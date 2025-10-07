@@ -636,7 +636,7 @@ perform_cleanup() {
     safe_clean ~/.cache/swift-package-manager/* "Swift package manager cache"
     safe_clean ~/.cache/bazel/* "Bazel cache"
     safe_clean ~/.cache/zig/* "Zig cache"
-    safe_clean ~/.cache/deno/* "Deno cache"
+    safe_clean ~/Library/Caches/deno/* "Deno cache"
 
     # Database tools
     safe_clean ~/Library/Caches/com.sequel-ace.sequel-ace/* "Sequel Ace cache"
