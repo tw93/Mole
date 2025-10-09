@@ -186,14 +186,12 @@ update_mole() {
     # Run installer with visible output (but capture for error handling)
     local install_output
     if install_output=$("$tmp_installer" --prefix "$install_dir" --config "$HOME/.config/mole" --update 2>&1); then
-        echo "$install_output" | grep -Ev "^$" || true
         local new_version
         new_version=$("$mole_path" --version 2>/dev/null | awk 'NF {print $NF}' || echo "")
         echo -e "${GREEN}✓${NC} Updated to latest version (${new_version:-unknown})"
     else
         # Retry without --update flag
         if install_output=$("$tmp_installer" --prefix "$install_dir" --config "$HOME/.config/mole" 2>&1); then
-            echo "$install_output" | grep -Ev "^$" || true
             local new_version
             new_version=$("$mole_path" --version 2>/dev/null | awk 'NF {print $NF}' || echo "")
             echo -e "${GREEN}✓${NC} Updated to latest version (${new_version:-unknown})"
