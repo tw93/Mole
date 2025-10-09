@@ -1596,6 +1596,7 @@ interactive_drill_down() {
     local need_scan=true
     local wait_for_calc=false  # Don't wait on first load, let user press 'r'
     local temp_items="$TEMP_PREFIX.items"
+    local status_message=""
 
     # Cache variables to avoid recalculation
     local -a items=()
@@ -1821,8 +1822,13 @@ interactive_drill_down() {
             output+=$'\n'
         fi
 
+        if [[ -n "$status_message" ]]; then
+            output+="  $status_message"$'\n\n'
+            status_message=""
+        fi
+
         # Bottom help bar
-        output+="  ${GRAY}↑/↓${NC} Navigate  ${GRAY}|${NC}  ${GRAY}Enter${NC} Open  ${GRAY}|${NC}  ${GRAY}←${NC} Back  ${GRAY}|${NC}  ${GRAY}Del${NC} Delete  ${GRAY}|${NC}  ${GRAY}Q/ESC${NC} Quit"$'\n'
+        output+="  ${GRAY}↑/↓${NC} Navigate  ${GRAY}|${NC}  ${GRAY}Enter${NC} Open  ${GRAY}|${NC}  ${GRAY}←${NC} Back  ${GRAY}|${NC}  ${GRAY}Del${NC} Delete  ${GRAY}|${NC}  ${GRAY}O${NC} Finder  ${GRAY}|${NC}  ${GRAY}Q/ESC${NC} Quit"$'\n'
 
         # Output everything at once (single write = no flicker)
         printf "%b" "$output" >&2
@@ -1967,6 +1973,17 @@ interactive_drill_down() {
                     [[ -d "${cache_dir:-}" ]] && rm -rf "$cache_dir" 2>/dev/null || true
                     trap - EXIT INT TERM
                     return 1  # Return to menu
+                fi
+                ;;
+            "OPEN")
+                if command -v open >/dev/null 2>&1; then
+                    if open "$current_path" >/dev/null 2>&1; then
+                        status_message="${GREEN}✓${NC} Finder opened: ${GRAY}$current_path${NC}"
+                    else
+                        status_message="${YELLOW}Warning:${NC} Could not open ${GRAY}$current_path${NC}"
+                    fi
+                else
+                    status_message="${YELLOW}Warning:${NC} 'open' command not available"
                 fi
                 ;;
             "DELETE")
@@ -2271,6 +2288,7 @@ main() {
                 echo "  Enter / →   Open selected folder"
                 echo "  ←           Go back to parent directory"
                 echo "  Delete      Delete selected file/folder (requires confirmation)"
+                echo "  O           Reveal current directory in Finder"
                 echo "  Q / ESC     Quit the explorer"
                 echo ""
                 echo "Features:"

@@ -121,6 +121,7 @@ read_key() {
         'd'|'D') echo "DELETE" ;;
         'r'|'R') echo "RETRY" ;;
         '?') echo "HELP" ;;
+        'o'|'O') echo "OPEN" ;;
         $'\x03') echo "QUIT" ;;  # Ctrl+C
         $'\x7f'|$'\x08') echo "DELETE" ;;  # Delete key (labeled "delete" on Mac, actually backspace)
         $'\x1b')
