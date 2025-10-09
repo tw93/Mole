@@ -20,6 +20,15 @@ readonly RED="${ESC}[0;31m"
 readonly GRAY="${ESC}[0;90m"
 readonly NC="${ESC}[0m"
 
+# Icon definitions
+readonly ICON_CONFIRM="◎"      # Confirm operation
+readonly ICON_ADMIN="●"        # Admin permission
+readonly ICON_SUCCESS="✓"      # Success
+readonly ICON_ERROR="✗"        # Error
+readonly ICON_EMPTY="○"        # Empty state
+readonly ICON_LIST="-"         # List item
+readonly ICON_MENU="▸"         # Menu item
+
 # Spinner character helpers (ASCII by default, overridable via env)
 mo_spinner_chars() {
     local chars="${MO_SPINNER_CHARS:-|/-\\}"
@@ -52,7 +61,7 @@ log_info() {
 
 log_success() {
     rotate_log
-    echo -e "  ${GREEN}✓${NC} $1"
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" >> "$LOG_FILE" 2>/dev/null || true
 }
 
@@ -64,14 +73,45 @@ log_warning() {
 
 log_error() {
     rotate_log
-    echo -e "${RED}$1${NC}" >&2
+    echo -e "${RED}${ICON_ERROR}${NC} $1" >&2
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$LOG_FILE" 2>/dev/null || true
 }
 
 log_header() {
     rotate_log
-    echo -e "\n${PURPLE}▶ $1${NC}"
+    echo -e "\n${PURPLE}${ICON_MENU} $1${NC}"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] SECTION: $1" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# Icon output helpers
+icon_confirm() {
+    echo -e "${BLUE}${ICON_CONFIRM}${NC} $1"
+}
+
+icon_admin() {
+    echo -e "${BLUE}${ICON_ADMIN}${NC} $1"
+}
+
+icon_success() {
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
+}
+
+icon_error() {
+    echo -e "  ${RED}${ICON_ERROR}${NC} $1"
+}
+
+icon_empty() {
+    echo -e "  ${BLUE}${ICON_EMPTY}${NC} $1"
+}
+
+icon_list() {
+    echo -e "  ${ICON_LIST} $1"
+}
+
+icon_menu() {
+    local num="$1"
+    local text="$2"
+    echo -e "${BLUE}${ICON_MENU} ${num}. ${text}${NC}"
 }
 
 # System detection
@@ -121,6 +161,7 @@ read_key() {
         'd'|'D') echo "DELETE" ;;
         'r'|'R') echo "RETRY" ;;
         '?') echo "HELP" ;;
+        'o'|'O') echo "OPEN" ;;
         $'\x03') echo "QUIT" ;;  # Ctrl+C
         $'\x7f'|$'\x08') echo "DELETE" ;;  # Delete key (labeled "delete" on Mac, actually backspace)
         $'\x1b')
@@ -276,7 +317,7 @@ request_sudo_access() {
 
     # If Touch ID is supported and not forced to use password
     if [[ "$force_password" != "true" ]] && check_touchid_support; then
-        echo -e "${BLUE}${prompt_msg}${NC} ${GRAY}(Touch ID or password)${NC}"
+        echo -e "${BLUE}${ICON_ADMIN}${NC} ${prompt_msg} ${GRAY}(Touch ID or password)${NC}"
         if sudo -v 2>/dev/null; then
             return 0
         else
@@ -284,8 +325,8 @@ request_sudo_access() {
         fi
     else
         # Traditional password method
-        echo -e "${BLUE}${prompt_msg}${NC}"
-        echo -ne "${BLUE}   Password> ${NC}"
+        echo -e "${BLUE}${ICON_ADMIN}${NC} ${prompt_msg}"
+        echo -ne "${BLUE}${ICON_MENU}${NC} Password: "
         read -s password
         echo ""
         if [[ -n "$password" ]] && echo "$password" | sudo -S true 2>/dev/null; then
@@ -313,13 +354,27 @@ request_sudo() {
 update_via_homebrew() {
     local version="${1:-unknown}"
 
-    echo -e "${BLUE}|${NC} Updating Homebrew..."
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Updating Homebrew..."
+    else
+        echo "Updating Homebrew..."
+    fi
     # Filter out common noise but show important info
     brew update 2>&1 | grep -Ev "^(==>|Already up-to-date)" || true
+    if [[ -t 1 ]]; then
+        stop_inline_spinner
+    fi
 
-    echo -e "${BLUE}|${NC} Upgrading Mole..."
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Upgrading Mole..."
+    else
+        echo "Upgrading Mole..."
+    fi
     local upgrade_output
     upgrade_output=$(brew upgrade mole 2>&1) || true
+    if [[ -t 1 ]]; then
+        stop_inline_spinner
+    fi
 
     if echo "$upgrade_output" | grep -q "already installed"; then
         # Get current version
@@ -397,17 +452,21 @@ start_inline_spinner() {
 
     if [[ -t 1 ]]; then
         (
+            trap 'exit 0' TERM INT EXIT
             local chars
             chars="$(mo_spinner_chars)"
+            [[ -z "$chars" ]] && chars='|/-\'
             local i=0
             while true; do
                 local c="${chars:$((i % ${#chars})):1}"
-                printf "\r${MOLE_SPINNER_PREFIX:-}${BLUE}%s${NC} %s" "$c" "$message"
+                printf "\r${MOLE_SPINNER_PREFIX:-}${BLUE}%s${NC} %s" "$c" "$message" 2>/dev/null || exit 0
                 ((i++))
-                sleep 0.12
+                # macOS supports decimal sleep, this is the primary target
+                sleep 0.1 2>/dev/null || sleep 1 2>/dev/null || exit 0
             done
         ) &
         INLINE_SPINNER_PID=$!
+        disown 2>/dev/null || true
     else
         echo -n "  ${BLUE}|${NC} $message"
     fi
@@ -419,7 +478,7 @@ stop_inline_spinner() {
         kill "$INLINE_SPINNER_PID" 2>/dev/null || true
         wait "$INLINE_SPINNER_PID" 2>/dev/null || true
         INLINE_SPINNER_PID=""
-        [[ -t 1 ]] && printf "\r"
+        [[ -t 1 ]] && printf "\r\033[K"
     fi
 }
 
@@ -556,10 +615,45 @@ parallel_execute() {
 # Set MOLE_SPINNER_PREFIX="  " for indented spinner (e.g., in clean context)
 with_spinner() {
     local msg="$1"; shift || true
+    local timeout="${MOLE_CMD_TIMEOUT:-180}"  # Default 3min timeout
+
     if [[ -t 1 ]]; then
         start_inline_spinner "$msg"
     fi
-    "$@" >/dev/null 2>&1 || return $?
+
+    # Run command with timeout protection
+    if command -v timeout >/dev/null 2>&1; then
+        # GNU timeout available
+        timeout "$timeout" "$@" >/dev/null 2>&1 || {
+            local exit_code=$?
+            if [[ -t 1 ]]; then stop_inline_spinner; fi
+            # Exit code 124 means timeout
+            [[ $exit_code -eq 124 ]] && echo -e "  ${YELLOW}⚠${NC} $msg timed out (skipped)" >&2
+            return $exit_code
+        }
+    else
+        # Fallback: run in background with manual timeout
+        "$@" >/dev/null 2>&1 &
+        local cmd_pid=$!
+        local elapsed=0
+        while kill -0 $cmd_pid 2>/dev/null; do
+            if [[ $elapsed -ge $timeout ]]; then
+                kill -TERM $cmd_pid 2>/dev/null || true
+                wait $cmd_pid 2>/dev/null || true
+                if [[ -t 1 ]]; then stop_inline_spinner; fi
+                echo -e "  ${YELLOW}⚠${NC} $msg timed out (skipped)" >&2
+                return 124
+            fi
+            sleep 1
+            ((elapsed++))
+        done
+        wait $cmd_pid 2>/dev/null || {
+            local exit_code=$?
+            if [[ -t 1 ]]; then stop_inline_spinner; fi
+            return $exit_code
+        }
+    fi
+
     if [[ -t 1 ]]; then
         stop_inline_spinner
     fi
@@ -575,8 +669,16 @@ clean_tool_cache() {
         echo -e "  ${YELLOW}→${NC} $label (would clean)"
         return 0
     fi
-    MOLE_SPINNER_PREFIX="  " with_spinner "$label" "$@"
-    echo -e "  ${GREEN}✓${NC} $label"
+    if MOLE_SPINNER_PREFIX="  " with_spinner "$label" "$@"; then
+        echo -e "  ${GREEN}✓${NC} $label"
+    else
+        local exit_code=$?
+        # Timeout returns 124, don't show error message (already shown by with_spinner)
+        if [[ $exit_code -ne 124 ]]; then
+            echo -e "  ${YELLOW}⚠${NC} $label failed (skipped)" >&2
+        fi
+    fi
+    return 0  # Always return success to continue cleanup
 }
 
 # ============================================================================

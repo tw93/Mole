@@ -42,12 +42,20 @@ collect_files_to_be_cleaned() {
     local clean_sh="$SCRIPT_DIR/../bin/clean.sh"
     local -a items=()
 
-    echo -e "${BLUE}|${NC} Scanning cache files..."
-    echo ""
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Scanning cache files..."
+    else
+        echo "Scanning cache files..."
+    fi
 
     # Run clean.sh in dry-run mode
     local temp_output=$(create_temp_file)
     echo "" | bash "$clean_sh" --dry-run 2>&1 > "$temp_output" || true
+
+    if [[ -t 1 ]]; then
+        stop_inline_spinner
+    fi
+    echo ""
 
     # Strip ANSI color codes for parsing
     local temp_plain=$(create_temp_file)

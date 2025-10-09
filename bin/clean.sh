@@ -1325,11 +1325,30 @@ perform_cleanup() {
         local freed_gb=$(echo "$total_size_cleaned" | awk '{printf "%.2f", $1/1024/1024}')
         if [[ "$DRY_RUN" == "true" ]]; then
             echo "Potential reclaimable space: ${GREEN}${freed_gb}GB${NC} (no changes made) | Free space now: $(get_free_space)"
+
+            # Show file/category stats for dry run
+            if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
+                printf "Files to clean: %s | Categories: %s\n" "$files_cleaned" "$total_items"
+            elif [[ $files_cleaned -gt 0 ]]; then
+                printf "Files to clean: %s\n" "$files_cleaned"
+            elif [[ $total_items -gt 0 ]]; then
+                printf "Categories: %s\n" "$total_items"
+            fi
+
+            echo ""
+            echo "To protect specific cache files from deletion, run: mo clean --whitelist"
         else
             echo "Space freed: ${GREEN}${freed_gb}GB${NC} | Free space now: $(get_free_space)"
-        fi
 
-        if [[ "$DRY_RUN" != "true" ]]; then
+            # Show file/category stats for actual cleanup
+            if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
+                printf "Files cleaned: %s | Categories: %s\n" "$files_cleaned" "$total_items"
+            elif [[ $files_cleaned -gt 0 ]]; then
+                printf "Files cleaned: %s\n" "$files_cleaned"
+            elif [[ $total_items -gt 0 ]]; then
+                printf "Categories: %s\n" "$total_items"
+            fi
+
             if [[ $(echo "$freed_gb" | awk '{print ($1 >= 1) ? 1 : 0}') -eq 1 ]]; then
                 local movies=$(echo "$freed_gb" | awk '{printf "%.0f", $1/4.5}')
                 if [[ $movies -gt 0 ]]; then
@@ -1343,14 +1362,6 @@ perform_cleanup() {
         else
             echo "No significant space was freed (system was already clean) | Free space: $(get_free_space)"
         fi
-    fi
-
-    if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
-        printf "Files cleaned: %s | Categories processed: %s\n" "$files_cleaned" "$total_items"
-    elif [[ $files_cleaned -gt 0 ]]; then
-        printf "Files cleaned: %s\n" "$files_cleaned"
-    elif [[ $total_items -gt 0 ]]; then
-        printf "Categories processed: %s\n" "$total_items"
     fi
     printf "====================================================================\n"
 }

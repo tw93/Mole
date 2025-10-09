@@ -57,23 +57,32 @@ batch_uninstall_applications() {
     # Format size display (convert KB to bytes for bytes_to_human())
     local size_display=$(bytes_to_human "$((total_estimated_size * 1024))")
 
-    # Request sudo access if needed (do this before confirmation)
+    # Show summary and get batch confirmation first (before asking for password)
+    local app_total=${#selected_apps[@]}
+    local app_text="app"
+    [[ $app_total -gt 1 ]] && app_text="apps"
+    if [[ ${#running_apps[@]} -gt 0 ]]; then
+        echo -n "${BLUE}${ICON_CONFIRM}${NC} Remove ${app_total} ${app_text} | ${size_display} | Force quit: ${running_apps[*]} | Enter=go / ESC=q: "
+    else
+        echo -n "${BLUE}${ICON_CONFIRM}${NC} Remove ${app_total} ${app_text} | ${size_display} | Enter=go / ESC=q: "
+    fi
+    IFS= read -r -s -n1 key || key=""
+    case "$key" in
+        $'\e'|q|Q) echo ""; return 0 ;;
+        ""|$'\n'|$'\r'|y|Y) echo "" ;;
+        *) echo ""; return 0 ;;
+    esac
+
+    # User confirmed, now request sudo access if needed
     if [[ ${#sudo_apps[@]} -gt 0 ]]; then
         # Check if sudo is already cached
-        if sudo -n true 2>/dev/null; then
-            echo "◎ Admin access confirmed for: ${sudo_apps[*]}"
-        else
-            echo "◎ Admin required for: ${sudo_apps[*]}"
-            echo ""
-            if ! request_sudo_access "Uninstalling system apps requires admin access"; then
+        if ! sudo -n true 2>/dev/null; then
+            if ! request_sudo_access "Admin required for system apps: ${sudo_apps[*]}"; then
                 echo ""
                 log_error "Admin access denied"
                 return 1
             fi
-            echo ""
-            echo "✓ Admin access granted"
         fi
-        echo "◎ Gathering targets..."
         (while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null) &
         local sudo_keepalive_pid=$!
         local _trap_cleanup_cmd="kill $sudo_keepalive_pid 2>/dev/null || true; wait $sudo_keepalive_pid 2>/dev/null || true"
@@ -87,22 +96,7 @@ batch_uninstall_applications() {
         done
     fi
 
-    # Show summary and get batch confirmation
-    local app_total=${#selected_apps[@]}
-    if [[ ${#running_apps[@]} -gt 0 ]]; then
-        echo -n "${BLUE}◎ Remove ${app_total} app(s) (${size_display}) | Quit: ${running_apps[*]} | Enter=go / ESC=q:${NC} "
-    else
-        echo -n "${BLUE}◎ Remove ${app_total} app(s) (${size_display}) | Enter=go / ESC=q:${NC} "
-    fi
-    IFS= read -r -s -n1 key || key=""
-    case "$key" in
-        $'\e'|q|Q) echo ""; return 0 ;;
-        ""|$'\n'|$'\r'|y|Y) echo "" ;;
-        *) echo ""; return 0 ;;
-    esac
-
-    echo -n "◎ Starting in 3s... 3"; sleep 1; echo -ne "\r◎ Starting in 3s... 2"; sleep 1; echo -ne "\r◎ Starting in 3s... 1"; sleep 1
-    echo -ne "\r\033[K"
+    echo ""
     if [[ -t 1 ]]; then start_inline_spinner "Uninstalling apps..."; fi
 
     # Force quit running apps first (batch)
@@ -113,11 +107,11 @@ batch_uninstall_applications() {
         if pgrep -f "${running_apps[0]}" >/dev/null 2>&1; then sleep 1; fi
     fi
 
-    # Perform uninstallations (compact output)
+    # Perform uninstallations (silent mode, show results at end)
     if [[ -t 1 ]]; then stop_inline_spinner; fi
-    echo ""
     local success_count=0 failed_count=0
     local -a failed_items=()
+    local -a success_items=()
     for detail in "${app_details[@]}"; do
         IFS='|' read -r app_name app_path bundle_id total_kb encoded_files <<< "$detail"
         local related_files=$(echo "$encoded_files" | base64 -d)
@@ -144,7 +138,7 @@ batch_uninstall_applications() {
             ((success_count++))
             ((files_cleaned++))
             ((total_items++))
-            printf "  ${GREEN}OK${NC}   %-20s%s\n" "$app_name" $([[ $files_removed -gt 0 ]] && echo "+$files_removed" )
+            success_items+=("$app_name")
         else
             ((failed_count++))
             failed_items+=("$app_name:$reason")
@@ -152,32 +146,36 @@ batch_uninstall_applications() {
     done
 
     # Summary
-    local freed_display="0B"
-    if [[ $total_size_freed -gt 0 ]]; then
-        local freed_kb=$total_size_freed
-        if [[ $freed_kb -ge 1048576 ]]; then
-            freed_display=$(echo "$freed_kb" | awk '{printf "%.2fGB", $1/1024/1024}')
-        elif [[ $freed_kb -ge 1024 ]]; then
-            freed_display=$(echo "$freed_kb" | awk '{printf "%.1fMB", $1/1024}')
-        else
-            freed_display="${freed_kb}KB"
-        fi
-    fi
+    local freed_display=$(bytes_to_human "$((total_size_freed * 1024))")
     local bar="================================================================================"
     echo ""
     echo "$bar"
+    if [[ $success_count -gt 0 ]]; then
+        local success_list="${success_items[*]}"
+        echo -e "Removed: ${GREEN}${success_list}${NC} | Freed: ${GREEN}${freed_display}${NC}"
+    fi
     if [[ $failed_count -gt 0 ]]; then
-        echo -e "Removed: ${GREEN}$success_count${NC} | Failed: ${RED}$failed_count${NC} | Freed: ${GREEN}$freed_display${NC}"
+        local failed_names=()
+        local reason_summary=""
+        for item in "${failed_items[@]}"; do
+            local name=${item%%:*}
+            failed_names+=("$name")
+        done
+        local failed_list="${failed_names[*]}"
+
+        # Determine primary reason
         if [[ $failed_count -eq 1 ]]; then
-            local first="${failed_items[0]}"
-            local name=${first%%:*}
-            local reason=${first#*:}
-            echo "${name} $(map_uninstall_reason "$reason")"
+            local first_reason=${failed_items[0]#*:}
+            case "$first_reason" in
+                still*running*) reason_summary="still running" ;;
+                remove*failed*) reason_summary="could not be removed" ;;
+                permission*) reason_summary="permission denied" ;;
+                *) reason_summary="$first_reason" ;;
+            esac
+            echo -e "Failed: ${RED}${failed_list}${NC} ${reason_summary}"
         else
-            local joined="${failed_items[*]}"; echo "Failures: $joined"
+            echo -e "Failed: ${RED}${failed_list}${NC} could not be removed"
         fi
-    else
-        echo -e "Removed: ${GREEN}$success_count${NC} | Failed: ${RED}$failed_count${NC} | Freed: ${GREEN}$freed_display${NC}"
     fi
     echo "$bar"
 

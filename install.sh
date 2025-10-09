@@ -16,20 +16,28 @@ start_line_spinner() {
     local msg="$1"; [[ ! -t 1 ]] && { echo -e "${BLUE}|${NC} $msg"; return; }
     local chars="${MO_SPINNER_CHARS:-|/-\\}"; [[ -z "$chars" ]] && chars='|/-\\'
     local i=0
-    ( while true; do c="${chars:$((i % ${#chars})):1}"; printf "\r  ${BLUE}%s${NC} %s" "$c" "$msg"; ((i++)); sleep 0.12; done ) &
+    ( while true; do c="${chars:$((i % ${#chars})):1}"; printf "\r${BLUE}%s${NC} %s" "$c" "$msg"; ((i++)); sleep 0.12; done ) &
     _SPINNER_PID=$!
 }
-stop_line_spinner() { if [[ -n "$_SPINNER_PID" ]]; then kill "$_SPINNER_PID" 2>/dev/null || true; wait "$_SPINNER_PID" 2>/dev/null || true; _SPINNER_PID=""; printf "\r"; fi; }
+stop_line_spinner() { if [[ -n "$_SPINNER_PID" ]]; then kill "$_SPINNER_PID" 2>/dev/null || true; wait "$_SPINNER_PID" 2>/dev/null || true; _SPINNER_PID=""; printf "\r\033[K"; fi; }
 
 
 # Verbosity (0 = quiet, 1 = verbose)
 VERBOSE=1
 
+# Icons (duplicated from lib/common.sh - necessary as install.sh runs standalone)
+readonly ICON_SUCCESS="✓"
+readonly ICON_ADMIN="●"
+readonly ICON_CONFIRM="◎"
+readonly ICON_ERROR="✗"
+
 # Logging functions
 log_info() { [[ ${VERBOSE} -eq 1 ]] && echo -e "${BLUE}$1${NC}"; }
-log_success() { [[ ${VERBOSE} -eq 1 ]] && echo -e "${GREEN}$1${NC}"; }
+log_success() { [[ ${VERBOSE} -eq 1 ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} $1"; }
 log_warning() { [[ ${VERBOSE} -eq 1 ]] && echo -e "${YELLOW}$1${NC}"; }
-log_error() { echo -e "${RED}$1${NC}"; }
+log_error() { echo -e "${RED}${ICON_ERROR}${NC} $1"; }
+log_admin() { [[ ${VERBOSE} -eq 1 ]] && echo -e "${BLUE}${ICON_ADMIN}${NC} $1"; }
+log_confirm() { [[ ${VERBOSE} -eq 1 ]] && echo -e "${BLUE}${ICON_CONFIRM}${NC} $1"; }
 
 # Default installation directory
 INSTALL_DIR="/usr/local/bin"
@@ -239,12 +247,14 @@ install_files() {
     if [[ -f "$SOURCE_DIR/mole" ]]; then
         if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
             if [[ "$INSTALL_DIR" == "/usr/local/bin" ]] && [[ ! -w "$INSTALL_DIR" ]]; then
+                log_admin "Admin access required for /usr/local/bin"
                 sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole"
                 sudo chmod +x "$INSTALL_DIR/mole"
             else
                 cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole"
                 chmod +x "$INSTALL_DIR/mole"
             fi
+            log_success "Installed mole to $INSTALL_DIR"
         fi
     else
         log_error "mole executable not found in ${SOURCE_DIR:-unknown}"
@@ -254,7 +264,7 @@ install_files() {
     # Install mo alias for Mole if available
     if [[ -f "$SOURCE_DIR/mo" ]]; then
         if [[ "$source_dir_abs" == "$install_dir_abs" ]]; then
-            log_info "mo alias already present in $INSTALL_DIR"
+            log_success "mo alias already present"
         else
             if [[ "$INSTALL_DIR" == "/usr/local/bin" ]] && [[ ! -w "$INSTALL_DIR" ]]; then
                 sudo cp "$SOURCE_DIR/mo" "$INSTALL_DIR/mo"
@@ -263,6 +273,7 @@ install_files() {
                 cp "$SOURCE_DIR/mo" "$INSTALL_DIR/mo"
                 chmod +x "$INSTALL_DIR/mo"
             fi
+            log_success "Installed mo alias"
         fi
     fi
 
@@ -271,10 +282,11 @@ install_files() {
         local source_bin_abs="$(cd "$SOURCE_DIR/bin" && pwd)"
         local config_bin_abs="$(cd "$CONFIG_DIR/bin" && pwd)"
         if [[ "$source_bin_abs" == "$config_bin_abs" ]]; then
-            log_info "Configuration bin directory already synced"
+            log_success "Modules already synced"
         else
             cp -r "$SOURCE_DIR/bin"/* "$CONFIG_DIR/bin/"
             chmod +x "$CONFIG_DIR/bin"/*
+            log_success "Installed modules"
         fi
     fi
 
@@ -282,9 +294,10 @@ install_files() {
         local source_lib_abs="$(cd "$SOURCE_DIR/lib" && pwd)"
         local config_lib_abs="$(cd "$CONFIG_DIR/lib" && pwd)"
         if [[ "$source_lib_abs" == "$config_lib_abs" ]]; then
-            log_info "Configuration lib directory already synced"
+            log_success "Libraries already synced"
         else
             cp -r "$SOURCE_DIR/lib"/* "$CONFIG_DIR/lib/"
+            log_success "Installed libraries"
         fi
     fi
 
@@ -355,6 +368,8 @@ print_usage_summary() {
         return
     fi
 
+    echo ""
+    
     local message="Mole ${action} successfully"
 
     if [[ "$action" == "updated" && -n "$previous_version" && -n "$new_version" && "$previous_version" != "$new_version" ]]; then
@@ -363,7 +378,7 @@ print_usage_summary() {
         message+=" (version ${new_version})"
     fi
 
-    log_success "$message!"
+    log_confirm "$message"
 
     echo ""
     echo "Usage:"
@@ -389,16 +404,18 @@ print_usage_summary() {
 
 # Uninstall function
 uninstall_mole() {
-    log_info "Uninstalling mole..."
+    log_confirm "Uninstalling Mole"
+    echo ""
 
     # Remove executable
     if [[ -f "$INSTALL_DIR/mole" ]]; then
         if [[ "$INSTALL_DIR" == "/usr/local/bin" ]] && [[ ! -w "$INSTALL_DIR" ]]; then
+            log_admin "Admin access required"
             sudo rm -f "$INSTALL_DIR/mole"
         else
             rm -f "$INSTALL_DIR/mole"
         fi
-        log_success "Removed executable from $INSTALL_DIR"
+        log_success "Removed mole executable"
     fi
 
     if [[ -f "$INSTALL_DIR/mo" ]]; then
@@ -407,7 +424,7 @@ uninstall_mole() {
         else
             rm -f "$INSTALL_DIR/mo"
         fi
-        log_success "Removed mo alias from $INSTALL_DIR"
+        log_success "Removed mo alias"
     fi
 
     # SAFETY CHECK: Verify config directory is safe to remove
@@ -442,14 +459,15 @@ uninstall_mole() {
             echo ""
             read -p "Remove configuration directory $CONFIG_DIR? (y/N): " -n 1 -r; echo ""; if [[ $REPLY =~ ^[Yy]$ ]]; then
                 rm -rf "$CONFIG_DIR"
-                log_success "Removed configuration directory"
+                log_success "Removed configuration"
             else
-                log_info "Configuration directory preserved"
+                log_success "Configuration preserved"
             fi
         fi
     fi
 
-    log_success "Mole uninstalled successfully"
+    echo ""
+    log_confirm "Mole uninstalled successfully"
 }
 
 # Main installation function
@@ -486,12 +504,26 @@ perform_update() {
             update_via_homebrew "$VERSION"
         else
             # Fallback: inline implementation
-            echo -e "${BLUE}|${NC} Updating Homebrew..."
+            if [[ -t 1 ]]; then
+                start_line_spinner "Updating Homebrew..."
+            else
+                echo "Updating Homebrew..."
+            fi
             brew update 2>&1 | grep -Ev "^(==>|Already up-to-date)" || true
+            if [[ -t 1 ]]; then
+                stop_line_spinner
+            fi
 
-            echo -e "${BLUE}|${NC} Upgrading Mole..."
+            if [[ -t 1 ]]; then
+                start_line_spinner "Upgrading Mole..."
+            else
+                echo "Upgrading Mole..."
+            fi
             local upgrade_output
             upgrade_output=$(brew upgrade mole 2>&1) || true
+            if [[ -t 1 ]]; then
+                stop_line_spinner
+            fi
 
             if echo "$upgrade_output" | grep -q "already installed"; then
                 local current_version

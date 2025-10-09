@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 
 # Version info
-VERSION="1.7.0"
+VERSION="1.7.1"
 MOLE_TAGLINE="can dig deep to clean your Mac."
 
 # Get latest version from remote repository
@@ -49,7 +49,7 @@ check_for_updates() {
         local latest=$(get_latest_version)
 
         if [[ -n "$latest" && "$VERSION" != "$latest" && "$(printf '%s\n' "$VERSION" "$latest" | sort -V | head -1)" == "$VERSION" ]]; then
-            echo -e "${YELLOW}New version ${GREEN}${latest}${YELLOW} available (current: ${VERSION})\n   Run ${GREEN}mole update${YELLOW} to upgrade${NC}" > "$msg_cache"
+            echo -e "${YELLOW}New version ${GREEN}${latest}${YELLOW} available (current: ${VERSION})\n${YELLOW}   Run ${GREEN}mole update${YELLOW} to upgrade${NC}" > "$msg_cache"
         else
             echo -n > "$msg_cache"
         fi
@@ -166,7 +166,11 @@ update_mole() {
     fi
 
     # Download and run installer with progress
-    echo -e "${BLUE}|${NC} Downloading latest version..."
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Downloading latest version..."
+    else
+        echo "Downloading latest version..."
+    fi
 
     local installer_url="https://raw.githubusercontent.com/tw93/mole/main/install.sh"
     local tmp_installer
@@ -175,22 +179,26 @@ update_mole() {
     # Download installer with progress
     if command -v curl >/dev/null 2>&1; then
         if ! curl -fsSL --connect-timeout 10 --max-time 60 "$installer_url" -o "$tmp_installer" 2>&1; then
+            if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
             log_error "Update failed. Check network connection."
             exit 1
         fi
     elif command -v wget >/dev/null 2>&1; then
         if ! wget --timeout=10 --tries=3 -qO "$tmp_installer" "$installer_url" 2>&1; then
+            if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
             log_error "Update failed. Check network connection."
             exit 1
         fi
     else
+        if [[ -t 1 ]]; then stop_inline_spinner; fi
         rm -f "$tmp_installer"
         log_error "curl or wget required"
         exit 1
     fi
 
+    if [[ -t 1 ]]; then stop_inline_spinner; fi
     chmod +x "$tmp_installer"
 
     # Determine install directory
@@ -199,21 +207,35 @@ update_mole() {
     local install_dir
     install_dir="$(cd "$(dirname "$mole_path")" && pwd)"
 
-    echo -e "${BLUE}|${NC} Installing update..."
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Installing update..."
+    else
+        echo "Installing update..."
+    fi
 
     # Run installer with visible output (but capture for error handling)
     local install_output
     if install_output=$("$tmp_installer" --prefix "$install_dir" --config "$HOME/.config/mole" --update 2>&1); then
-        local new_version
-        new_version=$("$mole_path" --version 2>/dev/null | awk 'NF {print $NF}' || echo "")
-        echo -e "${GREEN}✓${NC} Updated to latest version (${new_version:-unknown})"
-    else
-        # Retry without --update flag
-        if install_output=$("$tmp_installer" --prefix "$install_dir" --config "$HOME/.config/mole" 2>&1); then
+        if [[ -t 1 ]]; then stop_inline_spinner; fi
+        echo "$install_output" | grep -Ev "^$" || true
+        # Only show success message if not already shown by installer
+        if ! echo "$install_output" | grep -q "Already on latest version"; then
             local new_version
             new_version=$("$mole_path" --version 2>/dev/null | awk 'NF {print $NF}' || echo "")
             echo -e "${GREEN}✓${NC} Updated to latest version (${new_version:-unknown})"
+        fi
+    else
+        # Retry without --update flag
+        if install_output=$("$tmp_installer" --prefix "$install_dir" --config "$HOME/.config/mole" 2>&1); then
+            if [[ -t 1 ]]; then stop_inline_spinner; fi
+            echo "$install_output" | grep -Ev "^$" || true
+            if ! echo "$install_output" | grep -q "Already on latest version"; then
+                local new_version
+                new_version=$("$mole_path" --version 2>/dev/null | awk 'NF {print $NF}' || echo "")
+                echo -e "${GREEN}✓${NC} Updated to latest version (${new_version:-unknown})"
+            fi
         else
+            if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
             log_error "Update failed"
             echo "$install_output" | tail -10 >&2  # Show last 10 lines of error
@@ -232,7 +254,13 @@ remove_mole() {
     echo -e "${YELLOW}Remove Mole${NC}"
     echo ""
 
-    # Detect all installations
+    # Detect all installations with loading
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Detecting Mole installations..."
+    else
+        echo "Detecting installations..."
+    fi
+
     local is_homebrew=false
     local -a manual_installs=()
     local -a alias_installs=()
@@ -270,42 +298,51 @@ remove_mole() {
         fi
     done
 
-    # Show what will be removed
-    echo "This will remove:"
-    echo ""
-
-    if [[ "$is_homebrew" == "true" ]]; then
-        echo -e "  ${GREEN}✓${NC} Mole (via Homebrew)"
+    if [[ -t 1 ]]; then
+        stop_inline_spinner
     fi
 
-    if [[ ${#manual_installs[@]} -gt 0 ]]; then
-        for install in "${manual_installs[@]}"; do
-            echo -e "  ${GREEN}✓${NC} $install"
-        done
-    fi
-
-    if [[ ${#alias_installs[@]} -gt 0 ]]; then
-        for alias in "${alias_installs[@]}"; do
-            echo -e "  ${GREEN}✓${NC} $alias"
-        done
-    fi
-
-    echo -e "  ${GREEN}✓${NC} ~/.config/mole/ (configuration)"
-    echo -e "  ${GREEN}✓${NC} ~/.cache/mole/ (cache)"
-
+    # Check if anything to remove
     if [[ "$is_homebrew" == "false" && ${#manual_installs[@]} -eq 0 && ${#alias_installs[@]} -eq 0 ]]; then
         echo ""
         echo -e "${YELLOW}No Mole installation detected${NC}"
         exit 0
     fi
 
+    # Show what will be removed
+    echo "Will remove:"
     echo ""
 
-    # Confirm removal
-    read -p "Are you sure you want to remove Mole? (y/N): " -n 1 -r; echo ""; if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Cancelled."
-        exit 0
+    if [[ "$is_homebrew" == "true" ]]; then
+        echo "  - Mole via Homebrew"
     fi
+
+    for install in "${manual_installs[@]}" "${alias_installs[@]}"; do
+        echo "  - $install"
+    done
+
+    echo "  - ~/.config/mole"
+    echo "  - ~/.cache/mole"
+
+    echo ""
+    echo -n "Press Enter to confirm, ESC or q to cancel: "
+
+    # Read single key
+    IFS= read -r -s -n1 key || key=""
+    echo ""
+    case "$key" in
+        $'\e'|q|Q)
+            echo "Cancelled"
+            exit 0
+            ;;
+        ""|$'\n'|$'\r')
+            # Continue with removal
+            ;;
+        *)
+            echo "Cancelled"
+            exit 0
+            ;;
+    esac
 
     echo ""
 

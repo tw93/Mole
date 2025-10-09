@@ -122,7 +122,7 @@ scan_applications() {
         fi
     fi
 
-    local temp_file=$(mktemp_file)
+    local temp_file=$(create_temp_file)
 
     echo "" >&2  # Add space before scanning output without breaking stdout return
     # Pre-cache current epoch to avoid repeated calls
@@ -375,7 +375,8 @@ load_applications() {
 uninstall_applications() {
     local total_size_freed=0
 
-    log_header "Uninstalling selected applications"
+    echo ""
+    echo -e "${PURPLE}▶ Uninstalling selected applications${NC}"
 
     if [[ ${#selected_apps[@]} -eq 0 ]]; then
         log_warning "No applications selected for uninstallation"
@@ -389,14 +390,14 @@ uninstall_applications() {
 
         # Check if app is running
         if pgrep -f "$app_name" >/dev/null 2>&1; then
-            log_warning "$app_name is currently running"
+            echo -e "${YELLOW}⚠ $app_name is currently running${NC}"
             read -p "  Force quit $app_name? (y/N): " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 pkill -f "$app_name" 2>/dev/null || true
                 sleep 2
             else
-                log_warning "Skipping $app_name (still running)"
+                echo -e "  ${BLUE}○${NC} Skipped $app_name"
                 continue
             fi
         fi
@@ -414,7 +415,7 @@ uninstall_applications() {
         local total_kb=$((app_size_kb + related_size_kb + system_size_kb))
 
         # Show what will be removed
-        echo -e "  ${YELLOW}Files to be removed:${NC}"
+        echo -e "${BLUE}◎${NC} $app_name - Files to be removed:"
         echo -e "  ${GREEN}✓${NC} Application: $(echo "$app_path" | sed "s|$HOME|~|")"
 
         # Show user-level files
@@ -425,7 +426,7 @@ uninstall_applications() {
         # Show system-level files
         if [[ -n "$system_files" ]]; then
             while IFS= read -r file; do
-                [[ -n "$file" && -e "$file" ]] && echo -e "  ${YELLOW}✓${NC} [System] $file"
+                [[ -n "$file" && -e "$file" ]] && echo -e "  ${BLUE}●${NC} System: $file"
             done <<< "$system_files"
         fi
 
@@ -448,7 +449,7 @@ uninstall_applications() {
             if rm -rf "$app_path" 2>/dev/null; then
                 echo -e "  ${GREEN}✓${NC} Removed application"
             else
-                log_error "Failed to remove $app_path"
+                echo -e "  ${RED}✗${NC} Failed to remove $app_path"
                 continue
             fi
 
@@ -463,13 +464,13 @@ uninstall_applications() {
 
             # Remove system-level files (requires sudo)
             if [[ -n "$system_files" ]]; then
-                echo -e "  ${YELLOW}System-level files require administrator privileges${NC}"
+                echo -e "  ${BLUE}●${NC} Admin access required for system files"
                 while IFS= read -r file; do
                     if [[ -n "$file" && -e "$file" ]]; then
                         if sudo rm -rf "$file" 2>/dev/null; then
-                            echo -e "  ${GREEN}✓${NC} Removed [System] $(basename "$file")"
+                            echo -e "  ${GREEN}✓${NC} Removed $(basename "$file")"
                         else
-                            log_warning "Failed to remove system file: $file"
+                            echo -e "  ${YELLOW}⚠${NC} Failed to remove: $file"
                         fi
                     fi
                 done <<< "$system_files"
@@ -479,15 +480,15 @@ uninstall_applications() {
             ((files_cleaned++))
             ((total_items++))
 
-            log_success "$app_name uninstalled successfully"
+            echo -e "  ${GREEN}✓${NC} $app_name uninstalled successfully"
         else
-            echo -e "  ${BLUE}❂${NC} Skipped $app_name"
+            echo -e "  ${BLUE}○${NC} Skipped $app_name"
         fi
     done
 
     # Show final summary
     echo ""
-    log_header "Uninstallation Summary"
+    echo -e "${PURPLE}▶ Uninstallation Summary${NC}"
 
     if [[ $total_size_freed -gt 0 ]]; then
         if [[ $total_size_freed -gt 1048576 ]]; then  # > 1GB
@@ -498,10 +499,10 @@ uninstall_applications() {
             local freed_display="${total_size_freed}KB"
         fi
 
-        log_success "Freed $freed_display of disk space"
+        echo -e "  ${GREEN}✓${NC} Freed $freed_display of disk space"
     fi
 
-    echo "Applications uninstalled: $files_cleaned"
+    echo -e "  ${GREEN}✓${NC} Applications uninstalled: $files_cleaned"
     ((total_size_cleaned += total_size_freed))
 }
 
@@ -561,7 +562,7 @@ main() {
     local extra=$((selection_count-3))
     local list="${names[*]}"
     [[ $extra -gt 0 ]] && list+=" +${extra}"
-    echo "◎ ${selection_count} apps: ${list}"
+    echo -e "${BLUE}◎${NC} ${selection_count} apps: ${list}"
 
     # Execute batch uninstallation (handles confirmation)
     batch_uninstall_applications

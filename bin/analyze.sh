@@ -1220,17 +1220,38 @@ display_file_types() {
         return
     fi
 
-    # Analyze common file types
-    local -A type_map=(
-        ["Videos"]="kMDItemContentType == 'public.movie' || kMDItemContentType == 'public.video'"
-        ["Images"]="kMDItemContentType == 'public.image'"
-        ["Archives"]="kMDItemContentType == 'public.archive' || kMDItemContentType == 'public.zip-archive'"
-        ["Documents"]="kMDItemContentType == 'com.adobe.pdf' || kMDItemContentType == 'public.text'"
-        ["Audio"]="kMDItemContentType == 'public.audio'"
-    )
-
-    for type_name in "${!type_map[@]}"; do
-        local query="${type_map[$type_name]}"
+    # Analyze common file types (bash 3.2 compatible - no associative arrays)
+    local -a type_names=("Videos" "Images" "Archives" "Documents" "Audio")
+    
+    local type_name
+    for type_name in "${type_names[@]}"; do
+        local query=""
+        local badge="$BADGE_FILE"
+        
+        # Map type name to query and badge
+        case "$type_name" in
+            "Videos")
+                query="kMDItemContentType == 'public.movie' || kMDItemContentType == 'public.video'"
+                badge="$BADGE_MEDIA"
+                ;;
+            "Images")
+                query="kMDItemContentType == 'public.image'"
+                badge="$BADGE_MEDIA"
+                ;;
+            "Archives")
+                query="kMDItemContentType == 'public.archive' || kMDItemContentType == 'public.zip-archive'"
+                badge="$BADGE_BUNDLE"
+                ;;
+            "Documents")
+                query="kMDItemContentType == 'com.adobe.pdf' || kMDItemContentType == 'public.text'"
+                badge="$BADGE_FILE"
+                ;;
+            "Audio")
+                query="kMDItemContentType == 'public.audio'"
+                badge="🎵"
+                ;;
+        esac
+        
         local files=$(mdfind -onlyin "$CURRENT_PATH" "$query" 2>/dev/null)
         local count=$(echo "$files" | grep -c . || echo "0")
         local total_size=0
@@ -1245,13 +1266,6 @@ display_file_types() {
 
             if [[ $total_size -gt 0 ]]; then
                 local human_size=$(bytes_to_human "$total_size")
-                local badge="$BADGE_FILE"
-                case "$type_name" in
-                    "Videos"|"Images") badge="$BADGE_MEDIA" ;;
-                    "Archives") badge="$BADGE_BUNDLE" ;;
-                    "Documents") badge="$BADGE_FILE" ;;
-                    "Audio") badge="🎵" ;;
-                esac
                 printf "  %s %-12s %8s (%d files)\n" "$badge" "$type_name:" "$human_size" "$count"
             fi
         fi
@@ -1596,6 +1610,7 @@ interactive_drill_down() {
     local need_scan=true
     local wait_for_calc=false  # Don't wait on first load, let user press 'r'
     local temp_items="$TEMP_PREFIX.items"
+    local status_message=""
 
     # Cache variables to avoid recalculation
     local -a items=()
@@ -1821,8 +1836,13 @@ interactive_drill_down() {
             output+=$'\n'
         fi
 
+        if [[ -n "$status_message" ]]; then
+            output+="  $status_message"$'\n\n'
+            status_message=""
+        fi
+
         # Bottom help bar
-        output+="  ${GRAY}↑/↓${NC} Navigate  ${GRAY}|${NC}  ${GRAY}Enter${NC} Open  ${GRAY}|${NC}  ${GRAY}←${NC} Back  ${GRAY}|${NC}  ${GRAY}Del${NC} Delete  ${GRAY}|${NC}  ${GRAY}Q/ESC${NC} Quit"$'\n'
+        output+="  ${GRAY}↑/↓${NC} Navigate  ${GRAY}|${NC}  ${GRAY}Enter${NC} Open  ${GRAY}|${NC}  ${GRAY}←${NC} Back  ${GRAY}|${NC}  ${GRAY}Del${NC} Delete  ${GRAY}|${NC}  ${GRAY}O${NC} Finder  ${GRAY}|${NC}  ${GRAY}Q/ESC${NC} Quit"$'\n'
 
         # Output everything at once (single write = no flicker)
         printf "%b" "$output" >&2
@@ -1967,6 +1987,17 @@ interactive_drill_down() {
                     [[ -d "${cache_dir:-}" ]] && rm -rf "$cache_dir" 2>/dev/null || true
                     trap - EXIT INT TERM
                     return 1  # Return to menu
+                fi
+                ;;
+            "OPEN")
+                if command -v open >/dev/null 2>&1; then
+                    if open "$current_path" >/dev/null 2>&1; then
+                        status_message="${GREEN}✓${NC} Finder opened: ${GRAY}$current_path${NC}"
+                    else
+                        status_message="${YELLOW}Warning:${NC} Could not open ${GRAY}$current_path${NC}"
+                    fi
+                else
+                    status_message="${YELLOW}Warning:${NC} 'open' command not available"
                 fi
                 ;;
             "DELETE")
@@ -2271,6 +2302,7 @@ main() {
                 echo "  Enter / →   Open selected folder"
                 echo "  ←           Go back to parent directory"
                 echo "  Delete      Delete selected file/folder (requires confirmation)"
+                echo "  O           Reveal current directory in Finder"
                 echo "  Q / ESC     Quit the explorer"
                 echo ""
                 echo "Features:"
