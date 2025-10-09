@@ -25,6 +25,13 @@ source "$SCRIPT_DIR/lib/common.sh"
 VERSION="1.7.0"
 MOLE_TAGLINE="can dig deep to clean your Mac."
 
+# Get latest version from remote repository
+get_latest_version() {
+    curl -fsSL --connect-timeout 2 --max-time 3 -H "Cache-Control: no-cache" \
+        "https://raw.githubusercontent.com/tw93/mole/main/mole" 2>/dev/null | \
+        grep '^VERSION=' | head -1 | sed 's/VERSION="\(.*\)"/\1/'
+}
+
 # Check for updates (non-blocking, cached)
 check_for_updates() {
     local cache="$HOME/.cache/mole/version_check"
@@ -39,9 +46,7 @@ check_for_updates() {
 
     # Background version check (save to file, don't output)
     (
-        local latest=$(curl -fsSL --connect-timeout 2 --max-time 3 -H "Cache-Control: no-cache" \
-            "https://raw.githubusercontent.com/tw93/mole/main/mole" 2>/dev/null | \
-            grep '^VERSION=' | head -1 | sed 's/VERSION="\(.*\)"/\1/')
+        local latest=$(get_latest_version)
 
         if [[ -n "$latest" && "$VERSION" != "$latest" && "$(printf '%s\n' "$VERSION" "$latest" | sort -V | head -1)" == "$VERSION" ]]; then
             echo -e "${YELLOW}New version ${GREEN}${latest}${YELLOW} available (current: ${VERSION})\n   Run ${GREEN}mole update${YELLOW} to upgrade${NC}" > "$msg_cache"
@@ -144,6 +149,19 @@ update_mole() {
     # Check if installed via Homebrew
     if command -v brew >/dev/null 2>&1 && brew list mole >/dev/null 2>&1; then
         update_via_homebrew "$VERSION"
+        exit 0
+    fi
+
+    # Check for updates
+    local latest=$(get_latest_version)
+
+    if [[ -z "$latest" ]]; then
+        log_error "Unable to check for updates. Check network connection."
+        exit 1
+    fi
+
+    if [[ "$VERSION" == "$latest" ]]; then
+        echo -e "${GREEN}✓${NC} Mole is already up to date (${VERSION})"
         exit 0
     fi
 
