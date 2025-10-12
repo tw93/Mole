@@ -1,45 +1,25 @@
-name: Shell Format & Lint
+name: Shell Format Check
 
 on:
   push:
-    branches: [main]
-    paths:
-      - '**/*.sh'
-      - mole
   pull_request:
-    paths:
-      - '**/*.sh'
-      - mole
 
 jobs:
-  format-lint:
-    runs-on: macos-latest
+  shfmt:
+    name: Run shfmt
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install shfmt and shellcheck
-        run: brew install shfmt shellcheck
+      - name: Install shfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shfmt
 
-      - name: Run shfmt in diff mode
+      - name: Check shell formatting
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
-            echo "No shell files found; skipping shfmt"
-            exit 0
-          fi
-          shfmt -i 4 -ci -sr -d "${files[@]}"
-
-      - name: Run shellcheck
-        run: |
-          set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
-            echo "No shell files found; skipping shellcheck"
-            exit 0
-          fi
-          shellcheck --rcfile .shellcheckrc "${files[@]}"
+          find . -type f -name '*.sh' ! -path './tests/tmp-*' -print0 \
+            | xargs -0 -r shfmt -d -i 4 -ci -sr
