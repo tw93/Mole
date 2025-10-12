@@ -1,45 +1,38 @@
-name: Shell Format & Lint
+name: Shell Formatter
 
 on:
   push:
-    branches: [main]
-    paths:
-      - '**/*.sh'
-      - mole
   pull_request:
-    paths:
-      - '**/*.sh'
-      - mole
 
 jobs:
-  format-lint:
-    runs-on: macos-latest
+  shfmt:
+    name: Format shell scripts
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install shfmt and shellcheck
-        run: brew install shfmt shellcheck
+      - name: Install shfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shfmt
 
-      - name: Run shfmt in diff mode
+      - name: Format shell files
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
-            echo "No shell files found; skipping shfmt"
-            exit 0
-          fi
-          shfmt -i 4 -ci -sr -d "${files[@]}"
+          find . -type f \( -name '*.sh' -o -name 'mole' \) \
+            ! -path './.git/*' ! -path './tests/tmp-*' -print0 |
+            xargs -0 -r shfmt -w -i 4 -ci -sr
 
-      - name: Run shellcheck
-        run: |
-          set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
-            echo "No shell files found; skipping shellcheck"
-            exit 0
-          fi
-          shellcheck --rcfile .shellcheckrc "${files[@]}"
+      - name: Commit formatted files
+        if: github.event_name == 'push'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: apply shfmt"
+          commit_user_name: mole-bot
+          commit_user_email: actions@github.com
+
+      - name: Ensure formatting is clean
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code
