@@ -2,14 +2,7 @@ name: Shell Format & Lint
 
 on:
   push:
-    branches: [main]
-    paths:
-      - '**/*.sh'
-      - mole
   pull_request:
-    paths:
-      - '**/*.sh'
-      - mole
 
 jobs:
   format-lint:
