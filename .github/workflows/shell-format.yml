@@ -25,7 +25,10 @@ jobs:
       - name: Run shfmt in diff mode
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
                                    ! -path './.git/*' ! -path './tests/tmp-*' -print0)
           if (( ${#files[@]} == 0 )); then
             echo "No shell files found; skipping shfmt"
@@ -36,7 +39,10 @@ jobs:
       - name: Run shellcheck
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
                                    ! -path './.git/*' ! -path './tests/tmp-*' -print0)
           if (( ${#files[@]} == 0 )); then
             echo "No shell files found; skipping shellcheck"
