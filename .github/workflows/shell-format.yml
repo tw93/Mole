@@ -25,21 +25,23 @@ jobs:
       - name: Run shfmt in diff mode
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
+          search_cmd=(find . -type f \( -name '*.sh' -o -name 'mole' \) \
+                            ! -path './.git/*' ! -path './tests/tmp-*')
+          first_file="$(${search_cmd[@]} -print -quit)"
+          if [[ -z "$first_file" ]]; then
             echo "No shell files found; skipping shfmt"
             exit 0
           fi
-          shfmt -i 4 -ci -sr -d "${files[@]}"
+          "${search_cmd[@]}" -exec shfmt -i 4 -ci -sr -d {} +
 
       - name: Run shellcheck
         run: |
           set -euo pipefail
-          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
+          search_cmd=(find . -type f \( -name '*.sh' -o -name 'mole' \) \
+                            ! -path './.git/*' ! -path './tests/tmp-*')
+          first_file="$(${search_cmd[@]} -print -quit)"
+          if [[ -z "$first_file" ]]; then
             echo "No shell files found; skipping shellcheck"
             exit 0
           fi
-          shellcheck --rcfile .shellcheckrc "${files[@]}"
+          "${search_cmd[@]}" -exec shellcheck --rcfile .shellcheckrc {} +
