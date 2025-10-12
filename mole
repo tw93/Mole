@@ -1,6 +1,6 @@
 #!/bin/bash
 # Mole - Main Entry Point
-# A comprehensive macOS maintenance tool
+# A comprehensive macOS maintenance tool.
 #
 # Clean - Remove junk files and optimize system
 # Uninstall - Remove applications completely
