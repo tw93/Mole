@@ -13,39 +13,35 @@ on:
 
 jobs:
   format-lint:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install shfmt and shellcheck
-        run: brew install shfmt shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shfmt shellcheck
 
       - name: Run shfmt in diff mode
         run: |
           set -euo pipefail
-          files=()
-          while IFS= read -r -d '' file; do
-            files+=("$file")
-          done < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
+          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
+            ! -path './.git/*' ! -path './tests/tmp-*' -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
             echo "No shell files found; skipping shfmt"
             exit 0
           fi
-          "${search_cmd[@]}" -exec shfmt -i 4 -ci -sr -d {} +
+          shfmt -i 4 -ci -sr -d "${files[@]}"
 
       - name: Run shellcheck
         run: |
           set -euo pipefail
-          files=()
-          while IFS= read -r -d '' file; do
-            files+=("$file")
-          done < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
-                                   ! -path './.git/*' ! -path './tests/tmp-*' -print0)
-          if (( ${#files[@]} == 0 )); then
+          mapfile -d '' files < <(find . -type f \( -name '*.sh' -o -name 'mole' \) \
+            ! -path './.git/*' ! -path './tests/tmp-*' -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
             echo "No shell files found; skipping shellcheck"
             exit 0
           fi
-          "${search_cmd[@]}" -exec shellcheck --rcfile .shellcheckrc {} +
+          shellcheck --rcfile .shellcheckrc "${files[@]}"
