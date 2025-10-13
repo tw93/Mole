@@ -176,8 +176,28 @@ show_cursor() {
 # Keyboard input handling (simple and robust)
 read_key() {
     local key rest
-    # Use macOS bash 3.2 compatible read syntax
     IFS= read -r -s -n 1 key || return 1
+
+    # Raw typing mode (filter): map most keys to CHAR:<key>
+    if [[ "${MOLE_READ_KEY_FORCE_CHAR:-}" == "1" ]]; then
+        # Some terminals return empty on Enter with -n1
+        if [[ -z "$key" ]]; then
+            echo "ENTER"
+            return 0
+        fi
+        case "$key" in
+            $'\n'|$'\r') echo "ENTER" ;;
+            $'\x7f'|$'\x08') echo "DELETE" ;;
+            $'\x1b') echo "QUIT" ;;   # ESC cancels filter
+            *)
+                case "$key" in
+                    [[:print:]]) echo "CHAR:$key" ;;
+                    *) echo "OTHER" ;;
+                esac
+                ;;
+        esac
+        return 0
+    fi
 
     # Some terminals can yield empty on Enter with -n1; treat as ENTER
     if [[ -z "$key" ]]; then
@@ -189,14 +209,13 @@ read_key() {
         $'\n' | $'\r') echo "ENTER" ;;
         ' ') echo "SPACE" ;;
         'q' | 'Q') echo "QUIT" ;;
-        'a' | 'A') echo "ALL" ;;
-        'n' | 'N') echo "NONE" ;;
-        'd' | 'D') echo "DELETE" ;;
-        'r' | 'R') echo "RETRY" ;;
+        'A') echo "ALL" ;;
+        'N') echo "NONE" ;;
+        'R') echo "RETRY" ;;
         '?') echo "HELP" ;;
         'o' | 'O') echo "OPEN" ;;
         $'\x03') echo "QUIT" ;;             # Ctrl+C
-        $'\x7f' | $'\x08') echo "DELETE" ;; # Delete key (labeled "delete" on Mac, actually backspace)
+        $'\x7f' | $'\x08') echo "DELETE" ;; # Backspace/Delete key
         $'\x1b')
             # ESC sequence - could be arrow key, delete key, or ESC alone
             # Read the next two bytes within 1s
@@ -241,7 +260,13 @@ read_key() {
                 echo "QUIT"
             fi
             ;;
-        *) echo "OTHER" ;;
+        *)
+            # Printable ASCII -> expose as CHAR:<key> (for live filtering)
+            case "$key" in
+                [[:print:]]) echo "CHAR:$key" ;;
+                *) echo "OTHER" ;;
+            esac
+            ;;
     esac
 }
 

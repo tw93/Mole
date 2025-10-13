@@ -33,17 +33,43 @@ select_apps_for_uninstall() {
 
     # Build menu options
     local -a menu_options=()
+    # Prepare metadata (comma-separated) for sorting/filtering inside the menu
+    local epochs_csv=""
+    local sizekb_csv=""
+    local idx=0
     for app_data in "${apps_data[@]}"; do
-        # Ignore metadata fields not needed for menu display
-        IFS='|' read -r _ _ display_name _ size last_used <<< "$app_data"
+        # Keep extended field 7 (size_kb) if present
+        IFS='|' read -r epoch _ display_name _ size last_used size_kb <<< "$app_data"
         menu_options+=("$(format_app_display "$display_name" "$size" "$last_used")")
+        # Build csv lists (avoid trailing commas)
+        if [[ $idx -eq 0 ]]; then
+            epochs_csv="${epoch:-0}"
+            sizekb_csv="${size_kb:-0}"
+        else
+            epochs_csv+=",${epoch:-0}"
+            sizekb_csv+=",${size_kb:-0}"
+        fi
+        ((idx++))
     done
+
+    # Expose metadata for the paginated menu (optional inputs)
+    # - MOLE_MENU_META_EPOCHS: numeric last_used_epoch per item
+    # - MOLE_MENU_META_SIZEKB: numeric size in KB per item
+    # The menu will gracefully fallback if these are unset or malformed.
+    export MOLE_MENU_META_EPOCHS="$epochs_csv"
+    export MOLE_MENU_META_SIZEKB="$sizekb_csv"
+    # Optional: allow default sort override via env (date|name|size)
+    # export MOLE_MENU_SORT_DEFAULT="${MOLE_MENU_SORT_DEFAULT:-date}"
 
     # Use paginated menu - result will be stored in MOLE_SELECTION_RESULT
     # Note: paginated_multi_select enters alternate screen and handles clearing
     MOLE_SELECTION_RESULT=""
     paginated_multi_select "Select Apps to Remove" "${menu_options[@]}"
     local exit_code=$?
+
+    # Clean env leakage for safety
+    unset MOLE_MENU_META_EPOCHS MOLE_MENU_META_SIZEKB
+    # leave MOLE_MENU_SORT_DEFAULT untouched if user set it globally
 
     if [[ $exit_code -ne 0 ]]; then
         echo "Cancelled"
@@ -56,11 +82,9 @@ select_apps_for_uninstall() {
     fi
 
     # Build selected apps array (global variable in bin/uninstall.sh)
-    # Clear existing selections - compatible with bash 3.2
     selected_apps=()
 
     # Parse indices and build selected apps array
-    # MOLE_SELECTION_RESULT is comma-separated list of indices from the paginated menu
     IFS=',' read -r -a indices_array <<< "$MOLE_SELECTION_RESULT"
 
     for idx in "${indices_array[@]}"; do

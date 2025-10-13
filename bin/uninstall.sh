@@ -245,7 +245,10 @@ scan_applications() {
 
         # Parallel size calculation
         local app_size="N/A"
+        local app_size_kb="0"
         if [[ -d "$app_path" ]]; then
+            # numeric size (KB) for sorting + human-readable for display
+            app_size_kb=$(du -sk "$app_path" 2> /dev/null | awk '{print $1}' || echo "0")
             app_size=$(du -sh "$app_path" 2> /dev/null | cut -f1 || echo "N/A")
         fi
 
@@ -297,7 +300,8 @@ scan_applications() {
         fi
 
         # Write to output file atomically
-        echo "${last_used_epoch}|${app_path}|${display_name}|${bundle_id}|${app_size}|${last_used}" >> "$output_file"
+        # Fields: epoch|app_path|display_name|bundle_id|size_human|last_used|size_kb
+        echo "${last_used_epoch}|${app_path}|${display_name}|${bundle_id}|${app_size}|${last_used}|${app_size_kb}" >> "$output_file"
     }
 
     export -f process_app_metadata
@@ -380,8 +384,8 @@ load_applications() {
     selection_state=()
 
     # Read apps into array
-    while IFS='|' read -r epoch app_path app_name bundle_id size last_used; do
-        apps_data+=("$epoch|$app_path|$app_name|$bundle_id|$size|$last_used")
+    while IFS='|' read -r epoch app_path app_name bundle_id size last_used size_kb; do
+        apps_data+=("$epoch|$app_path|$app_name|$bundle_id|$size|$last_used|${size_kb:-0}")
         selection_state+=(false)
     done < "$apps_file"
 
