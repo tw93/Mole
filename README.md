@@ -59,7 +59,7 @@ mo --version            # Show installed version
 
 - Safety first, if your Mac is mission-critical, wait for Mole to mature before full cleanups.
 - Preview the cleanup by running `mo clean --dry-run` and reviewing the generated list.
-- Protect caches with `mo clean --whitelist`; defaults cover Playwright, HuggingFace, Maven paths, and Surge Mac.
+- Protect caches with `mo clean --whitelist`; defaults cover Playwright, HuggingFace, Maven, and Surge Mac paths.
 - Use `mo touchid` to approve sudo with Touch ID instead of typing your password.
 
 ## Quick Launchers
