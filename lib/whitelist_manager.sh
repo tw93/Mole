@@ -18,6 +18,8 @@ declare -a DEFAULT_WHITELIST_PATTERNS=(
     "$HOME/.cache/huggingface*"
     "$HOME/.m2/repository/*"
     "$HOME/.ollama/models/*"
+    "$HOME/Library/Caches/com.nssurge.surge-mac/*"
+    "$HOME/Library/Application Support/com.nssurge.surge-mac/*"
 )
 
 # Save whitelist patterns to config
@@ -28,7 +30,7 @@ save_whitelist_patterns() {
 
     cat > "$WHITELIST_CONFIG" << 'EOF'
 # Mole Whitelist - Protected paths won't be deleted
-# Default protections: Playwright browsers, HuggingFace models, Maven repo, Ollama models
+# Default protections: Playwright browsers, HuggingFace models, Maven repo, Ollama models, Surge Mac
 # Add one pattern per line to keep items safe.
 EOF
 
@@ -118,6 +120,8 @@ Safari web browser cache|$HOME/Library/Caches/com.apple.Safari/*|browser_cache
 Chrome browser cache|$HOME/Library/Caches/Google/Chrome/*|browser_cache
 Firefox browser cache|$HOME/Library/Caches/Firefox/*|browser_cache
 Brave browser cache|$HOME/Library/Caches/BraveSoftware/Brave-Browser/*|browser_cache
+Surge proxy cache|$HOME/Library/Caches/com.nssurge.surge-mac/*|network_tools
+Surge configuration and data|$HOME/Library/Application Support/com.nssurge.surge-mac/*|network_tools
 Docker Desktop image cache|$HOME/Library/Containers/com.docker.docker/Data/*|container_cache
 Podman container cache|$HOME/.local/share/containers/cache/*|container_cache
 Font cache|$HOME/Library/Caches/com.apple.FontRegistry/*|system_cache

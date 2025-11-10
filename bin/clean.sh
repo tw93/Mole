@@ -34,6 +34,8 @@ declare -a DEFAULT_WHITELIST_PATTERNS=(
     "$HOME/.cache/huggingface*"
     "$HOME/.m2/repository/*"
     "$HOME/.ollama/models/*"
+    "$HOME/Library/Caches/com.nssurge.surge-mac/*"
+    "$HOME/Library/Application Support/com.nssurge.surge-mac/*"
 )
 declare -a WHITELIST_PATTERNS=()
 WHITELIST_WARNINGS=()
