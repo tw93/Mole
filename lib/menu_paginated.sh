@@ -27,12 +27,18 @@ _pm_parse_csv_to_array() {
     done
 }
 
-# Non-blocking input drain (bash 3.2)
+# Non-blocking input drain (bash 3.2) - improved for mouse wheel
 drain_pending_input() {
-    local _k
-    # -t 0 is non-blocking; -n 1 consumes one byte at a time
-    while IFS= read -r -s -n 1 -t 0 _k; do
-        IFS= read -r -s -n 1 _k || break
+    local _k drained=0
+    # Multiple passes to handle mouse wheel burst sequences
+    while IFS= read -r -s -n 1 -t 0.01 _k 2> /dev/null; do
+        ((drained++))
+        [[ $drained -gt 1000 ]] && break
+    done
+    # Second pass with shorter timeout
+    while IFS= read -r -s -n 1 -t 0.001 _k 2> /dev/null; do
+        ((drained++))
+        [[ $drained -gt 1500 ]] && break
     done
 }
 
@@ -488,6 +494,8 @@ paginated_multi_select() {
     # Main interaction loop
     while true; do
         draw_menu
+        # Drain any pending input to prevent mouse wheel scroll issues
+        drain_pending_input
         local key
         key=$(read_key)
 

@@ -259,8 +259,21 @@ read_key() {
                     else
                         echo "QUIT" # ESC [ timeout
                     fi
+                elif [[ "$rest" == "O" ]]; then
+                    # Application keypad mode sequences (mouse wheel often generates these)
+                    if IFS= read -r -s -n 1 -t 1 rest2 2> /dev/null; then
+                        case "$rest2" in
+                            "A") echo "UP" ;;     # ESC O A
+                            "B") echo "DOWN" ;;   # ESC O B
+                            "C") echo "RIGHT" ;;  # ESC O C  
+                            "D") echo "LEFT" ;;   # ESC O D
+                            *) echo "OTHER" ;;     # Ignore other ESC O sequences
+                        esac
+                    else
+                        echo "OTHER" # ESC O timeout
+                    fi
                 else
-                    echo "QUIT" # ESC + something else
+                    echo "OTHER" # ESC + something else (not [ or O)
                 fi
             else
                 # ESC pressed alone - treat as quit
@@ -280,12 +293,17 @@ read_key() {
 # Drain pending input (useful for scrolling prevention)
 drain_pending_input() {
     local drained=0
-    # Single pass with reasonable timeout
-    # Touchpad scrolling can generate bursts of arrow keys
+    # Multiple passes with very short timeout to catch mouse wheel bursts
+    # Mouse wheel scrolling can generate rapid sequences like B^[OB^[OB^[O...
+    while IFS= read -r -s -n 1 -t 0.01 _ 2> /dev/null; do
+        ((drained++))
+        # Higher safety limit for mouse wheel sequences
+        [[ $drained -gt 1000 ]] && break
+    done
+    # Second pass with even shorter timeout to catch any remaining input
     while IFS= read -r -s -n 1 -t 0.001 _ 2> /dev/null; do
         ((drained++))
-        # Safety limit to prevent infinite loop
-        [[ $drained -gt 500 ]] && break
+        [[ $drained -gt 1500 ]] && break
     done
 }
 
