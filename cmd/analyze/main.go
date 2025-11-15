@@ -1273,7 +1273,7 @@ func scanPathConcurrent(root string, filesScanned, dirsScanned, bytesScanned *in
 		if err != nil {
 			continue
 		}
-		size := info.Size()
+		size := fileDiskUsage(info)
 		atomic.AddInt64(&total, size)
 		atomic.AddInt64(filesScanned, 1)
 		atomic.AddInt64(bytesScanned, size)
@@ -1341,7 +1341,7 @@ func calculateDirSizeWithDu(path string) int64 {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Use -sb for exact byte count (matches info.Size() behavior)
+	// Use -sb for exact byte count (matches fileDiskUsage behavior)
 	// -s: summarize (don't show subdirs), -b: bytes (not blocks)
 	cmd := exec.CommandContext(ctx, "du", "-sb", path)
 	output, err := cmd.Output()
@@ -1401,7 +1401,7 @@ func calculateDirSizeFast(root string, filesScanned, dirsScanned, bytesScanned *
 		if err != nil {
 			return nil
 		}
-		size := info.Size()
+		size := fileDiskUsage(info)
 		total += size
 		batchBytes += size
 		localFiles++
@@ -1481,7 +1481,7 @@ func findLargeFilesWithSpotlight(root string, minSize int64) []fileEntry {
 		files = append(files, fileEntry{
 			name: filepath.Base(line),
 			path: line,
-			size: info.Size(),
+			size: fileDiskUsage(info),
 		})
 	}
 
@@ -1541,7 +1541,7 @@ func calculateDirSizeConcurrent(root string, tracker *largeFileTracker, filesSca
 		if err != nil {
 			return nil
 		}
-		size := info.Size()
+		size := fileDiskUsage(info)
 		total += size
 		batchBytes += size
 		localFiles++
@@ -1892,6 +1892,25 @@ func cloneFileEntries(files []fileEntry) []fileEntry {
 	copied := make([]fileEntry, len(files))
 	copy(copied, files)
 	return copied
+}
+
+func fileDiskUsage(info fs.FileInfo) int64 {
+	if info == nil {
+		return 0
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		if stat.Blocks > 0 {
+			const blockSize = 512 // stat.Blocks counts 512-byte units on POSIX systems
+			return int64(stat.Blocks) * blockSize
+		}
+		if stat.Blksize > 0 && info.Size() > 0 {
+			// Approximate allocation by rounding the logical size up to block size.
+			blk := int64(stat.Blksize)
+			blocks := (info.Size() + blk - 1) / blk
+			return blocks * blk
+		}
+	}
+	return info.Size()
 }
 
 func sumKnownEntrySizes(entries []dirEntry) int64 {
