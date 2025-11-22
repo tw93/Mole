@@ -10,6 +10,24 @@ if [[ -n "${MOLE_COMMON_LOADED:-}" ]]; then
 fi
 readonly MOLE_COMMON_LOADED=1
 
+CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/mole}"
+ENV_FILE="$CONFIG_DIR/mole.env"
+if [[ -f "$ENV_FILE" ]]; then
+    __MOLE_LANG_CLI_OVERRIDE__="${MOLE_LANG:-}"
+    source "$ENV_FILE"
+    if [[ -n "$__MOLE_LANG_CLI_OVERRIDE__" ]]; then
+        export MOLE_LANG="$__MOLE_LANG_CLI_OVERRIDE__"
+    else
+        if [[ -n "${MOLE_LANG:-}" ]]; then
+            export MOLE_LANG
+        fi
+    fi
+    unset __MOLE_LANG_CLI_OVERRIDE__
+fi
+
+# Load i18n library
+source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
+
 # Color definitions (readonly for safety)
 readonly ESC=$'\033'
 readonly GREEN="${ESC}[0;32m"
@@ -455,7 +473,7 @@ check_touchid_support() {
 # Request sudo access with Touch ID support
 # Usage: request_sudo_access "prompt message" [optional: force_password]
 request_sudo_access() {
-    local prompt_msg="${1:-Admin access required}"
+    local prompt_msg="${1:-$(t "admin_required")}"
     local force_password="${2:-false}"
 
     # Check if already has sudo access
@@ -465,7 +483,7 @@ request_sudo_access() {
 
     # If Touch ID is supported and not forced to use password
     if [[ "$force_password" != "true" ]] && check_touchid_support; then
-        echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg} ${GRAY}(Touch ID or password)${NC}"
+        echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg} ${GRAY}$(t "touchid_or_password")${NC}"
         if sudo -v 2> /dev/null; then
             return 0
         else
@@ -474,7 +492,7 @@ request_sudo_access() {
     else
         # Traditional password method
         echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg}"
-        echo -ne "${PURPLE}${ICON_ARROW}${NC} Password: "
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} $(t "password_prompt")"
         IFS= read -r -s password
         echo ""
         if [[ -n "$password" ]] && echo "$password" | sudo -S true 2> /dev/null; then

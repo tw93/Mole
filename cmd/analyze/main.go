@@ -16,6 +16,83 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var i18nMap map[string]string
+var currentLang string
+
+func initI18n() {
+	// Initialize empty map first
+	i18nMap = make(map[string]string)
+
+	lang := os.Getenv("MOLE_LANG")
+	if lang == "" {
+		lang = os.Getenv("LANG")
+	}
+
+	if strings.Contains(lang, "zh") {
+		currentLang = "zh"
+	} else {
+		currentLang = "en"
+	}
+
+	// Try to load translations, but don't fail if we can't
+	translations := loadTranslations(currentLang)
+	if len(translations) > 0 {
+		i18nMap = translations
+	}
+}
+
+func loadTranslations(lang string) map[string]string {
+	translations := make(map[string]string)
+
+	// Try multiple paths for the translation file
+	paths := []string{
+		os.Getenv("HOME") + "/.config/mole/config/lang/" + lang + ".sh",
+		"./config/lang/" + lang + ".sh",
+		"../config/lang/" + lang + ".sh",
+	}
+
+	var content []byte
+	var err error
+	for _, path := range paths {
+		content, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		// Fallback to empty map if file not found
+		return translations
+	}
+
+	// Parse the shell script format: I18N_key="value"
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "I18N_") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimPrefix(parts[0], "I18N_")
+				value := strings.Trim(parts[1], "\"")
+				translations[key] = value
+			}
+		}
+	}
+
+	return translations
+}
+
+func t(key string) string {
+	if i18nMap == nil {
+		return "[" + key + "]"
+	}
+	if val, ok := i18nMap[key]; ok {
+		return val
+	}
+	// Return key in brackets if translation not found (for debugging)
+	return "[" + key + "]"
+}
+
 type dirEntry struct {
 	Name       string
 	Path       string
@@ -115,6 +192,8 @@ func (m model) inOverviewMode() bool {
 }
 
 func main() {
+	// Temporarily disable i18n to debug crash
+	// initI18n()
 	target := os.Getenv("MO_ANALYZE_PATH")
 	if target == "" && len(os.Args) > 1 {
 		target = os.Args[1]
@@ -736,7 +815,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 		m.path = selected.Path
 		m.selected = 0
 		m.offset = 0
-		m.status = "Scanning..."
+		m.status = t("scanning")
 		m.scanning = true
 		m.isOverview = false
 
@@ -773,7 +852,7 @@ func (m model) View() string {
 	fmt.Fprintln(&b)
 
 	if m.inOverviewMode() {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s\n", colorPurple, colorReset)
+		fmt.Fprintf(&b, "%s%s%s\n", colorPurple, t("overview"), colorReset)
 		if m.overviewScanning {
 			// Check if we're in initial scan (all entries are pending)
 			allPending := true
@@ -786,15 +865,15 @@ func (m model) View() string {
 
 			if allPending {
 				// Show prominent loading screen for initial scan
-				fmt.Fprintf(&b, "%s%s%s%s Analyzing disk usage, please wait...%s\n",
+				fmt.Fprintf(&b, "%s%s%s%s %s%s\n",
 					colorCyan, colorBold,
 					spinnerFrames[m.spinner],
-					colorReset, colorReset)
+					colorReset, t("analyzing_wait"), colorReset)
 				return b.String()
 			} else {
 				// Progressive scanning - show subtle indicator
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
-				fmt.Fprintf(&b, "%s%s%s%s Scanning...\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, t("select_location"), colorReset)
+				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, t("scanning"))
 			}
 		} else {
 			// Check if there are still pending items
@@ -806,16 +885,16 @@ func (m model) View() string {
 				}
 			}
 			if hasPending {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
-				fmt.Fprintf(&b, "%s%s%s%s Scanning...\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, t("select_location"), colorReset)
+				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, t("scanning"))
 			} else {
 				fmt.Fprintf(&b, "%sSelect a location to explore:%s\n\n", colorGray, colorReset)
 			}
 		}
 	} else {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s  %s%s%s", colorPurple, colorReset, colorGray, displayPath(m.path), colorReset)
+		fmt.Fprintf(&b, "%s%s%s  %s%s%s", colorPurple, t("overview"), colorReset, colorGray, displayPath(m.path), colorReset)
 		if !m.scanning {
-			fmt.Fprintf(&b, "  |  Total: %s", humanizeBytes(m.totalSize))
+			fmt.Fprintf(&b, "  |  %s %s", t("total_size"), humanizeBytes(m.totalSize))
 		}
 		fmt.Fprintf(&b, "\n\n")
 	}
@@ -827,10 +906,11 @@ func (m model) View() string {
 			count = atomic.LoadInt64(m.deleteCount)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Deleting: %s%s items%s removed, please wait...\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s %s%s items%s removed, please wait...\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
+			t("deleting"),
 			colorYellow, formatNumber(count), colorReset)
 
 		return b.String()
@@ -839,10 +919,11 @@ func (m model) View() string {
 	if m.scanning {
 		filesScanned, dirsScanned, bytesScanned := m.getScanProgress()
 
-		fmt.Fprintf(&b, "%s%s%s%s Scanning: %s%s files%s, %s%s dirs%s, %s%s%s\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s %s%s files%s, %s%s dirs%s, %s%s%s\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
+			t("scanning"),
 			colorYellow, formatNumber(filesScanned), colorReset,
 			colorYellow, formatNumber(dirsScanned), colorReset,
 			colorGreen, humanizeBytes(bytesScanned), colorReset)

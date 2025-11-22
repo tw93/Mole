@@ -50,9 +50,9 @@ supports_touchid() {
 # Show current Touch ID status
 show_status() {
     if is_touchid_configured; then
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Touch ID is enabled for sudo"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "touchid_enabled")"
     else
-        echo -e "${YELLOW}☻${NC} Touch ID is not configured for sudo"
+        echo -e "${YELLOW}☻${NC} $(t "touchid_not_configured")"
     fi
 }
 
@@ -60,10 +60,10 @@ show_status() {
 enable_touchid() {
     # First check if system supports Touch ID
     if ! supports_touchid; then
-        log_warning "This Mac may not support Touch ID"
-        read -rp "Continue anyway? [y/N] " confirm
+        log_warning "$(t "touchid_maybe_not_supported")"
+        read -rp "$(t "continue_anyway") [y/N] " confirm
         if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Cancelled${NC}"
+            echo -e "${YELLOW}$(t "cancelled")${NC}"
             return 1
         fi
         echo ""
@@ -71,13 +71,13 @@ enable_touchid() {
 
     # Check if already configured
     if is_touchid_configured; then
-        echo -e "${GREEN}${ICON_SUCCESS} Touch ID is already enabled${NC}"
+        echo -e "${GREEN}${ICON_SUCCESS} $(t "touchid_already_enabled")${NC}"
         return 0
     fi
 
     # Create backup and apply changes
     if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
-        log_error "Failed to create backup"
+        log_error "$(t "failed_create_backup")"
         return 1
     fi
 
@@ -98,12 +98,12 @@ enable_touchid() {
 
     # Apply the changes
     if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
-        echo -e "${GREEN}${ICON_SUCCESS} Touch ID enabled${NC} ${GRAY}- try: sudo ls${NC}"
+        echo -e "${GREEN}${ICON_SUCCESS} $(t "touchid_enabled")${NC} ${GRAY}- sudo ls${NC}"
         echo ""
         return 0
     else
         rm -f "$temp_file" 2> /dev/null || true
-        log_error "Failed to enable Touch ID"
+        log_error "$(t "failed_enable_touchid")"
         return 1
     fi
 }
@@ -111,13 +111,13 @@ enable_touchid() {
 # Disable Touch ID for sudo
 disable_touchid() {
     if ! is_touchid_configured; then
-        echo -e "${YELLOW}Touch ID is not currently enabled${NC}"
+        echo -e "${YELLOW}$(t "touchid_not_enabled")${NC}"
         return 0
     fi
 
     # Create backup and remove configuration
     if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
-        log_error "Failed to create backup"
+        log_error "$(t "failed_create_backup")"
         return 1
     fi
 
@@ -127,12 +127,12 @@ disable_touchid() {
     grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
 
     if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
-        echo -e "${GREEN}${ICON_SUCCESS} Touch ID disabled${NC}"
+        echo -e "${GREEN}${ICON_SUCCESS} $(t "touchid_disabled")${NC}"
         echo ""
         return 0
     else
         rm -f "$temp_file" 2> /dev/null || true
-        log_error "Failed to disable Touch ID"
+        log_error "$(t "failed_disable_touchid")"
         return 1
     fi
 }
@@ -142,7 +142,7 @@ show_menu() {
     echo ""
     show_status
     if is_touchid_configured; then
-        echo -ne "${PURPLE}☛${NC} Press ${GREEN}Enter${NC} to disable, ${GRAY}Q${NC} to quit: "
+        echo -ne "${PURPLE}☛${NC} $(t "press_enter_disable"), ${GRAY}Q${NC} $(t "quit_short"): "
         IFS= read -r -s -n1 key || key=""
         drain_pending_input # Clean up any escape sequence remnants
         echo ""
@@ -157,11 +157,11 @@ show_menu() {
                 ;;
             *)
                 echo ""
-                log_error "Invalid key"
+                log_error "$(t "invalid_key")"
                 ;;
         esac
     else
-        echo -ne "${PURPLE}☛${NC} Press ${GREEN}Enter${NC} to enable, ${GRAY}Q${NC} to quit: "
+        echo -ne "${PURPLE}☛${NC} $(t "press_enter_enable"), ${GRAY}Q${NC} $(t "quit_short"): "
         IFS= read -r -s -n1 key || key=""
         drain_pending_input # Clean up any escape sequence remnants
 
@@ -175,7 +175,7 @@ show_menu() {
                 ;;
             *)
                 echo ""
-                log_error "Invalid key"
+                log_error "$(t "invalid_key")"
                 ;;
         esac
     fi
@@ -199,7 +199,7 @@ main() {
             show_menu
             ;;
         *)
-            log_error "Unknown command: $command"
+            log_error "$(t "unknown_command"): $command"
             exit 1
             ;;
     esac

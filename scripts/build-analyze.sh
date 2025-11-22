@@ -36,6 +36,10 @@ GOARCH=amd64 go build -ldflags="$LDFLAGS" -trimpath -o bin/analyze-go-amd64 ./cm
 echo "  → Creating Universal Binary..."
 lipo -create bin/analyze-go-arm64 bin/analyze-go-amd64 -output bin/analyze-go
 
+# Sign the binary (required for macOS security policy)
+echo "  → Signing binary..."
+codesign -s - -f bin/analyze-go 2>/dev/null || echo "  ⚠ Warning: Could not sign binary (may require manual signing)"
+
 # Clean up temporary files
 rm bin/analyze-go-arm64 bin/analyze-go-amd64
 
@@ -48,4 +52,5 @@ size_bytes=$(stat -f%z bin/analyze-go 2> /dev/null || echo 0)
 size_mb=$((size_bytes / 1024 / 1024))
 printf "Size: %d MB (%d bytes)\n" "$size_mb" "$size_bytes"
 echo ""
+lipo -info bin/analyze-go
 echo "Binary supports: arm64 (Apple Silicon) + x86_64 (Intel)"

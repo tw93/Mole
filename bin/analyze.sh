@@ -9,5 +9,5 @@ if [[ -x "$GO_BIN" ]]; then
     exec "$GO_BIN" "$@"
 fi
 
-echo "Bundled analyzer binary not found. Please reinstall Mole or run mo update to restore it." >&2
+echo "$(t "analyzer_not_found")" >&2
 exit 1

@@ -18,12 +18,23 @@ set -euo pipefail
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Global language override
+if [[ "${1:-}" == "--lang" || "${1:-}" == "-L" ]]; then
+    if [[ "${2:-}" == "zh" || "${2:-}" == "en" ]]; then
+        export MOLE_LANG="${2}"
+        shift 2
+    else
+        echo "Invalid language, use: en or zh"
+        exit 1
+    fi
+fi
+
 # Source common functions
 source "$SCRIPT_DIR/lib/common.sh"
 
 # Version info
 VERSION="1.10.1"
-MOLE_TAGLINE="can dig deep to clean your Mac."
+MOLE_TAGLINE="$(t "main_menu_desc")"
 
 # Get latest version from remote repository
 get_latest_version() {
@@ -80,7 +91,7 @@ check_for_updates() {
         fi
 
         if [[ -n "$latest" && "$VERSION" != "$latest" && "$(printf '%s\n' "$VERSION" "$latest" | sort -V | head -1)" == "$VERSION" ]]; then
-            printf "\nUpdate available: %s → %s, run %smo update%s\n\n" "$VERSION" "$latest" "$GREEN" "$NC" > "$msg_cache"
+            printf "\n%s: %s → %s, %smo update%s\n\n" "$(t "update_available")" "$VERSION" "$latest" "$GREEN" "$(t "run_update_hint")" "$NC" > "$msg_cache"
             [[ -n "${MO_UPDATE_DEBUG:-}" ]] && echo "$(date): Update available ($check_method): $VERSION → $latest" >> "$debug_log"
         else
             echo -n > "$msg_cache"
@@ -155,28 +166,30 @@ EOF
 }
 
 show_version() {
-    printf '\nMole version %s\n\n' "$VERSION"
+    printf '\n%s %s\n\n' "$(t "version_label")" "$VERSION"
 }
 
 show_help() {
     show_brand_banner
     echo
-    printf "%s%s%s\n" "$BLUE" "COMMANDS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "Interactive main menu"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean" "$NC" "Deeper system cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup (no deletions)"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "Manage protected caches"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall" "$NC" "Remove applications completely"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize" "$NC" "System health check & optimization"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze" "$NC" "Interactive disk space explorer"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo status" "$NC" "System status dashboard"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid" "$NC" "Configure Touch ID for sudo"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update" "$NC" "Update Mole to the latest version"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove" "$NC" "Remove Mole from the system"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo --version" "$NC" "Show installed version"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo --help" "$NC" "Show this help message"
+    printf "%s%s%s\n" "$BLUE" "$(t "commands_title")" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "$(t "main_menu_title")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean" "$NC" "$(t "cmd_clean")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "$(t "clean_dry_run")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "$(t "clean_whitelist")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall" "$NC" "$(t "cmd_uninstall")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize" "$NC" "$(t "cmd_optimize")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze" "$NC" "$(t "cmd_analyze")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo status" "$NC" "$(t "cmd_status")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid" "$NC" "$(t "cmd_touchid")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update" "$NC" "$(t "cmd_update")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove" "$NC" "$(t "cmd_remove")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo --version" "$NC" "$(t "cmd_version")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo --help" "$NC" "$(t "cmd_help")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo --lang en|zh" "$NC" "$(t "cmd_lang_tmp")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo lang en|zh" "$NC" "$(t "cmd_lang_persist")"
 
-    printf "\n%s%s%s\n" "$BLUE" "MORE" "$NC"
+    printf "\n%s%s%s\n" "$BLUE" "$(t "more_title")" "$NC"
     printf "  https://github.com/tw93/mole\n\n"
 }
 
@@ -500,15 +513,15 @@ show_main_menu() {
     # Spacer before menu options
     printf '\r\033[2K\n'
 
-    printf '\r\033[2K%s\n' "$(show_menu_option 1 "Clean Mac - Remove junk files and optimize" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 2 "Uninstall Apps - Remove applications completely" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize Mac - System health & tuning" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze Disk - Interactive space explorer" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 5 "System Status - Live CPU/GPU/memory" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 1 "$(t "cmd_clean")" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 2 "$(t "cmd_uninstall")" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 3 "$(t "cmd_optimize")" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 4 "$(t "cmd_analyze")" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 5 "$(t "cmd_status")" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
-        printf '\r\033[2K%s\n' "${GRAY}↑↓  |  Enter  |  H Help  |  V Version  |  Q Quit${NC}"
+        printf '\r\033[2K%s\n' "${GRAY}↑↓  |  Enter  |  H $(t "hint_help")  |  V $(t "hint_version")  |  Q $(t "hint_quit")${NC}"
         printf '\r\033[2K\n'
     fi
 
@@ -605,6 +618,18 @@ interactive_main_menu() {
                 show_help
                 exit 0
                 ;;
+            "CHAR:l"|"CHAR:L")
+                if [[ "${MOLE_CURRENT_LANG:-en}" == "en" ]]; then
+                    export MOLE_LANG="zh"
+                else
+                    export MOLE_LANG="en"
+                fi
+                i18n_init
+                brand_banner="$(show_brand_banner)"
+                MAIN_MENU_BANNER="$brand_banner"
+                mkdir -p "$HOME/.config/mole" 2> /dev/null
+                printf "MOLE_LANG=%s\n" "$MOLE_LANG" > "$HOME/.config/mole/mole.env"
+                ;;
             "VERSION")
                 show_cursor
                 clear
@@ -621,6 +646,19 @@ interactive_main_menu() {
 
 main() {
     case "${1:-""}" in
+        "lang")
+            lang_code="${2:-}"
+            if [[ "$lang_code" != "en" && "$lang_code" != "zh" ]]; then
+                echo "Usage: mo lang en|zh"
+                exit 1
+            fi
+            export MOLE_LANG="$lang_code"
+            i18n_init
+            mkdir -p "$HOME/.config/mole" 2> /dev/null
+            printf "MOLE_LANG=%s\n" "$MOLE_LANG" > "$HOME/.config/mole/mole.env"
+            echo "Language set: $MOLE_LANG"
+            exit 0
+            ;;
         "optimize")
             exec "$SCRIPT_DIR/bin/optimize.sh"
             ;;
@@ -660,8 +698,8 @@ main() {
             interactive_main_menu
             ;;
         *)
-            echo "Unknown command: $1"
-            echo "Use 'mole --help' for usage information."
+            echo "$(t "unknown_command"): $1"
+            echo "$(t "use_help")"
             exit 1
             ;;
     esac

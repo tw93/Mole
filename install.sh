@@ -8,6 +8,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+GRAY='\033[0;90m'
 NC='\033[0m'
 
 # Simple spinner
@@ -250,6 +251,8 @@ create_directories() {
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$CONFIG_DIR/bin"
     mkdir -p "$CONFIG_DIR/lib"
+    mkdir -p "$CONFIG_DIR/config/lang"
+    mkdir -p "$CONFIG_DIR/completions"
 
 }
 
@@ -323,6 +326,30 @@ install_files() {
         fi
     fi
 
+    # Install completions
+    if [[ -d "$SOURCE_DIR/completions" ]]; then
+        local source_comp_abs="$(cd "$SOURCE_DIR/completions" && pwd)"
+        local config_comp_abs="$(cd "$CONFIG_DIR/completions" && pwd)"
+        if [[ "$source_comp_abs" == "$config_comp_abs" ]]; then
+            log_success "Completions already synced"
+        else
+            cp -r "$SOURCE_DIR/completions"/* "$CONFIG_DIR/completions/"
+            log_success "Installed completions"
+        fi
+    fi
+
+    # Install language files
+    if [[ -d "$SOURCE_DIR/config/lang" ]]; then
+        local source_lang_abs="$(cd "$SOURCE_DIR/config/lang" && pwd)"
+        local config_lang_abs="$(cd "$CONFIG_DIR/config/lang" && pwd)"
+        if [[ "$source_lang_abs" == "$config_lang_abs" ]]; then
+            log_success "Language files already synced"
+        else
+            cp -r "$SOURCE_DIR/config/lang"/* "$CONFIG_DIR/config/lang/"
+            log_success "Installed language files"
+        fi
+    fi
+
     # Copy other files if they exist and directories differ
     if [[ "$config_dir_abs" != "$source_dir_abs" ]]; then
         for file in README.md LICENSE install.sh; do
@@ -367,6 +394,8 @@ verify_installation() {
 setup_path() {
     # Check if install directory is in PATH
     if [[ ":$PATH:" == *":$INSTALL_DIR:"* ]]; then
+        # Even if in PATH, we should still check/suggest completions
+        suggest_completions
         return
     fi
 
@@ -377,7 +406,49 @@ setup_path() {
         echo "To use mole from anywhere, add this line to your shell profile:"
         echo "export PATH=\"$INSTALL_DIR:\$PATH\""
         echo ""
+        echo "export PATH=\"$INSTALL_DIR:\$PATH\""
+        echo ""
         echo "For example, add it to ~/.zshrc or ~/.bash_profile"
+    fi
+
+    suggest_completions
+}
+
+suggest_completions() {
+    # Only proceed if we detect Zsh
+    if [[ -n "${ZSH_VERSION:-}" ]] || [[ "$SHELL" == */zsh ]]; then
+        local zshrc="$HOME/.zshrc"
+        local comp_dir="$CONFIG_DIR/completions"
+        
+        # Use $HOME for portability
+        local comp_dir_portable="${comp_dir/#$HOME/\$HOME}"
+        
+        # Construct the configuration lines
+        local config_content="# Mole completions
+[[ -d \"$comp_dir_portable\" ]] && fpath=($comp_dir_portable \$fpath)
+autoload -Uz compinit && compinit"
+
+        # Check if already configured
+        if [[ -f "$zshrc" ]] && grep -q "mole/completions" "$zshrc"; then
+            return
+        fi
+
+        echo ""
+        echo -e "${BLUE}${ICON_CONFIRM}${NC} Zsh detected. Add completions to ~/.zshrc?"
+        echo -ne "  ${GRAY}This will add the completion directory to fpath.${NC} (Y/n): "
+        
+        local choice
+        read -r choice
+        if [[ -z "$choice" || "$choice" =~ ^[Yy]$ ]]; then
+            echo "" >> "$zshrc"
+            echo "$config_content" >> "$zshrc"
+            log_success "Added completions to ~/.zshrc"
+            echo -e "  ${GRAY}Run 'source ~/.zshrc' or restart your shell to apply changes.${NC}"
+        else
+            echo ""
+            echo "To enable manually, add this to your ~/.zshrc:"
+            echo "$config_content"
+        fi
     fi
 }
 

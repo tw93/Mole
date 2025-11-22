@@ -21,6 +21,7 @@ logs/
 # Temporary files
 tmp/
 temp/
+tmp_home/
 *.tmp
 *.temp
 *.dmg

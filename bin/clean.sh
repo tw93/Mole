@@ -221,7 +221,7 @@ start_section() {
 
 end_section() {
     if [[ $TRACK_SECTION -eq 1 && $SECTION_ACTIVITY -eq 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Nothing to tidy"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "nothing_to_tidy")"
     fi
     TRACK_SECTION=0
 }
@@ -318,10 +318,10 @@ safe_clean() {
                 wait "${pids[0]}" 2> /dev/null || true
                 pids=("${pids[@]:1}")
                 ((completed++))
-                # Update progress every 10 items for smoother display
+                # Update progress every 10 $(t "items") for smoother display
                 if [[ -t 1 ]] && ((completed % 10 == 0)); then
                     stop_inline_spinner
-                    MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items ($completed/$total_paths)..."
+                    MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning $(t "items") ($completed/$total_paths)..."
                 fi
             fi
         done
@@ -398,7 +398,7 @@ safe_clean() {
         fi
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}→${NC} $label ${YELLOW}($size_human dry)${NC}"
+            echo -e "  ${YELLOW}→${NC} $label ${YELLOW}($size_human $(t "dry_suffix"))${NC}"
         else
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($size_human)${NC}"
         fi
@@ -469,7 +469,7 @@ clean_ds_store_tree() {
         local size_human
         size_human=$(bytes_to_human "$total_bytes")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}→${NC} $label ${YELLOW}($file_count files, $size_human dry)${NC}"
+            echo -e "  ${YELLOW}→${NC} $label ${YELLOW}($file_count files, $size_human $(t "dry_suffix"))${NC}"
         else
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($file_count files, $size_human)${NC}"
         fi
@@ -485,7 +485,7 @@ clean_ds_store_tree() {
 start_cleanup() {
     clear
     printf '\n'
-    echo -e "${PURPLE}Clean Your Mac${NC}"
+    echo -e "${PURPLE}$(t "clean_start")${NC}"
     echo ""
 
     if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
@@ -493,7 +493,7 @@ start_cleanup() {
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}Dry Run Mode${NC} - Preview only, no deletions"
+        echo -e "${YELLOW}$(t "clean_dry_run")${NC} - $(t "preview_only")"
         echo ""
         SYSTEM_CLEAN=false
         return
@@ -616,13 +616,13 @@ clean_service_worker_cache() {
 }
 
 perform_cleanup() {
-    echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | Free space: $(get_free_space)"
+    echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | $(t "free_space"): $(get_free_space)"
 
     # Show whitelist info if patterns are active
     local active_count=${#WHITELIST_PATTERNS[@]}
     if [[ $active_count -gt 2 ]]; then
         local custom_count=$((active_count - 2))
-        echo -e "${BLUE}${ICON_SUCCESS}${NC} Whitelist: $custom_count custom + 2 core patterns active"
+        echo -e "${BLUE}${ICON_SUCCESS}${NC} ✓ $(t "whitelist_patterns_active") ${custom_count} $(t "custom") + 2 $(t "core_patterns")"
     elif [[ $active_count -eq 2 ]]; then
         echo -e "${BLUE}${ICON_SUCCESS}${NC} Whitelist: 2 core patterns active"
     fi
@@ -634,7 +634,7 @@ perform_cleanup() {
 
     # ===== 1. Deep system cleanup (if admin) - Do this first while sudo is fresh =====
     if [[ "$SYSTEM_CLEAN" == "true" ]]; then
-        start_section "Deep system"
+        start_section "$(t "section_deep_system")"
 
         # Clean system caches more safely (only old files to avoid breaking running apps)
         sudo find /Library/Caches -name "*.cache" -mtime +7 -delete 2> /dev/null || true
@@ -680,7 +680,7 @@ perform_cleanup() {
     fi
 
     # ===== 2. User essentials =====
-    start_section "User essentials"
+    start_section "$(t "clean_user_cache")"
     safe_clean ~/Library/Caches/* "User app cache"
     safe_clean ~/Library/Logs/* "User app logs"
     safe_clean ~/.Trash/* "Trash"
@@ -729,10 +729,10 @@ perform_cleanup() {
     safe_clean ~/Library/Application\ Support/AddressBook/Sources/*/Photos.cache "Address Book photo cache"
     end_section
 
-    start_section "Finder metadata"
+    start_section "$(t "section_finder_metadata")"
     if [[ "$PROTECT_FINDER_METADATA" == "true" ]]; then
         note_activity
-        echo -e "  ${YELLOW}☻${NC} Finder metadata protected by whitelist"
+        echo -e "  ${YELLOW}☻${NC} Finder metadata $(t "protected_by_whitelist")"
         echo -e "  ${YELLOW}☻${NC} Run ${GRAY}mo clean --whitelist${NC} to allow cleaning .DS_Store files"
     else
         clean_ds_store_tree "$HOME" "Home directory (.DS_Store)"
@@ -754,7 +754,7 @@ perform_cleanup() {
     end_section
 
     # ===== 3. macOS system caches =====
-    start_section "macOS system caches"
+    start_section "$(t "section_macos_caches")"
     safe_clean ~/Library/Saved\ Application\ State/* "Saved application states"
     safe_clean ~/Library/Caches/com.apple.spotlight "Spotlight cache"
     # Skip: may store Bluetooth device info
@@ -774,7 +774,7 @@ perform_cleanup() {
     end_section
 
     # ===== 4. Sandboxed app caches =====
-    start_section "Sandboxed app caches"
+    start_section "$(t "section_sandboxed_caches")"
     safe_clean ~/Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/* "Wallpaper agent cache"
     safe_clean ~/Library/Containers/com.apple.mediaanalysisd/Data/Library/Caches/* "Media analysis cache"
     safe_clean ~/Library/Containers/com.apple.AppStore/Data/Library/Caches/* "App Store cache"
@@ -783,7 +783,7 @@ perform_cleanup() {
     end_section
 
     # ===== 5. Browsers =====
-    start_section "Browsers"
+    start_section "$(t "section_browsers")"
     safe_clean ~/Library/Caches/com.apple.Safari/* "Safari cache"
 
     # Chrome/Chromium
@@ -821,7 +821,7 @@ perform_cleanup() {
     end_section
 
     # ===== 6. Cloud storage =====
-    start_section "Cloud storage"
+    start_section "$(t "section_cloud_storage")"
     safe_clean ~/Library/Caches/com.dropbox.* "Dropbox cache"
     safe_clean ~/Library/Caches/com.getdropbox.dropbox "Dropbox cache"
     safe_clean ~/Library/Caches/com.google.GoogleDrive "Google Drive cache"
@@ -832,7 +832,7 @@ perform_cleanup() {
     end_section
 
     # ===== 7. Office applications =====
-    start_section "Office applications"
+    start_section "$(t "section_office_apps")"
     safe_clean ~/Library/Caches/com.microsoft.Word "Microsoft Word cache"
     safe_clean ~/Library/Caches/com.microsoft.Excel "Microsoft Excel cache"
     safe_clean ~/Library/Caches/com.microsoft.Powerpoint "Microsoft PowerPoint cache"
@@ -844,12 +844,12 @@ perform_cleanup() {
     end_section
 
     # ===== 8. Developer tools =====
-    start_section "Developer tools"
+    start_section "$(t "section_developer_tools")"
     if command -v npm > /dev/null 2>&1; then
         if [[ "$DRY_RUN" != "true" ]]; then
             clean_tool_cache "npm cache" npm cache clean --force
         else
-            echo -e "  ${YELLOW}→${NC} npm cache (would clean)"
+            echo -e "  ${YELLOW}→${NC} npm cache ($(t "would_clean"))"
         fi
         note_activity
     fi
@@ -865,7 +865,7 @@ perform_cleanup() {
         if [[ "$DRY_RUN" != "true" ]]; then
             clean_tool_cache "pip cache" bash -c 'pip3 cache purge >/dev/null 2>&1 || true'
         else
-            echo -e "  ${YELLOW}→${NC} pip cache (would clean)"
+            echo -e "  ${YELLOW}→${NC} pip cache ($(t "would_clean"))"
         fi
         note_activity
     fi
@@ -878,7 +878,7 @@ perform_cleanup() {
         if [[ "$DRY_RUN" != "true" ]]; then
             clean_tool_cache "Go cache" bash -c 'go clean -modcache >/dev/null 2>&1 || true; go clean -cache >/dev/null 2>&1 || true'
         else
-            echo -e "  ${YELLOW}→${NC} Go cache (would clean)"
+            echo -e "  ${YELLOW}→${NC} Go cache ($(t "would_clean"))"
         fi
         note_activity
     fi
@@ -892,7 +892,7 @@ perform_cleanup() {
         if [[ "$DRY_RUN" != "true" ]]; then
             clean_tool_cache "Docker build cache" docker builder prune -af
         else
-            echo -e "  ${YELLOW}→${NC} Docker build cache (would clean)"
+            echo -e "  ${YELLOW}→${NC} Docker build cache ($(t "would_clean"))"
         fi
         note_activity
     fi
@@ -976,7 +976,7 @@ perform_cleanup() {
         if [[ "$DRY_RUN" != "true" ]]; then
             clean_tool_cache "Nix garbage collection" nix-collect-garbage --delete-older-than 30d
         else
-            echo -e "  ${YELLOW}→${NC} Nix garbage collection (would clean)"
+            echo -e "  ${YELLOW}→${NC} Nix garbage collection ($(t "would_clean"))"
         fi
         note_activity
     fi
@@ -1061,7 +1061,7 @@ perform_cleanup() {
     safe_clean ~/.rustup/toolchains/*/share/doc/* "Rust documentation cache"
     safe_clean ~/.rustup/downloads/* "Rust downloads cache"
     safe_clean ~/.gradle/caches/* "Gradle caches"
-    # Skip: Maven repository is not cache, it's dependency storage (protected by whitelist)
+    # Skip: Maven repository is not cache, it's dependency storage ($(t "protected_by_whitelist"))
     safe_clean ~/.sbt/* "SBT cache"
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
     safe_clean ~/.cache/terraform/* "Terraform cache"
@@ -1118,7 +1118,7 @@ perform_cleanup() {
     end_section
 
     # ===== 9. Development applications =====
-    start_section "Development applications"
+    start_section "$(t "section_dev_applications")"
     safe_clean ~/Library/Developer/Xcode/DerivedData/* "Xcode derived data"
     # Skip: Archives contain signed App Store builds
     # safe_clean ~/Library/Developer/Xcode/Archives/* "Xcode archives"
@@ -1240,7 +1240,7 @@ perform_cleanup() {
     end_section
 
     # ===== 10. Virtualization tools =====
-    start_section "Virtualization tools"
+    start_section "$(t "section_virtualization")"
     safe_clean ~/Library/Caches/com.vmware.fusion "VMware Fusion cache"
     safe_clean ~/Library/Caches/com.parallels.* "Parallels cache"
     safe_clean ~/VirtualBox\ VMs/.cache "VirtualBox cache"
@@ -1248,7 +1248,7 @@ perform_cleanup() {
     end_section
 
     # ===== 11. Application Support logs cleanup =====
-    start_section "Application Support logs"
+    start_section "$(t "section_app_support_logs")"
 
     # Clean log directories for apps that store logs in Application Support
     for app_dir in ~/Library/Application\ Support/*; do
@@ -1279,7 +1279,7 @@ perform_cleanup() {
     # ===== 12. Orphaned app data cleanup =====
     # Only touch apps missing from scan + 60+ days inactive
     # Skip protected vendors, keep Preferences/Application Support
-    start_section "Orphaned app data"
+    start_section "$(t "section_orphaned_data")"
 
     local -r ORPHAN_AGE_THRESHOLD=60 # 60 days - good balance between safety and cleanup
 
@@ -1423,7 +1423,7 @@ perform_cleanup() {
 
     if [[ $orphaned_count -gt 0 ]]; then
         local orphaned_mb=$(echo "$total_orphaned_kb" | awk '{printf "%.1f", $1/1024}')
-        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count orphaned items (~${orphaned_mb}MB)"
+        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count orphaned $(t "items") (~${orphaned_mb}MB)"
         note_activity
     else
         echo "  ${GREEN}${ICON_SUCCESS}${NC} No orphaned app data found"
@@ -1435,7 +1435,7 @@ perform_cleanup() {
 
     # ===== 13. Apple Silicon optimizations =====
     if [[ "$IS_M_SERIES" == "true" ]]; then
-        start_section "Apple Silicon optimizations"
+        start_section "$(t "section_apple_silicon")"
         safe_clean /Library/Apple/usr/share/rosetta/rosetta_update_bundle "Rosetta 2 cache"
         safe_clean ~/Library/Caches/com.apple.rosetta.update "Rosetta 2 user cache"
         safe_clean ~/Library/Caches/com.apple.amp.mediasevicesd "Apple Silicon media service cache"
@@ -1445,7 +1445,7 @@ perform_cleanup() {
     fi
 
     # ===== 14. iOS device backups =====
-    start_section "iOS device backups"
+    start_section "$(t "section_ios_backups")"
     backup_dir="$HOME/Library/Application Support/MobileSync/Backup"
     if [[ -d "$backup_dir" ]] && find "$backup_dir" -mindepth 1 -maxdepth 1 | read -r _; then
         backup_kb=$(du -sk "$backup_dir" 2> /dev/null | awk '{print $1}')
@@ -1459,7 +1459,7 @@ perform_cleanup() {
     end_section
 
     # ===== 15. Time Machine failed backups =====
-    start_section "Time Machine failed backups"
+    start_section "$(t "section_timemachine")"
     local tm_cleaned=0
 
     # Check all mounted volumes for Time Machine backups
@@ -1515,7 +1515,7 @@ perform_cleanup() {
                             fi
                         else
                             local size_human=$(bytes_to_human "$((size_kb * 1024))")
-                            echo -e "  ${YELLOW}→${NC} Failed backup: $backup_name ${YELLOW}($size_human dry)${NC}"
+                            echo -e "  ${YELLOW}→${NC} Failed backup: $backup_name ${YELLOW}($size_human $(t "dry_suffix"))${NC}"
                             ((tm_cleaned++))
                             note_activity
                         fi
@@ -1568,7 +1568,7 @@ perform_cleanup() {
                                 fi
                             else
                                 local size_human=$(bytes_to_human "$((size_kb * 1024))")
-                                echo -e "  ${YELLOW}→${NC} Failed APFS backup in $bundle_name: $backup_name ${YELLOW}($size_human dry)${NC}"
+                                echo -e "  ${YELLOW}→${NC} Failed APFS backup in $bundle_name: $backup_name ${YELLOW}($size_human $(t "dry_suffix"))${NC}"
                                 ((tm_cleaned++))
                                 note_activity
                             fi
@@ -1580,12 +1580,12 @@ perform_cleanup() {
     fi
 
     if [[ $tm_cleaned -eq 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No failed Time Machine backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "no_failed_tm_backups")"
     fi
     end_section
 
     # ===== Check for large project dependencies =====
-    start_section "Large project dependencies"
+    start_section "$(t "section_large_deps")"
 
     if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning project directories..."; fi
 
@@ -1652,7 +1652,7 @@ perform_cleanup() {
         fi
         echo -e "  ${YELLOW}☻${NC} Run ${GRAY}mo analyze${NC} to see details and manually clean"
     else
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No large unused project dependencies found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "no_large_deps")"
     fi
     end_section
 
@@ -1662,9 +1662,9 @@ perform_cleanup() {
     local summary_heading=""
     local summary_status="success"
     if [[ "$DRY_RUN" == "true" ]]; then
-        summary_heading="Dry run complete - no changes made"
+        summary_heading="$(t "dry_run_complete")"
     else
-        summary_heading="Cleanup complete"
+        summary_heading="$(t "clean_complete")"
     fi
 
     local -a summary_details=()
@@ -1675,27 +1675,27 @@ perform_cleanup() {
 
         if [[ "$DRY_RUN" == "true" ]]; then
             # Build compact stats line for dry run
-            local stats="Potential space: ${GREEN}${freed_gb}GB${NC}"
-            [[ $files_cleaned -gt 0 ]] && stats+=" | Files: $files_cleaned"
-            [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
-            [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | Protected: $whitelist_skipped_count"
+            local stats="$(t "potential_space"): ${GREEN}${freed_gb}GB${NC}"
+            [[ $files_cleaned -gt 0 ]] && stats+=" | $(t "files"): $files_cleaned"
+            [[ $total_items -gt 0 ]] && stats+=" | $(t "categories"): $total_items"
+            [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | $(t "protected"): $whitelist_skipped_count"
             summary_details+=("$stats")
             summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to protect caches")
         else
-            summary_details+=("Space freed: ${GREEN}${freed_gb}GB${NC}")
-            summary_details+=("Free space now: $(get_free_space)")
+            summary_details+=("$(t "clean_freed"): ${GREEN}${freed_gb}GB${NC}")
+            summary_details+=("$(t "free_space_now"): $(get_free_space)")
 
             if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
-                local stats="Files cleaned: $files_cleaned | Categories: $total_items"
-                [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | Protected: $whitelist_skipped_count"
+                local stats="Files cleaned: $files_cleaned | $(t "categories"): $total_items"
+                [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | $(t "protected"): $whitelist_skipped_count"
                 summary_details+=("$stats")
             elif [[ $files_cleaned -gt 0 ]]; then
                 local stats="Files cleaned: $files_cleaned"
-                [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | Protected: $whitelist_skipped_count"
+                [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | $(t "protected"): $whitelist_skipped_count"
                 summary_details+=("$stats")
             elif [[ $total_items -gt 0 ]]; then
                 local stats="Categories: $total_items"
-                [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | Protected: $whitelist_skipped_count"
+                [[ $whitelist_skipped_count -gt 0 ]] && stats+=" | $(t "protected"): $whitelist_skipped_count"
                 summary_details+=("$stats")
             fi
 
@@ -1710,11 +1710,11 @@ perform_cleanup() {
     else
         summary_status="info"
         if [[ "$DRY_RUN" == "true" ]]; then
-            summary_details+=("No significant reclaimable space detected (system already clean).")
+            summary_details+=("$(t "no_space_detected")")
         else
             summary_details+=("System was already clean; no additional space freed.")
         fi
-        summary_details+=("Free space now: $(get_free_space)")
+        summary_details+=("$(t "free_space_now"): $(get_free_space)")
     fi
 
     print_summary_block "$summary_status" "$summary_heading" "${summary_details[@]}"

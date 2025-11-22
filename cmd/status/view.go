@@ -97,11 +97,11 @@ type cardData struct {
 
 func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int) string {
 	// Title
-	title := titleStyle.Render("Mole Status")
+    title := titleStyle.Render(t("title_status"))
 
 	// Health Score with color and label
 	scoreStyle := getScoreStyle(m.HealthScore)
-	scoreText := subtleStyle.Render("Health ") + scoreStyle.Render(fmt.Sprintf("● %d", m.HealthScore))
+    scoreText := subtleStyle.Render(t("label_health")+" ") + scoreStyle.Render(fmt.Sprintf("● %d", m.HealthScore))
 
 	// Hardware info
 	infoParts := []string{}
@@ -185,8 +185,8 @@ func hasSensorData(sensors []SensorReading) bool {
 
 func renderCPUCard(cpu CPUStatus) cardData {
 	var lines []string
-	lines = append(lines, fmt.Sprintf("Total  %s  %5.1f%%", progressBar(cpu.Usage), cpu.Usage))
-	lines = append(lines, subtleStyle.Render(fmt.Sprintf("%.2f / %.2f / %.2f  (%d cores)", cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU)))
+    lines = append(lines, fmt.Sprintf("%s  %s  %5.1f%%", t("label_total"), progressBar(cpu.Usage), cpu.Usage))
+    lines = append(lines, subtleStyle.Render(fmt.Sprintf("%.2f / %.2f / %.2f  (%d %s)", cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU, t("label_cores"))))
 
 	// Show top 3 busiest cores
 	type coreUsage struct {
@@ -205,16 +205,16 @@ func renderCPUCard(cpu CPUStatus) cardData {
 	}
 	for i := 0; i < maxCores; i++ {
 		c := cores[i]
-		lines = append(lines, fmt.Sprintf("Core%-2d %s  %5.1f%%", c.idx+1, progressBar(c.val), c.val))
+        lines = append(lines, fmt.Sprintf("%s%-2d %s  %5.1f%%", t("label_core"), c.idx+1, progressBar(c.val), c.val))
 	}
 
-	return cardData{icon: iconCPU, title: "CPU", lines: lines}
+    return cardData{icon: iconCPU, title: t("title_cpu"), lines: lines}
 }
 
 func renderGPUCard(gpus []GPUStatus) cardData {
 	var lines []string
 	if len(gpus) == 0 {
-		lines = append(lines, subtleStyle.Render("No GPU detected"))
+        lines = append(lines, subtleStyle.Render(t("no_gpu")))
 	} else {
 		for _, g := range gpus {
 			name := shorten(g.Name, 12)
@@ -225,23 +225,23 @@ func renderGPUCard(gpus []GPUStatus) cardData {
 			}
 		}
 	}
-	return cardData{icon: iconGPU, title: "GPU", lines: lines}
+    return cardData{icon: iconGPU, title: t("title_gpu"), lines: lines}
 }
 
 func renderMemoryCard(mem MemoryStatus) cardData {
 	var lines []string
-	lines = append(lines, fmt.Sprintf("Used   %s  %5.1f%%", progressBar(mem.UsedPercent), mem.UsedPercent))
-	lines = append(lines, subtleStyle.Render(fmt.Sprintf("%s / %s total", humanBytes(mem.Used), humanBytes(mem.Total))))
+    lines = append(lines, fmt.Sprintf("%s   %s  %5.1f%%", t("label_used"), progressBar(mem.UsedPercent), mem.UsedPercent))
+    lines = append(lines, subtleStyle.Render(fmt.Sprintf("%s / %s %s", humanBytes(mem.Used), humanBytes(mem.Total), t("label_total_word"))))
 	lines = append(lines, "")
 	// Show available memory
 	available := mem.Total - mem.Used
 	freePercent := 100 - mem.UsedPercent
-	lines = append(lines, fmt.Sprintf("Free   %s  %5.1f%%", progressBar(freePercent), freePercent))
-	lines = append(lines, subtleStyle.Render(fmt.Sprintf("%s available", humanBytes(available))))
+    lines = append(lines, fmt.Sprintf("%s   %s  %5.1f%%", t("label_free"), progressBar(freePercent), freePercent))
+    lines = append(lines, subtleStyle.Render(fmt.Sprintf("%s %s", humanBytes(available), t("label_available"))))
 	// Memory pressure
 	if mem.Pressure != "" {
 		pressureStyle := okStyle
-		pressureText := "Status " + mem.Pressure
+        pressureText := t("label_status") + " " + translateStatus(mem.Pressure)
 		if mem.Pressure == "warn" {
 			pressureStyle = warnStyle
 		} else if mem.Pressure == "critical" {
@@ -249,7 +249,7 @@ func renderMemoryCard(mem MemoryStatus) cardData {
 		}
 		lines = append(lines, pressureStyle.Render(pressureText))
 	}
-	return cardData{icon: iconMemory, title: "Memory", lines: lines}
+    return cardData{icon: iconMemory, title: t("title_memory"), lines: lines}
 }
 
 func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
@@ -259,14 +259,14 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
 		d := disks[0]
 		freeSpace := d.Total - d.Used
 		bar := diskBar(d.UsedPercent)
-		lines = append(lines, fmt.Sprintf("Used   %s  %4.0f%%  (%s free)", bar, d.UsedPercent, humanBytes(freeSpace)))
+        lines = append(lines, fmt.Sprintf("%s   %s  %4.0f%%  (%s %s)", t("label_used"), bar, d.UsedPercent, humanBytes(freeSpace), t("label_free")))
 	}
 	// IO
 	readBar := ioBar(io.ReadRate)
 	writeBar := ioBar(io.WriteRate)
-	lines = append(lines, fmt.Sprintf("Read   %s  %.1f MB/s", readBar, io.ReadRate))
-	lines = append(lines, fmt.Sprintf("Write  %s  %.1f MB/s", writeBar, io.WriteRate))
-	return cardData{icon: iconDisk, title: "Disk", lines: lines}
+    lines = append(lines, fmt.Sprintf("%s   %s  %.1f MB/s", t("label_read"), readBar, io.ReadRate))
+    lines = append(lines, fmt.Sprintf("%s  %s  %.1f MB/s", t("label_write"), writeBar, io.WriteRate))
+    return cardData{icon: iconDisk, title: t("title_disk"), lines: lines}
 }
 
 func diskBar(percent float64) string {
@@ -309,10 +309,10 @@ func renderProcessCard(procs []ProcessInfo) cardData {
 		cpuBar := miniBar(p.CPU)
 		lines = append(lines, fmt.Sprintf("%-12s  %s  %5.1f%%", name, cpuBar, p.CPU))
 	}
-	if len(lines) == 0 {
-		lines = append(lines, subtleStyle.Render("No data"))
-	}
-	return cardData{icon: iconProcs, title: "Processes", lines: lines}
+    if len(lines) == 0 {
+        lines = append(lines, subtleStyle.Render(t("no_data")))
+    }
+    return cardData{icon: iconProcs, title: t("title_processes"), lines: lines}
 }
 
 func miniBar(percent float64) string {
@@ -340,16 +340,16 @@ func renderNetworkCard(netStats []NetworkStatus, proxy ProxyStatus) cardData {
 	}
 
 	if len(netStats) == 0 {
-		lines = []string{subtleStyle.Render("Collecting...")}
+        lines = []string{subtleStyle.Render(t("collecting"))}
 	} else {
 		rxBar := netBar(totalRx)
 		txBar := netBar(totalTx)
-		lines = append(lines, fmt.Sprintf("Down   %s  %s", rxBar, formatRate(totalRx)))
-		lines = append(lines, fmt.Sprintf("Up     %s  %s", txBar, formatRate(totalTx)))
+        lines = append(lines, fmt.Sprintf("%s   %s  %s", t("down"), rxBar, formatRate(totalRx)))
+        lines = append(lines, fmt.Sprintf("%s     %s  %s", t("up"), txBar, formatRate(totalTx)))
 		// Proxy + IP
 		info := ""
 		if proxy.Enabled {
-			info = okStyle.Render("Proxy: " + proxy.Type)
+            info = okStyle.Render(t("proxy") + " " + proxy.Type)
 		}
 		if primaryIP != "" {
 			if info != "" {
@@ -361,7 +361,7 @@ func renderNetworkCard(netStats []NetworkStatus, proxy ProxyStatus) cardData {
 			lines = append(lines, subtleStyle.Render(info))
 		}
 	}
-	return cardData{icon: iconNetwork, title: "Network", lines: lines}
+    return cardData{icon: iconNetwork, title: t("title_network"), lines: lines}
 }
 
 func netBar(rate float64) string {
@@ -385,12 +385,12 @@ func netBar(rate float64) string {
 
 func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 	var lines []string
-	if len(batts) == 0 {
-		lines = append(lines, subtleStyle.Render("No battery"))
+    if len(batts) == 0 {
+        lines = append(lines, subtleStyle.Render(t("no_battery")))
 	} else {
 		b := batts[0]
 		// Line 1: label + percentage + bar
-		lines = append(lines, fmt.Sprintf("Level  %3.0f%%  %s", b.Percent, progressBar(b.Percent)))
+        lines = append(lines, fmt.Sprintf("%s  %3.0f%%  %s", t("label_level"), b.Percent, progressBar(b.Percent)))
 
 		// Line 2: status
 		statusIcon := ""
@@ -403,7 +403,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			statusStyle = dangerStyle
 		}
 		// Capitalize first letter
-		statusText := b.Status
+        statusText := translateStatus(b.Status)
 		if len(statusText) > 0 {
 			statusText = strings.ToUpper(statusText[:1]) + strings.ToLower(statusText[1:])
 		}
@@ -414,11 +414,11 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 
 		// Line 3: Health + cycles
 		healthParts := []string{}
-		if b.Health != "" {
-			healthParts = append(healthParts, b.Health)
-		}
+        if b.Health != "" {
+            healthParts = append(healthParts, translateStatus(b.Health))
+        }
 		if b.CycleCount > 0 {
-			healthParts = append(healthParts, fmt.Sprintf("%d cycles", b.CycleCount))
+            healthParts = append(healthParts, fmt.Sprintf("%d %s", b.CycleCount, t("label_cycles")))
 		}
 		if len(healthParts) > 0 {
 			lines = append(lines, subtleStyle.Render(strings.Join(healthParts, " · ")))
@@ -442,7 +442,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			lines = append(lines, strings.Join(thermalParts, " · "))
 		}
 	}
-	return cardData{icon: iconBattery, title: "Power", lines: lines}
+    return cardData{icon: iconBattery, title: t("title_power"), lines: lines}
 }
 
 func renderSensorsCard(sensors []SensorReading) cardData {
@@ -453,10 +453,10 @@ func renderSensorsCard(sensors []SensorReading) cardData {
 		}
 		lines = append(lines, fmt.Sprintf("%-12s %s", shorten(s.Label, 12), colorizeTemp(s.Value)+s.Unit))
 	}
-	if len(lines) == 0 {
-		lines = append(lines, subtleStyle.Render("No sensors"))
-	}
-	return cardData{icon: iconSensors, title: "Sensors", lines: lines}
+    if len(lines) == 0 {
+        lines = append(lines, subtleStyle.Render(t("no_sensors")))
+    }
+    return cardData{icon: iconSensors, title: t("title_sensors"), lines: lines}
 }
 
 
@@ -591,4 +591,3 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
-

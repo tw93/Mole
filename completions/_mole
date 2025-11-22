@@ -1,0 +1,50 @@
+#compdef mole mo
+
+_mole() {
+    local -a commands
+    local -a clean_opts
+
+    commands=(
+        'clean:Remove junk files and optimize system'
+        'uninstall:Remove applications completely'
+        'optimize:System health check & optimization'
+        'analyze:Interactive disk space explorer'
+        'status:System status dashboard'
+        'touchid:Configure Touch ID for sudo'
+        'update:Update Mole to the latest version'
+        'remove:Remove Mole from the system'
+        'help:Show help message'
+        'version:Show installed version'
+    )
+
+    clean_opts=(
+        '--dry-run[Preview cleanup (no deletions)]'
+        '--whitelist[Manage protected caches]'
+    )
+
+    _arguments -C \
+        '1: :->cmds' \
+        '*:: :->args'
+
+    case "$state" in
+        cmds)
+            _describe -t commands 'mole commands' commands
+            ;;
+        args)
+            case $line[1] in
+                clean)
+                    _arguments \
+                        "$clean_opts[@]"
+                    ;;
+                analyze)
+                     _arguments \
+                        '1:directory:_files -/'
+                    ;;
+                *)
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_mole "$@"

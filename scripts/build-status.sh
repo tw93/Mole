@@ -31,6 +31,10 @@ GOARCH=amd64 go build -ldflags="$LDFLAGS" -trimpath -o bin/status-go-amd64 ./cmd
 echo "  → Creating Universal Binary..."
 lipo -create bin/status-go-arm64 bin/status-go-amd64 -output bin/status-go
 
+# Sign the binary (required for macOS security policy)
+echo "  → Signing binary..."
+codesign -s - -f bin/status-go 2>/dev/null || echo "  ⚠ Warning: Could not sign binary"
+
 rm bin/status-go-arm64 bin/status-go-amd64
 
 echo ""

@@ -11,7 +11,7 @@ source "$SCRIPT_DIR/lib/optimize_health.sh"
 
 print_header() {
     printf '\n'
-    echo -e "${PURPLE}Optimize Your Mac${NC}"
+    echo -e "${PURPLE}$(t "optimize_title")${NC}"
     echo ""
 }
 
@@ -27,7 +27,7 @@ show_system_health() {
     local uptime=$(echo "$health_json" | jq -r '.uptime_days')
 
     # Compact one-line format with icon
-    printf "${ICON_ADMIN} System: %.0f/%.0f GB RAM | %.0f/%.0f GB Disk (%.0f%%) | Uptime %.0fd\n" \
+    printf "${ICON_ADMIN} %.0f/%.0f GB RAM | %.0f/%.0f GB Disk (%.0f%%) | Uptime %.0fd\n" \
         "$mem_used" "$mem_total" "$disk_used" "$disk_total" "$disk_percent" "$uptime"
     echo ""
 }
@@ -170,44 +170,44 @@ execute_optimization() {
 
     case "$action" in
         system_maintenance)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Rebuilding LaunchServices database..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rebuilding_launchservices")"
             timeout 10 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user > /dev/null 2>&1 || true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} LaunchServices database rebuilt"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_launchservices_done")"
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Flushing DNS cache..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_flushing_dns")"
             if sudo dscacheutil -flushcache 2> /dev/null && sudo killall -HUP mDNSResponder 2> /dev/null; then
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} DNS cache flushed"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_dns_flushed")"
             else
-                echo -e "${RED}${ICON_ERROR}${NC} Failed to flush DNS cache"
+                echo -e "${RED}${ICON_ERROR}${NC} $(t "optimize_dns_failed")"
             fi
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Purging memory cache..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_purging_memory")"
             if sudo purge 2> /dev/null; then
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Memory cache purged"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_memory_purged")"
             else
-                echo -e "${RED}${ICON_ERROR}${NC} Failed to purge memory"
+                echo -e "${RED}${ICON_ERROR}${NC} $(t "optimize_memory_failed")"
             fi
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Rebuilding font cache..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rebuilding_fonts")"
             sudo atsutil databases -remove > /dev/null 2>&1
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Font cache rebuilt"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_fonts_done")"
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Rebuilding Spotlight index..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rebuilding_spotlight")"
             sudo mdutil -E / > /dev/null 2>&1 || true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Spotlight index rebuilt"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_spotlight_done")"
             ;;
 
         cache_refresh)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Resetting Quick Look cache..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_resetting_quicklook")"
             qlmanage -r cache > /dev/null 2>&1 || true
             qlmanage -r > /dev/null 2>&1 || true
 
             local -a cache_targets=(
-                "$HOME/Library/Caches/com.apple.QuickLook.thumbnailcache|Quick Look thumbnails"
-                "$HOME/Library/Caches/com.apple.iconservices.store|Icon Services store"
-                "$HOME/Library/Caches/com.apple.iconservices|Icon Services cache"
-                "$HOME/Library/Caches/com.apple.Safari/WebKitCache|Safari WebKit cache"
-                "$HOME/Library/Caches/com.apple.Safari/Favicon|Safari favicon cache"
+                "$HOME/Library/Caches/com.apple.QuickLook.thumbnailcache|$(t "quicklook_thumbnails")"
+                "$HOME/Library/Caches/com.apple.iconservices.store|$(t "icon_services")"
+                "$HOME/Library/Caches/com.apple.iconservices|$(t "icon_services")"
+                "$HOME/Library/Caches/com.apple.Safari/WebKitCache|$(t "safari_cache")"
+                "$HOME/Library/Caches/com.apple.Safari/Favicon|$(t "favicon_cache")"
             )
 
             for target in "${cache_targets[@]}"; do
@@ -215,33 +215,33 @@ execute_optimization() {
                 cleanup_path "$target_path" "$label"
             done
 
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Finder and Safari caches refreshed"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_caches_refreshed")"
             ;;
 
         maintenance_scripts)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Running macOS periodic scripts..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_running_periodic")"
             local periodic_cmd="/usr/sbin/periodic"
             if [[ -x "$periodic_cmd" ]]; then
                 local periodic_output=""
                 if periodic_output=$(sudo "$periodic_cmd" daily weekly monthly 2>&1); then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Daily/weekly/monthly scripts completed"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_periodic_done")"
                 else
                     echo -e "${YELLOW}!${NC} periodic scripts reported an issue"
                     printf '%s\n' "$periodic_output" | sed 's/^/    /'
                 fi
             fi
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Rotating system logs..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rotating_logs")"
             if sudo newsyslog > /dev/null 2>&1; then
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Log rotation complete"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_log_rotation_done")"
             else
                 echo -e "${YELLOW}!${NC} newsyslog reported an issue"
             fi
 
             if [[ -x "/usr/libexec/repair_packages" ]]; then
-                echo -e "${BLUE}${ICON_ARROW}${NC} Repairing base system permissions..."
+                echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_repairing_permissions")"
                 if sudo /usr/libexec/repair_packages --repair --standard-pkgs --volume / > /dev/null 2>&1; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Base system permission repair complete"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_permissions_done")"
                 else
                     echo -e "${YELLOW}!${NC} repair_packages reported an issue"
                 fi
@@ -249,7 +249,7 @@ execute_optimization() {
             ;;
 
         log_cleanup)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Clearing diagnostic & crash logs..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_clearing_diagnostics")"
             local -a user_logs=(
                 "$HOME/Library/Logs/DiagnosticReports"
                 "$HOME/Library/Logs/CrashReporter"
@@ -262,21 +262,19 @@ execute_optimization() {
             if [[ -d "/Library/Logs/DiagnosticReports" ]]; then
                 sudo find /Library/Logs/DiagnosticReports -type f -name "*.crash" -delete 2> /dev/null || true
                 sudo find /Library/Logs/DiagnosticReports -type f -name "*.panic" -delete 2> /dev/null || true
-                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} System diagnostic logs cleared"
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "diagnostic_logs")"
             else
-                echo -e "  ${GRAY}-${NC} No system diagnostic logs found"
+                echo -e "  ${GRAY}-${NC} $(t "no_diagnostic_logs")"
             fi
             ;;
 
         recent_items)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Clearing recent items lists..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_clearing_recent")"
             local shared_dir="$HOME/Library/Application Support/com.apple.sharedfilelist"
             if [[ -d "$shared_dir" ]]; then
                 # Count files first, then delete (safer than -print -delete)
-                local removed
-                removed=$(find "$shared_dir" -name "*.sfl2" -type f 2> /dev/null | wc -l | tr -d ' ')
                 find "$shared_dir" -name "*.sfl2" -type f -delete 2> /dev/null || true
-                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Reset $removed shared file lists"
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "recent_items_cleared")"
             else
                 echo -e "  ${GRAY}-${NC} Recent item caches already clean"
             fi
@@ -286,57 +284,57 @@ execute_optimization() {
             if defaults read NSGlobalDomain NSRecentDocumentsLimit > /dev/null 2>&1; then
                 defaults delete NSGlobalDomain NSRecentDocumentsLimit 2> /dev/null || true
             fi
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Finder/Apple menu recent items cleared"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "recent_items_cleared")"
             ;;
 
         radio_refresh)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Resetting Bluetooth preferences..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_resetting_bluetooth")"
             rm -f "$HOME/Library/Preferences/com.apple.Bluetooth.plist" 2> /dev/null || true
             sudo rm -f /Library/Preferences/com.apple.Bluetooth.plist 2> /dev/null || true
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Bluetooth caches refreshed"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_bluetooth_done")"
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Resetting Wi-Fi configuration..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_resetting_wifi")"
             local sysconfig="/Library/Preferences/SystemConfiguration"
             if [[ -d "$sysconfig" ]]; then
                 sudo cp "$sysconfig"/com.apple.airport.preferences.plist "$sysconfig"/com.apple.airport.preferences.plist.bak 2> /dev/null || true
                 sudo rm -f "$sysconfig"/com.apple.airport.preferences.plist 2> /dev/null || true
-                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Wi-Fi preferences reset"
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_wifi_done")"
             else
                 echo -e "  ${GRAY}-${NC} SystemConfiguration directory missing"
             fi
 
             sudo ifconfig awdl0 down 2> /dev/null || true
             sudo ifconfig awdl0 up 2> /dev/null || true
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Wireless services refreshed"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_wireless_done")"
             ;;
 
         mail_downloads)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Clearing Mail attachment downloads..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_clearing_mail")"
             local -a mail_dirs=(
-                "$HOME/Library/Mail Downloads|Mail Downloads"
-                "$HOME/Library/Containers/com.apple.mail/Data/Library/Mail Downloads|Mail Container Downloads"
+                "$HOME/Library/Mail Downloads|$(t "mail_downloads")"
+                "$HOME/Library/Containers/com.apple.mail/Data/Library/Mail Downloads|$(t "mail_downloads")"
             )
             for target in "${mail_dirs[@]}"; do
                 IFS='|' read -r target_path label <<< "$target"
                 cleanup_path "$target_path" "$label"
                 ensure_directory "$target_path"
             done
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Mail downloads cleared"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_mail_done")"
             ;;
 
         saved_state_cleanup)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Purging saved application states..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_purging_saved_state")"
             local state_dir="$HOME/Library/Saved Application State"
-            cleanup_path "$state_dir" "Saved Application State"
+            cleanup_path "$state_dir" "$(t "saved_app_state")"
             ensure_directory "$state_dir"
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Saved states cleared"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_saved_state_done")"
             ;;
 
         finder_dock_refresh)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Resetting Finder & Dock caches..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_resetting_finder_dock")"
             local -a interface_targets=(
-                "$HOME/Library/Caches/com.apple.finder|Finder cache"
-                "$HOME/Library/Caches/com.apple.dock.iconcache|Dock icon cache"
+                "$HOME/Library/Caches/com.apple.finder|$(t "finder_cache")"
+                "$HOME/Library/Caches/com.apple.dock.iconcache|$(t "dock_cache")"
             )
             for target in "${interface_targets[@]}"; do
                 IFS='|' read -r target_path label <<< "$target"
@@ -344,17 +342,17 @@ execute_optimization() {
             done
             killall Finder > /dev/null 2>&1 || true
             killall Dock > /dev/null 2>&1 || true
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Finder & Dock relaunched"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_finder_dock_done")"
             ;;
 
         swap_cleanup)
-            echo -e "${BLUE}${ICON_ARROW}${NC} Removing swapfiles and resetting dynamic pager..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_removing_swapfiles")"
             if sudo launchctl unload /System/Library/LaunchDaemons/com.apple.dynamic_pager.plist > /dev/null 2>&1; then
                 sudo rm -f /private/var/vm/swapfile* > /dev/null 2>&1 || true
                 sudo touch /private/var/vm/swapfile0 > /dev/null 2>&1 || true
                 sudo chmod 600 /private/var/vm/swapfile0 > /dev/null 2>&1 || true
                 sudo launchctl load /System/Library/LaunchDaemons/com.apple.dynamic_pager.plist > /dev/null 2>&1 || true
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Swap cache rebuilt"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_swap_done")"
             else
                 echo -e "${YELLOW}!${NC} Could not unload dynamic_pager"
             fi
@@ -366,24 +364,24 @@ execute_optimization() {
 
             # macOS 11+ has read-only system volume, skip system file operations
             if [[ "$macos_version" -ge 11 ]] || [[ "$(uname -m)" == "arm64" ]]; then
-                echo -e "${BLUE}${ICON_ARROW}${NC} Rebuilding kext caches..."
+                echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rebuilding_kext")"
                 if sudo kextcache -i / > /dev/null 2>&1; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Startup caches refreshed"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_startup_done")"
                 else
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Startup caches refreshed (sealed system volume)"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_startup_done")"
                 fi
             else
-                echo -e "${BLUE}${ICON_ARROW}${NC} Rebuilding kext caches..."
+                echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rebuilding_kext")"
                 if sudo kextcache -i / > /dev/null 2>&1; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Kernel/kext caches rebuilt"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_startup_done")"
                 else
                     echo -e "${YELLOW}!${NC} kextcache reported an issue"
                 fi
 
-                echo -e "${BLUE}${ICON_ARROW}${NC} Clearing system prelinked kernel caches..."
+                echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_rebuilding_kext")"
                 sudo rm -rf /System/Library/PrelinkedKernels/* > /dev/null 2>&1 || true
                 sudo kextcache -system-prelinked-kernel > /dev/null 2>&1 || true
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Startup caches refreshed"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_startup_done")"
             fi
             ;;
 
@@ -400,14 +398,14 @@ execute_optimization() {
                 return
             fi
 
-            echo -e "${BLUE}${ICON_ARROW}${NC} Thinning $before APFS local snapshots..."
+            echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_thinning_snapshots")"
             if sudo tmutil thinlocalsnapshots / 9999999999 4 > /dev/null 2>&1; then
                 after=$(count_local_snapshots)
                 local removed=$((before - after))
                 if [[ "$removed" -lt 0 ]]; then
                     removed=0
                 fi
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Removed $removed snapshots (remaining: $after)"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_snapshots_removed") ${GREEN}$removed${NC}"
             else
                 echo -e "${RED}${ICON_ERROR}${NC} Failed to thin local snapshots"
             fi
@@ -426,19 +424,19 @@ execute_optimization() {
             done
 
             if command -v xcrun > /dev/null 2>&1; then
-                echo -e "${BLUE}${ICON_ARROW}${NC} Removing unavailable simulator runtimes..."
+                echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_removing_simulators")"
                 if xcrun simctl delete unavailable > /dev/null 2>&1; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Unavailable simulators removed"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_simulators_done")"
                 else
                     echo -e "${YELLOW}!${NC} Could not prune simulator runtimes"
                 fi
             fi
 
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Developer caches cleaned"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(t "optimize_developer_done")"
             ;;
 
         *)
-            echo -e "${RED}${ICON_ERROR}${NC} Unknown action: $action"
+            echo -e "${RED}${ICON_ERROR}${NC} $(t "error"): $action"
             ;;
     esac
 }
@@ -461,7 +459,7 @@ main() {
     fi
 
     # Simple confirmation first
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Admin access required  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    echo -ne "${PURPLE}${ICON_ARROW}${NC} $(t "optimize_admin_prompt")  ${GREEN}$(t "optimize_confirm")${NC} / ${GRAY}$(t "optimize_cancel")${NC}: "
 
     IFS= read -r -s -n1 key || key=""
     drain_pending_input # Clean up any escape sequence remnants
@@ -469,15 +467,15 @@ main() {
         $'\e' | q | Q)
             echo ""
             echo ""
-            echo -e "${GRAY}Cancelled${NC}"
+            echo -e "${GRAY}$(t "cancelled")${NC}"
             echo ""
             exit 0
             ;;
         "" | $'\n' | $'\r')
             printf "\r\033[K"
-            if ! request_sudo_access "System optimizations require admin access"; then
+            if ! request_sudo_access "$(t "optimize_admin_prompt")"; then
                 echo ""
-                echo -e "${YELLOW}Authentication failed${NC}"
+                echo -e "${YELLOW}$(t "failed")${NC}"
                 exit 1
             fi
             start_sudo_keepalive
@@ -485,7 +483,7 @@ main() {
         *)
             echo ""
             echo ""
-            echo -e "${GRAY}Cancelled${NC}"
+            echo -e "${GRAY}$(t "cancelled")${NC}"
             echo ""
             exit 0
             ;;
@@ -495,7 +493,7 @@ main() {
     local health_json
     if ! health_json=$(generate_health_json 2> /dev/null); then
         echo ""
-        log_error "Failed to collect system health data"
+        log_error "$(t "failed")"
         exit 1
     fi
 
@@ -554,7 +552,7 @@ main() {
     if ((${#login_items_list[@]} > 0)); then
         local display_count=${#login_items_list[@]}
         echo ""
-        echo -e "${BLUE}${ICON_ARROW}${NC} Login items (${display_count}) auto-start at login:"
+        echo -e "${BLUE}${ICON_ARROW}${NC} $(t "optimize_login_items") (${display_count}) $(t "optimize_auto_start"):"
         local preview_limit=5
         ((preview_limit > display_count)) && preview_limit=$display_count
         for ((i = 0; i < preview_limit; i++)); do
@@ -562,13 +560,13 @@ main() {
         done
         if ((display_count > preview_limit)); then
             local remaining=$((display_count - preview_limit))
-            echo "    • …and $remaining more"
+            echo "    • … $remaining"
         fi
-        echo -e "${GRAY}Review System Settings → General → Login Items to trim extras.${NC}"
+        :
     fi
 
     echo ""
-    local summary_title="System optimization completed"
+    local summary_title="$(t "optimize_complete")"
     local -a summary_details=()
 
     local safe_count=${#safe_items[@]}
@@ -592,7 +590,7 @@ main() {
     fi
 
     if [[ "$show_touchid_tip" == "true" ]]; then
-        echo -e "${YELLOW}☻${NC} Run ${GRAY}mo touchid${NC} to approve sudo via Touch ID"
+        echo -e "${YELLOW}☻${NC} $(t "touchid_enabled")"
     fi
     print_summary_block "success" "$summary_title" "${summary_details[@]}"
     printf '\n'
