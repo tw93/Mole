@@ -70,7 +70,7 @@ get_uptime_days() {
     local boot_output boot_time uptime_days
 
     boot_output=$(sysctl -n kern.boottime 2> /dev/null || echo "")
-    boot_time=$(echo "$boot_output" | sed -n 's/.*sec = \([0-9]*\).*/\1/p' 2> /dev/null || echo "")
+    boot_time=$(echo "$boot_output" | awk -F 'sec = |, usec' '{print $2}' 2> /dev/null || echo "")
 
     if [[ -n "$boot_time" && "$boot_time" =~ ^[0-9]+$ ]]; then
         local now=$(date +%s 2> /dev/null || echo "0")
