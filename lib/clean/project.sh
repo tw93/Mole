@@ -210,9 +210,9 @@ is_recently_modified() {
         return 1
     fi
 
-    # Check modification time (macOS compatible)
+    # Get modification time using base.sh helper (handles GNU vs BSD stat)
     local mod_time
-    mod_time=$(stat -f "%m" "$path" 2> /dev/null || stat -c "%Y" "$path" 2> /dev/null || echo "0")
+    mod_time=$(get_file_mtime "$path")
     local current_time=$(date +%s)
     local age_seconds=$((current_time - mod_time))
     local age_in_days=$((age_seconds / 86400))

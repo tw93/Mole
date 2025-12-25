@@ -44,7 +44,7 @@ echo ""
 echo "✓ Build complete!"
 echo ""
 file bin/analyze-go
-size_bytes=$(stat -f%z bin/analyze-go 2> /dev/null || echo 0)
+size_bytes=$(/usr/bin/stat -f%z bin/analyze-go 2> /dev/null || echo 0)
 size_mb=$((size_bytes / 1024 / 1024))
 printf "Size: %d MB (%d bytes)\n" "$size_mb" "$size_bytes"
 echo ""

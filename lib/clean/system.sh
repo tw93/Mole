@@ -40,7 +40,7 @@ clean_deep_system() {
 
                 # Skip system-protected files (restricted flag)
                 local item_flags
-                item_flags=$(command stat -f%Sf "$item" 2> /dev/null || echo "")
+                item_flags=$($STAT_BSD -f%Sf "$item" 2> /dev/null || echo "")
                 if [[ "$item_flags" == *"restricted"* ]]; then
                     continue
                 fi
