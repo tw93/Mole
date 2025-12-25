@@ -30,6 +30,22 @@ clean_dev_npm() {
         note_activity
     fi
 
+    # Clean pnpm store cache
+    local pnpm_store_paths=("~/Library/pnpm/store")
+    if command -v pnpm > /dev/null 2>&1; then
+        local pnpm_store_path
+        # Use timeout to prevent hanging if pnpm is slow to respond
+        pnpm_store_path=$(run_with_timeout 5 pnpm store path 2>/dev/null) || pnpm_store_path=""
+        # Add to array if different from default
+        if [[ -n "$pnpm_store_path" && "$pnpm_store_path" != "${pnpm_store_paths[0]}" ]]; then
+            pnpm_store_paths+=("$pnpm_store_path")
+        fi
+        note_activity
+    fi
+    for store_path in "${pnpm_store_paths[@]}"; do
+        safe_clean "$store_path"/* "pnpm store"
+    done
+
     # Clean alternative package manager caches
     safe_clean ~/.tnpm/_cacache/* "tnpm cache directory"
     safe_clean ~/.tnpm/_logs/* "tnpm logs"
