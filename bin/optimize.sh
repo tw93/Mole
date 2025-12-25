@@ -200,7 +200,7 @@ cleanup_path() {
 ensure_directory() {
     local raw_path="$1"
     local expanded_path="${raw_path/#\~/$HOME}"
-    mkdir -p "$expanded_path" > /dev/null 2>&1 || true
+    ensure_user_dir "$expanded_path"
 }
 
 count_local_snapshots() {

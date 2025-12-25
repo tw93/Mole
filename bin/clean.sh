@@ -159,6 +159,7 @@ start_section() {
 
     # Write section header to export list in dry-run mode
     if [[ "$DRY_RUN" == "true" ]]; then
+        ensure_user_file "$EXPORT_LIST_FILE"
         echo "" >> "$EXPORT_LIST_FILE"
         echo "=== $1 ===" >> "$EXPORT_LIST_FILE"
     fi
@@ -452,7 +453,7 @@ start_cleanup() {
         SYSTEM_CLEAN=false
 
         # Initialize export list file
-        mkdir -p "$(dirname "$EXPORT_LIST_FILE")"
+        ensure_user_file "$EXPORT_LIST_FILE"
         cat > "$EXPORT_LIST_FILE" << EOF
 # Mole Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
 #

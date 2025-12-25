@@ -58,7 +58,8 @@ is_homebrew_install() {
 # Check for updates (non-blocking, always check in background)
 check_for_updates() {
     local msg_cache="$HOME/.cache/mole/update_message"
-    mkdir -p "$(dirname "$msg_cache")" 2> /dev/null
+    ensure_user_dir "$(dirname "$msg_cache")"
+    ensure_user_file "$msg_cache"
 
     # Background version check
     # Always check in background, display result from previous check
@@ -634,11 +635,11 @@ interactive_main_menu() {
         if [[ -n "$tty_name" ]]; then
             local flag_file
             local cache_dir="$HOME/.cache/mole"
-            mkdir -p "$cache_dir" 2> /dev/null
+            ensure_user_dir "$cache_dir"
             flag_file="$cache_dir/intro_$(echo "$tty_name" | tr -c '[:alnum:]_' '_')"
             if [[ ! -f "$flag_file" ]]; then
                 animate_mole_intro
-                touch "$flag_file" 2> /dev/null || true
+                ensure_user_file "$flag_file"
             fi
         fi
     fi

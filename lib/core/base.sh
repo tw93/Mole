@@ -167,6 +167,25 @@ get_free_space() {
     command df -h / | awk 'NR==2 {print $4}'
 }
 
+# Get Darwin kernel major version (e.g., 24 for 24.2.0)
+get_darwin_major() {
+    local kernel
+    kernel=$(uname -r 2> /dev/null || true)
+    local major="${kernel%%.*}"
+    if [[ ! "$major" =~ ^[0-9]+$ ]]; then
+        major=0
+    fi
+    echo "$major"
+}
+
+# Check if Darwin kernel major version meets minimum
+is_darwin_ge() {
+    local minimum="$1"
+    local major
+    major=$(get_darwin_major)
+    [[ "$major" -ge "$minimum" ]]
+}
+
 # Get optimal parallel jobs for operation type (scan|io|compute|default)
 get_optimal_parallel_jobs() {
     local operation_type="${1:-default}"
@@ -183,6 +202,180 @@ get_optimal_parallel_jobs() {
             echo $((cpu_cores + 2))
             ;;
     esac
+}
+
+# ============================================================================
+# User Context Utilities
+# ============================================================================
+
+is_root_user() {
+    [[ "$(id -u)" == "0" ]]
+}
+
+get_user_home() {
+    local user="$1"
+    local home=""
+
+    if [[ -z "$user" ]]; then
+        echo ""
+        return 0
+    fi
+
+    if command -v dscl > /dev/null 2>&1; then
+        home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2> /dev/null | awk '{print $2}' | head -1 || true)
+    fi
+
+    if [[ -z "$home" ]]; then
+        home=$(eval echo "~$user" 2> /dev/null || true)
+    fi
+
+    if [[ "$home" == "~"* ]]; then
+        home=""
+    fi
+
+    echo "$home"
+}
+
+get_invoking_user() {
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "root" ]]; then
+        echo "$SUDO_USER"
+        return 0
+    fi
+    echo "${USER:-}"
+}
+
+get_invoking_uid() {
+    if [[ -n "${SUDO_UID:-}" ]]; then
+        echo "$SUDO_UID"
+        return 0
+    fi
+
+    local uid
+    uid=$(id -u 2> /dev/null || true)
+    echo "$uid"
+}
+
+get_invoking_gid() {
+    if [[ -n "${SUDO_GID:-}" ]]; then
+        echo "$SUDO_GID"
+        return 0
+    fi
+
+    local gid
+    gid=$(id -g 2> /dev/null || true)
+    echo "$gid"
+}
+
+get_invoking_home() {
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "root" ]]; then
+        get_user_home "$SUDO_USER"
+        return 0
+    fi
+
+    echo "${HOME:-}"
+}
+
+ensure_user_dir() {
+    local raw_path="$1"
+    if [[ -z "$raw_path" ]]; then
+        return 0
+    fi
+
+    local target_path="$raw_path"
+    if [[ "$target_path" == "~"* ]]; then
+        target_path="${target_path/#\~/$HOME}"
+    fi
+
+    mkdir -p "$target_path" 2> /dev/null || true
+
+    if ! is_root_user; then
+        return 0
+    fi
+
+    local sudo_user="${SUDO_USER:-}"
+    if [[ -z "$sudo_user" || "$sudo_user" == "root" ]]; then
+        return 0
+    fi
+
+    local user_home
+    user_home=$(get_user_home "$sudo_user")
+    if [[ -z "$user_home" ]]; then
+        return 0
+    fi
+    user_home="${user_home%/}"
+
+    if [[ "$target_path" != "$user_home" && "$target_path" != "$user_home/"* ]]; then
+        return 0
+    fi
+
+    local owner_uid="${SUDO_UID:-}"
+    local owner_gid="${SUDO_GID:-}"
+    if [[ -z "$owner_uid" || -z "$owner_gid" ]]; then
+        owner_uid=$(id -u "$sudo_user" 2> /dev/null || true)
+        owner_gid=$(id -g "$sudo_user" 2> /dev/null || true)
+    fi
+
+    if [[ -z "$owner_uid" || -z "$owner_gid" ]]; then
+        return 0
+    fi
+
+    local dir="$target_path"
+    while [[ -n "$dir" && "$dir" != "/" ]]; do
+        chown "$owner_uid:$owner_gid" "$dir" 2> /dev/null || true
+        if [[ "$dir" == "$user_home" ]]; then
+            break
+        fi
+        dir=$(dirname "$dir")
+        if [[ "$dir" == "." ]]; then
+            break
+        fi
+    done
+}
+
+ensure_user_file() {
+    local raw_path="$1"
+    if [[ -z "$raw_path" ]]; then
+        return 0
+    fi
+
+    local target_path="$raw_path"
+    if [[ "$target_path" == "~"* ]]; then
+        target_path="${target_path/#\~/$HOME}"
+    fi
+
+    ensure_user_dir "$(dirname "$target_path")"
+    touch "$target_path" 2> /dev/null || true
+
+    if ! is_root_user; then
+        return 0
+    fi
+
+    local sudo_user="${SUDO_USER:-}"
+    if [[ -z "$sudo_user" || "$sudo_user" == "root" ]]; then
+        return 0
+    fi
+
+    local user_home
+    user_home=$(get_user_home "$sudo_user")
+    if [[ -z "$user_home" ]]; then
+        return 0
+    fi
+    user_home="${user_home%/}"
+
+    if [[ "$target_path" != "$user_home" && "$target_path" != "$user_home/"* ]]; then
+        return 0
+    fi
+
+    local owner_uid="${SUDO_UID:-}"
+    local owner_gid="${SUDO_GID:-}"
+    if [[ -z "$owner_uid" || -z "$owner_gid" ]]; then
+        owner_uid=$(id -u "$sudo_user" 2> /dev/null || true)
+        owner_gid=$(id -g "$sudo_user" 2> /dev/null || true)
+    fi
+
+    if [[ -n "$owner_uid" && -n "$owner_gid" ]]; then
+        chown "$owner_uid:$owner_gid" "$target_path" 2> /dev/null || true
+    fi
 }
 
 # ============================================================================

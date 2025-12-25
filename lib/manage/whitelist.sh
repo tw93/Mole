@@ -44,7 +44,7 @@ save_whitelist_patterns() {
         header_text="# Mole Whitelist - Protected paths won't be deleted\n# Default protections: Playwright browsers, HuggingFace models, Maven repo, Ollama models, Surge Mac, R renv, Finder metadata\n# Add one pattern per line to keep items safe."
     fi
 
-    mkdir -p "$(dirname "$config_file")"
+    ensure_user_file "$config_file"
 
     echo -e "$header_text" > "$config_file"
 

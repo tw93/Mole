@@ -116,7 +116,7 @@ clean_homebrew() {
 
     # Update cache timestamp on successful completion
     if [[ "$brew_success" == "true" || "$autoremove_success" == "true" ]]; then
-        mkdir -p "$(dirname "$brew_cache_file")"
+        ensure_user_file "$brew_cache_file"
         date +%s > "$brew_cache_file"
     fi
 }

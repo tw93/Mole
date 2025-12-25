@@ -26,7 +26,10 @@ readonly DEBUG_LOG_FILE="${HOME}/.config/mole/mole_debug_session.log"
 readonly LOG_MAX_SIZE_DEFAULT=1048576 # 1MB
 
 # Ensure log directory exists
-mkdir -p "$(dirname "$LOG_FILE")" 2> /dev/null || true
+ensure_user_dir "$(dirname "$LOG_FILE")"
+if is_root_user && [[ -n "${SUDO_USER:-}" && "${SUDO_USER:-}" != "root" ]]; then
+    ensure_user_file "$LOG_FILE"
+fi
 
 # ============================================================================
 # Log Rotation
@@ -41,7 +44,7 @@ rotate_log_once() {
     local max_size="${MOLE_MAX_LOG_SIZE:-$LOG_MAX_SIZE_DEFAULT}"
     if [[ -f "$LOG_FILE" ]] && [[ $(get_file_size "$LOG_FILE") -gt "$max_size" ]]; then
         mv "$LOG_FILE" "${LOG_FILE}.old" 2> /dev/null || true
-        touch "$LOG_FILE" 2> /dev/null || true
+        ensure_user_file "$LOG_FILE"
     fi
 }
 
@@ -104,6 +107,7 @@ log_system_info() {
     export MOLE_SYS_INFO_LOGGED=1
 
     # Reset debug log file for this new session
+    ensure_user_file "$DEBUG_LOG_FILE"
     : > "$DEBUG_LOG_FILE"
 
     # Start block in debug log file

@@ -52,8 +52,7 @@ check_tcc_permissions() {
     fi
 
     # Mark permissions as granted (won't prompt again)
-    mkdir -p "$(dirname "$permission_flag")" 2> /dev/null || true
-    touch "$permission_flag" 2> /dev/null || true
+    ensure_user_file "$permission_flag"
 }
 
 # Clean browser Service Worker cache, protecting web editing tools (capcut, photopea, pixlr)

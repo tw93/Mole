@@ -17,9 +17,16 @@ flush_dns_cache() {
 
 # Rebuild databases and flush caches
 opt_system_maintenance() {
-    # DISABLED: Causes System Settings corruption - Issue #136
-    echo -e "${GRAY}⊘${NC} LaunchServices rebuild disabled"
-    # run_with_timeout 10 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user > /dev/null 2>&1 || true
+    local darwin_major
+    darwin_major=$(get_darwin_major)
+
+    if [[ "$darwin_major" -ge 24 ]]; then
+        echo -e "${GRAY}⊘${NC} LaunchServices/dyld rebuild skipped on macOS 15+ (Darwin ${darwin_major})"
+    else
+        # DISABLED: Causes System Settings corruption - Issue #136
+        echo -e "${GRAY}⊘${NC} LaunchServices rebuild disabled"
+        # run_with_timeout 10 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user > /dev/null 2>&1 || true
+    fi
 
     echo -e "${BLUE}${ICON_ARROW}${NC} Clearing DNS cache..."
     if flush_dns_cache; then

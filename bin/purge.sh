@@ -47,7 +47,9 @@ start_purge() {
 
     # Initialize stats file in user cache directory
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
-    mkdir -p "$stats_dir"
+    ensure_user_dir "$stats_dir"
+    ensure_user_file "$stats_dir/purge_stats"
+    ensure_user_file "$stats_dir/purge_count"
     echo "0" > "$stats_dir/purge_stats"
     echo "0" > "$stats_dir/purge_count"
 }

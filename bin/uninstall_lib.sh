@@ -75,7 +75,7 @@ scan_applications() {
     local cache_ttl=86400 # 24 hours
     local force_rescan="${1:-false}"
 
-    mkdir -p "$cache_dir" 2> /dev/null
+    ensure_user_dir "$cache_dir"
 
     # Check if cache exists and is fresh
     if [[ $force_rescan == false && -f "$cache_file" ]]; then
@@ -344,6 +344,7 @@ scan_applications() {
     fi
 
     # Save to cache (simplified - no metadata)
+    ensure_user_file "$cache_file"
     cp "${temp_file}.sorted" "$cache_file" 2> /dev/null || true
 
     # Return sorted file

@@ -174,7 +174,7 @@ CACHE_DIR="${HOME}/.cache/mole"
 CACHE_TTL=600 # 10 minutes in seconds
 
 # Ensure cache directory exists
-mkdir -p "$CACHE_DIR" 2> /dev/null || true
+ensure_user_dir "$CACHE_DIR"
 
 clear_cache_file() {
     local file="$1"
@@ -302,6 +302,7 @@ check_mole_update() {
             latest_version=$(curl -fsSL https://api.github.com/repos/tw93/mole/releases/latest 2> /dev/null | grep '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/' || echo "")
             # Save to cache
             if [[ -n "$latest_version" ]]; then
+                ensure_user_file "$cache_file"
                 echo "$latest_version" > "$cache_file" 2> /dev/null || true
             fi
         fi
