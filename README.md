@@ -223,4 +223,5 @@ Adds 5 commands: `clean`, `uninstall`, `optimize`, `analyze`, `status`. Mole aut
 
 ## License
 
-MIT License - feel free to enjoy and participate in open source.
+MIT License - feel free to enjoy and participate in open source. 
+ee9b34a4ca7b0056d71f76460ae66a7499f4d21a
