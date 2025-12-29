@@ -27,7 +27,8 @@ readonly MIN_AGE_DAYS=7
 readonly PURGE_MIN_DEPTH_DEFAULT=2
 readonly PURGE_MAX_DEPTH_DEFAULT=8
 # Search paths (only project directories)
-readonly PURGE_SEARCH_PATHS=(
+# Search paths (default)
+readonly DEFAULT_PURGE_SEARCH_PATHS=(
     "$HOME/www"
     "$HOME/dev"
     "$HOME/Projects"
@@ -37,6 +38,40 @@ readonly PURGE_SEARCH_PATHS=(
     "$HOME/Repos"
     "$HOME/Development"
 )
+
+# Config file for custom purge paths
+readonly PURGE_CONFIG_FILE="$HOME/.config/mole/purge_paths"
+
+# Global array to hold actual search paths
+PURGE_SEARCH_PATHS=()
+
+# Load purge paths from config or defaults
+load_purge_config() {
+    PURGE_SEARCH_PATHS=()
+    if [[ -f "$PURGE_CONFIG_FILE" ]]; then
+        while IFS= read -r line; do
+            # Remove leading/trailing whitespace
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
+            
+            # Skip empty lines and comments
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            
+            # Expand tilde to HOME
+            line="${line/#\~/$HOME}"
+            
+            PURGE_SEARCH_PATHS+=("$line")
+        done < "$PURGE_CONFIG_FILE"
+    fi
+    
+    # Fallback to defaults if no paths loaded
+    if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
+        PURGE_SEARCH_PATHS=("${DEFAULT_PURGE_SEARCH_PATHS[@]}")
+    fi
+}
+
+# Initialize paths
+load_purge_config
 # Args: $1 - path to check
 # Check if path is safe to clean (must be inside a project directory)
 is_safe_project_artifact() {

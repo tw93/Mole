@@ -202,6 +202,23 @@ Select Categories to Clean - 18.5GB (8 selected)
 
 > **Use with caution:** This will permanently delete selected artifacts. Review carefully before confirming. Recent projects (< 7 days) are marked and unselected by default.
 
+#### Configuration
+
+You can configure which directories `mole` scans for projects by creating a config file:
+
+1. Create `~/.config/mole/purge_paths`
+2. Add one directory path per line (supports `~`)
+
+Example `~/.config/mole/purge_paths`:
+
+```
+~/Documents/MyProjects
+~/Work/ClientA
+~/Work/ClientB
+```
+
+If this file exists, `mole` will *only* scan the paths listed in it. If not, it uses the default paths (`~/Projects`, `~/GitHub`, `~/dev`, etc.).
+
 ## Quick Launchers
 
 Launch Mole commands instantly from Raycast or Alfred:

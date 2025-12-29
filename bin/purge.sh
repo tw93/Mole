@@ -111,6 +111,26 @@ perform_purge() {
     printf '\n'
 }
 
+# Show help message
+show_help() {
+    echo -e "${PURPLE_BOLD}Mole Purge${NC} - Clean old project build artifacts"
+    echo ""
+    echo -e "${YELLOW}Usage:${NC} mo purge [options]"
+    echo ""
+    echo -e "${YELLOW}Options:${NC}"
+    echo "  --help          Show this help message"
+    echo "  --debug         Enable debug logging"
+    echo ""
+    echo -e "${YELLOW}Configuration:${NC}"
+    echo "  To customize search paths, create: ${NC}$HOME/.config/mole/purge_paths${NC}"
+    echo "  Add one directory path per line (supports ~)."
+    echo ""
+    echo -e "${YELLOW}Default Paths:${NC}"
+    for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
+        echo "  - $path"
+    done
+}
+
 # Main entry point
 main() {
     # Set up signal handling
@@ -119,12 +139,16 @@ main() {
     # Parse arguments
     for arg in "$@"; do
         case "$arg" in
+            "--help")
+                show_help
+                exit 0
+                ;;
             "--debug")
                 export MO_DEBUG=1
                 ;;
             *)
                 echo "Unknown option: $arg"
-                echo "Use 'mo --help' for usage information"
+                echo "Use 'mo purge --help' for usage information"
                 exit 1
                 ;;
         esac
