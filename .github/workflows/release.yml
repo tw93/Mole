@@ -87,7 +87,7 @@ jobs:
           echo "Releasing version: $VERSION (tag: $TAG)"
 
       - name: Update Homebrew formula
-        uses: mislav/bump-homebrew-formula-action@v3
+        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
         with:
           formula-name: mole
           formula-path: Formula/mole.rb
