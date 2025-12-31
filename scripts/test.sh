@@ -10,6 +10,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# shellcheck source=lib/core/file_ops.sh
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -123,7 +126,7 @@ else
     printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
     ((FAILED++))
 fi
-rm -rf /tmp/mole-test
+safe_remove "/tmp/mole-test" true || true
 echo ""
 
 echo "==============================="
