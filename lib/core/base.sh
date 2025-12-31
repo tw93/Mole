@@ -409,18 +409,28 @@ bytes_to_human() {
         return 1
     }
 
+    if [[ "${MOLE_BYTES_TO_HUMAN_CACHE_BYTES:-}" == "$bytes" ]]; then
+        printf "%s\n" "${MOLE_BYTES_TO_HUMAN_CACHE_RESULT}"
+        return 0
+    fi
+
+    local result
     # GB: >= 1073741824 bytes
     if ((bytes >= 1073741824)); then
-        printf "%d.%02dGB\n" $((bytes / 1073741824)) $(((bytes % 1073741824) * 100 / 1073741824))
+        result="$(printf "%d.%02dGB" $((bytes / 1073741824)) $(((bytes % 1073741824) * 100 / 1073741824)))"
     # MB: >= 1048576 bytes
     elif ((bytes >= 1048576)); then
-        printf "%d.%01dMB\n" $((bytes / 1048576)) $(((bytes % 1048576) * 10 / 1048576))
+        result="$(printf "%d.%01dMB" $((bytes / 1048576)) $(((bytes % 1048576) * 10 / 1048576)))"
     # KB: >= 1024 bytes (round up)
     elif ((bytes >= 1024)); then
-        printf "%dKB\n" $(((bytes + 512) / 1024))
+        result="$(printf "%dKB" $(((bytes + 512) / 1024)))"
     else
-        printf "%dB\n" "$bytes"
+        result="$(printf "%dB" "$bytes")"
     fi
+
+    MOLE_BYTES_TO_HUMAN_CACHE_BYTES="$bytes"
+    MOLE_BYTES_TO_HUMAN_CACHE_RESULT="$result"
+    printf "%s\n" "$result"
 }
 
 # Convert kilobytes to human-readable format
