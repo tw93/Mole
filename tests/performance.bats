@@ -18,6 +18,7 @@ setup() {
 
 @test "bytes_to_human handles large values efficiently" {
     local start end elapsed
+    local limit_ms="${MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS:-2000}"
 
     bytes_to_human 1073741824 > /dev/null
 
@@ -29,7 +30,7 @@ setup() {
 
     elapsed=$(( (end - start) / 1000000 ))
 
-    [ "$elapsed" -lt 2000 ]
+    [ "$elapsed" -lt "$limit_ms" ]
 }
 
 @test "bytes_to_human produces correct output for GB range" {
