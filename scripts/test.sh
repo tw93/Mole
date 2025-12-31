@@ -10,6 +10,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# shellcheck source=lib/core/file_ops.sh
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -112,18 +115,22 @@ echo "6. Testing installation..."
 # Skip if Homebrew mole is installed (install.sh will refuse to overwrite)
 if brew list mole &> /dev/null; then
     printf "${GREEN}${ICON_SUCCESS} Installation test skipped (Homebrew)${NC}\n"
-elif ./install.sh --prefix /tmp/mole-test > /dev/null 2>&1; then
-    if [ -f /tmp/mole-test/mole ]; then
-        printf "${GREEN}${ICON_SUCCESS} Installation test passed${NC}\n"
+else
+    TEST_INSTALL_DIR="$(mktemp -d "/tmp/mole-test.XXXXXX")"
+    if ./install.sh --prefix "$TEST_INSTALL_DIR" > /dev/null 2>&1; then
+        if [ -f "$TEST_INSTALL_DIR/mole" ]; then
+            printf "${GREEN}${ICON_SUCCESS} Installation test passed${NC}\n"
+        else
+            printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
+            ((FAILED++))
+        fi
     else
         printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
         ((FAILED++))
     fi
-else
-    printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
-    ((FAILED++))
+    safe_remove "$TEST_INSTALL_DIR" true || true
+    unset TEST_INSTALL_DIR
 fi
-rm -rf /tmp/mole-test
 echo ""
 
 echo "==============================="

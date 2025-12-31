@@ -61,7 +61,14 @@ ACTION="install"
 
 # Resolve source dir (local checkout, env override, or download).
 needs_sudo() {
-    [[ ! -w "$INSTALL_DIR" ]]
+    if [[ -e "$INSTALL_DIR" ]]; then
+        [[ ! -w "$INSTALL_DIR" ]]
+        return
+    fi
+
+    local parent_dir
+    parent_dir="$(dirname "$INSTALL_DIR")"
+    [[ ! -w "$parent_dir" ]]
 }
 
 maybe_sudo() {
