@@ -13,16 +13,6 @@ cd "$PROJECT_ROOT"
 # shellcheck source=lib/core/file_ops.sh
 source "$PROJECT_ROOT/lib/core/file_ops.sh"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-readonly ICON_SUCCESS="✓"
-readonly ICON_ERROR="☻"
-readonly ICON_WARNING="●"
-readonly ICON_LIST="•"
-
 echo "==============================="
 echo "Mole Test Runner"
 echo "==============================="
