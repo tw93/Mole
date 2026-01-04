@@ -49,7 +49,6 @@ mo optimize                  # Refresh caches & services
 mo analyze                   # Visual disk explorer
 mo status                    # Live system health dashboard
 mo purge                     # Clean project build artifacts
-mo installer                 # Find and remove installer files
 
 mo touchid                   # Configure Touch ID for sudo
 mo completion                # Setup shell tab completion
@@ -225,23 +224,6 @@ Run `mo purge --paths` to configure which directories to scan, or edit `~/.confi
 When custom paths are configured, only those directories are scanned. Otherwise, defaults to `~/Projects`, `~/GitHub`, `~/dev`, etc.
 
 </details>
-
-### Installer Cleanup
-
-Find and remove large installer files scattered across Downloads, Desktop, Homebrew caches, iCloud, and Mail. Each file is labeled by source to help you know where the space is hiding.
-
-```bash
-mo installer
-
-Select Installers to Remove - 3.8GB (5 selected)
-
-➤ ● Photoshop_2024.dmg     1.2GB | Downloads
-  ● IntelliJ_IDEA.dmg       850.6MB | Downloads
-  ● Illustrator_Setup.pkg   920.4MB | Downloads
-  ● PyCharm_Pro.dmg         640.5MB | Homebrew
-  ● Acrobat_Reader.dmg      220.4MB | Downloads
-  ○ AppCode_Legacy.zip      410.6MB | Downloads
-```
 
 ## Quick Launchers
 
