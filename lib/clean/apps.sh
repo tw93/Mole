@@ -134,7 +134,7 @@ scan_installed_apps() {
     safe_remove "$scan_tmp_dir" true
     sort -u "$installed_bundles" -o "$installed_bundles"
     ensure_user_dir "$(dirname "$cache_file")"
-    cp "$installed_bundles" "$cache_file" 2> /dev/null || true
+    cp -- "$installed_bundles" "$cache_file" 2> /dev/null || true
     local app_count=$(wc -l < "$installed_bundles" 2> /dev/null | tr -d ' ')
     debug_log "Scanned $app_count unique applications"
 }
@@ -170,7 +170,7 @@ is_bundle_orphaned() {
 }
 # Orphaned app data sweep.
 clean_orphaned_app_data() {
-    if ! ls "$HOME/Library/Caches" > /dev/null 2>&1; then
+    if ! ls -- "$HOME/Library/Caches" > /dev/null 2>&1; then
         stop_section_spinner
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} Skipped: No permission to access Library folders"
         return 0
@@ -199,7 +199,7 @@ clean_orphaned_app_data() {
         if [[ ! -d "$base_path" ]]; then
             continue
         fi
-        if ! ls "$base_path" > /dev/null 2>&1; then
+        if ! ls -- "$base_path" > /dev/null 2>&1; then
             continue
         fi
         local -a file_patterns=()

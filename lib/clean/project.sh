@@ -413,7 +413,7 @@ is_recently_modified() {
 get_dir_size_kb() {
     local path="$1"
     if [[ -d "$path" ]]; then
-        du -sk "$path" 2> /dev/null | awk '{print $1}' || echo "0"
+        du -sk -- "$path" 2> /dev/null | awk '{print $1}' || echo "0"
     else
         echo "0"
     fi

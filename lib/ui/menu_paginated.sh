@@ -344,7 +344,7 @@ paginated_multi_select() {
                     view_indices+=("$_id")
                 done < <(LC_ALL=C sort -t $'\t' $sort_key -- "$tmpfile" 2> /dev/null)
 
-                rm -f "$tmpfile"
+                rm -f -- "$tmpfile"
             else
                 # Fallback: no sorting
                 view_indices=("${filtered[@]}")

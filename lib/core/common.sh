@@ -34,7 +34,7 @@ update_via_homebrew() {
     temp_upgrade=$(mktemp_file "brew_upgrade")
 
     # Set up trap for interruption (Ctrl+C) with inline cleanup
-    trap 'stop_inline_spinner 2>/dev/null; rm -f "$temp_update" "$temp_upgrade" 2>/dev/null; echo ""; exit 130' INT TERM
+    trap 'stop_inline_spinner 2>/dev/null; rm -f -- "$temp_update" "$temp_upgrade" 2>/dev/null; echo ""; exit 130' INT TERM
 
     # Update Homebrew
     if [[ -t 1 ]]; then

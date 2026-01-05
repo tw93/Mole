@@ -15,7 +15,7 @@ check_tcc_permissions() {
     )
     # Quick permission probe (avoid deep scans).
     local needs_permission_check=false
-    if ! ls "$HOME/Library/Caches" > /dev/null 2>&1; then
+    if ! ls -- "$HOME/Library/Caches" > /dev/null 2>&1; then
         needs_permission_check=true
     fi
     if [[ "$needs_permission_check" == "true" ]]; then

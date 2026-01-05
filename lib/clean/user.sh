@@ -26,7 +26,7 @@ clean_empty_library_items() {
     local -a empty_dirs=()
     while IFS= read -r -d '' dir; do
         [[ -d "$dir" ]] && empty_dirs+=("$dir")
-    done < <(find "$HOME/Library" -mindepth 1 -maxdepth 1 -type d -empty -print0 2> /dev/null)
+    done < <(find -- "$HOME/Library" -mindepth 1 -maxdepth 1 -type d -empty -print0 2> /dev/null)
 
     if [[ ${#empty_dirs[@]} -gt 0 ]]; then
         safe_clean "${empty_dirs[@]}" "Empty Library folders"
@@ -60,7 +60,7 @@ clean_empty_library_items() {
                     continue
                 fi
                 [[ -d "$dir" ]] && nested_empty_dirs+=("$dir")
-            done < <(find "$location" -mindepth 1 -type d -empty -print0 2> /dev/null)
+            done < <(find -- "$location" -mindepth 1 -type d -empty -print0 2> /dev/null)
 
             # If no empty dirs found, we're done with this location
             if [[ ${#nested_empty_dirs[@]} -eq 0 ]]; then
@@ -104,7 +104,7 @@ clean_chrome_old_versions() {
         [[ -L "$current_link" ]] || continue
 
         local current_version
-        current_version=$(readlink "$current_link" 2> /dev/null || true)
+        current_version=$(readlink -- "$current_link" 2> /dev/null || true)
         current_version="${current_version##*/}"
         [[ -n "$current_version" ]] || continue
 
@@ -184,7 +184,7 @@ clean_edge_old_versions() {
         [[ -L "$current_link" ]] || continue
 
         local current_version
-        current_version=$(readlink "$current_link" 2> /dev/null || true)
+        current_version=$(readlink -- "$current_link" 2> /dev/null || true)
         current_version="${current_version##*/}"
         [[ -n "$current_version" ]] || continue
 
@@ -340,7 +340,7 @@ scan_external_volumes() {
         if [[ -d "$volume_trash" && "$DRY_RUN" != "true" ]] && ! is_path_whitelisted "$volume_trash"; then
             while IFS= read -r -d '' item; do
                 safe_remove "$item" true || true
-            done < <(command find "$volume_trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
+            done < <(command find -- "$volume_trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
         fi
         if [[ "$PROTECT_FINDER_METADATA" != "true" ]]; then
             clean_ds_store_tree "$volume" "$(basename "$volume") volume (.DS_Store)"
@@ -433,7 +433,7 @@ clean_mail_downloads() {
                         ((cleaned_kb += file_size_kb))
                     fi
                 fi
-            done < <(command find "$target_path" -type f -mtime +"$mail_age_days" -print0 2> /dev/null || true)
+            done < <(command find -- "$target_path" -type f -mtime +"$mail_age_days" -print0 2> /dev/null || true)
         fi
     done
     if [[ $count -gt 0 ]]; then
@@ -491,7 +491,7 @@ process_container_cache() {
     local cache_dir="$container_dir/Data/Library/Caches"
     [[ -d "$cache_dir" ]] || return 0
     # Fast non-empty check.
-    if find "$cache_dir" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
+    if find -- "$cache_dir" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
         local size=$(get_path_size_kb "$cache_dir")
         ((total_size += size))
         found_any=true
@@ -567,7 +567,7 @@ clean_virtualization_tools() {
 # Application Support logs/caches.
 clean_application_support_logs() {
     stop_section_spinner
-    if [[ ! -d "$HOME/Library/Application Support" ]] || ! ls "$HOME/Library/Application Support" > /dev/null 2>&1; then
+    if [[ ! -d "$HOME/Library/Application Support" ]] || ! ls -- "$HOME/Library/Application Support" > /dev/null 2>&1; then
         note_activity
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} Skipped: No permission to access Application Support"
         return 0
@@ -599,7 +599,7 @@ clean_application_support_logs() {
         local -a start_candidates=("$app_dir/log" "$app_dir/logs" "$app_dir/activitylog" "$app_dir/Cache/Cache_Data" "$app_dir/Crashpad/completed")
         for candidate in "${start_candidates[@]}"; do
             if [[ -d "$candidate" ]]; then
-                if find "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
+                if find -- "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
                     local size=$(get_path_size_kb "$candidate")
                     ((total_size += size))
                     ((cleaned_count++))
@@ -623,7 +623,7 @@ clean_application_support_logs() {
         local -a gc_candidates=("$container_path/Logs" "$container_path/Library/Logs")
         for candidate in "${gc_candidates[@]}"; do
             if [[ -d "$candidate" ]]; then
-                if find "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
+                if find -- "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
                     local size=$(get_path_size_kb "$candidate")
                     ((total_size += size))
                     ((cleaned_count++))
@@ -660,7 +660,7 @@ check_ios_device_backups() {
     if [[ -d "$backup_dir" ]]; then
         local backup_kb=$(get_path_size_kb "$backup_dir")
         if [[ -n "${backup_kb:-}" && "$backup_kb" -gt 102400 ]]; then
-            local backup_human=$(command du -sh "$backup_dir" 2> /dev/null | awk '{print $1}')
+            local backup_human=$(command du -sh -- "$backup_dir" 2> /dev/null | awk '{print $1}')
             if [[ -n "$backup_human" ]]; then
                 note_activity
                 echo -e "  Found ${GREEN}${backup_human}${NC} iOS backups"

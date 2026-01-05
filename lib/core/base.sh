@@ -352,7 +352,7 @@ ensure_user_dir() {
             fi
         fi
 
-        chown "$owner_uid:$owner_gid" "$dir" 2> /dev/null || true
+        chown -- "$owner_uid:$owner_gid" "$dir" 2> /dev/null || true
 
         if [[ "$dir" == "$user_home" ]]; then
             break
@@ -376,7 +376,7 @@ ensure_user_file() {
     fi
 
     ensure_user_dir "$(dirname "$target_path")"
-    touch "$target_path" 2> /dev/null || true
+    touch -- "$target_path" 2> /dev/null || true
 
     if ! is_root_user; then
         return 0
@@ -406,7 +406,7 @@ ensure_user_file() {
     fi
 
     if [[ -n "$owner_uid" && -n "$owner_gid" ]]; then
-        chown "$owner_uid:$owner_gid" "$target_path" 2> /dev/null || true
+        chown -- "$owner_uid:$owner_gid" "$target_path" 2> /dev/null || true
     fi
 }
 
@@ -548,13 +548,13 @@ cleanup_temp_files() {
     local file
     if [[ ${#MOLE_TEMP_FILES[@]} -gt 0 ]]; then
         for file in "${MOLE_TEMP_FILES[@]}"; do
-            [[ -f "$file" ]] && rm -f "$file" 2> /dev/null || true
+            [[ -f "$file" ]] && rm -f -- "$file" 2> /dev/null || true
         done
     fi
 
     if [[ ${#MOLE_TEMP_DIRS[@]} -gt 0 ]]; then
         for file in "${MOLE_TEMP_DIRS[@]}"; do
-            [[ -d "$file" ]] && rm -rf "$file" 2> /dev/null || true # SAFE: cleanup_temp_files
+            [[ -d "$file" ]] && rm -rf -- "$file" 2> /dev/null || true # SAFE: cleanup_temp_files
         done
     fi
 

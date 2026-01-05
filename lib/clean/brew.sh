@@ -29,7 +29,7 @@ clean_homebrew() {
     local skip_cleanup=false
     local brew_cache_size=0
     if [[ -d ~/Library/Caches/Homebrew ]]; then
-        brew_cache_size=$(run_with_timeout 3 du -sk ~/Library/Caches/Homebrew 2> /dev/null | awk '{print $1}')
+        brew_cache_size=$(run_with_timeout 3 du -sk -- ~/Library/Caches/Homebrew 2> /dev/null | awk '{print $1}')
         local du_exit=$?
         if [[ $du_exit -eq 0 && -n "$brew_cache_size" && "$brew_cache_size" -lt 51200 ]]; then
             skip_cleanup=true

@@ -35,7 +35,7 @@ run_launchctl_unload() {
 
 needs_permissions_repair() {
     local owner
-    owner=$(stat -f %Su "$HOME" 2> /dev/null || echo "")
+    owner=$(stat -f %Su -- "$HOME" 2> /dev/null || echo "")
     if [[ -n "$owner" && "$owner" != "$USER" ]]; then
         return 0
     fi
@@ -248,7 +248,7 @@ opt_sqlite_vacuum() {
 
             should_protect_path "$db_file" && continue
 
-            if ! file "$db_file" 2> /dev/null | grep -q "SQLite"; then
+            if ! file -- "$db_file" 2> /dev/null | grep -q "SQLite"; then
                 continue
             fi
 
@@ -640,7 +640,7 @@ opt_dock_refresh() {
 
     local dock_plist="$HOME/Library/Preferences/com.apple.dock.plist"
     if [[ -f "$dock_plist" ]]; then
-        touch "$dock_plist" 2> /dev/null || true
+        touch -- "$dock_plist" 2> /dev/null || true
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then

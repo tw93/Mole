@@ -332,12 +332,12 @@ scan_applications() {
     else
         echo -ne "\r\033[K" >&2
     fi
-    rm -f "$progress_file"
+    rm -f -- "$progress_file"
 
     # Check if we found any applications
     if [[ ! -s "$temp_file" ]]; then
         echo "No applications found to uninstall" >&2
-        rm -f "$temp_file"
+        rm -f -- "$temp_file"
         return 1
     fi
 
@@ -352,10 +352,10 @@ scan_applications() {
     fi
 
     sort -t'|' -k1,1n "$temp_file" > "${temp_file}.sorted" || {
-        rm -f "$temp_file"
+        rm -f -- "$temp_file"
         return 1
     }
-    rm -f "$temp_file"
+    rm -f -- "$temp_file"
 
     # Clear processing message
     if [[ $total_apps -gt 50 ]]; then
@@ -368,7 +368,7 @@ scan_applications() {
 
     # Save to cache (simplified - no metadata)
     ensure_user_file "$cache_file"
-    cp "${temp_file}.sorted" "$cache_file" 2> /dev/null || true
+    cp -- "${temp_file}.sorted" "$cache_file" 2> /dev/null || true
 
     # Return sorted file
     if [[ -f "${temp_file}.sorted" ]]; then
@@ -514,7 +514,7 @@ main() {
                 unset MOLE_ALT_SCREEN_ACTIVE
                 unset MOLE_INLINE_LOADING MOLE_MANAGED_ALT_SCREEN
             fi
-            rm -f "$apps_file"
+            rm -f -- "$apps_file"
             return 1
         fi
 
@@ -533,7 +533,7 @@ main() {
             show_cursor
             clear_screen
             printf '\033[2J\033[H' >&2 # Also clear stderr
-            rm -f "$apps_file"
+            rm -f -- "$apps_file"
 
             # Handle Refresh (code 10)
             if [[ $exit_code -eq 10 ]]; then
@@ -559,7 +559,7 @@ main() {
         local selection_count=${#selected_apps[@]}
         if [[ $selection_count -eq 0 ]]; then
             echo "No apps selected"
-            rm -f "$apps_file"
+            rm -f -- "$apps_file"
             # Loop back or exit? If select_apps_for_uninstall returns 0 but empty selection,
             # it technically shouldn't happen based on that function's logic.
             continue
@@ -640,7 +640,7 @@ main() {
         batch_uninstall_applications
 
         # Cleanup current apps file
-        rm -f "$apps_file"
+        rm -f -- "$apps_file"
 
         # Pause before looping back
         echo -e "${GRAY}Press Enter to return to application list, ESC to exit...${NC}"

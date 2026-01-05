@@ -226,7 +226,7 @@ echo "Run this manually:"
 echo "    ${raw_cmd}"
 exit 1
 EOF
-    chmod +x "$target"
+    chmod +x -- "$target"
 }
 
 create_raycast_commands() {
