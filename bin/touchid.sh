@@ -61,7 +61,7 @@ show_status() {
 enable_touchid() {
     # Cleanup trap
     local temp_file=""
-    trap '[[ -n "${temp_file:-}" ]] && rm -f "${temp_file:-}"' EXIT
+    trap '[[ -n "${temp_file:-}" ]] && rm -f -- "${temp_file:-}"' EXIT
 
     # First check if system supports Touch ID
     if ! supports_touchid; then
@@ -82,7 +82,7 @@ enable_touchid() {
 
     # Create backup only if it doesn't exist to preserve original state
     if [[ ! -f "${PAM_SUDO_FILE}.mole-backup" ]]; then
-        if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
+        if ! sudo cp -- "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
             log_error "Failed to create backup"
             return 1
         fi
@@ -109,7 +109,7 @@ enable_touchid() {
     fi
 
     # Apply the changes
-    if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
+    if sudo mv -- "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
         log_success "Touch ID enabled - try: sudo ls"
         return 0
     else
@@ -122,7 +122,7 @@ enable_touchid() {
 disable_touchid() {
     # Cleanup trap
     local temp_file=""
-    trap '[[ -n "${temp_file:-}" ]] && rm -f "${temp_file:-}"' EXIT
+    trap '[[ -n "${temp_file:-}" ]] && rm -f -- "${temp_file:-}"' EXIT
 
     if ! is_touchid_configured; then
         echo -e "${YELLOW}Touch ID is not currently enabled${NC}"
@@ -131,7 +131,7 @@ disable_touchid() {
 
     # Create backup only if it doesn't exist
     if [[ ! -f "${PAM_SUDO_FILE}.mole-backup" ]]; then
-        if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
+        if ! sudo cp -- "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
             log_error "Failed to create backup"
             return 1
         fi
@@ -141,7 +141,7 @@ disable_touchid() {
     temp_file=$(mktemp)
     grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
 
-    if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
+    if sudo mv -- "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
         echo -e "${GREEN}${ICON_SUCCESS} Touch ID disabled${NC}"
         echo ""
         return 0

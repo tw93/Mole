@@ -274,11 +274,11 @@ scan_applications() {
     else
         echo -ne "\r\033[K" >&2
     fi
-    rm -f "$progress_file"
+    rm -f -- "$progress_file"
 
     if [[ ! -s "$temp_file" ]]; then
         echo "No applications found to uninstall" >&2
-        rm -f "$temp_file"
+        rm -f -- "$temp_file"
         return 1
     fi
 
@@ -291,10 +291,10 @@ scan_applications() {
     fi
 
     sort -t'|' -k1,1n "$temp_file" > "${temp_file}.sorted" || {
-        rm -f "$temp_file"
+        rm -f -- "$temp_file"
         return 1
     }
-    rm -f "$temp_file"
+    rm -f -- "$temp_file"
 
     if [[ $total_apps -gt 50 ]]; then
         if [[ $inline_loading == true ]]; then
@@ -305,7 +305,7 @@ scan_applications() {
     fi
 
     ensure_user_file "$cache_file"
-    cp "${temp_file}.sorted" "$cache_file" 2> /dev/null || true
+    cp -- "${temp_file}.sorted" "$cache_file" 2> /dev/null || true
 
     if [[ -f "${temp_file}.sorted" ]]; then
         echo "${temp_file}.sorted"
@@ -430,7 +430,7 @@ main() {
                 unset MOLE_ALT_SCREEN_ACTIVE
                 unset MOLE_INLINE_LOADING MOLE_MANAGED_ALT_SCREEN
             fi
-            rm -f "$apps_file"
+            rm -f -- "$apps_file"
             return 1
         fi
 
@@ -448,7 +448,7 @@ main() {
             show_cursor
             clear_screen
             printf '\033[2J\033[H' >&2
-            rm -f "$apps_file"
+            rm -f -- "$apps_file"
 
             if [[ $exit_code -eq 10 ]]; then
                 force_rescan=true
@@ -470,7 +470,7 @@ main() {
         local selection_count=${#selected_apps[@]}
         if [[ $selection_count -eq 0 ]]; then
             echo "No apps selected"
-            rm -f "$apps_file"
+            rm -f -- "$apps_file"
             continue
         fi
         echo -e "${BLUE}${ICON_CONFIRM}${NC} Selected ${selection_count} app(s):"
@@ -548,7 +548,7 @@ main() {
 
         batch_uninstall_applications
 
-        rm -f "$apps_file"
+        rm -f -- "$apps_file"
 
         echo -e "${GRAY}Press Enter to return to application list, any other key to exit...${NC}"
         local key

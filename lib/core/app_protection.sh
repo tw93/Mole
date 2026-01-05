@@ -719,13 +719,13 @@ find_app_files() {
         [[ -f ~/Library/Preferences/"$bundle_id".plist ]] && files_to_clean+=("$HOME/Library/Preferences/$bundle_id.plist")
         [[ -d ~/Library/Preferences/ByHost ]] && while IFS= read -r -d '' pref; do
             files_to_clean+=("$pref")
-        done < <(command find ~/Library/Preferences/ByHost -maxdepth 1 \( -name "$bundle_id*.plist" \) -print0 2> /dev/null)
+        done < <(command find -- ~/Library/Preferences/ByHost -maxdepth 1 \( -name "$bundle_id*.plist" \) -print0 2> /dev/null)
 
         # Group Containers (special handling)
         if [[ -d ~/Library/Group\ Containers ]]; then
             while IFS= read -r -d '' container; do
                 files_to_clean+=("$container")
-            done < <(command find ~/Library/Group\ Containers -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
+            done < <(command find -- ~/Library/Group\ Containers -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
         fi
     fi
 
@@ -733,7 +733,7 @@ find_app_files() {
     if [[ ${#app_name} -gt 3 ]] && [[ -d ~/Library/LaunchAgents ]]; then
         while IFS= read -r -d '' plist; do
             files_to_clean+=("$plist")
-        done < <(command find ~/Library/LaunchAgents -maxdepth 1 \( -name "*$app_name*.plist" \) -print0 2> /dev/null)
+        done < <(command find -- ~/Library/LaunchAgents -maxdepth 1 \( -name "*$app_name*.plist" \) -print0 2> /dev/null)
     fi
 
     # Handle specialized toolchains and development environments
@@ -749,7 +749,7 @@ find_app_files() {
         for d in ~/AndroidStudioProjects ~/Library/Android ~/.android ~/.gradle; do
             [[ -d "$d" ]] && files_to_clean+=("$d")
         done
-        [[ -d ~/Library/Application\ Support/Google ]] && while IFS= read -r -d '' d; do files_to_clean+=("$d"); done < <(command find ~/Library/Application\ Support/Google -maxdepth 1 -name "AndroidStudio*" -print0 2> /dev/null)
+        [[ -d ~/Library/Application\ Support/Google ]] && while IFS= read -r -d '' d; do files_to_clean+=("$d"); done < <(command find -- ~/Library/Application\ Support/Google -maxdepth 1 -name "AndroidStudio*" -print0 2> /dev/null)
     fi
 
     # 3. Xcode (Apple)
@@ -761,7 +761,7 @@ find_app_files() {
     # 4. JetBrains (IDE settings)
     if [[ "$bundle_id" =~ jetbrains ]] || [[ "$app_name" =~ IntelliJ|PyCharm|WebStorm|GoLand|RubyMine|PhpStorm|CLion|DataGrip|Rider ]]; then
         for base in ~/Library/Application\ Support/JetBrains ~/Library/Caches/JetBrains ~/Library/Logs/JetBrains; do
-            [[ -d "$base" ]] && while IFS= read -r -d '' d; do files_to_clean+=("$d"); done < <(command find "$base" -maxdepth 1 -name "${app_name}*" -print0 2> /dev/null)
+            [[ -d "$base" ]] && while IFS= read -r -d '' d; do files_to_clean+=("$d"); done < <(command find -- "$base" -maxdepth 1 -name "${app_name}*" -print0 2> /dev/null)
         done
     fi
 
@@ -843,7 +843,7 @@ find_app_system_files() {
         for base in /Library/LaunchAgents /Library/LaunchDaemons; do
             [[ -d "$base" ]] && while IFS= read -r -d '' plist; do
                 system_files+=("$plist")
-            done < <(command find "$base" -maxdepth 1 \( -name "*$app_name*.plist" \) -print0 2> /dev/null)
+            done < <(command find -- "$base" -maxdepth 1 \( -name "*$app_name*.plist" \) -print0 2> /dev/null)
         done
     fi
 
@@ -852,11 +852,11 @@ find_app_system_files() {
     if [[ -n "$bundle_id" && "$bundle_id" != "unknown" && ${#bundle_id} -gt 3 ]]; then
         [[ -d /Library/PrivilegedHelperTools ]] && while IFS= read -r -d '' helper; do
             system_files+=("$helper")
-        done < <(command find /Library/PrivilegedHelperTools -maxdepth 1 \( -name "$bundle_id*" \) -print0 2> /dev/null)
+        done < <(command find -- /Library/PrivilegedHelperTools -maxdepth 1 \( -name "$bundle_id*" \) -print0 2> /dev/null)
 
         [[ -d /private/var/db/receipts ]] && while IFS= read -r -d '' receipt; do
             system_files+=("$receipt")
-        done < <(command find /private/var/db/receipts -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
+        done < <(command find -- /private/var/db/receipts -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
     fi
 
     if [[ ${#system_files[@]} -gt 0 ]]; then

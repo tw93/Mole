@@ -408,7 +408,7 @@ has_full_disk_access() {
         if [[ -e "$test_path" ]]; then
             tested_count=$((tested_count + 1))
             # Try to stat the ACTUAL protected path - this requires FDA
-            if stat "$test_path" > /dev/null 2>&1; then
+            if stat -- "$test_path" > /dev/null 2>&1; then
                 accessible_count=$((accessible_count + 1))
             fi
         fi

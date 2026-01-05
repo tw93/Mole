@@ -40,7 +40,7 @@ rotate_log_once() {
 
     local max_size="$LOG_MAX_SIZE_DEFAULT"
     if [[ -f "$LOG_FILE" ]] && [[ $(get_file_size "$LOG_FILE") -gt "$max_size" ]]; then
-        mv "$LOG_FILE" "${LOG_FILE}.old" 2> /dev/null || true
+        mv -- "$LOG_FILE" "${LOG_FILE}.old" 2> /dev/null || true
         ensure_user_file "$LOG_FILE"
     fi
 }

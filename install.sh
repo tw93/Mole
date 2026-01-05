@@ -404,7 +404,7 @@ build_binary_from_source() {
 
     if (cd "$SOURCE_DIR" && go build -ldflags="-s -w" -o "$target_path" "./$cmd_dir" > /dev/null 2>&1); then
         if [[ -t 1 ]]; then stop_line_spinner; fi
-        chmod +x "$target_path"
+        chmod +x -- "$target_path"
         log_success "Built ${binary_name} from source"
         return 0
     fi
@@ -425,13 +425,13 @@ download_binary() {
     fi
 
     if [[ -f "$SOURCE_DIR/bin/${binary_name}-go" ]]; then
-        cp "$SOURCE_DIR/bin/${binary_name}-go" "$target_path"
-        chmod +x "$target_path"
+        cp -- "$SOURCE_DIR/bin/${binary_name}-go" "$target_path"
+        chmod +x -- "$target_path"
         log_success "Installed local ${binary_name} binary"
         return 0
     elif [[ -f "$SOURCE_DIR/bin/${binary_name}-darwin-${arch_suffix}" ]]; then
-        cp "$SOURCE_DIR/bin/${binary_name}-darwin-${arch_suffix}" "$target_path"
-        chmod +x "$target_path"
+        cp -- "$SOURCE_DIR/bin/${binary_name}-darwin-${arch_suffix}" "$target_path"
+        chmod +x -- "$target_path"
         log_success "Installed local ${binary_name} binary"
         return 0
     fi
@@ -463,7 +463,7 @@ download_binary() {
 
     if curl -fsSL --connect-timeout 10 --max-time 60 -o "$target_path" "$url"; then
         if [[ -t 1 ]]; then stop_line_spinner; fi
-        chmod +x "$target_path"
+        chmod +x -- "$target_path"
         log_success "Downloaded ${binary_name} binary"
     else
         if [[ -t 1 ]]; then stop_line_spinner; fi
@@ -495,9 +495,9 @@ install_files() {
             fi
 
             # Atomic update: copy to temporary name first, then move
-            maybe_sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new"
-            maybe_sudo chmod +x "$INSTALL_DIR/mole.new"
-            maybe_sudo mv -f "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"
+            maybe_sudo cp -- "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new"
+            maybe_sudo chmod +x -- "$INSTALL_DIR/mole.new"
+            maybe_sudo mv -f -- "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"
 
             log_success "Installed mole to $INSTALL_DIR"
         fi
@@ -510,9 +510,9 @@ install_files() {
         if [[ "$source_dir_abs" == "$install_dir_abs" ]]; then
             log_success "mo alias already present"
         else
-            maybe_sudo cp "$SOURCE_DIR/mo" "$INSTALL_DIR/mo.new"
-            maybe_sudo chmod +x "$INSTALL_DIR/mo.new"
-            maybe_sudo mv -f "$INSTALL_DIR/mo.new" "$INSTALL_DIR/mo"
+            maybe_sudo cp -- "$SOURCE_DIR/mo" "$INSTALL_DIR/mo.new"
+            maybe_sudo chmod +x -- "$INSTALL_DIR/mo.new"
+            maybe_sudo mv -f -- "$INSTALL_DIR/mo.new" "$INSTALL_DIR/mo"
             log_success "Installed mo alias"
         fi
     fi
@@ -525,9 +525,9 @@ install_files() {
         else
             local -a bin_files=("$SOURCE_DIR/bin"/*)
             if [[ ${#bin_files[@]} -gt 0 ]]; then
-                cp -r "${bin_files[@]}" "$CONFIG_DIR/bin/"
+                cp -r -- "${bin_files[@]}" "$CONFIG_DIR/bin/"
                 for file in "$CONFIG_DIR/bin/"*; do
-                    [[ -e "$file" ]] && chmod +x "$file"
+                    [[ -e "$file" ]] && chmod +x -- "$file"
                 done
                 log_success "Installed modules"
             fi
@@ -542,7 +542,7 @@ install_files() {
         else
             local -a lib_files=("$SOURCE_DIR/lib"/*)
             if [[ ${#lib_files[@]} -gt 0 ]]; then
-                cp -r "${lib_files[@]}" "$CONFIG_DIR/lib/"
+                cp -r -- "${lib_files[@]}" "$CONFIG_DIR/lib/"
                 log_success "Installed libraries"
             fi
         fi
@@ -551,13 +551,13 @@ install_files() {
     if [[ "$config_dir_abs" != "$source_dir_abs" ]]; then
         for file in README.md LICENSE install.sh; do
             if [[ -f "$SOURCE_DIR/$file" ]]; then
-                cp -f "$SOURCE_DIR/$file" "$CONFIG_DIR/"
+                cp -f -- "$SOURCE_DIR/$file" "$CONFIG_DIR/"
             fi
         done
     fi
 
     if [[ -f "$CONFIG_DIR/install.sh" ]]; then
-        chmod +x "$CONFIG_DIR/install.sh"
+        chmod +x -- "$CONFIG_DIR/install.sh"
     fi
 
     if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then

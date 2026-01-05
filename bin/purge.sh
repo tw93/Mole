@@ -84,13 +84,13 @@ perform_purge() {
 
     if [[ -f "$stats_dir/purge_stats" ]]; then
         total_size_cleaned=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo "0")
-        rm -f "$stats_dir/purge_stats"
+        rm -f -- "$stats_dir/purge_stats"
     fi
 
     # Read count
     if [[ -f "$stats_dir/purge_count" ]]; then
         total_items_cleaned=$(cat "$stats_dir/purge_count" 2> /dev/null || echo "0")
-        rm -f "$stats_dir/purge_count"
+        rm -f -- "$stats_dir/purge_count"
     fi
 
     if [[ $total_size_cleaned -gt 0 ]]; then

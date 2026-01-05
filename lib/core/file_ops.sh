@@ -135,7 +135,7 @@ safe_remove() {
     # Use || to capture the exit code so set -e won't abort on rm failures
     local error_msg
     local rm_exit=0
-    error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # safe_remove
+    error_msg=$(rm -rf -- "$path" 2>&1) || rm_exit=$? # safe_remove
 
     if [[ $rm_exit -eq 0 ]]; then
         return 0
@@ -211,7 +211,7 @@ safe_sudo_remove() {
     debug_log "Removing (sudo): $path"
 
     # Perform the deletion
-    if sudo rm -rf "$path" 2> /dev/null; then # SAFE: safe_sudo_remove implementation
+    if sudo rm -rf -- "$path" 2> /dev/null; then # SAFE: safe_sudo_remove implementation
         return 0
     else
         log_error "Failed to remove (sudo): $path"
@@ -262,7 +262,7 @@ safe_find_delete() {
             fi
         fi
         safe_remove "$match" true || true
-    done < <(command find "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
+    done < <(command find -- "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
 
     return 0
 }
@@ -275,12 +275,12 @@ safe_sudo_find_delete() {
     local type_filter="${4:-f}"
 
     # Validate base directory (use sudo for permission-restricted dirs)
-    if ! sudo test -d "$base_dir" 2> /dev/null; then
+    if ! sudo test -d -- "$base_dir" 2> /dev/null; then
         debug_log "Directory does not exist (skipping): $base_dir"
         return 0
     fi
 
-    if sudo test -L "$base_dir" 2> /dev/null; then
+    if sudo test -L -- "$base_dir" 2> /dev/null; then
         log_error "Refusing to search symlinked directory: $base_dir"
         return 1
     fi
@@ -306,7 +306,7 @@ safe_sudo_find_delete() {
             fi
         fi
         safe_sudo_remove "$match" || true
-    done < <(sudo find "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
+    done < <(sudo find -- "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
 
     return 0
 }
@@ -315,7 +315,6 @@ safe_sudo_find_delete() {
 # Size Calculation
 # ============================================================================
 
-# Get path size in KB (returns 0 if not found)
 get_path_size_kb() {
     local path="$1"
     [[ -z "$path" || ! -e "$path" ]] && {
@@ -326,7 +325,7 @@ get_path_size_kb() {
     # Use || echo 0 to ensure failure in du (e.g. permission error) doesn't exit script under set -e
     # Pipefail would normally cause the pipeline to fail if du fails, but || handle catches it.
     local size
-    size=$(command du -sk "$path" 2> /dev/null | awk 'NR==1 {print $1; exit}' || true)
+    size=$(command du -sk -- "$path" 2> /dev/null | awk 'NR==1 {print $1; exit}' || true)
 
     # Ensure size is a valid number (fix for non-numeric du output)
     if [[ "$size" =~ ^[0-9]+$ ]]; then

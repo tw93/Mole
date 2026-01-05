@@ -238,7 +238,7 @@ get_cleanup_path_size_kb() {
     if [[ -f "$path" && ! -L "$path" ]]; then
         if command -v stat > /dev/null 2>&1; then
             local bytes
-            bytes=$(stat -f%z "$path" 2> /dev/null || echo "0")
+            bytes=$(stat -f%z -- "$path" 2> /dev/null || echo "0")
             if [[ "$bytes" =~ ^[0-9]+$ && "$bytes" -gt 0 ]]; then
                 echo $(((bytes + 1023) / 1024))
                 return 0
@@ -249,7 +249,7 @@ get_cleanup_path_size_kb() {
     if [[ -L "$path" ]]; then
         if command -v stat > /dev/null 2>&1; then
             local bytes
-            bytes=$(stat -f%z "$path" 2> /dev/null || echo "0")
+            bytes=$(stat -f%z -- "$path" 2> /dev/null || echo "0")
             if [[ "$bytes" =~ ^[0-9]+$ && "$bytes" -gt 0 ]]; then
                 echo $(((bytes + 1023) / 1024))
             else
@@ -470,7 +470,7 @@ safe_clean() {
                         else
                             echo "0 0" > "$tmp_file"
                         fi
-                        mv "$tmp_file" "$temp_dir/result_${idx}" 2> /dev/null || true
+                        mv -- "$tmp_file" "$temp_dir/result_${idx}" 2> /dev/null || true
                     ) &
                     pids+=($!)
                     ((idx++))
@@ -509,7 +509,7 @@ safe_clean() {
                     local removed=0
                     if [[ "$DRY_RUN" != "true" ]]; then
                         if [[ -L "$path" ]]; then
-                            rm "$path" 2> /dev/null && removed=1
+                            rm -- "$path" 2> /dev/null && removed=1
                         else
                             if safe_remove "$path" true; then
                                 removed=1
@@ -546,7 +546,7 @@ safe_clean() {
                 local removed=0
                 if [[ "$DRY_RUN" != "true" ]]; then
                     if [[ -L "$path" ]]; then
-                        rm "$path" 2> /dev/null && removed=1
+                        rm -- "$path" 2> /dev/null && removed=1
                     else
                         if safe_remove "$path" true; then
                             removed=1
@@ -651,7 +651,7 @@ safe_clean() {
                     fi
                 done
 
-                rm -f "$paths_temp"
+                rm -f -- "$paths_temp"
             fi
         else
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($size_human)${NC}"

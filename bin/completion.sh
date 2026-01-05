@@ -74,12 +74,12 @@ if [[ $# -eq 0 ]]; then
     if [[ -z "$completion_name" ]]; then
         if [[ -f "$config_file" ]] && grep -Eq "(^# Mole shell completion$|(mole|mo)[[:space:]]+completion)" "$config_file" 2> /dev/null; then
             original_mode=""
-            original_mode="$(stat -f '%Mp%Lp' "$config_file" 2> /dev/null || true)"
+            original_mode="$(stat -f '%Mp%Lp' -- "$config_file" 2> /dev/null || true)"
             temp_file="$(mktemp)"
             grep -Ev "(^# Mole shell completion$|(mole|mo)[[:space:]]+completion)" "$config_file" > "$temp_file" || true
-            mv "$temp_file" "$config_file"
+            mv -- "$temp_file" "$config_file"
             if [[ -n "$original_mode" ]]; then
-                chmod "$original_mode" "$config_file" 2> /dev/null || true
+                chmod -- "$original_mode" "$config_file" 2> /dev/null || true
             fi
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Removed stale completion entries from $config_file"
             echo ""
@@ -91,12 +91,12 @@ if [[ $# -eq 0 ]]; then
     # Check if already installed and normalize to latest line
     if [[ -f "$config_file" ]] && grep -Eq "(mole|mo)[[:space:]]+completion" "$config_file" 2> /dev/null; then
         original_mode=""
-        original_mode="$(stat -f '%Mp%Lp' "$config_file" 2> /dev/null || true)"
+        original_mode="$(stat -f '%Mp%Lp' -- "$config_file" 2> /dev/null || true)"
         temp_file="$(mktemp)"
         grep -Ev "(^# Mole shell completion$|(mole|mo)[[:space:]]+completion)" "$config_file" > "$temp_file" || true
-        mv "$temp_file" "$config_file"
+        mv -- "$temp_file" "$config_file"
         if [[ -n "$original_mode" ]]; then
-            chmod "$original_mode" "$config_file" 2> /dev/null || true
+            chmod -- "$original_mode" "$config_file" 2> /dev/null || true
         fi
         {
             echo ""
@@ -134,18 +134,18 @@ if [[ $# -eq 0 ]]; then
     # Create config file if it doesn't exist
     if [[ ! -f "$config_file" ]]; then
         mkdir -p "$(dirname "$config_file")"
-        touch "$config_file"
+        touch -- "$config_file"
     fi
 
     # Remove previous Mole completion lines to avoid duplicates
     if [[ -f "$config_file" ]]; then
         original_mode=""
-        original_mode="$(stat -f '%Mp%Lp' "$config_file" 2> /dev/null || true)"
+        original_mode="$(stat -f '%Mp%Lp' -- "$config_file" 2> /dev/null || true)"
         temp_file="$(mktemp)"
         grep -Ev "(^# Mole shell completion$|(mole|mo)[[:space:]]+completion)" "$config_file" > "$temp_file" || true
-        mv "$temp_file" "$config_file"
+        mv -- "$temp_file" "$config_file"
         if [[ -n "$original_mode" ]]; then
-            chmod "$original_mode" "$config_file" 2> /dev/null || true
+            chmod -- "$original_mode" "$config_file" 2> /dev/null || true
         fi
     fi
 
