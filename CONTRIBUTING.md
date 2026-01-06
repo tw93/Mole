@@ -4,7 +4,7 @@
 
 ```bash
 # Install development tools
-brew install shfmt shellcheck bats-core
+brew install shfmt shellcheck bats-core golangci-lint
 ```
 
 ## Development
