@@ -24,6 +24,19 @@
 - **Disk insights**: Visualizes usage, manages large files, **rebuilds caches**, and refreshes system services
 - **Live monitoring**: Real-time stats for CPU, GPU, memory, disk, and network to **diagnose performance issues**
 
+## Platform Support
+
+Mole is designed for **macOS** users. If you're on Windows, check out [**WinMole**](https://github.com/bhadraagada/winmole) - a Windows adaptation that brings similar deep cleaning and optimization capabilities to Windows systems.
+
+**WinMole features:**
+- Deep system cleanup (temp files, caches, logs)
+- Smart app uninstaller with leftover detection
+- System optimization and service refresh
+- Developer artifact cleanup (node_modules, target, etc.)
+- Disk analysis and real-time monitoring tools
+
+Built with PowerShell and Go for native Windows performance.
+
 ## Quick Start
 
 **Install via Homebrew — recommended:**
