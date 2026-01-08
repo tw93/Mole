@@ -32,6 +32,12 @@
 brew install mole
 ```
 
+**Install via MacPorts:**
+
+```bash
+port install mole-cleaner
+```
+
 **Or via script:**
 
 ```bash
