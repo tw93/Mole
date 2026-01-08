@@ -68,13 +68,12 @@ func readBluetoothCTLDevices() ([]BluetoothDevice, error) {
 }
 
 func parseSPBluetooth(raw string) []BluetoothDevice {
-	lines := strings.Split(raw, "\n")
 	var devices []BluetoothDevice
 	var currentName string
 	var connected bool
 	var battery string
 
-	for _, line := range lines {
+	for line := range strings.Lines(raw) {
 		trim := strings.TrimSpace(line)
 		if len(trim) == 0 {
 			continue
@@ -112,10 +111,9 @@ func parseSPBluetooth(raw string) []BluetoothDevice {
 }
 
 func parseBluetoothctl(raw string) []BluetoothDevice {
-	lines := strings.Split(raw, "\n")
 	var devices []BluetoothDevice
 	current := BluetoothDevice{}
-	for _, line := range lines {
+	for line := range strings.Lines(raw) {
 		trim := strings.TrimSpace(line)
 		if strings.HasPrefix(trim, "Device ") {
 			if current.Name != "" {
@@ -123,8 +121,8 @@ func parseBluetoothctl(raw string) []BluetoothDevice {
 			}
 			current = BluetoothDevice{Name: strings.TrimPrefix(trim, "Device "), Connected: false}
 		}
-		if strings.HasPrefix(trim, "Name:") {
-			current.Name = strings.TrimSpace(strings.TrimPrefix(trim, "Name:"))
+		if after, ok := strings.CutPrefix(trim, "Name:"); ok {
+			current.Name = strings.TrimSpace(after)
 		}
 		if strings.HasPrefix(trim, "Connected:") {
 			current.Connected = strings.Contains(trim, "yes")

@@ -93,15 +93,12 @@ func humanizeBytes(size int64) string {
 	return fmt.Sprintf("%.1f %cB", value, "KMGTPE"[exp])
 }
 
-func coloredProgressBar(value, max int64, percent float64) string {
-	if max <= 0 {
+func coloredProgressBar(value, maxValue int64, percent float64) string {
+	if maxValue <= 0 {
 		return colorGray + strings.Repeat("░", barWidth) + colorReset
 	}
 
-	filled := int((value * int64(barWidth)) / max)
-	if filled > barWidth {
-		filled = barWidth
-	}
+	filled := min(int((value*int64(barWidth))/maxValue), barWidth)
 
 	var barColor string
 	if percent >= 50 {
@@ -114,26 +111,27 @@ func coloredProgressBar(value, max int64, percent float64) string {
 		barColor = colorGreen
 	}
 
-	bar := barColor
-	for i := 0; i < barWidth; i++ {
+	var bar strings.Builder
+	bar.WriteString(barColor)
+	for i := range barWidth {
 		if i < filled {
 			if i < filled-1 {
-				bar += "█"
+				bar.WriteString("█")
 			} else {
-				remainder := (value * int64(barWidth)) % max
-				if remainder > max/2 {
-					bar += "█"
-				} else if remainder > max/4 {
-					bar += "▓"
+				remainder := (value * int64(barWidth)) % maxValue
+				if remainder > maxValue/2 {
+					bar.WriteString("█")
+				} else if remainder > maxValue/4 {
+					bar.WriteString("▓")
 				} else {
-					bar += "▒"
+					bar.WriteString("▒")
 				}
 			}
 		} else {
-			bar += colorGray + "░" + barColor
+			bar.WriteString(colorGray + "░" + barColor)
 		}
 	}
-	return bar + colorReset
+	return bar.String() + colorReset
 }
 
 // runeWidth returns display width for wide characters and emoji.
@@ -179,10 +177,6 @@ func calculateNameWidth(termWidth int) int {
 		return 60
 	}
 	return available
-}
-
-func trimName(name string) string {
-	return trimNameWithWidth(name, 45) // Default width for backward compatibility
 }
 
 func trimNameWithWidth(name string, maxWidth int) string {

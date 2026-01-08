@@ -148,7 +148,7 @@ func main() {
 	go prefetchOverviewCache(prefetchCtx)
 
 	p := tea.NewProgram(newModel(abs, isOverview), tea.WithAltScreen())
-	if err := p.Start(); err != nil {
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "analyzer error: %v\n", err)
 		os.Exit(1)
 	}
@@ -359,7 +359,7 @@ func (m model) scanCmd(path string) tea.Cmd {
 			return scanResultMsg{result: result, err: nil}
 		}
 
-		v, err, _ := scanGroup.Do(path, func() (interface{}, error) {
+		v, err, _ := scanGroup.Do(path, func() (any, error) {
 			return scanPathConcurrent(path, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath)
 		})
 
@@ -997,10 +997,7 @@ func (m *model) clampEntrySelection() {
 		m.selected = 0
 	}
 	viewport := calculateViewport(m.height, false)
-	maxOffset := len(m.entries) - viewport
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
+	maxOffset := max(len(m.entries)-viewport, 0)
 	if m.offset > maxOffset {
 		m.offset = maxOffset
 	}
@@ -1025,10 +1022,7 @@ func (m *model) clampLargeSelection() {
 		m.largeSelected = 0
 	}
 	viewport := calculateViewport(m.height, true)
-	maxOffset := len(m.largeFiles) - viewport
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
+	maxOffset := max(len(m.largeFiles)-viewport, 0)
 	if m.largeOffset > maxOffset {
 		m.largeOffset = maxOffset
 	}

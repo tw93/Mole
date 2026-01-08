@@ -85,7 +85,8 @@ Xcode archives (built app packages)|$HOME/Library/Developer/Xcode/Archives/*|ide
 Xcode internal cache files|$HOME/Library/Caches/com.apple.dt.Xcode/*|ide_cache
 Xcode iOS device support symbols|$HOME/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*|ide_cache
 Maven local repository (Java dependencies)|$HOME/.m2/repository/*|ide_cache
-JetBrains IDEs cache (IntelliJ, PyCharm, WebStorm)|$HOME/Library/Caches/JetBrains/*|ide_cache
+JetBrains IDEs data (IntelliJ, PyCharm, WebStorm, GoLand)|$HOME/Library/Application Support/JetBrains/*|ide_cache
+JetBrains IDEs cache|$HOME/Library/Caches/JetBrains/*|ide_cache
 Android Studio cache and indexes|$HOME/Library/Caches/Google/AndroidStudio*/*|ide_cache
 Android build cache|$HOME/.android/build-cache/*|ide_cache
 VS Code runtime cache|$HOME/Library/Application Support/Code/Cache/*|ide_cache

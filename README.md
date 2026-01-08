@@ -70,14 +70,11 @@ mo purge --paths             # Configure project scan directories
 
 ## Tips
 
-- **Terminal**: For best results, use Alacritty, kitty, WezTerm, Ghostty, or Warp. iTerm2 may have compatibility issues.
-- **Safety**: Built with strict protections. See our [Security Audit](SECURITY_AUDIT.md). Preview changes with `mo clean --dry-run`.
-- **Whitelist**: Manage protected paths with `mo clean --whitelist`.
-- **Touch ID**: Enable Touch ID for sudo commands by running `mo touchid`.
-- **Shell Completion**: Enable tab completion by running `mo completion` — auto-detects your shell.
-- **Navigation**: Supports standard arrow keys and Vim bindings (`h/j/k/l`).
-- **Debug**: View detailed logs by appending the `--debug` flag, like `mo clean --debug`.
-- **Detailed Preview**: Combine `--dry-run --debug` for comprehensive operation details including risk levels, file paths, sizes, and expected outcomes. Check `~/.config/mole/mole_debug_session.log` for full details.
+- **Terminal**: iTerm2 has known compatibility issues; we recommend Alacritty, kitty, WezTerm, Ghostty, or Warp.
+- **Safety**: Built with strict protections. See [Security Audit](SECURITY_AUDIT.md). Preview changes with `mo clean --dry-run`.
+- **Debug Mode**: Use `--debug` for detailed logs (e.g., `mo clean --debug`). Combine with `--dry-run` for comprehensive preview including risk levels and file details.
+- **Navigation**: Supports arrow keys and Vim bindings (`h/j/k/l`).
+- **Configuration**: Run `mo touchid` for Touch ID sudo, `mo completion` for shell tab completion, `mo clean --whitelist` to manage protected paths.
 
 ## Features in Detail
 
@@ -188,7 +185,7 @@ Up      ▮▯▯▯▯  0.8 MB/s                  Chrome     ▮▮▮▯▯  2
 Proxy   HTTP · 192.168.1.100             Terminal   ▮▯▯▯▯  12.5%
 ```
 
-Health score is based on CPU, memory, disk, temperature, and I/O load, color-coded by severity.
+Health score based on CPU, memory, disk, temperature, and I/O load. Color-coded by range. Press `k` to hide/show cat, `q` to quit.
 
 ### Project Artifact Purge
 

@@ -156,7 +156,7 @@ func isExternalDisk(device string) (bool, error) {
 		found    bool
 		external bool
 	)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.Lines(out) {
 		trim := strings.TrimSpace(line)
 		if strings.HasPrefix(trim, "Internal:") {
 			found = true

@@ -39,10 +39,7 @@ func scanPathConcurrent(root string, filesScanned, dirsScanned, bytesScanned *in
 	heap.Init(largeFilesHeap)
 
 	// Worker pool sized for I/O-bound scanning.
-	numWorkers := runtime.NumCPU() * cpuMultiplier
-	if numWorkers < minWorkers {
-		numWorkers = minWorkers
-	}
+	numWorkers := max(runtime.NumCPU()*cpuMultiplier, minWorkers)
 	if numWorkers > maxWorkers {
 		numWorkers = maxWorkers
 	}
@@ -289,10 +286,7 @@ func calculateDirSizeFast(root string, filesScanned, dirsScanned, bytesScanned *
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	concurrency := runtime.NumCPU() * 4
-	if concurrency > 64 {
-		concurrency = 64
-	}
+	concurrency := min(runtime.NumCPU()*4, 64)
 	sem := make(chan struct{}, concurrency)
 
 	var walk func(string)
@@ -363,10 +357,9 @@ func findLargeFilesWithSpotlight(root string, minSize int64) []fileEntry {
 		return nil
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var files []fileEntry
 
-	for _, line := range lines {
+	for line := range strings.Lines(strings.TrimSpace(string(output))) {
 		if line == "" {
 			continue
 		}
@@ -413,8 +406,8 @@ func findLargeFilesWithSpotlight(root string, minSize int64) []fileEntry {
 
 // isInFoldedDir checks if a path is inside a folded directory.
 func isInFoldedDir(path string) bool {
-	parts := strings.Split(path, string(os.PathSeparator))
-	for _, part := range parts {
+	parts := strings.SplitSeq(path, string(os.PathSeparator))
+	for part := range parts {
 		if foldDirs[part] {
 			return true
 		}
@@ -432,10 +425,7 @@ func calculateDirSizeConcurrent(root string, largeFileChan chan<- fileEntry, fil
 	var wg sync.WaitGroup
 
 	// Limit concurrent subdirectory scans.
-	maxConcurrent := runtime.NumCPU() * 2
-	if maxConcurrent > maxDirWorkers {
-		maxConcurrent = maxDirWorkers
-	}
+	maxConcurrent := min(runtime.NumCPU()*2, maxDirWorkers)
 	sem := make(chan struct{}, maxConcurrent)
 
 	for _, child := range children {

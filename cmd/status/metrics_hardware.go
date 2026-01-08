@@ -28,8 +28,7 @@ func collectHardware(totalRAM uint64, disks []DiskStatus) HardwareInfo {
 
 	out, err := runCmd(ctx, "system_profiler", "SPHardwareDataType")
 	if err == nil {
-		lines := strings.Split(out, "\n")
-		for _, line := range lines {
+		for line := range strings.Lines(out) {
 			lower := strings.ToLower(strings.TrimSpace(line))
 			// Prefer "Model Name" over "Model Identifier".
 			if strings.Contains(lower, "model name:") {
@@ -85,10 +84,9 @@ func collectHardware(totalRAM uint64, disks []DiskStatus) HardwareInfo {
 
 // parseRefreshRate extracts the highest refresh rate from system_profiler display output.
 func parseRefreshRate(output string) string {
-	lines := strings.Split(output, "\n")
 	maxHz := 0
 
-	for _, line := range lines {
+	for line := range strings.Lines(output) {
 		lower := strings.ToLower(line)
 		// Look for patterns like "@ 60Hz", "@ 60.00Hz", or "Refresh Rate: 120 Hz".
 		if strings.Contains(lower, "hz") {
@@ -100,8 +98,7 @@ func parseRefreshRate(output string) string {
 					}
 					continue
 				}
-				if strings.HasSuffix(field, "hz") {
-					numStr := strings.TrimSuffix(field, "hz")
+				if numStr, ok := strings.CutSuffix(field, "hz"); ok {
 					if numStr == "" && i > 0 {
 						numStr = fields[i-1]
 					}

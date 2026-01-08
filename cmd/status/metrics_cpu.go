@@ -119,7 +119,10 @@ func getCoreTopology() (pCores, eCores int) {
 		return 0, 0
 	}
 
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var lines []string
+	for line := range strings.Lines(strings.TrimSpace(out)) {
+		lines = append(lines, line)
+	}
 	if len(lines) < 4 {
 		return 0, 0
 	}

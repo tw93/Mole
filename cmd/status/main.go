@@ -34,11 +34,13 @@ type model struct {
 	lastUpdated time.Time
 	collecting  bool
 	animFrame   int
+	catHidden   bool // true = hidden, false = visible
 }
 
 func newModel() model {
 	return model{
 		collector: NewCollector(),
+		catHidden: false,
 	}
 }
 
@@ -52,6 +54,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
+		case "k":
+			// Toggle cat visibility
+			m.catHidden = !m.catHidden
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -89,7 +95,7 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
-	header := renderHeader(m.metrics, m.errMessage, m.animFrame, m.width)
+	header := renderHeader(m.metrics, m.errMessage, m.animFrame, m.width, m.catHidden)
 	cardWidth := 0
 	if m.width > 80 {
 		cardWidth = maxInt(24, m.width/2-4)
@@ -104,10 +110,20 @@ func (m model) View() string {
 			}
 			rendered = append(rendered, renderCard(c, cardWidth, 0))
 		}
-		return header + "\n" + lipgloss.JoinVertical(lipgloss.Left, rendered...)
+		result := header + "\n" + lipgloss.JoinVertical(lipgloss.Left, rendered...)
+		// Add extra newline if cat is hidden for better spacing
+		if m.catHidden {
+			result = header + "\n\n" + lipgloss.JoinVertical(lipgloss.Left, rendered...)
+		}
+		return result
 	}
 
-	return header + "\n" + renderTwoColumns(cards, m.width)
+	twoCol := renderTwoColumns(cards, m.width)
+	// Add extra newline if cat is hidden for better spacing
+	if m.catHidden {
+		return header + "\n\n" + twoCol
+	}
+	return header + "\n" + twoCol
 }
 
 func (m model) collectCmd() tea.Cmd {
@@ -127,16 +143,13 @@ func animTick() tea.Cmd {
 
 func animTickWithSpeed(cpuUsage float64) tea.Cmd {
 	// Higher CPU = faster animation.
-	interval := 300 - int(cpuUsage*2.5)
-	if interval < 50 {
-		interval = 50
-	}
+	interval := max(300-int(cpuUsage*2.5), 50)
 	return tea.Tick(time.Duration(interval)*time.Millisecond, func(time.Time) tea.Msg { return animTickMsg{} })
 }
 
 func main() {
 	p := tea.NewProgram(newModel(), tea.WithAltScreen())
-	if err := p.Start(); err != nil {
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "system status error: %v\n", err)
 		os.Exit(1)
 	}

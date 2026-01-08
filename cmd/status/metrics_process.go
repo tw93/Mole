@@ -21,15 +21,17 @@ func collectTopProcesses() []ProcessInfo {
 		return nil
 	}
 
-	lines := strings.Split(strings.TrimSpace(out), "\n")
 	var procs []ProcessInfo
-	for i, line := range lines {
+	i := 0
+	for line := range strings.Lines(strings.TrimSpace(out)) {
 		if i == 0 {
+			i++
 			continue
 		}
 		if i > 5 {
 			break
 		}
+		i++
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue

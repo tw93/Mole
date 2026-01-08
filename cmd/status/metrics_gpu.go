@@ -61,9 +61,8 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 		return nil, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(out), "\n")
 	var gpus []GPUStatus
-	for _, line := range lines {
+	for line := range strings.Lines(strings.TrimSpace(out)) {
 		fields := strings.Split(line, ",")
 		if len(fields) < 4 {
 			continue

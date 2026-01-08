@@ -46,22 +46,22 @@ func getFileBackedMemory() uint64 {
 
 	// Parse page size from first line: "Mach Virtual Memory Statistics: (page size of 16384 bytes)"
 	var pageSize uint64 = 4096 // Default
-	lines := strings.Split(out, "\n")
-	if len(lines) > 0 {
-		firstLine := lines[0]
-		if strings.Contains(firstLine, "page size of") {
-			if _, after, found := strings.Cut(firstLine, "page size of "); found {
-				if before, _, found := strings.Cut(after, " bytes"); found {
-					if size, err := strconv.ParseUint(strings.TrimSpace(before), 10, 64); err == nil {
-						pageSize = size
+	firstLine := true
+	for line := range strings.Lines(out) {
+		if firstLine {
+			firstLine = false
+			if strings.Contains(line, "page size of") {
+				if _, after, found := strings.Cut(line, "page size of "); found {
+					if before, _, found := strings.Cut(after, " bytes"); found {
+						if size, err := strconv.ParseUint(strings.TrimSpace(before), 10, 64); err == nil {
+							pageSize = size
+						}
 					}
 				}
 			}
 		}
-	}
 
-	// Parse "File-backed pages: 388975."
-	for _, line := range lines {
+		// Parse "File-backed pages: 388975."
 		if strings.Contains(line, "File-backed pages:") {
 			if _, after, found := strings.Cut(line, ":"); found {
 				numStr := strings.TrimSpace(after)

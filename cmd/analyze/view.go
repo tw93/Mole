@@ -100,14 +100,8 @@ func (m model) View() string {
 			fmt.Fprintln(&b, "  No large files found (>=100MB)")
 		} else {
 			viewport := calculateViewport(m.height, true)
-			start := m.largeOffset
-			if start < 0 {
-				start = 0
-			}
-			end := start + viewport
-			if end > len(m.largeFiles) {
-				end = len(m.largeFiles)
-			}
+			start := max(m.largeOffset, 0)
+			end := min(start+viewport, len(m.largeFiles))
 			maxLargeSize := int64(1)
 			for _, file := range m.largeFiles {
 				if file.Size > maxLargeSize {
@@ -163,10 +157,7 @@ func (m model) View() string {
 				for idx, entry := range m.entries {
 					icon := "📁"
 					sizeVal := entry.Size
-					barValue := sizeVal
-					if barValue < 0 {
-						barValue = 0
-					}
+					barValue := max(sizeVal, 0)
 					var percent float64
 					if totalSize > 0 && sizeVal >= 0 {
 						percent = float64(sizeVal) / float64(totalSize) * 100
@@ -243,14 +234,8 @@ func (m model) View() string {
 
 				viewport := calculateViewport(m.height, false)
 				nameWidth := calculateNameWidth(m.width)
-				start := m.offset
-				if start < 0 {
-					start = 0
-				}
-				end := start + viewport
-				if end > len(m.entries) {
-					end = len(m.entries)
-				}
+				start := max(m.offset, 0)
+				end := min(start+viewport, len(m.entries))
 
 				for idx := start; idx < end; idx++ {
 					entry := m.entries[idx]
