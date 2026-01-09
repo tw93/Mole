@@ -36,6 +36,10 @@ readonly PURGE_TARGETS=(
     ".dart_tool"    # Flutter/Dart build cache
     ".zig-cache"    # Zig
     "zig-out"       # Zig
+    ".angular"      # Angular
+    ".svelte-kit"   # SvelteKit
+    ".astro"        # Astro
+    "coverage"      # Code coverage reports
 )
 # Minimum age in days before considering for cleanup.
 readonly MIN_AGE_DAYS=7
