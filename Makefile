@@ -1,6 +1,6 @@
 # Makefile for Mole
 
-.PHONY: all build clean release
+.PHONY: all build clean release menubar-lib menubar-app
 
 # Output directory
 BIN_DIR := bin
@@ -8,10 +8,12 @@ BIN_DIR := bin
 # Binaries
 ANALYZE := analyze
 STATUS := status
+MENUBAR_LIB := libmolemetrics
 
 # Source directories
 ANALYZE_SRC := ./cmd/analyze
 STATUS_SRC := ./cmd/status
+MENUBAR_SRC := ./cmd/menubar
 
 # Build flags
 LDFLAGS := -s -w
@@ -38,3 +40,14 @@ release-arm64:
 clean:
 	@echo "Cleaning binaries..."
 	rm -f $(BIN_DIR)/$(ANALYZE)-* $(BIN_DIR)/$(STATUS)-* $(BIN_DIR)/$(ANALYZE)-go $(BIN_DIR)/$(STATUS)-go
+	rm -f $(BIN_DIR)/$(MENUBAR_LIB).dylib $(BIN_DIR)/$(MENUBAR_LIB).h
+
+# Menu bar app targets
+menubar-lib:
+	@echo "Building shared library for menu bar app..."
+	go build -buildmode=c-shared -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/$(MENUBAR_LIB).dylib $(MENUBAR_SRC)
+	@echo "Library built: $(BIN_DIR)/$(MENUBAR_LIB).dylib"
+
+menubar-app: menubar-lib
+	@echo "Building menu bar app..."
+	bash scripts/build-menubar.sh

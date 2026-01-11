@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/tw93/mole/pkg/metrics"
 )
 
 var (
@@ -130,7 +131,7 @@ type cardData struct {
 	lines []string
 }
 
-func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int, catHidden bool) string {
+func renderHeader(m metrics.MetricsSnapshot, errMsg string, animFrame int, termWidth int, catHidden bool) string {
 	title := titleStyle.Render("Mole Status")
 
 	scoreStyle := getScoreStyle(m.HealthScore)
@@ -201,7 +202,7 @@ func getScoreStyle(score int) lipgloss.Style {
 	}
 }
 
-func buildCards(m MetricsSnapshot, _ int) []cardData {
+func buildCards(m metrics.MetricsSnapshot, _ int) []cardData {
 	cards := []cardData{
 		renderCPUCard(m.CPU),
 		renderMemoryCard(m.Memory),
@@ -216,7 +217,7 @@ func buildCards(m MetricsSnapshot, _ int) []cardData {
 	return cards
 }
 
-func hasSensorData(sensors []SensorReading) bool {
+func hasSensorData(sensors []metrics.SensorReading) bool {
 	for _, s := range sensors {
 		if s.Note == "" && s.Value > 0 {
 			return true
@@ -225,7 +226,7 @@ func hasSensorData(sensors []SensorReading) bool {
 	return false
 }
 
-func renderCPUCard(cpu CPUStatus) cardData {
+func renderCPUCard(cpu metrics.CPUStatus) cardData {
 	var lines []string
 	lines = append(lines, fmt.Sprintf("Total  %s  %5.1f%%", progressBar(cpu.Usage), cpu.Usage))
 
@@ -261,7 +262,7 @@ func renderCPUCard(cpu CPUStatus) cardData {
 	return cardData{icon: iconCPU, title: "CPU", lines: lines}
 }
 
-func renderMemoryCard(mem MemoryStatus) cardData {
+func renderMemoryCard(mem metrics.MemoryStatus) cardData {
 	// Check if swap is being used (or at least allocated).
 	hasSwap := mem.SwapTotal > 0 || mem.SwapUsed > 0
 
@@ -320,13 +321,13 @@ func renderMemoryCard(mem MemoryStatus) cardData {
 	return cardData{icon: iconMemory, title: "Memory", lines: lines}
 }
 
-func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
+func renderDiskCard(disks []metrics.DiskStatus, io metrics.DiskIOStatus) cardData {
 	var lines []string
 	if len(disks) == 0 {
 		lines = append(lines, subtleStyle.Render("Collecting..."))
 	} else {
 		internal, external := splitDisks(disks)
-		addGroup := func(prefix string, list []DiskStatus) {
+		addGroup := func(prefix string, list []metrics.DiskStatus) {
 			if len(list) == 0 {
 				return
 			}
@@ -348,7 +349,7 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
 	return cardData{icon: iconDisk, title: "Disk", lines: lines}
 }
 
-func splitDisks(disks []DiskStatus) (internal, external []DiskStatus) {
+func splitDisks(disks []metrics.DiskStatus) (internal, external []metrics.DiskStatus) {
 	for _, d := range disks {
 		if d.External {
 			external = append(external, d)
@@ -366,7 +367,7 @@ func diskLabel(prefix string, index int, total int) string {
 	return fmt.Sprintf("%s%d", prefix, index+1)
 }
 
-func formatDiskLine(label string, d DiskStatus) string {
+func formatDiskLine(label string, d metrics.DiskStatus) string {
 	if label == "" {
 		label = "DISK"
 	}
@@ -391,7 +392,7 @@ func ioBar(rate float64) string {
 	return okStyle.Render(bar)
 }
 
-func renderProcessCard(procs []ProcessInfo) cardData {
+func renderProcessCard(procs []metrics.ProcessInfo) cardData {
 	var lines []string
 	maxProcs := 3
 	for i, p := range procs {
@@ -416,7 +417,7 @@ func miniBar(percent float64) string {
 	return colorizePercent(percent, strings.Repeat("▮", filled)+strings.Repeat("▯", 5-filled))
 }
 
-func renderNetworkCard(netStats []NetworkStatus, proxy ProxyStatus) cardData {
+func renderNetworkCard(netStats []metrics.NetworkStatus, proxy metrics.ProxyStatus) cardData {
 	var lines []string
 	var totalRx, totalTx float64
 	var primaryIP string
@@ -466,7 +467,7 @@ func netBar(rate float64) string {
 	return okStyle.Render(bar)
 }
 
-func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
+func renderBatteryCard(batts []metrics.BatteryStatus, thermal metrics.ThermalStatus) cardData {
 	var lines []string
 	if len(batts) == 0 {
 		lines = append(lines, subtleStyle.Render("No battery"))
@@ -548,7 +549,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 	return cardData{icon: iconBattery, title: "Power", lines: lines}
 }
 
-func renderSensorsCard(sensors []SensorReading) cardData {
+func renderSensorsCard(sensors []metrics.SensorReading) cardData {
 	var lines []string
 	for _, s := range sensors {
 		if s.Note != "" {

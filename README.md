@@ -23,6 +23,7 @@
 - **Smart uninstaller**: Thoroughly removes apps along with launch agents, preferences, and **hidden remnants**
 - **Disk insights**: Visualizes usage, manages large files, **rebuilds caches**, and refreshes system services
 - **Live monitoring**: Real-time stats for CPU, GPU, memory, disk, and network to **diagnose performance issues**
+- **Menu bar app**: Native macOS menu bar application for continuous system monitoring with **Quick Actions** and **launch at login**
 
 ## Platform Support
 
@@ -192,6 +193,31 @@ Proxy   HTTP · 192.168.1.100             Terminal   ▮▯▯▯▯  12.5%
 ```
 
 Health score based on CPU, memory, disk, temperature, and I/O load. Color-coded by range.
+
+### Menu Bar App (macOS)
+
+Live system monitoring in your menu bar - like iStat Menus, powered by Mole's metrics.
+
+```bash
+# Build the menu bar app
+make menubar-app
+
+# Or use the build script
+bash scripts/build-menubar.sh
+
+# Launch from Applications
+open menubar-app/build/MoleMenuBar.app
+```
+
+**Features:**
+- **Real-time CPU percentage** in menu bar (🔍 45%)
+- **Click to see all metrics** - CPU, memory, disk, network, battery, thermal, processes
+- **Health score indicator** with status message
+- **Quick Actions** - Run `mo clean`, `mo optimize`, `mo analyze` from menu
+- **Auto-refresh** every 2 seconds
+- **Launch at login** option in Preferences
+
+The app uses a hybrid Swift + Go architecture, sharing the same metrics collection code as `mo status`. See [menubar-app/README.md](menubar-app/README.md) for details.
 
 ### Project Artifact Purge
 

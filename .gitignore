@@ -68,3 +68,6 @@ tests/*.log
 
 session.json
 run_tests.ps1
+menubar-app/build/
+menubar-app/test_dylib
+menubar-app/test_dylib.c
