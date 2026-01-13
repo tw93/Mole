@@ -22,6 +22,7 @@ source "$SCRIPT_DIR/../lib/clean/user.sh"
 
 SYSTEM_CLEAN=false
 DRY_RUN=false
+JSON_OUTPUT=false
 PROTECT_FINDER_METADATA=false
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
@@ -32,6 +33,10 @@ readonly PROTECTED_SW_DOMAINS=(
     "photopea.com"
     "pixlr.com"
 )
+
+# JSON data structures
+declare -a JSON_CLEANUP_ITEMS=()
+JSON_START_TIME=$(date +%s)
 
 declare -a WHITELIST_PATTERNS=()
 WHITELIST_WARNINGS=()
@@ -161,14 +166,17 @@ start_section() {
     TRACK_SECTION=1
     SECTION_ACTIVITY=0
     CURRENT_SECTION="$1"
-    echo ""
-    echo -e "${PURPLE_BOLD}${ICON_ARROW} $1${NC}"
+    
+    if [[ "$JSON_OUTPUT" != "true" ]]; then
+        echo ""
+        echo -e "${PURPLE_BOLD}${ICON_ARROW} $1${NC}"
+    fi
 
-    if [[ -t 1 ]]; then
+    if [[ -t 1 && "$JSON_OUTPUT" != "true" ]]; then
         MOLE_SPINNER_PREFIX="  " start_inline_spinner "Preparing..."
     fi
 
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [[ "$DRY_RUN" == "true" && "$JSON_OUTPUT" != "true" ]]; then
         ensure_user_file "$EXPORT_LIST_FILE"
         echo "" >> "$EXPORT_LIST_FILE"
         echo "=== $1 ===" >> "$EXPORT_LIST_FILE"
@@ -178,10 +186,139 @@ start_section() {
 end_section() {
     stop_section_spinner
 
-    if [[ "${TRACK_SECTION:-0}" == "1" && "${SECTION_ACTIVITY:-0}" == "0" ]]; then
+    if [[ "$JSON_OUTPUT" != "true" && "${TRACK_SECTION:-0}" == "1" && "${SECTION_ACTIVITY:-0}" == "0" ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Nothing to clean"
     fi
     TRACK_SECTION=0
+}
+
+# JSON helper functions
+json_escape() {
+    local string="$1"
+    # Escape backslashes, quotes, and control characters
+    string="${string//\\/\\\\}"
+    string="${string//\"/\\\"}"
+    string="${string//$'\t'/\\t}"
+    string="${string//$'\n'/\\n}"
+    string="${string//$'\r'/\\r}"
+    echo -n "$string"
+}
+
+json_array() {
+    local -a items=("$@")
+    local result="["
+    local first=true
+    
+    for item in "${items[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            result+=","
+        fi
+        result+="\"$(json_escape "$item")\""
+    done
+    result+="]"
+    echo -n "$result"
+}
+
+add_json_item() {
+    local description="$1"
+    local size_kb="$2"
+    local count="$3"
+    local category="$4"
+    local paths="$5"
+    local status="$6"
+    
+    local escaped_desc=$(json_escape "$description")
+    local escaped_category=$(json_escape "$category")
+    local size_human=$(bytes_to_human "$((size_kb * 1024))")
+    local escaped_size_human=$(json_escape "$size_human")
+    local timestamp=$(date '+%Y-%m-%dT%H:%M:%S%z')
+    
+    JSON_CLEANUP_ITEMS+=("$(cat <<EOF
+    {
+      "description": "$escaped_desc",
+      "size_kb": $size_kb,
+      "size_human": "$escaped_size_human",
+      "count": $count,
+      "category": "$escaped_category",
+      "paths": $paths,
+      "status": "$status",
+      "timestamp": "$timestamp"
+    }
+EOF
+    )")
+}
+
+generate_json_output() {
+    local end_time=$(date +%s)
+    local duration=$((end_time - JSON_START_TIME))
+    
+    local freed_gb=$(echo "$total_size_cleaned" | awk '{printf "%.2f", $1/1024/1024}')
+    local size_human=$(bytes_to_human "$((total_size_cleaned * 1024))")
+    local escaped_size_human=$(json_escape "$size_human")
+    local free_space_before=$(get_free_space)
+    local escaped_free_space_before=$(json_escape "$free_space_before")
+    local free_space_after=$(get_free_space)
+    local escaped_free_space_after=$(json_escape "$free_space_after")
+    local timestamp=$(date '+%Y-%m-%dT%H:%M:%S%z')
+    
+    local mode="execution"
+    [[ "$DRY_RUN" == "true" ]] && mode="dry_run"
+    
+    local system_cleanup="false"
+    [[ "$SYSTEM_CLEAN" == "true" ]] && system_cleanup="true"
+    
+    # Generate whitelist patterns array
+    local whitelist_array="["
+    local first=true
+    for pattern in "${WHITELIST_PATTERNS[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            whitelist_array+=","
+        fi
+        whitelist_array+="\"$(json_escape "$pattern")\""
+    done
+    whitelist_array+="]"
+    
+    # Generate cleanup items array
+    local items_array="["
+    first=true
+    for item in "${JSON_CLEANUP_ITEMS[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            items_array+=","
+        fi
+        items_array+="$item"
+    done
+    items_array+="]"
+    
+    cat <<EOF
+{
+  "command": "clean",
+  "mode": "$mode",
+  "timestamp": "$timestamp",
+  "duration_seconds": $duration,
+  "summary": {
+    "total_size_kb": $total_size_cleaned,
+    "total_size_gb": $freed_gb,
+    "total_size_human": "$escaped_size_human",
+    "items_cleaned": $files_cleaned,
+    "categories_cleaned": $total_items,
+    "system_cleanup_performed": $system_cleanup,
+    "free_space_before": "$escaped_free_space_before",
+    "free_space_after": "$escaped_free_space_after"
+  },
+  "whitelist": {
+    "enabled": true,
+    "patterns_count": ${#WHITELIST_PATTERNS[@]},
+    "patterns": $whitelist_array
+  },
+  "cleanup_items": $items_array
+}
+EOF
 }
 
 # shellcheck disable=SC2329
@@ -359,12 +496,13 @@ safe_clean() {
     local permission_start=${MOLE_PERMISSION_DENIED_COUNT:-0}
 
     local show_scan_feedback=false
-    if [[ ${#targets[@]} -gt 20 && -t 1 ]]; then
+    if [[ ${#targets[@]} -gt 20 && -t 1 && "$JSON_OUTPUT" != "true" ]]; then
         show_scan_feedback=true
         MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning ${#targets[@]} items..."
     fi
 
     local -a existing_paths=()
+    local -a json_paths=()
     for path in "${targets[@]}"; do
         local skip=false
 
@@ -380,7 +518,10 @@ safe_clean() {
             ((skipped_count++))
         fi
         [[ "$skip" == "true" ]] && continue
-        [[ -e "$path" ]] && existing_paths+=("$path")
+        if [[ -e "$path" ]]; then
+            existing_paths+=("$path")
+            json_paths+=("$path")
+        fi
     done
 
     if [[ "$show_scan_feedback" == "true" ]]; then
@@ -431,7 +572,7 @@ safe_clean() {
     fi
 
     local show_spinner=false
-    if [[ ${#existing_paths[@]} -gt 10 ]]; then
+    if [[ ${#existing_paths[@]} -gt 10 && "$JSON_OUTPUT" != "true" ]]; then
         show_spinner=true
         local total_paths=${#existing_paths[@]}
         if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."; fi
@@ -453,7 +594,7 @@ safe_clean() {
 
         # Heuristic: mostly files -> sequential stat is faster than subshells.
         if [[ $dir_count -lt 5 && ${#existing_paths[@]} -gt 20 ]]; then
-            if [[ -t 1 && "$show_spinner" == "false" ]]; then
+            if [[ -t 1 && "$show_spinner" == "false" && "$JSON_OUTPUT" != "true" ]]; then
                 MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."
                 show_spinner=true
             fi
@@ -508,7 +649,7 @@ safe_clean() {
                         pids=("${pids[@]:1}")
                         ((completed++))
 
-                        if [[ "$show_spinner" == "true" && -t 1 ]]; then
+                        if [[ "$show_spinner" == "true" && -t 1 && "$JSON_OUTPUT" != "true" ]]; then
                             update_progress_if_needed "$completed" "$total_paths" last_progress_update 2 || true
                         fi
                     fi
@@ -520,7 +661,7 @@ safe_clean() {
                     wait "$pid" 2> /dev/null || true
                     ((completed++))
 
-                    if [[ "$show_spinner" == "true" && -t 1 ]]; then
+                    if [[ "$show_spinner" == "true" && -t 1 && "$JSON_OUTPUT" != "true" ]]; then
                         update_progress_if_needed "$completed" "$total_paths" last_progress_update 2 || true
                     fi
                 done
@@ -622,96 +763,111 @@ safe_clean() {
         fi
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label ${YELLOW}($size_human dry)${NC}"
-
-            local paths_temp=$(create_temp_file)
-
-            idx=0
-            if [[ ${#existing_paths[@]} -gt 0 ]]; then
-                for path in "${existing_paths[@]}"; do
-                    local size=0
-
-                    if [[ -n "${temp_dir:-}" && -f "$temp_dir/result_${idx}" ]]; then
-                        read -r size count < "$temp_dir/result_${idx}" 2> /dev/null || true
-                    else
-                        size=$(get_cleanup_path_size_kb "$path" 2> /dev/null || echo "0")
-                    fi
-
-                    [[ "$size" == "0" || -z "$size" ]] && {
-                        ((idx++))
-                        continue
-                    }
-
-                    echo "$(dirname "$path")|$size|$path" >> "$paths_temp"
-                    ((idx++))
-                done
+            if [[ "$JSON_OUTPUT" != "true" ]]; then
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label ${YELLOW}($size_human dry)${NC}"
             fi
 
-            # Group dry-run paths by parent for a compact export list.
-            if [[ -f "$paths_temp" && -s "$paths_temp" ]]; then
-                sort -t'|' -k1,1 "$paths_temp" | awk -F'|' '
-                {
-                    parent = $1
-                    size = $2
-                    path = $3
+            if [[ "$JSON_OUTPUT" != "true" ]]; then
+                local paths_temp=$(create_temp_file)
 
-                    parent_size[parent] += size
-                    if (parent_count[parent] == 0) {
-                        parent_first[parent] = path
+                idx=0
+                if [[ ${#existing_paths[@]} -gt 0 ]]; then
+                    for path in "${existing_paths[@]}"; do
+                        local size=0
+
+                        if [[ -n "${temp_dir:-}" && -f "$temp_dir/result_${idx}" ]]; then
+                            read -r size count < "$temp_dir/result_${idx}" 2> /dev/null || true
+                        else
+                            size=$(get_cleanup_path_size_kb "$path" 2> /dev/null || echo "0")
+                        fi
+
+                        [[ "$size" == "0" || -z "$size" ]] && {
+                            ((idx++))
+                            continue
+                        }
+
+                        echo "$(dirname "$path")|$size|$path" >> "$paths_temp"
+                        ((idx++))
+                    done
+                fi
+
+                # Group dry-run paths by parent for a compact export list.
+                if [[ -f "$paths_temp" && -s "$paths_temp" ]]; then
+                    sort -t'|' -k1,1 "$paths_temp" | awk -F'|' '
+                    {
+                        parent = $1
+                        size = $2
+                        path = $3
+
+                        parent_size[parent] += size
+                        if (parent_count[parent] == 0) {
+                            parent_first[parent] = path
+                        }
+                        parent_count[parent]++
                     }
-                    parent_count[parent]++
-                }
-                END {
-                    for (parent in parent_size) {
-                        if (parent_count[parent] > 1) {
-                            printf "%s|%d|%d\n", parent, parent_size[parent], parent_count[parent]
-                        } else {
-                            printf "%s|%d|1\n", parent_first[parent], parent_size[parent]
+                    END {
+                        for (parent in parent_size) {
+                            if (parent_count[parent] > 1) {
+                                printf "%s|%d|%d\n", parent, parent_size[parent], parent_count[parent]
+                            } else {
+                                printf "%s|%d|1\n", parent_first[parent], parent_size[parent]
+                            }
                         }
                     }
-                }
-                ' | while IFS='|' read -r display_path total_size child_count; do
-                    local size_human=$(bytes_to_human "$((total_size * 1024))")
-                    if [[ $child_count -gt 1 ]]; then
-                        echo "$display_path  # $size_human ($child_count items)" >> "$EXPORT_LIST_FILE"
-                    else
-                        echo "$display_path  # $size_human" >> "$EXPORT_LIST_FILE"
-                    fi
-                done
+                    ' | while IFS='|' read -r display_path total_size child_count; do
+                        local size_human=$(bytes_to_human "$((total_size * 1024))")
+                        if [[ $child_count -gt 1 ]]; then
+                            echo "$display_path  # $size_human ($child_count items)" >> "$EXPORT_LIST_FILE"
+                        else
+                            echo "$display_path  # $size_human" >> "$EXPORT_LIST_FILE"
+                        fi
+                    done
 
-                rm -f "$paths_temp"
+                    rm -f "$paths_temp"
+                fi
             fi
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($size_human)${NC}"
+            if [[ "$JSON_OUTPUT" != "true" ]]; then
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $label ${GREEN}($size_human)${NC}"
+            fi
         fi
         ((files_cleaned += total_count))
         ((total_size_cleaned += total_size_kb))
         ((total_items++))
         note_activity
+        
+        # Add to JSON output if enabled
+        if [[ "$JSON_OUTPUT" == "true" ]]; then
+            local json_paths_array=$(json_array "${json_paths[@]}")
+            local status="cleaned"
+            [[ "$DRY_RUN" == "true" ]] && status="would_clean"
+            add_json_item "$description" "$total_size_kb" "$total_count" "$CURRENT_SECTION" "$json_paths_array" "$status"
+        fi
     fi
 
     return 0
 }
 
 start_cleanup() {
-    if [[ -t 1 ]]; then
-        printf '\033[2J\033[H'
-    fi
-    printf '\n'
-    echo -e "${PURPLE_BOLD}Clean Your Mac${NC}"
-    echo ""
-
-    if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
-        echo -e "${GRAY}${ICON_SOLID} Use --dry-run to preview, --whitelist to manage protected paths${NC}"
-    fi
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}Dry Run Mode${NC} - Preview only, no deletions"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then
+        if [[ -t 1 ]]; then
+            printf '\033[2J\033[H'
+        fi
+        printf '\n'
+        echo -e "${PURPLE_BOLD}Clean Your Mac${NC}"
         echo ""
-        SYSTEM_CLEAN=false
 
-        ensure_user_file "$EXPORT_LIST_FILE"
-        cat > "$EXPORT_LIST_FILE" << EOF
+        if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
+            echo -e "${GRAY}${ICON_SOLID} Use --dry-run to preview, --whitelist to manage protected paths${NC}"
+        fi
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo -e "${YELLOW}Dry Run Mode${NC} - Preview only, no deletions"
+            echo ""
+            SYSTEM_CLEAN=false
+
+            ensure_user_file "$EXPORT_LIST_FILE"
+            cat > "$EXPORT_LIST_FILE" << EOF
 # Mole Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
 #
 # How to protect files:
@@ -723,48 +879,52 @@ start_cleanup() {
 #
 
 EOF
-        return
-    fi
-
-    if [[ -t 0 ]]; then
-        echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo — ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
-
-        local choice
-        choice=$(read_key)
-
-        # ESC/Q aborts, Space skips, Enter enables system cleanup.
-        if [[ "$choice" == "QUIT" ]]; then
-            echo -e " ${GRAY}Canceled${NC}"
-            exit 0
+            return
         fi
 
-        if [[ "$choice" == "SPACE" ]]; then
-            echo -e " ${GRAY}Skipped${NC}"
-            echo ""
-            SYSTEM_CLEAN=false
-        elif [[ "$choice" == "ENTER" ]]; then
-            printf "\r\033[K" # Clear the prompt line
-            if ensure_sudo_session "System cleanup requires admin access"; then
-                SYSTEM_CLEAN=true
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+        if [[ -t 0 ]]; then
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo — ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+
+            local choice
+            choice=$(read_key)
+
+            # ESC/Q aborts, Space skips, Enter enables system cleanup.
+            if [[ "$choice" == "QUIT" ]]; then
+                echo -e " ${GRAY}Canceled${NC}"
+                exit 0
+            fi
+
+            if [[ "$choice" == "SPACE" ]]; then
+                echo -e " ${GRAY}Skipped${NC}"
                 echo ""
+                SYSTEM_CLEAN=false
+            elif [[ "$choice" == "ENTER" ]]; then
+                printf "\r\033[K" # Clear the prompt line
+                if ensure_sudo_session "System cleanup requires admin access"; then
+                    SYSTEM_CLEAN=true
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+                    echo ""
+                else
+                    SYSTEM_CLEAN=false
+                    echo ""
+                    echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
+                fi
             else
                 SYSTEM_CLEAN=false
+                echo -e " ${GRAY}Skipped${NC}"
                 echo ""
-                echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
             fi
         else
             SYSTEM_CLEAN=false
-            echo -e " ${GRAY}Skipped${NC}"
+            echo ""
+            echo "Running in non-interactive mode"
+            echo "  ${ICON_LIST} System-level cleanup skipped (requires interaction)"
+            echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
             echo ""
         fi
     else
+        # JSON mode: non-interactive, skip system cleanup
         SYSTEM_CLEAN=false
-        echo ""
-        echo "Running in non-interactive mode"
-        echo "  ${ICON_LIST} System-level cleanup skipped (requires interaction)"
-        echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
-        echo ""
     fi
 }
 
@@ -773,43 +933,45 @@ perform_cleanup() {
     local test_mode_enabled=false
     if [[ "${MOLE_TEST_MODE:-0}" == "1" ]]; then
         test_mode_enabled=true
-        if [[ "$DRY_RUN" == "true" ]]; then
+        if [[ "$DRY_RUN" == "true" && "$JSON_OUTPUT" != "true" ]]; then
             echo -e "${YELLOW}Dry Run Mode${NC} - Preview only, no deletions"
             echo ""
         fi
-        echo -e "${GREEN}${ICON_LIST}${NC} User app cache"
-        if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
-            local -a expanded_defaults
-            expanded_defaults=()
-            for default in "${DEFAULT_WHITELIST_PATTERNS[@]}"; do
-                expanded_defaults+=("${default/#\~/$HOME}")
-            done
-            local has_custom=false
-            for pattern in "${WHITELIST_PATTERNS[@]}"; do
-                local is_default=false
-                local normalized_pattern="${pattern%/}"
-                for default in "${expanded_defaults[@]}"; do
-                    local normalized_default="${default%/}"
-                    [[ "$normalized_pattern" == "$normalized_default" ]] && is_default=true && break
+        if [[ "$JSON_OUTPUT" != "true" ]]; then
+            echo -e "${GREEN}${ICON_LIST}${NC} User app cache"
+            if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
+                local -a expanded_defaults
+                expanded_defaults=()
+                for default in "${DEFAULT_WHITELIST_PATTERNS[@]}"; do
+                    expanded_defaults+=("${default/#\~/$HOME}")
                 done
-                [[ "$is_default" == "false" ]] && has_custom=true && break
-            done
-            [[ "$has_custom" == "true" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Protected items found"
-        fi
-        if [[ "$DRY_RUN" == "true" ]]; then
-            echo ""
-            echo "Potential space: 0.00GB"
+                local has_custom=false
+                for pattern in "${WHITELIST_PATTERNS[@]}"; do
+                    local is_default=false
+                    local normalized_pattern="${pattern%/}"
+                    for default in "${expanded_defaults[@]}"; do
+                        local normalized_default="${default%/}"
+                        [[ "$normalized_pattern" == "$normalized_default" ]] && is_default=true && break
+                    done
+                    [[ "$is_default" == "false" ]] && has_custom=true && break
+                done
+                [[ "$has_custom" == "true" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Protected items found"
+            fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+                echo ""
+                echo "Potential space: 0.00GB"
+            fi
         fi
         total_items=1
         files_cleaned=0
         total_size_cleaned=0
     fi
 
-    if [[ "$test_mode_enabled" == "false" ]]; then
+    if [[ "$test_mode_enabled" == "false" && "$JSON_OUTPUT" != "true" ]]; then
         echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | Free space: $(get_free_space)"
     fi
 
-    if [[ "$test_mode_enabled" == "true" ]]; then
+    if [[ "$test_mode_enabled" == "true" && "$JSON_OUTPUT" != "true" ]]; then
         local summary_heading="Test mode complete"
         local -a summary_details
         summary_details=()
@@ -822,7 +984,7 @@ perform_cleanup() {
     # Pre-check TCC permissions to avoid mid-run prompts.
     check_tcc_permissions
 
-    if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
+    if [[ "$JSON_OUTPUT" != "true" && ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
         local predefined_count=0
         local custom_count=0
 
@@ -861,7 +1023,7 @@ perform_cleanup() {
         fi
     fi
 
-    if [[ -t 1 && "$DRY_RUN" != "true" ]]; then
+    if [[ -t 1 && "$DRY_RUN" != "true" && "$JSON_OUTPUT" != "true" ]]; then
         local fda_status=0
         has_full_disk_access
         fda_status=$?
@@ -889,7 +1051,7 @@ perform_cleanup() {
         end_section
     fi
 
-    if [[ ${#WHITELIST_WARNINGS[@]} -gt 0 ]]; then
+    if [[ "$JSON_OUTPUT" != "true" && ${#WHITELIST_WARNINGS[@]} -gt 0 ]]; then
         echo ""
         for warning in "${WHITELIST_WARNINGS[@]}"; do
             echo -e "  ${YELLOW}${ICON_WARNING}${NC} Whitelist: $warning"
@@ -971,80 +1133,96 @@ perform_cleanup() {
     end_section
 
     # ===== Final summary =====
-    echo ""
-
-    local summary_heading=""
-    local summary_status="success"
-    if [[ "$DRY_RUN" == "true" ]]; then
-        summary_heading="Dry run complete - no changes made"
-    else
-        summary_heading="Cleanup complete"
+    if [[ "$JSON_OUTPUT" != "true" ]]; then
+        echo ""
     fi
 
-    local -a summary_details=()
-
-    if [[ $total_size_cleaned -gt 0 ]]; then
-        local freed_gb
-        freed_gb=$(echo "$total_size_cleaned" | awk '{printf "%.2f", $1/1024/1024}')
-
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        # Generate JSON output
+        local json_output
+        json_output=$(generate_json_output)
+        
+        # Save to file
+        local json_file="$HOME/.config/mole/clean-output-$(date +%Y%m%d-%H%M%S).json"
+        ensure_user_file "$json_file"
+        echo "$json_output" > "$json_file"
+        
+        # Also output to stdout
+        echo "$json_output"
+    else
+        local summary_heading=""
+        local summary_status="success"
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_gb}GB${NC}"
-            [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
-            [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
-            summary_details+=("$stats")
-
-            {
-                echo ""
-                echo "# ============================================"
-                echo "# Summary"
-                echo "# ============================================"
-                echo "# Potential cleanup: ${freed_gb}GB"
-                echo "# Items: $files_cleaned"
-                echo "# Categories: $total_items"
-            } >> "$EXPORT_LIST_FILE"
-
-            summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
-            summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
+            summary_heading="Dry run complete - no changes made"
         else
-            local summary_line="Space freed: ${GREEN}${freed_gb}GB${NC}"
+            summary_heading="Cleanup complete"
+        fi
 
-            if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
-                summary_line+=" | Items cleaned: $files_cleaned | Categories: $total_items"
-            elif [[ $files_cleaned -gt 0 ]]; then
-                summary_line+=" | Items cleaned: $files_cleaned"
-            elif [[ $total_items -gt 0 ]]; then
-                summary_line+=" | Categories: $total_items"
-            fi
+        local -a summary_details=()
 
-            summary_details+=("$summary_line")
+        if [[ $total_size_cleaned -gt 0 ]]; then
+            local freed_gb
+            freed_gb=$(echo "$total_size_cleaned" | awk '{printf "%.2f", $1/1024/1024}')
 
-            if [[ $(echo "$freed_gb" | awk '{print ($1 >= 1) ? 1 : 0}') -eq 1 ]]; then
-                local movies
-                movies=$(echo "$freed_gb" | awk '{printf "%.0f", $1/4.5}')
-                if [[ $movies -gt 0 ]]; then
-                    summary_details+=("Equivalent to ~$movies 4K movies of storage.")
+            if [[ "$DRY_RUN" == "true" ]]; then
+                local stats="Potential space: ${GREEN}${freed_gb}GB${NC}"
+                [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
+                [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
+                summary_details+=("$stats")
+
+                {
+                    echo ""
+                    echo "# ============================================"
+                    echo "# Summary"
+                    echo "# ============================================"
+                    echo "# Potential cleanup: ${freed_gb}GB"
+                    echo "# Items: $files_cleaned"
+                    echo "# Categories: $total_items"
+                } >> "$EXPORT_LIST_FILE"
+
+                summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
+                summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
+            else
+                local summary_line="Space freed: ${GREEN}${freed_gb}GB${NC}"
+
+                if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
+                    summary_line+=" | Items cleaned: $files_cleaned | Categories: $total_items"
+                elif [[ $files_cleaned -gt 0 ]]; then
+                    summary_line+=" | Items cleaned: $files_cleaned"
+                elif [[ $total_items -gt 0 ]]; then
+                    summary_line+=" | Categories: $total_items"
                 fi
+
+                summary_details+=("$summary_line")
+
+                if [[ $(echo "$freed_gb" | awk '{print ($1 >= 1) ? 1 : 0}') -eq 1 ]]; then
+                    local movies
+                    movies=$(echo "$freed_gb" | awk '{printf "%.0f", $1/4.5}')
+                    if [[ $movies -gt 0 ]]; then
+                        summary_details+=("Equivalent to ~$movies 4K movies of storage.")
+                    fi
+                fi
+
+                local final_free_space=$(get_free_space)
+                summary_details+=("Free space now: $final_free_space")
             fi
-
-            local final_free_space=$(get_free_space)
-            summary_details+=("Free space now: $final_free_space")
-        fi
-    else
-        summary_status="info"
-        if [[ "$DRY_RUN" == "true" ]]; then
-            summary_details+=("No significant reclaimable space detected (system already clean).")
         else
-            summary_details+=("System was already clean; no additional space freed.")
+            summary_status="info"
+            if [[ "$DRY_RUN" == "true" ]]; then
+                summary_details+=("No significant reclaimable space detected (system already clean).")
+            else
+                summary_details+=("System was already clean; no additional space freed.")
+            fi
+            summary_details+=("Free space now: $(get_free_space)")
         fi
-        summary_details+=("Free space now: $(get_free_space)")
-    fi
 
-    if [[ $had_errexit -eq 1 ]]; then
-        set -e
-    fi
+        if [[ $had_errexit -eq 1 ]]; then
+            set -e
+        fi
 
-    print_summary_block "$summary_heading" "${summary_details[@]}"
-    printf '\n'
+        print_summary_block "$summary_heading" "${summary_details[@]}"
+        printf '\n'
+    fi
 }
 
 main() {
@@ -1056,6 +1234,9 @@ main() {
             "--dry-run" | "-n")
                 DRY_RUN=true
                 ;;
+            "--json")
+                JSON_OUTPUT=true
+                ;;
             "--whitelist")
                 source "$SCRIPT_DIR/../lib/manage/whitelist.sh"
                 manage_whitelist "clean"
@@ -1065,9 +1246,13 @@ main() {
     done
 
     start_cleanup
-    hide_cursor
+    if [[ "$JSON_OUTPUT" != "true" ]]; then
+        hide_cursor
+    fi
     perform_cleanup
-    show_cursor
+    if [[ "$JSON_OUTPUT" != "true" ]]; then
+        show_cursor
+    fi
     exit 0
 }
 
