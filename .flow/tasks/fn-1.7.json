@@ -1,0 +1,17 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:20:44.915971Z",
+  "depends_on": [
+    "fn-1.1",
+    "fn-1.6"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.7",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.7.md",
+  "status": "todo",
+  "title": "Port deep clean module to Swift",
+  "updated_at": "2026-01-19T21:22:16.332981Z"
+}

@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:34:27.744903Z",
+  "depends_on": [
+    "fn-1.21"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.24",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.24.md",
+  "status": "todo",
+  "title": "Collector bin for deletion staging (D-304)",
+  "updated_at": "2026-01-19T21:36:27.247537Z"
+}

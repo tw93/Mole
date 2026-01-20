@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:34:27.316860Z",
+  "depends_on": [
+    "fn-1.4"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.19",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.19.md",
+  "status": "todo",
+  "title": "App Manager with categorization (A-202)",
+  "updated_at": "2026-01-19T21:36:23.323264Z"
+}

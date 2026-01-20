@@ -1,0 +1,31 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-19T22:14:09.118859Z",
+  "created_at": "2026-01-19T21:20:44.437060Z",
+  "depends_on": [],
+  "epic": "fn-1",
+  "evidence": {
+    "build_status": "** BUILD SUCCEEDED **",
+    "commits": [],
+    "features_implemented": [
+      "Concurrent directory scanning with TaskGroup",
+      "Top-N heaps for largest entries",
+      "Spotlight integration",
+      "SwiftUI file browser with navigation",
+      "Progress tracking during scan",
+      "Large file detection",
+      "Size visualization with bars"
+    ],
+    "files_created": 3,
+    "lines_of_code": 980,
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-1.2",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.2.md",
+  "status": "done",
+  "title": "Port disk analysis module to Swift",
+  "updated_at": "2026-01-19T22:14:09.198862Z"
+}

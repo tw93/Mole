@@ -1,0 +1,18 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:20:45.010454Z",
+  "depends_on": [
+    "fn-1.1",
+    "fn-1.4",
+    "fn-1.6"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.8",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.8.md",
+  "status": "todo",
+  "title": "Port app uninstaller to SwiftUI",
+  "updated_at": "2026-01-19T21:22:16.515051Z"
+}

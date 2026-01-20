@@ -1,0 +1,24 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-19T21:49:58.657599Z",
+  "created_at": "2026-01-19T21:20:44.343609Z",
+  "depends_on": [],
+  "epic": "fn-1",
+  "evidence": {
+    "binary_info": "Mach-O 64-bit executable arm64",
+    "build_output": "** BUILD SUCCEEDED **",
+    "bundle_id": "com.tonicformac.app",
+    "commits": [],
+    "deployment_target": "14.0",
+    "prs": [],
+    "tests": [],
+    "version": "0.1.0"
+  },
+  "id": "fn-1.1",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.1.md",
+  "status": "done",
+  "title": "Xcode project setup and foundation",
+  "updated_at": "2026-01-19T22:09:21.226553Z"
+}

@@ -1,0 +1,16 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-20T06:26:46.956982Z",
+  "created_at": "2026-01-19T21:20:44.714473Z",
+  "depends_on": [
+    "fn-1.1"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.5",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.5.md",
+  "status": "in_progress",
+  "title": "Code signing and notarization",
+  "updated_at": "2026-01-20T06:26:46.957128Z"
+}

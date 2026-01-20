@@ -1,0 +1,16 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-20T06:26:47.111709Z",
+  "created_at": "2026-01-19T21:20:44.810022Z",
+  "depends_on": [
+    "fn-1.1"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.6",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.6.md",
+  "status": "in_progress",
+  "title": "Implement privileged helper tool",
+  "updated_at": "2026-01-20T06:26:47.111856Z"
+}

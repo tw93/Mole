@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:34:28.099520Z",
+  "depends_on": [
+    "fn-1.7"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.28",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.28.md",
+  "status": "todo",
+  "title": "Project artifact purge (T-501)",
+  "updated_at": "2026-01-19T21:36:27.957255Z"
+}

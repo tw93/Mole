@@ -1,0 +1,17 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:20:45.474450Z",
+  "depends_on": [
+    "fn-1.11",
+    "fn-1.12"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.13",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.13.md",
+  "status": "todo",
+  "title": "Dark mode and visual polish",
+  "updated_at": "2026-01-19T21:22:17.474654Z"
+}

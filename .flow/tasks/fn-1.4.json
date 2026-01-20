@@ -1,0 +1,14 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-20T06:26:46.799615Z",
+  "created_at": "2026-01-19T21:20:44.619551Z",
+  "depends_on": [],
+  "epic": "fn-1",
+  "id": "fn-1.4",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.4.md",
+  "status": "in_progress",
+  "title": "Implement app inventory feature",
+  "updated_at": "2026-01-20T06:26:46.799872Z"
+}

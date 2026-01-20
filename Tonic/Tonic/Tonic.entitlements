@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Sandbox - Disabled for full system access (disk scanning requires file system access) -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+
+	<!-- File Access Permissions -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+
+	<!-- Network Permissions -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<false/>
+
+	<!-- Automation Permissions - For AppleEvents (app management, file operations) -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+
+	<!-- Hardware Access - Not currently needed but included for completeness -->
+	<key>com.apple.security.device.camera</key>
+	<false/>
+	<key>com.apple.security.device.microphone</key>
+	<false/>
+
+	<!-- Print - Not currently needed -->
+	<key>com.apple.security.print</key>
+	<false/>
+
+	<!-- Hardened Runtime: Disable JIT - Not needed for this app -->
+	<key>com.apple.security.cs.disable-jit</key>
+	<false/>
+
+	<!-- Hardened Runtime: Disable library validation -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<false/>
+
+	<!-- Hardened Runtime: Allow unsigned executable memory -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<false/>
+
+	<!-- Hardened Runtime: Allow execution of JIT-compiled code -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<false/>
+</dict>
+</plist>

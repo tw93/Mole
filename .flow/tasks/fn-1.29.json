@@ -1,0 +1,17 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-01-19T21:34:28.186859Z",
+  "depends_on": [
+    "fn-1.1",
+    "fn-1.6"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.29",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.29.md",
+  "status": "todo",
+  "title": "Docker and VM cleanup (T-502)",
+  "updated_at": "2026-01-19T21:36:28.132738Z"
+}

@@ -1,0 +1,16 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-20T06:26:47.267127Z",
+  "created_at": "2026-01-19T21:20:45.197089Z",
+  "depends_on": [
+    "fn-1.1"
+  ],
+  "epic": "fn-1",
+  "id": "fn-1.10",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-1.10.md",
+  "status": "in_progress",
+  "title": "Integrate Sparkle update framework",
+  "updated_at": "2026-01-20T06:26:47.267277Z"
+}
