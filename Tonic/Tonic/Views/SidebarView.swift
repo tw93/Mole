@@ -17,7 +17,11 @@ struct SidebarView: View {
             HStack {
                 Image(systemName: "drop.circle.fill")
                     .font(.title2)
-                    .foregroundColor(TonicColors.accent)
+                    .foregroundStyle(.linearGradient(
+                        colors: [TonicColors.accent, TonicColors.pro],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
 
                 Text("Tonic")
                     .font(.headline)
