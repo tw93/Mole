@@ -589,16 +589,14 @@ show_main_menu() {
     printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Check and maintain system" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze      Explore disk usage" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 5 "Status       Monitor system health" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 6 "Purge        Remove old project artifacts" "$([[ $selected -eq 6 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 7 "Installer    Find and remove installer files" "$([[ $selected -eq 7 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 8 "TouchID      Configure Touch ID for sudo" "$([[ $selected -eq 8 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 9 "Completion   Setup shell tab completion" "$([[ $selected -eq 9 ]] && echo true || echo false)")"
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
-        local controls="${GRAY}↑↓  |  Enter  |  M More  |  "
-        if ! is_touchid_configured; then
-            controls="${controls}T TouchID"
-        else
-            controls="${controls}U Update"
-        fi
-        controls="${controls}  |  Q Quit${NC}"
+        local controls="${GRAY}↑↓  |  Enter  |  M More  |  U Update  |  Q Quit${NC}"
         printf '\r\033[2K%s\n' "$controls"
         printf '\r\033[2K\n'
     fi
@@ -656,7 +654,7 @@ interactive_main_menu() {
 
         case "$key" in
             "UP") ((current_option > 1)) && ((current_option--)) ;;
-            "DOWN") ((current_option < 5)) && ((current_option++)) ;;
+            "DOWN") ((current_option < 9)) && ((current_option++)) ;;
             "ENTER")
                 show_cursor
                 case $current_option in
@@ -665,6 +663,10 @@ interactive_main_menu() {
                     3) exec "$SCRIPT_DIR/bin/optimize.sh" ;;
                     4) exec "$SCRIPT_DIR/bin/analyze.sh" ;;
                     5) exec "$SCRIPT_DIR/bin/status.sh" ;;
+                    6) exec "$SCRIPT_DIR/bin/purge.sh" ;;
+                    7) exec "$SCRIPT_DIR/bin/installer.sh" ;;
+                    8) exec "$SCRIPT_DIR/bin/touchid.sh" ;;
+                    9) exec "$SCRIPT_DIR/bin/completion.sh" ;;
                 esac
                 ;;
             "CHAR:1")
@@ -687,6 +689,22 @@ interactive_main_menu() {
                 show_cursor
                 exec "$SCRIPT_DIR/bin/status.sh"
                 ;;
+            "CHAR:6")
+                show_cursor
+                exec "$SCRIPT_DIR/bin/purge.sh"
+                ;;
+            "CHAR:7")
+                show_cursor
+                exec "$SCRIPT_DIR/bin/installer.sh"
+                ;;
+            "CHAR:8")
+                show_cursor
+                exec "$SCRIPT_DIR/bin/touchid.sh"
+                ;;
+            "CHAR:9")
+                show_cursor
+                exec "$SCRIPT_DIR/bin/completion.sh"
+                ;;
             "MORE")
                 show_cursor
                 clear
@@ -698,10 +716,6 @@ interactive_main_menu() {
                 clear
                 show_version
                 exit 0
-                ;;
-            "TOUCHID")
-                show_cursor
-                exec "$SCRIPT_DIR/bin/touchid.sh"
                 ;;
             "UPDATE")
                 show_cursor
