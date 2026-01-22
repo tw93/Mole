@@ -769,6 +769,36 @@ struct RecommendationRow: View {
     }
 }
 
+// MARK: - Path Detail Model
+
+struct PathDetail: Identifiable, Hashable, Sendable {
+    let id = UUID()
+    let path: String
+    let size: Int64
+    let isDirectory: Bool
+    var isExpanded: Bool = false
+    var children: [PathDetail]? = nil
+
+    var fileName: String {
+        (path as NSString).lastPathComponent
+    }
+
+    var parentDirectory: String {
+        (path as NSString).deletingLastPathComponent
+    }
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
+    var displayPath: String {
+        if path.hasPrefix(NSHomeDirectory()) {
+            return "~" + path.dropFirst(NSHomeDirectory().count)
+        }
+        return path
+    }
+}
+
 // MARK: - Recommendation Detail View (Placeholder)
 
 struct RecommendationDetailView: View {
