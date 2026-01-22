@@ -15,6 +15,7 @@
 		39F60D956BB32885CF3A611F /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BD96844B37981E628F20497 /* SidebarView.swift */; };
 		6A7A780E9DF26434C8E8F7EA /* DiskAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41F4E935929B3AC2ACDA2B2 /* DiskAnalysisView.swift */; };
 		6C89B19E3FA0CA427EED0A25 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58269188377B485FBDE88264 /* PreferencesView.swift */; };
+		75B31A742F22C7160057934B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 75B31A732F22C7160057934B /* Assets.xcassets */; };
 		75EFDFBC2F224BE200B990DA /* DiskWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75EFDFB52F224BE200B990DA /* DiskWidgetView.swift */; };
 		75EFDFBD2F224BE200B990DA /* GPUWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75EFDFB62F224BE200B990DA /* GPUWidgetView.swift */; };
 		75EFDFBE2F224BE200B990DA /* WeatherWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75EFDFB92F224BE200B990DA /* WeatherWidgetView.swift */; };
@@ -82,6 +83,7 @@
 		58EEBBB99EBEAF9CC1353AF0 /* AppMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMetadata.swift; sourceTree = "<group>"; };
 		60203727B4DCE325D1534B06 /* SparkleUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleUpdater.swift; sourceTree = "<group>"; };
 		6BD96844B37981E628F20497 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		75B31A732F22C7160057934B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		75EFDFB32F224BE200B990DA /* BatteryWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryWidgetView.swift; sourceTree = "<group>"; };
 		75EFDFB42F224BE200B990DA /* CPUWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUWidgetView.swift; sourceTree = "<group>"; };
 		75EFDFB52F224BE200B990DA /* DiskWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskWidgetView.swift; sourceTree = "<group>"; };
@@ -181,6 +183,7 @@
 				31C13F47AD87DD7BAA2D558A /* Design */,
 				561387584F1DDAFF11465619 /* TonicApp.swift */,
 				75EFDFBB2F224BE200B990DA /* MenuBarWidgets */,
+				75B31A732F22C7160057934B /* Assets.xcassets */,
 			);
 			path = Tonic;
 			sourceTree = "<group>";
@@ -355,6 +358,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				75B31A742F22C7160057934B /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

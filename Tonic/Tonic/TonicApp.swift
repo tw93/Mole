@@ -51,6 +51,7 @@ struct TonicApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set app activation policy to accessory for menu bar behavior
@@ -96,20 +97,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    @MainActor
     private func startWidgetSystem() {
         // Check if user has completed widget onboarding
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "tonic.widget.hasCompletedOnboarding")
 
+        print("🔵 [TonicApp] startWidgetSystem called, hasCompletedOnboarding: \(hasCompletedOnboarding)")
+
         if hasCompletedOnboarding {
             // Start the widget coordinator to show menu bar widgets
-            // WidgetCoordinator is defined in MenuBarWidgets/WidgetStatusItem.swift
-            // This call will work once widget files are added to Xcode project (fn-3.8)
-            if let coordinatorClass = NSClassFromString("Tonic.WidgetCoordinator") as? NSObject.Type {
-                let selector = NSSelectorFromString("start")
-                if coordinatorClass.responds(to: selector) {
-                    _ = coordinatorClass.perform(selector)
-                }
-            }
+            print("🔵 [TonicApp] Calling WidgetCoordinator.shared.start()")
+            WidgetCoordinator.shared.start()
+            print("🔵 [TonicApp] WidgetCoordinator.shared.start() completed")
         }
     }
 
