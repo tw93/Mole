@@ -571,6 +571,10 @@ struct SmartScanView: View {
                         isSelected: selectedRecommendations.contains(recommendation.id),
                         toggleSelection: {
                             toggleSelection(recommendation.id)
+                        },
+                        showDetails: {
+                            detailRecommendation = recommendation
+                            showingDetail = true
                         }
                     )
                 }
@@ -677,22 +681,26 @@ struct RecommendationRow: View {
     let recommendation: ScanRecommendation
     let isSelected: Bool
     let toggleSelection: () -> Void
+    let showDetails: () -> Void
 
     var body: some View {
-        Button(action: toggleSelection) {
-            HStack(spacing: 16) {
-                // Selection indicator
+        HStack(spacing: 16) {
+            // Selection checkbox
+            Button(action: toggleSelection) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundColor(isSelected ? TonicColors.accent : .secondary)
+            }
+            .buttonStyle(.plain)
 
-                // Icon
-                Image(systemName: recommendation.icon)
-                    .font(.title2)
-                    .foregroundColor(recommendation.color)
-                    .frame(width: 32)
+            // Icon
+            Image(systemName: recommendation.icon)
+                .font(.title2)
+                .foregroundColor(recommendation.color)
+                .frame(width: 32)
 
-                // Content
+            // Content (clickable for details)
+            Button(action: showDetails) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(recommendation.title)
@@ -712,34 +720,51 @@ struct RecommendationRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    if recommendation.safeToFix {
+                    HStack(spacing: 8) {
+                        if recommendation.safeToFix {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .font(.caption2)
+                                Text("Safe to remove")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(TonicColors.success)
+                        }
+
+                        // Path count indicator
                         HStack(spacing: 4) {
-                            Image(systemName: "checkmark.shield.fill")
+                            Image(systemName: "folder")
                                 .font(.caption2)
-                            Text("Safe to remove")
+                            Text("\(recommendation.affectedPaths.count) locations")
                                 .font(.caption2)
                         }
-                        .foregroundColor(TonicColors.success)
+                        .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        // View details hint
+                        HStack(spacing: 4) {
+                            Text("View details")
+                                .font(.caption2)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(TonicColors.accent)
                     }
                 }
-
-                // Chevron
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(Color.secondary)
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(nsColor: .controlBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1)
-            )
+            .buttonStyle(.plain)
+            .disabled(!recommendation.actionable)
         }
-        .buttonStyle(.plain)
-        .disabled(!recommendation.actionable)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1)
+        )
         .opacity(recommendation.actionable ? 1 : 0.6)
     }
 }
