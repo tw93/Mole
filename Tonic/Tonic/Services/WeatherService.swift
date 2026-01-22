@@ -175,9 +175,8 @@ public final class WeatherService {
                 URLQueryItem(name: "longitude", value: "\(longitude)"),
                 URLQueryItem(name: "current", value: "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m"),
                 URLQueryItem(name: "hourly", value: "temperature_2m,weather_code"),
-                URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum"),
+                URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,uv_index_max"),
                 URLQueryItem(name: "timezone", value: "auto"),
-                URLQueryItem(name: "uv_index", value: "daily"),
                 URLQueryItem(name: "forecast_days", value: "7")
             ]
 
@@ -216,6 +215,15 @@ public final class WeatherService {
     }
 
     private func parseResponse(_ response: OpenMeteoResponse, locationName: String) -> WeatherResponse {
+        // Create date formatter for API response
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: response.utc_offset_seconds)
+
+        let dailyDateFormatter = DateFormatter()
+        dailyDateFormatter.dateFormat = "yyyy-MM-dd"
+        dailyDateFormatter.timeZone = TimeZone(secondsFromGMT: response.utc_offset_seconds)
+
         // Current weather
         let current = WeatherData(
             locationName: locationName,
@@ -226,15 +234,17 @@ public final class WeatherService {
             humidity: response.current.relative_humidity_2m,
             windSpeed: response.current.wind_speed_10m,
             windDirection: response.current.wind_direction_10m,
-            uvIndex: response.daily.uv_index.max() ?? 0,
+            uvIndex: response.daily.uv_index_max.max() ?? 0,
             condition: WeatherCondition(wmoCode: response.current.weather_code),
             timestamp: Date()
         )
 
         // Hourly forecast (next 24 hours)
         let now = Date()
-        let hourly: [HourlyForecast] = response.hourly.time.enumerated().compactMap { (index, time) -> HourlyForecast? in
-            guard time > now, index < response.hourly.time.count else { return nil }
+        let hourly: [HourlyForecast] = response.hourly.time.enumerated().compactMap { (index, timeString) -> HourlyForecast? in
+            guard let time = dateFormatter.date(from: timeString) else { return nil }
+            guard time > now, index < response.hourly.temperature_2m.count else { return nil }
+            
             return HourlyForecast(
                 time: time,
                 temperature: response.hourly.temperature_2m[index],
@@ -244,8 +254,11 @@ public final class WeatherService {
         }.prefix(24).map { $0 }
 
         // Daily forecast
-        let daily = response.daily.time.enumerated().map { index, date in
-            DailyForecast(
+        let daily = response.daily.time.enumerated().compactMap { index, dateString -> DailyForecast? in
+            guard let date = dailyDateFormatter.date(from: dateString) else { return nil }
+            guard index < response.daily.temperature_2m_max.count else { return nil }
+
+            return DailyForecast(
                 date: date,
                 highTemp: response.daily.temperature_2m_max[index],
                 lowTemp: response.daily.temperature_2m_min[index],
@@ -424,6 +437,7 @@ class TemporaryLocationManager: NSObject, CLLocationManagerDelegate {
 private struct OpenMeteoResponse: Codable {
     let latitude: Double
     let longitude: Double
+    let utc_offset_seconds: Int
     let current: CurrentWeather
     let hourly: HourlyWeather
     let daily: DailyWeather
@@ -438,46 +452,18 @@ private struct OpenMeteoResponse: Codable {
     }
 
     struct HourlyWeather: Codable {
-        let time: [Date]
+        let time: [String]
         let temperature_2m: [Double]
         let weather_code: [Int]
     }
 
     struct DailyWeather: Codable {
-        let time: [Date]
+        let time: [String]
         let weather_code: [Int]
         let temperature_2m_max: [Double]
         let temperature_2m_min: [Double]
         let precipitation_probability_max: [Int]
         let precipitation_sum: [Double]
-        let uv_index: [Double]
-    }
-}
-
-// Date decoding helper for ISO8601 dates in API response
-extension Date: @retroactive Codable {
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let dateString = try container.decode(String.self)
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        if let date = formatter.date(from: dateString) {
-            self = date
-        } else {
-            // Try alternate format
-            let altFormatter = ISO8601DateFormatter()
-            altFormatter.formatOptions = [.withInternetDateTime]
-
-            if let date = altFormatter.date(from: dateString) {
-                self = date
-            } else {
-                throw DecodingError.dataCorruptedError(
-                    in: container,
-                    debugDescription: "Cannot decode date from \(dateString)"
-                )
-            }
-        }
+        let uv_index_max: [Double]
     }
 }

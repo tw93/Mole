@@ -13,6 +13,7 @@ import CoreWLAN
 import AppKit
 import MachO
 import SwiftUI
+import os
 
 // MARK: - IOKit Constants
 
@@ -236,7 +237,29 @@ public struct AppResourceUsage: Sendable, Identifiable {
 public final class WidgetDataManager {
     public static let shared = WidgetDataManager()
 
+    private let logger = Logger(subsystem: "com.tonic.app", category: "WidgetDataManager")
+    private let logFile: URL = {
+        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+        let path = paths[0].appendingPathComponent("tonic_widget_debug.txt")
+        // Clear previous log
+        try? FileManager.default.removeItem(at: path)
+        return path
+    }()
+
     // MARK: - History Constants
+
+    private func logToFile(_ message: String) {
+        let data = "\(Date()): \(message)\n".data(using: .utf8)!
+        if FileManager.default.fileExists(atPath: logFile.path) {
+            if let handle = try? FileHandle(forWritingTo: logFile) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                handle.closeFile()
+            }
+        } else {
+            try? data.write(to: logFile)
+        }
+    }
 
     private static let maxHistoryPoints = 60
 
@@ -300,10 +323,16 @@ public final class WidgetDataManager {
 
     /// Start monitoring system data
     public func startMonitoring() {
-        guard !isMonitoring else { return }
+        guard !isMonitoring else {
+            logger.warning("Already monitoring, skipping startMonitoring")
+            logToFile("Already monitoring, skipping startMonitoring")
+            return
+        }
         isMonitoring = true
-
         let interval = WidgetPreferences.shared.updateInterval.timeInterval
+        logger.info("🔵 Starting monitoring with interval: \(interval)s")
+        logToFile("🔵 STARTING MONITORING with interval: \(interval)s")
+
         updateTimer = DispatchSource.makeTimerSource(queue: .main)
         updateTimer?.schedule(deadline: .now(), repeating: .seconds(Int(interval)))
         updateTimer?.setEventHandler { [weak self] in
@@ -312,6 +341,8 @@ public final class WidgetDataManager {
         updateTimer?.resume()
 
         // Initial update
+        logger.info("🔵 Triggering initial data update...")
+        logToFile("🔵 Triggering initial data update...")
         updateAllData()
     }
 
@@ -332,7 +363,11 @@ public final class WidgetDataManager {
 
     // MARK: - Data Updates
 
+    private var updateCounter = 0
+
     private func updateAllData() {
+        logger.debug("🔄 updateAllData called")
+        logToFile("🔄 updateAllData called")
         updateCPUData()
         updateMemoryData()
         updateDiskData()
@@ -340,9 +375,19 @@ public final class WidgetDataManager {
         updateGPUData()
         updateBatteryData()
 
-        // Update top apps less frequently (every 5th update)
-        // This avoids the performance cost of querying all processes
-        // topCPUApps and topMemoryApps will be updated separately
+        // Update top apps less frequently (every 3rd update - effectively every 3s)
+        updateCounter += 1
+        if updateCounter >= 3 {
+            updateCounter = 0
+            // Run on background queue to avoid blocking main thread
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.updateTopCPUApps()
+                self?.updateTopMemoryApps()
+            }
+        }
+
+        logger.info("✅ updateAllData complete - CPU: \(Int(self.cpuData.totalUsage))%, Memory: \(Int(self.memoryData.usagePercentage))%")
+        logToFile("✅ updateAllData complete - CPU: \(Int(self.cpuData.totalUsage))%, Memory: \(Int(self.memoryData.usagePercentage))%, Disk: \(self.diskVolumes.first?.usagePercentage ?? 0)%")
     }
 
     // MARK: - CPU Monitoring
@@ -355,6 +400,9 @@ public final class WidgetDataManager {
 
         // Update history
         addToHistory(&cpuHistory, value: usage, maxPoints: Self.maxHistoryPoints)
+
+        logger.debug("🔵 CPU updated: \(Int(usage))% (\(perCore.count) cores)")
+        logToFile("🔵 CPU updated: \(Int(usage))% (\(perCore.count) cores), perCore: \(perCore.prefix(3))")
     }
 
     private func getCPUUsage() -> Double {
@@ -704,10 +752,10 @@ public final class WidgetDataManager {
         defer { freeifaddrs(ifaddrs) }
 
         var hasEthernet = false
-        var ptr = firstAddr
-        while ptr != nil {
-            let interface = String(cString: ptr.pointee.ifa_name)
-            let addrFamily = ptr.pointee.ifa_addr.pointee.sa_family
+        var ptr: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let current = ptr {
+            let interface = String(cString: current.pointee.ifa_name)
+            let addrFamily = current.pointee.ifa_addr.pointee.sa_family
 
             // Check for active ethernet interfaces (en0, en1, etc.)
             if addrFamily == UInt8(AF_INET) || addrFamily == UInt8(AF_INET6) {
@@ -717,7 +765,7 @@ public final class WidgetDataManager {
                 }
             }
 
-            ptr = ptr.pointee.ifa_next
+            ptr = current.pointee.ifa_next
         }
 
         return hasEthernet ? .ethernet : .unknown
@@ -958,16 +1006,138 @@ public final class WidgetDataManager {
         }
     }
 
-    /// Update top apps by CPU usage (call less frequently)
+    /// Update top apps by CPU usage
     public func updateTopCPUApps() {
-        // This will be implemented in PerAppResourceMonitor (fn-2.4)
-        topCPUApps = []
+        let task = Process()
+        task.launchPath = "/bin/ps"
+        task.arguments = ["-axro", "pid,pcpu,rss,comm", "-c"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else {
+                topCPUApps = []
+                return
+            }
+
+            var apps: [AppResourceUsage] = []
+            let lines = output.components(separatedBy: "\n").dropFirst() // Skip header
+
+            for line in lines where !line.isEmpty {
+                let components = line.trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                guard components.count >= 4,
+                      let cpuUsage = Double(components[1]),
+                      let memKB = UInt64(components[2]) else { continue }
+
+                let name = components.dropFirst(3).joined(separator: " ")
+
+                // Skip system processes with very low CPU
+                guard cpuUsage >= 0.1 else { continue }
+
+                // Try to get app icon
+                let icon = getAppIcon(for: name)
+
+                apps.append(AppResourceUsage(
+                    name: name,
+                    bundleIdentifier: nil,
+                    icon: icon,
+                    cpuUsage: cpuUsage,
+                    memoryBytes: memKB * 1024
+                ))
+            }
+
+            // Sort by CPU and take top 5
+            topCPUApps = apps.sorted { $0.cpuUsage > $1.cpuUsage }.prefix(10).map { $0 }
+        } catch {
+            logger.warning("Failed to get top CPU apps: \(error.localizedDescription)")
+            topCPUApps = []
+        }
     }
 
-    /// Update top apps by memory usage (call less frequently)
+    /// Update top apps by memory usage
     public func updateTopMemoryApps() {
-        // This will be implemented in PerAppResourceMonitor (fn-2.4)
-        topMemoryApps = []
+        let task = Process()
+        task.launchPath = "/bin/ps"
+        task.arguments = ["-axro", "pid,rss,pcpu,comm", "-c"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else {
+                topMemoryApps = []
+                return
+            }
+
+            var apps: [AppResourceUsage] = []
+            let lines = output.components(separatedBy: "\n").dropFirst() // Skip header
+
+            for line in lines where !line.isEmpty {
+                let components = line.trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                guard components.count >= 4,
+                      let memKB = UInt64(components[1]),
+                      let cpuUsage = Double(components[2]) else { continue }
+
+                let name = components.dropFirst(3).joined(separator: " ")
+
+                // Skip processes with very little memory (< 10MB)
+                guard memKB >= 10 * 1024 else { continue }
+
+                // Try to get app icon
+                let icon = getAppIcon(for: name)
+
+                apps.append(AppResourceUsage(
+                    name: name,
+                    bundleIdentifier: nil,
+                    icon: icon,
+                    cpuUsage: cpuUsage,
+                    memoryBytes: memKB * 1024
+                ))
+            }
+
+            // Sort by memory and take top 5
+            topMemoryApps = apps.sorted { $0.memoryBytes > $1.memoryBytes }.prefix(10).map { $0 }
+        } catch {
+            logger.warning("Failed to get top memory apps: \(error.localizedDescription)")
+            topMemoryApps = []
+        }
+    }
+
+    /// Get app icon for a process name
+    private func getAppIcon(for processName: String) -> NSImage? {
+        // Try to find the app in /Applications
+        let appName = processName.replacingOccurrences(of: " Helper", with: "")
+            .replacingOccurrences(of: " Renderer", with: "")
+        
+        let possiblePaths = [
+            "/Applications/\(appName).app",
+            "/System/Applications/\(appName).app",
+            "/Applications/Utilities/\(appName).app"
+        ]
+        
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path) {
+                return NSWorkspace.shared.icon(forFile: path)
+            }
+        }
+        
+        // Try running apps
+        for app in NSWorkspace.shared.runningApplications {
+            if app.localizedName == processName || app.executableURL?.lastPathComponent == processName {
+                return app.icon
+            }
+        }
+        
+        return nil
     }
 }
 
