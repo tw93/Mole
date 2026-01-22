@@ -8,25 +8,27 @@
 
 import SwiftUI
 import Charts
+import os
 
 // MARK: - CPU Compact View
 
 /// Compact menu bar view for CPU widget
 public struct CPUCompactView: View {
+    let cpuUsage: Double
 
-    @ObservedController private var dataManager: WidgetDataManager
-
-    public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
+    public init(cpuUsage: Double) {
+        self.cpuUsage = cpuUsage
     }
 
     public var body: some View {
+        let cpuValue = Int(cpuUsage)
+
         HStack(spacing: 4) {
             Image(systemName: "cpu")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(usageColor)
 
-            Text("\(Int(dataManager.cpuData.totalUsage))%")
+            Text("\(cpuValue)%")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(.primary)
         }
@@ -35,7 +37,7 @@ public struct CPUCompactView: View {
     }
 
     private var usageColor: Color {
-        switch dataManager.cpuData.totalUsage {
+        switch cpuUsage {
         case 0..<50: return TonicColors.success
         case 50..<80: return TonicColors.warning
         default: return TonicColors.error
@@ -48,11 +50,9 @@ public struct CPUCompactView: View {
 /// Detailed popover view for CPU widget
 public struct CPUDetailView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -74,12 +74,37 @@ public struct CPUDetailView: View {
 
                     // Top apps
                     topAppsSection
+
+                    // Activity Monitor link
+                    activityMonitorButton
                 }
                 .padding()
             }
         }
-        .frame(width: 320, height: 400)
+        .frame(width: 320, height: 450)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var activityMonitorButton: some View {
+        Button {
+            NSWorkspace.shared.launchApplication("Activity Monitor")
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 14))
+                Text("Open Activity Monitor")
+                    .font(.subheadline)
+                Spacer()
+                Image(systemName: "arrow.up.forward.square")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {
@@ -301,8 +326,10 @@ public final class CPUStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public func createDetailView() -> some View {
-        CPUDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+
+    public override func createDetailView() -> AnyView {
+        AnyView(CPUDetailView())
     }
 }
 

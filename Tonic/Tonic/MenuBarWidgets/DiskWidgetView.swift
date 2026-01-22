@@ -13,11 +13,12 @@ import Charts
 
 /// Compact menu bar view for Disk widget
 public struct DiskCompactView: View {
+    let usagePercentage: Double
+    let isActive: Bool
 
-    @ObservedController private var dataManager: WidgetDataManager
-
-    public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
+    public init(usagePercentage: Double, isActive: Bool) {
+        self.usagePercentage = usagePercentage
+        self.isActive = isActive
     }
 
     public var body: some View {
@@ -26,12 +27,12 @@ public struct DiskCompactView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(usageColor)
 
-            Text("\(Int(primaryUsage))%")
+            Text("\(Int(usagePercentage))%")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(.primary)
 
             // Activity indicator when disk is active
-            if dataManager.primaryDiskActivity {
+            if isActive {
                 Circle()
                     .fill(usageColor)
                     .frame(width: 6, height: 6)
@@ -46,12 +47,8 @@ public struct DiskCompactView: View {
         .frame(height: 22)
     }
 
-    private var primaryUsage: Double {
-        dataManager.diskVolumes.first(where: { $0.isBootVolume })?.usagePercentage ?? 0
-    }
-
     private var usageColor: Color {
-        switch primaryUsage {
+        switch usagePercentage {
         case 0..<70: return TonicColors.success
         case 70..<90: return TonicColors.warning
         default: return TonicColors.error
@@ -64,11 +61,9 @@ public struct DiskCompactView: View {
 /// Detailed popover view for Disk widget
 public struct DiskDetailView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -338,8 +333,10 @@ public final class DiskStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public func createDetailView() -> some View {
-        DiskDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+
+    public override func createDetailView() -> AnyView {
+        AnyView(DiskDetailView())
     }
 }
 

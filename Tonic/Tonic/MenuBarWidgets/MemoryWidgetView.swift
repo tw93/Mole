@@ -13,11 +13,12 @@ import Charts
 
 /// Compact menu bar view for Memory widget
 public struct MemoryCompactView: View {
+    let usagePercentage: Double
+    let pressure: MemoryPressure
 
-    @ObservedController private var dataManager: WidgetDataManager
-
-    public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
+    public init(usagePercentage: Double, pressure: MemoryPressure) {
+        self.usagePercentage = usagePercentage
+        self.pressure = pressure
     }
 
     public var body: some View {
@@ -26,7 +27,7 @@ public struct MemoryCompactView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(pressureColor)
 
-            Text("\(Int(dataManager.memoryData.usagePercentage))%")
+            Text("\(Int(usagePercentage))%")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(.primary)
 
@@ -40,7 +41,7 @@ public struct MemoryCompactView: View {
     }
 
     private var pressureColor: Color {
-        switch dataManager.memoryData.pressure {
+        switch pressure {
         case .normal: return TonicColors.success
         case .warning: return TonicColors.warning
         case .critical: return TonicColors.error
@@ -53,11 +54,9 @@ public struct MemoryCompactView: View {
 /// Detailed popover view for Memory widget
 public struct MemoryDetailView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -82,12 +81,37 @@ public struct MemoryDetailView: View {
 
                     // Top apps
                     topAppsSection
+
+                    // Activity Monitor link
+                    activityMonitorButton
                 }
                 .padding()
             }
         }
-        .frame(width: 320, height: 450)
+        .frame(width: 320, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var activityMonitorButton: some View {
+        Button {
+            NSWorkspace.shared.launchApplication("Activity Monitor")
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 14))
+                Text("Open Activity Monitor")
+                    .font(.subheadline)
+                Spacer()
+                Image(systemName: "arrow.up.forward.square")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {
@@ -385,8 +409,10 @@ public final class MemoryStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public func createDetailView() -> some View {
-        MemoryDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+
+    public override func createDetailView() -> AnyView {
+        AnyView(MemoryDetailView())
     }
 }
 
