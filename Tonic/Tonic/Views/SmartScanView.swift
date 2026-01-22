@@ -799,19 +799,317 @@ struct PathDetail: Identifiable, Hashable, Sendable {
     }
 }
 
-// MARK: - Recommendation Detail View (Placeholder)
+// MARK: - Recommendation Detail View
 
 struct RecommendationDetailView: View {
     let recommendation: ScanRecommendation
     @Binding var isPresented: Bool
+    @State private var pathDetails: [PathDetail] = []
+    @State private var selectedItems: Set<String> = []
+    @State private var searchText = ""
+    @State private var isLoading = true
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var filteredItems: [PathDetail] {
+        if searchText.isEmpty {
+            return pathDetails
+        }
+        return pathDetails.filter { detail in
+            detail.fileName.localizedCaseInsensitiveContains(searchText) ||
+            detail.path.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var totalSelectedSize: Int64 {
+        selectedItems.reduce(0) { total, path in
+            total + (pathDetails.first { $0.path == path }?.size ?? 0)
+        }
+    }
+
+    private var formattedSelectedSize: String {
+        ByteCountFormatter.string(fromByteCount: totalSelectedSize, countStyle: .file)
+    }
 
     var body: some View {
-        VStack {
-            Text("Recommendation Details")
-            Text(recommendation.title)
-            Button("Close") { isPresented = false }
+        VStack(spacing: 0) {
+            // Header
+            header
+
+            Divider()
+
+            // Search and filter bar
+            searchBar
+
+            Divider()
+
+            // Content
+            if isLoading {
+                loadingView
+            } else if filteredItems.isEmpty {
+                emptyState
+            } else {
+                itemsList
+            }
+
+            Divider()
+
+            // Footer
+            footer
         }
-        .frame(width: 500, height: 300)
+        .frame(width: 650, height: 500)
+        .onAppear {
+            loadPathDetails()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 16) {
+            // Icon
+            Image(systemName: recommendation.icon)
+                .font(.system(size: 28))
+                .foregroundColor(recommendation.color)
+                .frame(width: 44)
+
+            // Title info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recommendation.title)
+                    .font(.headline)
+
+                Text(recommendation.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            // Safe to fix badge
+            if recommendation.safeToFix {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.caption2)
+                    Text("Safe to remove")
+                        .font(.caption2)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(TonicColors.success.opacity(0.15))
+                .foregroundColor(TonicColors.success)
+                .cornerRadius(6)
+            }
+
+            // Close button
+            Button {
+                isPresented = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            // Search field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+
+                TextField("Search files and folders...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .textBackgroundColor))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+            )
+
+            Spacer()
+
+            // Selection info
+            Text("\(selectedItems.count) selected · \(formattedSelectedSize)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.2)
+
+            Text("Loading file details...")
+                .font(.body)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
+                .foregroundColor(.secondary)
+
+            Text("No results found")
+                .font(.body)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var itemsList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(filteredItems) { detail in
+                    PathDetailRow(
+                        detail: detail,
+                        selectedItems: $selectedItems,
+                        isTopLevel: true,
+                        toggleExpansion: toggleExpansion
+                    )
+
+                    if detail.id != filteredItems.last?.id {
+                        Divider()
+                            .padding(.leading, 60)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            // Select all / Deselect all
+            Button(selectedItems.count == filteredItems.count ? "Deselect All" : "Select All") {
+                if selectedItems.count == filteredItems.count {
+                    selectedItems.removeAll()
+                } else {
+                    selectedItems = Set(filteredItems.map { $0.path })
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(filteredItems.isEmpty)
+
+            Spacer()
+
+            // Cancel button
+            Button("Cancel") {
+                isPresented = false
+            }
+            .buttonStyle(.bordered)
+
+            // Confirm button
+            Button("Apply Selection") {
+                isPresented = false
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(selectedItems.isEmpty)
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func loadPathDetails() {
+        isLoading = true
+
+        Task {
+            var details: [PathDetail] = []
+
+            for path in recommendation.affectedPaths {
+                let detail = await createPathDetail(from: path)
+                details.append(detail)
+            }
+
+            // Sort by size (descending)
+            details.sort { $0.size > $1.size }
+
+            await MainActor.run {
+                pathDetails = details
+                isLoading = false
+            }
+        }
+    }
+
+    private func createPathDetail(from path: String) async -> PathDetail {
+        var isDirectory: ObjCBool = false
+        let fileManager = FileManager.default
+
+        fileManager.fileExists(atPath: path, isDirectory: &isDirectory)
+
+        var size: Int64 = 0
+        var children: [PathDetail]? = nil
+
+        if isDirectory.boolValue {
+            // Get directory size and contents
+            if let enumerator = fileManager.enumerator(atPath: path) {
+                var childPaths: [String] = []
+
+                // Collect all files first to avoid async context issues
+                let allFiles = enumerator.compactMap { $0 as? String }
+
+                for file in allFiles {
+                    let fullPath = (path as NSString).appendingPathComponent(file)
+                    childPaths.append(fullPath)
+
+                    if let attributes = try? fileManager.attributesOfItem(atPath: fullPath),
+                       let fileSize = attributes[.size] as? Int64 {
+                        size += fileSize
+                    }
+                }
+
+                // Create child details (limit to first 50 for performance)
+                children = Array(childPaths.prefix(50)).map { childPath in
+                    PathDetail(
+                        path: childPath,
+                        size: (try? fileManager.attributesOfItem(atPath: childPath)[.size] as? Int64) ?? 0,
+                        isDirectory: (try? fileManager.attributesOfItem(atPath: childPath)[.type] as? FileAttributeType == .typeDirectory) ?? false
+                    )
+                }
+            }
+        } else {
+            // Single file size
+            if let attributes = try? fileManager.attributesOfItem(atPath: path),
+               let fileSize = attributes[.size] as? Int64 {
+                size = fileSize
+            }
+        }
+
+        return PathDetail(
+            path: path,
+            size: size,
+            isDirectory: isDirectory.boolValue,
+            isExpanded: false,
+            children: children
+        )
+    }
+
+    private func toggleExpansion(_ detail: PathDetail) {
+        if let index = pathDetails.firstIndex(where: { $0.id == detail.id }) {
+            pathDetails[index].isExpanded.toggle()
+        }
     }
 }
 
