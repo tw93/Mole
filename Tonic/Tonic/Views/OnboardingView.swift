@@ -502,6 +502,11 @@ struct OnboardingView: View {
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         isPresented = false
         dismiss()
+
+        // Show widget onboarding after main onboarding
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NotificationCenter.default.post(name: NSNotification.Name("ShowWidgetOnboarding"), object: nil)
+        }
     }
 }
 

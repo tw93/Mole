@@ -420,6 +420,8 @@ class SmartScanManager: ObservableObject {
 struct DashboardView: View {
     @StateObject private var scanManager = SmartScanManager()
     @StateObject private var systemMonitor = SystemMonitor()
+    @State private var showWidgetCustomization = false
+    @State private var showWidgetOnboarding = false
 
     var body: some View {
         ScrollView {
@@ -433,6 +435,9 @@ struct DashboardView: View {
                 // Quick Stats Cards
                 quickStatsSection
 
+                // Menu Bar Widgets Section
+                widgetSetupSection
+
                 // Recommendations
                 if !scanManager.recommendations.isEmpty {
                     recommendationsSection
@@ -444,6 +449,12 @@ struct DashboardView: View {
             .padding(DesignTokens.Spacing.lg)
         }
         .background(DesignTokens.Colors.background)
+        .sheet(isPresented: $showWidgetCustomization) {
+            WidgetCustomizationView()
+        }
+        .sheet(isPresented: $showWidgetOnboarding) {
+            WidgetOnboardingView()
+        }
     }
 
     // MARK: - Header Section
@@ -631,6 +642,108 @@ struct DashboardView: View {
         case 0..<50: return DesignTokens.Colors.success
         case 50..<80: return DesignTokens.Colors.warning
         default: return DesignTokens.Colors.error
+        }
+    }
+
+    // MARK: - Widget Setup Section
+
+    private var widgetSetupSection: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            SectionHeader(title: "Menu Bar Widgets", subtitle: "Monitor your system from the menu bar")
+
+            HStack(spacing: DesignTokens.Spacing.md) {
+                // Widget info card
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.title2)
+                            .foregroundStyle(.linearGradient(
+                                colors: [TonicColors.accent, TonicColors.pro],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Real-Time System Monitoring")
+                                .font(DesignTokens.Typography.headlineMedium)
+                                .foregroundColor(DesignTokens.Colors.text)
+
+                            Text("Track CPU, Memory, Disk, Network, Weather, and more right from your menu bar")
+                                .font(DesignTokens.Typography.bodySmall)
+                                .foregroundColor(DesignTokens.Colors.textSecondary)
+                        }
+
+                        Spacer()
+                    }
+
+                    // Feature list
+                    HStack(spacing: 20) {
+                        widgetFeature("cpu.fill", "CPU")
+                        widgetFeature("memorychip.fill", "Memory")
+                        widgetFeature("internaldrive.fill", "Disk")
+                        widgetFeature("wifi", "Network")
+                        widgetFeature("cloud.sun.fill", "Weather")
+                    }
+                    .padding(.top, DesignTokens.Spacing.sm)
+                }
+
+                // Setup button
+                VStack(spacing: DesignTokens.Spacing.sm) {
+                    Button {
+                        setupWidgets()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus.circle.fill")
+                            Text(setupButtonText)
+                        }
+                        .font(DesignTokens.Typography.bodyMedium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, DesignTokens.Spacing.lg)
+                        .padding(.vertical, DesignTokens.Spacing.md)
+                        .background(
+                            LinearGradient(
+                                colors: [TonicColors.accent, TonicColors.pro],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .cornerRadius(DesignTokens.CornerRadius.large)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text(WidgetPreferences.shared.hasCompletedOnboarding ? "Click to customize your widgets" : "First-time setup required")
+                        .font(DesignTokens.Typography.captionSmall)
+                        .foregroundColor(DesignTokens.Colors.textSecondary)
+                }
+                .frame(minWidth: 200)
+            }
+            .padding(DesignTokens.Spacing.md)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(DesignTokens.CornerRadius.large)
+        }
+    }
+
+    private func widgetFeature(_ icon: String, _ name: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundColor(TonicColors.accent)
+                .frame(width: 16)
+            Text(name)
+                .font(.caption)
+                .foregroundColor(DesignTokens.Colors.textSecondary)
+        }
+    }
+
+    private var setupButtonText: String {
+        WidgetPreferences.shared.hasCompletedOnboarding ? "Customize Widgets" : "Setup Widgets"
+    }
+
+    private func setupWidgets() {
+        if WidgetPreferences.shared.hasCompletedOnboarding {
+            showWidgetCustomization = true
+        } else {
+            showWidgetOnboarding = true
         }
     }
 

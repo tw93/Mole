@@ -13,6 +13,7 @@ enum NavigationDestination: String, CaseIterable {
     case appManager = "App Manager"
     case diskAnalysis = "Disk Analysis"
     case liveMonitoring = "Live Monitoring"
+    case menuBarWidgets = "Menu Bar Widgets"
     case developerTools = "Developer Tools"
     case settings = "Settings"
 
@@ -23,6 +24,7 @@ enum NavigationDestination: String, CaseIterable {
         case .appManager: return "app.badge"
         case .diskAnalysis: return "externaldrive.fill"
         case .liveMonitoring: return "gauge"
+        case .menuBarWidgets: return "square.grid.2x2"
         case .developerTools: return "hammer.fill"
         case .settings: return "gear"
         }
