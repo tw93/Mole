@@ -14,11 +14,9 @@ import IOKit.ps
 /// Compact menu bar view for Battery widget
 public struct BatteryCompactView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         HStack(spacing: 4) {
@@ -76,11 +74,9 @@ public struct BatteryCompactView: View {
 /// Detailed popover view for Battery widget
 public struct BatteryDetailView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -272,8 +268,10 @@ public final class BatteryStatusItem: WidgetStatusItem {
         }
     }
 
-    public func createDetailView() -> some View {
-        BatteryDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+
+    public override func createDetailView() -> AnyView {
+        AnyView(BatteryDetailView())
     }
 }
 

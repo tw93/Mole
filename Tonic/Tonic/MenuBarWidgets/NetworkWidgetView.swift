@@ -15,11 +15,9 @@ import Network
 /// Compact menu bar view for Network widget
 public struct NetworkCompactView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         HStack(spacing: 4) {
@@ -69,11 +67,9 @@ public struct NetworkCompactView: View {
 /// Detailed popover view for Network widget
 public struct NetworkDetailView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -346,8 +342,10 @@ public final class NetworkStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public func createDetailView() -> some View {
-        NetworkDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+
+    public override func createDetailView() -> AnyView {
+        AnyView(NetworkDetailView())
     }
 }
 

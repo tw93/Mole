@@ -143,7 +143,7 @@ public struct WeatherDetailView: View {
 
     private var errorView: some View {
         VStack(spacing: 16) {
-            Image(systemName: "cloud.slash")
+            Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 40))
                 .foregroundColor(.secondary)
 
@@ -367,8 +367,14 @@ public final class WeatherStatusItem: WidgetStatusItem {
         WeatherService.shared.startUpdates()
     }
 
-    public func createDetailView() -> some View {
-        WeatherDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+    
+    public override func createCompactView() -> AnyView {
+        AnyView(WeatherCompactView())
+    }
+
+    public override func createDetailView() -> AnyView {
+        AnyView(WeatherDetailView())
     }
 }
 

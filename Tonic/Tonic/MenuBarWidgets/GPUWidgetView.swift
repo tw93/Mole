@@ -14,11 +14,9 @@ import Charts
 /// Compact menu bar view for GPU widget
 public struct GPUCompactView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         HStack(spacing: 4) {
@@ -46,11 +44,9 @@ public struct GPUCompactView: View {
 /// Detailed popover view for GPU widget
 public struct GPUDetailView: View {
 
-    @ObservedController private var dataManager: WidgetDataManager
+    @State private var dataManager = WidgetDataManager.shared
 
-    public init(dataManager: WidgetDataManager = .shared) {
-        self._dataManager = ObservedController(initialValue: dataManager)
-    }
+    public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -303,8 +299,10 @@ public final class GPUStatusItem: WidgetStatusItem {
         #endif
     }
 
-    public func createDetailView() -> some View {
-        GPUDetailView()
+    // Uses base WidgetStatusItem.createCompactView() which respects configuration
+
+    public override func createDetailView() -> AnyView {
+        AnyView(GPUDetailView())
     }
 }
 
