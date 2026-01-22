@@ -110,6 +110,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
+mkdir -p "$HOME/.cache/puppeteer"
 safe_clean() { echo "$2"; }
 clean_browsers
 EOF
@@ -117,6 +118,51 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Safari cache"* ]]
     [[ "$output" == *"Firefox cache"* ]]
+}
+
+@test "clean_puppeteer_cache cleans when cache exists in non-interactive mode" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+mkdir -p "$HOME/.cache/puppeteer"
+echo "test" > "$HOME/.cache/puppeteer/chrome-1234.zip"
+safe_clean() { echo "$2"; }
+clean_puppeteer_cache
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Puppeteer browser cache"* ]]
+}
+
+@test "clean_puppeteer_cache skips when cache does not exist" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2"; }
+rm -rf "$HOME/.cache/puppeteer"
+clean_puppeteer_cache
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ -z "${output//[[:space:]]/}" ]]
+}
+
+@test "clean_puppeteer_cache respects DRY_RUN mode" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+mkdir -p "$HOME/.cache/puppeteer"
+echo "test" > "$HOME/.cache/puppeteer/chrome-1234.zip"
+note_activity() { :; }
+clean_puppeteer_cache
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Puppeteer browser cache"* ]]
+    [[ "$output" == *"dry"* ]]
 }
 
 @test "clean_application_support_logs skips when no access" {

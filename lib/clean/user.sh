@@ -12,6 +12,53 @@ clean_user_essentials() {
     fi
 }
 
+clean_puppeteer_cache() {
+    local puppeteer_cache="$HOME/.cache/puppeteer"
+    [[ -d "$puppeteer_cache" ]] || return 0
+
+    local size_kb
+    size_kb=$(get_path_size_kb "$puppeteer_cache" || echo 0)
+    size_kb="${size_kb:-0}"
+
+    if [[ $size_kb -le 0 ]]; then
+        return 0
+    fi
+
+    local size_human
+    size_human=$(bytes_to_human "$((size_kb * 1024))")
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Puppeteer browser cache ${YELLOW}($size_human dry)${NC}"
+        note_activity
+        return 0
+    fi
+
+    if [[ -t 0 ]]; then
+        echo ""
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} Remove Puppeteer cache ($size_human)? ${GREEN}Enter${NC} yes, ${GRAY}Space${NC} skip: "
+
+        local choice
+        choice=$(read_key)
+
+        if [[ "$choice" == "QUIT" ]]; then
+            echo -e " ${GRAY}Skipped${NC}"
+            return 0
+        fi
+
+        if [[ "$choice" == "SPACE" ]]; then
+            echo -e " ${GRAY}Skipped${NC}"
+            return 0
+        elif [[ "$choice" == "ENTER" ]]; then
+            printf "\r\033[K"
+        else
+            echo -e " ${GRAY}Skipped${NC}"
+            return 0
+        fi
+    fi
+
+    safe_clean "$puppeteer_cache" "Puppeteer browser cache"
+}
+
 # Remove old Google Chrome versions while keeping Current.
 clean_chrome_old_versions() {
     local -a app_paths=(
@@ -446,6 +493,7 @@ clean_browsers() {
     safe_clean ~/Library/Application\ Support/Google/Chrome/*/Application\ Cache/* "Chrome app cache"
     safe_clean ~/Library/Application\ Support/Google/Chrome/*/GPUCache/* "Chrome GPU cache"
     safe_clean ~/Library/Caches/Chromium/* "Chromium cache"
+    clean_puppeteer_cache
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
     safe_clean ~/Library/Caches/company.thebrowser.Browser/* "Arc cache"
     safe_clean ~/Library/Caches/company.thebrowser.dia/* "Dia cache"
