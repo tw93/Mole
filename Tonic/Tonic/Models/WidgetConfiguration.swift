@@ -62,27 +62,109 @@ public enum WidgetType: String, CaseIterable, Identifiable, Codable {
 
 /// Display mode options for each widget
 public enum WidgetDisplayMode: String, CaseIterable, Identifiable, Codable {
-    case iconOnly = "iconOnly"
-    case iconWithValue = "iconWithValue"
-    case iconWithValueAndSparkline = "iconWithValueAndSparkline"
+    case compact = "compact"
+    case detailed = "detailed"
 
     public var id: String { rawValue }
 
     /// Display name for the mode
     public var displayName: String {
         switch self {
-        case .iconOnly: return "Icon only"
-        case .iconWithValue: return "Icon + Value"
-        case .iconWithValueAndSparkline: return "Icon + Value + Graph"
+        case .compact: return "Compact"
+        case .detailed: return "Detailed"
+        }
+    }
+
+    /// Short label for tags
+    public var shortLabel: String {
+        switch self {
+        case .compact: return "Compact"
+        case .detailed: return "Detailed"
         }
     }
 
     /// Approximate width in points for this mode
     public var estimatedWidth: CGFloat {
         switch self {
-        case .iconOnly: return 20
-        case .iconWithValue: return 50
-        case .iconWithValueAndSparkline: return 90
+        case .compact: return 70
+        case .detailed: return 130
+        }
+    }
+}
+
+// MARK: - Widget Value Format
+
+/// How to display the value (percentage vs absolute with unit)
+public enum WidgetValueFormat: String, CaseIterable, Identifiable, Codable {
+    case percentage = "percentage"
+    case valueWithUnit = "valueWithUnit"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .percentage: return "Percentage (%)"
+        case .valueWithUnit: return "Value with Unit"
+        }
+    }
+
+    public var shortLabel: String {
+        switch self {
+        case .percentage: return "%"
+        case .valueWithUnit: return "Value"
+        }
+    }
+}
+
+// MARK: - Widget Accent Color
+
+/// Color options for widgets
+public enum WidgetAccentColor: String, CaseIterable, Identifiable, Codable, Sendable {
+    case system = "system"
+    case blue = "blue"
+    case green = "green"
+    case orange = "orange"
+    case purple = "purple"
+    case yellow = "yellow"
+
+    public var id: String { rawValue }
+
+    /// Display name for the color
+    public var displayName: String {
+        switch self {
+        case .system: return "Auto"
+        case .blue: return "Blue"
+        case .green: return "Green"
+        case .orange: return "Orange"
+        case .purple: return "Purple"
+        case .yellow: return "Yellow"
+        }
+    }
+
+    /// The actual Color value
+    public func colorValue(for widgetType: WidgetType) -> Color {
+        switch self {
+        case .system:
+            // Return default color for each widget type when in Auto mode
+            return defaultColor(for: widgetType)
+        case .blue: return Color(red: 0.37, green: 0.62, blue: 1.0)
+        case .green: return Color(red: 0.19, green: 0.82, blue: 0.35)
+        case .orange: return Color(red: 1.0, green: 0.62, blue: 0.04)
+        case .purple: return Color(red: 0.75, green: 0.35, blue: 0.95)
+        case .yellow: return Color(red: 1.0, green: 0.84, blue: 0.04)
+        }
+    }
+
+    /// Default color for each widget type when in Auto mode
+    private func defaultColor(for widgetType: WidgetType) -> Color {
+        switch widgetType {
+        case .cpu: return Color(red: 0.37, green: 0.62, blue: 1.0)
+        case .memory: return Color(red: 0.19, green: 0.82, blue: 0.35)
+        case .disk: return Color(red: 1.0, green: 0.62, blue: 0.04)
+        case .network: return Color(red: 0.39, green: 0.82, blue: 1.0)
+        case .gpu: return Color(red: 0.75, green: 0.35, blue: 0.95)
+        case .battery: return Color(red: 0.19, green: 0.82, blue: 0.35)
+        case .weather: return Color(red: 1.0, green: 0.84, blue: 0.04)
         }
     }
 }
@@ -97,14 +179,20 @@ public struct WidgetConfiguration: Codable, Identifiable, Sendable {
     public var position: Int
     public var displayMode: WidgetDisplayMode
     public var showLabel: Bool
+    public var valueFormat: WidgetValueFormat
+    public var refreshInterval: WidgetUpdateInterval
+    public var accentColor: WidgetAccentColor
 
     public init(
         id: UUID = UUID(),
         type: WidgetType,
         isEnabled: Bool = true,
         position: Int,
-        displayMode: WidgetDisplayMode = .iconWithValue,
-        showLabel: Bool = false
+        displayMode: WidgetDisplayMode,
+        showLabel: Bool = false,
+        valueFormat: WidgetValueFormat = .percentage,
+        refreshInterval: WidgetUpdateInterval = .balanced,
+        accentColor: WidgetAccentColor = .system
     ) {
         self.id = id
         self.type = type
@@ -112,6 +200,9 @@ public struct WidgetConfiguration: Codable, Identifiable, Sendable {
         self.position = position
         self.displayMode = displayMode
         self.showLabel = showLabel
+        self.valueFormat = valueFormat
+        self.refreshInterval = refreshInterval
+        self.accentColor = accentColor
     }
 
     /// Default configuration for a given widget type
@@ -120,9 +211,26 @@ public struct WidgetConfiguration: Codable, Identifiable, Sendable {
             type: type,
             isEnabled: type.isDefaultEnabled,
             position: position,
-            displayMode: .iconWithValue,
-            showLabel: false
+            displayMode: .compact,
+            showLabel: false,
+            valueFormat: type.defaultValueFormat,
+            refreshInterval: .balanced,
+            accentColor: .system
         )
+    }
+}
+
+extension WidgetType {
+    /// Default value format for this widget type
+    var defaultValueFormat: WidgetValueFormat {
+        switch self {
+        case .cpu, .memory, .gpu, .battery:
+            return .percentage
+        case .disk, .network:
+            return .valueWithUnit
+        case .weather:
+            return .valueWithUnit
+        }
     }
 }
 
@@ -274,11 +382,58 @@ public final class WidgetPreferences: Sendable {
     }
 
     private static func loadConfigsFromUserDefaults() -> [WidgetConfiguration]? {
-        guard let data = UserDefaults.standard.data(forKey: Keys.widgetConfigs),
-              let configs = try? JSONDecoder().decode([WidgetConfiguration].self, from: data) else {
+        guard let data = UserDefaults.standard.data(forKey: Keys.widgetConfigs) else {
             return nil
         }
-        return configs
+
+        // First, try to decode with the current struct
+        if let configs = try? JSONDecoder().decode([WidgetConfiguration].self, from: data) {
+            return configs
+        }
+
+        // If that fails, try to decode with legacy format and migrate
+        struct LegacyWidgetConfiguration: Codable {
+            let id: UUID
+            var type: WidgetType
+            var isEnabled: Bool
+            var position: Int
+            var displayMode: LegacyDisplayMode
+            var showLabel: Bool
+            var valueFormat: WidgetValueFormat
+            var refreshInterval: WidgetUpdateInterval
+        }
+
+        enum LegacyDisplayMode: String, Codable {
+            case iconOnly = "iconOnly"
+            case iconWithValue = "iconWithValue"
+            case iconWithValueAndSparkline = "iconWithValueAndSparkline"
+
+            func migrate() -> WidgetDisplayMode {
+                switch self {
+                case .iconOnly, .iconWithValue: return .compact
+                case .iconWithValueAndSparkline: return .detailed
+                }
+            }
+        }
+
+        if let legacyConfigs = try? JSONDecoder().decode([LegacyWidgetConfiguration].self, from: data) {
+            // Migrate to new format
+            return legacyConfigs.map { legacy in
+                WidgetConfiguration(
+                    id: legacy.id,
+                    type: legacy.type,
+                    isEnabled: legacy.isEnabled,
+                    position: legacy.position,
+                    displayMode: legacy.displayMode.migrate(),
+                    showLabel: legacy.showLabel,
+                    valueFormat: legacy.valueFormat,
+                    refreshInterval: legacy.refreshInterval,
+                    accentColor: .system
+                )
+            }
+        }
+
+        return nil
     }
 
     private func saveInterval() {
@@ -322,6 +477,24 @@ public final class WidgetPreferences: Sendable {
     public func setWidgetShowLabel(type: WidgetType, show: Bool) {
         updateConfig(for: type) { config in
             config.showLabel = show
+        }
+    }
+
+    public func setWidgetValueFormat(type: WidgetType, format: WidgetValueFormat) {
+        updateConfig(for: type) { config in
+            config.valueFormat = format
+        }
+    }
+
+    public func setWidgetRefreshInterval(type: WidgetType, interval: WidgetUpdateInterval) {
+        updateConfig(for: type) { config in
+            config.refreshInterval = interval
+        }
+    }
+
+    public func setWidgetColor(type: WidgetType, color: WidgetAccentColor) {
+        updateConfig(for: type) { config in
+            config.accentColor = color
         }
     }
 }
