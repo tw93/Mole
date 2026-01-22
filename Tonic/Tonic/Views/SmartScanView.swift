@@ -173,6 +173,8 @@ struct SmartScanView: View {
     @State private var selectedRecommendations: Set<UUID> = []
     @State private var showFixCompleteAlert = false
     @State private var fixResult: FixResult?
+    @State private var detailRecommendation: ScanRecommendation?
+    @State private var showingDetail = false
 
     private let stages = ScanStage.allCases.filter { $0 != .complete }
 
@@ -190,6 +192,14 @@ struct SmartScanView: View {
         } message: {
             if let result = fixResult {
                 Text(result.message)
+            }
+        }
+        .sheet(isPresented: $showingDetail) {
+            if let recommendation = detailRecommendation {
+                RecommendationDetailView(
+                    recommendation: recommendation,
+                    isPresented: $showingDetail
+                )
             }
         }
     }
@@ -731,6 +741,22 @@ struct RecommendationRow: View {
         .buttonStyle(.plain)
         .disabled(!recommendation.actionable)
         .opacity(recommendation.actionable ? 1 : 0.6)
+    }
+}
+
+// MARK: - Recommendation Detail View (Placeholder)
+
+struct RecommendationDetailView: View {
+    let recommendation: ScanRecommendation
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack {
+            Text("Recommendation Details")
+            Text(recommendation.title)
+            Button("Close") { isPresented = false }
+        }
+        .frame(width: 500, height: 300)
     }
 }
 
