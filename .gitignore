@@ -71,3 +71,4 @@ tests/*.log
 
 session.json
 run_tests.ps1
+Tonic/weather_sample.json
