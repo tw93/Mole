@@ -1,285 +1,199 @@
 <div align="center">
-  <h1>Mole</h1>
-  <p><em>Deep clean and optimize your Mac.</em></p>
+  <h1>Tonic</h1>
+  <p><em>Beautiful native macOS system management.</em></p>
 </div>
 
 <p align="center">
-  <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/tag/tw93/mole?label=version&style=flat-square" alt="Version"></a>
+  <a href="https://github.com/tw93/Tonic/stargazers"><img src="https://img.shields.io/github/stars/tw93/Tonic?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/tw93/Tonic/releases"><img src="https://img.shields.io/github/v/tag/tw93/Tonic?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
-  <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
+  <a href="https://github.com/tw93/Tonic/commits"><img src="https://img.shields.io/github/commit-activity/m/Tonic?style=flat-square" alt="Commits"></a>
   <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
-  <a href="https://t.me/+GclQS9ZnxyI2ODQ1"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </p>
 
 <p align="center">
-  <img src="https://cdn.tw93.fun/img/mole.jpeg" alt="Mole - 95.50GB freed" width="1000" />
+  <img src="https://via.placeholder.com/1000x600?text=Tonic+Dashboard+Screenshot" alt="Tonic Dashboard" width="1000" />
 </p>
+
+## Overview
+
+Tonic is a beautiful, native macOS application for system management and optimization. It combines disk cleanup, performance monitoring, and app management into a single, polished interface built entirely with SwiftUI.
+
+Unlike CLI tools or web-based utilities, Tonic provides a true native Mac experience with:
+- **Real-time system monitoring** with live menu bar widgets
+- **One-click smart scanning** that identifies junk and reclaimable space
+- **Deep cleaning** across 10 categories of system clutter
+- **Disk analysis** with interactive treemap visualization
+- **App inventory** with uninstall and update capabilities
 
 ## Features
 
-- **All-in-one toolkit**: CleanMyMac, AppCleaner, DaisyDisk, and iStat Menus combined into a **single binary**
-- **Deep cleaning**: Scans and removes caches, logs, and browser leftovers to **reclaim gigabytes of space**
-- **Smart uninstaller**: Thoroughly removes apps along with launch agents, preferences, and **hidden remnants**
-- **Disk insights**: Visualizes usage, manages large files, **rebuilds caches**, and refreshes system services
-- **Live monitoring**: Real-time stats for CPU, GPU, memory, disk, and network to **diagnose performance issues**
+### Dashboard
+The main dashboard provides an at-a-glance view of your Mac's health with:
+- System health score (0-100) with color-coded rating
+- Quick action buttons for common tasks
+- Real-time storage, memory, and CPU statistics
+- Actionable recommendations for improvement
+- Recent activity timeline
+
+### Smart Scan
+Four-stage scanning engine that analyzes your system:
+1. **Preparing** - Initialize scan and load preferences
+2. **Scanning Disk** - Enumerate caches, logs, and temporary files
+3. **Checking Apps** - Identify unused applications and duplicates
+4. **Analyzing System** - Detect hidden space and optimization opportunities
+
+Results include a health score and categorized recommendations with estimated space to reclaim.
+
+### Deep Clean
+Ten cleanup categories:
+- System Cache (`/Library/Caches`, `/System/Library/Caches`)
+- User Cache (`~/Library/Caches`)
+- Log Files (system and application logs)
+- Temporary Files (`/tmp`, temp directories)
+- Browser Cache (Safari, Chrome, Firefox, Edge)
+- Downloads (files older than 30 days)
+- Trash (items in ~/.Trash)
+- Development Artifacts (npm, yarn, cargo, gradle, maven, Xcode)
+- Docker (container data and images)
+- Xcode (DerivedData, Archives, DeviceSupport)
+
+### Disk Analysis
+- **Directory Browser** - Navigate any folder with back/up controls
+- **Large Files View** - Quickly identify space hogs (100MB+)
+- **Treemap Visualization** - Visual representation of disk usage by file type
+- **Permission Handling** - Guided Full Disk Access setup
+
+### System Monitoring
+Real-time metrics for:
+- **CPU** - Total usage, per-core activity, active processes
+- **Memory** - Used/available, pressure level, swap usage
+- **Disk** - Per-volume usage with progress visualization
+- **Network** - Upload/download bandwidth, connection type, SSID
+- **Battery** - Charge percentage, health, time remaining (portable Macs)
+
+### Menu Bar Widgets
+Seven customizable widgets that live in your menu bar:
+- **CPU Widget** - Usage percentage with optional sparkline history
+- **Memory Widget** - Usage with pressure indicator
+- **Disk Widget** - Primary volume usage
+- **Network Widget** - Bandwidth and connection status
+- **GPU Widget** - Apple Silicon unified memory (M-series only)
+- **Battery Widget** - Charge level and time remaining (portable Macs)
+- **Weather Widget** - Current conditions and 7-day forecast
+
+Each widget supports three display modes:
+- Icon only (minimal)
+- Icon + value
+- Icon + value + sparkline
+
+### App Management
+- **App Inventory** - Categorized view of all apps and extensions
+- **Smart Filtering** - By category, size, last used, install date
+- **Batch Operations** - Select multiple apps for actions
+- **Complete Uninstall** - Removes app bundle + all associated files
+- **Update Checking** - Sparkle-based update detection
+
+### Notification Rules
+Create custom alerts based on:
+- CPU usage (above threshold)
+- Memory pressure (warning/critical)
+- Disk space (low free percentage)
+- Network connectivity (disconnected)
+- Weather conditions (temperature extremes)
 
 ## Quick Start
 
-**Install via Homebrew:**
+### Download
+Download the latest release from [GitHub Releases](https://github.com/tw93/Tonic/releases) and move Tonic.app to `/Applications`.
+
+### First Launch
+1. Open Tonic from Applications or Spotlight
+2. Complete the onboarding wizard (4 pages)
+3. Grant **Full Disk Access** in System Settings → Privacy
+4. Optionally install the **Privileged Helper** for system-level operations
+5. Start with a Smart Scan from the dashboard
+
+### Requirements
+- macOS 14.0 (Sonoma) or later
+- Apple Silicon or Intel Mac
+- Full Disk Access recommended for full functionality
+
+## Architecture
+
+```
+Tonic/
+├── TonicApp.swift           # App entry point
+├── Views/                   # SwiftUI views
+│   ├── ContentView.swift    # Navigation split view
+│   ├── DashboardView.swift  # Main dashboard
+│   ├── SmartScanView.swift  # Scanning UI
+│   ├── DiskAnalysisView.swr # Disk browser
+│   ├── SystemStatusDashboard.swift  # Real-time monitoring
+│   └── PreferencesView.swift # Settings
+├── Services/                # Business logic
+│   ├── SmartScanEngine.swift
+│   ├── DeepCleanEngine.swift
+│   ├── WidgetDataManager.swift
+│   ├── WeatherService.swift
+│   └── NotificationRuleEngine.swift
+├── Models/                  # Data types
+├── Design/                  # Design system
+│   ├── DesignTokens.swift   # Colors, spacing, typography
+│   ├── DesignComponents.swift
+│   └── DesignAnimations.swift
+├── MenuBar/                 # Menu bar integration
+├── MenuBarWidgets/          # Widget implementations
+└── Utilities/               # Helpers
+    ├── DiskScanner.swift
+    └── SparkleUpdater.swift
+```
+
+## Building from Source
+
+### Prerequisites
+- Xcode 15.0 or later
+- XcodeGen (`brew install xcodegen`)
+
+### Build
 
 ```bash
-brew install mole
+# Clone the repository
+git clone https://github.com/tw93/Tonic.git
+cd Tonic
+
+# Generate Xcode project
+xcodegen generate
+
+# Build debug version
+xcodebuild -scheme Tonic -configuration Debug build
+
+# Build release version
+xcodebuild -scheme Tonic -configuration Release build
 ```
 
-**Or via script:**
-
+### Run
 ```bash
-# Optional args: -s latest for main branch code, -s 1.17.0 for specific version
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
+# Open the app
+open Tonic.xcodeproj
+# Then press Cmd+R in Xcode
 ```
 
-**Windows:** Mole is designed for macOS, but we offer an experimental Windows version based on user demand. See the [windows branch](https://github.com/tw93/Mole/tree/windows) — for early adopters only.
-
-**Run:**
-
-```bash
-mo                           # Interactive menu
-mo clean                     # Deep cleanup
-mo uninstall                 # Remove apps + leftovers
-mo optimize                  # Refresh caches & services
-mo analyze                   # Visual disk explorer
-mo status                    # Live system health dashboard
-mo purge                     # Clean project build artifacts
-mo installer                 # Find and remove installer files
-
-mo touchid                   # Configure Touch ID for sudo
-mo completion                # Set up shell tab completion
-mo update                    # Update Mole
-mo remove                    # Remove Mole from system
-mo --help                    # Show help
-mo --version                 # Show installed version
-
-mo clean --dry-run           # Preview the cleanup plan
-mo clean --whitelist         # Manage protected caches
-mo clean --dry-run --debug   # Detailed preview with risk levels and file info
-
-mo optimize --dry-run        # Preview optimization actions
-mo optimize --debug          # Run with detailed operation logs
-mo optimize --whitelist      # Manage protected optimization rules
-mo purge --paths             # Configure project scan directories
-```
-
-## Tips
-
-- **Terminal**: iTerm2 has known compatibility issues; we recommend Alacritty, kitty, WezTerm, Ghostty, or Warp.
-- **Safety**: Built with strict protections. See [Security Audit](SECURITY_AUDIT.md). Preview changes with `mo clean --dry-run`.
-- **Be Careful**: Although safe by design, file deletion is permanent. Please review operations carefully.
-- **Debug Mode**: Use `--debug` for detailed logs (e.g., `mo clean --debug`). Combine with `--dry-run` for comprehensive preview including risk levels and file details.
-- **Navigation**: Supports arrow keys and Vim bindings (`h/j/k/l`).
-- **Status Shortcuts**: In `mo status`, press `k` to toggle cat visibility and save preference, `q` to quit.
-- **Configuration**: Run `mo touchid` for Touch ID sudo, `mo completion` for shell tab completion, `mo clean --whitelist` to manage protected paths.
-
-## Features in Detail
-
-### Deep System Cleanup
-
-```bash
-$ mo clean
-
-Scanning cache directories...
-
-  ✓ User app cache                                           45.2GB
-  ✓ Browser cache (Chrome, Safari, Firefox)                  10.5GB
-  ✓ Developer tools (Xcode, Node.js, npm)                    23.3GB
-  ✓ System logs and temp files                                3.8GB
-  ✓ App-specific cache (Spotify, Dropbox, Slack)              8.4GB
-  ✓ Trash                                                    12.3GB
-
-====================================================================
-Space freed: 95.5GB | Free space now: 223.5GB
-====================================================================
-```
-
-### Smart App Uninstaller
-
-```bash
-$ mo uninstall
-
-Select Apps to Remove
-═══════════════════════════
-▶ ☑ Photoshop 2024            (4.2G) | Old
-  ☐ IntelliJ IDEA             (2.8G) | Recent
-  ☐ Premiere Pro              (3.4G) | Recent
-
-Uninstalling: Photoshop 2024
-
-  ✓ Removed application
-  ✓ Cleaned 52 related files across 12 locations
-    - Application Support, Caches, Preferences
-    - Logs, WebKit storage, Cookies
-    - Extensions, Plugins, Launch daemons
-
-====================================================================
-Space freed: 12.8GB
-====================================================================
-```
-
-### System Optimization
-
-```bash
-$ mo optimize
-
-System: 5/32 GB RAM | 333/460 GB Disk (72%) | Uptime 6d
-
-  ✓ Rebuild system databases and clear caches
-  ✓ Reset network services
-  ✓ Refresh Finder and Dock
-  ✓ Clean diagnostic and crash logs
-  ✓ Remove swap files and restart dynamic pager
-  ✓ Rebuild launch services and spotlight index
-
-====================================================================
-System optimization completed
-====================================================================
-
-Use `mo optimize --whitelist` to exclude specific optimizations.
-```
-
-### Disk Space Analyzer
-
-```bash
-$ mo analyze
-
-Analyze Disk  ~/Documents  |  Total: 156.8GB
-
- ▶  1. ███████████████████  48.2%  |  📁 Library                     75.4GB  >6mo
-    2. ██████████░░░░░░░░░  22.1%  |  📁 Downloads                   34.6GB
-    3. ████░░░░░░░░░░░░░░░  14.3%  |  📁 Movies                      22.4GB
-    4. ███░░░░░░░░░░░░░░░░  10.8%  |  📁 Documents                   16.9GB
-    5. ██░░░░░░░░░░░░░░░░░   5.2%  |  📄 backup_2023.zip              8.2GB
-
-  ↑↓←→ Navigate  |  O Open  |  F Show  |  ⌫ Delete  |  L Large files  |  Q Quit
-```
-
-### Live System Status
-
-Real-time dashboard with system health score, hardware info, and performance metrics.
-
-```bash
-$ mo status
-
-Mole Status  Health ● 92  MacBook Pro · M4 Pro · 32GB · macOS 14.5
-
-⚙ CPU                                    ▦ Memory
-Total   ████████████░░░░░░░  45.2%       Used    ███████████░░░░░░░  58.4%
-Load    0.82 / 1.05 / 1.23 (8 cores)     Total   14.2 / 24.0 GB
-Core 1  ███████████████░░░░  78.3%       Free    ████████░░░░░░░░░░  41.6%
-Core 2  ████████████░░░░░░░  62.1%       Avail   9.8 GB
-
-▤ Disk                                   ⚡ Power
-Used    █████████████░░░░░░  67.2%       Level   ██████████████████  100%
-Free    156.3 GB                         Status  Charged
-Read    ▮▯▯▯▯  2.1 MB/s                  Health  Normal · 423 cycles
-Write   ▮▮▮▯▯  18.3 MB/s                 Temp    58°C · 1200 RPM
-
-⇅ Network                                ▶ Processes
-Down    ▮▮▯▯▯  3.2 MB/s                  Code       ▮▮▮▮▯  42.1%
-Up      ▮▯▯▯▯  0.8 MB/s                  Chrome     ▮▮▮▯▯  28.3%
-Proxy   HTTP · 192.168.1.100             Terminal   ▮▯▯▯▯  12.5%
-```
-
-Health score based on CPU, memory, disk, temperature, and I/O load. Color-coded by range.
-
-### Project Artifact Purge
-
-Clean old build artifacts (`node_modules`, `target`, `build`, `dist`, etc.) from your projects to free up disk space.
-
-```bash
-mo purge
-
-Select Categories to Clean - 18.5GB (8 selected)
-
-➤ ● my-react-app       3.2GB | node_modules
-  ● old-project        2.8GB | node_modules
-  ● rust-app           4.1GB | target
-  ● next-blog          1.9GB | node_modules
-  ○ current-work       856MB | node_modules  | Recent
-  ● django-api         2.3GB | venv
-  ● vue-dashboard      1.7GB | node_modules
-  ● backend-service    2.5GB | node_modules
-```
-
-> **Use with caution:** This will permanently delete selected artifacts. Review carefully before confirming. Recent projects — less than 7 days old — are marked and unselected by default.
-
-<details>
-<summary><strong>Custom Scan Paths</strong></summary>
-
-Run `mo purge --paths` to configure which directories to scan, or edit `~/.config/mole/purge_paths` directly:
-
-```shell
-~/Documents/MyProjects
-~/Work/ClientA
-~/Work/ClientB
-```
-
-When custom paths are configured, only those directories are scanned. Otherwise, it defaults to `~/Projects`, `~/GitHub`, `~/dev`, etc.
-
-</details>
-
-### Installer Cleanup
-
-Find and remove large installer files scattered across Downloads, Desktop, Homebrew caches, iCloud, and Mail. Each file is labeled by source to help you know where the space is hiding.
-
-```bash
-mo installer
-
-Select Installers to Remove - 3.8GB (5 selected)
-
-➤ ● Photoshop_2024.dmg     1.2GB | Downloads
-  ● IntelliJ_IDEA.dmg       850.6MB | Downloads
-  ● Illustrator_Setup.pkg   920.4MB | Downloads
-  ● PyCharm_Pro.dmg         640.5MB | Homebrew
-  ● Acrobat_Reader.dmg      220.4MB | Downloads
-  ○ AppCode_Legacy.zip      410.6MB | Downloads
-```
-
-## Quick Launchers
-
-Launch Mole commands instantly from Raycast or Alfred:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/Mole/main/scripts/setup-quick-launchers.sh | bash
-```
-
-Adds 5 commands: `clean`, `uninstall`, `optimize`, `analyze`, `status`.
-
-Mole automatically detects your terminal, or set `MO_LAUNCHER_APP=<name>` to override. For Raycast users: if this is your first script directory, add it via Raycast Extensions → Add Script Directory, then run "Reload Script Directories".
-
-## Community Love
-
-Mole wouldn't be possible without these amazing contributors. They've built countless features that make Mole what it is today. Go follow them! ❤️
-
-<a href="https://github.com/tw93/Mole/graphs/contributors">
-  <img src="./CONTRIBUTORS.svg?v=2" width="1000" />
-</a>
-
-Join thousands of users worldwide who trust Mole to keep their Macs clean and optimized.
-
-<img src="https://cdn.tw93.fun/pic/lovemole.jpeg" alt="Community feedback on Mole" width="1000" />
-
-## Support
-
-- If Mole saved you disk space, consider starring the repo or [sharing it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Mac.) with friends.
-- Have ideas or fixes? Check our [Contributing Guide](CONTRIBUTING.md), then open an issue or PR to help shape Mole's future.
-- Love Mole? <a href="https://miaoyan.app/cats.html?name=Mole" target="_blank">Buy Tw93 an ice-cold Coke</a> to keep the project alive and kicking! 🥤
-
-<details>
-<summary><strong>Friends who bought me Coke</strong></summary>
-<br/>
-<a href="https://miaoyan.app/cats.html?name=Mole"><img src="https://miaoyan.app/assets/sponsors.svg" width="1000" /></a>
-</details>
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on:
+- Code style and conventions
+- Submitting pull requests
+- Reporting issues
 
 ## License
 
-MIT License — feel free to enjoy and participate in open source.
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+Built with:
+- [SwiftUI](https://developer.apple.com/xcode/swiftui/) - Native UI framework
+- [Sparkle](https://sparkle-project.org/) - Software update framework
+- [IOKit](https://developer.apple.com/documentation/iokit) - Hardware access
+- [CoreLocation](https://developer.apple.com/documentation/corelocation) - Weather location
