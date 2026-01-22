@@ -1,0 +1,13 @@
+{
+  "branch_name": "fn-2",
+  "created_at": "2026-01-22T08:37:24.426242Z",
+  "depends_on_epics": [],
+  "id": "fn-2",
+  "next_task": 1,
+  "plan_review_status": "unknown",
+  "plan_reviewed_at": null,
+  "spec_path": ".flow/specs/fn-2.md",
+  "status": "done",
+  "title": "Menu Bar System Monitoring with Customizable Widgets",
+  "updated_at": "2026-01-22T10:19:11.901530Z"
+}

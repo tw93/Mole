@@ -1,0 +1,21 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T09:45:31.923748Z",
+  "created_at": "2026-01-22T08:39:54.996443Z",
+  "depends_on": [
+    "fn-2.1"
+  ],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.2",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.2.md",
+  "status": "done",
+  "title": "Build widget data manager service",
+  "updated_at": "2026-01-22T09:47:48.645998Z"
+}

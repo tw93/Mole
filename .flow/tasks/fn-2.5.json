@@ -1,0 +1,22 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T09:52:39.135844Z",
+  "created_at": "2026-01-22T08:39:55.234920Z",
+  "depends_on": [
+    "fn-2.2",
+    "fn-2.3"
+  ],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.5",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.5.md",
+  "status": "done",
+  "title": "Build GPU monitoring widget",
+  "updated_at": "2026-01-22T09:56:34.980302Z"
+}

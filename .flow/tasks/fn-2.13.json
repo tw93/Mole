@@ -1,0 +1,19 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T10:10:35.211596Z",
+  "created_at": "2026-01-22T09:38:55.699536Z",
+  "depends_on": [],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.13",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.13.md",
+  "status": "done",
+  "title": "Create WidgetHistoryStore for graph persistence",
+  "updated_at": "2026-01-22T10:18:56.530723Z"
+}

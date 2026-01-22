@@ -63,6 +63,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Apply saved theme preference
         applyThemePreference()
 
+        // Start widget system if onboarding completed
+        startWidgetSystem()
+
         // Listen for theme changes
         NotificationCenter.default.addObserver(
             self,
@@ -91,6 +94,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Keep app running when window is closed (menu bar app behavior)
         return false
+    }
+
+    private func startWidgetSystem() {
+        // Check if user has completed widget onboarding
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "tonic.widget.hasCompletedOnboarding")
+
+        if hasCompletedOnboarding {
+            // Start the widget coordinator to show menu bar widgets
+            // WidgetCoordinator is defined in MenuBarWidgets/WidgetStatusItem.swift
+            // This call will work once widget files are added to Xcode project (fn-3.8)
+            if let coordinatorClass = NSClassFromString("Tonic.WidgetCoordinator") as? NSObject.Type {
+                let selector = NSSelectorFromString("start")
+                if coordinatorClass.responds(to: selector) {
+                    _ = coordinatorClass.perform(selector)
+                }
+            }
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

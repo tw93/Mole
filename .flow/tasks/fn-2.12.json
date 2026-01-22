@@ -1,0 +1,21 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T10:03:13.430709Z",
+  "created_at": "2026-01-22T08:39:55.781925Z",
+  "depends_on": [
+    "fn-2.11"
+  ],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.12",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.12.md",
+  "status": "done",
+  "title": "Add Widgets tab to PreferencesView",
+  "updated_at": "2026-01-22T10:07:31.140140Z"
+}

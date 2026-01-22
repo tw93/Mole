@@ -1,0 +1,22 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T09:49:37.887461Z",
+  "created_at": "2026-01-22T08:39:55.157429Z",
+  "depends_on": [
+    "fn-2.2",
+    "fn-2.3"
+  ],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.4",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.4.md",
+  "status": "done",
+  "title": "Build CPU monitoring widget",
+  "updated_at": "2026-01-22T09:51:59.186985Z"
+}

@@ -1,0 +1,19 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T11:11:47.622400Z",
+  "created_at": "2026-01-22T11:02:45.540088Z",
+  "depends_on": [],
+  "epic": "fn-3",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-3.4",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-3.4.md",
+  "status": "done",
+  "title": "Fix network connection and WiFi detection",
+  "updated_at": "2026-01-22T11:14:42.042130Z"
+}

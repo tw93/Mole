@@ -1,0 +1,21 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T10:00:59.235589Z",
+  "created_at": "2026-01-22T08:39:55.629200Z",
+  "depends_on": [
+    "fn-2.2"
+  ],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.10",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.10.md",
+  "status": "done",
+  "title": "Create notification rules engine",
+  "updated_at": "2026-01-22T10:02:50.009689Z"
+}

@@ -1,0 +1,21 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T09:56:58.923690Z",
+  "created_at": "2026-01-22T08:39:55.549674Z",
+  "depends_on": [
+    "fn-2.2"
+  ],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.9",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.9.md",
+  "status": "done",
+  "title": "Implement weather service and widget",
+  "updated_at": "2026-01-22T10:00:49.172795Z"
+}

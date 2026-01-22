@@ -47,13 +47,19 @@ struct PreferencesView: View {
                     Label("Updates", systemImage: "arrow.down.circle")
                 }
 
+            // Widgets Tab
+            WidgetsSettingsView()
+                .tabItem {
+                    Label("Widgets", systemImage: "square.grid.2x2")
+                }
+
             // About Tab
             AboutView(version: currentVersion, build: buildNumber)
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 550, height: 420)
+        .frame(width: 550, height: 450)
         .padding()
     }
 }
@@ -524,6 +530,68 @@ struct UpdatesSettingsView: View {
             // Sync settings with Sparkle updater
             automaticallyChecksForUpdates = SparkleUpdater.shared.automaticallyChecksForUpdates
             #endif
+        }
+    }
+}
+
+// MARK: - Widgets Settings
+
+struct WidgetsSettingsView: View {
+    var body: some View {
+        // NOTE: WidgetCustomizationView provides full widget customization UI
+        // Once widget files are added to Xcode project, uncomment below:
+        // WidgetCustomizationView()
+
+        // For now, show preview while widget files are being integrated
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 48))
+                .foregroundColor(TonicColors.accent)
+
+            Text("Menu Bar Widgets")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Customizable system monitoring widgets coming soon.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding()
+
+            VStack(alignment: .leading, spacing: 8) {
+                featureRow("CPU", "Real-time CPU usage monitoring")
+                featureRow("Memory", "Memory pressure and usage tracking")
+                featureRow("Disk", "Disk space and activity monitoring")
+                featureRow("Network", "Bandwidth and connection status")
+                featureRow("Weather", "Current conditions and forecast")
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(10)
+
+            Spacer()
+        }
+        .padding()
+    }
+
+    private func featureRow(_ name: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Text(description)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
         }
     }
 }

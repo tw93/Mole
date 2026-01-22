@@ -1,0 +1,19 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T10:10:35.292079Z",
+  "created_at": "2026-01-22T09:38:55.776120Z",
+  "depends_on": [],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.14",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.14.md",
+  "status": "done",
+  "title": "Implement widget onboarding tour experience",
+  "updated_at": "2026-01-22T10:19:00.922894Z"
+}

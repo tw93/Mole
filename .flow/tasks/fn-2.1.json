@@ -1,0 +1,19 @@
+{
+  "assignee": "saransh1337@gmail.com",
+  "claim_note": "",
+  "claimed_at": "2026-01-22T09:43:33.535069Z",
+  "created_at": "2026-01-22T08:39:54.903398Z",
+  "depends_on": [],
+  "epic": "fn-2",
+  "evidence": {
+    "commits": [],
+    "prs": [],
+    "tests": []
+  },
+  "id": "fn-2.1",
+  "priority": null,
+  "spec_path": ".flow/tasks/fn-2.1.md",
+  "status": "done",
+  "title": "Create widget configuration data model and preferences",
+  "updated_at": "2026-01-22T09:45:20.215131Z"
+}
