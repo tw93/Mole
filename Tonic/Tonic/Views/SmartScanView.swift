@@ -815,6 +815,132 @@ struct RecommendationDetailView: View {
     }
 }
 
+// MARK: - Path Detail Row
+
+struct PathDetailRow: View {
+    let detail: PathDetail
+    @Binding var selectedItems: Set<String>
+    let isTopLevel: Bool
+    let toggleExpansion: (PathDetail) -> Void
+
+    private var isSelected: Bool {
+        selectedItems.contains(detail.path)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Main row
+            HStack(spacing: 12) {
+                // Selection checkbox
+                Button {
+                    toggleSelection()
+                } label: {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 18))
+                        .foregroundColor(isSelected ? TonicColors.accent : .secondary)
+                }
+                .buttonStyle(.plain)
+
+                // Expand/collapse for directories
+                if detail.isDirectory && (detail.children?.isEmpty == false) {
+                    Button {
+                        toggleExpansion(detail)
+                    } label: {
+                        Image(systemName: detail.isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .frame(width: 16)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Spacer()
+                        .frame(width: 16)
+                }
+
+                // Icon
+                Image(systemName: detail.isDirectory ? "folder.fill" : "doc.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(detail.isDirectory ? .blue : .secondary)
+                    .frame(width: 20)
+
+                // Name and size
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(detail.fileName)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 8) {
+                        Text(detail.formattedSize)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        if !isTopLevel {
+                            Text("·")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(detail.parentDirectory)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Show in Finder button
+                Button {
+                    showInFinder()
+                } label: {
+                    Image(systemName: "arrow.right.square")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Show in Finder")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
+            )
+
+            // Expanded children
+            if detail.isExpanded, let children = detail.children, !children.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(children) { child in
+                        PathDetailRow(
+                            detail: child,
+                            selectedItems: $selectedItems,
+                            isTopLevel: false,
+                            toggleExpansion: toggleExpansion
+                        )
+                    }
+                }
+                .padding(.leading, 24)
+            }
+        }
+    }
+
+    private func toggleSelection() {
+        if selectedItems.contains(detail.path) {
+            selectedItems.remove(detail.path)
+        } else {
+            selectedItems.insert(detail.path)
+        }
+    }
+
+    private func showInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    private var path: String {
+        detail.path
+    }
+}
+
 // MARK: - Fix Result
 
 struct FixResult {
