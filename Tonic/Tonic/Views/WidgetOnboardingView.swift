@@ -50,8 +50,6 @@ public struct WidgetOnboardingView: View {
                         .tag(index)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .indexDisplayMode(pageIndexDisplayMode)
             .frame(height: 300)
 
             // Page indicators
@@ -94,10 +92,6 @@ public struct WidgetOnboardingView: View {
         }
         .padding()
         .frame(width: 500, height: 500)
-    }
-
-    private var pageIndexDisplayMode: PageIndexDisplayMode {
-        .always
     }
 
     private func completeOnboarding() {

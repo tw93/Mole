@@ -15,11 +15,9 @@ import Charts
 public struct CPUCompactView: View {
 
     @ObservedController private var dataManager: WidgetDataManager
-    @ObservedObject private var config: WidgetPreferences
 
     public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
         self._dataManager = ObservedController(initialValue: dataManager)
-        self._config = ObservedObject(wrappedValue: config)
     }
 
     public var body: some View {
@@ -51,11 +49,9 @@ public struct CPUCompactView: View {
 public struct CPUDetailView: View {
 
     @ObservedController private var dataManager: WidgetDataManager
-    @ObservedObject private var config: WidgetPreferences
 
     public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
         self._dataManager = ObservedController(initialValue: dataManager)
-        self._config = ObservedObject(wrappedValue: config)
     }
 
     public var body: some View {
@@ -241,7 +237,7 @@ public struct CPUDetailView: View {
                     .padding()
             } else {
                 VStack(spacing: 8) {
-                    ForEach(dataManager.topCPUApps.prefix(5)) { app in
+                    ForEach(Array(dataManager.topCPUApps.prefix(5))) { app in
                         HStack(spacing: 12) {
                             // App icon
                             if let icon = app.icon {
@@ -305,7 +301,7 @@ public final class CPUStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         CPUDetailView()
     }
 }

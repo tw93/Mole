@@ -303,7 +303,7 @@ public final class GPUStatusItem: WidgetStatusItem {
         #endif
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         GPUDetailView()
     }
 }

@@ -48,7 +48,7 @@ public final class WidgetHistoryStore {
     // MARK: - Auto-Save
 
     /// Timer for periodic history saving (every 5 minutes)
-    private var autoSaveTimer: Timer?
+    nonisolated(unsafe) private var autoSaveTimer: Timer?
 
     /// Interval for auto-save (5 minutes)
     private let autoSaveInterval: TimeInterval = 5 * 60
@@ -67,7 +67,9 @@ public final class WidgetHistoryStore {
     private func setupAutoSave() {
         // Schedule periodic auto-save every 5 minutes
         autoSaveTimer = Timer.scheduledTimer(withTimeInterval: autoSaveInterval, repeats: true) { [weak self] _ in
-            self?.saveHistory()
+            Task { @MainActor in
+                self?.saveHistory()
+            }
         }
     }
 
@@ -99,6 +101,7 @@ public final class WidgetHistoryStore {
     }
 
     deinit {
+        // Timer needs to be invalidated outside of MainActor context
         autoSaveTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }

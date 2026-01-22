@@ -233,7 +233,7 @@ public final class WeatherService {
 
         // Hourly forecast (next 24 hours)
         let now = Date()
-        let hourly = response.hourly.time.enumerated().compactMap { index, time in
+        let hourly: [HourlyForecast] = response.hourly.time.enumerated().compactMap { (index, time) -> HourlyForecast? in
             guard time > now, index < response.hourly.time.count else { return nil }
             return HourlyForecast(
                 time: time,

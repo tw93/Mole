@@ -65,19 +65,7 @@ struct DiskVolume: Identifiable, Equatable {
     }
 }
 
-enum MemoryPressure: String, CaseIterable {
-    case normal = "Normal"
-    case warning = "Warning"
-    case critical = "Critical"
-
-    var color: Color {
-        switch self {
-        case .normal: return DesignTokens.Colors.progressLow
-        case .warning: return DesignTokens.Colors.progressMedium
-        case .critical: return DesignTokens.Colors.progressHigh
-        }
-    }
-}
+// MARK: - Battery Info
 
 struct BatteryInfo: Equatable {
     let isPresent: Bool
@@ -96,13 +84,6 @@ struct BatteryInfo: Equatable {
             return DesignTokens.Colors.progressHigh
         }
     }
-}
-
-enum BatteryHealth: String {
-    case good = "Good"
-    case fair = "Fair"
-    case poor = "Poor"
-    case unknown = "Unknown"
 }
 
 // MARK: - System Monitor

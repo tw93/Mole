@@ -15,11 +15,9 @@ import Charts
 public struct MemoryCompactView: View {
 
     @ObservedController private var dataManager: WidgetDataManager
-    @ObservedObject private var config: WidgetPreferences
 
     public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
         self._dataManager = ObservedController(initialValue: dataManager)
-        self._config = ObservedObject(wrappedValue: config)
     }
 
     public var body: some View {
@@ -56,11 +54,9 @@ public struct MemoryCompactView: View {
 public struct MemoryDetailView: View {
 
     @ObservedController private var dataManager: WidgetDataManager
-    @ObservedObject private var config: WidgetPreferences
 
     public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
         self._dataManager = ObservedController(initialValue: dataManager)
-        self._config = ObservedObject(wrappedValue: config)
     }
 
     public var body: some View {
@@ -304,7 +300,7 @@ public struct MemoryDetailView: View {
                     .padding()
             } else {
                 VStack(spacing: 8) {
-                    ForEach(dataManager.topMemoryApps.prefix(5)) { app in
+                    ForEach(Array(dataManager.topMemoryApps.prefix(5))) { app in
                         HStack(spacing: 12) {
                             if let icon = app.icon {
                                 Image(nsImage: icon)
@@ -389,7 +385,7 @@ public final class MemoryStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         MemoryDetailView()
     }
 }

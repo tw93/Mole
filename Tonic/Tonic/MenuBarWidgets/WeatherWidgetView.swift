@@ -14,7 +14,7 @@ import Charts
 /// Compact menu bar view for Weather widget
 public struct WeatherCompactView: View {
 
-    @ObservedObject private var weatherService = WeatherService.shared
+    @State private var weatherService = WeatherService.shared
 
     public init() {}
 
@@ -54,7 +54,7 @@ public struct WeatherCompactView: View {
 /// Detailed popover view for Weather widget
 public struct WeatherDetailView: View {
 
-    @ObservedObject private var weatherService = WeatherService.shared
+    @State private var weatherService = WeatherService.shared
 
     public init() {}
 
@@ -296,12 +296,11 @@ public struct WeatherDetailView: View {
                 detailRow(label: "Wind", value: "\(Int(weather.current.windSpeed)) km/h", icon: "wind")
                 detailRow(label: "UV Index", value: "\(Int(weather.current.uvIndex))", icon: "sun.max")
 
-                if let uvValue = Int(weather.current.uvIndex) {
-                    let uvColor = uvColor(for: uvValue)
-                    Text(uvDescription(for: uvValue))
-                        .font(.caption)
-                        .foregroundColor(uvColor)
-                }
+                let uvValue = Int(weather.current.uvIndex)
+                let uvColor = uvColor(for: uvValue)
+                Text(uvDescription(for: uvValue))
+                    .font(.caption)
+                    .foregroundColor(uvColor)
             }
         }
         .padding()
@@ -368,7 +367,7 @@ public final class WeatherStatusItem: WidgetStatusItem {
         WeatherService.shared.startUpdates()
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         WeatherDetailView()
     }
 }

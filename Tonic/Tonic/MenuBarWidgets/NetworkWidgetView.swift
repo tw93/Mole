@@ -346,7 +346,7 @@ public final class NetworkStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         NetworkDetailView()
     }
 }

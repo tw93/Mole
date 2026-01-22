@@ -13,7 +13,7 @@ import SwiftUI
 /// Main UI for customizing menu bar widgets
 struct WidgetCustomizationView: View {
 
-    @ObservedObject private var preferences = WidgetPreferences.shared
+    @State private var preferences = WidgetPreferences.shared
     @State private var draggedWidget: WidgetType?
     @State private var wallpaperURL: URL?
     @State private var showingResetAlert = false

@@ -267,7 +267,7 @@ public final class WidgetPreferences: Sendable {
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Keys.hasCompletedOnboarding)
     }
 
-    private func saveConfigs() {
+    internal func saveConfigs() {
         if let encoded = try? JSONEncoder().encode(widgetConfigs) {
             UserDefaults.standard.set(encoded, forKey: Keys.widgetConfigs)
         }

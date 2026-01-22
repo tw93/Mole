@@ -22,7 +22,8 @@ public struct BatteryCompactView: View {
 
     public var body: some View {
         HStack(spacing: 4) {
-            if let battery = dataManager.batteryData, battery.isPresent {
+            let battery = dataManager.batteryData
+            if battery.isPresent {
                 Image(systemName: batteryIcon(for: battery))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(batteryColor(for: battery))
@@ -88,7 +89,8 @@ public struct BatteryDetailView: View {
 
             Divider()
 
-            if let battery = dataManager.batteryData, battery.isPresent {
+            let battery = dataManager.batteryData
+            if battery.isPresent {
                 contentView(battery: battery)
             } else {
                 noBatteryView
@@ -109,7 +111,8 @@ public struct BatteryDetailView: View {
 
             Spacer()
 
-            if let battery = dataManager.batteryData, battery.isPresent {
+            let battery = dataManager.batteryData
+            if battery.isPresent {
                 Text("\(Int(battery.chargePercentage))%")
                     .font(.system(size: 20, weight: .bold, design: .monospaced))
                     .foregroundColor(batteryColor(for: battery))
@@ -269,7 +272,7 @@ public final class BatteryStatusItem: WidgetStatusItem {
         }
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         BatteryDetailView()
     }
 }

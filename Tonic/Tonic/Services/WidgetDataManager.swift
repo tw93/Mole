@@ -10,6 +10,19 @@ import Foundation
 import IOKit.ps
 import IOKit
 import CoreWLAN
+import AppKit
+import MachO
+import SwiftUI
+
+// MARK: - IOKit Constants
+
+// Missing IOKit constants for block storage drivers
+private let kIOBlockStorageDriverClass = "IOBlockStorageDriver"
+private let kIOBlockStorageDriverStatisticsKey = "Statistics"
+private let kIOBlockStorageDriverStatisticsBytesReadKey = "BytesRead"
+private let kIOBlockStorageDriverStatisticsBytesWrittenKey = "BytesWritten"
+private let kIOPropertyPlaneKey = "IOPropertyPlane"
+private let kIOPropertyThermalInformationKey = "ThermalInformation"
 
 // MARK: - Widget Data Models
 
@@ -390,7 +403,7 @@ public final class WidgetDataManager {
         // Store current for next iteration
         if let prevInfo = previousCPUInfo {
             vm_deallocate(
-                mach_task_self(),
+                mach_task_self_,
                 vm_address_t(UInt(bitPattern: prevInfo)),
                 vm_size_t(Int(previousNumCpuInfo) * MemoryLayout<integer_t>.size)
             )
@@ -468,7 +481,7 @@ public final class WidgetDataManager {
         sysctlbyname("hw.memsize", &memSize, &memSizeLen, nil, 0)
 
         // Get swap usage
-        var xswUsage: xsw_usage = xsw_usage()
+        var xswUsage = xsw_usage(xsu_total: 0, xsu_used: 0, xsu_pagesize: 0, xsu_encrypted: 0)
         var xswSize = MemoryLayout<xsw_usage>.stride
         if sysctlbyname("vm.swapusage", &xswUsage, &xswSize, nil, 0) == 0 {
             // Swap available in xswUsage
@@ -559,16 +572,21 @@ public final class WidgetDataManager {
 
         // Match IOKit services for block storage drivers
         let matchingDict = IOServiceMatching(kIOBlockStorageDriverClass)
-        guard let serviceIterator = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict) else {
+        var serviceIterator: io_iterator_t = 0
+        let result = IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &serviceIterator)
+        guard result == KERN_SUCCESS else {
             return (0, 0)
         }
 
-        var service: io_service_t?
-        while case let nextService = IOIteratorNext(serviceIterator), nextService != 0 {
-            service = nextService
+        defer { IOObjectRelease(serviceIterator) }
+
+        while true {
+            let nextService = IOIteratorNext(serviceIterator)
+            guard nextService != 0 else { break }
+            defer { IOObjectRelease(nextService) }
 
             // Get statistics properties from the driver
-            guard let properties = IORegistryEntryCreateCFProperty(service, kIOPropertyPlaneKey, kCFAllocatorDefault, 0).takeRetainedValue() as? [String: Any] else {
+            guard let properties = IORegistryEntryCreateCFProperty(nextService, kIOPropertyPlaneKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? [String: Any] else {
                 continue
             }
 
@@ -581,11 +599,7 @@ public final class WidgetDataManager {
                     totalWriteBytes += writeBytes
                 }
             }
-
-            IOObjectRelease(service)
         }
-
-        IOObjectRelease(serviceIterator)
 
         return (totalReadBytes, totalWriteBytes)
     }
@@ -672,9 +686,9 @@ public final class WidgetDataManager {
 
     private func getConnectionType() -> ConnectionType {
         // Use CoreWLAN to detect connection type
-        if let client = CWWiFiClient.shared(),
-           let interface = client.interfaces()?.first,
-           interface.powerOn {
+        let client = CWWiFiClient.shared()
+        if let interface = client.interfaces()?.first,
+           interface.powerOn() {
             // WiFi is on and connected
             if interface.ssid() != nil {
                 return .wifi
@@ -706,14 +720,14 @@ public final class WidgetDataManager {
             ptr = ptr.pointee.ifa_next
         }
 
-        return hasEthernet ? .ethernet : .other
+        return hasEthernet ? .ethernet : .unknown
     }
 
     private func getWiFiInterface() -> String? {
         // Use CoreWLAN to get WiFi interface name
-        if let client = CWWiFiClient.shared(),
-           let interface = client.interfaces()?.first,
-           interface.powerOn {
+        let client = CWWiFiClient.shared()
+        if let interface = client.interfaces()?.first,
+           interface.powerOn() {
             return interface.interfaceName
         }
         return nil
@@ -723,9 +737,9 @@ public final class WidgetDataManager {
         // Use CoreWLAN to get the current SSID
         // Note: This requires the app to have the "com.apple.security.network.client" entitlement
         // or be run without sandboxing (like a menu bar app)
-        if let client = CWWiFiClient.shared(),
-           let interface = client.interfaces()?.first,
-           interface.powerOn {
+        let client = CWWiFiClient.shared()
+        if let interface = client.interfaces()?.first,
+           interface.powerOn() {
             return interface.ssid()
         }
         return nil
@@ -751,7 +765,8 @@ public final class WidgetDataManager {
 
         // Try to get GPU activity from IORegistry
         // Apple AGX GPU registers under IOService:/AppleARMIODevice/AGX
-        if let gpuService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOGPU")) {
+        let gpuService = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOGPU"))
+        if gpuService != 0 {
             // Try to read GPU stats
             if let properties = IORegistryEntryCreateCFProperty(gpuService, "PerformanceStatistics" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? [String: Any] {
                 // Parse GPU stats if available
@@ -765,9 +780,10 @@ public final class WidgetDataManager {
         // Alternative: Try IOAccelerator
         if usage == nil {
             var iterator: io_iterator_t = 0
-            if IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching("IOAccelerator"), &iterator) == KERN_SUCCESS {
-                var service: io_object_t
-                while (service = IOIteratorNext(iterator)), service != 0 {
+            if IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &iterator) == KERN_SUCCESS {
+                while true {
+                    let service = IOIteratorNext(iterator)
+                    guard service != 0 else { break }
                     // Check if this is an Apple GPU
                     if let name = IORegistryEntryCreateCFProperty(service, "IOName" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String,
                        name.contains("AGX") || name.contains("AppleGPU") {
@@ -793,7 +809,8 @@ public final class WidgetDataManager {
         // Estimate GPU memory usage from system memory pressure
         // On unified memory, GPU + CPU share the same pool
         // GPU typically uses 5-15% when idle, up to 50%+ under load
-        if let total = totalMemory, let memPercent = memoryData.usagePercentage {
+        if let total = totalMemory {
+            let memPercent = memoryData.usagePercentage
             // Estimate GPU memory based on activity and system memory pressure
             // This is an approximation since Apple doesn't expose exact GPU memory allocation
             let estimatedGPUMemoryPercent = usage ?? 10.0 // Default 10% idle
@@ -834,7 +851,7 @@ public final class WidgetDataManager {
     private func getThermalInfo() -> ThermalInfo? {
         // Try IOPM thermal management
         var iterator: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching("IOPMThermalProfile"), &iterator) == KERN_SUCCESS else {
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOPMThermalProfile"), &iterator) == KERN_SUCCESS else {
             return nil
         }
 
@@ -852,8 +869,9 @@ public final class WidgetDataManager {
             "TG0P"  // GPU
         ]
 
-        var service: io_object_t
-        while (service = IOIteratorNext(iterator)), service != 0 {
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else { break }
             if let properties = IORegistryEntryCreateCFProperty(service, kIOPropertyThermalInformationKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? [String: Any] {
                 // Try to parse thermal info
                 IOObjectRelease(service)

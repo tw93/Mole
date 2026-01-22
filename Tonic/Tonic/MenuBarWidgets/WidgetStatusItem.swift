@@ -47,7 +47,12 @@ public class WidgetStatusItem: ObservableObject {
     }
 
     deinit {
-        removeStatusItem()
+        // Clean up status item on main thread
+        MainActor.assumeIsolated {
+            if let statusItem = self.statusItem {
+                NSStatusBar.system.removeStatusItem(statusItem)
+            }
+        }
     }
 
     // MARK: - Setup
@@ -291,17 +296,29 @@ struct WidgetDetailViewPlaceholder: View {
 
 // MARK: - ObservedController Property Wrapper
 
-/// Property wrapper for observing non-SwiftUI observable objects
+/// Property wrapper for observing @Observable objects in SwiftUI views
+/// For @Observable objects, use @State in SwiftUI views instead
 @propertyWrapper
-struct ObservedController<ObservedObject: Observable>: DynamicProperty {
-    @ObservedObject private var value: ObservedObject
+struct ObservedController<T>: DynamicProperty {
+    private var storage: ObservedControllerStorage<T>
 
-    var wrappedValue: ObservedObject {
-        get { value }
+    var wrappedValue: T {
+        get { storage.value }
+        set { storage.value = newValue }
     }
 
-    init(initialValue: ObservedObject) {
-        self._value = ObservedObject(wrappedValue: initialValue)
+    init(initialValue: T) {
+        self.storage = ObservedControllerStorage(value: initialValue)
+    }
+}
+
+/// Storage class for ObservedController to work around SwiftUI property wrapper limitations
+@Observable
+private class ObservedControllerStorage<T> {
+    var value: T
+
+    init(value: T) {
+        self.value = value
     }
 }
 

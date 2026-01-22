@@ -13,7 +13,7 @@ import SwiftUI
 /// Configuration UI for notification rules
 struct NotificationRulesView: View {
 
-    @ObservedObject private var engine = NotificationRuleEngine.shared
+    @State private var engine = NotificationRuleEngine.shared
     @State private var showingAddRule = false
     @State private var editingRule: NotificationRule?
 

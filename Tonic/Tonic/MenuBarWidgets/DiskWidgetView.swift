@@ -15,11 +15,9 @@ import Charts
 public struct DiskCompactView: View {
 
     @ObservedController private var dataManager: WidgetDataManager
-    @ObservedObject private var config: WidgetPreferences
 
     public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
         self._dataManager = ObservedController(initialValue: dataManager)
-        self._config = ObservedObject(wrappedValue: config)
     }
 
     public var body: some View {
@@ -67,11 +65,9 @@ public struct DiskCompactView: View {
 public struct DiskDetailView: View {
 
     @ObservedController private var dataManager: WidgetDataManager
-    @ObservedObject private var config: WidgetPreferences
 
     public init(dataManager: WidgetDataManager = .shared, config: WidgetPreferences = .shared) {
         self._dataManager = ObservedController(initialValue: dataManager)
-        self._config = ObservedObject(wrappedValue: config)
     }
 
     public var body: some View {
@@ -342,7 +338,7 @@ public final class DiskStatusItem: WidgetStatusItem {
         super.init(widgetType: widgetType, configuration: configuration)
     }
 
-    public override func createDetailView() -> some View {
+    public func createDetailView() -> some View {
         DiskDetailView()
     }
 }

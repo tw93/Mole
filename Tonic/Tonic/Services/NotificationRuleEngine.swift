@@ -205,7 +205,7 @@ public final class NotificationRuleEngine {
         content.sound = .default
 
         // Add icon for notification
-        if let iconUrl = Bundle.main.urlForResource("AppIcon", withExtension: "icns") {
+        if let iconUrl = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
             // On macOS, notification icons use the app icon by default
         }
 
@@ -325,6 +325,8 @@ extension NotificationRuleEngine {
             }
         }
     }
+
+    /// Stop the observer timer
 
     /// Stop the observer timer
     public func stopObserver() {
