@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/lib/core/commands.sh"
 trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
-VERSION="1.21.0"
+VERSION="1.23.2"
 MOLE_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {
@@ -223,6 +223,7 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "Manage protected items"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "Configure scan directories"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force re-install latest version"
     echo
     printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
     printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
@@ -231,6 +232,7 @@ show_help() {
 
 # Update flow (Homebrew or installer).
 update_mole() {
+    local force_update="${1:-false}"
     local update_interrupted=false
     trap 'update_interrupted=true; echo ""; exit 130' INT TERM
 
@@ -250,11 +252,19 @@ update_mole() {
         exit 1
     fi
 
-    if [[ "$VERSION" == "$latest" ]]; then
+    if [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
         echo ""
         echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version (${VERSION})"
         echo ""
+        echo -e "${YELLOW}Tip:${NC} To force a re-install, use: ${GRAY}mo update --force${NC}"
+        echo ""
         exit 0
+    fi
+
+    if [[ "$force_update" == "true" && "$VERSION" == "$latest" ]]; then
+        echo ""
+        echo -e "${YELLOW}Force re-installing latest version (${latest})...${NC}"
+        echo ""
     fi
 
     if [[ -t 1 ]]; then
@@ -336,6 +346,7 @@ update_mole() {
 
     process_install_output() {
         local output="$1"
+        local fallback_version="$2"
         if [[ -t 1 ]]; then stop_inline_spinner; fi
 
         local filtered_output
@@ -346,7 +357,16 @@ update_mole() {
 
         if ! printf '%s\n' "$output" | grep -Eq "Updated to latest version|Already on latest version"; then
             local new_version
-            new_version=$("$mole_path" --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
+            new_version=$(printf '%s\n' "$output" | sed -n 's/.*Updated to latest version (\([^)]*\)).*/\1/p' | head -1)
+            if [[ -z "$new_version" ]]; then
+                new_version=$(printf '%s\n' "$output" | sed -n 's/.*(\([0-9][^)]*\)).*/\1/p' | head -1)
+            fi
+            if [[ -z "$new_version" ]]; then
+                new_version=$("$mole_path" --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
+            fi
+            if [[ -z "$new_version" ]]; then
+                new_version="$fallback_version"
+            fi
             printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version (${new_version:-unknown})"
         else
             printf '\n'
@@ -359,11 +379,25 @@ update_mole() {
     if [[ ! -f "$config_dir/lib/core/common.sh" ]]; then
         config_dir="$HOME/.config/mole"
     fi
-    if install_output=$(MOLE_VERSION="$update_tag" "$tmp_installer" --prefix "$install_dir" --config "$config_dir" --update 2>&1); then
-        process_install_output "$install_output"
+    
+    local installer_args=("--prefix" "$install_dir" "--config" "$config_dir")
+    if [[ "$force_update" != "true" ]]; then
+        installer_args+=("--update")
+    fi
+    
+    if install_output=$(MOLE_VERSION="$update_tag" "$tmp_installer" "${installer_args[@]}" 2>&1); then
+        process_install_output "$install_output" "$latest"
     else
-        if install_output=$(MOLE_VERSION="$update_tag" "$tmp_installer" --prefix "$install_dir" --config "$config_dir" 2>&1); then
-            process_install_output "$install_output"
+        if [[ "$force_update" != "true" ]]; then
+            if install_output=$(MOLE_VERSION="$update_tag" "$tmp_installer" --prefix "$install_dir" --config "$config_dir" 2>&1); then
+                process_install_output "$install_output" "$latest"
+            else
+                if [[ -t 1 ]]; then stop_inline_spinner; fi
+                rm -f "$tmp_installer"
+                log_error "Update failed"
+                echo "$install_output" | tail -10 >&2 # Show last 10 lines of error
+                exit 1
+            fi
         else
             if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
@@ -759,7 +793,11 @@ main() {
             exec "$SCRIPT_DIR/bin/completion.sh" "${args[@]:1}"
             ;;
         "update")
-            update_mole
+            local force_update="false"
+            if [[ "${args[1]:-}" == "--force" ]] || [[ "${args[1]:-}" == "-f" ]]; then
+                force_update="true"
+            fi
+            update_mole "$force_update"
             exit 0
             ;;
         "remove")
