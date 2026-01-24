@@ -244,6 +244,13 @@ clean_dev_jetbrains_toolbox() {
         product_dirs+=("$product_dir")
     done < <(command find "$toolbox_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
 
+    if [[ ${#product_dirs[@]} -eq 0 ]]; then
+        if [[ "$whitelist_overridden" == "true" ]]; then
+            WHITELIST_PATTERNS=("${original_whitelist[@]}")
+        fi
+        return 0
+    fi
+
     local product_dir
     for product_dir in "${product_dirs[@]}"; do
         while IFS= read -r -d '' channel_dir; do
@@ -275,6 +282,8 @@ clean_dev_jetbrains_toolbox() {
 
                 version_dirs+=("$version_dir")
             done < <(command find "$channel_dir" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+
+            [[ ${#version_dirs[@]} -eq 0 ]] && continue
 
             local -a sorted_dirs=()
             while IFS= read -r line; do
