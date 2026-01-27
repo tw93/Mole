@@ -89,6 +89,7 @@ paginated_multi_select() {
     local top_index=0
     local sort_mode="${MOLE_MENU_SORT_MODE:-${MOLE_MENU_SORT_DEFAULT:-date}}" # date|name|size
     local sort_reverse="${MOLE_MENU_SORT_REVERSE:-false}"
+    local filter_query="" # For / search filter mode
 
     # Metadata (optional)
     # epochs[i]   -> last_used_epoch (numeric) for item i
@@ -403,6 +404,7 @@ paginated_multi_select() {
         local space_select="${GRAY}Space Select${NC}"
         local enter="${GRAY}Enter${NC}"
         local exit="${GRAY}Q Exit${NC}"
+        local filter_hint="${GRAY}/ Filter${NC}"
 
         local reverse_arrow="↑"
         [[ "$sort_reverse" == "true" ]] && reverse_arrow="↓"
@@ -418,7 +420,7 @@ paginated_multi_select() {
             [[ "$term_width" =~ ^[0-9]+$ ]] || term_width=80
 
             # Full controls
-            local -a _segs=("$nav" "$space_select" "$enter" "$refresh" "$sort_ctrl" "$order_ctrl" "$exit")
+            local -a _segs=("$nav" "$space_select" "$enter" "$filter_hint" "$refresh" "$sort_ctrl" "$order_ctrl" "$exit")
 
             # Calculate width
             local total_len=0 seg_count=${#_segs[@]}
@@ -447,7 +449,7 @@ paginated_multi_select() {
             _print_wrapped_controls "$sep" "${_segs[@]}"
         else
             # Without metadata: basic controls
-            local -a _segs_simple=("$nav" "$space_select" "$enter" "$refresh" "$exit")
+            local -a _segs_simple=("$nav" "$space_select" "$enter" "$filter_hint" "$refresh" "$exit")
             _print_wrapped_controls "$sep" "${_segs_simple[@]}"
         fi
         printf "${clear_line}" >&2
@@ -686,6 +688,123 @@ paginated_multi_select() {
                     rebuild_view
                     need_full_redraw=true
                 fi
+                ;;
+            "CHAR:/")
+                # Enter filter mode - type to search items
+                filter_query=""
+
+                # Save original view_indices to restore on cancel
+                local -a orig_view_indices=("${view_indices[@]}")
+
+                while true; do
+                    # Show filter prompt and current query
+                    local filter_display="$filter_query"
+                    [[ -z "$filter_display" ]] && filter_display="(type to filter...)"
+
+                    # Redraw menu with filter prompt
+                    items_per_page=$(_pm_calculate_items_per_page)
+                    printf "\033[H" >&2
+                    local clear_line="\r\033[2K"
+
+                    # Header with filter prompt
+                    printf "${clear_line}${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d selected${NC}\n" "${title}" "$selected_count" "$total_items" >&2
+                    printf "${clear_line}${CYAN}Filter: ${NC}${YELLOW}%s${NC}\n" "$filter_display" >&2
+                    printf "${clear_line}\n" >&2
+
+                    # Build filtered view_indices
+                    view_indices=()
+                    if [[ -z "$filter_query" ]]; then
+                        # No filter - show all
+                        view_indices=("${orig_view_indices[@]}")
+                    else
+                        # Filter items by name (case-insensitive substring match)
+                        # Use tr for bash 3.2 compatibility (macOS)
+                        local filter_lc=$(echo "$filter_query" | tr '[:upper:]' '[:lower:]')
+                        for idx in "${orig_view_indices[@]}"; do
+                            local item_name="${items[idx]}"
+                            local name_lc=$(echo "$item_name" | tr '[:upper:]' '[:lower:]')
+                            if [[ "$name_lc" == *"$filter_lc"* ]]; then
+                                view_indices+=("$idx")
+                            fi
+                        done
+                    fi
+
+                    # Display filtered items
+                    local visible_total=${#view_indices[@]}
+                    if [[ $visible_total -eq 0 ]]; then
+                        printf "${clear_line}No matching items\n" >&2
+                        for ((i = 0; i < items_per_page; i++)); do
+                            printf "${clear_line}\n" >&2
+                        done
+                        printf "${clear_line}${GRAY}Press Esc to clear filter, Enter to apply${NC}\n" >&2
+                        printf "${clear_line}" >&2
+                    else
+                        # Show filtered results (same display logic as draw_menu)
+                        local visible_count=$((visible_total - top_index))
+                        [[ $visible_count -gt $items_per_page ]] && visible_count=$items_per_page
+                        [[ $visible_count -le 0 ]] && visible_count=1
+
+                        local start_idx=$top_index
+                        local end_idx=$((top_index + items_per_page - 1))
+                        [[ $end_idx -ge $visible_total ]] && end_idx=$((visible_total - 1))
+
+                        for ((i = start_idx; i <= end_idx; i++)); do
+                            [[ $i -lt 0 ]] && continue
+                            local is_current=false
+                            [[ $((i - start_idx)) -eq $cursor_pos ]] && is_current=true
+                            render_item $((i - start_idx)) $is_current
+                        done
+
+                        local items_shown=$((end_idx - start_idx + 1))
+                        [[ $items_shown -lt 0 ]] && items_shown=0
+                        for ((i = items_shown; i < items_per_page; i++)); do
+                            printf "${clear_line}\n" >&2
+                        done
+
+                        printf "${clear_line}\n" >&2
+                        printf "${clear_line}${GRAY}Press Esc to cancel, Enter to apply${NC}\n" >&2
+                    fi
+                    printf "${clear_line}" >&2
+
+                    # Read one character (with timeout for escape sequences)
+                    local fkey rest
+                    IFS= read -r -s -n 1 fkey 2>/dev/null || { fkey=""; break; }
+                    read_status=$?
+
+                    if [[ $read_status -ne 0 ]]; then
+                        break
+                    fi
+
+                    case "$fkey" in
+                        $'\x1b') # Escape key
+                            # Cancel filter - restore original view
+                            view_indices=("${orig_view_indices[@]}")
+                            filter_query=""
+                            need_full_redraw=true
+                            break
+                            ;;
+                        $'\n' | $'\r') # Enter key
+                            # Apply filter and exit filter mode
+                            need_full_redraw=true
+                            break
+                            ;;
+                        $'\x7f' | $'\x08') # Backspace/Delete
+                            # Remove last character from filter
+                            if [[ -n "$filter_query" ]]; then
+                                filter_query="${filter_query%?}"
+                            fi
+                            ;;
+                        [[:print:]])
+                            # Add character to filter (limit to 50 chars)
+                            if [[ ${#filter_query} -lt 50 ]]; then
+                                filter_query+="$fkey"
+                            fi
+                            ;;
+                    esac
+
+                    # Small delay to prevent excessive CPU usage
+                    sleep 0.01
+                done
                 ;;
             "ENTER")
                 # Smart Enter behavior
