@@ -1046,7 +1046,11 @@ perform_cleanup() {
                 local movies
                 movies=$(echo "$freed_gb" | awk '{printf "%.0f", $1/4.5}')
                 if [[ $movies -gt 0 ]]; then
-                    summary_details+=("Equivalent to ~$movies 4K movies of storage.")
+                    if [[ $movies -eq 1 ]]; then
+                        summary_details+=("Equivalent to ~$movies 4K movie of storage.")
+                    else
+                        summary_details+=("Equivalent to ~$movies 4K movies of storage.")
+                    fi
                 fi
             fi
 
