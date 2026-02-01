@@ -411,21 +411,25 @@ scan_purge_targets() {
 
     if [[ "$use_find" == "true" ]]; then
         # Pruned find avoids descending into heavy directories.
-        local find_expr=()
         local prune_dirs=(".git" "Library" ".Trash" "Applications")
-        for dir in "${prune_dirs[@]}"; do
-            find_expr+=("-name" "$dir" "-prune" "-o")
+        local purge_targets=("${PURGE_TARGETS[@]}")
+
+        local prune_expr=()
+        for i in "${!prune_dirs[@]}"; do
+            prune_expr+=( -name "${prune_dirs[$i]}" )
+            [[ $i -lt $((${#prune_dirs[@]} - 1)) ]] && prune_expr+=( -o )
         done
-        local i=0
-        for target in "${PURGE_TARGETS[@]}"; do
-            find_expr+=("-name" "$target" "-print" "-prune")
-            if [[ $i -lt $((${#PURGE_TARGETS[@]} - 1)) ]]; then
-                find_expr+=("-o")
-            fi
-            ((i++))
+
+        local target_expr=()
+        for i in "${!purge_targets[@]}"; do
+            target_expr+=( -name "${purge_targets[$i]}" -print )
+            [[ $i -lt $((${#purge_targets[@]} - 1)) ]] && target_expr+=( -o )
         done
+
         command find "$search_path" -mindepth "$min_depth" -maxdepth "$max_depth" -type d \
-            \( "${find_expr[@]}" \) 2> /dev/null > "$output_file.raw" || true
+            \( "${prune_expr[@]}" \) -prune -o \
+            \( "${target_expr[@]}" \) \
+            2>&1 | tee "$output_file.raw" > /dev/null
 
         process_scan_results "$output_file.raw"
     fi
