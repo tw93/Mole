@@ -429,7 +429,7 @@ scan_purge_targets() {
         command find "$search_path" -mindepth "$min_depth" -maxdepth "$max_depth" -type d \
             \( "${prune_expr[@]}" \) -prune -o \
             \( "${target_expr[@]}" \) -print -prune \
-            2> /dev/null > "$output_file.raw" || true
+            2> /dev/null | cat > "$output_file.raw" || true
 
         process_scan_results "$output_file.raw"
     fi
