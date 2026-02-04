@@ -63,11 +63,13 @@ mo --version                 # Show installed version
 mo clean --dry-run           # Preview the cleanup plan
 mo clean --whitelist         # Manage protected caches
 mo clean --dry-run --debug   # Detailed preview with risk levels and file info
+mo clean --format json       # Machine-readable JSON output
 
 mo optimize --dry-run        # Preview optimization actions
 mo optimize --debug          # Run with detailed operation logs
 mo optimize --whitelist      # Manage protected optimization rules
 mo purge --paths             # Configure project scan directories
+mo purge --format json       # Machine-readable JSON output
 ```
 
 ## Tips
@@ -244,6 +246,72 @@ Select Installers to Remove - 3.8GB (5 selected)
   ● Acrobat_Reader.dmg      220.4MB | Downloads
   ○ AppCode_Legacy.zip      410.6MB | Downloads
 ```
+
+### JSON Output
+
+Mole supports machine-readable JSON output
+
+```bash
+mo clean --format json       # JSON output (implies --dry-run)
+mo clean --json              # Alias for --format json
+mo purge --format json       # JSON output for purge scan
+```
+
+**Example output:**
+
+```json
+{
+  "command": "clean",
+  "dryRun": true,
+  "items": [
+    {
+      "id": "safari_cache_123456",
+      "title": "Safari cache",
+      "category": "Browsers",
+      "paths": ["/Users/you/Library/Caches/com.apple.Safari"],
+      "estimatedBytes": 52428800,
+      "risk": "low",
+      "requiresSudo": false,
+      "reason": "Cache files are automatically regenerated when needed",
+      "personaTags": ["browser", "safari"]
+    },
+    {
+      "id": "xcode_deriveddata_789012",
+      "title": "Xcode DerivedData",
+      "category": "Developer tools",
+      "paths": ["/Users/you/Library/Developer/Xcode/DerivedData"],
+      "estimatedBytes": 5368709120,
+      "risk": "low",
+      "requiresSudo": false,
+      "reason": "Cache files are automatically regenerated when needed",
+      "personaTags": ["ios", "xcode", "developer"]
+    }
+  ],
+  "totalEstimatedBytes": 5421137920,
+  "requiresSudo": false,
+  "warnings": []
+}
+```
+
+**JSON Schema:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Command name (`clean` or `purge`) |
+| `dryRun` | boolean | Always `true` for JSON output |
+| `items` | array | Cleanup items found |
+| `items[].id` | string | Stable identifier (consistent across runs) |
+| `items[].title` | string | Human-readable description |
+| `items[].category` | string | Category grouping |
+| `items[].paths` | array | File/directory paths to clean |
+| `items[].estimatedBytes` | number | Estimated size in bytes |
+| `items[].risk` | string | Risk level: `low`, `medium`, or `high` |
+| `items[].requiresSudo` | boolean | Whether admin access is needed |
+| `items[].reason` | string | Explanation of why it's safe to remove |
+| `items[].personaTags` | array | Technology/persona tags for filtering |
+| `totalEstimatedBytes` | number | Total estimated bytes across all items |
+| `requiresSudo` | boolean | Whether any item requires sudo |
+| `warnings` | array | Warning messages (e.g., missing permissions) |
 
 ## Quick Launchers
 

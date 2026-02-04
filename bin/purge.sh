@@ -2,6 +2,7 @@
 # Mole - Purge command.
 # Cleans heavy project build artifacts.
 # Interactive selection by project.
+# Supports JSON output for UI integration.
 
 set -euo pipefail
 
@@ -12,6 +13,7 @@ export LANG=C
 # Get script directory and source common functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
+source "$SCRIPT_DIR/../lib/core/json_output.sh"
 
 # Set up cleanup trap for temporary files
 trap cleanup_temp_files EXIT INT TERM
@@ -233,6 +235,9 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Options:${NC}"
     echo "  --paths         Edit custom scan directories"
+    echo "  --dry-run       Scan only, do not delete"
+    echo "  --format json   Output machine-readable JSON (implies --dry-run)"
+    echo "  --json          Alias for --format json"
     echo "  --debug         Enable debug logging"
     echo "  --help          Show this help message"
     echo ""
@@ -242,12 +247,135 @@ show_help() {
     done
 }
 
+# JSON Output Mode Functions
+
+# Scan for purgeable artifacts and output as JSON
+perform_purge_json() {
+    json_reset
+    json_set_category "Project Artifacts"
+
+    # Get search paths
+    local -a search_paths=()
+    if [[ -f "$PURGE_CONFIG_FILE" ]]; then
+        while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            [[ "$line" == ~* ]] && line="${line/#~/$HOME}"
+            [[ -d "$line" ]] && search_paths+=("$line")
+        done < "$PURGE_CONFIG_FILE"
+    fi
+
+    if [[ ${#search_paths[@]} -eq 0 ]]; then
+        for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
+            [[ -d "$path" ]] && search_paths+=("$path")
+        done
+    fi
+
+    if [[ ${#search_paths[@]} -eq 0 ]]; then
+        json_add_warning "No project directories found to scan"
+        json_output_purge "true"
+        return 0
+    fi
+
+    # Scan for artifacts
+    local now
+    now=$(get_epoch_seconds)
+    local min_age_seconds=$((MIN_AGE_DAYS * 86400))
+
+    for search_path in "${search_paths[@]}"; do
+        [[ ! -d "$search_path" ]] && continue
+
+        for target in "${PURGE_TARGETS[@]}"; do
+            while IFS= read -r artifact_path; do
+                [[ -z "$artifact_path" ]] && continue
+                [[ ! -d "$artifact_path" ]] && continue
+
+                # Check age
+                local mtime
+                mtime=$(get_file_mtime "$artifact_path")
+                [[ ! "$mtime" =~ ^[0-9]+$ ]] && continue
+
+                local age_seconds=$((now - mtime))
+                [[ $age_seconds -lt $min_age_seconds ]] && continue
+
+                # Get size
+                local size_kb
+                size_kb=$(get_path_size_kb "$artifact_path" 2> /dev/null || echo "0")
+                [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
+                [[ $size_kb -eq 0 ]] && continue
+
+                # Get project name from parent
+                local project_dir
+                project_dir=$(dirname "$artifact_path")
+                local project_name
+                project_name=$(basename "$project_dir")
+
+                # Create description
+                local description="$project_name/$target"
+                local age_days=$((age_seconds / 86400))
+
+                # Determine tags based on artifact type
+                local tags=""
+                case "$target" in
+                    node_modules | .next | .nuxt | dist | .turbo | .parcel-cache)
+                        tags="nodejs,frontend"
+                        ;;
+                    target)
+                        if [[ -f "$project_dir/Cargo.toml" ]]; then
+                            tags="rust"
+                        else
+                            tags="java,maven"
+                        fi
+                        ;;
+                    venv | .venv | __pycache__ | .pytest_cache | .mypy_cache | .tox | .nox | .ruff_cache)
+                        tags="python"
+                        ;;
+                    build | .gradle)
+                        tags="java,gradle"
+                        ;;
+                    vendor)
+                        tags="php"
+                        ;;
+                    .dart_tool)
+                        tags="flutter,dart"
+                        ;;
+                    .zig-cache | zig-out)
+                        tags="zig"
+                        ;;
+                    .angular | .svelte-kit | .astro)
+                        tags="frontend"
+                        ;;
+                    *)
+                        tags="build"
+                        ;;
+                esac
+
+                # Add item
+                json_add_item "$description ($age_days days old)" "$size_kb" "$artifact_path" "false"
+
+            done < <(find "$search_path" -maxdepth "$PURGE_MAX_DEPTH_DEFAULT" -mindepth "$PURGE_MIN_DEPTH_DEFAULT" \
+                -type d -name "$target" \
+                -not -path "*/.*/*" \
+                -not -path "*/.git/*" \
+                2> /dev/null || true)
+        done
+    done
+
+    # Output JSON
+    json_output_purge "true"
+}
+
 # Main entry point
 main() {
     # Set up signal handling
     trap 'show_cursor; exit 130' INT TERM
 
+    local output_format="human"
+    local dry_run=false
+
     # Parse arguments
+    local prev_arg=""
     for arg in "$@"; do
         case "$arg" in
             "--paths")
@@ -262,13 +390,44 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
+            "--dry-run" | "-n")
+                dry_run=true
+                ;;
+            "--format=json" | "--json")
+                output_format="json"
+                export MOLE_JSON_OUTPUT="true"
+                ;;
+            "--format="*)
+                output_format="${arg#--format=}"
+                if [[ "$output_format" == "json" ]]; then
+                    export MOLE_JSON_OUTPUT="true"
+                fi
+                ;;
+            "--format")
+                # Next arg will be the format
+                ;;
             *)
-                echo "Unknown option: $arg"
-                echo "Use 'mo purge --help' for usage information"
-                exit 1
+                # Check if this is the value for --format
+                if [[ "$prev_arg" == "--format" ]]; then
+                    output_format="$arg"
+                    if [[ "$output_format" == "json" ]]; then
+                        export MOLE_JSON_OUTPUT="true"
+                    fi
+                else
+                    echo "Unknown option: $arg"
+                    echo "Use 'mo purge --help' for usage information"
+                    exit 1
+                fi
                 ;;
         esac
+        prev_arg="$arg"
     done
+
+    # JSON output mode
+    if [[ "$output_format" == "json" ]]; then
+        perform_purge_json
+        exit 0
+    fi
 
     start_purge
     hide_cursor

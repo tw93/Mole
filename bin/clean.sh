@@ -1,7 +1,7 @@
 #!/bin/bash
 # Mole - Clean command.
 # Runs cleanup modules with optional sudo.
-# Supports dry-run and whitelist.
+# Supports dry-run, whitelist, and JSON output.
 
 set -euo pipefail
 
@@ -10,6 +10,7 @@ export LANG=C
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
+source "$SCRIPT_DIR/../lib/core/json_output.sh"
 
 source "$SCRIPT_DIR/../lib/core/sudo.sh"
 source "$SCRIPT_DIR/../lib/clean/brew.sh"
@@ -1074,7 +1075,355 @@ perform_cleanup() {
     printf '\n'
 }
 
+# JSON Output Mode Functions
+
+# Initialize cleanup for JSON mode (no UI, no prompts)
+start_cleanup_json() {
+    export MOLE_CURRENT_COMMAND="clean"
+    SYSTEM_CLEAN=false
+
+    # Check if sudo is available without prompting
+    if sudo -n true 2> /dev/null; then
+        SYSTEM_CLEAN=true
+    fi
+}
+
+# JSON-aware version of safe_clean that collects items instead of printing
+safe_clean_json() {
+    if [[ $# -eq 0 ]]; then
+        return 0
+    fi
+
+    local description
+    local -a targets
+
+    if [[ $# -eq 1 ]]; then
+        description="$1"
+        targets=("$1")
+    else
+        description="${*: -1}"
+        targets=("${@:1:$#-1}")
+    fi
+
+    local -a valid_targets=()
+    for target in "${targets[@]}"; do
+        if [[ "$target" == *"*"* && ! -e "$target" ]]; then
+            local base_path="${target%%\**}"
+            local parent_dir
+            if [[ "$base_path" == */ ]]; then
+                parent_dir="${base_path%/}"
+            else
+                parent_dir=$(dirname "$base_path")
+            fi
+            if [[ ! -d "$parent_dir" ]]; then
+                continue
+            fi
+        fi
+        valid_targets+=("$target")
+    done
+
+    if [[ ${#valid_targets[@]} -gt 0 ]]; then
+        targets=("${valid_targets[@]}")
+    else
+        targets=()
+    fi
+
+    if [[ ${#targets[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local total_size_kb=0
+    local -a existing_paths=()
+
+    for path in "${targets[@]}"; do
+        local skip=false
+
+        if should_protect_path "$path"; then
+            skip=true
+        fi
+        [[ "$skip" == "true" ]] && continue
+
+        if is_path_whitelisted "$path"; then
+            skip=true
+        fi
+        [[ "$skip" == "true" ]] && continue
+
+        [[ -e "$path" ]] && existing_paths+=("$path")
+    done
+
+    if [[ ${#existing_paths[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    # Calculate total size
+    local paths_list=""
+    for path in "${existing_paths[@]}"; do
+        local size_kb
+        size_kb=$(get_cleanup_path_size_kb "$path" 2> /dev/null || echo "0")
+        [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
+        ((total_size_kb += size_kb))
+        [[ -n "$paths_list" ]] && paths_list+=$'\n'
+        paths_list+="$path"
+    done
+
+    if [[ $total_size_kb -gt 0 ]]; then
+        # Determine if sudo required
+        local requires_sudo="false"
+        for path in "${existing_paths[@]}"; do
+            if [[ "$path" =~ ^/Library || "$path" =~ ^/System || "$path" =~ ^/private ]]; then
+                requires_sudo="true"
+                break
+            fi
+        done
+
+        # Add to JSON buffer
+        json_add_item "$description" "$total_size_kb" "$paths_list" "$requires_sudo"
+
+        ((files_cleaned += ${#existing_paths[@]}))
+        ((total_size_cleaned += total_size_kb))
+        ((total_items++))
+    fi
+
+    return 0
+}
+
+# Perform cleanup scan for JSON output
+perform_cleanup_json() {
+    total_items=0
+    files_cleaned=0
+    total_size_cleaned=0
+
+    # Override safe_clean with JSON version temporarily
+    # We'll call the scan functions but redirect output
+
+    local had_errexit=0
+    [[ $- == *e* ]] && had_errexit=1
+    set +e
+
+    # ===== 1. Deep system cleanup (if admin) =====
+    if [[ "$SYSTEM_CLEAN" == "true" ]]; then
+        json_set_category "Deep system"
+        # Note: System cleanup functions use safe_clean, we need to intercept
+    fi
+
+    # ===== Scan each category =====
+
+    json_set_category "User essentials"
+    scan_user_essentials_json
+
+    json_set_category "Finder metadata"
+    scan_finder_metadata_json
+
+    json_set_category "macOS system caches"
+    scan_macos_caches_json
+
+    json_set_category "Sandboxed app caches"
+    scan_sandboxed_apps_json
+
+    json_set_category "Browsers"
+    scan_browsers_json
+
+    json_set_category "Cloud storage"
+    scan_cloud_storage_json
+
+    json_set_category "Office applications"
+    scan_office_apps_json
+
+    json_set_category "Developer tools"
+    scan_developer_tools_json
+
+    json_set_category "Development applications"
+    scan_dev_applications_json
+
+    json_set_category "Virtual machine tools"
+    scan_virtualization_json
+
+    json_set_category "Application Support"
+    scan_app_support_json
+
+    json_set_category "Uninstalled app data"
+    scan_orphaned_data_json
+
+    if [[ $had_errexit -eq 1 ]]; then
+        set -e
+    fi
+
+    # Add whitelist warnings
+    if [[ ${#WHITELIST_WARNINGS[@]} -gt 0 ]]; then
+        for warning in "${WHITELIST_WARNINGS[@]}"; do
+            json_add_warning "Whitelist: $warning"
+        done
+    fi
+
+    # Add sudo requirement warning
+    if [[ "$SYSTEM_CLEAN" == "false" ]]; then
+        json_add_warning "System-level cleanup skipped (requires sudo)"
+    fi
+}
+
+# JSON Scan Functions (simplified versions that collect data)
+
+scan_user_essentials_json() {
+    # User caches
+    safe_clean_json ~/Library/Caches/com.apple.bird/* "iCloud Drive cache"
+    safe_clean_json ~/Library/Caches/com.apple.Safari/* "Safari cache"
+    safe_clean_json ~/Library/Caches/com.apple.Safari.SafeBrowsing/* "Safari Safe Browsing cache"
+    safe_clean_json ~/Library/Caches/Google/* "Google apps cache"
+    safe_clean_json ~/Library/Caches/com.google.SoftwareUpdate/* "Google Software Update cache"
+    safe_clean_json ~/Library/Caches/com.spotify.client/* "Spotify cache"
+    safe_clean_json ~/Library/Caches/com.microsoft.* "Microsoft apps cache"
+
+    # Trash
+    if [[ -d ~/.Trash ]]; then
+        local trash_size
+        trash_size=$(get_path_size_kb ~/.Trash 2> /dev/null || echo "0")
+        if [[ "$trash_size" -gt 0 ]]; then
+            json_add_item "Trash" "$trash_size" "$HOME/.Trash" "false"
+            ((total_size_cleaned += trash_size))
+            ((total_items++))
+        fi
+    fi
+
+    # Downloads old files (30+ days)
+    if [[ -d ~/Downloads ]]; then
+        local old_downloads=""
+        local old_size=0
+        while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            old_downloads+="$file"$'\n'
+            local fsize
+            fsize=$(get_cleanup_path_size_kb "$file" 2> /dev/null || echo "0")
+            ((old_size += fsize))
+        done < <(find ~/Downloads -maxdepth 1 -type f -mtime +30 2> /dev/null || true)
+
+        if [[ $old_size -gt 0 ]]; then
+            json_add_item "Old downloads (30+ days)" "$old_size" "${old_downloads%$'\n'}" "false"
+            ((total_size_cleaned += old_size))
+            ((total_items++))
+        fi
+    fi
+}
+
+scan_finder_metadata_json() {
+    # .DS_Store files (estimate based on typical size)
+    local ds_count
+    ds_count=$(find ~ -maxdepth 4 -name ".DS_Store" 2> /dev/null | head -$MOLE_MAX_DS_STORE_FILES | wc -l | tr -d ' ')
+    if [[ "$ds_count" -gt 0 ]]; then
+        # Average .DS_Store is about 6KB
+        local ds_size=$((ds_count * 6))
+        json_add_item ".DS_Store metadata files" "$ds_size" "Multiple locations (~$ds_count files)" "false"
+        ((total_size_cleaned += ds_size))
+        ((total_items++))
+    fi
+}
+
+scan_macos_caches_json() {
+    safe_clean_json ~/Library/Caches/com.apple.QuickLook.thumbnailcache/* "QuickLook thumbnail cache"
+    safe_clean_json ~/Library/Caches/com.apple.nsservicescache.plist "NSServices cache"
+    safe_clean_json ~/Library/Caches/com.apple.helpd/* "Help cache"
+    safe_clean_json ~/Library/Caches/TemporaryItems/* "Temporary items"
+}
+
+scan_sandboxed_apps_json() {
+    safe_clean_json ~/Library/Containers/*/Data/Library/Caches/* "Sandboxed app caches"
+    safe_clean_json ~/Library/Group\ Containers/*/Library/Caches/* "Group container caches"
+}
+
+scan_browsers_json() {
+    # Chrome
+    safe_clean_json ~/Library/Caches/Google/Chrome/* "Google Chrome cache"
+    safe_clean_json ~/Library/Application\ Support/Google/Chrome/Default/Service\ Worker/* "Chrome Service Worker"
+    safe_clean_json ~/Library/Application\ Support/Google/Chrome/Default/Cache/* "Chrome disk cache"
+
+    # Firefox
+    safe_clean_json ~/Library/Caches/Firefox/* "Firefox cache"
+    safe_clean_json ~/Library/Caches/org.mozilla.firefox/* "Firefox org cache"
+
+    # Edge
+    safe_clean_json ~/Library/Caches/Microsoft\ Edge/* "Microsoft Edge cache"
+
+    # Arc
+    safe_clean_json ~/Library/Caches/company.thebrowser.Browser/* "Arc browser cache"
+
+    # Brave
+    safe_clean_json ~/Library/Caches/BraveSoftware/* "Brave browser cache"
+}
+
+scan_cloud_storage_json() {
+    safe_clean_json ~/Library/Caches/com.apple.CloudDocs.MobileDocumentsFileProvider/* "iCloud Documents cache"
+    safe_clean_json ~/Library/Caches/com.getdropbox.dropbox/* "Dropbox cache"
+    safe_clean_json ~/Library/Caches/com.google.drivefs/* "Google Drive cache"
+    safe_clean_json ~/Library/Caches/OneDrive/* "OneDrive cache"
+}
+
+scan_office_apps_json() {
+    safe_clean_json ~/Library/Caches/com.microsoft.Word/* "Microsoft Word cache"
+    safe_clean_json ~/Library/Caches/com.microsoft.Excel/* "Microsoft Excel cache"
+    safe_clean_json ~/Library/Caches/com.microsoft.Powerpoint/* "Microsoft PowerPoint cache"
+    safe_clean_json ~/Library/Caches/com.microsoft.Outlook/* "Microsoft Outlook cache"
+    safe_clean_json ~/Library/Caches/com.microsoft.teams* "Microsoft Teams cache"
+}
+
+scan_developer_tools_json() {
+    # Xcode
+    safe_clean_json ~/Library/Developer/Xcode/DerivedData/* "Xcode DerivedData"
+    safe_clean_json ~/Library/Developer/Xcode/Archives/* "Xcode Archives"
+    safe_clean_json ~/Library/Developer/CoreSimulator/Caches/* "iOS Simulator caches"
+
+    # Node.js
+    safe_clean_json ~/.npm/_cacache/* "npm cache"
+    safe_clean_json ~/Library/Caches/node-gyp/* "node-gyp cache"
+    safe_clean_json ~/.yarn/cache/* "Yarn cache"
+    safe_clean_json ~/.pnpm-store/* "pnpm store"
+
+    # Python
+    safe_clean_json ~/.cache/pip/* "pip cache"
+    safe_clean_json ~/.pyenv/cache/* "pyenv cache"
+
+    # Go
+    safe_clean_json ~/go/pkg/mod/cache/* "Go module cache"
+
+    # Rust
+    safe_clean_json ~/.cargo/registry/cache/* "Cargo registry cache"
+    safe_clean_json ~/.rustup/downloads/* "Rustup downloads"
+
+    # Docker
+    safe_clean_json ~/.docker/buildx/cache/* "Docker BuildX cache"
+
+    # Homebrew
+    safe_clean_json ~/Library/Caches/Homebrew/* "Homebrew cache"
+    safe_clean_json /opt/homebrew/Caskroom/.cache/* "Homebrew Cask cache"
+}
+
+scan_dev_applications_json() {
+    safe_clean_json ~/Library/Caches/com.apple.dt.Xcode/* "Xcode app cache"
+    safe_clean_json ~/Library/Caches/com.sublimetext.* "Sublime Text cache"
+    safe_clean_json ~/Library/Caches/com.microsoft.VSCode/* "VS Code cache"
+    safe_clean_json ~/Library/Caches/com.visualstudio.code.oss/* "VS Code OSS cache"
+}
+
+scan_virtualization_json() {
+    safe_clean_json ~/Library/Caches/com.docker.docker/* "Docker Desktop cache"
+    safe_clean_json ~/.vagrant.d/boxes/*/*.box "Vagrant boxes"
+    safe_clean_json ~/Library/Caches/com.hashicorp.vagrant/* "Vagrant cache"
+}
+
+scan_app_support_json() {
+    safe_clean_json ~/Library/Application\ Support/*/logs/* "Application logs"
+    safe_clean_json ~/Library/Application\ Support/*/Logs/* "Application Logs"
+    safe_clean_json ~/Library/Application\ Support/*/cache/* "Application cache"
+    safe_clean_json ~/Library/Application\ Support/*/Cache/* "Application Cache"
+}
+
+scan_orphaned_data_json() {
+    # Simplified: just report known orphan patterns
+    safe_clean_json ~/Library/Application\ Support/CrashReporter/* "Crash reports"
+    safe_clean_json ~/Library/Logs/DiagnosticReports/* "Diagnostic reports"
+}
+
 main() {
+    local output_format="human"
+
     for arg in "$@"; do
         case "$arg" in
             "--debug")
@@ -1089,8 +1438,49 @@ main() {
                 manage_whitelist "clean"
                 exit 0
                 ;;
+            "--format")
+                # Format flag requires next argument, handled below
+                ;;
+            "--format=json" | "--json")
+                output_format="json"
+                export MOLE_JSON_OUTPUT="true"
+                ;;
+            "--format="*)
+                output_format="${arg#--format=}"
+                if [[ "$output_format" == "json" ]]; then
+                    export MOLE_JSON_OUTPUT="true"
+                fi
+                ;;
         esac
     done
+
+    # Handle --format json (two separate args)
+    local prev_arg=""
+    for arg in "$@"; do
+        if [[ "$prev_arg" == "--format" && "$arg" == "json" ]]; then
+            output_format="json"
+            export MOLE_JSON_OUTPUT="true"
+        fi
+        prev_arg="$arg"
+    done
+
+    # JSON output mode
+    if [[ "$output_format" == "json" ]]; then
+        # JSON mode requires dry-run
+        DRY_RUN=true
+        export MOLE_DRY_RUN=1
+
+        # Initialize JSON buffers
+        json_reset
+
+        # Run scan without terminal UI
+        start_cleanup_json
+        perform_cleanup_json
+
+        # Output JSON to stdout
+        json_output_clean "clean" "true"
+        exit 0
+    fi
 
     start_cleanup
     hide_cursor
