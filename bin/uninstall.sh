@@ -391,6 +391,16 @@ main() {
     # Global flags
     for arg in "$@"; do
         case "$arg" in
+            "--help" | "-h")
+                echo "Usage: mo uninstall [OPTIONS]"
+                echo ""
+                echo "Interactively remove applications and their leftover files."
+                echo ""
+                echo "Options:"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
             "--debug")
                 export MO_DEBUG=1
                 ;;

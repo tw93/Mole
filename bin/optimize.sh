@@ -373,6 +373,18 @@ main() {
     local health_json
     for arg in "$@"; do
         case "$arg" in
+            "--help" | "-h")
+                echo "Usage: mo optimize [OPTIONS]"
+                echo ""
+                echo "Check and maintain system health, apply optimizations."
+                echo ""
+                echo "Options:"
+                echo "  --dry-run         Preview optimization without making changes"
+                echo "  --whitelist       Manage protected items"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
             "--debug")
                 export MO_DEBUG=1
                 ;;

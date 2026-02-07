@@ -306,6 +306,22 @@ main() {
     local command="${1:-}"
 
     case "$command" in
+        "--help" | "-h")
+            echo "Usage: mo touchid [COMMAND]"
+            echo ""
+            echo "Configure Touch ID for sudo authentication."
+            echo ""
+            echo "Commands:"
+            echo "  enable            Enable Touch ID for sudo"
+            echo "  disable           Disable Touch ID for sudo"
+            echo "  status            Show current Touch ID status"
+            echo ""
+            echo "Options:"
+            echo "  -h, --help        Show this help message"
+            echo ""
+            echo "If no command is provided, an interactive menu is shown."
+            exit 0
+            ;;
         enable)
             enable_touchid
             ;;

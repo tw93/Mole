@@ -1077,6 +1077,18 @@ perform_cleanup() {
 main() {
     for arg in "$@"; do
         case "$arg" in
+            "--help" | "-h")
+                echo "Usage: mo clean [OPTIONS]"
+                echo ""
+                echo "Clean up disk space by removing caches, logs, and temporary files."
+                echo ""
+                echo "Options:"
+                echo "  --dry-run, -n     Preview cleanup without making changes"
+                echo "  --whitelist       Manage protected paths"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
             "--debug")
                 export MO_DEBUG=1
                 ;;

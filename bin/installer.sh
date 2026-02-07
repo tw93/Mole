@@ -668,6 +668,16 @@ show_summary() {
 main() {
     for arg in "$@"; do
         case "$arg" in
+            "--help" | "-h")
+                echo "Usage: mo installer [OPTIONS]"
+                echo ""
+                echo "Find and remove installer files (.dmg, .pkg, .iso, .xip, .zip)."
+                echo ""
+                echo "Options:"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
             "--debug")
                 export MO_DEBUG=1
                 ;;
