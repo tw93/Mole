@@ -822,32 +822,6 @@ func TestGetScoreStyle(t *testing.T) {
 	}
 }
 
-func TestMaxInt(t *testing.T) {
-	tests := []struct {
-		name string
-		a    int
-		b    int
-		want int
-	}{
-		{"a greater", 10, 5, 10},
-		{"b greater", 3, 8, 8},
-		{"equal", 7, 7, 7},
-		{"negative a greater", -5, -10, -5},
-		{"negative b greater", -10, -5, -5},
-		{"zero vs positive", 0, 5, 5},
-		{"zero vs negative", 0, -5, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := maxInt(tt.a, tt.b)
-			if got != tt.want {
-				t.Errorf("maxInt(%d, %d) = %d, want %d", tt.a, tt.b, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestSparkline(t *testing.T) {
 	tests := []struct {
 		name    string

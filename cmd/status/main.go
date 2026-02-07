@@ -142,7 +142,7 @@ func (m model) View() string {
 	header := renderHeader(m.metrics, m.errMessage, m.animFrame, m.width, m.catHidden)
 	cardWidth := 0
 	if m.width > 80 {
-		cardWidth = maxInt(24, m.width/2-4)
+		cardWidth = max(24, m.width/2-4)
 	}
 	cards := buildCards(m.metrics, cardWidth)
 

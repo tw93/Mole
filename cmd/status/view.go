@@ -763,7 +763,7 @@ func renderTwoColumns(cards []cardData, width int) string {
 		if i+1 < len(cards) {
 			right = renderCard(cards[i+1], cw, 0)
 		}
-		targetHeight := maxInt(lipgloss.Height(left), lipgloss.Height(right))
+		targetHeight := max(lipgloss.Height(left), lipgloss.Height(right))
 		left = renderCard(cards[i], cw, targetHeight)
 		if right != "" {
 			right = renderCard(cards[i+1], cw, targetHeight)
@@ -781,11 +781,4 @@ func renderTwoColumns(cards []cardData, width int) string {
 		spacedRows = append(spacedRows, r)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, spacedRows...)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
