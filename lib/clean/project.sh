@@ -1010,7 +1010,9 @@ clean_project_artifacts() {
         local terminal_width=$(tput cols 2> /dev/null || echo 80)
         local fixed_width=32 # Reserve for size and artifact type (9 + 3 + 20)
         local available_width=$((terminal_width - fixed_width))
-        # Bounds: 30 chars minimum for project path
+        # Bounds: 30 chars min, but cap at 70% of terminal width to preserve aesthetics
+        local max_aesthetic_width=$((terminal_width * 70 / 100))
+        [[ $available_width -gt $max_aesthetic_width ]] && available_width=$max_aesthetic_width
         [[ $available_width -lt 30 ]] && available_width=30
         # Truncate project path if needed
         local truncated_path=$(truncate_by_display_width "$project_path" "$available_width")
