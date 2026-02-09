@@ -33,7 +33,25 @@ emit_fish_completions() {
 }
 
 # Auto-install mode when run without arguments
-if [[ $# -eq 0 ]]; then
+if [[ $# -eq 0 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        echo -e "Usage: mo completion [SHELL]"
+        echo ""
+        echo "Generate shell completion scripts for Mole."
+        echo ""
+        echo "Arguments:"
+        echo "  bash              Generate Bash completion"
+        echo "  zsh               Generate Zsh completion"
+        echo "  fish              Generate Fish completion"
+        echo ""
+        echo "Options:"
+        echo "  -h, --help        Show this help message"
+        echo ""
+        echo "Examples:"
+        echo "  mo completion zsh > ~/.zshrc"
+        exit 0
+    fi
+
     # Detect current shell
     current_shell="${SHELL##*/}"
     if [[ -z "$current_shell" ]]; then

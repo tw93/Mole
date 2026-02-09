@@ -315,6 +315,18 @@ main() {
         status)
             show_status
             ;;
+        "-h" | "--help")
+            echo -e "Usage: mo touchid [COMMAND]"
+            echo ""
+            echo "Configure Touch ID for sudo authentication."
+            echo ""
+            echo "Commands:"
+            echo "  enable            Enable Touch ID for sudo"
+            echo "  disable           Disable Touch ID for sudo"
+            echo "  status            Show current status"
+            echo "  -h, --help        Show this help message"
+            exit 0
+            ;;
         "")
             show_menu
             ;;

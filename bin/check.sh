@@ -31,6 +31,25 @@ main() {
     trap cleanup_all EXIT
     trap handle_interrupt INT TERM
 
+    # Parse arguments
+    for arg in "$@"; do
+        case "$arg" in
+            "--debug")
+                export MO_DEBUG=1
+                ;;
+            "-h" | "--help")
+                echo -e "Usage: mo check [OPTIONS]"
+                echo ""
+                echo "Run system health checks, security audits, and configuration validation."
+                echo ""
+                echo "Options:"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
+        esac
+    done
+
     if [[ -t 1 ]]; then
         clear
     fi

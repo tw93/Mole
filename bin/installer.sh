@@ -671,6 +671,16 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
+            "-h" | "--help")
+                echo -e "Usage: mo installer [OPTIONS]"
+                echo ""
+                echo "Scan for and remove installer files (dmg, pkg, iso, zip)."
+                echo ""
+                echo "Options:"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
             *)
                 echo "Unknown option: $arg"
                 exit 1

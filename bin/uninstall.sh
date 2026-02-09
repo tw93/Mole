@@ -760,6 +760,16 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
+            "-h" | "--help")
+                echo -e "Usage: mo uninstall [OPTIONS]"
+                echo ""
+                echo "Interactively select and remove applications and their leftovers."
+                echo ""
+                echo "Options:"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
         esac
     done
 

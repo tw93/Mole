@@ -383,6 +383,18 @@ main() {
                 manage_whitelist "optimize"
                 exit 0
                 ;;
+            "-h" | "--help")
+                echo -e "Usage: mo optimize [OPTIONS]"
+                echo ""
+                echo "Run system maintenance tasks and apply optimizations."
+                echo ""
+                echo "Options:"
+                echo "  --dry-run         Preview optimizations without applying changes"
+                echo "  --whitelist       Manage protected paths"
+                echo "  --debug           Show detailed operation logs"
+                echo "  -h, --help        Show this help message"
+                exit 0
+                ;;
         esac
     done
 
