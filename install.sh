@@ -112,6 +112,22 @@ maybe_sudo() {
     fi
 }
 
+sed_inplace() {
+    if sed --version 2>/dev/null | grep -q "GNU sed"; then
+        sed -i "$@"
+    else
+        sed -i '' "$@"
+    fi
+}
+
+maybe_sudo_sed_inplace() {
+    if sed --version 2>/dev/null | grep -q "GNU sed"; then
+        maybe_sudo sed -i "$@"
+    else
+        maybe_sudo sed -i '' "$@"
+    fi
+}
+
 resolve_source_dir() {
     if [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && -f "$SOURCE_DIR/mole" ]]; then
         return 0
@@ -604,7 +620,7 @@ install_files() {
     fi
 
     if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
-        maybe_sudo sed -i '' "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$CONFIG_DIR\"|" "$INSTALL_DIR/mole"
+        maybe_sudo_sed_inplace "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$CONFIG_DIR\"|" "$INSTALL_DIR/mole"
     fi
 
     if ! download_binary "analyze"; then
