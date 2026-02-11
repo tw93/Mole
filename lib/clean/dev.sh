@@ -1,6 +1,13 @@
 #!/bin/bash
 # Developer Tools Cleanup Module
 set -euo pipefail
+
+_MOLE_DEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! declare -f paginated_multi_select > /dev/null 2>&1; then
+    # shellcheck source=lib/ui/menu_paginated.sh
+    source "$_MOLE_DEV_DIR/../ui/menu_paginated.sh"
+fi
+
 # Tool cache helper (respects DRY_RUN).
 clean_tool_cache() {
     local description="$1"
@@ -221,22 +228,316 @@ clean_xcode_documentation_cache() {
     fi
 }
 
+_sim_runtime_mount_points() {
+    if [[ -n "${MOLE_XCODE_SIM_RUNTIME_MOUNT_POINTS:-}" ]]; then
+        printf '%s\n' "$MOLE_XCODE_SIM_RUNTIME_MOUNT_POINTS"
+        return 0
+    fi
+    mount 2> /dev/null | command awk '{print $3}' || true
+}
+
+_sim_runtime_is_path_in_use() {
+    local target_path="$1"
+    shift || true
+    local mount_path
+    for mount_path in "$@"; do
+        [[ -z "$mount_path" ]] && continue
+        if [[ "$mount_path" == "$target_path" || "$mount_path" == "$target_path"/* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+_sim_runtime_size_kb() {
+    local target_path="$1"
+    local size_kb=0
+    if has_sudo_session; then
+        size_kb=$(sudo du -skP "$target_path" 2> /dev/null | command awk 'NR==1 {print $1; exit}' || echo "0")
+    else
+        size_kb=$(du -skP "$target_path" 2> /dev/null | command awk 'NR==1 {print $1; exit}' || echo "0")
+    fi
+
+    [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+    echo "$size_kb"
+}
+
+clean_xcode_simulator_runtime_volumes() {
+    local volumes_root="${MOLE_XCODE_SIM_RUNTIME_VOLUMES_ROOT:-/Library/Developer/CoreSimulator/Volumes}"
+    local cryptex_root="${MOLE_XCODE_SIM_RUNTIME_CRYPTEX_ROOT:-/Library/Developer/CoreSimulator/Cryptex}"
+
+    local -a candidates=()
+    local candidate
+    for candidate in "$volumes_root" "$cryptex_root"; do
+        [[ -d "$candidate" ]] || continue
+        while IFS= read -r -d '' entry; do
+            candidates+=("$entry")
+        done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+    done
+
+    if [[ ${#candidates[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local -a mount_points=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && mount_points+=("$line")
+    done < <(_sim_runtime_mount_points)
+
+    local -a menu_options=()
+    local -a filter_names=()
+    local -a size_values=()
+    local -a entry_statuses=()
+    local -a preselected_indices=()
+    local -a sorted_candidates=()
+    local sorted
+    while IFS= read -r sorted; do
+        [[ -n "$sorted" ]] && sorted_candidates+=("$sorted")
+    done < <(printf '%s\n' "${candidates[@]}" | LC_ALL=C sort)
+
+    local idx=0
+    for candidate in "${sorted_candidates[@]}"; do
+        local status="UNUSED"
+        if _sim_runtime_is_path_in_use "$candidate" "${mount_points[@]}"; then
+            status="IN_USE"
+        fi
+
+        local size_kb
+        size_kb=$(_sim_runtime_size_kb "$candidate")
+        local size_human
+        size_human=$(bytes_to_human "$((size_kb * 1024))")
+        local parent_name
+        parent_name=$(basename "$(dirname "$candidate")")
+        local base_name
+        base_name=$(basename "$candidate")
+
+        menu_options+=("[$status] $parent_name/$base_name | $size_human")
+        filter_names+=("$candidate")
+        size_values+=("$size_kb")
+        entry_statuses+=("$status")
+        if [[ "$status" == "UNUSED" ]]; then
+            preselected_indices+=("$idx")
+        fi
+        idx=$((idx + 1))
+    done
+
+    local in_use_count=0
+    local unused_count=0
+    local in_use_kb=0
+    local unused_kb=0
+    local status
+    local i=0
+    for status in "${entry_statuses[@]}"; do
+        local entry_size_kb="${size_values[$i]:-0}"
+        if [[ "$status" == "IN_USE" ]]; then
+            in_use_count=$((in_use_count + 1))
+            in_use_kb=$((in_use_kb + entry_size_kb))
+        else
+            unused_count=$((unused_count + 1))
+            unused_kb=$((unused_kb + entry_size_kb))
+        fi
+        i=$((i + 1))
+    done
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode runtime volumes · ${unused_count} unused, ${in_use_count} in use"
+        local dryrun_total_kb=$((unused_kb + in_use_kb))
+        local dryrun_total_human
+        dryrun_total_human=$(bytes_to_human "$((dryrun_total_kb * 1024))")
+        local dryrun_unused_human
+        dryrun_unused_human=$(bytes_to_human "$((unused_kb * 1024))")
+        local dryrun_in_use_human
+        dryrun_in_use_human=$(bytes_to_human "$((in_use_kb * 1024))")
+        echo -e "  ${GRAY}${ICON_LIST}${NC} Runtime volumes total: ${dryrun_total_human} (unused ${dryrun_unused_human}, in-use ${dryrun_in_use_human})"
+
+        local dryrun_max_items="${MOLE_SIM_RUNTIME_DRYRUN_MAX_ITEMS:-20}"
+        [[ "$dryrun_max_items" =~ ^[0-9]+$ ]] || dryrun_max_items=20
+        if [[ "$dryrun_max_items" -le 0 ]]; then
+            dryrun_max_items=20
+        fi
+
+        local shown=0
+        local line_size_kb line_status line_path
+        while IFS=$'\t' read -r line_size_kb line_status line_path; do
+            [[ -z "${line_path:-}" ]] && continue
+            local line_human
+            line_human=$(bytes_to_human "$((line_size_kb * 1024))")
+            echo -e "    ${GRAY}${line_status}${NC} ${line_human} · ${line_path}"
+            shown=$((shown + 1))
+            if [[ "$shown" -ge "$dryrun_max_items" ]]; then
+                break
+            fi
+        done < <(
+            local j=0
+            while [[ $j -lt ${#sorted_candidates[@]} ]]; do
+                printf '%s\t%s\t%s\n' "${size_values[$j]:-0}" "${entry_statuses[$j]:-UNUSED}" "${sorted_candidates[$j]}"
+                j=$((j + 1))
+            done | LC_ALL=C sort -nr -k1,1
+        )
+
+        local total_entries="${#sorted_candidates[@]}"
+        if [[ "$total_entries" -gt "$shown" ]]; then
+            local remaining=$((total_entries - shown))
+            echo -e "    ${GRAY}${ICON_LIST}${NC} ... and ${remaining} more runtime volume entries"
+        fi
+        note_activity
+        return 0
+    fi
+
+    if [[ "${MOLE_SIM_RUNTIME_SELECTOR_ENABLED:-true}" != "true" ]]; then
+        return 0
+    fi
+
+    if ! [[ -t 0 && -t 1 ]] && [[ "${MOLE_SIM_RUNTIME_FORCE_INTERACTIVE:-0}" != "1" ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes detected (${unused_count} unused) · interactive terminal required"
+        note_activity
+        return 0
+    fi
+
+    if [[ $unused_count -eq 0 ]]; then
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · all in use"
+        note_activity
+        return 0
+    fi
+
+    local size_csv=""
+    local names_newline=""
+    size_csv=$(IFS=','; echo "${size_values[*]}")
+    names_newline=$(printf '%s\n' "${filter_names[@]}")
+    export MOLE_MENU_META_SIZEKB="$size_csv"
+    export MOLE_MENU_FILTER_NAMES="$names_newline"
+    export MOLE_MENU_SORT_DEFAULT="size"
+    if [[ ${#preselected_indices[@]} -gt 0 ]]; then
+        export MOLE_PRESELECTED_INDICES
+        MOLE_PRESELECTED_INDICES=$(IFS=','; echo "${preselected_indices[*]}")
+    else
+        unset MOLE_PRESELECTED_INDICES
+    fi
+
+    MOLE_SELECTION_RESULT=""
+    paginated_multi_select "Xcode Runtime Volumes (${unused_count} unused / ${in_use_count} in use)" "${menu_options[@]}" || {
+        unset MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES MOLE_PRESELECTED_INDICES
+        return 0
+    }
+    unset MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES MOLE_PRESELECTED_INDICES
+
+    if [[ -z "$MOLE_SELECTION_RESULT" ]]; then
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · nothing selected"
+        note_activity
+        return 0
+    fi
+
+    local -a selected_indices=()
+    IFS=',' read -r -a selected_indices <<< "$MOLE_SELECTION_RESULT"
+
+    local -a selected_paths=()
+    local -a selected_sizes_kb=()
+    local selected_total_kb=0
+    local skipped_in_use=0
+    local skipped_protected=0
+    local selected_idx
+    for selected_idx in "${selected_indices[@]}"; do
+        [[ "$selected_idx" =~ ^[0-9]+$ ]] || continue
+        [[ $selected_idx -lt 0 || $selected_idx -ge ${#sorted_candidates[@]} ]] && continue
+        local selected_path="${sorted_candidates[selected_idx]}"
+        if [[ "${entry_statuses[selected_idx]:-UNUSED}" == "IN_USE" ]]; then
+            skipped_in_use=$((skipped_in_use + 1))
+            continue
+        fi
+        if should_protect_path "$selected_path" || is_path_whitelisted "$selected_path"; then
+            skipped_protected=$((skipped_protected + 1))
+            continue
+        fi
+        selected_paths+=("$selected_path")
+        selected_sizes_kb+=("${size_values[selected_idx]:-0}")
+        selected_total_kb=$((selected_total_kb + ${size_values[selected_idx]:-0}))
+    done
+
+    if [[ ${#selected_paths[@]} -eq 0 ]]; then
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · no removable selection"
+        note_activity
+        return 0
+    fi
+
+    if ! has_sudo_session; then
+        if ! ensure_sudo_session "Cleaning Xcode runtime volumes requires admin access"; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes cleanup skipped (sudo denied)"
+            note_activity
+            return 0
+        fi
+    fi
+
+    local selected_human
+    selected_human=$(bytes_to_human "$((selected_total_kb * 1024))")
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · selected ${#selected_paths[@]}, ${selected_human}"
+    if [[ $skipped_in_use -gt 0 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes · skipped ${skipped_in_use} in-use items"
+    fi
+    if [[ $skipped_protected -gt 0 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes · skipped ${skipped_protected} protected items"
+    fi
+
+    local removed_count=0
+    local removed_size_kb=0
+    local i=0
+    local selected_path
+    for selected_path in "${selected_paths[@]}"; do
+        local selected_size_kb="${selected_sizes_kb[$i]:-0}"
+        if safe_sudo_remove "$selected_path"; then
+            removed_count=$((removed_count + 1))
+            removed_size_kb=$((removed_size_kb + selected_size_kb))
+        fi
+        i=$((i + 1))
+    done
+
+    if [[ $removed_count -gt 0 ]]; then
+        local removed_human
+        removed_human=$(bytes_to_human "$((removed_size_kb * 1024))")
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · removed ${removed_count}, ${removed_human}"
+        note_activity
+    else
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes · no items removed"
+        note_activity
+    fi
+}
+
 clean_dev_mobile() {
     check_android_ndk
     clean_xcode_documentation_cache
+    clean_xcode_simulator_runtime_volumes
 
     if command -v xcrun > /dev/null 2>&1; then
         debug_log "Checking for unavailable Xcode simulators"
         local unavailable_before=0
         local unavailable_after=0
         local removed_unavailable=0
+        local unavailable_size_kb=0
+        local unavailable_size_human="0B"
+        local -a unavailable_udids=()
+        local unavailable_udid=""
 
         unavailable_before=$(xcrun simctl list devices unavailable 2> /dev/null | command awk '/\(unavailable/ { count++ } END { print count+0 }' || echo "0")
         [[ "$unavailable_before" =~ ^[0-9]+$ ]] || unavailable_before=0
+        while IFS= read -r unavailable_udid; do
+            [[ -n "$unavailable_udid" ]] && unavailable_udids+=("$unavailable_udid")
+        done < <(
+            xcrun simctl list devices unavailable 2> /dev/null |
+                command sed -nE 's/.*\(([0-9A-Fa-f-]{36})\).*\(unavailable.*/\1/p' || true
+        )
+        if [[ ${#unavailable_udids[@]} -gt 0 ]]; then
+            local udid
+            for udid in "${unavailable_udids[@]}"; do
+                local simulator_device_path="$HOME/Library/Developer/CoreSimulator/Devices/$udid"
+                if [[ -d "$simulator_device_path" ]]; then
+                    unavailable_size_kb=$((unavailable_size_kb + $(get_path_size_kb "$simulator_device_path")))
+                fi
+            done
+        fi
+        unavailable_size_human=$(bytes_to_human "$((unavailable_size_kb * 1024))")
 
         if [[ "$DRY_RUN" == "true" ]]; then
             if ((unavailable_before > 0)); then
-                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode unavailable simulators · would clean ${unavailable_before}"
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode unavailable simulators · would clean ${unavailable_before}, ${unavailable_size_human}"
             else
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
             fi
@@ -255,9 +556,9 @@ clean_dev_mobile() {
                 if ((unavailable_before == 0)); then
                     echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
                 elif ((removed_unavailable > 0)); then
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · removed ${removed_unavailable}"
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · removed ${removed_unavailable}, ${unavailable_size_human}"
                 else
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · cleanup completed"
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · cleanup completed, ${unavailable_size_human}"
                 fi
             else
                 stop_section_spinner
