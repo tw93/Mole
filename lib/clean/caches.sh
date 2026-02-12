@@ -102,6 +102,7 @@ clean_project_caches() {
         "$HOME/work"
         "$HOME/src"
         "$HOME/repos"
+        "$HOME/Developer"
         "$HOME/Development"
         "$HOME/www"
         "$HOME/golang"
