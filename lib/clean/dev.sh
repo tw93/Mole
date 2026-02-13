@@ -2,12 +2,6 @@
 # Developer Tools Cleanup Module
 set -euo pipefail
 
-_MOLE_DEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if ! declare -f paginated_multi_select > /dev/null 2>&1; then
-    # shellcheck source=lib/ui/menu_paginated.sh
-    source "$_MOLE_DEV_DIR/../ui/menu_paginated.sh"
-fi
-
 # Tool cache helper (respects DRY_RUN).
 clean_tool_cache() {
     local description="$1"
@@ -284,11 +278,8 @@ clean_xcode_simulator_runtime_volumes() {
         [[ -n "$line" ]] && mount_points+=("$line")
     done < <(_sim_runtime_mount_points)
 
-    local -a menu_options=()
-    local -a filter_names=()
     local -a size_values=()
     local -a entry_statuses=()
-    local -a preselected_indices=()
     local -a sorted_candidates=()
     local sorted
     while IFS= read -r sorted; do
@@ -304,20 +295,8 @@ clean_xcode_simulator_runtime_volumes() {
 
         local size_kb
         size_kb=$(_sim_runtime_size_kb "$candidate")
-        local size_human
-        size_human=$(bytes_to_human "$((size_kb * 1024))")
-        local parent_name
-        parent_name=$(basename "$(dirname "$candidate")")
-        local base_name
-        base_name=$(basename "$candidate")
-
-        menu_options+=("[$status] $parent_name/$base_name | $size_human")
-        filter_names+=("$candidate")
         size_values+=("$size_kb")
         entry_statuses+=("$status")
-        if [[ "$status" == "UNUSED" ]]; then
-            preselected_indices+=("$idx")
-        fi
         idx=$((idx + 1))
     done
 
@@ -384,77 +363,28 @@ clean_xcode_simulator_runtime_volumes() {
         return 0
     fi
 
-    if [[ "${MOLE_SIM_RUNTIME_SELECTOR_ENABLED:-true}" != "true" ]]; then
-        return 0
-    fi
-
-    if ! [[ -t 0 && -t 1 ]] && [[ "${MOLE_SIM_RUNTIME_FORCE_INTERACTIVE:-0}" != "1" ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes detected (${unused_count} unused) · interactive terminal required"
-        note_activity
-        return 0
-    fi
-
-    if [[ $unused_count -eq 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · all in use"
-        note_activity
-        return 0
-    fi
-
-    local size_csv=""
-    local names_newline=""
-    size_csv=$(IFS=','; echo "${size_values[*]}")
-    names_newline=$(printf '%s\n' "${filter_names[@]}")
-    export MOLE_MENU_META_SIZEKB="$size_csv"
-    export MOLE_MENU_FILTER_NAMES="$names_newline"
-    export MOLE_MENU_SORT_DEFAULT="size"
-    if [[ ${#preselected_indices[@]} -gt 0 ]]; then
-        export MOLE_PRESELECTED_INDICES
-        MOLE_PRESELECTED_INDICES=$(IFS=','; echo "${preselected_indices[*]}")
-    else
-        unset MOLE_PRESELECTED_INDICES
-    fi
-
-    MOLE_SELECTION_RESULT=""
-    paginated_multi_select "Xcode Runtime Volumes (${unused_count} unused / ${in_use_count} in use)" "${menu_options[@]}" || {
-        unset MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES MOLE_PRESELECTED_INDICES
-        return 0
-    }
-    unset MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES MOLE_PRESELECTED_INDICES
-
-    if [[ -z "$MOLE_SELECTION_RESULT" ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · nothing selected"
-        note_activity
-        return 0
-    fi
-
-    local -a selected_indices=()
-    IFS=',' read -r -a selected_indices <<< "$MOLE_SELECTION_RESULT"
-
+    # Auto-clean all UNUSED runtime volumes (no user selection)
     local -a selected_paths=()
     local -a selected_sizes_kb=()
     local selected_total_kb=0
-    local skipped_in_use=0
     local skipped_protected=0
-    local selected_idx
-    for selected_idx in "${selected_indices[@]}"; do
-        [[ "$selected_idx" =~ ^[0-9]+$ ]] || continue
-        [[ $selected_idx -lt 0 || $selected_idx -ge ${#sorted_candidates[@]} ]] && continue
-        local selected_path="${sorted_candidates[selected_idx]}"
-        if [[ "${entry_statuses[selected_idx]:-UNUSED}" == "IN_USE" ]]; then
-            skipped_in_use=$((skipped_in_use + 1))
-            continue
-        fi
-        if should_protect_path "$selected_path" || is_path_whitelisted "$selected_path"; then
+    local i=0
+    for ((i = 0; i < ${#sorted_candidates[@]}; i++)); do
+        local status="${entry_statuses[$i]:-UNUSED}"
+        [[ "$status" == "IN_USE" ]] && continue
+
+        local candidate_path="${sorted_candidates[$i]}"
+        if should_protect_path "$candidate_path" || is_path_whitelisted "$candidate_path"; then
             skipped_protected=$((skipped_protected + 1))
             continue
         fi
-        selected_paths+=("$selected_path")
-        selected_sizes_kb+=("${size_values[selected_idx]:-0}")
-        selected_total_kb=$((selected_total_kb + ${size_values[selected_idx]:-0}))
+        selected_paths+=("$candidate_path")
+        selected_sizes_kb+=("${size_values[$i]:-0}")
+        selected_total_kb=$((selected_total_kb + ${size_values[$i]:-0}))
     done
 
     if [[ ${#selected_paths[@]} -eq 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · no removable selection"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · nothing to clean"
         note_activity
         return 0
     fi
@@ -469,10 +399,7 @@ clean_xcode_simulator_runtime_volumes() {
 
     local selected_human
     selected_human=$(bytes_to_human "$((selected_total_kb * 1024))")
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · selected ${#selected_paths[@]}, ${selected_human}"
-    if [[ $skipped_in_use -gt 0 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes · skipped ${skipped_in_use} in-use items"
-    fi
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · cleaning ${#selected_paths[@]} unused, ${selected_human}"
     if [[ $skipped_protected -gt 0 ]]; then
         echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode runtime volumes · skipped ${skipped_protected} protected items"
     fi

@@ -81,7 +81,7 @@ mo analyze /Volumes          # Analyze external drives only
 - **Navigation**: Supports arrow keys and Vim bindings (`h/j/k/l`).
 - **Status Shortcuts**: In `mo status`, press `k` to toggle cat visibility and save preference, `q` to quit.
 - **Configuration**: Run `mo touchid` for Touch ID sudo, `mo completion` for shell tab completion, `mo clean --whitelist` to manage protected paths.
-- **Simulator Runtime Volumes**: In `mo clean` -> Developer tools, Mole can list CoreSimulator `Volumes/Cryptex` entries with `IN_USE/UNUSED` status and let you select cleanup items interactively.
+- **Simulator Runtime Volumes**: In `mo clean` -> Developer tools, Mole auto-detects and removes unused CoreSimulator `Volumes/Cryptex` entries (IN_USE items are safely skipped).
 
 ## Features in Detail
 
