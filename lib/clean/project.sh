@@ -40,6 +40,10 @@ readonly PURGE_TARGETS=(
     ".svelte-kit"   # SvelteKit
     ".astro"        # Astro
     "coverage"      # Code coverage reports
+    "DerivedData"   # Xcode
+    "Pods"          # CocoaPods
+    ".cxx"          # Android
+    ".expo"         # Expo
 )
 # Minimum age in days before considering for cleanup.
 readonly MIN_AGE_DAYS=7
