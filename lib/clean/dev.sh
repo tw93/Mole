@@ -17,10 +17,35 @@ clean_tool_cache() {
 }
 # npm/pnpm/yarn/bun caches.
 clean_dev_npm() {
+    local npm_default_cache="$HOME/.npm"
+    local npm_cache_path="$npm_default_cache"
+
     if command -v npm > /dev/null 2>&1; then
         clean_tool_cache "npm cache" npm cache clean --force
+
+        start_section_spinner "Checking npm cache path..."
+        npm_cache_path=$(run_with_timeout 2 npm config get cache 2> /dev/null) || npm_cache_path=""
+        stop_section_spinner
+
+        if [[ -z "$npm_cache_path" || "$npm_cache_path" != /* ]]; then
+            npm_cache_path="$npm_default_cache"
+        fi
+
         note_activity
     fi
+
+    safe_clean "$npm_default_cache"/_cacache/* "npm cache directory"
+    safe_clean "$npm_default_cache"/_npx/* "npm npx cache"
+    safe_clean "$npm_default_cache"/_logs/* "npm logs"
+    safe_clean "$npm_default_cache"/_prebuilds/* "npm prebuilds"
+
+    if [[ "$npm_cache_path" != "$npm_default_cache" ]]; then
+        safe_clean "$npm_cache_path"/_cacache/* "npm cache directory (custom path)"
+        safe_clean "$npm_cache_path"/_npx/* "npm npx cache (custom path)"
+        safe_clean "$npm_cache_path"/_logs/* "npm logs (custom path)"
+        safe_clean "$npm_cache_path"/_prebuilds/* "npm prebuilds (custom path)"
+    fi
+
     # Clean pnpm store cache
     local pnpm_default_store=~/Library/pnpm/store
     # Check if pnpm is actually usable (not just Corepack shim)

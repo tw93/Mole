@@ -50,6 +50,89 @@ EOF
     [[ "$output" == *"Orphaned pnpm store"* ]]
 }
 
+@test "clean_dev_npm cleans default npm residual directories" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_tool_cache() { :; }
+safe_clean() { echo "$2|$1"; }
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+npm() {
+    if [[ "$1" == "config" && "$2" == "get" && "$3" == "cache" ]]; then
+        echo "$HOME/.npm"
+        return 0
+    fi
+    return 0
+}
+clean_dev_npm
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"npm cache directory|$HOME/.npm/_cacache/*"* ]]
+    [[ "$output" == *"npm npx cache|$HOME/.npm/_npx/*"* ]]
+    [[ "$output" == *"npm logs|$HOME/.npm/_logs/*"* ]]
+    [[ "$output" == *"npm prebuilds|$HOME/.npm/_prebuilds/*"* ]]
+}
+
+@test "clean_dev_npm cleans custom npm cache path when detected" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_tool_cache() { :; }
+safe_clean() { echo "$2|$1"; }
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+npm() {
+    if [[ "$1" == "config" && "$2" == "get" && "$3" == "cache" ]]; then
+        echo "/tmp/mole-custom-npm-cache"
+        return 0
+    fi
+    return 0
+}
+clean_dev_npm
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"npm cache directory|$HOME/.npm/_cacache/*"* ]]
+    [[ "$output" == *"npm cache directory (custom path)|/tmp/mole-custom-npm-cache/_cacache/*"* ]]
+    [[ "$output" == *"npm npx cache (custom path)|/tmp/mole-custom-npm-cache/_npx/*"* ]]
+    [[ "$output" == *"npm logs (custom path)|/tmp/mole-custom-npm-cache/_logs/*"* ]]
+    [[ "$output" == *"npm prebuilds (custom path)|/tmp/mole-custom-npm-cache/_prebuilds/*"* ]]
+}
+
+@test "clean_dev_npm falls back to default cache when npm path is invalid" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_tool_cache() { :; }
+safe_clean() { echo "$2|$1"; }
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+npm() {
+    if [[ "$1" == "config" && "$2" == "get" && "$3" == "cache" ]]; then
+        echo "relative-cache"
+        return 0
+    fi
+    return 0
+}
+clean_dev_npm
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"npm cache directory|$HOME/.npm/_cacache/*"* ]]
+    [[ "$output" != *"(custom path)"* ]]
+}
+
 @test "clean_dev_docker skips when daemon not running" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 DRY_RUN=false bash --noprofile --norc <<'EOF'
 set -euo pipefail
