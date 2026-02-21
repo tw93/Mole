@@ -215,6 +215,9 @@ Select Categories to Clean - 18.5GB (8 selected)
   ● backend-service    2.5GB | node_modules
 ```
 
+> We recommend to install `fd` on your mac.
+> `brew install fd`
+
 > **Use with caution:** This will permanently delete selected artifacts. Review carefully before confirming. Recent projects, less than 7 days old, are marked and unselected by default.
 
 <details>
