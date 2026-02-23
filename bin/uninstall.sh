@@ -850,7 +850,7 @@ main() {
             size_display=$(uninstall_normalize_size_display "$size")
             local last_display
             last_display=$(uninstall_normalize_last_used_display "$last_used")
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${app_name}  ${GRAY}${size_display}  |  Last: ${last_display}${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${app_name}  ${GRAY}${size_display}  |  ${bundle_id}  |  Last: ${last_display}${NC}"
         done
         echo ""
         echo -e "${GRAY}Total: ${#apps_data[@]} applications${NC}"
