@@ -621,8 +621,24 @@ select_purge_categories() {
                 ((selected_count++))
             fi
         done
-        local selected_gb
-        selected_gb=$(printf "%.1f" "$(echo "scale=2; $selected_size/1024/1024" | bc)")
+
+        # Dynamic size formatting (KB → MB → GB) with 2 decimal places
+        local selected_size_human
+        local selected_value
+        local selected_unit
+
+        if (( selected_size < 1024 )); then
+            selected_value="$selected_size"
+            selected_unit="KB"
+        elif (( selected_size < 1024 * 1024 )); then
+            selected_value=$(printf "%.2f" "$(echo "scale=4; $selected_size/1024" | bc)")
+            selected_unit="MB"
+        else
+            selected_value=$(printf "%.2f" "$(echo "scale=4; $selected_size/1024/1024" | bc)")
+            selected_unit="GB"
+        fi
+
+        selected_size_human="${selected_value}${selected_unit}"
 
         # Show position indicator if scrolling is needed
         local scroll_indicator=""
@@ -632,7 +648,7 @@ select_purge_categories() {
         fi
 
         printf "%s\n" "$clear_line"
-        printf "%s${PURPLE_BOLD}Select Categories to Clean${NC}%s ${GRAY}, ${selected_gb}GB, ${selected_count} selected${NC}\n" "$clear_line" "$scroll_indicator"
+        printf "%s${PURPLE_BOLD}Select Categories to Clean${NC}%s${GRAY}, ${selected_size_human}, ${selected_count} selected${NC}\n" "$clear_line" "$scroll_indicator"
         printf "%s\n" "$clear_line"
 
         IFS=',' read -r -a recent_flags <<< "${PURGE_RECENT_CATEGORIES:-}"
