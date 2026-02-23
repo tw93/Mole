@@ -827,6 +827,9 @@ main() {
             "--dry-run" | "-n")
                 dry_run=true
                 ;;
+            "--yes" | "-y")
+                export MOLE_AUTO_CONFIRM=1
+                ;;
             -*)
                 echo "Unknown option: $arg"
                 echo "Use 'mo uninstall --help' for usage information"

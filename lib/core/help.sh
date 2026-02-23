@@ -58,6 +58,7 @@ show_uninstall_help() {
     echo ""
     echo "Options:"
     echo "  --dry-run, -n     List all applications with bundle IDs"
+    echo "  --yes, -y         Skip confirmation prompt"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"
     echo ""
@@ -65,4 +66,5 @@ show_uninstall_help() {
     echo "  mo uninstall                           Interactive mode"
     echo "  mo uninstall --dry-run                  List all apps and bundle IDs"
     echo "  mo uninstall com.google.Chrome.beta     Uninstall by bundle ID"
+    echo "  mo uninstall com.example.app --yes      Uninstall without confirmation"
 }

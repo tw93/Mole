@@ -368,28 +368,32 @@ batch_uninstall_applications() {
     if [[ ${#running_apps[@]} -gt 0 ]]; then
         removal_note+=" ${YELLOW}[Running]${NC}"
     fi
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    if [[ "${MOLE_AUTO_CONFIRM:-}" == "1" ]]; then
+        echo -e "${PURPLE}${ICON_ARROW}${NC} ${removal_note}"
+    else
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
 
-    drain_pending_input # Clean up any pending input before confirmation
-    IFS= read -r -s -n1 key || key=""
-    drain_pending_input # Clean up any escape sequence remnants
-    case "$key" in
-        $'\e' | q | Q)
-            echo ""
-            echo ""
-            _restore_uninstall_traps
-            return 0
-            ;;
-        "" | $'\n' | $'\r' | y | Y)
-            echo "" # Move to next line
-            ;;
-        *)
-            echo ""
-            echo ""
-            _restore_uninstall_traps
-            return 0
-            ;;
-    esac
+        drain_pending_input # Clean up any pending input before confirmation
+        IFS= read -r -s -n1 key || key=""
+        drain_pending_input # Clean up any escape sequence remnants
+        case "$key" in
+            $'\e' | q | Q)
+                echo ""
+                echo ""
+                _restore_uninstall_traps
+                return 0
+                ;;
+            "" | $'\n' | $'\r' | y | Y)
+                echo "" # Move to next line
+                ;;
+            *)
+                echo ""
+                echo ""
+                _restore_uninstall_traps
+                return 0
+                ;;
+        esac
+    fi
 
     # Enable uninstall mode - allows deletion of data-protected apps (VPNs, dev tools, etc.)
     # that user explicitly chose to uninstall. System-critical components remain protected.
