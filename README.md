@@ -65,6 +65,9 @@ mo clean --dry-run           # Preview the cleanup plan
 mo clean --whitelist         # Manage protected caches
 mo clean --dry-run --debug   # Detailed preview with risk levels and file info
 
+mo uninstall --dry-run       # List all apps without interactive menu
+mo installer --dry-run       # List all installers without interactive menu
+
 mo optimize --dry-run        # Preview optimization actions
 mo optimize --debug          # Run with detailed operation logs
 mo optimize --whitelist      # Manage protected optimization rules
