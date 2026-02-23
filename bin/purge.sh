@@ -230,6 +230,15 @@ perform_purge() {
     printf '\n'
 }
 
+# Dry-run: scan and list all artifacts without interactive menu
+perform_purge_dry_run() {
+    export MOLE_PURGE_DRY_RUN=1
+    clean_project_artifacts
+    local exit_code=$?
+    unset MOLE_PURGE_DRY_RUN
+    return $exit_code
+}
+
 # Show help message
 show_help() {
     echo -e "${PURPLE_BOLD}Mole Purge${NC}, Clean old project build artifacts"
@@ -237,6 +246,7 @@ show_help() {
     echo -e "${YELLOW}Usage:${NC} mo purge [options]"
     echo ""
     echo -e "${YELLOW}Options:${NC}"
+    echo "  --dry-run, -n   List all project artifacts without interactive menu"
     echo "  --paths         Edit custom scan directories"
     echo "  --debug         Enable debug logging"
     echo "  --help          Show this help message"
@@ -253,6 +263,7 @@ main() {
     trap 'show_cursor; exit 130' INT TERM
 
     # Parse arguments
+    local dry_run=false
     for arg in "$@"; do
         case "$arg" in
             "--paths")
@@ -267,6 +278,9 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
+            "--dry-run" | "-n")
+                dry_run=true
+                ;;
             *)
                 echo "Unknown option: $arg"
                 echo "Use 'mo purge --help' for usage information"
@@ -274,6 +288,13 @@ main() {
                 ;;
         esac
     done
+
+    if [[ $dry_run == true ]]; then
+        export MOLE_PURGE_DRY_RUN=1
+        start_purge
+        perform_purge_dry_run
+        return 0
+    fi
 
     start_purge
     hide_cursor

@@ -1228,6 +1228,36 @@ clean_project_artifacts() {
     if [[ -t 1 ]]; then
         stop_inline_spinner
     fi
+
+    # Dry-run: list all artifacts and exit
+    if [[ "${MOLE_PURGE_DRY_RUN:-}" == "1" ]]; then
+        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
+        local total_size_kb=0
+        for ((i = 0; i < ${#item_paths[@]}; i++)); do
+            local project_path
+            project_path=$(get_project_path "${item_paths[i]}")
+            local artifact_type
+            artifact_type=$(basename "${item_paths[i]}")
+            local size_human
+            if [[ "${item_size_unknown_flags[i]}" == "true" ]]; then
+                size_human="unknown"
+            else
+                size_human=$(bytes_to_human "$((item_sizes[i] * 1024))")
+                ((total_size_kb += item_sizes[i])) || true
+            fi
+            local recent_tag=""
+            if [[ "${item_recent_flags[i]}" == "true" ]]; then
+                recent_tag="  ${GRAY}[Recent]${NC}"
+            fi
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${project_path}  ${GRAY}${size_human}  |  ${artifact_type}${NC}${recent_tag}"
+        done
+        echo ""
+        local total_human
+        total_human=$(bytes_to_human "$((total_size_kb * 1024))")
+        echo -e "${GRAY}Total: ${#item_paths[@]} artifacts, ${total_human}${NC}"
+        return 0
+    fi
+
     # Set global vars for selector
     export PURGE_CATEGORY_SIZES=$(
         IFS=,
