@@ -52,12 +52,17 @@ show_touchid_help() {
 }
 
 show_uninstall_help() {
-    echo "Usage: mo uninstall [OPTIONS]"
+    echo "Usage: mo uninstall [OPTIONS] [BUNDLE_ID...]"
     echo ""
     echo "Interactively remove applications and their leftover files."
     echo ""
     echo "Options:"
-    echo "  --dry-run, -n     List all applications without interactive menu"
+    echo "  --dry-run, -n     List all applications with bundle IDs"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  mo uninstall                           Interactive mode"
+    echo "  mo uninstall --dry-run                  List all apps and bundle IDs"
+    echo "  mo uninstall com.google.Chrome.beta     Uninstall by bundle ID"
 }
