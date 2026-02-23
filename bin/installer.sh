@@ -666,6 +666,7 @@ show_summary() {
 }
 
 main() {
+    local dry_run=false
     for arg in "$@"; do
         case "$arg" in
             "--help" | "-h")
@@ -675,12 +676,33 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
+            "--dry-run" | "-n")
+                dry_run=true
+                ;;
             *)
                 echo "Unknown option: $arg"
                 exit 1
                 ;;
         esac
     done
+
+    # Dry-run: scan and list all installers without interactive menu
+    if [[ $dry_run == true ]]; then
+        if ! collect_installers; then
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+            return 0
+        fi
+
+        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
+        for ((i = 0; i < ${#INSTALLER_PATHS[@]}; i++)); do
+            local size_human
+            size_human=$(bytes_to_human "${INSTALLER_SIZES[i]}")
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(basename "${INSTALLER_PATHS[i]}")  ${GRAY}${size_human}  |  ${INSTALLER_SOURCES[i]}${NC}"
+        done
+        echo ""
+        echo -e "${GRAY}Total: ${#INSTALLER_PATHS[@]} installers${NC}"
+        return 0
+    fi
 
     hide_cursor
     perform_installers

@@ -813,6 +813,7 @@ main() {
     log_operation_session_start "uninstall"
 
     # Global flags
+    local dry_run=false
     for arg in "$@"; do
         case "$arg" in
             "--help" | "-h")
@@ -822,8 +823,41 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
+            "--dry-run" | "-n")
+                dry_run=true
+                ;;
         esac
     done
+
+    # Dry-run: scan and list all apps without interactive menu
+    if [[ $dry_run == true ]]; then
+        local apps_file=""
+        if ! apps_file=$(scan_applications); then
+            return 1
+        fi
+        if [[ ! -f "$apps_file" ]]; then
+            return 1
+        fi
+        if ! load_applications "$apps_file"; then
+            rm -f "$apps_file"
+            return 1
+        fi
+
+        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
+        for app_data in "${apps_data[@]}"; do
+            IFS='|' read -r _ app_path app_name bundle_id size last_used _ <<< "$app_data"
+            local size_display
+            size_display=$(uninstall_normalize_size_display "$size")
+            local last_display
+            last_display=$(uninstall_normalize_last_used_display "$last_used")
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${app_name}  ${GRAY}${size_display}  |  Last: ${last_display}${NC}"
+        done
+        echo ""
+        echo -e "${GRAY}Total: ${#apps_data[@]} applications${NC}"
+
+        rm -f "$apps_file"
+        return 0
+    fi
 
     hide_cursor
 

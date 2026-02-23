@@ -18,6 +18,7 @@ show_installer_help() {
     echo "Find and remove installer files (.dmg, .pkg, .iso, .xip, .zip)."
     echo ""
     echo "Options:"
+    echo "  --dry-run, -n     List all installers without interactive menu"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"
 }
@@ -56,6 +57,7 @@ show_uninstall_help() {
     echo "Interactively remove applications and their leftover files."
     echo ""
     echo "Options:"
+    echo "  --dry-run, -n     List all applications without interactive menu"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"
 }
