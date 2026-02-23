@@ -814,7 +814,6 @@ main() {
 
     # Global flags
     local dry_run=false
-    local -a target_ids=()
     for arg in "$@"; do
         case "$arg" in
             "--help" | "-h")
@@ -826,14 +825,6 @@ main() {
                 ;;
             "--dry-run" | "-n")
                 dry_run=true
-                ;;
-            -*)
-                echo "Unknown option: $arg"
-                echo "Use 'mo uninstall --help' for usage information"
-                exit 1
-                ;;
-            *)
-                target_ids+=("$arg")
                 ;;
         esac
     done
@@ -864,65 +855,6 @@ main() {
         echo ""
         echo -e "${GRAY}Total: ${#apps_data[@]} applications${NC}"
 
-        rm -f "$apps_file"
-        return 0
-    fi
-
-    # Direct uninstall by bundle ID
-    if [[ ${#target_ids[@]} -gt 0 ]]; then
-        local apps_file=""
-        if ! apps_file=$(scan_applications); then
-            return 1
-        fi
-        if [[ ! -f "$apps_file" ]]; then
-            return 1
-        fi
-        if ! load_applications "$apps_file"; then
-            rm -f "$apps_file"
-            return 1
-        fi
-
-        # Match target IDs against scanned apps by bundle_id
-        selected_apps=()
-        local -a not_found=()
-        for target in "${target_ids[@]}"; do
-            local matched=false
-            for app_data in "${apps_data[@]}"; do
-                IFS='|' read -r _ _ _ bundle_id _ _ _ <<< "$app_data"
-                if [[ "$bundle_id" == "$target" ]]; then
-                    selected_apps+=("$app_data")
-                    matched=true
-                    break
-                fi
-            done
-            if [[ $matched == false ]]; then
-                not_found+=("$target")
-            fi
-        done
-
-        if [[ ${#not_found[@]} -gt 0 ]]; then
-            for nf in "${not_found[@]}"; do
-                echo -e "${RED}${ICON_ERROR}${NC} Not found: ${nf}"
-            done
-        fi
-
-        if [[ ${#selected_apps[@]} -eq 0 ]]; then
-            echo "No matching applications found"
-            rm -f "$apps_file"
-            return 1
-        fi
-
-        echo -e "${BLUE}${ICON_CONFIRM}${NC} Selected ${#selected_apps[@]} apps:"
-        for selected_app in "${selected_apps[@]}"; do
-            IFS='|' read -r _ _ app_name bundle_id size last_used _ <<< "$selected_app"
-            local size_display
-            size_display=$(uninstall_normalize_size_display "$size")
-            local last_display
-            last_display=$(uninstall_normalize_last_used_display "$last_used")
-            echo -e "  ${BLUE}${ICON_CONFIRM}${NC} ${app_name}  ${GRAY}${size_display}  |  ${bundle_id}  |  Last: ${last_display}${NC}"
-        done
-
-        batch_uninstall_applications
         rm -f "$apps_file"
         return 0
     fi
