@@ -260,7 +260,7 @@ Launch Mole commands from Raycast or Alfred:
 curl -fsSL https://raw.githubusercontent.com/tw93/Mole/main/scripts/setup-quick-launchers.sh | bash
 ```
 
-Adds 5 commands: `clean`, `uninstall`, `optimize`, `analyze`, `status`.
+Adds 5 commands: `Mole Clean`, `Mole Uninstall`, `Mole Optimize`, `Mole Analyze`, `Mole Status`.
 
 ### Raycast Setup
 
@@ -271,7 +271,7 @@ After running the script, complete these steps in Raycast:
 3. Click **"Add Script Directory"** (or **"+"**)
 4. Add path: `~/Library/Application Support/Raycast/script-commands`
 5. Search in Raycast for: **"Reload Script Directories"** and run it
-6. Done! Search for `mole`, `clean`, or `optimize` to use the commands
+6. Done! Search for `mole clean`, `mole optimize`, or `mole status` to use the commands
 
 > **Note**: The script creates the commands, but Raycast still requires a one-time manual script directory setup.
 

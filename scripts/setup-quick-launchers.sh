@@ -42,8 +42,9 @@ detect_mo() {
 write_raycast_script() {
     local target="$1"
     local title="$2"
-    local mo_bin="$3"
-    local subcommand="$4"
+    local description="$3"
+    local mo_bin="$4"
+    local subcommand="$5"
 
     local cmd_for_applescript="${mo_bin//\\/\\\\}"
     cmd_for_applescript="${cmd_for_applescript//\"/\\\"}"
@@ -56,6 +57,7 @@ write_raycast_script() {
 # @raycast.title ${title}
 # @raycast.mode fullOutput
 # @raycast.packageName Mole
+# @raycast.description ${description}
 
 # Optional parameters:
 # @raycast.icon 🐹
@@ -240,11 +242,11 @@ create_raycast_commands() {
 
     log_step "Installing Raycast commands..."
     mkdir -p "$dir"
-    write_raycast_script "$dir/mole-clean.sh" "clean" "$mo_bin" "clean"
-    write_raycast_script "$dir/mole-uninstall.sh" "uninstall" "$mo_bin" "uninstall"
-    write_raycast_script "$dir/mole-optimize.sh" "optimize" "$mo_bin" "optimize"
-    write_raycast_script "$dir/mole-analyze.sh" "analyze" "$mo_bin" "analyze"
-    write_raycast_script "$dir/mole-status.sh" "status" "$mo_bin" "status"
+    write_raycast_script "$dir/mole-clean.sh" "Mole Clean" "Deep system cleanup with Mole" "$mo_bin" "clean"
+    write_raycast_script "$dir/mole-uninstall.sh" "Mole Uninstall" "Uninstall applications with Mole" "$mo_bin" "uninstall"
+    write_raycast_script "$dir/mole-optimize.sh" "Mole Optimize" "System health checks and optimization" "$mo_bin" "optimize"
+    write_raycast_script "$dir/mole-analyze.sh" "Mole Analyze" "Disk space analysis with Mole" "$mo_bin" "analyze"
+    write_raycast_script "$dir/mole-status.sh" "Mole Status" "Live system status dashboard" "$mo_bin" "status"
     log_success "Scripts ready in: $dir"
 
     log_header "Raycast Configuration"
@@ -404,11 +406,11 @@ main() {
 
     echo ""
     log_success "Done! Raycast and Alfred are ready with 5 commands:"
-    echo "  • clean, Deep system cleanup"
-    echo "  • uninstall, Remove applications"
-    echo "  • optimize, System health & tuning"
-    echo "  • analyze, Disk space explorer"
-    echo "  • status, Live system monitor"
+    echo "  • Mole Clean, Deep system cleanup"
+    echo "  • Mole Uninstall, Remove applications"
+    echo "  • Mole Optimize, System health & tuning"
+    echo "  • Mole Analyze, Disk space explorer"
+    echo "  • Mole Status, Live system monitor"
     echo ""
 }
 

@@ -72,6 +72,57 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup-quick-launchers.sh generates Raycast scripts with discoverable metadata" {
+    local fake_bin="$HOME/fake-bin"
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/mo" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+    chmod +x "$fake_bin/mo"
+
+    run env HOME="$HOME" TERM="dumb" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+        "$PROJECT_ROOT/scripts/setup-quick-launchers.sh"
+    [ "$status" -eq 0 ]
+
+    local raycast_dir="$HOME/Library/Application Support/Raycast/script-commands"
+    [ -d "$raycast_dir" ]
+
+    local clean_script="$raycast_dir/mole-clean.sh"
+    local uninstall_script="$raycast_dir/mole-uninstall.sh"
+    local optimize_script="$raycast_dir/mole-optimize.sh"
+    local analyze_script="$raycast_dir/mole-analyze.sh"
+    local status_script="$raycast_dir/mole-status.sh"
+
+    [ -x "$clean_script" ]
+    [ -x "$uninstall_script" ]
+    [ -x "$optimize_script" ]
+    [ -x "$analyze_script" ]
+    [ -x "$status_script" ]
+
+    run grep -q '^# @raycast.title Mole Clean$' "$clean_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.title Mole Uninstall$' "$uninstall_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.title Mole Optimize$' "$optimize_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.title Mole Analyze$' "$analyze_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.title Mole Status$' "$status_script"
+    [ "$status" -eq 0 ]
+
+    run grep -q '^# @raycast.description Deep system cleanup with Mole$' "$clean_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.description Uninstall applications with Mole$' "$uninstall_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.description System health checks and optimization$' "$optimize_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.description Disk space analysis with Mole$' "$analyze_script"
+    [ "$status" -eq 0 ]
+    run grep -q '^# @raycast.description Live system status dashboard$' "$status_script"
+    [ "$status" -eq 0 ]
+}
+
 @test "install.sh supports dev branch installs" {
     run bash -c "grep -q 'refs/heads/dev.tar.gz' '$PROJECT_ROOT/install.sh'"
     [ "$status" -eq 0 ]
