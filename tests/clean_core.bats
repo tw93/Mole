@@ -34,6 +34,42 @@ setup() {
     [[ "$output" != *"Deep system-level cleanup"* ]]
 }
 
+@test "mo clean --dry-run includes system preview when sudo is cached" {
+    local mock_bin="$HOME/bin"
+    mkdir -p "$mock_bin"
+    cat > "$mock_bin/sudo" << 'MOCK'
+#!/bin/bash
+# Shim: sudo -n true succeeds, all other sudo calls are no-ops.
+if [[ "$1" == "-n" && "$2" == "true" ]]; then exit 0; fi
+if [[ "$1" == "test" ]]; then exit 1; fi
+if [[ "$1" == "find" ]]; then exit 0; fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/sudo"
+
+    run env HOME="$HOME" MOLE_TEST_MODE=1 PATH="$mock_bin:$PATH" \
+        "$PROJECT_ROOT/mole" clean --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"system preview included"* ]]
+}
+
+@test "mo clean --dry-run shows hint when sudo is not cached" {
+    local mock_bin="$HOME/bin"
+    mkdir -p "$mock_bin"
+    cat > "$mock_bin/sudo" << 'MOCK'
+#!/bin/bash
+# Shim: sudo -n always fails (no cached credentials).
+exit 1
+MOCK
+    chmod +x "$mock_bin/sudo"
+
+    run env HOME="$HOME" MOLE_TEST_MODE=1 PATH="$mock_bin:$PATH" \
+        "$PROJECT_ROOT/mole" clean --dry-run
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"sudo -v"* ]]
+    [[ "$output" == *"full preview"* ]]
+}
+
 @test "mo clean --dry-run reports user cache without deleting it" {
     mkdir -p "$HOME/Library/Caches/TestApp"
     echo "cache data" > "$HOME/Library/Caches/TestApp/cache.tmp"

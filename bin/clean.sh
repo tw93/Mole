@@ -717,7 +717,6 @@ start_cleanup() {
     if [[ "$DRY_RUN" == "true" ]]; then
         echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
         echo ""
-        SYSTEM_CLEAN=false
 
         ensure_user_file "$EXPORT_LIST_FILE"
         cat > "$EXPORT_LIST_FILE" << EOF
@@ -732,6 +731,17 @@ start_cleanup() {
 #
 
 EOF
+
+        # Preview system section when sudo is already cached (no password prompt).
+        if sudo -n true 2> /dev/null; then
+            SYSTEM_CLEAN=true
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access available, system preview included"
+            echo ""
+        else
+            SYSTEM_CLEAN=false
+            echo -e "${GRAY}${ICON_WARNING} System caches need sudo, run ${NC}sudo -v && mo clean --dry-run${GRAY} for full preview${NC}"
+            echo ""
+        fi
         return
     fi
 
