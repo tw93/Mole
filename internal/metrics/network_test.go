@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import "testing"
 
@@ -10,7 +10,7 @@ func TestCollectProxyFromEnvSupportsAllProxy(t *testing.T) {
 		return env[key]
 	}
 
-	got := collectProxyFromEnv(getenv)
+	got := CollectProxyFromEnv(getenv)
 	if !got.Enabled {
 		t.Fatalf("expected proxy enabled")
 	}
@@ -28,7 +28,7 @@ func TestCollectProxyFromScutilOutputPAC(t *testing.T) {
   ProxyAutoConfigEnable : 1
   ProxyAutoConfigURLString : http://127.0.0.1:6152/proxy.pac
 }`
-	got := collectProxyFromScutilOutput(out)
+	got := CollectProxyFromScutilOutput(out)
 	if !got.Enabled {
 		t.Fatalf("expected proxy enabled")
 	}
@@ -47,7 +47,7 @@ func TestCollectProxyFromScutilOutputHTTPHostPort(t *testing.T) {
   HTTPProxy : 127.0.0.1
   HTTPPort : 7890
 }`
-	got := collectProxyFromScutilOutput(out)
+	got := CollectProxyFromScutilOutput(out)
 	if !got.Enabled {
 		t.Fatalf("expected proxy enabled")
 	}

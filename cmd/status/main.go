@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/tw93/mole/internal/metrics"
 )
 
 const refreshInterval = time.Second
@@ -23,15 +24,15 @@ type tickMsg struct{}
 type animTickMsg struct{}
 
 type metricsMsg struct {
-	data MetricsSnapshot
+	data metrics.MetricsSnapshot
 	err  error
 }
 
 type model struct {
-	collector   *Collector
+	collector   *metrics.Collector
 	width       int
 	height      int
-	metrics     MetricsSnapshot
+	metrics     metrics.MetricsSnapshot
 	errMessage  string
 	ready       bool
 	lastUpdated time.Time
@@ -82,7 +83,7 @@ func saveCatHidden(hidden bool) {
 
 func newModel() model {
 	return model{
-		collector: NewCollector(),
+		collector: metrics.NewCollector(),
 		catHidden: loadCatHidden(),
 	}
 }

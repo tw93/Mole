@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"context"
@@ -22,7 +22,9 @@ var skipDiskMounts = map[string]bool{
 	"/dev":                     true,
 }
 
-func collectDisks() ([]DiskStatus, error) {
+const diskCacheTTL = 2 * time.Minute
+
+func (c *Collector) collectDisks() ([]DiskStatus, error) {
 	partitions, err := disk.Partitions(false)
 	if err != nil {
 		return nil, err
@@ -79,7 +81,7 @@ func collectDisks() ([]DiskStatus, error) {
 		seenVolume[volKey] = true
 	}
 
-	annotateDiskTypes(disks)
+	c.annotateDiskTypes(disks)
 
 	sort.Slice(disks, func(i, j int) bool {
 		return disks[i].Total > disks[j].Total
@@ -92,23 +94,16 @@ func collectDisks() ([]DiskStatus, error) {
 	return disks, nil
 }
 
-var (
-	// External disk cache.
-	lastDiskCacheAt time.Time
-	diskTypeCache   = make(map[string]bool)
-	diskCacheTTL    = 2 * time.Minute
-)
-
-func annotateDiskTypes(disks []DiskStatus) {
+func (c *Collector) annotateDiskTypes(disks []DiskStatus) {
 	if len(disks) == 0 || runtime.GOOS != "darwin" || !commandExists("diskutil") {
 		return
 	}
 
 	now := time.Now()
 	// Clear stale cache.
-	if now.Sub(lastDiskCacheAt) > diskCacheTTL {
-		diskTypeCache = make(map[string]bool)
-		lastDiskCacheAt = now
+	if now.Sub(c.lastDiskCacheAt) > diskCacheTTL {
+		c.diskTypeCache = make(map[string]bool)
+		c.lastDiskCacheAt = now
 	}
 
 	for i := range disks {
@@ -117,7 +112,7 @@ func annotateDiskTypes(disks []DiskStatus) {
 			base = disks[i].Device
 		}
 
-		if val, ok := diskTypeCache[base]; ok {
+		if val, ok := c.diskTypeCache[base]; ok {
 			disks[i].External = val
 			continue
 		}
@@ -127,7 +122,7 @@ func annotateDiskTypes(disks []DiskStatus) {
 			external = strings.HasPrefix(disks[i].Mount, "/Volumes/")
 		}
 		disks[i].External = external
-		diskTypeCache[base] = external
+		c.diskTypeCache[base] = external
 	}
 }
 

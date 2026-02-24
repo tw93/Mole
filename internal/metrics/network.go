@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func (c *Collector) collectNetwork(now time.Time) ([]NetworkStatus, error) {
 
 	var result []NetworkStatus
 	for _, cur := range stats {
-		if isNoiseInterface(cur.Name) {
+		if IsNoiseInterface(cur.Name) {
 			continue
 		}
 		prev, ok := c.prevNet[cur.Name]
@@ -104,7 +104,9 @@ func getInterfaceIPs() map[string]string {
 	return result
 }
 
-func isNoiseInterface(name string) bool {
+// IsNoiseInterface reports whether the given network interface name is noise
+// (loopback, tunnel, bridge, etc.) that should be filtered from display.
+func IsNoiseInterface(name string) bool {
 	lower := strings.ToLower(name)
 	noiseList := []string{"lo", "awdl", "utun", "llw", "bridge", "gif", "stf", "xhc", "anpi", "ap"}
 	for _, prefix := range noiseList {
@@ -116,7 +118,7 @@ func isNoiseInterface(name string) bool {
 }
 
 func collectProxy() ProxyStatus {
-	if proxy := collectProxyFromEnv(os.Getenv); proxy.Enabled {
+	if proxy := CollectProxyFromEnv(os.Getenv); proxy.Enabled {
 		return proxy
 	}
 
@@ -126,7 +128,7 @@ func collectProxy() ProxyStatus {
 		defer cancel()
 		out, err := runCmd(ctx, "scutil", "--proxy")
 		if err == nil {
-			if proxy := collectProxyFromScutilOutput(out); proxy.Enabled {
+			if proxy := CollectProxyFromScutilOutput(out); proxy.Enabled {
 				return proxy
 			}
 		}
@@ -139,7 +141,8 @@ func collectProxy() ProxyStatus {
 	return ProxyStatus{Enabled: false}
 }
 
-func collectProxyFromEnv(getenv func(string) string) ProxyStatus {
+// CollectProxyFromEnv detects proxy configuration from environment variables.
+func CollectProxyFromEnv(getenv func(string) string) ProxyStatus {
 	// Include ALL_PROXY for users running proxy tools that only export a single variable.
 	envKeys := []string{
 		"https_proxy", "HTTPS_PROXY",
@@ -168,7 +171,8 @@ func collectProxyFromEnv(getenv func(string) string) ProxyStatus {
 	return ProxyStatus{Enabled: false}
 }
 
-func collectProxyFromScutilOutput(out string) ProxyStatus {
+// CollectProxyFromScutilOutput parses macOS scutil --proxy output.
+func CollectProxyFromScutilOutput(out string) ProxyStatus {
 	if out == "" {
 		return ProxyStatus{Enabled: false}
 	}
@@ -245,7 +249,7 @@ func scutilProxyEnabled(out, key string) bool {
 
 func scutilProxyValue(out, key string) string {
 	prefix := key + " :"
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.Lines(out) {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {
 			return strings.TrimSpace(strings.TrimPrefix(line, prefix))

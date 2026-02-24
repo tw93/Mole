@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"bufio"
@@ -15,9 +15,10 @@ import (
 
 const (
 	cpuSampleInterval = 200 * time.Millisecond
+	topologyTTL       = 10 * time.Minute
 )
 
-func collectCPU() (CPUStatus, error) {
+func (c *Collector) collectCPU() (CPUStatus, error) {
 	counts, countsErr := cpu.Counts(false)
 	if countsErr != nil || counts == 0 {
 		counts = runtime.NumCPU()
@@ -67,7 +68,7 @@ func collectCPU() (CPUStatus, error) {
 	}
 
 	// P/E core counts for Apple Silicon.
-	pCores, eCores := getCoreTopology()
+	pCores, eCores := c.getCoreTopology()
 
 	return CPUStatus{
 		Usage:            totalPercent,
@@ -87,23 +88,16 @@ func isZeroLoad(avg load.AvgStat) bool {
 	return avg.Load1 == 0 && avg.Load5 == 0 && avg.Load15 == 0
 }
 
-var (
-	// Cache for core topology.
-	lastTopologyAt   time.Time
-	cachedP, cachedE int
-	topologyTTL      = 10 * time.Minute
-)
-
 // getCoreTopology returns P/E core counts on Apple Silicon.
-func getCoreTopology() (pCores, eCores int) {
+func (c *Collector) getCoreTopology() (pCores, eCores int) {
 	if runtime.GOOS != "darwin" {
 		return 0, 0
 	}
 
 	now := time.Now()
-	if cachedP > 0 || cachedE > 0 {
-		if now.Sub(lastTopologyAt) < topologyTTL {
-			return cachedP, cachedE
+	if c.cachedP > 0 || c.cachedE > 0 {
+		if now.Sub(c.lastTopologyAt) < topologyTTL {
+			return c.cachedP, c.cachedE
 		}
 	}
 
@@ -145,8 +139,8 @@ func getCoreTopology() (pCores, eCores int) {
 		eCores = level1Count
 	}
 
-	cachedP, cachedE = pCores, eCores
-	lastTopologyAt = now
+	c.cachedP, c.cachedE = pCores, eCores
+	c.lastTopologyAt = now
 	return pCores, eCores
 }
 

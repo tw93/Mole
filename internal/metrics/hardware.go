@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"context"
@@ -13,7 +13,7 @@ func collectHardware(totalRAM uint64, disks []DiskStatus) HardwareInfo {
 		return HardwareInfo{
 			Model:       "Unknown",
 			CPUModel:    runtime.GOARCH,
-			TotalRAM:    humanBytes(totalRAM),
+			TotalRAM:    HumanBytes(totalRAM),
 			DiskSize:    "Unknown",
 			OSVersion:   runtime.GOOS,
 			RefreshRate: "",
@@ -64,26 +64,26 @@ func collectHardware(totalRAM uint64, disks []DiskStatus) HardwareInfo {
 	defer cancel3()
 	out3, err := runCmd(ctx3, "system_profiler", "-detailLevel", "mini", "SPDisplaysDataType")
 	if err == nil {
-		refreshRate = parseRefreshRate(out3)
+		refreshRate = ParseRefreshRate(out3)
 	}
 
 	diskSize := "Unknown"
 	if len(disks) > 0 {
-		diskSize = humanBytes(disks[0].Total)
+		diskSize = HumanBytes(disks[0].Total)
 	}
 
 	return HardwareInfo{
 		Model:       model,
 		CPUModel:    cpuModel,
-		TotalRAM:    humanBytes(totalRAM),
+		TotalRAM:    HumanBytes(totalRAM),
 		DiskSize:    diskSize,
 		OSVersion:   osVersion,
 		RefreshRate: refreshRate,
 	}
 }
 
-// parseRefreshRate extracts the highest refresh rate from system_profiler display output.
-func parseRefreshRate(output string) string {
+// ParseRefreshRate extracts the highest refresh rate from system_profiler display output.
+func ParseRefreshRate(output string) string {
 	maxHz := 0
 
 	for line := range strings.Lines(output) {
@@ -93,7 +93,7 @@ func parseRefreshRate(output string) string {
 			fields := strings.Fields(lower)
 			for i, field := range fields {
 				if field == "hz" && i > 0 {
-					if hz := parseInt(fields[i-1]); hz > maxHz && hz < 500 {
+					if hz := ParseInt(fields[i-1]); hz > maxHz && hz < 500 {
 						maxHz = hz
 					}
 					continue
@@ -102,7 +102,7 @@ func parseRefreshRate(output string) string {
 					if numStr == "" && i > 0 {
 						numStr = fields[i-1]
 					}
-					if hz := parseInt(numStr); hz > maxHz && hz < 500 {
+					if hz := ParseInt(numStr); hz > maxHz && hz < 500 {
 						maxHz = hz
 					}
 				}
@@ -116,8 +116,8 @@ func parseRefreshRate(output string) string {
 	return ""
 }
 
-// parseInt safely parses an integer from a string.
-func parseInt(s string) int {
+// ParseInt safely parses an integer from a string.
+func ParseInt(s string) int {
 	// Trim away non-numeric padding, keep digits and '.' for decimals.
 	cleaned := strings.TrimSpace(s)
 	cleaned = strings.TrimLeftFunc(cleaned, func(r rune) bool {

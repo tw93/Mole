@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/tw93/mole/internal/metrics"
 )
 
 func TestFormatRate(t *testing.T) {
@@ -34,9 +36,9 @@ func TestFormatRate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatRate(tt.input)
+			got := metrics.FormatRate(tt.input)
 			if got != tt.want {
-				t.Errorf("formatRate(%v) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("FormatRate(%v) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -197,9 +199,9 @@ func TestHumanBytesShort(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := humanBytesShort(tt.input)
+			got := metrics.HumanBytesShort(tt.input)
 			if got != tt.want {
-				t.Errorf("humanBytesShort(%d) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("HumanBytesShort(%d) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -239,9 +241,9 @@ func TestHumanBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := humanBytes(tt.input)
+			got := metrics.HumanBytes(tt.input)
 			if got != tt.want {
-				t.Errorf("humanBytes(%d) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("HumanBytes(%d) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -277,9 +279,9 @@ func TestHumanBytesCompact(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := humanBytesCompact(tt.input)
+			got := metrics.HumanBytesCompact(tt.input)
 			if got != tt.want {
-				t.Errorf("humanBytesCompact(%d) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("HumanBytesCompact(%d) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -288,19 +290,19 @@ func TestHumanBytesCompact(t *testing.T) {
 func TestSplitDisks(t *testing.T) {
 	tests := []struct {
 		name         string
-		disks        []DiskStatus
+		disks        []metrics.DiskStatus
 		wantInternal int
 		wantExternal int
 	}{
 		{
 			name:         "empty slice",
-			disks:        []DiskStatus{},
+			disks:        []metrics.DiskStatus{},
 			wantInternal: 0,
 			wantExternal: 0,
 		},
 		{
 			name: "all internal",
-			disks: []DiskStatus{
+			disks: []metrics.DiskStatus{
 				{Mount: "/", External: false},
 				{Mount: "/System", External: false},
 			},
@@ -309,7 +311,7 @@ func TestSplitDisks(t *testing.T) {
 		},
 		{
 			name: "all external",
-			disks: []DiskStatus{
+			disks: []metrics.DiskStatus{
 				{Mount: "/Volumes/USB", External: true},
 				{Mount: "/Volumes/Backup", External: true},
 			},
@@ -318,7 +320,7 @@ func TestSplitDisks(t *testing.T) {
 		},
 		{
 			name: "mixed",
-			disks: []DiskStatus{
+			disks: []metrics.DiskStatus{
 				{Mount: "/", External: false},
 				{Mount: "/Volumes/USB", External: true},
 				{Mount: "/System", External: false},
@@ -406,9 +408,9 @@ func TestParseInt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseInt(tt.input)
+			got := metrics.ParseInt(tt.input)
 			if got != tt.want {
-				t.Errorf("parseInt(%q) = %d, want %d", tt.input, got, tt.want)
+				t.Errorf("ParseInt(%q) = %d, want %d", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -445,9 +447,9 @@ func TestParseRefreshRate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseRefreshRate(tt.input)
+			got := metrics.ParseRefreshRate(tt.input)
 			if got != tt.want {
-				t.Errorf("parseRefreshRate(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("ParseRefreshRate(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -486,9 +488,9 @@ func TestIsNoiseInterface(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isNoiseInterface(tt.input)
+			got := metrics.IsNoiseInterface(tt.input)
 			if got != tt.want {
-				t.Errorf("isNoiseInterface(%q) = %v, want %v", tt.input, got, tt.want)
+				t.Errorf("IsNoiseInterface(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -562,9 +564,9 @@ func TestParsePMSet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parsePMSet(tt.raw, tt.health, tt.cycles, tt.capacity)
+			got := metrics.ParsePMSet(tt.raw, tt.health, tt.cycles, tt.capacity)
 			if len(got) != tt.wantLen {
-				t.Errorf("parsePMSet() returned %d batteries, want %d", len(got), tt.wantLen)
+				t.Errorf("ParsePMSet() returned %d batteries, want %d", len(got), tt.wantLen)
 				return
 			}
 			if tt.wantLen == 0 {
@@ -653,6 +655,54 @@ func TestBatteryProgressBar(t *testing.T) {
 				t.Errorf("batteryProgressBar(%v) rune count = %d, want %d", tt.percent, gotRuneCount, tt.wantRune)
 			}
 		})
+	}
+}
+
+func TestColorizeTempThresholds(t *testing.T) {
+	tests := []struct {
+		temp     float64
+		expected string
+	}{
+		{temp: 30.0, expected: "30.0"}, // Normal - should use okStyle (green)
+		{temp: 55.9, expected: "55.9"}, // Just below warning threshold
+		{temp: 56.0, expected: "56.0"}, // Warning threshold - should use warnStyle (yellow)
+		{temp: 65.0, expected: "65.0"}, // Mid warning range
+		{temp: 75.9, expected: "75.9"}, // Just below danger threshold
+		{temp: 76.0, expected: "76.0"}, // Danger threshold - should use dangerStyle (red)
+		{temp: 90.0, expected: "90.0"}, // High temperature
+		{temp: 0.0, expected: "0.0"},   // Edge case: zero
+	}
+
+	for _, tt := range tests {
+		result := colorizeTemp(tt.temp)
+		// Check that result contains the formatted temperature value
+		if !strings.Contains(result, tt.expected) {
+			t.Errorf("colorizeTemp(%.1f) = %q, should contain %q", tt.temp, result, tt.expected)
+		}
+		// Verify output is not empty and contains the temperature
+		if result == "" {
+			t.Errorf("colorizeTemp(%.1f) returned empty string", tt.temp)
+		}
+	}
+}
+
+func TestColorizeTempStyleRanges(t *testing.T) {
+	normalTemp := colorizeTemp(40.0)
+	warningTemp := colorizeTemp(65.0)
+	dangerTemp := colorizeTemp(85.0)
+
+	if normalTemp == "" || warningTemp == "" || dangerTemp == "" {
+		t.Fatal("colorizeTemp should not return empty strings")
+	}
+
+	if !strings.Contains(normalTemp, "40.0") {
+		t.Errorf("normal temp should contain '40.0', got: %s", normalTemp)
+	}
+	if !strings.Contains(warningTemp, "65.0") {
+		t.Errorf("warning temp should contain '65.0', got: %s", warningTemp)
+	}
+	if !strings.Contains(dangerTemp, "85.0") {
+		t.Errorf("danger temp should contain '85.0', got: %s", dangerTemp)
 	}
 }
 
@@ -749,27 +799,27 @@ func TestFormatDiskLine(t *testing.T) {
 	tests := []struct {
 		name  string
 		label string
-		disk  DiskStatus
+		disk  metrics.DiskStatus
 	}{
 		{
 			name:  "empty label defaults to DISK",
 			label: "",
-			disk:  DiskStatus{UsedPercent: 50.5, Used: 100 << 30, Total: 200 << 30},
+			disk:  metrics.DiskStatus{UsedPercent: 50.5, Used: 100 << 30, Total: 200 << 30},
 		},
 		{
 			name:  "internal disk",
 			label: "INTR",
-			disk:  DiskStatus{UsedPercent: 67.2, Used: 336 << 30, Total: 500 << 30},
+			disk:  metrics.DiskStatus{UsedPercent: 67.2, Used: 336 << 30, Total: 500 << 30},
 		},
 		{
 			name:  "external disk",
 			label: "EXTR1",
-			disk:  DiskStatus{UsedPercent: 85.0, Used: 850 << 30, Total: 1000 << 30},
+			disk:  metrics.DiskStatus{UsedPercent: 85.0, Used: 850 << 30, Total: 1000 << 30},
 		},
 		{
 			name:  "low usage",
 			label: "INTR",
-			disk:  DiskStatus{UsedPercent: 15.3, Used: 15 << 30, Total: 100 << 30},
+			disk:  metrics.DiskStatus{UsedPercent: 15.3, Used: 15 << 30, Total: 100 << 30},
 		},
 	}
 
