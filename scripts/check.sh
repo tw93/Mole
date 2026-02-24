@@ -76,11 +76,11 @@ if [[ "$MODE" == "format" ]]; then
 
     if command -v goimports > /dev/null 2>&1; then
         echo -e "${YELLOW}Formatting Go code, goimports...${NC}"
-        goimports -w -local github.com/tw93/Mole ./cmd
+        goimports -w -local github.com/tw93/Mole ./cmd ./internal
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting complete${NC}\n"
     elif command -v go > /dev/null 2>&1; then
         echo -e "${YELLOW}Formatting Go code, gofmt...${NC}"
-        gofmt -w ./cmd
+        gofmt -w ./cmd ./internal
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting complete${NC}\n"
     else
         echo -e "${YELLOW}${ICON_WARNING} go not installed, skipping gofmt${NC}\n"
@@ -101,11 +101,11 @@ if [[ "$MODE" != "check" ]]; then
 
     if command -v goimports > /dev/null 2>&1; then
         echo -e "${YELLOW}2. Formatting Go code, goimports...${NC}"
-        goimports -w -local github.com/tw93/Mole ./cmd
+        goimports -w -local github.com/tw93/Mole ./cmd ./internal
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting applied${NC}\n"
     elif command -v go > /dev/null 2>&1; then
         echo -e "${YELLOW}2. Formatting Go code, gofmt...${NC}"
-        gofmt -w ./cmd
+        gofmt -w ./cmd ./internal
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting applied${NC}\n"
     fi
 fi
@@ -116,7 +116,7 @@ if command -v golangci-lint > /dev/null 2>&1; then
         echo -e "${RED}${ICON_ERROR} golangci-lint config invalid${NC}\n"
         exit 1
     fi
-    if golangci-lint run ./cmd/...; then
+    if golangci-lint run ./cmd/... ./internal/...; then
         echo -e "${GREEN}${ICON_SUCCESS} golangci-lint passed${NC}\n"
     else
         echo -e "${RED}${ICON_ERROR} golangci-lint failed${NC}\n"
@@ -124,7 +124,7 @@ if command -v golangci-lint > /dev/null 2>&1; then
     fi
 elif command -v go > /dev/null 2>&1; then
     echo -e "${YELLOW}${ICON_WARNING} golangci-lint not installed, falling back to go vet${NC}"
-    if go vet ./cmd/...; then
+    if go vet ./cmd/... ./internal/...; then
         echo -e "${GREEN}${ICON_SUCCESS} go vet passed${NC}\n"
     else
         echo -e "${RED}${ICON_ERROR} go vet failed${NC}\n"

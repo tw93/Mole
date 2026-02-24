@@ -130,22 +130,24 @@ Format: `[MODULE_NAME] message` output to stderr.
 - macOS 10.14 or newer, works on Intel and Apple Silicon
 - Default macOS Bash 3.2+ plus administrator privileges for cleanup tasks
 - Install Command Line Tools with `xcode-select --install` for curl, tar, and related utilities
-- Go 1.24+ is required to build the `mo status` or `mo analyze` TUI binaries locally.
+- Go 1.24+ is required to build the `mo status`, `mo analyze`, or `mo menubar` binaries locally.
 
 ## Go Components
 
-`mo status` and `mo analyze` use Go with Bubble Tea for interactive dashboards.
+`mo status`, `mo analyze`, and `mo menubar` use Go for interactive dashboards and system monitoring.
 
 **Code organization:**
 
 - Each module split into focused files by responsibility
+- `internal/metrics/` - Shared metrics collection package used by `status` and `menubar`
 - `cmd/analyze/` - Disk analyzer with 7 files under 500 lines each
-- `cmd/status/` - System monitor with metrics split into 11 domain files
+- `cmd/status/` - Terminal system monitor (Bubble Tea TUI)
+- `cmd/menubar/` - macOS menu bar system monitor (systray)
 
 **Development workflow:**
 
-- Format code with `gofmt -w ./cmd/...`
-- Run `go vet ./cmd/...` to check for issues
+- Format code with `gofmt -w ./cmd ./internal`
+- Run `go vet ./...` to check for issues
 - Build with `go build ./...` to verify all packages compile
 
 **Building Go Binaries:**
@@ -159,6 +161,7 @@ make build
 # Or run directly without building
 go run ./cmd/analyze
 go run ./cmd/status
+go run ./cmd/menubar  # macOS only
 ```
 
 For releases, GitHub Actions builds architecture-specific binaries automatically.

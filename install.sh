@@ -613,6 +613,9 @@ install_files() {
     if ! download_binary "status"; then
         exit 1
     fi
+    if ! download_binary "menubar"; then
+        exit 1
+    fi
 }
 
 # Verification and PATH hint

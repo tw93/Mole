@@ -150,7 +150,7 @@ echo ""
 
 echo "3. Running Go tests..."
 if command -v go > /dev/null 2>&1; then
-    if go build ./... > /dev/null 2>&1 && go vet ./cmd/... > /dev/null 2>&1 && go test ./cmd/... > /dev/null 2>&1; then
+    if go build ./... > /dev/null 2>&1 && go vet ./... > /dev/null 2>&1 && go test ./... > /dev/null 2>&1; then
         printf "${GREEN}${ICON_SUCCESS} Go tests passed${NC}\n"
     else
         printf "${RED}${ICON_ERROR} Go tests failed${NC}\n"
