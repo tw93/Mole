@@ -727,10 +727,17 @@ clean_application_support_logs() {
     local _ng_state
     _ng_state=$(shopt -p nullglob || true)
     shopt -s nullglob
+    local app_count=0
+    local total_apps
+    total_apps=$(find ~/Library/Application\ Support -mindepth 1 -maxdepth 1 -type d 2> /dev/null | wc -l | tr -d ' ')
+    local last_progress_update
+    last_progress_update=$(get_epoch_seconds)
     for app_dir in ~/Library/Application\ Support/*; do
         [[ -d "$app_dir" ]] || continue
         local app_name
         app_name=$(basename "$app_dir")
+        ((app_count++))
+        update_progress_if_needed "$app_count" "$total_apps" last_progress_update 1 || true
         local app_name_lower
         app_name_lower=$(echo "$app_name" | LC_ALL=C tr '[:upper:]' '[:lower:]')
         local is_protected=false
@@ -748,19 +755,24 @@ clean_application_support_logs() {
         local -a start_candidates=("$app_dir/log" "$app_dir/logs" "$app_dir/activitylog" "$app_dir/Cache/Cache_Data" "$app_dir/Crashpad/completed")
         for candidate in "${start_candidates[@]}"; do
             if [[ -d "$candidate" ]]; then
-                if find "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
-                    local size
-                    size=$(get_path_size_kb "$candidate")
-                    ((total_size += size))
+                local item_found=false
+                local candidate_size=0
+                while IFS= read -r -d '' item; do
+                    [[ -e "$item" ]] || continue
+                    item_found=true
+                    if [[ -f "$item" && ! -L "$item" ]]; then
+                        local bytes
+                        bytes=$(stat -f%z "$item" 2> /dev/null || echo "0")
+                        [[ "$bytes" =~ ^[0-9]+$ ]] && ((candidate_size += bytes / 1024)) || true
+                    fi
+                    if [[ "$DRY_RUN" != "true" ]]; then
+                        safe_remove "$item" true > /dev/null 2>&1 || true
+                    fi
+                done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
+                if [[ "$item_found" == "true" ]]; then
+                    ((total_size += candidate_size))
                     ((cleaned_count++))
                     found_any=true
-                    if [[ "$DRY_RUN" != "true" ]]; then
-                        local item
-                        while IFS= read -r -d '' item; do
-                            [[ -e "$item" ]] || continue
-                            safe_remove "$item" true > /dev/null 2>&1 || true
-                        done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
-                    fi
                 fi
             fi
         done
@@ -774,19 +786,24 @@ clean_application_support_logs() {
         local -a gc_candidates=("$container_path/Logs" "$container_path/Library/Logs")
         for candidate in "${gc_candidates[@]}"; do
             if [[ -d "$candidate" ]]; then
-                if find "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2> /dev/null | grep -q .; then
-                    local size
-                    size=$(get_path_size_kb "$candidate")
-                    ((total_size += size))
+                local item_found=false
+                local candidate_size=0
+                while IFS= read -r -d '' item; do
+                    [[ -e "$item" ]] || continue
+                    item_found=true
+                    if [[ -f "$item" && ! -L "$item" ]]; then
+                        local bytes
+                        bytes=$(stat -f%z "$item" 2> /dev/null || echo "0")
+                        [[ "$bytes" =~ ^[0-9]+$ ]] && ((candidate_size += bytes / 1024)) || true
+                    fi
+                    if [[ "$DRY_RUN" != "true" ]]; then
+                        safe_remove "$item" true > /dev/null 2>&1 || true
+                    fi
+                done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
+                if [[ "$item_found" == "true" ]]; then
+                    ((total_size += candidate_size))
                     ((cleaned_count++))
                     found_any=true
-                    if [[ "$DRY_RUN" != "true" ]]; then
-                        local item
-                        while IFS= read -r -d '' item; do
-                            [[ -e "$item" ]] || continue
-                            safe_remove "$item" true > /dev/null 2>&1 || true
-                        done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
-                    fi
                 fi
             fi
         done
