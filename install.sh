@@ -425,6 +425,30 @@ build_binary_from_source() {
         status)
             cmd_dir="cmd/status"
             ;;
+        menubar)
+            # Swift binary — use swift build instead of go build.
+            if ! command -v swift > /dev/null 2>&1; then
+                return 1
+            fi
+            if [[ ! -d "$SOURCE_DIR/cmd/menubar" ]]; then
+                return 1
+            fi
+            if [[ -t 1 ]]; then
+                start_line_spinner "Building ${binary_name} from source (Swift)..."
+            else
+                echo "Building ${binary_name} from source (Swift)..."
+            fi
+            if (cd "$SOURCE_DIR/cmd/menubar" && swift build -c release > /dev/null 2>&1); then
+                if [[ -t 1 ]]; then stop_line_spinner; fi
+                cp "$SOURCE_DIR/cmd/menubar/.build/release/MoleMenuBar" "$target_path"
+                chmod +x "$target_path"
+                log_success "Built ${binary_name} from source"
+                return 0
+            fi
+            if [[ -t 1 ]]; then stop_line_spinner; fi
+            log_warning "Failed to build ${binary_name} from source"
+            return 1
+            ;;
         *)
             return 1
             ;;
@@ -458,7 +482,11 @@ build_binary_from_source() {
 
 download_binary() {
     local binary_name="$1"
-    local target_path="$CONFIG_DIR/bin/${binary_name}-go"
+    local bin_suffix="go"
+    if [[ "$binary_name" == "menubar" ]]; then
+        bin_suffix="swift"
+    fi
+    local target_path="$CONFIG_DIR/bin/${binary_name}-${bin_suffix}"
     local arch
     arch=$(uname -m)
     local arch_suffix="amd64"
@@ -466,8 +494,8 @@ download_binary() {
         arch_suffix="arm64"
     fi
 
-    if [[ -f "$SOURCE_DIR/bin/${binary_name}-go" ]]; then
-        cp "$SOURCE_DIR/bin/${binary_name}-go" "$target_path"
+    if [[ -f "$SOURCE_DIR/bin/${binary_name}-${bin_suffix}" ]]; then
+        cp "$SOURCE_DIR/bin/${binary_name}-${bin_suffix}" "$target_path"
         chmod +x "$target_path"
         log_success "Installed local ${binary_name} binary"
         return 0
@@ -611,6 +639,9 @@ install_files() {
         exit 1
     fi
     if ! download_binary "status"; then
+        exit 1
+    fi
+    if ! download_binary "menubar"; then
         exit 1
     fi
 }

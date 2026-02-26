@@ -64,6 +64,11 @@ bin/status-go
 bin/analyze-darwin-*
 bin/status-darwin-*
 
+# Swift build artifacts
+cmd/menubar/.build/
+bin/menubar-swift
+bin/menubar-darwin-*
+
 # Test artifacts
 tests/tmp-*/
 tests/*.tmp

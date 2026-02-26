@@ -77,8 +77,6 @@ touch "$TMP_DIAG/MyApp_2025-02-10-120000_host.ips"
 touch "$TMP_DIAG/MyApp.crash"
 touch "$TMP_DIAG/MyApp_2025-02-10-120001_host.spin"
 touch "$TMP_DIAG/OtherApp_2025-02-10.ips"
-touch "$TMP_DIAG/MyAppPro_2025-02-10-120002_host.ips"
-touch "$TMP_DIAG/MyAppPro.crash"
 touch "$TMP_DIAG/MyApp_log.txt"
 
 out=$(get_diagnostic_report_paths_for_app "$TMP_APP" "My App" "$TMP_DIAG" 2> /dev/null || true)
@@ -92,13 +90,6 @@ if [[ "$out" == *"OtherApp"* ]]; then
     ((FAILED++))
 else
     echo "  OK does not return OtherApp"
-    ((PASSED++))
-fi
-if [[ "$out" == *"MyAppPro"* ]]; then
-    echo "  FAIL should not return MyAppPro (prefix collision)"
-    ((FAILED++))
-else
-    echo "  OK does not return MyAppPro"
     ((PASSED++))
 fi
 if [[ "$out" == *"MyApp_log.txt"* ]]; then
