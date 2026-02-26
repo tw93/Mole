@@ -9,6 +9,7 @@ MOLE_COMMANDS=(
     "status:Monitor system health"
     "purge:Remove old project artifacts"
     "installer:Find and remove installer files"
+    "export:Export dev environment to shell script"
     "touchid:Configure Touch ID for sudo"
     "completion:Setup shell tab completion"
     "update:Update to latest version"

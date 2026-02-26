@@ -774,6 +774,9 @@ main() {
         "purge")
             exec "$SCRIPT_DIR/bin/purge.sh" "${args[@]:1}"
             ;;
+        "export")
+            exec "$SCRIPT_DIR/bin/export.sh" "${args[@]:1}"
+            ;;
         "installer")
             exec "$SCRIPT_DIR/bin/installer.sh" "${args[@]:1}"
             ;;
