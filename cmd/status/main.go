@@ -2,14 +2,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/tw93/mole/internal/metrics"
 )
 
 const refreshInterval = time.Second
@@ -23,15 +28,15 @@ type tickMsg struct{}
 type animTickMsg struct{}
 
 type metricsMsg struct {
-	data MetricsSnapshot
+	data metrics.MetricsSnapshot
 	err  error
 }
 
 type model struct {
-	collector   *Collector
+	collector   *metrics.Collector
 	width       int
 	height      int
-	metrics     MetricsSnapshot
+	metrics     metrics.MetricsSnapshot
 	errMessage  string
 	ready       bool
 	lastUpdated time.Time
@@ -82,7 +87,7 @@ func saveCatHidden(hidden bool) {
 
 func newModel() model {
 	return model{
-		collector: NewCollector(),
+		collector: metrics.NewCollector(),
 		catHidden: loadCatHidden(),
 	}
 }
@@ -139,7 +144,7 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
-	header, mole := renderHeader(m.metrics, m.errMessage, m.animFrame, m.width, m.catHidden)
+	header := renderHeader(m.metrics, m.errMessage, m.animFrame, m.width, m.catHidden)
 	cardWidth := 0
 	if m.width > 80 {
 		cardWidth = max(24, m.width/2-4)
@@ -154,25 +159,20 @@ func (m model) View() string {
 			}
 			rendered = append(rendered, renderCard(c, cardWidth, 0))
 		}
-		// Combine header, mole, and cards with consistent spacing
-		var content []string
-		content = append(content, header)
-		if mole != "" {
-			content = append(content, mole)
+		result := header + "\n" + lipgloss.JoinVertical(lipgloss.Left, rendered...)
+		// Add extra newline if cat is hidden for better spacing
+		if m.catHidden {
+			result = header + "\n\n" + lipgloss.JoinVertical(lipgloss.Left, rendered...)
 		}
-		content = append(content, lipgloss.JoinVertical(lipgloss.Left, rendered...))
-		return lipgloss.JoinVertical(lipgloss.Left, content...)
+		return result
 	}
 
 	twoCol := renderTwoColumns(cards, m.width)
-	// Combine header, mole, and cards with consistent spacing
-	var content []string
-	content = append(content, header)
-	if mole != "" {
-		content = append(content, mole)
+	// Add extra newline if cat is hidden for better spacing
+	if m.catHidden {
+		return header + "\n\n" + twoCol
 	}
-	content = append(content, twoCol)
-	return lipgloss.JoinVertical(lipgloss.Left, content...)
+	return header + "\n" + twoCol
 }
 
 func (m model) collectCmd() tea.Cmd {
@@ -197,6 +197,69 @@ func animTickWithSpeed(cpuUsage float64) tea.Cmd {
 }
 
 func main() {
+	var jsonMode, watchMode bool
+	interval := time.Second
+
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json", "-json":
+			jsonMode = true
+		case "--watch", "-watch":
+			watchMode = true
+		case "--interval", "-interval":
+			if i+1 < len(args) {
+				if v, err := strconv.ParseFloat(args[i+1], 64); err == nil && v >= 0.5 {
+					interval = time.Duration(v * float64(time.Second))
+				}
+				i++
+			}
+		}
+	}
+
+	if jsonMode {
+		c := metrics.NewCollector()
+
+		if watchMode {
+			// Stream mode: keep Collector alive, output newline-delimited JSON.
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+			// Collect immediately on start.
+			snap, err := c.Collect()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "collect error: %v\n", err)
+			}
+			data, _ := json.Marshal(snap)
+			fmt.Println(string(data))
+
+			for {
+				select {
+				case <-ticker.C:
+					snap, err := c.Collect()
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "collect error: %v\n", err)
+					}
+					data, _ := json.Marshal(snap)
+					fmt.Println(string(data))
+				case <-sigCh:
+					return
+				}
+			}
+		} else {
+			// Single-shot JSON mode.
+			snap, err := c.Collect()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "collect error: %v\n", err)
+			}
+			data, _ := json.Marshal(snap)
+			fmt.Println(string(data))
+		}
+		return
+	}
+
 	p := tea.NewProgram(newModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "system status error: %v\n", err)

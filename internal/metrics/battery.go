@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"context"
@@ -12,14 +12,9 @@ import (
 	"time"
 )
 
-var (
-	// Cache for heavy system_profiler output.
-	lastPowerAt   time.Time
-	cachedPower   string
-	powerCacheTTL = 30 * time.Second
-)
+const powerCacheTTL = 30 * time.Second
 
-func collectBatteries() (batts []BatteryStatus, err error) {
+func (c *Collector) collectBatteries() (batts []BatteryStatus, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Swallow panics to keep UI alive.
@@ -29,10 +24,12 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 
 	// macOS: pmset for real-time percentage/status.
 	if runtime.GOOS == "darwin" && commandExists("pmset") {
-		if out, err := runCmd(context.Background(), "pmset", "-g", "batt"); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		if out, err := runCmd(ctx, "pmset", "-g", "batt"); err == nil {
 			// Health/cycles/capacity from cached system_profiler.
-			health, cycles, capacity := getCachedPowerData()
-			if batts := parsePMSet(out, health, cycles, capacity); len(batts) > 0 {
+			health, cycles, capacity := c.getCachedPowerData()
+			if batts := ParsePMSet(out, health, cycles, capacity); len(batts) > 0 {
 				return batts, nil
 			}
 		}
@@ -65,7 +62,8 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 	return nil, errors.New("no battery data found")
 }
 
-func parsePMSet(raw string, health string, cycles int, capacity int) []BatteryStatus {
+// ParsePMSet parses macOS pmset -g batt output into battery status entries.
+func ParsePMSet(raw string, health string, cycles int, capacity int) []BatteryStatus {
 	var out []BatteryStatus
 	var timeLeft string
 
@@ -119,8 +117,8 @@ func parsePMSet(raw string, health string, cycles int, capacity int) []BatterySt
 }
 
 // getCachedPowerData returns condition, cycles, and capacity from cached system_profiler.
-func getCachedPowerData() (health string, cycles int, capacity int) {
-	out := getSystemPowerOutput()
+func (c *Collector) getCachedPowerData() (health string, cycles int, capacity int) {
+	out := c.getSystemPowerOutput()
 	if out == "" {
 		return "", 0, 0
 	}
@@ -148,14 +146,14 @@ func getCachedPowerData() (health string, cycles int, capacity int) {
 	return health, cycles, capacity
 }
 
-func getSystemPowerOutput() string {
+func (c *Collector) getSystemPowerOutput() string {
 	if runtime.GOOS != "darwin" {
 		return ""
 	}
 
 	now := time.Now()
-	if cachedPower != "" && now.Sub(lastPowerAt) < powerCacheTTL {
-		return cachedPower
+	if c.cachedPower != "" && now.Sub(c.lastPowerAt) < powerCacheTTL {
+		return c.cachedPower
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -163,13 +161,13 @@ func getSystemPowerOutput() string {
 
 	out, err := runCmd(ctx, "system_profiler", "SPPowerDataType")
 	if err == nil {
-		cachedPower = out
-		lastPowerAt = now
+		c.cachedPower = out
+		c.lastPowerAt = now
 	}
-	return cachedPower
+	return c.cachedPower
 }
 
-func collectThermal() ThermalStatus {
+func (c *Collector) collectThermal() ThermalStatus {
 	if runtime.GOOS != "darwin" {
 		return ThermalStatus{}
 	}
@@ -177,7 +175,7 @@ func collectThermal() ThermalStatus {
 	var thermal ThermalStatus
 
 	// Fan info from cached system_profiler.
-	out := getSystemPowerOutput()
+	out := c.getSystemPowerOutput()
 	if out != "" {
 		for line := range strings.Lines(out) {
 			lower := strings.ToLower(line)
@@ -244,14 +242,11 @@ func collectThermal() ThermalStatus {
 				var parsed bool
 
 				// Strategy 1: Try parsing as a signed integer first.
-				// This handles standard positive values and explicit negative strings like "-12345".
 				if valInt, err := strconv.ParseInt(valStr, 10, 64); err == nil {
 					powerMW = float64(valInt)
 					parsed = true
 				} else if valUint, err := strconv.ParseUint(valStr, 10, 64); err == nil {
 					// Strategy 2: Try parsing as an unsigned integer (Two's Complement).
-					// ioreg often returns negative values as huge uint64 numbers (e.g. 2^64 - 100).
-					// Casting such a uint64 to int64 correctly restores the negative value.
 					powerMW = float64(int64(valUint))
 					parsed = true
 				}

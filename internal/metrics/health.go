@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"fmt"
@@ -37,7 +37,8 @@ const (
 	ioHighThreshold   = 150.0
 )
 
-func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, diskIO DiskIOStatus, thermal ThermalStatus) (int, string) {
+// CalculateHealthScore computes a 0-100 health score based on system metrics.
+func CalculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, diskIO DiskIOStatus, thermal ThermalStatus) (int, string) {
 	score := 100.0
 	issues := []string{}
 
@@ -153,7 +154,8 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	return int(score), msg
 }
 
-func formatUptime(secs uint64) string {
+// FormatUptime formats seconds into a human-readable uptime string.
+func FormatUptime(secs uint64) string {
 	days := secs / 86400
 	hours := (secs % 86400) / 3600
 	mins := (secs % 3600) / 60
