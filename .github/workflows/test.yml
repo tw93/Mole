@@ -46,6 +46,11 @@ jobs:
           source lib/core/common.sh
           echo "✓ Successfully loaded on ${{ matrix.os }}"
 
+      - name: Build Swift menubar
+        run: |
+          cd cmd/menubar && swift build -c release
+          echo "✓ Swift menubar builds on ${{ matrix.os }}"
+
   security:
     name: Security Checks
     runs-on: macos-latest
