@@ -127,39 +127,40 @@ export_file_exists() {
 
 # 导出操作日志 - 成功
 # 参数: $1 - 消息
+# 注意: 输出到 stderr 以避免干扰函数返回值
 export_log_success() {
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1" >&2
 }
 
 # 导出操作日志 - 信息
 # 参数: $1 - 消息
 export_log_info() {
-    echo -e "  ${BLUE}${ICON_LIST}${NC} $1"
+    echo -e "  ${BLUE}${ICON_LIST}${NC} $1" >&2
 }
 
 # 导出操作日志 - 警告
 # 参数: $1 - 消息
 export_log_warning() {
-    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $1"
+    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $1" >&2
 }
 
 # 导出操作日志 - 错误
 # 参数: $1 - 消息
 export_log_error() {
-    echo -e "  ${RED}${ICON_ERROR}${NC} $1"
+    echo -e "  ${RED}${ICON_ERROR}${NC} $1" >&2
 }
 
 # 导出操作日志 - 跳过
 # 参数: $1 - 消息
 export_log_skipped() {
-    echo -e "  ${GRAY}○${NC} $1"
+    echo -e "  ${GRAY}○${NC} $1" >&2
 }
 
 # 导出操作日志 - 调试 (仅在 --verbose 模式)
 # 参数: $1 - 消息
 export_log_verbose() {
     if [[ "${EXPORT_VERBOSE:-false}" == "true" ]]; then
-        echo -e "  ${GRAY}[DEBUG]${NC} $1"
+        echo -e "  ${GRAY}[DEBUG]${NC} $1" >&2
     fi
 }
 

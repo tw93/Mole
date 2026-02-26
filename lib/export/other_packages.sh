@@ -163,10 +163,11 @@ _export_go_get_tools() {
         
         [[ -z "$mod_path" ]] && continue
         
-        if [[ -n "$mod_version" ]]; then
-            echo "${mod_path}@${mod_version}"
+        # 处理 (devel) 版本标识 - 使用 @latest 代替
+        if [[ "$mod_version" == "(devel)" || -z "$mod_version" ]]; then
+            echo "${mod_path}@latest"
         else
-            echo "$mod_path@latest"
+            echo "${mod_path}@${mod_version}"
         fi
     done | sort -u
 }
@@ -242,21 +243,28 @@ _export_gem_get_packages() {
         return 1
     fi
 
-    # gem list --local 输出格式: gem-name (version1, version2, ...)
+    # gem list --local 输出格式: gem-name (version1, version2, ...) 或 gem-name (default: version)
     gem list --local 2>/dev/null | while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         
-        # 跳过系统默认 gems
+        # 跳过系统默认 gems (包括带 default: 前缀的版本)
         case "$line" in
             bigdecimal*|bundler*|did_you_mean*|io-console*|json*|minitest*|net-telnet*|openssl*|power_assert*|psych*|rake*|rdoc*|test-unit*|xmlrpc*)
+                continue
+                ;;
+            *"(default:"*)
+                # 跳过默认 gems
                 continue
                 ;;
         esac
         
         # 提取 gem 名和版本
+        # 格式: gem-name (version) 或 gem-name (v1, v2, ...)
         local gem_name gem_version
-        gem_name=$(echo "$line" | sed -E 's/\s*\(.*\)$//')
-        gem_version=$(echo "$line" | sed -E 's/.*\(([^,)]+).*/\1/')
+        # 移除括号及其内容，并去除尾随空格
+        gem_name=$(echo "$line" | sed -E 's/[[:space:]]*\(.*\)$//' | tr -d ' ')
+        # 提取第一个版本号（可能有多个版本，取第一个）
+        gem_version=$(echo "$line" | sed -E 's/.*\(([^,)]+).*/\1/' | sed 's/default: //')
         
         [[ -z "$gem_name" ]] && continue
         

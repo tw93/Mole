@@ -630,6 +630,11 @@ perform_export() {
     local exported_categories=0
     local section_num=1
     local function_calls=""
+    
+    # 已处理的复合类别组（用于去重）
+    local _exported_ide=false
+    local _exported_cloud=false
+    local _exported_ai=false
 
     # 遍历类别执行导出
     for category in "${final_categories[@]}"; do
@@ -645,8 +650,15 @@ perform_export() {
                 ;;
             mas)
                 export_start_section "Mac App Store"
-                export_mas "$OUTPUT_FILE" 2>/dev/null && ((exported_categories++)) || true
-                function_calls="${function_calls}install_mas_apps"$'\n'
+                local mas_count
+                mas_count=$(export_mas "$OUTPUT_FILE") || mas_count=0
+                if [[ "$mas_count" -gt 0 ]]; then
+                    export_log_success "mas: $mas_count 个应用"
+                    function_calls="${function_calls}install_mas_apps"$'\n'
+                    ((exported_categories++))
+                else
+                    export_log_skipped "mas 未安装或无应用"
+                fi
                 export_end_section
                 ;;
             apps)
@@ -883,12 +895,22 @@ perform_export() {
                 export_end_section
                 ;;
 
-            # IDE 和编辑器 (统一处理)
+            # IDE 和编辑器 (统一处理，避免重复)
             vscode|cursor|windsurf|zed|neovim|vim)
-                export_start_section "IDE: $category"
-                export_ide "$OUTPUT_FILE" 2>/dev/null && ((exported_categories++)) || true
-                function_calls="${function_calls}install_ide_extensions"$'\n'
-                export_end_section
+                if [[ "$_exported_ide" == "false" ]]; then
+                    _exported_ide=true
+                    export_start_section "IDE Extensions"
+                    local ide_count
+                    ide_count=$(export_ide "$OUTPUT_FILE") || ide_count=0
+                    if [[ "$ide_count" -gt 0 ]]; then
+                        export_log_success "ide: $ide_count 个扩展"
+                        function_calls="${function_calls}install_ide_extensions"$'\n'
+                        ((exported_categories++))
+                    else
+                        export_log_skipped "无 IDE 扩展"
+                    fi
+                    export_end_section
+                fi
                 ;;
 
             # Shell 配置
@@ -907,21 +929,41 @@ perform_export() {
                 export_end_section
                 ;;
 
-            # Cloud/DevOps 工具 (统一处理)
+            # Cloud/DevOps 工具 (统一处理，避免重复)
             docker|kubectl|aws|terraform|helm)
-                export_start_section "Cloud: $category"
-                export_cloud "$OUTPUT_FILE" 2>/dev/null && ((exported_categories++)) || true
-                function_calls="${function_calls}restore_docker_images"$'\n'
-                function_calls="${function_calls}restore_helm_repos"$'\n'
-                export_end_section
+                if [[ "$_exported_cloud" == "false" ]]; then
+                    _exported_cloud=true
+                    export_start_section "Cloud/DevOps"
+                    local cloud_count
+                    cloud_count=$(export_cloud "$OUTPUT_FILE") || cloud_count=0
+                    if [[ "$cloud_count" -gt 0 ]]; then
+                        export_log_success "cloud: $cloud_count 个项目"
+                        function_calls="${function_calls}restore_docker_images"$'\n'
+                        function_calls="${function_calls}restore_helm_repos"$'\n'
+                        ((exported_categories++))
+                    else
+                        export_log_skipped "无 Cloud/DevOps 配置"
+                    fi
+                    export_end_section
+                fi
                 ;;
 
-            # AI 工具 (统一处理)
+            # AI 工具 (统一处理，避免重复)
             claude|copilot|codeium|continue|aider|ollama)
-                export_start_section "AI: $category"
-                export_ai "$OUTPUT_FILE" 2>/dev/null && ((exported_categories++)) || true
-                function_calls="${function_calls}restore_ollama_models"$'\n'
-                export_end_section
+                if [[ "$_exported_ai" == "false" ]]; then
+                    _exported_ai=true
+                    export_start_section "AI Tools"
+                    local ai_count
+                    ai_count=$(export_ai "$OUTPUT_FILE") || ai_count=0
+                    if [[ "$ai_count" -gt 0 ]]; then
+                        export_log_success "ai: $ai_count 个工具"
+                        function_calls="${function_calls}restore_ollama_models"$'\n'
+                        ((exported_categories++))
+                    else
+                        export_log_skipped "无 AI 工具"
+                    fi
+                    export_end_section
+                fi
                 ;;
 
             # CLI 工具

@@ -164,7 +164,7 @@ export_cloud_helm_get_repos() {
 
 # 主导出函数: 导出云和 DevOps 工具配置
 # 参数: $1 - 输出文件路径
-# 返回: 0 成功, 1 失败
+# 返回: 成功时输出项目数量到 stdout
 # 副作用: 更新 EXPORT_STATS
 export_cloud() {
     local output_file="$1"
@@ -224,6 +224,7 @@ export_cloud() {
     
     if [[ $total_items -eq 0 && -z "$terraform_ver" ]]; then
         export_log_skipped "No Cloud/DevOps tools detected"
+        echo "0"
         return 0
     fi
     
@@ -377,6 +378,8 @@ EOF
     
     export_log_success "Cloud/DevOps: $total_items items exported"
     
+    # 输出数量供调用者使用
+    echo "$total_items"
     return 0
 }
 

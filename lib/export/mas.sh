@@ -67,7 +67,7 @@ export_mas_parse_name() {
 
 # 主导出函数: 生成 MAS 安装脚本
 # 参数: $1 - 输出文件路径
-# 返回: 0 成功, 1 失败
+# 返回: 成功时输出应用数量到 stdout，失败返回 0
 # 副作用: 更新 EXPORT_STATS
 export_mas() {
     local output_file="$1"
@@ -75,6 +75,7 @@ export_mas() {
     # 检测 mas-cli 是否存在
     if ! export_mas_available; then
         export_log_skipped "mas-cli not installed (brew install mas)"
+        echo "0"
         return 0
     fi
     
@@ -86,6 +87,7 @@ export_mas() {
     
     if [[ -z "$mas_output" ]]; then
         export_log_warning "No Mac App Store apps found"
+        echo "0"
         return 0
     fi
     
@@ -148,6 +150,8 @@ EOF
     
     export_log_success "Mac App Store: $app_count apps"
     
+    # 输出数量供调用者使用
+    echo "$app_count"
     return 0
 }
 

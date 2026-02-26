@@ -251,7 +251,7 @@ export_ai_cursor_extensions_count() {
 
 # 主导出函数: 导出 AI 编程工具配置
 # 参数: $1 - 输出文件路径
-# 返回: 0 成功, 1 失败
+# 返回: 成功时输出项目数量到 stdout
 # 副作用: 更新 EXPORT_STATS
 export_ai() {
     local output_file="$1"
@@ -324,6 +324,7 @@ export_ai() {
     
     if [[ $total_items -eq 0 ]]; then
         export_log_skipped "No AI programming tools detected"
+        echo "0"
         return 0
     fi
     
@@ -521,6 +522,8 @@ EOF
     
     export_log_success "AI Tools: $total_items items exported"
     
+    # 输出数量供调用者使用
+    echo "$total_items"
     return 0
 }
 

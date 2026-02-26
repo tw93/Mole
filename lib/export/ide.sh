@@ -269,7 +269,7 @@ EOF
 
 # 主导出函数: 生成 IDE 扩展安装脚本
 # 参数: $1 - 输出文件路径
-# 返回: 0 成功, 1 失败
+# 返回: 成功时输出扩展数量到 stdout
 # 副作用: 更新 EXPORT_STATS
 export_ide() {
     local output_file="$1"
@@ -375,6 +375,7 @@ export_ide() {
     
     if [[ "$has_content" == "false" ]]; then
         export_log_skipped "No IDE configurations found"
+        echo "0"
         return 0
     fi
     
@@ -480,6 +481,8 @@ EOF
     export_add_stat "IDE" "$total_count" "$stats_desc"
     export_log_success "IDE: $total_count extensions exported"
     
+    # 输出数量供调用者使用
+    echo "$total_count"
     return 0
 }
 

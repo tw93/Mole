@@ -46,12 +46,12 @@ _export_npm_get_packages() {
         local pkg_name
         pkg_name=$(echo "$line" | sed -E 's/.*"([^"]+)".*/\1/')
         
-        # 跳过 npm 自身
-        [[ "$pkg_name" == "npm" ]] && continue
+        # 跳过 npm 自身和 dependencies 伪包名
+        [[ "$pkg_name" == "npm" || "$pkg_name" == "dependencies" ]] && continue
         
-        # 获取版本号
+        # 获取版本号 (注意: macOS sed 不支持 \s，使用 [[:space:]] 或直接空格)
         local version
-        version=$(echo "$npm_json" | grep -A1 "\"$pkg_name\":" | grep '"version"' | sed -E 's/.*"version":\s*"([^"]+)".*/\1/' | head -1)
+        version=$(echo "$npm_json" | grep -A1 "\"$pkg_name\":" | grep '"version"' | sed -E 's/.*"version": "([^"]+)".*/\1/' | head -1)
         
         if [[ -n "$version" ]]; then
             echo "${pkg_name}@${version}"
@@ -133,13 +133,15 @@ _export_pnpm_get_packages() {
     fi
 
     # pnpm list -g --depth=0 输出格式解析
-    pnpm list -g --depth=0 2>/dev/null | grep -E '^\s*[a-zA-Z@]' | while IFS= read -r line; do
+    # 跳过 Legend:, dependencies:, devDependencies: 等标签行
+    pnpm list -g --depth=0 2>/dev/null | grep -E '^\s*[@a-zA-Z]' | while IFS= read -r line; do
         # 提取包名（格式可能是 "package-name 1.0.0" 或带 @ 前缀的作用域包）
         local pkg
         pkg=$(echo "$line" | awk '{print $1}')
         
-        # 跳过 pnpm 自身和空行
+        # 跳过 pnpm 自身、空行和标签行 (Legend:, dependencies: 等)
         [[ -z "$pkg" || "$pkg" == "pnpm" ]] && continue
+        [[ "$pkg" == "Legend:" || "$pkg" == "dependencies:" || "$pkg" == "devDependencies:" ]] && continue
         
         # 提取版本
         local version
