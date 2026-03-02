@@ -303,6 +303,101 @@ clean_xcode_documentation_cache() {
     fi
 }
 
+# Clean old Xcode DeviceSupport versions, keeping the most recent ones.
+# Each version holds debug symbols (1-3 GB) for a specific iOS/watchOS/tvOS version.
+# Symbols regenerate automatically when a device running that version is connected.
+# Args: $1=directory path, $2=display name (e.g. "iOS DeviceSupport")
+clean_xcode_device_support() {
+    local ds_dir="$1"
+    local display_name="$2"
+    local keep_count="${MOLE_XCODE_DEVICE_SUPPORT_KEEP:-2}"
+    [[ "$keep_count" =~ ^[0-9]+$ ]] || keep_count=2
+
+    [[ -d "$ds_dir" ]] || return 0
+
+    # Collect version directories (each is a platform version like "17.5 (21F79)")
+    local -a version_dirs=()
+    while IFS= read -r -d '' entry; do
+        # Skip non-directories (e.g. .log files at the top level)
+        [[ -d "$entry" ]] || continue
+        version_dirs+=("$entry")
+    done < <(command find "$ds_dir" -mindepth 1 -maxdepth 1 -print0 2> /dev/null)
+
+    if [[ ${#version_dirs[@]} -le $keep_count ]]; then
+        # Nothing to remove, still clean caches/logs inside existing versions
+        safe_clean "$ds_dir"/*/Symbols/System/Library/Caches/* "$display_name symbol cache"
+        safe_clean "$ds_dir"/*.log "$display_name logs"
+        return 0
+    fi
+
+    # Sort by modification time (most recent first)
+    local -a sorted_dirs=()
+    while IFS= read -r line; do
+        sorted_dirs+=("${line#* }")
+    done < <(
+        for entry in "${version_dirs[@]}"; do
+            local mtime
+            mtime=$(stat -f%m "$entry" 2> /dev/null || echo "0")
+            printf '%s %s\n' "$mtime" "$entry"
+        done | sort -rn
+    )
+
+    # Split into keep vs remove
+    local -a stale_dirs=()
+    local idx=0
+    for entry in "${sorted_dirs[@]}"; do
+        if [[ $idx -lt $keep_count ]]; then
+            ((idx++)) || true
+            continue
+        fi
+        stale_dirs+=("$entry")
+        ((idx++)) || true
+    done
+
+    if [[ ${#stale_dirs[@]} -eq 0 ]]; then
+        safe_clean "$ds_dir"/*/Symbols/System/Library/Caches/* "$display_name symbol cache"
+        safe_clean "$ds_dir"/*.log "$display_name logs"
+        return 0
+    fi
+
+    # Calculate total size of stale versions
+    local stale_size_kb=0
+    local stale_entry
+    for stale_entry in "${stale_dirs[@]}"; do
+        local entry_size_kb
+        entry_size_kb=$(get_path_size_kb "$stale_entry" 2> /dev/null || echo "0")
+        stale_size_kb=$((stale_size_kb + entry_size_kb))
+    done
+    local stale_size_human
+    stale_size_human=$(bytes_to_human "$((stale_size_kb * 1024))")
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${display_name} · would remove ${#stale_dirs[@]} old versions (${stale_size_human}), keeping ${keep_count} most recent"
+        note_activity
+        return 0
+    fi
+
+    # Remove old versions
+    local removed_count=0
+    for stale_entry in "${stale_dirs[@]}"; do
+        if should_protect_path "$stale_entry" || is_path_whitelisted "$stale_entry"; then
+            continue
+        fi
+        if safe_remove "$stale_entry"; then
+            removed_count=$((removed_count + 1))
+        fi
+    done
+
+    if [[ $removed_count -gt 0 ]]; then
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${display_name} · removed ${removed_count} old versions, ${stale_size_human}"
+        note_activity
+    fi
+
+    # Still clean caches/logs inside the kept versions
+    safe_clean "$ds_dir"/*/Symbols/System/Library/Caches/* "$display_name symbol cache"
+    safe_clean "$ds_dir"/*.log "$display_name logs"
+}
+
 _sim_runtime_mount_points() {
     if [[ -n "${MOLE_XCODE_SIM_RUNTIME_MOUNT_POINTS:-}" ]]; then
         printf '%s\n' "$MOLE_XCODE_SIM_RUNTIME_MOUNT_POINTS"
@@ -589,11 +684,12 @@ clean_dev_mobile() {
         fi
         note_activity
     fi
-    # DeviceSupport caches/logs (preserve core support files).
-    safe_clean ~/Library/Developer/Xcode/iOS\ DeviceSupport/*/Symbols/System/Library/Caches/* "iOS device symbol cache"
-    safe_clean ~/Library/Developer/Xcode/iOS\ DeviceSupport/*.log "iOS device support logs"
-    safe_clean ~/Library/Developer/Xcode/watchOS\ DeviceSupport/*/Symbols/System/Library/Caches/* "watchOS device symbol cache"
-    safe_clean ~/Library/Developer/Xcode/tvOS\ DeviceSupport/*/Symbols/System/Library/Caches/* "tvOS device symbol cache"
+    # Old iOS/watchOS/tvOS DeviceSupport versions (debug symbols for connected devices).
+    # Each iOS version creates a 1-3 GB folder of debug symbols. Only the versions
+    # matching currently used devices are needed; older ones regenerate on device connect.
+    clean_xcode_device_support ~/Library/Developer/Xcode/iOS\ DeviceSupport "iOS DeviceSupport"
+    clean_xcode_device_support ~/Library/Developer/Xcode/watchOS\ DeviceSupport "watchOS DeviceSupport"
+    clean_xcode_device_support ~/Library/Developer/Xcode/tvOS\ DeviceSupport "tvOS DeviceSupport"
     # Simulator runtime caches.
     safe_clean ~/Library/Developer/CoreSimulator/Profiles/Runtimes/*/Contents/Resources/RuntimeRoot/System/Library/Caches/* "Simulator runtime cache"
     safe_clean ~/Library/Caches/Google/AndroidStudio*/* "Android Studio cache"
