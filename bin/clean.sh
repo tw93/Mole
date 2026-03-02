@@ -1021,11 +1021,28 @@ perform_cleanup() {
     local -a summary_details=()
 
     if [[ $total_size_cleaned -gt 0 ]]; then
-        local freed_gb
-        freed_gb=$(echo "$total_size_cleaned" | awk '{printf "%.2f", $1/1024/1024}')
+        local freed_size_human
+        local freed_value
+        local freed_unit
+
+        # ============================================
+        # Dynamic size formatting (KB → MB → GB)
+        # ============================================
+        if (( total_size_cleaned < 1024 )); then
+            freed_value="$total_size_cleaned"
+            freed_unit="KB"
+        elif (( total_size_cleaned < 1024 * 1024 )); then
+            freed_value=$(printf "%.2f" "$(echo "scale=4; $total_size_cleaned/1024" | bc)")
+            freed_unit="MB"
+        else
+            freed_value=$(printf "%.2f" "$(echo "scale=4; $total_size_cleaned/1024/1024" | bc)")
+            freed_unit="GB"
+        fi
+
+        freed_size_human="${freed_value}${freed_unit}"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_gb}GB${NC}"
+            local stats="Potential space: ${GREEN}${freed_size_human}{NC}"
             [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
             [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
             summary_details+=("$stats")
@@ -1035,7 +1052,7 @@ perform_cleanup() {
                 echo "# ============================================"
                 echo "# Summary"
                 echo "# ============================================"
-                echo "# Potential cleanup: ${freed_gb}GB"
+                echo "# Potential cleanup: ${freed_size_human}"
                 echo "# Items: $files_cleaned"
                 echo "# Categories: $total_items"
             } >> "$EXPORT_LIST_FILE"
@@ -1043,7 +1060,7 @@ perform_cleanup() {
             summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
             summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
         else
-            local summary_line="Space freed: ${GREEN}${freed_gb}GB${NC}"
+            local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
 
             if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
                 summary_line+=" | Items cleaned: $files_cleaned | Categories: $total_items"
@@ -1055,9 +1072,13 @@ perform_cleanup() {
 
             summary_details+=("$summary_line")
 
-            if [[ $(echo "$freed_gb" | awk '{print ($1 >= 1) ? 1 : 0}') -eq 1 ]]; then
+            # Movie comparison only if unit is GB and >= 1GB
+            if [[ "$freed_unit" == "GB" ]] && \
+            [[ $(echo "$freed_value >= 1" | bc) -eq 1 ]]; then
+
                 local movies
-                movies=$(echo "$freed_gb" | awk '{printf "%.0f", $1/4.5}')
+                movies=$(printf "%.0f" "$(echo "scale=2; $freed_value/4.5" | bc)")
+
                 if [[ $movies -gt 0 ]]; then
                     if [[ $movies -eq 1 ]]; then
                         summary_details+=("Equivalent to ~$movies 4K movie of storage.")
