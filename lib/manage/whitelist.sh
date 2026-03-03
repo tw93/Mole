@@ -94,8 +94,8 @@ VS Code extension and update cache|$HOME/Library/Application Support/Code/Cached
 VS Code system cache (Cursor, VSCodium)|$HOME/Library/Caches/com.microsoft.VSCode/*|ide_cache
 Cursor editor cache|$HOME/Library/Caches/com.todesktop.230313mzl4w4u92/*|ide_cache
 Bazel build cache|$HOME/.cache/bazel/*|compiler_cache
-Go build cache and module cache|$HOME/Library/Caches/go-build/*|compiler_cache
-Go module cache|$HOME/go/pkg/mod/cache/*|compiler_cache
+Go build cache|$HOME/Library/Caches/go-build/*|compiler_cache
+Go module cache|$HOME/go/pkg/mod/*|compiler_cache
 Rust Cargo registry cache|$HOME/.cargo/registry/cache/*|compiler_cache
 Rust documentation cache|$HOME/.rustup/toolchains/*/share/doc/*|compiler_cache
 Rustup toolchain downloads|$HOME/.rustup/downloads/*|compiler_cache

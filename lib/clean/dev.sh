@@ -106,8 +106,50 @@ clean_dev_python() {
 # Go build/module caches.
 clean_dev_go() {
     if command -v go > /dev/null 2>&1; then
-        clean_tool_cache "Go cache" bash -c 'go clean -modcache > /dev/null 2>&1 || true; go clean -cache > /dev/null 2>&1 || true'
-        note_activity
+        # Get Go cache paths
+        local go_build_cache
+        local go_mod_cache
+        go_build_cache=$(go env GOCACHE 2> /dev/null || echo "$HOME/Library/Caches/go-build")
+        go_mod_cache=$(go env GOMODCACHE 2> /dev/null || echo "$HOME/go/pkg/mod")
+
+        # Check if Go caches are whitelisted
+        local build_protected=false
+        local mod_protected=false
+
+        if is_path_whitelisted "$go_build_cache"; then
+            build_protected=true
+        fi
+
+        if is_path_whitelisted "$go_mod_cache"; then
+            mod_protected=true
+        fi
+
+        # Only clean if not protected by whitelist
+        if [[ "$build_protected" == "true" && "$mod_protected" == "true" ]]; then
+            if [[ "$DRY_RUN" == "true" ]]; then
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Go cache · would skip (whitelist)"
+            else
+                echo -e "  ${BLUE}${ICON_SKIP}${NC} Go cache · protected by whitelist"
+            fi
+        elif [[ "$build_protected" == "true" ]]; then
+            # Only clean module cache
+            clean_tool_cache "Go module cache" bash -c 'go clean -modcache > /dev/null 2>&1 || true'
+            if [[ "$DRY_RUN" != "true" ]]; then
+                echo -e "  ${BLUE}${ICON_SKIP}${NC} Go build cache · protected by whitelist"
+            fi
+            note_activity
+        elif [[ "$mod_protected" == "true" ]]; then
+            # Only clean build cache
+            clean_tool_cache "Go build cache" bash -c 'go clean -cache > /dev/null 2>&1 || true'
+            if [[ "$DRY_RUN" != "true" ]]; then
+                echo -e "  ${BLUE}${ICON_SKIP}${NC} Go module cache · protected by whitelist"
+            fi
+            note_activity
+        else
+            # Clean both caches
+            clean_tool_cache "Go cache" bash -c 'go clean -modcache > /dev/null 2>&1 || true; go clean -cache > /dev/null 2>&1 || true'
+            note_activity
+        fi
     fi
 }
 # Rust/cargo caches.
