@@ -57,143 +57,143 @@ func (rb *RingBuffer) Slice() []float64 {
 }
 
 type MetricsSnapshot struct {
-	CollectedAt    time.Time
-	Host           string
-	Platform       string
-	Uptime         string
-	Procs          uint64
-	Hardware       HardwareInfo
-	HealthScore    int    // 0-100 system health score
-	HealthScoreMsg string // Brief explanation
+	CollectedAt    time.Time    `json:"collected_at"`
+	Host           string       `json:"host"`
+	Platform       string       `json:"platform"`
+	Uptime         string       `json:"uptime"`
+	Procs          uint64       `json:"procs"`
+	Hardware       HardwareInfo `json:"hardware"`
+	HealthScore    int          `json:"health_score"`     // 0-100 system health score
+	HealthScoreMsg string       `json:"health_score_msg"` // Brief explanation
 
-	CPU            CPUStatus
-	GPU            []GPUStatus
-	Memory         MemoryStatus
-	Disks          []DiskStatus
-	DiskIO         DiskIOStatus
-	Network        []NetworkStatus
-	NetworkHistory NetworkHistory
-	Proxy          ProxyStatus
-	Batteries      []BatteryStatus
-	Thermal        ThermalStatus
-	Sensors        []SensorReading
-	Bluetooth      []BluetoothDevice
-	TopProcesses   []ProcessInfo
+	CPU            CPUStatus         `json:"cpu"`
+	GPU            []GPUStatus       `json:"gpu"`
+	Memory         MemoryStatus      `json:"memory"`
+	Disks          []DiskStatus      `json:"disks"`
+	DiskIO         DiskIOStatus      `json:"disk_io"`
+	Network        []NetworkStatus   `json:"network"`
+	NetworkHistory NetworkHistory    `json:"network_history"`
+	Proxy          ProxyStatus       `json:"proxy"`
+	Batteries      []BatteryStatus   `json:"batteries"`
+	Thermal        ThermalStatus     `json:"thermal"`
+	Sensors        []SensorReading   `json:"sensors"`
+	Bluetooth      []BluetoothDevice `json:"bluetooth"`
+	TopProcesses   []ProcessInfo     `json:"top_processes"`
 }
 
 type HardwareInfo struct {
-	Model       string // MacBook Pro 14-inch, 2021
-	CPUModel    string // Apple M1 Pro / Intel Core i7
-	TotalRAM    string // 16GB
-	DiskSize    string // 512GB
-	OSVersion   string // macOS Sonoma 14.5
-	RefreshRate string // 120Hz / 60Hz
+	Model       string `json:"model"`        // MacBook Pro 14-inch, 2021
+	CPUModel    string `json:"cpu_model"`    // Apple M1 Pro / Intel Core i7
+	TotalRAM    string `json:"total_ram"`    // 16GB
+	DiskSize    string `json:"disk_size"`    // 512GB
+	OSVersion   string `json:"os_version"`   // macOS Sonoma 14.5
+	RefreshRate string `json:"refresh_rate"` // 120Hz / 60Hz
 }
 
 type DiskIOStatus struct {
-	ReadRate  float64 // MB/s
-	WriteRate float64 // MB/s
+	ReadRate  float64 `json:"read_rate"`  // MB/s
+	WriteRate float64 `json:"write_rate"` // MB/s
 }
 
 type ProcessInfo struct {
-	Name   string
-	CPU    float64
-	Memory float64
+	Name   string  `json:"name"`
+	CPU    float64 `json:"cpu"`
+	Memory float64 `json:"memory"`
 }
 
 type CPUStatus struct {
-	Usage            float64
-	PerCore          []float64
-	PerCoreEstimated bool
-	Load1            float64
-	Load5            float64
-	Load15           float64
-	CoreCount        int
-	LogicalCPU       int
-	PCoreCount       int // Performance cores (Apple Silicon)
-	ECoreCount       int // Efficiency cores (Apple Silicon)
+	Usage            float64   `json:"usage"`
+	PerCore          []float64 `json:"per_core"`
+	PerCoreEstimated bool      `json:"per_core_estimated"`
+	Load1            float64   `json:"load1"`
+	Load5            float64   `json:"load5"`
+	Load15           float64   `json:"load15"`
+	CoreCount        int       `json:"core_count"`
+	LogicalCPU       int       `json:"logical_cpu"`
+	PCoreCount       int       `json:"p_core_count"` // Performance cores (Apple Silicon)
+	ECoreCount       int       `json:"e_core_count"` // Efficiency cores (Apple Silicon)
 }
 
 type GPUStatus struct {
-	Name        string
-	Usage       float64
-	MemoryUsed  float64
-	MemoryTotal float64
-	CoreCount   int
-	Note        string
+	Name        string  `json:"name"`
+	Usage       float64 `json:"usage"`
+	MemoryUsed  float64 `json:"memory_used"`
+	MemoryTotal float64 `json:"memory_total"`
+	CoreCount   int     `json:"core_count"`
+	Note        string  `json:"note"`
 }
 
 type MemoryStatus struct {
-	Used        uint64
-	Total       uint64
-	UsedPercent float64
-	SwapUsed    uint64
-	SwapTotal   uint64
-	Cached      uint64 // File cache that can be freed if needed
-	Pressure    string // macOS memory pressure: normal/warn/critical
+	Used        uint64  `json:"used"`
+	Total       uint64  `json:"total"`
+	UsedPercent float64 `json:"used_percent"`
+	SwapUsed    uint64  `json:"swap_used"`
+	SwapTotal   uint64  `json:"swap_total"`
+	Cached      uint64  `json:"cached"`   // File cache that can be freed if needed
+	Pressure    string  `json:"pressure"` // macOS memory pressure: normal/warn/critical
 }
 
 type DiskStatus struct {
-	Mount       string
-	Device      string
-	Used        uint64
-	Total       uint64
-	UsedPercent float64
-	Fstype      string
-	External    bool
+	Mount       string  `json:"mount"`
+	Device      string  `json:"device"`
+	Used        uint64  `json:"used"`
+	Total       uint64  `json:"total"`
+	UsedPercent float64 `json:"used_percent"`
+	Fstype      string  `json:"fstype"`
+	External    bool    `json:"external"`
 }
 
 type NetworkStatus struct {
-	Name      string
-	RxRateMBs float64
-	TxRateMBs float64
-	IP        string
+	Name      string  `json:"name"`
+	RxRateMBs float64 `json:"rx_rate_mbs"`
+	TxRateMBs float64 `json:"tx_rate_mbs"`
+	IP        string  `json:"ip"`
 }
 
 // NetworkHistory holds the global network usage history.
 type NetworkHistory struct {
-	RxHistory []float64
-	TxHistory []float64
+	RxHistory []float64 `json:"rx_history"`
+	TxHistory []float64 `json:"tx_history"`
 }
 
 const NetworkHistorySize = 120 // Increased history size for wider graph
 
 type ProxyStatus struct {
-	Enabled bool
-	Type    string // HTTP, HTTPS, SOCKS, PAC, WPAD, TUN
-	Host    string
+	Enabled bool   `json:"enabled"`
+	Type    string `json:"type"` // HTTP, HTTPS, SOCKS, PAC, WPAD, TUN
+	Host    string `json:"host"`
 }
 
 type BatteryStatus struct {
-	Percent    float64
-	Status     string
-	TimeLeft   string
-	Health     string
-	CycleCount int
-	Capacity   int // Maximum capacity percentage (e.g., 85 means 85% of original)
+	Percent    float64 `json:"percent"`
+	Status     string  `json:"status"`
+	TimeLeft   string  `json:"time_left"`
+	Health     string  `json:"health"`
+	CycleCount int     `json:"cycle_count"`
+	Capacity   int     `json:"capacity"` // Maximum capacity percentage (e.g., 85 means 85% of original)
 }
 
 type ThermalStatus struct {
-	CPUTemp      float64
-	GPUTemp      float64
-	FanSpeed     int
-	FanCount     int
-	SystemPower  float64 // System power consumption in Watts
-	AdapterPower float64 // AC adapter max power in Watts
-	BatteryPower float64 // Battery charge/discharge power in Watts (positive = discharging)
+	CPUTemp      float64 `json:"cpu_temp"`
+	GPUTemp      float64 `json:"gpu_temp"`
+	FanSpeed     int     `json:"fan_speed"`
+	FanCount     int     `json:"fan_count"`
+	SystemPower  float64 `json:"system_power"`  // System power consumption in Watts
+	AdapterPower float64 `json:"adapter_power"` // AC adapter max power in Watts
+	BatteryPower float64 `json:"battery_power"` // Battery charge/discharge power in Watts (positive = discharging)
 }
 
 type SensorReading struct {
-	Label string
-	Value float64
-	Unit  string
-	Note  string
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+	Note  string  `json:"note"`
 }
 
 type BluetoothDevice struct {
-	Name      string
-	Connected bool
-	Battery   string
+	Name      string `json:"name"`
+	Connected bool   `json:"connected"`
+	Battery   string `json:"battery"`
 }
 
 type Collector struct {

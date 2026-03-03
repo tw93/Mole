@@ -2,6 +2,8 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +19,9 @@ const refreshInterval = time.Second
 var (
 	Version   = "dev"
 	BuildTime = ""
+
+	// Command-line flags
+	jsonOutput = flag.Bool("json", false, "output metrics as JSON instead of TUI")
 )
 
 type tickMsg struct{}
@@ -196,10 +201,38 @@ func animTickWithSpeed(cpuUsage float64) tea.Cmd {
 	return tea.Tick(time.Duration(interval)*time.Millisecond, func(time.Time) tea.Msg { return animTickMsg{} })
 }
 
-func main() {
+// runJSONMode collects metrics once and outputs as JSON.
+func runJSONMode() {
+	collector := NewCollector()
+	data, err := collector.Collect()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error collecting metrics: %v\n", err)
+		os.Exit(1)
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// runTUIMode runs the interactive terminal UI.
+func runTUIMode() {
 	p := tea.NewProgram(newModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "system status error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	if *jsonOutput {
+		runJSONMode()
+	} else {
+		runTUIMode()
 	}
 }
