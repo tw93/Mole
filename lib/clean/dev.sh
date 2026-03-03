@@ -538,6 +538,14 @@ clean_dev_mobile() {
         local -a unavailable_udids=()
         local unavailable_udid=""
 
+        # Check if simctl is accessible and working
+        if ! xcrun simctl list devices > /dev/null 2>&1; then
+            debug_log "simctl not accessible or CoreSimulator service not running"
+            echo -e "  ${GRAY}${ICON_SKIP}${NC} Xcode unavailable simulators · simctl not available"
+            note_activity
+            return 0
+        fi
+
         unavailable_before=$(xcrun simctl list devices unavailable 2> /dev/null | command awk '/\(unavailable/ { count++ } END { print count+0 }' || echo "0")
         [[ "$unavailable_before" =~ ^[0-9]+$ ]] || unavailable_before=0
         while IFS= read -r unavailable_udid; do
@@ -564,8 +572,21 @@ clean_dev_mobile() {
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
             fi
         else
+            # Skip if no unavailable simulators
+            if ((unavailable_before == 0)); then
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
+                note_activity
+                return 0
+            fi
+
             start_section_spinner "Checking unavailable simulators..."
-            if xcrun simctl delete unavailable > /dev/null 2>&1; then
+
+            # Capture error output for diagnostics
+            local delete_output
+            local delete_exit_code=0
+            delete_output=$(xcrun simctl delete unavailable 2>&1) || delete_exit_code=$?
+
+            if [[ $delete_exit_code -eq 0 ]]; then
                 stop_section_spinner
                 unavailable_after=$(xcrun simctl list devices unavailable 2> /dev/null | command awk '/\(unavailable/ { count++ } END { print count+0 }' || echo "0")
                 [[ "$unavailable_after" =~ ^[0-9]+$ ]] || unavailable_after=0
@@ -575,16 +596,67 @@ clean_dev_mobile() {
                     removed_unavailable=0
                 fi
 
-                if ((unavailable_before == 0)); then
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
-                elif ((removed_unavailable > 0)); then
+                if ((removed_unavailable > 0)); then
                     echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · removed ${removed_unavailable}, ${unavailable_size_human}"
                 else
                     echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · cleanup completed, ${unavailable_size_human}"
                 fi
             else
                 stop_section_spinner
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators cleanup failed"
+
+                # Analyze error and provide helpful message
+                local error_hint=""
+                if echo "$delete_output" | grep -qi "permission denied"; then
+                    error_hint=" (permission denied)"
+                elif echo "$delete_output" | grep -qi "in use\|busy"; then
+                    error_hint=" (device in use)"
+                elif echo "$delete_output" | grep -qi "unable to boot\|failed to boot"; then
+                    error_hint=" (boot failure)"
+                elif echo "$delete_output" | grep -qi "service"; then
+                    error_hint=" (CoreSimulator service issue)"
+                fi
+
+                # Try fallback: manual deletion of unavailable device directories
+                if [[ ${#unavailable_udids[@]} -gt 0 ]]; then
+                    debug_log "Attempting fallback: manual deletion of unavailable simulators"
+                    local manually_removed=0
+                    local manual_failed=0
+
+                    for udid in "${unavailable_udids[@]}"; do
+                        # Validate UUID format (36 chars: 8-4-4-4-12 hex pattern)
+                        if [[ ! "$udid" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+                            debug_log "Invalid UUID format, skipping: $udid"
+                            ((manual_failed++)) || true
+                            continue
+                        fi
+
+                        local device_path="$HOME/Library/Developer/CoreSimulator/Devices/$udid"
+                        if [[ -d "$device_path" ]]; then
+                            # Use safe_remove for validated simulator device directory
+                            if safe_remove "$device_path" true; then
+                                ((manually_removed++)) || true
+                                debug_log "Manually removed simulator: $udid"
+                            else
+                                ((manual_failed++)) || true
+                                debug_log "Failed to manually remove simulator: $udid"
+                            fi
+                        fi
+                    done
+
+                    if ((manually_removed > 0)); then
+                        if ((manual_failed == 0)); then
+                            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · removed ${manually_removed} (fallback), ${unavailable_size_human}"
+                        else
+                            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode unavailable simulators · partially cleaned ${manually_removed}/${#unavailable_udids[@]}, ${unavailable_size_human}"
+                        fi
+                    else
+                        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators cleanup failed${error_hint}"
+                        debug_log "simctl delete error: $delete_output"
+                    fi
+                else
+                    echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators cleanup failed${error_hint}"
+                    debug_log "simctl delete error: $delete_output"
+                fi
             fi
         fi
         note_activity
