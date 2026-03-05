@@ -261,10 +261,10 @@ func scutilProxyEnabled(out, key string) bool {
 
 func scutilProxyValue(out, key string) string {
 	prefix := key + " :"
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.Lines(out) {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		if after, ok := strings.CutPrefix(line, prefix); ok {
+			return strings.TrimSpace(after)
 		}
 	}
 	return ""

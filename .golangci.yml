@@ -16,6 +16,8 @@ linters:
     - errcheck
     - ineffassign
     - unused
+    # Additional linters
+    - modernize
 
   settings:
     govet:

@@ -261,7 +261,7 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 		sort.Slice(cores, func(i, j int) bool { return cores[i].val > cores[j].val })
 
 		maxCores := min(len(cores), 3)
-		for i := 0; i < maxCores; i++ {
+		for i := range maxCores {
 			c := cores[i]
 			lines = append(lines, fmt.Sprintf("Core%-2d %s  %5.1f%%", c.idx+1, progressBar(c.val), c.val))
 		}
@@ -403,10 +403,7 @@ func formatDiskLine(label string, d DiskStatus) string {
 }
 
 func ioBar(rate float64) string {
-	filled := min(int(rate/10.0), 5)
-	if filled < 0 {
-		filled = 0
-	}
+	filled := max(min(int(rate/10.0), 5), 0)
 	bar := strings.Repeat("▮", filled) + strings.Repeat("▯", 5-filled)
 	if rate > 80 {
 		return dangerStyle.Render(bar)
@@ -451,10 +448,7 @@ func buildCards(m MetricsSnapshot, width int) []cardData {
 }
 
 func miniBar(percent float64) string {
-	filled := min(int(percent/20), 5)
-	if filled < 0 {
-		filled = 0
-	}
+	filled := max(min(int(percent/20), 5), 0)
 	return colorizePercent(percent, strings.Repeat("▮", filled)+strings.Repeat("▯", 5-filled))
 }
 
@@ -478,13 +472,7 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 		// Layout: "Down   " (7) + graph + "  " (2) + rate (approx 10-12)
 		// Safe margin: 22 chars.
 		// We target 16 chars to match progressBar implementation for visual consistency.
-		graphWidth := cardWidth - 22
-		if graphWidth < 5 {
-			graphWidth = 5
-		}
-		if graphWidth > 16 {
-			graphWidth = 16 // Match progressBar fixed width
-		}
+		graphWidth := min(max(cardWidth-22, 5), 16)
 
 		// sparkline graphs
 		rxSparkline := sparkline(history.RxHistory, totalRx, graphWidth)
@@ -536,10 +524,7 @@ func sparkline(history []float64, current float64, width int) string {
 
 	var builder strings.Builder
 	for _, v := range data {
-		level := int((v / maxVal) * float64(len(blocks)-1))
-		if level < 0 {
-			level = 0
-		}
+		level := max(int((v/maxVal)*float64(len(blocks)-1)), 0)
 		if level >= len(blocks) {
 			level = len(blocks) - 1
 		}
@@ -639,10 +624,7 @@ func renderCard(data cardData, width int, height int) string {
 	}
 
 	titleText := data.icon + " " + data.title
-	lineLen := width - lipgloss.Width(titleText) - 2
-	if lineLen < 0 {
-		lineLen = 0
-	}
+	lineLen := max(width-lipgloss.Width(titleText)-2, 0)
 
 	header := titleStyle.Render(titleText)
 	if lineLen > 0 {

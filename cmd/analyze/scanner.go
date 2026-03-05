@@ -77,16 +77,7 @@ func scanPathConcurrent(root string, filesScanned, dirsScanned, bytesScanned *in
 	largeFileMinSize := int64(largeFileWarmupMinSize)
 
 	// Worker pool sized for I/O-bound scanning.
-	numWorkers := max(runtime.NumCPU()*cpuMultiplier, minWorkers)
-	if numWorkers > maxWorkers {
-		numWorkers = maxWorkers
-	}
-	if numWorkers > len(children) {
-		numWorkers = len(children)
-	}
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
+	numWorkers := max(min(max(runtime.NumCPU()*cpuMultiplier, minWorkers), maxWorkers, len(children)), 1)
 	sem := make(chan struct{}, numWorkers)
 	dirSem := make(chan struct{}, min(runtime.NumCPU()*2, maxDirWorkers))
 	duSem := make(chan struct{}, min(4, runtime.NumCPU()))        // limits concurrent du processes
@@ -95,13 +86,7 @@ func scanPathConcurrent(root string, filesScanned, dirsScanned, bytesScanned *in
 
 	// Collect results via channels.
 	// Cap buffer size to prevent memory spikes with huge directories.
-	entryBufSize := len(children)
-	if entryBufSize > 4096 {
-		entryBufSize = 4096
-	}
-	if entryBufSize < 1 {
-		entryBufSize = 1
-	}
+	entryBufSize := max(min(len(children), 4096), 1)
 	entryChan := make(chan dirEntry, entryBufSize)
 	largeFileChan := make(chan fileEntry, maxLargeFiles*2)
 

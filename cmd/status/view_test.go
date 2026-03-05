@@ -951,7 +951,7 @@ func TestRenderHeaderWrapsOnNarrowWidth(t *testing.T) {
 	}
 
 	header, _ := renderHeader(m, "", 0, 38, true)
-	for _, line := range strings.Split(header, "\n") {
+	for line := range strings.Lines(header) {
 		if lipgloss.Width(stripANSI(line)) > 38 {
 			t.Fatalf("renderHeader() line exceeds width: %q", line)
 		}
@@ -1021,7 +1021,7 @@ func TestRenderCardWrapsOnNarrowWidth(t *testing.T) {
 	}
 
 	rendered := renderCard(card, 26, 0)
-	for _, line := range strings.Split(rendered, "\n") {
+	for line := range strings.Lines(rendered) {
 		if lipgloss.Width(stripANSI(line)) > 26 {
 			t.Fatalf("renderCard() line exceeds width: %q", line)
 		}

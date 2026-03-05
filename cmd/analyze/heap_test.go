@@ -70,7 +70,7 @@ func TestEntryHeap(t *testing.T) {
 		heap.Push(h, dirEntry{Name: "c", Size: 100})
 
 		// All have same size, heap property still holds.
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			popped := heap.Pop(h).(dirEntry)
 			if popped.Size != 100 {
 				t.Errorf("Pop() size = %d, want 100", popped.Size)

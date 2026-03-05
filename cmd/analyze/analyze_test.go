@@ -644,7 +644,7 @@ func TestCalculateDirSizeFastHighFanoutCompletes(t *testing.T) {
 
 	// Reproduce high fan-out nested directory pattern that previously risked semaphore deadlock.
 	const fanout = 256
-	for i := 0; i < fanout; i++ {
+	for i := range fanout {
 		nested := filepath.Join(root, fmt.Sprintf("dir-%03d", i), "nested")
 		if err := os.MkdirAll(nested, 0o755); err != nil {
 			t.Fatalf("create nested dir: %v", err)
