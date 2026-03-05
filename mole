@@ -734,6 +734,9 @@ show_main_menu() {
     printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Check and maintain system" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze      Explore disk usage" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
     printf '\r\033[2K%s\n' "$(show_menu_option 5 "Status       Monitor system health" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
+    if [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]]; then
+        printf '\r\033[2K%s\n' "$(show_menu_option 6 "Update       Update to latest version" "$([[ $selected -eq 6 ]] && echo true || echo false)")"
+    fi
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
@@ -765,6 +768,7 @@ interactive_main_menu() {
         update_message="$(cat "$msg_cache" 2> /dev/null || echo "")"
     fi
     MAIN_MENU_UPDATE_MESSAGE="$update_message"
+    MAIN_MENU_SHOW_UPDATE="$([[ -n "$update_message" ]] && echo true || echo false)"
 
     cleanup_and_exit() {
         show_cursor
@@ -787,7 +791,11 @@ interactive_main_menu() {
 
         case "$key" in
             "UP") ((current_option > 1)) && ((current_option--)) ;;
-            "DOWN") ((current_option < 5)) && ((current_option++)) ;;
+            "DOWN")
+                local _max=5
+                [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]] && _max=6
+                ((current_option < _max)) && ((current_option++))
+                ;;
             "ENTER")
                 show_cursor
                 case $current_option in
@@ -796,6 +804,7 @@ interactive_main_menu() {
                     3) exec "$SCRIPT_DIR/bin/optimize.sh" ;;
                     4) exec "$SCRIPT_DIR/bin/analyze.sh" ;;
                     5) exec "$SCRIPT_DIR/bin/status.sh" ;;
+                    6) show_cursor; clear; update_mole; exit 0 ;;
                 esac
                 ;;
             "CHAR:1")
@@ -817,6 +826,12 @@ interactive_main_menu() {
             "CHAR:5")
                 show_cursor
                 exec "$SCRIPT_DIR/bin/status.sh"
+                ;;
+            "CHAR:6")
+                show_cursor
+                clear
+                update_mole
+                exit 0
                 ;;
             "MORE")
                 show_cursor

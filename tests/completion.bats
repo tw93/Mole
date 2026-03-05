@@ -70,6 +70,7 @@ setup() {
 	[[ "$output" == *"purge"* ]]
 	[[ "$output" == *"touchid"* ]]
 	[[ "$output" == *"completion"* ]]
+	[[ "$output" == *"update"* ]]
 }
 
 @test "completion bash script supports mo command" {
@@ -96,6 +97,7 @@ setup() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"optimize:Check and maintain system"* ]]
 	[[ "$output" == *"clean:Free up disk space"* ]]
+	[[ "$output" == *"update:Update to latest version"* ]]
 }
 
 @test "completion fish generates valid fish script" {
