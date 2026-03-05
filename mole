@@ -828,6 +828,7 @@ interactive_main_menu() {
                 exec "$SCRIPT_DIR/bin/status.sh"
                 ;;
             "CHAR:6")
+                [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]] || continue
                 show_cursor
                 clear
                 update_mole
