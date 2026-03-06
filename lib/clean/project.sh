@@ -1310,6 +1310,14 @@ clean_project_artifacts() {
     if [[ -t 1 ]]; then
         stop_inline_spinner
     fi
+    # Exit early if no artifacts were found to avoid unbound variable errors
+    # when expanding empty arrays with set -u active.
+    if [[ ${#menu_options[@]} -eq 0 ]]; then
+        echo ""
+        echo -e "${GRAY}No artifacts found to purge${NC}"
+        printf '\n'
+        return 0
+    fi
     # Set global vars for selector
     export PURGE_CATEGORY_SIZES=$(
         IFS=,
