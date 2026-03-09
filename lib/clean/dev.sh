@@ -189,6 +189,13 @@ check_rust_toolchains() {
 }
 # Docker caches (guarded by daemon check).
 clean_dev_docker() {
+    if [[ "${MOLE_CLEAN_DOCKER:-0}" != "1" ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Docker unused data · skipped (use --docker)"
+        note_activity
+        safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
+        return 0
+    fi
+
     if command -v docker > /dev/null 2>&1; then
         if [[ "$DRY_RUN" != "true" ]]; then
             start_section_spinner "Checking Docker daemon..."
@@ -198,13 +205,16 @@ clean_dev_docker() {
             fi
             stop_section_spinner
             if [[ "$docker_running" == "true" ]]; then
-                clean_tool_cache "Docker build cache" docker builder prune -af
+                # Remove unused images, stopped containers, unused networks, and
+                # anonymous volumes in one pass. This maps better to the large
+                # reclaimable "docker system df" buckets users typically see.
+                clean_tool_cache "Docker unused data" docker system prune -af --volumes
             else
                 debug_log "Docker daemon not running, skipping Docker cache cleanup"
             fi
         else
             note_activity
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Docker build cache · would clean"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Docker unused data · would clean"
         fi
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
