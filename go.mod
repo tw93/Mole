@@ -1,15 +1,13 @@
 module github.com/tw93/mole
 
-go 1.24.2
-
-toolchain go1.24.6
+go 1.25.0
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/shirou/gopsutil/v4 v4.26.2
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
