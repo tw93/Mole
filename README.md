@@ -63,7 +63,6 @@ mo --version                 # Show installed version
 
 # Safe preview before applying changes
 mo clean --dry-run
-mo clean --docker            # Also prune unused Docker data
 mo uninstall --dry-run
 mo purge --dry-run
 

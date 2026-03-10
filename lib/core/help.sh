@@ -7,7 +7,6 @@ show_clean_help() {
     echo ""
     echo "Options:"
     echo "  --dry-run, -n     Preview cleanup without making changes"
-    echo "  --docker          Also prune unused Docker images, containers, networks, and anonymous volumes"
     echo "  --whitelist       Manage protected paths"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"

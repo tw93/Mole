@@ -160,43 +160,28 @@ EOF
 }
 
 @test "clean_dev_docker skips when daemon not running" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 DRY_RUN=false MOLE_CLEAN_DOCKER=1 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
 run_with_timeout() { return 1; }
-clean_tool_cache() { echo "$1"; }
 safe_clean() { echo "$2"; }
-debug_log() { echo "$*"; }
+debug_log() { :; }
 docker() { return 1; }
 export -f docker
 clean_dev_docker
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Docker daemon not running"* ]]
-    [[ "$output" != *"Docker unused data"* ]]
-}
-
-@test "clean_dev_docker is opt-in by default" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/dev.sh"
-safe_clean() { echo "$2"; }
-note_activity() { :; }
-clean_dev_docker
-EOF
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Docker unused data · skipped (use --docker)"* ]]
+    [[ "$output" == *"Docker unused data · skipped (daemon not running)"* ]]
     [[ "$output" == *"Docker BuildX cache"* ]]
+    [[ "$output" != *"Docker unused data|Docker unused data docker system prune -af --volumes"* ]]
 }
 
 @test "clean_dev_docker prunes unused docker data when daemon is running" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_CLEAN_DOCKER=1 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
