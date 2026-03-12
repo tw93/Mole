@@ -864,6 +864,8 @@ clean_application_support_logs() {
             is_protected=true
         elif should_protect_data "$app_name_lower"; then
             is_protected=true
+        elif is_path_whitelisted "$app_dir" ; then
+            is_protected=true
         fi
         if [[ "$is_protected" == "true" ]]; then
             continue
