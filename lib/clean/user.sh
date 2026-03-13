@@ -860,11 +860,13 @@ clean_application_support_logs() {
         local app_name_lower
         app_name_lower=$(echo "$app_name" | LC_ALL=C tr '[:upper:]' '[:lower:]')
         local is_protected=false
-        if should_protect_data "$app_name"; then
+        if is_path_whitelisted "$app_dir" 2> /dev/null; then
+            is_protected=true
+        elif should_protect_path "$app_dir" 2> /dev/null; then
+            is_protected=true
+        elif should_protect_data "$app_name"; then
             is_protected=true
         elif should_protect_data "$app_name_lower"; then
-            is_protected=true
-        elif is_path_whitelisted "$app_dir" ; then
             is_protected=true
         fi
         if [[ "$is_protected" == "true" ]]; then
@@ -876,6 +878,9 @@ clean_application_support_logs() {
         local -a start_candidates=("$app_dir/log" "$app_dir/logs" "$app_dir/activitylog" "$app_dir/Cache/Cache_Data" "$app_dir/Crashpad/completed")
         for candidate in "${start_candidates[@]}"; do
             if [[ -d "$candidate" ]]; then
+                if should_protect_path "$candidate" 2> /dev/null || is_path_whitelisted "$candidate" 2> /dev/null; then
+                    continue
+                fi
                 # Quick count check - skip if too many items to avoid hanging
                 local quick_count
                 quick_count=$(app_support_entry_count_capped "$candidate" 1 101)
@@ -903,6 +908,9 @@ clean_application_support_logs() {
                 local candidate_item_count=0
                 while IFS= read -r -d '' item; do
                     [[ -e "$item" ]] || continue
+                    if should_protect_path "$item" 2> /dev/null || is_path_whitelisted "$item" 2> /dev/null; then
+                        continue
+                    fi
                     item_found=true
                     candidate_item_count=$((candidate_item_count + 1))
                     if [[ ! -L "$item" && (-f "$item" || -d "$item") ]]; then

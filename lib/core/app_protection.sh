@@ -290,6 +290,8 @@ readonly DATA_PROTECTED_BUNDLES=(
     "clash.*"
     "Clash.*"
     "clash_*"
+    "*clash-verge*"
+    "*Clash-Verge*"
     "clashverge*"
     "ClashVerge*"
     "com.nssurge.surge-mac"
@@ -694,7 +696,7 @@ should_protect_data() {
         com.nssurge.* | com.v2ray.* | com.clash.* | ClashX* | Surge* | Shadowrocket* | Quantumult*)
             return 0
             ;;
-        clash-* | Clash-* | *-clash | *-Clash | clash.* | Clash.* | clash_* | clashverge* | ClashVerge*)
+        clash-* | Clash-* | *-clash | *-Clash | clash.* | Clash.* | clash_* | *clash-verge* | *Clash-Verge* | clashverge* | ClashVerge*)
             return 0
             ;;
         com.docker.* | com.getpostman.* | com.insomnia.*)

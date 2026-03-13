@@ -255,6 +255,37 @@ EOF
     [[ "$output" != *"REMOVE:"* ]]
 }
 
+@test "clean_application_support_logs skips whitelisted application support directories" {
+    local support_home="$HOME/support-appsupport-whitelist"
+    run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+safe_remove() { echo "REMOVE:$1"; }
+update_progress_if_needed() { return 1; }
+should_protect_data() { return 1; }
+is_critical_system_component() { return 1; }
+WHITELIST_PATTERNS=("$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev")
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+mkdir -p "$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/logs"
+touch "$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/logs/runtime.log"
+
+clean_application_support_logs
+test -f "$HOME/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/logs/runtime.log"
+rm -rf "$HOME/Library/Application Support"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"REMOVE:"* ]]
+}
+
 @test "app_support_entry_count_capped stops at cap without failing under pipefail" {
     local support_home="$HOME/support-appsupport-cap"
     run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
