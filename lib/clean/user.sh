@@ -444,19 +444,22 @@ clean_support_app_data() {
         safe_find_delete "$crash_reporter_dir" "*" "$support_age_days" "f" || true
     fi
 
-    # Keep recent wallpaper assets to avoid large re-downloads.
+    # Wallpaper assets are user-downloaded resources. Protect them by default
+    # via the whitelist to avoid expensive re-downloads, while still allowing
+    # advanced users to opt out of protection manually.
     local idle_assets_dir="$HOME/Library/Application Support/com.apple.idleassetsd"
     if [[ -d "$idle_assets_dir" && ! -L "$idle_assets_dir" ]]; then
         safe_find_delete "$idle_assets_dir" "*" "$support_age_days" "f" || true
     fi
 
-    # Clean system-level idle/aerial screensaver videos (macOS re-downloads as needed).
+    # System-level idle assets are also protected by the default whitelist.
     local sys_idle_assets_dir="/Library/Application Support/com.apple.idleassetsd/Customer"
     if sudo test -d "$sys_idle_assets_dir" 2> /dev/null; then
         safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
     fi
 
-    # Clean old aerial wallpaper videos (can be large, safe to remove).
+    # Downloaded aerial wallpaper videos are protected by default whitelist
+    # entries because users expect them to persist after cleanup.
     safe_clean ~/Library/Application\ Support/com.apple.wallpaper/aerials/videos/* "Aerial wallpaper videos"
 
     # Do not touch Messages attachments, only preview/sticker caches.

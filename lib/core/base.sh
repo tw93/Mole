@@ -105,6 +105,9 @@ declare -a DEFAULT_WHITELIST_PATTERNS=(
     "$HOME/Library/Caches/com.apple.spotlight*"
     "$HOME/Library/Caches/com.apple.Spotlight*"
     "$HOME/Library/Caches/CloudKit*"
+    "$HOME/Library/Application Support/com.apple.wallpaper/*"
+    "$HOME/Library/Application Support/com.apple.idleassetsd/*"
+    "/Library/Application Support/com.apple.idleassetsd/Customer/*"
     "$FINDER_METADATA_SENTINEL"
 )
 

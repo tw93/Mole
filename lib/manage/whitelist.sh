@@ -78,6 +78,9 @@ get_all_cache_items() {
     # Format: "display_name|pattern|category"
     cat << 'EOF'
 Apple Mail cache|$HOME/Library/Caches/com.apple.mail/*|system_cache
+macOS downloaded wallpaper assets|$HOME/Library/Application Support/com.apple.wallpaper/*|system_cache
+macOS user wallpaper idle assets|$HOME/Library/Application Support/com.apple.idleassetsd/*|system_cache
+macOS system wallpaper idle assets|/Library/Application Support/com.apple.idleassetsd/Customer/*|system_cache
 Gradle build cache (Android Studio, Gradle projects)|$HOME/.gradle/caches/*|ide_cache
 Gradle daemon processes cache|$HOME/.gradle/daemon/*|ide_cache
 Xcode DerivedData (build outputs, indexes)|$HOME/Library/Developer/Xcode/DerivedData/*|ide_cache
