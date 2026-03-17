@@ -275,6 +275,7 @@ show_help() {
     echo -e "${YELLOW}Usage:${NC} mo purge [options]"
     echo ""
     echo -e "${YELLOW}Options:${NC}"
+    echo "  --all           Select all artifacts without prompting"
     echo "  --paths         Edit custom scan directories"
     echo "  --dry-run       Preview purge actions without making changes"
     echo "  --debug         Enable debug logging"
@@ -305,6 +306,9 @@ main() {
                 ;;
             "--debug")
                 export MO_DEBUG=1
+                ;;
+            "--all" | "-a")
+                export MOLE_PURGE_ALL=1
                 ;;
             "--dry-run" | "-n")
                 export MOLE_DRY_RUN=1

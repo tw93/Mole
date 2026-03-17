@@ -846,6 +846,44 @@ EOF
 	[[ "$output" == *"DRY RUN MODE"* ]] || [[ "$output" == *"Dry run complete"* ]]
 }
 
+@test "mo purge: accepts --all flag" {
+	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
+		skip "gtimeout/timeout not available"
+	fi
+
+	timeout_cmd="timeout"
+	command -v timeout >/dev/null 2>&1 || timeout_cmd="gtimeout"
+
+	run bash -c "
+        export HOME='$HOME'
+        $timeout_cmd 5 '$PROJECT_ROOT/mole' purge --all --dry-run 2>&1 || true
+    "
+
+	[[ "$output" == *"DRY RUN MODE"* ]] || [[ "$output" == *"Dry run complete"* ]]
+}
+
+@test "clean_project_artifacts: --all selects all items including recent" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_PURGE_ALL=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+mkdir -p "$HOME/.cache/mole"
+echo "0" > "$HOME/.cache/mole/purge_stats"
+echo "0" > "$HOME/.cache/mole/purge_count"
+
+mkdir -p "$HOME/www/test-project/node_modules"
+echo "test data" > "$HOME/www/test-project/node_modules/file.js"
+touch "$HOME/www/test-project/package.json"
+
+PURGE_SEARCH_PATHS=("$HOME/www")
+export MOLE_DRY_RUN=1
+clean_project_artifacts
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
 @test "mo purge: creates cache directory for stats" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"

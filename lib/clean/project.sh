@@ -1417,7 +1417,13 @@ clean_project_artifacts() {
     # Interactive selection (only if terminal is available)
     PURGE_SELECTION_RESULT=""
     PURGE_CATEGORY_FULL_PATHS_ARRAY=("${item_display_paths[@]}")
-    if [[ -t 0 ]]; then
+    if [[ "${MOLE_PURGE_ALL:-0}" == "1" ]]; then
+        # --all flag: select everything (including recent items)
+        for ((i = 0; i < ${#menu_options[@]}; i++)); do
+            [[ -n "$PURGE_SELECTION_RESULT" ]] && PURGE_SELECTION_RESULT+=","
+            PURGE_SELECTION_RESULT+="$i"
+        done
+    elif [[ -t 0 ]]; then
         if ! select_purge_categories "${menu_options[@]}"; then
             PURGE_CATEGORY_FULL_PATHS_ARRAY=()
             unset PURGE_CATEGORY_SIZES PURGE_RECENT_CATEGORIES PURGE_SELECTION_RESULT
@@ -1454,7 +1460,7 @@ clean_project_artifacts() {
         selected_display_paths+=("${item_display_paths[idx]}")
     done
 
-    if [[ -t 0 ]]; then
+    if [[ "${MOLE_PURGE_ALL:-0}" != "1" && -t 0 ]]; then
         if ! confirm_purge_cleanup "${#selected_indices[@]}" "$selected_total_kb" "$selected_unknown_count" "${selected_display_paths[@]}"; then
             echo -e "${GRAY}Purge cancelled${NC}"
             printf '\n'
