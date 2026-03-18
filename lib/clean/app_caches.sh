@@ -240,8 +240,6 @@ clean_remote_desktop() {
 # Main entry for GUI app cleanup.
 clean_user_gui_applications() {
     stop_section_spinner
-    clean_xcode_tools
-    clean_code_editors
     clean_communication_apps
     clean_dingtalk
     clean_ai_apps
