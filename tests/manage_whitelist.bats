@@ -130,3 +130,19 @@ setup() {
     fi
     [ "$status" -eq 0 ]
 }
+
+@test "default whitelist protects tealdeer cache parent for tldr pages" {
+    local status
+    if HOME="$HOME" bash --noprofile --norc -c "
+        source '$PROJECT_ROOT/lib/manage/whitelist.sh'
+        rm -f \"\$HOME/.config/mole/whitelist\"
+        load_whitelist
+        WHITELIST_PATTERNS=(\"\${CURRENT_WHITELIST_PATTERNS[@]}\")
+        is_path_whitelisted \"\$HOME/Library/Caches/tealdeer\"
+    "; then
+        status=0
+    else
+        status=$?
+    fi
+    [ "$status" -eq 0 ]
+}

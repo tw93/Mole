@@ -96,6 +96,7 @@ declare -a DEFAULT_WHITELIST_PATTERNS=(
     "$HOME/Library/Caches/pypoetry/virtualenvs*"
     "$HOME/Library/Caches/JetBrains*"
     "$HOME/Library/Caches/com.jetbrains.toolbox*"
+    "$HOME/Library/Caches/tealdeer/tldr-pages"
     "$HOME/Library/Application Support/JetBrains*"
     "$HOME/Library/Caches/com.apple.finder"
     "$HOME/Library/Mobile Documents*"
