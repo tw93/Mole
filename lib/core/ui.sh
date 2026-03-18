@@ -342,7 +342,7 @@ start_inline_spinner() {
                 # Output to stderr to avoid interfering with stdout
                 printf "\r${MOLE_SPINNER_PREFIX:-}${BLUE}%s${NC} %s" "$c" "$display_message" >&2 || break
                 i=$((i + 1))
-                sleep 0.05
+                /bin/sleep 0.05
             done
 
             # Clean up stop file before exiting
@@ -366,7 +366,7 @@ stop_inline_spinner() {
         # Wait briefly for cooperative exit
         local wait_count=0
         while kill -0 "$INLINE_SPINNER_PID" 2> /dev/null && [[ $wait_count -lt 5 ]]; do
-            sleep 0.05 2> /dev/null || true
+            /bin/sleep 0.05 2> /dev/null || true
             wait_count=$((wait_count + 1))
         done
 

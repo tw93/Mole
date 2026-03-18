@@ -204,8 +204,28 @@ sleep 0.1
 stop_inline_spinner
 echo "done"
 EOF
-)
+    )
     [[ "$result" == *"done"* ]]
+}
+
+@test "start_inline_spinner ignores PATH-provided sleep in TTY mode" {
+    local fake_bin="$HOME/fake-bin"
+    local marker="$HOME/fake-sleep.marker"
+
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/sleep" <<EOF
+#!/bin/bash
+echo "fake" >> "$marker"
+exec /bin/sleep "\$@"
+EOF
+    chmod +x "$fake_bin/sleep"
+
+    PATH="$fake_bin:$PATH" PROJECT_ROOT="$PROJECT_ROOT" HOME="$HOME" \
+        /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c \
+        'source "$PROJECT_ROOT/lib/core/common.sh"; start_inline_spinner "Testing..."; /bin/sleep 0.15; stop_inline_spinner' \
+        > /dev/null 2>&1
+
+    [ ! -f "$marker" ]
 }
 
 @test "read_key maps j/k/h/l to navigation" {
