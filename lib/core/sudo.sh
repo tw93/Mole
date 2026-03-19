@@ -47,9 +47,15 @@ _request_password() {
 
     sudo -k 2> /dev/null
 
+    local stty_orig
+    stty_orig=$(stty -g < "$tty_path" 2> /dev/null || echo "")
+    trap '[[ -n "${stty_orig:-}" ]] && stty "${stty_orig:-}" < "$tty_path" 2> /dev/null || true' RETURN
+
     if check_touchid_support; then
         echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
     fi
+
+    echo -e "${PURPLE}${ICON_ARROW}${NC} Enter your credentials:" > "$tty_path"
 
     if sudo -v < "$tty_path" > /dev/null 2> "$tty_path"; then
         return 0
