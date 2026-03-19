@@ -44,28 +44,16 @@ is_clamshell_mode() {
 
 _request_password() {
     local tty_path="$1"
-    local attempts=0
-    local show_hint=true
 
     sudo -k 2> /dev/null
 
-    while ((attempts < 3)); do
-        if [[ $show_hint == true ]] && check_touchid_support; then
-            echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
-            show_hint=false
-        fi
+    if check_touchid_support; then
+        echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
+    fi
 
-        if sudo -v < "$tty_path" > /dev/null 2> "$tty_path"; then
-            return 0
-        fi
-
-        sudo -k 2> /dev/null
-        attempts=$((attempts + 1))
-        if [[ $attempts -lt 3 ]]; then
-            echo -e "${GRAY}${ICON_WARNING}${NC} Authentication failed, try again" > "$tty_path"
-        fi
-
-    done
+    if sudo -v < "$tty_path" > /dev/null 2> "$tty_path"; then
+        return 0
+    fi
 
     return 1
 }
