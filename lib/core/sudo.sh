@@ -47,54 +47,24 @@ _request_password() {
     local attempts=0
     local show_hint=true
 
-    # Extra safety: ensure sudo cache is cleared before password input
     sudo -k 2> /dev/null
 
-    # Save original terminal settings and ensure they're restored on exit
-    local stty_orig
-    stty_orig=$(stty -g < "$tty_path" 2> /dev/null || echo "")
-    trap '[[ -n "${stty_orig:-}" ]] && stty "${stty_orig:-}" < "$tty_path" 2> /dev/null || true' RETURN
-
     while ((attempts < 3)); do
-        local password=""
-
-        # Show hint on first attempt about Touch ID appearing again
         if [[ $show_hint == true ]] && check_touchid_support; then
             echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
             show_hint=false
         fi
 
-        printf "${PURPLE}${ICON_ARROW}${NC} Password: " > "$tty_path"
-
-        # Disable terminal echo to hide password input (keep canonical mode for reliable input)
-        stty -echo < "$tty_path" 2> /dev/null || true
-        IFS= read -r password < "$tty_path" || password=""
-        # Restore terminal echo immediately
-        stty echo < "$tty_path" 2> /dev/null || true
-
-        printf "\n" > "$tty_path"
-
-        if [[ -z "$password" ]]; then
-            unset password
-            attempts=$((attempts + 1))
-            if [[ $attempts -lt 3 ]]; then
-                echo -e "${GRAY}${ICON_WARNING}${NC} Password cannot be empty" > "$tty_path"
-            fi
-            continue
-        fi
-
-        # Verify password with sudo
-        # NOTE: macOS PAM will trigger Touch ID before password auth - this is system behavior
-        if printf '%s\n' "$password" | sudo -S -p "" -v > /dev/null 2>&1; then
-            unset password
+        if sudo -v < "$tty_path" > /dev/null 2> "$tty_path"; then
             return 0
         fi
 
-        unset password
+        sudo -k 2> /dev/null
         attempts=$((attempts + 1))
         if [[ $attempts -lt 3 ]]; then
-            echo -e "${GRAY}${ICON_WARNING}${NC} Incorrect password, try again" > "$tty_path"
+            echo -e "${GRAY}${ICON_WARNING}${NC} Authentication failed, try again" > "$tty_path"
         fi
+
     done
 
     return 1
