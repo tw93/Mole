@@ -84,7 +84,10 @@ EOF
 }
 
 @test "should_protect_path protects Mole runtime logs" {
-    result="$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_path '$HOME/Library/Logs/mole/operations.log' && echo protected || echo not-protected")"
+    result="$(
+        HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc -c \
+            'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$HOME/Library/Logs/mole/operations.log" && echo protected || echo not-protected'
+    )"
     [ "$result" = "protected" ]
 }
 
@@ -241,7 +244,7 @@ EOF
 
     PATH="$fake_bin:$PATH" PROJECT_ROOT="$PROJECT_ROOT" HOME="$HOME" \
         /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c \
-        'source "$PROJECT_ROOT/lib/core/common.sh"; start_inline_spinner "Testing..."; /bin/sleep 0.15; stop_inline_spinner' \
+        "source \"\$PROJECT_ROOT/lib/core/common.sh\"; start_inline_spinner \"Testing...\"; /bin/sleep 0.15; stop_inline_spinner" \
         > /dev/null 2>&1
 
     [ ! -f "$marker" ]

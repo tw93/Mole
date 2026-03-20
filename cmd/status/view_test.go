@@ -809,16 +809,16 @@ func TestFormatDiskLine(t *testing.T) {
 			if expectedLabel == "" {
 				expectedLabel = "DISK"
 			}
-			if !contains(got, expectedLabel) {
+			if !strings.Contains(got, expectedLabel) {
 				t.Errorf("formatDiskLine(%q, ...) = %q, should contain label %q", tt.label, got, expectedLabel)
 			}
-			if !contains(got, tt.wantUsed) {
+			if !strings.Contains(got, tt.wantUsed) {
 				t.Errorf("formatDiskLine(%q, ...) = %q, should contain used value %q", tt.label, got, tt.wantUsed)
 			}
-			if !contains(got, tt.wantFree) {
+			if !strings.Contains(got, tt.wantFree) {
 				t.Errorf("formatDiskLine(%q, ...) = %q, should contain free value %q", tt.label, got, tt.wantFree)
 			}
-			if tt.wantNoSubstr != "" && contains(got, tt.wantNoSubstr) {
+			if tt.wantNoSubstr != "" && strings.Contains(got, tt.wantNoSubstr) {
 				t.Errorf("formatDiskLine(%q, ...) = %q, should not contain %q", tt.label, got, tt.wantNoSubstr)
 			}
 		})
@@ -1133,6 +1133,37 @@ func TestRenderMemoryCardShowsSwapSizeOnWideWidth(t *testing.T) {
 	}
 }
 
+func TestModelViewPadsToTerminalHeight(t *testing.T) {
+	tests := []struct {
+		name   string
+		width  int
+		height int
+	}{
+		{"narrow terminal", 60, 40},
+		{"wide terminal", 120, 40},
+		{"tall terminal", 120, 80},
+		{"short terminal", 120, 10},
+		{"zero height", 120, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := model{
+				width:   tt.width,
+				height:  tt.height,
+				ready:   true,
+				metrics: MetricsSnapshot{},
+			}
+
+			view := m.View()
+			got := lipgloss.Height(view)
+			if got < tt.height {
+				t.Errorf("View() height = %d, want >= %d (terminal height)", got, tt.height)
+			}
+		})
+	}
+}
+
 func TestModelViewErrorRendersSingleMole(t *testing.T) {
 	m := model{
 		width:      120,
@@ -1168,17 +1199,4 @@ func stripANSI(s string) string {
 		}
 	}
 	return result.String()
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
-}
-
-func containsMiddle(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

@@ -44,58 +44,24 @@ is_clamshell_mode() {
 
 _request_password() {
     local tty_path="$1"
-    local attempts=0
-    local show_hint=true
 
-    # Extra safety: ensure sudo cache is cleared before password input
     sudo -k 2> /dev/null
 
-    # Save original terminal settings and ensure they're restored on exit
     local stty_orig
     stty_orig=$(stty -g < "$tty_path" 2> /dev/null || echo "")
     trap '[[ -n "${stty_orig:-}" ]] && stty "${stty_orig:-}" < "$tty_path" 2> /dev/null || true' RETURN
 
-    while ((attempts < 3)); do
-        local password=""
+    if check_touchid_support; then
+        echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
+    fi
 
-        # Show hint on first attempt about Touch ID appearing again
-        if [[ $show_hint == true ]] && check_touchid_support; then
-            echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
-            show_hint=false
-        fi
+    echo -e "${PURPLE}${ICON_ARROW}${NC} Enter your credentials:" > "$tty_path"
 
-        printf "${PURPLE}${ICON_ARROW}${NC} Password: " > "$tty_path"
-
-        # Disable terminal echo to hide password input (keep canonical mode for reliable input)
-        stty -echo < "$tty_path" 2> /dev/null || true
-        IFS= read -r password < "$tty_path" || password=""
-        # Restore terminal echo immediately
-        stty echo < "$tty_path" 2> /dev/null || true
-
-        printf "\n" > "$tty_path"
-
-        if [[ -z "$password" ]]; then
-            unset password
-            attempts=$((attempts + 1))
-            if [[ $attempts -lt 3 ]]; then
-                echo -e "${GRAY}${ICON_WARNING}${NC} Password cannot be empty" > "$tty_path"
-            fi
-            continue
-        fi
-
-        # Verify password with sudo
-        # NOTE: macOS PAM will trigger Touch ID before password auth - this is system behavior
-        if printf '%s\n' "$password" | sudo -S -p "" -v > /dev/null 2>&1; then
-            unset password
-            return 0
-        fi
-
-        unset password
-        attempts=$((attempts + 1))
-        if [[ $attempts -lt 3 ]]; then
-            echo -e "${GRAY}${ICON_WARNING}${NC} Incorrect password, try again" > "$tty_path"
-        fi
-    done
+    # shellcheck disable=SC2024,SC2094
+    # Intentionally route sudo's native prompt to the same TTY device it reads from.
+    if sudo -v < "$tty_path" > /dev/null 2> "$tty_path"; then
+        return 0
+    fi
 
     return 1
 }
@@ -154,10 +120,14 @@ request_sudo_access() {
 
     # Check if in clamshell mode - if yes, skip Touch ID entirely
     if is_clamshell_mode; then
+        local clear_lines=3
+        if check_touchid_support; then
+            clear_lines=4
+        fi
         echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg}"
         if _request_password "$tty_path"; then
             # Clear all prompt lines (use safe clearing method)
-            safe_clear_lines 3 "$tty_path"
+            safe_clear_lines "$clear_lines" "$tty_path"
             return 0
         fi
         return 1
