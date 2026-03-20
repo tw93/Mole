@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"sort"
-	"syscall"
 	"time"
 )
 
@@ -31,22 +29,27 @@ type ProcessAlert struct {
 }
 
 type trackedProcess struct {
-	info        ProcessInfo
-	firstAbove  time.Time
-	triggeredAt time.Time
+	info         ProcessInfo
+	firstAbove   time.Time
+	triggeredAt  time.Time
 	currentAbove bool
-	ignored     bool
+}
+
+type processIdentity struct {
+	pid     int
+	ppid    int
+	command string
 }
 
 type ProcessWatcher struct {
 	options ProcessWatchOptions
-	tracks  map[int]*trackedProcess
+	tracks  map[processIdentity]*trackedProcess
 }
 
 func NewProcessWatcher(options ProcessWatchOptions) *ProcessWatcher {
 	return &ProcessWatcher{
 		options: options,
-		tracks:  make(map[int]*trackedProcess),
+		tracks:  make(map[processIdentity]*trackedProcess),
 	}
 }
 
@@ -63,17 +66,22 @@ func (w *ProcessWatcher) Update(now time.Time, processes []ProcessInfo) []Proces
 		return nil
 	}
 
-	seen := make(map[int]bool, len(processes))
+	seen := make(map[processIdentity]bool, len(processes))
 	for _, proc := range processes {
 		if proc.PID <= 0 {
 			continue
 		}
-		seen[proc.PID] = true
+		key := processIdentity{
+			pid:     proc.PID,
+			ppid:    proc.PPID,
+			command: proc.Command,
+		}
+		seen[key] = true
 
-		track, ok := w.tracks[proc.PID]
+		track, ok := w.tracks[key]
 		if !ok {
 			track = &trackedProcess{}
-			w.tracks[proc.PID] = track
+			w.tracks[key] = track
 		}
 
 		track.info = proc
@@ -83,7 +91,7 @@ func (w *ProcessWatcher) Update(now time.Time, processes []ProcessInfo) []Proces
 			if track.firstAbove.IsZero() {
 				track.firstAbove = now
 			}
-			if !track.ignored && now.Sub(track.firstAbove) >= w.options.Window && track.triggeredAt.IsZero() {
+			if now.Sub(track.firstAbove) >= w.options.Window && track.triggeredAt.IsZero() {
 				track.triggeredAt = now
 			}
 			continue
@@ -102,57 +110,26 @@ func (w *ProcessWatcher) Update(now time.Time, processes []ProcessInfo) []Proces
 	return w.Snapshot()
 }
 
-func (w *ProcessWatcher) Ignore(pid int) bool {
-	if w == nil || !w.options.Enabled {
-		return false
-	}
-	track, ok := w.tracks[pid]
-	if !ok {
-		return false
-	}
-	track.ignored = true
-	if track.triggeredAt.IsZero() {
-		track.triggeredAt = time.Now()
-	}
-	return true
-}
-
 func (w *ProcessWatcher) Snapshot() []ProcessAlert {
 	if w == nil || !w.options.Enabled {
 		return nil
 	}
 
 	alerts := make([]ProcessAlert, 0, len(w.tracks))
-	for pid, track := range w.tracks {
-		if !track.currentAbove {
+	for _, track := range w.tracks {
+		if !track.currentAbove || track.triggeredAt.IsZero() {
 			continue
-		}
-
-		status := ""
-		switch {
-		case track.ignored:
-			status = "ignored"
-		case !track.triggeredAt.IsZero():
-			status = "active"
-		}
-		if status == "" {
-			continue
-		}
-
-		triggeredAt := track.triggeredAt
-		if triggeredAt.IsZero() {
-			triggeredAt = track.firstAbove
 		}
 
 		alerts = append(alerts, ProcessAlert{
-			PID:         pid,
+			PID:         track.info.PID,
 			Name:        track.info.Name,
 			Command:     track.info.Command,
 			CPU:         track.info.CPU,
 			Threshold:   w.options.CPUThreshold,
 			Window:      w.options.Window.String(),
-			TriggeredAt: triggeredAt,
-			Status:      status,
+			TriggeredAt: track.triggeredAt,
+			Status:      "active",
 		})
 	}
 
@@ -170,16 +147,4 @@ func (w *ProcessWatcher) Snapshot() []ProcessAlert {
 	})
 
 	return alerts
-}
-
-var syscallKill = syscall.Kill
-
-func terminateProcess(pid int) error {
-	if pid <= 0 {
-		return fmt.Errorf("invalid pid %d", pid)
-	}
-	if err := syscallKill(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("send SIGTERM to pid %d: %w", pid, err)
-	}
-	return nil
 }

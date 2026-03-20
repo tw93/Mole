@@ -50,18 +50,16 @@ type metricsMsg struct {
 }
 
 type model struct {
-	collector      *Collector
-	width          int
-	height         int
-	metrics        MetricsSnapshot
-	errMessage     string
-	statusMessage  string
-	ready          bool
-	lastUpdated    time.Time
-	collecting     bool
-	animFrame      int
-	catHidden      bool // true = hidden, false = visible
-	alertFocusPID  int
+	collector   *Collector
+	width       int
+	height      int
+	metrics     MetricsSnapshot
+	errMessage  string
+	ready       bool
+	lastUpdated time.Time
+	collecting  bool
+	animFrame   int
+	catHidden   bool // true = hidden, false = visible
 }
 
 // getConfigPath returns the path to the status preferences file.
@@ -144,37 +142,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.catHidden = !m.catHidden
 			saveCatHidden(m.catHidden)
 			return m, nil
-		case "n":
-			m.focusNextAlert()
-			return m, nil
-		case "i":
-			alert, ok := m.currentActiveAlert()
-			if !ok {
-				return m, nil
-			}
-			if m.collector.IgnoreProcess(alert.PID) {
-				m.metrics.ProcessAlerts = m.collector.CurrentProcessAlerts()
-				m.syncAlertFocus()
-				m.statusMessage = fmt.Sprintf("Ignoring %s until it exits", formatProcessLabel(ProcessInfo{
-					PID:  alert.PID,
-					Name: alert.Name,
-				}))
-			}
-			return m, nil
-		case "t":
-			alert, ok := m.currentActiveAlert()
-			if !ok {
-				return m, nil
-			}
-			if err := terminateProcess(alert.PID); err != nil {
-				m.statusMessage = err.Error()
-			} else {
-				m.statusMessage = fmt.Sprintf("Sent SIGTERM to %s", formatProcessLabel(ProcessInfo{
-					PID:  alert.PID,
-					Name: alert.Name,
-				}))
-			}
-			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -195,7 +162,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.metrics = msg.data
 		m.lastUpdated = msg.data.CollectedAt
 		m.collecting = false
-		m.syncAlertFocus()
 		// Mark ready after first successful data collection.
 		if !m.ready {
 			m.ready = true
@@ -219,8 +185,7 @@ func (m model) View() string {
 	}
 
 	header, mole := renderHeader(m.metrics, m.errMessage, m.animFrame, termWidth, m.catHidden)
-	alertBar := renderProcessAlertBar(m.metrics.ProcessAlerts, m.alertFocusPID, termWidth)
-	statusBar := renderStatusBar(m.statusMessage, termWidth)
+	alertBar := renderProcessAlertBar(m.metrics.ProcessAlerts, termWidth)
 
 	if termWidth <= 80 {
 		cardWidth := termWidth
@@ -242,9 +207,6 @@ func (m model) View() string {
 		if alertBar != "" {
 			content = append(content, alertBar)
 		}
-		if statusBar != "" {
-			content = append(content, statusBar)
-		}
 		if mole != "" {
 			content = append(content, mole)
 		}
@@ -260,9 +222,6 @@ func (m model) View() string {
 	content = append(content, header)
 	if alertBar != "" {
 		content = append(content, alertBar)
-	}
-	if statusBar != "" {
-		content = append(content, statusBar)
 	}
 	if mole != "" {
 		content = append(content, mole)
@@ -348,57 +307,4 @@ func activeAlerts(alerts []ProcessAlert) []ProcessAlert {
 		}
 	}
 	return active
-}
-
-func (m *model) currentActiveAlert() (ProcessAlert, bool) {
-	active := activeAlerts(m.metrics.ProcessAlerts)
-	if len(active) == 0 {
-		return ProcessAlert{}, false
-	}
-	if m.alertFocusPID == 0 {
-		return active[0], true
-	}
-	for _, alert := range active {
-		if alert.PID == m.alertFocusPID {
-			return alert, true
-		}
-	}
-	return active[0], true
-}
-
-func (m *model) focusNextAlert() {
-	active := activeAlerts(m.metrics.ProcessAlerts)
-	if len(active) == 0 {
-		m.alertFocusPID = 0
-		return
-	}
-	if m.alertFocusPID == 0 {
-		m.alertFocusPID = active[0].PID
-		return
-	}
-	for idx, alert := range active {
-		if alert.PID == m.alertFocusPID {
-			m.alertFocusPID = active[(idx+1)%len(active)].PID
-			return
-		}
-	}
-	m.alertFocusPID = active[0].PID
-}
-
-func (m *model) syncAlertFocus() {
-	active := activeAlerts(m.metrics.ProcessAlerts)
-	if len(active) == 0 {
-		m.alertFocusPID = 0
-		return
-	}
-	if m.alertFocusPID == 0 {
-		m.alertFocusPID = active[0].PID
-		return
-	}
-	for _, alert := range active {
-		if alert.PID == m.alertFocusPID {
-			return
-		}
-	}
-	m.alertFocusPID = active[0].PID
 }

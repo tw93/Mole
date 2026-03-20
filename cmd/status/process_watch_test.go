@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -95,7 +94,7 @@ func TestProcessWatcherResetsWhenUsageDrops(t *testing.T) {
 	}
 }
 
-func TestProcessWatcherIgnoreUntilExit(t *testing.T) {
+func TestProcessWatcherResetsOnPIDReuse(t *testing.T) {
 	base := time.Date(2026, 3, 19, 10, 0, 0, 0, time.UTC)
 	watcher := NewProcessWatcher(ProcessWatchOptions{
 		Enabled:      true,
@@ -103,46 +102,31 @@ func TestProcessWatcherIgnoreUntilExit(t *testing.T) {
 		Window:       2 * time.Minute,
 	})
 
-	high := []ProcessInfo{{PID: 42, Name: "stress", CPU: 140}}
-	watcher.Update(base, high)
-	watcher.Update(base.Add(2*time.Minute), high)
+	firstProc := []ProcessInfo{{
+		PID:     42,
+		PPID:    1,
+		Name:    "stress",
+		Command: "/usr/bin/stress",
+		CPU:     140,
+	}}
+	secondProc := []ProcessInfo{{
+		PID:     42,
+		PPID:    99,
+		Name:    "node",
+		Command: "/usr/local/bin/node /tmp/server.js",
+		CPU:     135,
+	}}
 
-	if ok := watcher.Ignore(42); !ok {
-		t.Fatal("Ignore(42) = false, want true")
-	}
-	alerts := watcher.Snapshot()
-	if len(alerts) != 1 || alerts[0].Status != "ignored" {
-		t.Fatalf("expected ignored alert, got %+v", alerts)
-	}
-
-	watcher.Update(base.Add(3*time.Minute), nil)
-	if alerts := watcher.Snapshot(); len(alerts) != 0 {
-		t.Fatalf("expected alerts to clear when process exits, got %+v", alerts)
-	}
-	if ok := watcher.Ignore(42); ok {
-		t.Fatal("Ignore(42) after exit = true, want false")
-	}
-}
-
-func TestTerminateProcessUsesSIGTERM(t *testing.T) {
-	orig := syscallKill
-	defer func() { syscallKill = orig }()
-
-	var (
-		gotPID int
-		gotSig syscall.Signal
-	)
-	syscallKill = func(pid int, sig syscall.Signal) error {
-		gotPID = pid
-		gotSig = sig
-		return nil
+	watcher.Update(base, firstProc)
+	if alerts := watcher.Update(base.Add(2*time.Minute), firstProc); len(alerts) != 1 {
+		t.Fatalf("expected first process to alert after window, got %+v", alerts)
 	}
 
-	if err := terminateProcess(77); err != nil {
-		t.Fatalf("terminateProcess() error = %v", err)
+	if alerts := watcher.Update(base.Add(3*time.Minute), secondProc); len(alerts) != 0 {
+		t.Fatalf("expected pid reuse to reset tracking, got %+v", alerts)
 	}
-	if gotPID != 77 || gotSig != syscall.SIGTERM {
-		t.Fatalf("unexpected kill call pid=%d sig=%v", gotPID, gotSig)
+	if alerts := watcher.Update(base.Add(5*time.Minute), secondProc); len(alerts) != 1 {
+		t.Fatalf("expected reused pid to alert only after its own window, got %+v", alerts)
 	}
 }
 
@@ -152,15 +136,18 @@ func TestRenderProcessAlertBar(t *testing.T) {
 		{PID: 11, Name: "java", CPU: 130, Threshold: 100, Window: "5m0s", Status: "active"},
 	}
 
-	bar := renderProcessAlertBar(alerts, 10, 120)
+	bar := renderProcessAlertBar(alerts, 120)
 	if !strings.Contains(bar, "ALERT") {
 		t.Fatalf("missing alert prefix: %q", bar)
 	}
 	if !strings.Contains(bar, "node (10)") {
-		t.Fatalf("missing focused process label: %q", bar)
+		t.Fatalf("missing lead process label: %q", bar)
 	}
 	if !strings.Contains(bar, "+1 more") {
 		t.Fatalf("missing additional alert count: %q", bar)
+	}
+	if strings.Contains(bar, "terminate") || strings.Contains(bar, "ignore") {
+		t.Fatalf("unexpected action text in read-only alert bar: %q", bar)
 	}
 }
 

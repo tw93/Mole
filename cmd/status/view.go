@@ -17,15 +17,11 @@ var (
 	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#A5D6A7"))
 	lineStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#404040"))
 
-	primaryStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#BD93F9"))
+	primaryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#BD93F9"))
 	alertBarStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#2B1200")).
 			Background(lipgloss.Color("#FFD75F")).
 			Bold(true).
-			Padding(0, 1)
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#111111")).
-			Background(lipgloss.Color("#D7D7D7")).
 			Padding(0, 1)
 )
 
@@ -243,39 +239,26 @@ func getScoreStyle(score int) lipgloss.Style {
 	}
 }
 
-func renderProcessAlertBar(alerts []ProcessAlert, focusPID int, width int) string {
+func renderProcessAlertBar(alerts []ProcessAlert, width int) string {
 	active := activeAlerts(alerts)
 	if len(active) == 0 {
 		return ""
 	}
 
 	focus := active[0]
-	for _, alert := range active {
-		if alert.PID == focusPID {
-			focus = alert
-			break
-		}
-	}
 
 	text := fmt.Sprintf(
-		"ALERT %s at %.1f%% for %s (threshold %.1f%%) · t terminate · i ignore",
+		"ALERT %s at %.1f%% for %s (threshold %.1f%%)",
 		formatProcessLabel(ProcessInfo{PID: focus.PID, Name: focus.Name}),
 		focus.CPU,
 		focus.Window,
 		focus.Threshold,
 	)
 	if len(active) > 1 {
-		text += fmt.Sprintf(" · n next · +%d more", len(active)-1)
+		text += fmt.Sprintf(" · +%d more", len(active)-1)
 	}
 
 	return renderBanner(alertBarStyle, text, width)
-}
-
-func renderStatusBar(message string, width int) string {
-	if strings.TrimSpace(message) == "" {
-		return ""
-	}
-	return renderBanner(statusBarStyle, message, width)
 }
 
 func renderBanner(style lipgloss.Style, text string, width int) string {

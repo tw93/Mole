@@ -66,19 +66,19 @@ type MetricsSnapshot struct {
 	HealthScore    int          `json:"health_score"`     // 0-100 system health score
 	HealthScoreMsg string       `json:"health_score_msg"` // Brief explanation
 
-	CPU            CPUStatus         `json:"cpu"`
-	GPU            []GPUStatus       `json:"gpu"`
-	Memory         MemoryStatus      `json:"memory"`
-	Disks          []DiskStatus      `json:"disks"`
-	DiskIO         DiskIOStatus      `json:"disk_io"`
-	Network        []NetworkStatus   `json:"network"`
-	NetworkHistory NetworkHistory    `json:"network_history"`
-	Proxy          ProxyStatus       `json:"proxy"`
-	Batteries      []BatteryStatus   `json:"batteries"`
-	Thermal        ThermalStatus     `json:"thermal"`
-	Sensors        []SensorReading   `json:"sensors"`
-	Bluetooth      []BluetoothDevice `json:"bluetooth"`
-	TopProcesses   []ProcessInfo     `json:"top_processes"`
+	CPU            CPUStatus          `json:"cpu"`
+	GPU            []GPUStatus        `json:"gpu"`
+	Memory         MemoryStatus       `json:"memory"`
+	Disks          []DiskStatus       `json:"disks"`
+	DiskIO         DiskIOStatus       `json:"disk_io"`
+	Network        []NetworkStatus    `json:"network"`
+	NetworkHistory NetworkHistory     `json:"network_history"`
+	Proxy          ProxyStatus        `json:"proxy"`
+	Batteries      []BatteryStatus    `json:"batteries"`
+	Thermal        ThermalStatus      `json:"thermal"`
+	Sensors        []SensorReading    `json:"sensors"`
+	Bluetooth      []BluetoothDevice  `json:"bluetooth"`
+	TopProcesses   []ProcessInfo      `json:"top_processes"`
 	ProcessWatch   ProcessWatchConfig `json:"process_watch"`
 	ProcessAlerts  []ProcessAlert     `json:"process_alerts"`
 }
@@ -357,33 +357,15 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 			RxHistory: c.rxHistoryBuf.Slice(),
 			TxHistory: c.txHistoryBuf.Slice(),
 		},
-		Proxy:        proxyStats,
-		Batteries:    batteryStats,
-		Thermal:      thermalStats,
-		Sensors:      sensorStats,
-		Bluetooth:    btStats,
-		TopProcesses: topProcs,
-		ProcessWatch: c.processWatch,
+		Proxy:         proxyStats,
+		Batteries:     batteryStats,
+		Thermal:       thermalStats,
+		Sensors:       sensorStats,
+		Bluetooth:     btStats,
+		TopProcesses:  topProcs,
+		ProcessWatch:  c.processWatch,
 		ProcessAlerts: processAlerts,
 	}, mergeErr
-}
-
-func (c *Collector) IgnoreProcess(pid int) bool {
-	c.watchMu.Lock()
-	defer c.watchMu.Unlock()
-	if c.processWatcher == nil {
-		return false
-	}
-	return c.processWatcher.Ignore(pid)
-}
-
-func (c *Collector) CurrentProcessAlerts() []ProcessAlert {
-	c.watchMu.Lock()
-	defer c.watchMu.Unlock()
-	if c.processWatcher == nil {
-		return nil
-	}
-	return c.processWatcher.Snapshot()
 }
 
 var runCmd = func(ctx context.Context, name string, args ...string) (string, error) {

@@ -210,6 +210,8 @@ Health score is based on CPU, memory, disk, temperature, and I/O load, with colo
 
 Shortcuts: In `mo status`, press `k` to toggle the cat and save the preference, and `q` to quit.
 
+When enabled, `mo status` shows a read-only alert banner for processes that stay above the configured CPU threshold for a sustained window. Use `--proc-cpu-threshold`, `--proc-cpu-window`, or `--proc-cpu-alerts=false` to tune or disable it.
+
 #### Machine-Readable Output
 
 Both `mo analyze` and `mo status` support a `--json` flag for scripting and automation.
