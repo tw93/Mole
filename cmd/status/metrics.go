@@ -79,6 +79,8 @@ type MetricsSnapshot struct {
 	Sensors        []SensorReading   `json:"sensors"`
 	Bluetooth      []BluetoothDevice `json:"bluetooth"`
 	TopProcesses   []ProcessInfo     `json:"top_processes"`
+	ProcessWatch   ProcessWatchConfig `json:"process_watch"`
+	ProcessAlerts  []ProcessAlert     `json:"process_alerts"`
 }
 
 type HardwareInfo struct {
@@ -96,9 +98,12 @@ type DiskIOStatus struct {
 }
 
 type ProcessInfo struct {
-	Name   string  `json:"name"`
-	CPU    float64 `json:"cpu"`
-	Memory float64 `json:"memory"`
+	PID     int     `json:"pid"`
+	PPID    int     `json:"ppid"`
+	Name    string  `json:"name"`
+	Command string  `json:"command"`
+	CPU     float64 `json:"cpu"`
+	Memory  float64 `json:"memory"`
 }
 
 type CPUStatus struct {
@@ -215,13 +220,19 @@ type Collector struct {
 	cachedGPU    []GPUStatus
 	prevDiskIO   disk.IOCountersStat
 	lastDiskAt   time.Time
+
+	watchMu        sync.Mutex
+	processWatch   ProcessWatchConfig
+	processWatcher *ProcessWatcher
 }
 
-func NewCollector() *Collector {
+func NewCollector(options ProcessWatchOptions) *Collector {
 	return &Collector{
-		prevNet:      make(map[string]net.IOCountersStat),
-		rxHistoryBuf: NewRingBuffer(NetworkHistorySize),
-		txHistoryBuf: NewRingBuffer(NetworkHistorySize),
+		prevNet:        make(map[string]net.IOCountersStat),
+		rxHistoryBuf:   NewRingBuffer(NetworkHistorySize),
+		txHistoryBuf:   NewRingBuffer(NetworkHistorySize),
+		processWatch:   options.SnapshotConfig(),
+		processWatcher: NewProcessWatcher(options),
 	}
 }
 
@@ -250,7 +261,7 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		sensorStats  []SensorReading
 		gpuStats     []GPUStatus
 		btStats      []BluetoothDevice
-		topProcs     []ProcessInfo
+		allProcs     []ProcessInfo
 	)
 
 	// Helper to launch concurrent collection.
@@ -303,7 +314,7 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		}
 		return nil
 	})
-	collect(func() (err error) { topProcs = collectTopProcesses(); return nil })
+	collect(func() (err error) { allProcs, err = collectProcesses(); return })
 
 	// Wait for all to complete.
 	wg.Wait()
@@ -318,6 +329,14 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 	hwInfo := c.cachedHW
 
 	score, scoreMsg := calculateHealthScore(cpuStats, memStats, diskStats, diskIO, thermalStats)
+	topProcs := topProcesses(allProcs, 5)
+
+	var processAlerts []ProcessAlert
+	c.watchMu.Lock()
+	if c.processWatcher != nil {
+		processAlerts = c.processWatcher.Update(now, allProcs)
+	}
+	c.watchMu.Unlock()
 
 	return MetricsSnapshot{
 		CollectedAt:    now,
@@ -344,7 +363,27 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		Sensors:      sensorStats,
 		Bluetooth:    btStats,
 		TopProcesses: topProcs,
+		ProcessWatch: c.processWatch,
+		ProcessAlerts: processAlerts,
 	}, mergeErr
+}
+
+func (c *Collector) IgnoreProcess(pid int) bool {
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	if c.processWatcher == nil {
+		return false
+	}
+	return c.processWatcher.Ignore(pid)
+}
+
+func (c *Collector) CurrentProcessAlerts() []ProcessAlert {
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	if c.processWatcher == nil {
+		return nil
+	}
+	return c.processWatcher.Snapshot()
 }
 
 var runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
