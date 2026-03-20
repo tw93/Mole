@@ -57,6 +57,8 @@ _request_password() {
 
     echo -e "${PURPLE}${ICON_ARROW}${NC} Enter your credentials:" > "$tty_path"
 
+    # shellcheck disable=SC2024,SC2094
+    # Intentionally route sudo's native prompt to the same TTY device it reads from.
     if sudo -v < "$tty_path" > /dev/null 2> "$tty_path"; then
         return 0
     fi
@@ -118,10 +120,14 @@ request_sudo_access() {
 
     # Check if in clamshell mode - if yes, skip Touch ID entirely
     if is_clamshell_mode; then
+        local clear_lines=3
+        if check_touchid_support; then
+            clear_lines=4
+        fi
         echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg}"
         if _request_password "$tty_path"; then
             # Clear all prompt lines (use safe clearing method)
-            safe_clear_lines 3 "$tty_path"
+            safe_clear_lines "$clear_lines" "$tty_path"
             return 0
         fi
         return 1
