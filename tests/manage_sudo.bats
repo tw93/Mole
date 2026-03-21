@@ -73,6 +73,7 @@ setup() {
 
 @test "request_sudo_access clears four lines in clamshell mode when Touch ID hint is shown" {
     run bash -c '
+        unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
         source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
 
@@ -101,6 +102,7 @@ setup() {
 
 @test "request_sudo_access keeps three-line cleanup in clamshell mode without Touch ID" {
     run bash -c '
+        unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
         source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
 

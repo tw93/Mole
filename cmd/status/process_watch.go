@@ -24,7 +24,7 @@ type ProcessAlert struct {
 	CPU         float64   `json:"cpu"`
 	Threshold   float64   `json:"threshold"`
 	Window      string    `json:"window"`
-	TriggeredAt time.Time `json:"triggered_at,omitempty"`
+	TriggeredAt time.Time `json:"triggered_at"`
 	Status      string    `json:"status"`
 }
 
