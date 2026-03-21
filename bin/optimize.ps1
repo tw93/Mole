@@ -158,7 +158,17 @@ function Optimize-DiskDrive {
     try {
         $systemDriveLetter = Get-SystemDriveLetter
         Write-Host "  Running Windows default optimization on drive ${systemDriveLetter}:..."
-        $null = Optimize-Volume -DriveLetter $systemDriveLetter -ErrorAction Stop
+
+        $volume = Get-Volume -DriveLetter $systemDriveLetter -ErrorAction SilentlyContinue
+        if ($volume) {
+            $null = Optimize-Volume -DriveLetter $systemDriveLetter -ErrorAction Stop
+        } else {
+            $result = & defrag "${systemDriveLetter}:" /U /V 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "defrag.exe exited with code $LASTEXITCODE"
+            }
+        }
+
         Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Drive optimization completed"
         $script:OptimizationsApplied++
     }
