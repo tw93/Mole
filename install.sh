@@ -19,7 +19,6 @@ start_line_spinner() {
         return
     }
     local chars="|/-\\"
-    [[ -z "$chars" ]] && chars='|/-\\'
     local i=0
     (while true; do
         c="${chars:$((i % ${#chars})):1}"
@@ -416,7 +415,8 @@ check_requirements() {
         local detected_os
         detected_os=$(uname -s 2> /dev/null || echo "unknown")
         log_error "Mole installer supports macOS only. Detected platform: $detected_os."
-        log_info "Windows and Linux are not officially supported yet."
+        log_info "For Windows, use the experimental windows branch: https://github.com/tw93/Mole/tree/windows"
+        log_info "Linux is currently unsupported."
         exit 1
     fi
 
