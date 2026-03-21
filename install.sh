@@ -413,7 +413,10 @@ parse_args() {
 # Environment checks and directory setup
 check_requirements() {
     if [[ "$OSTYPE" != "darwin"* ]]; then
-        log_error "This tool is designed for macOS only"
+        local detected_os
+        detected_os=$(uname -s 2> /dev/null || echo "unknown")
+        log_error "Mole installer supports macOS only. Detected platform: $detected_os."
+        log_info "Windows and Linux are not officially supported yet."
         exit 1
     fi
 

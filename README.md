@@ -39,7 +39,7 @@ brew install mole
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 ```
 
-> Note: Mole is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/tw93/Mole/tree/windows) for early adopters.
+> Note: Mole is built for macOS. The install script exits early on non-macOS systems. An experimental Windows version is available in the [windows branch](https://github.com/tw93/Mole/tree/windows) for early adopters.
 
 **Run**
 
