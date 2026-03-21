@@ -135,6 +135,17 @@ uninstall_resolve_display_name() {
     if [[ "$display_name" == /* ]]; then
         display_name="$app_name"
     fi
+
+    # Keep versioned app titles from the bundle filename when metadata is generic.
+    # Example: Finder shows "Xcode 16.4" while metadata often collapses to "Xcode".
+    if [[ -n "$display_name" && "$app_name" == "$display_name"* && "$app_name" != "$display_name" ]]; then
+        local suffix
+        suffix="${app_name#"$display_name"}"
+        if [[ "$suffix" == *[0-9]* ]]; then
+            display_name="$app_name"
+        fi
+    fi
+
     display_name="${display_name%.app}"
     display_name="${display_name//|/-}"
     display_name="${display_name//[$'\t\r\n']/}"
