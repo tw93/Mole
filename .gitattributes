@@ -1,0 +1,3 @@
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=crlf
