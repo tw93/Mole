@@ -32,22 +32,24 @@ function Get-MoleDefaultColors {
 # Icon Definitions
 # ============================================================================
 function Get-MoleDefaultIcons {
+    # Keep this block ASCII-only so Windows PowerShell 5.1 does not
+    # mis-parse BOM-less source files and collapse comment lines.
     return @{
-        Confirm  = [char]0x25CE  # ◎
-        Admin    = [char]0x2699  # ⚙
-        Success  = [char]0x2713  # ✓
-        Error    = [char]0x263B  # ☻
-        Warning  = [char]0x25CF  # ●
-        Empty    = [char]0x25CB  # ○
-        Solid    = [char]0x25CF  # ●
-        List     = [char]0x2022  # •
-        Arrow    = [char]0x27A4  # ➤
-        DryRun   = [char]0x2192  # →
-        NavUp    = [char]0x2191  # ↑
-        NavDown  = [char]0x2193  # ↓
-        Folder   = [char]0x25A0  # ■ (folder substitute)
-        File     = [char]0x25A1  # □ (file substitute)
-        Trash    = [char]0x2718  # ✘ (trash substitute)
+        Confirm  = [char]0x25CE  # circle confirm marker
+        Admin    = [char]0x2699  # admin/settings marker
+        Success  = [char]0x2713  # success check
+        Error    = [char]0x263B  # error marker
+        Warning  = [char]0x25CF  # warning dot
+        Empty    = [char]0x25CB  # empty circle
+        Solid    = [char]0x25CF  # solid dot
+        List     = [char]0x2022  # list bullet
+        Arrow    = [char]0x27A4  # navigation arrow
+        DryRun   = [char]0x2192  # dry-run arrow
+        NavUp    = [char]0x2191  # up arrow
+        NavDown  = [char]0x2193  # down arrow
+        Folder   = [char]0x25A0  # folder substitute
+        File     = [char]0x25A1  # file substitute
+        Trash    = [char]0x2718  # trash substitute
     }
 }
 
@@ -229,12 +231,25 @@ function Get-WindowsVersion {
     .SYNOPSIS
         Get Windows version information
     #>
-    $os = Get-WmiObject Win32_OperatingSystem
-    return @{
-        Name    = $os.Caption
-        Version = $os.Version
-        Build   = $os.BuildNumber
-        Arch    = $os.OSArchitecture
+    try {
+        $os = Get-WmiObject Win32_OperatingSystem -ErrorAction Stop
+        return @{
+            Name    = $os.Caption
+            Version = $os.Version
+            Build   = $os.BuildNumber
+            Arch    = $os.OSArchitecture
+        }
+    }
+    catch {
+        $currentVersion = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction SilentlyContinue
+        $fallbackVersion = [System.Environment]::OSVersion.Version
+
+        return @{
+            Name    = if ($currentVersion.ProductName) { $currentVersion.ProductName } else { "Windows" }
+            Version = if ($currentVersion.DisplayVersion) { $currentVersion.DisplayVersion } elseif ($currentVersion.CurrentVersion) { $currentVersion.CurrentVersion } else { $fallbackVersion.ToString() }
+            Build   = if ($currentVersion.CurrentBuildNumber) { $currentVersion.CurrentBuildNumber } else { $fallbackVersion.Build.ToString() }
+            Arch    = if ($env:PROCESSOR_ARCHITECTURE) { $env:PROCESSOR_ARCHITECTURE } else { "Unknown" }
+        }
     }
 }
 

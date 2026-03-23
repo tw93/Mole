@@ -35,6 +35,18 @@ Describe "Base Module" {
             $script:Icons.Admin | Should -Not -BeNullOrEmpty
             $script:Icons.Trash | Should -Not -BeNullOrEmpty
         }
+
+        It "Should expose the full icon table in Windows PowerShell" {
+            $basePath = (Join-Path $script:LibDir "core\base.ps1").Replace("'", "''")
+            $psCommand = "& { . '$basePath'; `$icons = Get-MoleDefaultIcons; [pscustomobject]@{ Count = `$icons.Count; HasSolid = `$icons.ContainsKey('Solid'); HasAdmin = `$icons.ContainsKey('Admin'); HasSuccess = `$icons.ContainsKey('Success') } | ConvertTo-Json -Compress }"
+            $result = & powershell -NoProfile -ExecutionPolicy Bypass -Command $psCommand
+            $iconInfo = $result | ConvertFrom-Json
+
+            $iconInfo.Count | Should -Be 15
+            $iconInfo.HasSolid | Should -Be $true
+            $iconInfo.HasAdmin | Should -Be $true
+            $iconInfo.HasSuccess | Should -Be $true
+        }
     }
 
     Context "Visual Defaults Initialization" {
