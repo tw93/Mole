@@ -964,10 +964,45 @@ clean_dev_jetbrains_toolbox() {
 
     _restore_whitelist
 }
+
+clean_composer_cache() {
+    if [[ -d "$HOME/.composer/cache" ]]; then
+        safe_clean "$HOME/.composer/cache"/* "PHP Composer cache"
+        return 0
+    fi
+
+    if [[ -d "$HOME/Library/Caches/composer" ]]; then
+        safe_clean "$HOME/Library/Caches/composer"/* "PHP Composer cache"
+        return 0
+    fi
+
+    if [[ -n "${XDG_CACHE_HOME:-}" && "${XDG_CACHE_HOME}" == /* ]]; then
+        if [[ -d "${XDG_CACHE_HOME%/}/composer" ]]; then
+            safe_clean "${XDG_CACHE_HOME%/}/composer"/* "PHP Composer cache"
+            return 0
+        fi
+    fi
+
+    if [[ -n "${COMPOSER_HOME:-}" && "${COMPOSER_HOME}" == /* ]]; then
+        if [[ -d "${COMPOSER_HOME%/}/cache" ]]; then
+            safe_clean "${COMPOSER_HOME%/}/cache"/* "PHP Composer cache"
+            return 0
+        fi
+    fi
+
+    if [[ -n "${LOCALAPPDATA:-}" ]]; then
+        if [[ "${LOCALAPPDATA//\\//}" == [A-Za-z]:/* ]]; then
+            if [[ -d "${LOCALAPPDATA//\\//}/Composer" ]]; then
+                safe_clean "${LOCALAPPDATA//\\//}/Composer"/* "PHP Composer cache"
+                return 0
+            fi
+        fi
+    fi
+}
 # Other language tool caches.
 clean_dev_other_langs() {
     safe_clean ~/.bundle/cache/* "Ruby Bundler cache"
-    safe_clean ~/.composer/cache/* "PHP Composer cache"
+    clean_composer_cache
     safe_clean ~/.nuget/packages/* "NuGet packages cache"
     # safe_clean ~/.pub-cache/* "Dart Pub cache"
     safe_clean ~/.cache/bazel/* "Bazel cache"

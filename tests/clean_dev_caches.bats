@@ -223,6 +223,55 @@ EOF
     [[ "$output" != *".local/share/mise"* ]]
 }
 
+@test "clean_dev_other_langs cleans only one existing composer cache path" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "$2|$1"; }
+rm -rf "$HOME/.composer" "$HOME/Library/Caches/composer" "$HOME/.cache/composer" "$HOME/.config/composer-home/cache"
+mkdir -p "$HOME/.composer/cache"
+mkdir -p "$HOME/Library/Caches/composer"
+clean_dev_other_langs
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PHP Composer cache|$HOME/.composer/cache/*"* ]]
+    [[ "$output" != *"PHP Composer cache (macOS)|$HOME/Library/Caches/composer/*"* ]]
+}
+
+@test "clean_dev_other_langs prefers XDG cache over COMPOSER_HOME cache" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" XDG_CACHE_HOME="$HOME/.cache" COMPOSER_HOME="$HOME/.config/composer-home" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "$2|$1"; }
+rm -rf "$HOME/.composer" "$HOME/Library/Caches/composer" "$HOME/.cache/composer" "$HOME/.config/composer-home/cache"
+mkdir -p "$HOME/.cache/composer"
+mkdir -p "$HOME/.config/composer-home/cache"
+    clean_dev_other_langs
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PHP Composer cache|$HOME/.cache/composer/*"* ]]
+    [[ "$output" != *"$HOME/.config/composer-home/cache/*"* ]]
+}
+
+@test "clean_dev_other_langs uses COMPOSER_HOME cache when that is the only existing path" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" COMPOSER_HOME="$HOME/.config/composer-home" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "$2|$1"; }
+rm -rf "$HOME/.composer" "$HOME/Library/Caches/composer" "$HOME/.cache/composer" "$HOME/.config/composer-home/cache"
+mkdir -p "$HOME/.config/composer-home/cache"
+    clean_dev_other_langs
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PHP Composer cache|$HOME/.config/composer-home/cache/*"* ]]
+}
+
 @test "clean_developer_tools runs key stages" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
