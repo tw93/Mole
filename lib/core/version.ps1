@@ -9,7 +9,7 @@ if ((Get-Variable -Name 'MOLE_VERSION_HELPERS_LOADED' -Scope Script -ErrorAction
 }
 $script:MOLE_VERSION_HELPERS_LOADED = $true
 
-$script:MoleDefaultVersion = "1.29.0"
+$script:MoleDefaultVersion = "1.29.1"
 
 function Get-MoleVersionFilePath {
     param([string]$RootDir)
