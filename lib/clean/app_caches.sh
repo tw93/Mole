@@ -8,12 +8,21 @@ clean_xcode_tools() {
     if pgrep -x "Xcode" > /dev/null 2>&1; then
         xcode_running=true
     fi
-    safe_clean ~/Library/Developer/CoreSimulator/Caches/* "Simulator cache"
-    safe_clean ~/Library/Developer/CoreSimulator/Devices/*/data/tmp/* "Simulator temp files"
+    # Skip Simulator caches/temp files while Simulator is running to avoid crashes.
+    local simulator_running=false
+    if pgrep -x "Simulator" > /dev/null 2>&1; then
+        simulator_running=true
+    fi
+    if [[ "$simulator_running" == "false" ]]; then
+        safe_clean ~/Library/Developer/CoreSimulator/Caches/* "Simulator cache"
+        safe_clean ~/Library/Developer/CoreSimulator/Devices/*/data/tmp/* "Simulator temp files"
+        safe_clean ~/Library/Logs/CoreSimulator/* "CoreSimulator logs"
+    else
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Simulator is running, skipping Simulator cache/temp/log cleanup"
+    fi
     safe_clean ~/Library/Caches/com.apple.dt.Xcode/* "Xcode cache"
     safe_clean ~/Library/Developer/Xcode/iOS\ Device\ Logs/* "iOS device logs"
     safe_clean ~/Library/Developer/Xcode/watchOS\ Device\ Logs/* "watchOS device logs"
-    safe_clean ~/Library/Logs/CoreSimulator/* "CoreSimulator logs"
     safe_clean ~/Library/Developer/Xcode/Products/* "Xcode build products"
     if [[ "$xcode_running" == "false" ]]; then
         safe_clean ~/Library/Developer/Xcode/DerivedData/* "Xcode derived data"

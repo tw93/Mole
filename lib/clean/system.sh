@@ -116,8 +116,11 @@ clean_deep_system() {
         fi
     fi
     # Clean macOS installer apps (e.g., "Install macOS Sequoia.app")
-    # Only remove installers older than 14 days and not currently running
+    # Only remove installers older than 14 days, not currently running,
+    # and not matching the currently installed macOS version (recovery safety).
     local installer_cleaned=0
+    local current_macos_version=""
+    current_macos_version=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1 || true)
     for installer_app in /Applications/Install\ macOS*.app; do
         [[ -d "$installer_app" ]] || continue
         local app_name
@@ -126,6 +129,22 @@ clean_deep_system() {
         if pgrep -f "$installer_app" > /dev/null 2>&1; then
             debug_log "Skipping $app_name: currently running"
             continue
+        fi
+        # Skip if this installer matches the current macOS major version.
+        # Users may need it for recovery or reinstallation.
+        if [[ -n "$current_macos_version" ]]; then
+            local installer_plist="$installer_app/Contents/Info.plist"
+            if [[ -f "$installer_plist" ]]; then
+                local installer_version=""
+                installer_version=$(/usr/libexec/PlistBuddy -c "Print :DTSDKBuild" "$installer_plist" 2>/dev/null || true)
+                if [[ -z "$installer_version" ]]; then
+                    installer_version=$(/usr/libexec/PlistBuddy -c "Print :DTPlatformVersion" "$installer_plist" 2>/dev/null | cut -d. -f1 || true)
+                fi
+                if [[ -n "$installer_version" && "$installer_version" == *"$current_macos_version"* ]]; then
+                    debug_log "Keeping $app_name: matches current macOS version ($current_macos_version)"
+                    continue
+                fi
+            fi
         fi
         # Check age (same 14-day threshold as /macOS Install Data)
         local mtime

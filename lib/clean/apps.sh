@@ -238,7 +238,7 @@ is_bundle_orphaned() {
         else
             # Query mdfind with strict timeout (2 seconds max)
             local app_exists
-            app_exists=$(run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
+            app_exists=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
             if [[ -n "$app_exists" ]]; then
                 echo "FOUND:$bundle_id" >> "$ORPHAN_MDFIND_CACHE_FILE"
                 return 1
@@ -290,7 +290,7 @@ is_claude_vm_bundle_orphaned() {
     fi
     if ! grep -Fxq "NOTFOUND:$claude_bundle_id" "$ORPHAN_MDFIND_CACHE_FILE" 2> /dev/null; then
         local app_exists
-        app_exists=$(run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$claude_bundle_id'" 2> /dev/null | head -1 || echo "")
+        app_exists=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$claude_bundle_id'" 2> /dev/null | head -1 || echo "")
         if [[ -n "$app_exists" ]]; then
             echo "FOUND:$claude_bundle_id" >> "$ORPHAN_MDFIND_CACHE_FILE"
             return 1
@@ -318,16 +318,21 @@ clean_orphaned_app_data() {
     local total_orphaned_kb=0
     start_section_spinner "Scanning orphaned app resources..."
 
-    local claude_vm_bundle="$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle"
-    if is_claude_vm_bundle_orphaned "$claude_vm_bundle" "$installed_bundles"; then
-        local claude_vm_size_kb
-        claude_vm_size_kb=$(get_path_size_kb "$claude_vm_bundle")
-        if [[ -n "$claude_vm_size_kb" && "$claude_vm_size_kb" != "0" ]]; then
-            if safe_clean "$claude_vm_bundle" "Orphaned Claude workspace VM"; then
-                orphaned_count=$((orphaned_count + 1))
-                total_orphaned_kb=$((total_orphaned_kb + claude_vm_size_kb))
+    # Dynamically discover Claude VM bundles (path may vary across versions).
+    local claude_support_dir="$HOME/Library/Application Support/Claude"
+    if [[ -d "$claude_support_dir" ]]; then
+        while IFS= read -r -d '' claude_vm_bundle; do
+            if is_claude_vm_bundle_orphaned "$claude_vm_bundle" "$installed_bundles"; then
+                local claude_vm_size_kb
+                claude_vm_size_kb=$(get_path_size_kb "$claude_vm_bundle")
+                if [[ -n "$claude_vm_size_kb" && "$claude_vm_size_kb" != "0" ]]; then
+                    if safe_clean "$claude_vm_bundle" "Orphaned Claude workspace VM"; then
+                        orphaned_count=$((orphaned_count + 1))
+                        total_orphaned_kb=$((total_orphaned_kb + claude_vm_size_kb))
+                    fi
+                fi
             fi
-        fi
+        done < <(find "$claude_support_dir" -maxdepth 3 -name "*.bundle" -type d -print0 2>/dev/null || true)
     fi
 
     # CRITICAL: NEVER add LaunchAgents or LaunchDaemons (breaks login items/startup apps).
@@ -463,7 +468,7 @@ clean_orphaned_system_services() {
             fi
             if ! grep -Fxq "NOTFOUND:$bundle_id" "$mdfind_cache_file" 2> /dev/null; then
                 local app_found
-                app_found=$(run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
+                app_found=$(run_with_timeout 5 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 || echo "")
                 if [[ -n "$app_found" ]]; then
                     echo "FOUND:$bundle_id" >> "$mdfind_cache_file"
                     return 0

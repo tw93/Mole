@@ -30,9 +30,28 @@ IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 EXPORT_LIST_FILE="$HOME/.config/mole/clean-list.txt"
 CURRENT_SECTION=""
 readonly PROTECTED_SW_DOMAINS=(
+    # Web editors
     "capcut.com"
     "photopea.com"
     "pixlr.com"
+    # Google Workspace (offline mode)
+    "docs.google.com"
+    "sheets.google.com"
+    "slides.google.com"
+    "drive.google.com"
+    "mail.google.com"
+    # Code platforms (offline/PWA)
+    "github.com"
+    "gitlab.com"
+    "codepen.io"
+    "codesandbox.io"
+    "replit.com"
+    "stackblitz.com"
+    # Collaboration tools (offline/PWA)
+    "notion.so"
+    "figma.com"
+    "linear.app"
+    "excalidraw.com"
 )
 
 declare -a WHITELIST_PATTERNS=()

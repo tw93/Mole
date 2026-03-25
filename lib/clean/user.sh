@@ -157,7 +157,7 @@ _clean_mail_downloads() {
     if [[ $count -gt 0 ]]; then
         local cleaned_mb
         cleaned_mb=$(echo "$cleaned_kb" | awk '{printf "%.1f", $1/1024}' || echo "0.0")
-        echo "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $count mail attachments, about ${cleaned_mb}MB"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $count mail attachments older than ${mail_age_days}d, about ${cleaned_mb}MB"
         note_activity
     fi
 }
@@ -192,6 +192,13 @@ clean_chrome_old_versions() {
         current_version=$(readlink "$current_link" 2> /dev/null || true)
         current_version="${current_version##*/}"
         [[ -n "$current_version" ]] || continue
+
+        # Verify the Current symlink target exists. If broken, skip to avoid
+        # accidentally deleting the active browser version.
+        if [[ ! -d "$versions_dir/$current_version" ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Chrome Current symlink is broken · skipping version cleanup"
+            continue
+        fi
 
         local -a old_versions=()
         local dir name
@@ -280,6 +287,13 @@ clean_edge_old_versions() {
         current_version=$(readlink "$current_link" 2> /dev/null || true)
         current_version="${current_version##*/}"
         [[ -n "$current_version" ]] || continue
+
+        # Verify the Current symlink target exists. If broken, skip to avoid
+        # accidentally deleting the active browser version.
+        if [[ ! -d "$versions_dir/$current_version" ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Edge Current symlink is broken · skipping version cleanup"
+            continue
+        fi
 
         local -a old_versions=()
         local dir name
@@ -464,18 +478,39 @@ clean_support_app_data() {
         safe_find_delete "$crash_reporter_dir" "*" "$support_age_days" "f" || true
     fi
 
-    # Keep recent wallpaper assets to avoid large re-downloads.
-    local idle_assets_dir="$HOME/Library/Application Support/com.apple.idleassetsd"
-    if [[ -d "$idle_assets_dir" && ! -L "$idle_assets_dir" ]]; then
-        safe_find_delete "$idle_assets_dir" "*" "$support_age_days" "f" || true
+    # Clean idle assets but preserve the active wallpaper/screensaver video.
+    local _active_wp_url
+    _active_wp_url=$(defaults read com.apple.wallpaper SystemWallpaperURL 2>/dev/null || true)
+    local _active_wp_file=""
+    if [[ -n "$_active_wp_url" ]]; then
+        _active_wp_file=$(python3 -c "import urllib.parse,sys; print(urllib.parse.unquote(sys.argv[1]).split('/')[-1])" "$_active_wp_url" 2>/dev/null || true)
+    fi
+    # Also collect all asset UUIDs referenced in the wallpaper Store plist (per-space choices).
+    local _store_plist="$HOME/Library/Application Support/com.apple.wallpaper/Store/Index.plist"
+    local _store_assets=""
+    if [[ -f "$_store_plist" ]]; then
+        _store_assets=$(plutil -p "$_store_plist" 2>/dev/null | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | sort -u || true)
     fi
 
-    # Clean system-level idle/aerial screensaver videos (macOS re-downloads as needed).
+    local idle_assets_dir="$HOME/Library/Application Support/com.apple.idleassetsd"
+    if [[ -d "$idle_assets_dir" && ! -L "$idle_assets_dir" ]]; then
+        if [[ -n "$_active_wp_file" ]]; then
+            find "$idle_assets_dir" -type f -mtime +"$support_age_days" ! -name "$_active_wp_file" -delete 2>/dev/null || true
+        else
+            safe_find_delete "$idle_assets_dir" "*" "$support_age_days" "f" || true
+        fi
+    fi
+
+    # Clean system-level idle/aerial screensaver videos, preserving active wallpaper.
     local sys_idle_assets_dir="/Library/Application Support/com.apple.idleassetsd/Customer"
     # Skip sudo operations during tests to avoid password prompts
     if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
         if sudo test -d "$sys_idle_assets_dir" 2> /dev/null; then
-            safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
+            if [[ -n "$_active_wp_file" ]]; then
+                sudo find "$sys_idle_assets_dir" -type f -mtime +"$support_age_days" ! -name "$_active_wp_file" -delete 2>/dev/null || true
+            else
+                safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
+            fi
         fi
     fi
 
@@ -564,7 +599,12 @@ clean_app_caches() {
     stop_section_spinner
 
     # Sandboxed app caches
-    safe_clean ~/Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/* "Wallpaper agent cache"
+    # Skip wallpaper agent cache if the agent is running — clearing it resets the wallpaper.
+    if ! pgrep -x "WallpaperAgent" > /dev/null 2>&1; then
+        safe_clean ~/Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/* "Wallpaper agent cache"
+    else
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Wallpaper agent is running · cache cleanup skipped"
+    fi
     safe_clean ~/Library/Containers/com.apple.mediaanalysisd/Data/Library/Caches/* "Media analysis cache"
     safe_clean ~/Library/Containers/com.apple.AppStore/Data/Library/Caches/* "App Store cache"
     safe_clean ~/Library/Containers/com.apple.configurator.xpc.InternetService/Data/tmp/* "Apple Configurator temp files"
