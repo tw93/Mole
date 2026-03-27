@@ -478,39 +478,18 @@ clean_support_app_data() {
         safe_find_delete "$crash_reporter_dir" "*" "$support_age_days" "f" || true
     fi
 
-    # Clean idle assets but preserve the active wallpaper/screensaver video.
-    local _active_wp_url
-    _active_wp_url=$(defaults read com.apple.wallpaper SystemWallpaperURL 2>/dev/null || true)
-    local _active_wp_file=""
-    if [[ -n "$_active_wp_url" ]]; then
-        _active_wp_file=$(python3 -c "import urllib.parse,sys; print(urllib.parse.unquote(sys.argv[1]).split('/')[-1])" "$_active_wp_url" 2>/dev/null || true)
-    fi
-    # Also collect all asset UUIDs referenced in the wallpaper Store plist (per-space choices).
-    local _store_plist="$HOME/Library/Application Support/com.apple.wallpaper/Store/Index.plist"
-    local _store_assets=""
-    if [[ -f "$_store_plist" ]]; then
-        _store_assets=$(plutil -p "$_store_plist" 2>/dev/null | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | sort -u || true)
-    fi
-
+    # Keep recent wallpaper assets to avoid large re-downloads.
     local idle_assets_dir="$HOME/Library/Application Support/com.apple.idleassetsd"
     if [[ -d "$idle_assets_dir" && ! -L "$idle_assets_dir" ]]; then
-        if [[ -n "$_active_wp_file" ]]; then
-            find "$idle_assets_dir" -type f -mtime +"$support_age_days" ! -name "$_active_wp_file" -delete 2>/dev/null || true
-        else
-            safe_find_delete "$idle_assets_dir" "*" "$support_age_days" "f" || true
-        fi
+        safe_find_delete "$idle_assets_dir" "*" "$support_age_days" "f" || true
     fi
 
-    # Clean system-level idle/aerial screensaver videos, preserving active wallpaper.
+    # Clean system-level idle/aerial screensaver videos (macOS re-downloads as needed).
     local sys_idle_assets_dir="/Library/Application Support/com.apple.idleassetsd/Customer"
     # Skip sudo operations during tests to avoid password prompts
     if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
         if sudo test -d "$sys_idle_assets_dir" 2> /dev/null; then
-            if [[ -n "$_active_wp_file" ]]; then
-                sudo find "$sys_idle_assets_dir" -type f -mtime +"$support_age_days" ! -name "$_active_wp_file" -delete 2>/dev/null || true
-            else
-                safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
-            fi
+            safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
         fi
     fi
 

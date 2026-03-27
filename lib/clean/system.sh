@@ -120,7 +120,7 @@ clean_deep_system() {
     # and not matching the currently installed macOS version (recovery safety).
     local installer_cleaned=0
     local current_macos_version=""
-    current_macos_version=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1 || true)
+    current_macos_version=$(sw_vers -productVersion 2> /dev/null | cut -d. -f1 || true)
     for installer_app in /Applications/Install\ macOS*.app; do
         [[ -d "$installer_app" ]] || continue
         local app_name
@@ -136,10 +136,7 @@ clean_deep_system() {
             local installer_plist="$installer_app/Contents/Info.plist"
             if [[ -f "$installer_plist" ]]; then
                 local installer_version=""
-                installer_version=$(/usr/libexec/PlistBuddy -c "Print :DTSDKBuild" "$installer_plist" 2>/dev/null || true)
-                if [[ -z "$installer_version" ]]; then
-                    installer_version=$(/usr/libexec/PlistBuddy -c "Print :DTPlatformVersion" "$installer_plist" 2>/dev/null | cut -d. -f1 || true)
-                fi
+                installer_version=$(/usr/libexec/PlistBuddy -c "Print :DTPlatformVersion" "$installer_plist" 2> /dev/null | cut -d. -f1 || true)
                 if [[ -n "$installer_version" && "$installer_version" == *"$current_macos_version"* ]]; then
                     debug_log "Keeping $app_name: matches current macOS version ($current_macos_version)"
                     continue
