@@ -109,12 +109,12 @@ func TestRedistributeBatteryScore_NoBattery(t *testing.T) {
 
 func TestRedistributeBatteryScore_ScoresProportional(t *testing.T) {
 	categories := []categoryResult{
-		{Name: "Storage", Score: 10, MaxScore: 20},       // 50%
-		{Name: "Performance", Score: 20, MaxScore: 20},    // 100%
-		{Name: "Battery", Score: 0, MaxScore: 0},          // skipped
-		{Name: "Security", Score: 15, MaxScore: 20},       // 75%
-		{Name: "Maintenance", Score: 15, MaxScore: 15},    // 100%
-		{Name: "Mole", Score: 5, MaxScore: 5},             // 100%
+		{Name: "Storage", Score: 10, MaxScore: 20},     // 50%
+		{Name: "Performance", Score: 20, MaxScore: 20}, // 100%
+		{Name: "Battery", Score: 0, MaxScore: 0},       // skipped
+		{Name: "Security", Score: 15, MaxScore: 20},    // 75%
+		{Name: "Maintenance", Score: 15, MaxScore: 15}, // 100%
+		{Name: "Mole", Score: 5, MaxScore: 5},          // 100%
 	}
 
 	result := redistributeBatteryScore(categories)

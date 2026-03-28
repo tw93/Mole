@@ -70,9 +70,9 @@ func TestProgressBarMaxZeroAllEmpty(t *testing.T) {
 }
 
 func TestProgressBarColorThresholds(t *testing.T) {
-	low := progressBar(50, 100, 20)    // 50% → red
-	mid := progressBar(70, 100, 20)    // 70% → yellow
-	high := progressBar(90, 100, 20)   // 90% → green
+	low := progressBar(50, 100, 20)  // 50% → red
+	mid := progressBar(70, 100, 20)  // 70% → yellow
+	high := progressBar(90, 100, 20) // 90% → green
 
 	if low == mid || mid == high {
 		t.Error("progressBar should use different colors for different score ranges")
