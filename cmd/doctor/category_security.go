@@ -29,7 +29,7 @@ func checkSecurity() categoryResult {
 }
 
 func checkFileVault() checkResult {
-	r := checkResult{Name: "FileVault", MaxScore: 5}
+	r := checkResult{Name: "FileVault", MaxScore: 4}
 
 	out, err := exec.Command("fdesetup", "status").Output()
 	if err != nil {
@@ -40,7 +40,7 @@ func checkFileVault() checkResult {
 
 	if strings.Contains(string(out), "FileVault is On") {
 		r.Status = statusPass
-		r.Score = 5
+		r.Score = 4
 		r.Detail = "Enabled"
 	} else {
 		r.Status = statusFail
@@ -51,7 +51,7 @@ func checkFileVault() checkResult {
 }
 
 func checkFirewall() checkResult {
-	r := checkResult{Name: "Firewall", MaxScore: 5}
+	r := checkResult{Name: "Firewall", MaxScore: 4}
 
 	// Try socketfilterfw first (works on macOS 15 Sequoia+).
 	out, err := exec.Command("/usr/libexec/ApplicationFirewall/socketfilterfw",
@@ -59,7 +59,7 @@ func checkFirewall() checkResult {
 	if err == nil {
 		if strings.Contains(string(out), "enabled") {
 			r.Status = statusPass
-			r.Score = 5
+			r.Score = 4
 			r.Detail = "Enabled"
 		} else {
 			r.Status = statusFail
@@ -81,7 +81,7 @@ func checkFirewall() checkResult {
 	state := strings.TrimSpace(string(out))
 	if state == "1" || state == "2" {
 		r.Status = statusPass
-		r.Score = 5
+		r.Score = 4
 		r.Detail = "Enabled"
 	} else {
 		r.Status = statusFail
@@ -92,7 +92,7 @@ func checkFirewall() checkResult {
 }
 
 func checkSIP() checkResult {
-	r := checkResult{Name: "SIP", MaxScore: 5}
+	r := checkResult{Name: "SIP", MaxScore: 4}
 
 	out, err := exec.Command("csrutil", "status").Output()
 	if err != nil {
@@ -105,11 +105,11 @@ func checkSIP() checkResult {
 	if strings.Contains(sipOutput, "enabled") {
 		if strings.Contains(sipOutput, "Custom Configuration") {
 			r.Status = statusWarn
-			r.Score = 3
+			r.Score = 2
 			r.Detail = "Partially enabled (custom configuration)"
 		} else {
 			r.Status = statusPass
-			r.Score = 5
+			r.Score = 4
 			r.Detail = "Enabled"
 		}
 	} else {
@@ -121,7 +121,7 @@ func checkSIP() checkResult {
 }
 
 func checkMacOSUpdated() checkResult {
-	r := checkResult{Name: "macOS version", MaxScore: 5}
+	r := checkResult{Name: "macOS version", MaxScore: 3}
 
 	out, err := exec.Command("sw_vers", "-productVersion").Output()
 	if err != nil {
@@ -143,10 +143,10 @@ func checkMacOSUpdated() checkResult {
 	majorNum, _ := strconv.Atoi(parts[0])
 	if majorNum >= 15 {
 		r.Status = statusPass
-		r.Score = 5
+		r.Score = 3
 	} else {
 		r.Status = statusWarn
-		r.Score = 2
+		r.Score = 1
 		r.Detail = "macOS " + version + " — consider updating"
 	}
 	return r

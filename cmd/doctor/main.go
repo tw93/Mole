@@ -24,12 +24,20 @@ const (
 	statusSkipped
 )
 
+type cacheBreakdownItem struct {
+	Name   string      `json:"name"`
+	Path   string      `json:"path"`
+	Size   int64       `json:"size"`
+	Status checkStatus `json:"status"`
+}
+
 type checkResult struct {
-	Name     string      `json:"name"`
-	Status   checkStatus `json:"status"`
-	Detail   string      `json:"detail"`
-	Score    int         `json:"score"`
-	MaxScore int         `json:"max_score"`
+	Name      string               `json:"name"`
+	Status    checkStatus          `json:"status"`
+	Detail    string               `json:"detail"`
+	Score     int                  `json:"score"`
+	MaxScore  int                  `json:"max_score"`
+	Breakdown []cacheBreakdownItem `json:"breakdown,omitempty"`
 }
 
 type categoryResult struct {
@@ -39,7 +47,19 @@ type categoryResult struct {
 	MaxScore int           `json:"max_score"`
 }
 
+type hardwareProfile struct {
+	Model    string `json:"model"`
+	Chip     string `json:"chip"`
+	RAM      string `json:"ram"`
+	SSDTotal string `json:"ssd_total"`
+	SSDFree  string `json:"ssd_free"`
+	MacOS    string `json:"macos_version"`
+	Build    string `json:"macos_build"`
+	ThermalOK bool  `json:"thermal_ok"`
+}
+
 type diagnosisResult struct {
+	Hardware   hardwareProfile  `json:"hardware"`
 	Categories []categoryResult `json:"categories"`
 	TotalScore int              `json:"total_score"`
 	MaxScore   int              `json:"max_score"`

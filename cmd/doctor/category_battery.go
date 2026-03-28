@@ -41,7 +41,7 @@ func checkBattery() categoryResult {
 }
 
 func checkBatteryCycles(ioregOutput string) checkResult {
-	r := checkResult{Name: "Cycle count", MaxScore: 10}
+	r := checkResult{Name: "Cycle count", MaxScore: 8}
 
 	cycles := parseIORegInt(ioregOutput, "CycleCount")
 	if cycles < 0 {
@@ -57,16 +57,16 @@ func checkBatteryCycles(ioregOutput string) checkResult {
 		r.Score = 2
 	} else if cycles > batteryCycleMedium {
 		r.Status = statusWarn
-		r.Score = 7
+		r.Score = 5
 	} else {
 		r.Status = statusPass
-		r.Score = 10
+		r.Score = 8
 	}
 	return r
 }
 
 func checkBatteryHealth(ioregOutput string) checkResult {
-	r := checkResult{Name: "Health", MaxScore: 10}
+	r := checkResult{Name: "Health", MaxScore: 7}
 
 	// Prefer AppleRawMaxCapacity (mAh) over MaxCapacity (percentage on newer macOS).
 	maxCap := parseIORegInt(ioregOutput, "AppleRawMaxCapacity")
@@ -91,10 +91,10 @@ func checkBatteryHealth(ioregOutput string) checkResult {
 		r.Score = 2
 	} else if healthPct < batteryHealthMed {
 		r.Status = statusWarn
-		r.Score = 7
+		r.Score = 5
 	} else {
 		r.Status = statusPass
-		r.Score = 10
+		r.Score = 7
 	}
 	return r
 }

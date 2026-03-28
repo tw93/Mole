@@ -3,12 +3,13 @@
 package main
 
 const (
-	scoreStorage     = 20
+	scoreStorage     = 15
 	scorePerformance = 20
-	scoreBattery     = 20
-	scoreSecurity    = 20
+	scoreBattery     = 15
+	scoreSecurity    = 15
 	scoreMaintenance = 15
 	scoreMole        = 5
+	scoreDevEnv      = 15
 
 	diskFreeWarning        = 0.20
 	diskFreeCritical       = 0.10
@@ -30,6 +31,23 @@ const (
 	heavyProcessCPU        = 5.0
 	heavyProcessMemMB      = 500
 	heavyProcessMax        = 2
+
+	// Storage v2 thresholds
+	nodeModulesHighGB = 10.0
+	nodeModulesMedGB  = 5.0
+	iosBackupHighGB   = 5.0
+
+	// Dev environment thresholds
+	brewOutdatedHigh = 10
+	brewOutdatedMed  = 3
+
+	// Cache breakdown thresholds (bytes)
+	cacheBreakdownWarnDefault int64 = 1024 * 1024 * 1024
+	cacheBreakdownFailDefault int64 = 3 * 1024 * 1024 * 1024
+	cacheBreakdownWarnSmall   int64 = 500 * 1024 * 1024
+	cacheBreakdownFailSmall   int64 = 2 * 1024 * 1024 * 1024
+	cacheBreakdownWarnXcode   int64 = 2 * 1024 * 1024 * 1024
+	cacheBreakdownFailXcode   int64 = 5 * 1024 * 1024 * 1024
 )
 
 var spinnerFrames = []string{"|", "/", "-", "\\"}
