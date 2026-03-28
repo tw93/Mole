@@ -10,6 +10,7 @@ MOLE_COMMANDS=(
     "purge:Remove old project artifacts"
     "installer:Find and remove installer files"
     "touchid:Configure Touch ID for sudo"
+    "language:Choose interface language"
     "completion:Setup shell tab completion"
     "update:Update to latest version"
     "remove:Remove Mole from system"

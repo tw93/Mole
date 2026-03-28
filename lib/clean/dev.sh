@@ -6,10 +6,12 @@ set -euo pipefail
 clean_tool_cache() {
     local description="$1"
     shift
+    local translated_description
+    translated_description="$(mole_t "$description")"
     if [[ "$DRY_RUN" != "true" ]]; then
         local command_succeeded=false
         if [[ -t 1 ]]; then
-            start_section_spinner "Cleaning $description..."
+            start_section_spinner "$(printf "$(mole_t "Cleaning %s...")" "$translated_description")"
         fi
         if "$@" > /dev/null 2>&1; then
             command_succeeded=true
@@ -18,10 +20,10 @@ clean_tool_cache() {
             stop_section_spinner
         fi
         if [[ "$command_succeeded" == "true" ]]; then
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $description"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${translated_description}"
         fi
     else
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $description · would clean"
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "$(mole_t "%s · would clean")" "$translated_description")"
     fi
     return 0
 }
@@ -128,9 +130,9 @@ clean_dev_go() {
 
     if [[ "$build_protected" == "true" && "$mod_protected" == "true" ]]; then
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Go cache · would skip (whitelist)"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Go cache · would skip (whitelist)")"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Go cache · skipped (whitelist)"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Go cache · skipped (whitelist)")"
         fi
         return 0
     fi
@@ -139,10 +141,10 @@ clean_dev_go() {
         clean_tool_cache "Go cache" bash -c 'go clean -modcache > /dev/null 2>&1 || true; go clean -cache > /dev/null 2>&1 || true'
     elif [[ "$build_protected" == "true" ]]; then
         clean_tool_cache "Go module cache" bash -c 'go clean -modcache > /dev/null 2>&1 || true'
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Go build cache · skipped (whitelist)"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Go build cache · skipped (whitelist)")"
     else
         clean_tool_cache "Go build cache" bash -c 'go clean -cache > /dev/null 2>&1 || true'
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Go module cache · skipped (whitelist)"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Go module cache · skipped (whitelist)")"
     fi
     note_activity
 }
@@ -174,7 +176,7 @@ clean_dev_mise() {
             clean_tool_cache "mise cache" bash -c 'mise cache clear > /dev/null 2>&1 || true'
             note_activity
         else
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} mise cache · would clean"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "mise cache · would clean")"
             note_activity
         fi
     fi
@@ -209,7 +211,7 @@ check_multiple_versions() {
         if [[ -n "$list_cmd" ]]; then
             hint=" · ${GRAY}${list_cmd}${NC}"
         fi
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${tool_name}: ${count} found${hint}"
+        printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "%s: %d found")${hint}\n" "$(mole_t "$tool_name")" "$count"
     fi
 }
 
@@ -241,19 +243,19 @@ clean_dev_docker() {
                 if is_path_whitelisted "$HOME/.docker" ||
                     is_path_whitelisted "$HOME/Library/Containers/com.docker.docker" ||
                     is_path_whitelisted "$HOME/Library/Group Containers/group.com.docker"; then
-                    echo -e "  ${GRAY}${ICON_WARNING}${NC} Docker unused data · skipped (whitelisted)"
+                    echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Docker unused data · skipped (whitelisted)")"
                     debug_log "Docker cleanup skipped: Docker paths found in whitelist"
                 else
                     clean_tool_cache "Docker unused data" docker system prune -af --volumes
                 fi
             else
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} Docker unused data · skipped (daemon not running)"
+                echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Docker unused data · skipped (daemon not running)")"
                 note_activity
                 debug_log "Docker daemon not running, skipping Docker cache cleanup"
             fi
         else
             note_activity
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Docker unused data · would clean"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Docker unused data · would clean")"
         fi
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
@@ -264,7 +266,7 @@ clean_dev_nix() {
         if [[ "$DRY_RUN" != "true" ]]; then
             clean_tool_cache "Nix garbage collection" nix-collect-garbage --delete-older-than 30d
         else
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Nix garbage collection · would clean"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Nix garbage collection · would clean")"
         fi
         note_activity
     fi
@@ -304,7 +306,7 @@ clean_xcode_documentation_cache() {
     [[ -d "$doc_cache_root" ]] || return 0
 
     if pgrep -x "Xcode" > /dev/null 2>&1; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode is running, skipping documentation cache cleanup"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode is running, skipping documentation cache cleanup")"
         note_activity
         return 0
     fi
@@ -353,7 +355,7 @@ clean_xcode_documentation_cache() {
 
     if ! has_sudo_session; then
         if ! ensure_sudo_session "Cleaning Xcode documentation cache requires admin access"; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache cleanup skipped (sudo denied)"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode documentation cache cleanup skipped (sudo denied)")"
             note_activity
             return 0
         fi
@@ -373,17 +375,17 @@ clean_xcode_documentation_cache() {
     done
 
     if [[ $removed_count -gt 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode documentation cache · removed ${removed_count} old indexes"
+        printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Xcode documentation cache · removed %d old indexes")\n" "${removed_count}"
         if [[ $skipped_count -gt 0 ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache · skipped ${skipped_count} protected items"
+            printf "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode documentation cache · skipped %d protected items")\n" "${skipped_count}"
         fi
         note_activity
     elif [[ $skipped_count -gt 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode documentation cache · nothing to clean"
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache · skipped ${skipped_count} protected items"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Xcode documentation cache · nothing to clean")"
+        printf "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode documentation cache · skipped %d protected items")\n" "${skipped_count}"
         note_activity
     else
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache · no items removed"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode documentation cache · no items removed")"
         note_activity
     fi
 }
@@ -433,7 +435,7 @@ clean_xcode_device_support() {
             stale_size_human=$(bytes_to_human "$((stale_size_kb * 1024))")
 
             if [[ "$DRY_RUN" == "true" ]]; then
-                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${display_name} · would remove ${#stale_dirs[@]} old versions (${stale_size_human}), keeping ${keep_count} most recent"
+                printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "%s · would remove %d old versions (%s), keeping %d most recent")\n" "${display_name}" "${#stale_dirs[@]}" "${stale_size_human}" "${keep_count}"
                 note_activity
             else
                 # Remove old versions
@@ -450,7 +452,7 @@ clean_xcode_device_support() {
                 if [[ $removed_count -gt 0 ]]; then
                     local line_color
                     line_color=$(cleanup_result_color_kb "$stale_size_kb")
-                    echo -e "  ${line_color}${ICON_SUCCESS}${NC} ${display_name} · removed ${removed_count} old versions, ${line_color}${stale_size_human}${NC}"
+                    printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "%s · removed %d old versions, %s")\n" "${display_name}" "${removed_count}" "${stale_size_human}"
                     note_activity
                 fi
             fi
@@ -527,7 +529,7 @@ clean_xcode_simulator_runtime_volumes() {
 
     # Only show scanning message in debug mode; spinner provides visual feedback otherwise
     if [[ "${MO_DEBUG:-0}" == "1" ]]; then
-        echo -e "  ${GRAY}${ICON_LIST}${NC} Xcode runtime volumes · scanning ${#sorted_candidates[@]} entries"
+        printf "  ${GRAY}${ICON_LIST}${NC} $(mole_t "Xcode runtime volumes · scanning %d entries")\n" "${#sorted_candidates[@]}"
     fi
     local runtime_scan_spinner=false
     if [[ -t 1 ]]; then
@@ -570,7 +572,7 @@ clean_xcode_simulator_runtime_volumes() {
             runtime_scan_spinner=false
         fi
 
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode runtime volumes · ${unused_count} unused, ${in_use_count} in use"
+        printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Xcode runtime volumes · %d unused, %d in use")\n" "${unused_count}" "${in_use_count}"
         local dryrun_total_kb=$((unused_kb + in_use_kb))
         local dryrun_total_human
         dryrun_total_human=$(bytes_to_human "$((dryrun_total_kb * 1024))")
@@ -578,7 +580,7 @@ clean_xcode_simulator_runtime_volumes() {
         dryrun_unused_human=$(bytes_to_human "$((unused_kb * 1024))")
         local dryrun_in_use_human
         dryrun_in_use_human=$(bytes_to_human "$((in_use_kb * 1024))")
-        echo -e "  ${GRAY}${ICON_LIST}${NC} Runtime volumes total: ${dryrun_total_human} (unused ${dryrun_unused_human}, in-use ${dryrun_in_use_human})"
+        printf "  ${GRAY}${ICON_LIST}${NC} $(mole_t "Runtime volumes total: %s (unused %s, in-use %s)")\n" "${dryrun_total_human}" "${dryrun_unused_human}" "${dryrun_in_use_human}"
 
         local dryrun_max_items="${MOLE_SIM_RUNTIME_DRYRUN_MAX_ITEMS:-20}"
         [[ "$dryrun_max_items" =~ ^[0-9]+$ ]] || dryrun_max_items=20
@@ -592,7 +594,7 @@ clean_xcode_simulator_runtime_volumes() {
             [[ -z "${line_path:-}" ]] && continue
             local line_human
             line_human=$(bytes_to_human "$((line_size_kb * 1024))")
-            echo -e "    ${GRAY}${line_status}${NC} ${line_human} · ${line_path}"
+            printf "    ${GRAY}%s${NC} %s · %s\n" "$(mole_t "$line_status")" "${line_human}" "${line_path}"
             shown=$((shown + 1))
             if [[ "$shown" -ge "$dryrun_max_items" ]]; then
                 break
@@ -608,7 +610,7 @@ clean_xcode_simulator_runtime_volumes() {
         local total_entries="${#sorted_candidates[@]}"
         if [[ "$total_entries" -gt "$shown" ]]; then
             local remaining=$((total_entries - shown))
-            echo -e "    ${GRAY}${ICON_LIST}${NC} ... and ${remaining} more runtime volume entries"
+            printf "    ${GRAY}${ICON_LIST}${NC} $(mole_t "... and %d more runtime volume entries")\n" "${remaining}"
         fi
         note_activity
         return 0
@@ -636,14 +638,14 @@ clean_xcode_simulator_runtime_volumes() {
     fi
 
     if [[ ${#selected_paths[@]} -eq 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · already clean"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Xcode runtime volumes · already clean")"
         note_activity
         return 0
     fi
 
     if ! has_sudo_session; then
         if ! ensure_sudo_session "Cleaning Xcode runtime volumes requires admin access"; then
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode runtime volumes · skipped (sudo denied)"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Xcode runtime volumes · skipped (sudo denied)")"
             note_activity
             return 0
         fi
@@ -669,16 +671,16 @@ clean_xcode_simulator_runtime_volumes() {
         local line_color
         line_color=$(cleanup_result_color_kb "$removed_size_kb")
         if [[ $skipped_protected -gt 0 ]]; then
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode runtime volumes · removed ${removed_count} (${line_color}${removed_human}${NC}), skipped ${skipped_protected} protected"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Xcode runtime volumes · removed %d (%s), skipped %d protected")\n" "${removed_count}" "${removed_human}" "${skipped_protected}"
         else
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode runtime volumes · removed ${removed_count} (${line_color}${removed_human}${NC})"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Xcode runtime volumes · removed %d (%s)")\n" "${removed_count}" "${removed_human}"
         fi
         note_activity
     else
         if [[ $skipped_protected -gt 0 ]]; then
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode runtime volumes · skipped ${skipped_protected} protected, none removed"
+            printf "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Xcode runtime volumes · skipped %d protected, none removed")\n" "${skipped_protected}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode runtime volumes · already clean"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Xcode runtime volumes · already clean")"
         fi
         note_activity
     fi
@@ -703,7 +705,7 @@ clean_dev_mobile() {
         local simctl_available=true
         if ! xcrun simctl list devices > /dev/null 2>&1; then
             debug_log "simctl not accessible or CoreSimulator service not running"
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators · simctl not available"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode unavailable simulators · simctl not available")"
             note_activity
             simctl_available=false
         fi
@@ -730,14 +732,14 @@ clean_dev_mobile() {
 
             if [[ "$DRY_RUN" == "true" ]]; then
                 if ((unavailable_before > 0)); then
-                    echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode unavailable simulators · would clean ${unavailable_before}, ${unavailable_size_human}"
+                    printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Xcode unavailable simulators · would clean %d, %s")\n" "${unavailable_before}" "${unavailable_size_human}"
                 else
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Xcode unavailable simulators · already clean")"
                 fi
             else
                 # Skip if no unavailable simulators
                 if ((unavailable_before == 0)); then
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Xcode unavailable simulators · already clean"
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Xcode unavailable simulators · already clean")"
                     note_activity
                 else
                     start_section_spinner "Checking unavailable simulators..."
@@ -760,9 +762,9 @@ clean_dev_mobile() {
                         local line_color
                         line_color=$(cleanup_result_color_kb "$unavailable_size_kb")
                         if ((removed_unavailable > 0)); then
-                            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode unavailable simulators · removed ${removed_unavailable}, ${line_color}${unavailable_size_human}${NC}"
+                            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Xcode unavailable simulators · removed %d, %s")\n" "${removed_unavailable}" "${unavailable_size_human}"
                         else
-                            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode unavailable simulators · cleanup completed, ${line_color}${unavailable_size_human}${NC}"
+                            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Xcode unavailable simulators · cleanup completed, %s")\n" "${unavailable_size_human}"
                         fi
                     else
                         stop_section_spinner
@@ -810,16 +812,16 @@ clean_dev_mobile() {
                                 if ((manual_failed == 0)); then
                                     local line_color
                                     line_color=$(cleanup_result_color_kb "$unavailable_size_kb")
-                                    echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode unavailable simulators · removed ${manually_removed} (fallback), ${line_color}${unavailable_size_human}${NC}"
+                                    printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Xcode unavailable simulators · removed %d (fallback), %s")\n" "${manually_removed}" "${unavailable_size_human}"
                                 else
-                                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode unavailable simulators · partially cleaned ${manually_removed}/${#unavailable_udids[@]}, ${unavailable_size_human}"
+                                    printf "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Xcode unavailable simulators · partially cleaned %d/%d, %s")\n" "${manually_removed}" "${#unavailable_udids[@]}" "${unavailable_size_human}"
                                 fi
                             else
-                                echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators cleanup failed${error_hint}"
+                                echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode unavailable simulators cleanup failed")${error_hint}"
                                 debug_log "simctl delete error: $delete_output"
                             fi
                         else
-                            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators cleanup failed${error_hint}"
+                            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Xcode unavailable simulators cleanup failed")${error_hint}"
                             debug_log "simctl delete error: $delete_output"
                         fi
                     fi

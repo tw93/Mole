@@ -14,7 +14,7 @@ func (m model) View() string {
 	fmt.Fprintln(&b)
 
 	if m.inOverviewMode() {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s\n", colorPurpleBold, colorReset)
+		fmt.Fprintf(&b, "%s%s%s\n", colorPurpleBold, tr("Analyze Disk"), colorReset)
 		if m.overviewScanning {
 			allPending := true
 			for _, entry := range m.entries {
@@ -25,13 +25,13 @@ func (m model) View() string {
 			}
 
 			if allPending {
-				fmt.Fprintf(&b, "%s%s%s%s Analyzing disk usage, please wait...%s\n",
+				fmt.Fprintf(&b, "%s%s%s%s %s%s\n",
 					colorCyan, colorBold,
 					spinnerFrames[m.spinner],
-					colorReset, colorReset)
+					colorReset, tr("Analyzing disk usage, please wait..."), colorReset)
 				return b.String()
 			} else {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, tr("Select a location to explore:"), colorReset)
 				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, m.status)
 			}
 		} else {
@@ -43,16 +43,16 @@ func (m model) View() string {
 				}
 			}
 			if hasPending {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, tr("Select a location to explore:"), colorReset)
 				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, m.status)
 			} else {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s\n\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s\n\n", colorGray, tr("Select a location to explore:"), colorReset)
 			}
 		}
 	} else {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s  %s%s%s", colorPurpleBold, colorReset, colorGray, displayPath(m.path), colorReset)
+		fmt.Fprintf(&b, "%s%s%s  %s%s%s", colorPurpleBold, tr("Analyze Disk"), colorReset, colorGray, displayPath(m.path), colorReset)
 		if !m.scanning {
-			fmt.Fprintf(&b, "  |  Total: %s", humanizeBytes(m.totalSize))
+			fmt.Fprintf(&b, "  |  %s", ftr("Total: %s", humanizeBytes(m.totalSize)))
 		}
 		fmt.Fprintf(&b, "\n\n")
 	}
@@ -63,11 +63,11 @@ func (m model) View() string {
 			count = atomic.LoadInt64(m.deleteCount)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Deleting: %s%s items%s removed, please wait...\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
-			colorYellow, formatNumber(count), colorReset)
+			ftr("Deleting: %s items removed, please wait...", fmt.Sprintf("%s%s%s", colorYellow, formatNumber(count), colorReset)))
 
 		return b.String()
 	}
@@ -89,13 +89,13 @@ func (m model) View() string {
 			progressPrefix = fmt.Sprintf(" %s%.0f%%%s", colorCyan, percent, colorReset)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Scanning%s: %s%s files%s, %s%s dirs%s, %s%s%s\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s%s: %s%s %s%s, %s%s %s%s, %s%s%s\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
-			progressPrefix,
-			colorYellow, formatNumber(filesScanned), colorReset,
-			colorYellow, formatNumber(dirsScanned), colorReset,
+			tr("Scanning"), progressPrefix,
+			colorYellow, formatNumber(filesScanned), colorReset, tr("files"),
+			colorYellow, formatNumber(dirsScanned), colorReset, tr("dirs"),
 			colorGreen, humanizeBytes(bytesScanned), colorReset)
 
 		if m.currentPath != nil {
@@ -112,7 +112,7 @@ func (m model) View() string {
 
 	if m.showLargeFiles {
 		if len(m.largeFiles) == 0 {
-			fmt.Fprintln(&b, "  No large files found")
+			fmt.Fprintf(&b, "  %s\n", tr("No large files found"))
 		} else {
 			viewport := calculateViewport(m.height, true)
 			start := max(m.largeOffset, 0)
@@ -157,7 +157,7 @@ func (m model) View() string {
 		}
 	} else {
 		if len(m.entries) == 0 {
-			fmt.Fprintln(&b, "  Empty directory")
+			fmt.Fprintf(&b, "  %s\n", tr("Empty directory"))
 		} else {
 			if m.inOverviewMode() {
 				maxSize := int64(1)
@@ -184,7 +184,7 @@ func (m model) View() string {
 						percentStr = "  --  "
 					}
 					bar := coloredProgressBar(barValue, maxSize, percent)
-					sizeText := "pending.."
+					sizeText := tr("pending..")
 					if sizeVal >= 0 {
 						sizeText = humanizeBytes(sizeVal)
 					}
@@ -327,31 +327,31 @@ func (m model) View() string {
 	fmt.Fprintln(&b)
 	if m.inOverviewMode() {
 		if len(m.history) > 0 {
-			fmt.Fprintf(&b, "%s↑↓←→ | Enter | R Refresh | O Open | F File | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s%s%s\n", colorGray, tr("↑↓←→ | Enter | R Refresh | O Open | F File | Esc Back | Q/Ctrl+C Quit"), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s↑↓→ | Enter | R Refresh | O Open | F File | Esc/Q Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s%s%s\n", colorGray, tr("↑↓→ | Enter | R Refresh | O Open | F File | Esc/Q Quit"), colorReset)
 		}
 	} else if m.showLargeFiles {
 		selectCount := len(m.largeMultiSelected)
 		if selectCount > 0 {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | R Refresh | O Open | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+			fmt.Fprintf(&b, "%s%s%s\n", colorGray, ftr("↑↓← | Space Select | R Refresh | O Open | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit", selectCount), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | R Refresh | O Open | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s%s%s\n", colorGray, tr("↑↓← | Space Select | R Refresh | O Open | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit"), colorReset)
 		}
 	} else {
 		largeFileCount := len(m.largeFiles)
 		selectCount := len(m.multiSelected)
 		if selectCount > 0 {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del %d | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s%s%s\n", colorGray, ftr("↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del %d | T Top %d | Esc Back | Q/Ctrl+C Quit", selectCount, largeFileCount), colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s%s%s\n", colorGray, ftr("↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit", selectCount), colorReset)
 			}
 		} else {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s%s%s\n", colorGray, ftr("↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del | T Top %d | Esc Back | Q/Ctrl+C Quit", largeFileCount), colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s\n", colorGray, tr("↑↓←→ | Space Select | Enter | R Refresh | O Open | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit"), colorReset)
 			}
 		}
 	}
@@ -382,15 +382,15 @@ func (m model) View() string {
 		}
 
 		if deleteCount > 1 {
-			fmt.Fprintf(&b, "%sDelete:%s %d items, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
-				colorRed, colorReset,
+			fmt.Fprintf(&b, "%s%s%s %d items, %s  %s%s%s\n",
+				colorRed, tr("Delete:"), colorReset,
 				deleteCount, humanizeBytes(totalDeleteSize),
-				colorGray, colorReset)
+				colorGray, tr("Press Enter to confirm  |  ESC cancel"), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%sDelete:%s %s, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
-				colorRed, colorReset,
+			fmt.Fprintf(&b, "%s%s%s %s, %s  %s%s%s\n",
+				colorRed, tr("Delete:"), colorReset,
 				m.deleteTarget.Name, humanizeBytes(m.deleteTarget.Size),
-				colorGray, colorReset)
+				colorGray, tr("Press Enter to confirm  |  ESC cancel"), colorReset)
 		}
 	}
 	return b.String()

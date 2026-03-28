@@ -1077,6 +1077,49 @@ func TestRenderHeaderDropsLowPriorityInfoToStaySingleLine(t *testing.T) {
 	}
 }
 
+func TestRenderHeaderUsesChineseWhenRequested(t *testing.T) {
+	t.Setenv("MOLE_LANG", "zh-CN")
+
+	header, _ := renderHeader(MetricsSnapshot{
+		HealthScore: 92,
+		Hardware: HardwareInfo{
+			Model:       "MacBook Pro",
+			CPUModel:    "M4 Pro",
+			TotalRAM:    "24GB",
+			DiskSize:    "1TB",
+			RefreshRate: "120Hz",
+			OSVersion:   "macOS 15.0",
+		},
+		Uptime: "2d 6h",
+	}, "", 0, 120, true)
+
+	plain := stripANSI(header)
+	if !strings.Contains(plain, "状态") {
+		t.Fatalf("renderHeader() should render Chinese title, got %q", plain)
+	}
+	if !strings.Contains(plain, "健康") {
+		t.Fatalf("renderHeader() should render Chinese health label, got %q", plain)
+	}
+}
+
+func TestRenderProcessAlertBarUsesChineseWhenRequested(t *testing.T) {
+	t.Setenv("MOLE_LANG", "zh-CN")
+
+	bar := renderProcessAlertBar([]ProcessAlert{{
+		PID:       10,
+		Name:      "node",
+		CPU:       150,
+		Threshold: 100,
+		Window:    "5m0s",
+		Status:    "active",
+	}}, 120)
+
+	plain := stripANSI(bar)
+	if !strings.Contains(plain, "告警") {
+		t.Fatalf("renderProcessAlertBar() should render Chinese alert prefix, got %q", plain)
+	}
+}
+
 func TestRenderCardWrapsOnNarrowWidth(t *testing.T) {
 	card := cardData{
 		icon:  iconCPU,

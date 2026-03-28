@@ -99,6 +99,10 @@ discover_project_dirs() {
         fi
     done
 
+    if [[ ${#discovered[@]} -eq 0 ]]; then
+        return 0
+    fi
+
     printf '%s\n' "${discovered[@]}" | sort -u
 }
 

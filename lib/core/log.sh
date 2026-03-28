@@ -94,45 +94,53 @@ get_timestamp() {
 
 # Log informational message
 log_info() {
-    echo -e "${BLUE}$1${NC}"
+    local translated
+    translated="$(mole_t "$1")"
+    echo -e "${BLUE}${translated}${NC}"
     local timestamp
     timestamp=$(get_timestamp)
-    append_log_line "$LOG_FILE" "[$timestamp] INFO: $1"
+    append_log_line "$LOG_FILE" "[$timestamp] INFO: $translated"
     if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] INFO: $1"
+        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] INFO: $translated"
     fi
 }
 
 # Log success message
 log_success() {
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
+    local translated
+    translated="$(mole_t "$1")"
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $translated"
     local timestamp
     timestamp=$(get_timestamp)
-    append_log_line "$LOG_FILE" "[$timestamp] SUCCESS: $1"
+    append_log_line "$LOG_FILE" "[$timestamp] SUCCESS: $translated"
     if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] SUCCESS: $1"
+        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] SUCCESS: $translated"
     fi
 }
 
 # shellcheck disable=SC2329
 log_warning() {
-    echo -e "${YELLOW}$1${NC}"
+    local translated
+    translated="$(mole_t "$1")"
+    echo -e "${YELLOW}${translated}${NC}"
     local timestamp
     timestamp=$(get_timestamp)
-    append_log_line "$LOG_FILE" "[$timestamp] WARNING: $1"
+    append_log_line "$LOG_FILE" "[$timestamp] WARNING: $translated"
     if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] WARNING: $1"
+        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] WARNING: $translated"
     fi
 }
 
 # shellcheck disable=SC2329
 log_error() {
-    echo -e "${YELLOW}${ICON_ERROR}${NC} $1" >&2
+    local translated
+    translated="$(mole_t "$1")"
+    echo -e "${YELLOW}${ICON_ERROR}${NC} $translated" >&2
     local timestamp
     timestamp=$(get_timestamp)
-    append_log_line "$LOG_FILE" "[$timestamp] ERROR: $1"
+    append_log_line "$LOG_FILE" "[$timestamp] ERROR: $translated"
     if [[ "${MO_DEBUG:-}" == "1" ]]; then
-        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] ERROR: $1"
+        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] ERROR: $translated"
     fi
 }
 
@@ -399,13 +407,13 @@ print_summary_block() {
     echo ""
     echo "$divider"
     if [[ -n "$heading" ]]; then
-        echo -e "${BLUE}${heading}${NC}"
+        echo -e "${BLUE}$(mole_t "$heading")${NC}"
     fi
 
     # Print details
     for detail in "${details[@]}"; do
         [[ -z "$detail" ]] && continue
-        echo -e "${detail}"
+        echo -e "$(mole_t "$detail")"
     done
     echo "$divider"
 

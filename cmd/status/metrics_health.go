@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 // Health score weights and thresholds.
@@ -52,7 +54,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	}
 	score -= cpuPenalty
 	if cpu.Usage > cpuHighThreshold {
-		issues = append(issues, "High CPU")
+		issues = append(issues, molei18n.T("High CPU"))
 	}
 
 	// Memory penalty.
@@ -66,17 +68,17 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	}
 	score -= memPenalty
 	if mem.UsedPercent > memHighThreshold {
-		issues = append(issues, "High Memory")
+		issues = append(issues, molei18n.T("High Memory"))
 	}
 
 	// Memory pressure penalty.
 	switch mem.Pressure {
 	case "warn":
 		score -= memPressureWarnPenalty
-		issues = append(issues, "Memory Pressure")
+		issues = append(issues, molei18n.T("Memory Pressure"))
 	case "critical":
 		score -= memPressureCritPenalty
-		issues = append(issues, "Critical Memory")
+		issues = append(issues, molei18n.T("Critical Memory"))
 	}
 
 	// Disk penalty.
@@ -92,7 +94,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		}
 		score -= diskPenalty
 		if diskUsage > diskCritThreshold {
-			issues = append(issues, "Disk Almost Full")
+			issues = append(issues, molei18n.T("Disk Almost Full"))
 		}
 	}
 
@@ -102,7 +104,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		if thermal.CPUTemp > thermalNormalThreshold {
 			if thermal.CPUTemp > thermalHighThreshold {
 				thermalPenalty = healthThermalWeight
-				issues = append(issues, "Overheating")
+				issues = append(issues, molei18n.T("Overheating"))
 			} else {
 				thermalPenalty = healthThermalWeight * (thermal.CPUTemp - thermalNormalThreshold) / (thermalHighThreshold - thermalNormalThreshold)
 			}
@@ -116,7 +118,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	if totalIO > ioNormalThreshold {
 		if totalIO > ioHighThreshold {
 			ioPenalty = healthIOWeight
-			issues = append(issues, "Heavy Disk IO")
+			issues = append(issues, molei18n.T("Heavy Disk IO"))
 		} else {
 			ioPenalty = healthIOWeight * (totalIO - ioNormalThreshold) / (ioHighThreshold - ioNormalThreshold)
 		}
@@ -135,15 +137,15 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	var msg string
 	switch {
 	case score >= 90:
-		msg = "Excellent"
+		msg = molei18n.T("Excellent")
 	case score >= 75:
-		msg = "Good"
+		msg = molei18n.T("Good")
 	case score >= 60:
-		msg = "Fair"
+		msg = molei18n.T("Fair")
 	case score >= 40:
-		msg = "Poor"
+		msg = molei18n.T("Poor")
 	default:
-		msg = "Critical"
+		msg = molei18n.T("Critical")
 	}
 
 	if len(issues) > 0 {
@@ -157,6 +159,15 @@ func formatUptime(secs uint64) string {
 	days := secs / 86400
 	hours := (secs % 86400) / 3600
 	mins := (secs % 3600) / 60
+	if molei18n.IsChinese() {
+		if days > 0 {
+			return fmt.Sprintf("%d天 %d小时", days, hours)
+		}
+		if hours > 0 {
+			return fmt.Sprintf("%d小时 %d分钟", hours, mins)
+		}
+		return fmt.Sprintf("%d分钟", mins)
+	}
 	if days > 0 {
 		// Only show days and hours when uptime is over 1 day (skip minutes for brevity)
 		return fmt.Sprintf("%dd %dh", days, hours)

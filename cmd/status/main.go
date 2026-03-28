@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 const refreshInterval = time.Second
@@ -21,10 +22,10 @@ var (
 	BuildTime = ""
 
 	// Command-line flags
-	jsonOutput       = flag.Bool("json", false, "output metrics as JSON instead of TUI")
-	procCPUThreshold = flag.Float64("proc-cpu-threshold", 100, "alert when a process stays above this CPU percent")
-	procCPUWindow    = flag.Duration("proc-cpu-window", 5*time.Minute, "continuous duration a process must exceed the CPU threshold")
-	procCPUAlerts    = flag.Bool("proc-cpu-alerts", true, "enable persistent high-CPU process alerts")
+	jsonOutput       = flag.Bool("json", false, molei18n.T("output metrics as JSON instead of TUI"))
+	procCPUThreshold = flag.Float64("proc-cpu-threshold", 100, molei18n.T("alert when a process stays above this CPU percent"))
+	procCPUWindow    = flag.Duration("proc-cpu-window", 5*time.Minute, molei18n.T("continuous duration a process must exceed the CPU threshold"))
+	procCPUAlerts    = flag.Bool("proc-cpu-alerts", true, molei18n.T("enable persistent high-CPU process alerts"))
 )
 
 func shouldUseJSONOutput(forceJSON bool, stdout *os.File) bool {
@@ -134,10 +135,10 @@ func processWatchOptionsFromFlags() ProcessWatchOptions {
 
 func validateFlags() error {
 	if *procCPUThreshold < 0 {
-		return fmt.Errorf("--proc-cpu-threshold must be >= 0")
+		return fmt.Errorf("%s", molei18n.T("--proc-cpu-threshold must be >= 0"))
 	}
 	if *procCPUWindow <= 0 {
-		return fmt.Errorf("--proc-cpu-window must be > 0")
+		return fmt.Errorf("%s", molei18n.T("--proc-cpu-window must be > 0"))
 	}
 	return nil
 }
@@ -191,7 +192,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if !m.ready {
-		return "Loading..."
+		return molei18n.T("Loading...")
 	}
 
 	termWidth := m.width
@@ -271,14 +272,14 @@ func runJSONMode() {
 	// Second collection has actual network data
 	data, err := collector.Collect()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error collecting metrics: %v\n", err)
+		fmt.Fprintln(os.Stderr, molei18n.F("error collecting metrics: %v", err))
 		os.Exit(1)
 	}
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(data); err != nil {
-		fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
+		fmt.Fprintln(os.Stderr, molei18n.F("error encoding JSON: %v", err))
 		os.Exit(1)
 	}
 }
@@ -287,7 +288,7 @@ func runJSONMode() {
 func runTUIMode() {
 	p := tea.NewProgram(newModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "system status error: %v\n", err)
+		fmt.Fprintln(os.Stderr, molei18n.F("system status error: %v", err))
 		os.Exit(1)
 	}
 }

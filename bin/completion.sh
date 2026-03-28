@@ -14,7 +14,7 @@ command_words="${command_names[*]}"
 
 emit_zsh_subcommands() {
     for entry in "${MOLE_COMMANDS[@]}"; do
-        printf "        '%s:%s'\n" "${entry%%:*}" "${entry#*:}"
+        printf "        '%s:%s'\n" "${entry%%:*}" "$(mole_t "${entry#*:}")"
     done
 }
 
@@ -23,7 +23,7 @@ emit_fish_completions() {
     for entry in "${MOLE_COMMANDS[@]}"; do
         local name="${entry%%:*}"
         local desc="${entry#*:}"
-        printf 'complete -c %s -n "__fish_mole_no_subcommand" -a %s -d "%s"\n' "$cmd" "$name" "$desc"
+        printf 'complete -c %s -n "__fish_mole_no_subcommand" -a %s -d "%s"\n' "$cmd" "$name" "$(mole_t "$desc")"
     done
 
     printf '\n'

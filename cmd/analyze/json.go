@@ -29,7 +29,7 @@ func runJSONMode(path string, isOverview bool) {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(result); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode JSON: %v\n", err)
+		fmt.Fprintln(os.Stderr, ftr("failed to encode JSON: %v", err))
 		os.Exit(1)
 	}
 }
@@ -41,7 +41,7 @@ func performScanForJSON(path string) jsonOutput {
 
 	items, err := os.ReadDir(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read directory: %v\n", err)
+		fmt.Fprintln(os.Stderr, ftr("failed to read directory: %v", err))
 		os.Exit(1)
 	}
 

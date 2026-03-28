@@ -40,7 +40,7 @@ check_touchid_sudo() {
     # Check if Touch ID is configured for sudo
     local pam_file="/etc/pam.d/sudo"
     if [[ -f "$pam_file" ]] && grep -q "pam_tid.so" "$pam_file" 2> /dev/null; then
-        echo -e "  ${GREEN}✓${NC} Touch ID     Biometric authentication enabled"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Touch ID")     $(mole_t "Biometric authentication enabled")"
     else
         # Check if Touch ID is supported
         local is_supported=false
@@ -53,7 +53,7 @@ check_touchid_sudo() {
         fi
 
         if [[ "$is_supported" == "true" ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Touch ID     ${YELLOW}Not configured for sudo${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Touch ID")     ${YELLOW}$(mole_t "Not configured for sudo")${NC}"
             export TOUCHID_NOT_CONFIGURED=true
         fi
     fi
@@ -65,9 +65,9 @@ check_rosetta() {
     # Check Rosetta 2 (for Apple Silicon Macs) - informational only, not auto-fixed
     if [[ "$(uname -m)" == "arm64" ]]; then
         if [[ -f "/Library/Apple/usr/share/rosetta/rosetta" ]]; then
-            echo -e "  ${GREEN}✓${NC} Rosetta 2    Intel app translation ready"
+            echo -e "  ${GREEN}✓${NC} $(mole_t "Rosetta 2")    $(mole_t "Intel app translation ready")"
         else
-            echo -e "  ${GRAY}${ICON_EMPTY}${NC} Rosetta 2    ${GRAY}Not installed${NC}"
+            echo -e "  ${GRAY}${ICON_EMPTY}${NC} $(mole_t "Rosetta 2")    ${GRAY}$(mole_t "Not installed")${NC}"
         fi
     fi
 }
@@ -81,15 +81,15 @@ check_git_config() {
         local git_email=$(git config --global user.email 2> /dev/null || echo "")
 
         if [[ -n "$git_name" && -n "$git_email" ]]; then
-            echo -e "  ${GREEN}✓${NC} Git          Global identity configured"
+            echo -e "  ${GREEN}✓${NC} $(mole_t "Git")          $(mole_t "Global identity configured")"
         else
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Git          ${YELLOW}User identity not set${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Git")          ${YELLOW}$(mole_t "User identity not set")${NC}"
         fi
     fi
 }
 
 check_all_config() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} System Configuration"
+    echo -e "${BLUE}${ICON_ARROW}${NC} $(mole_t "System Configuration")"
     check_touchid_sudo
     check_rosetta
     check_git_config
@@ -106,9 +106,9 @@ check_filevault() {
     if command -v fdesetup > /dev/null 2>&1; then
         local fv_status=$(fdesetup status 2> /dev/null || echo "")
         if echo "$fv_status" | grep -q "FileVault is On"; then
-            echo -e "  ${GREEN}✓${NC} FileVault    Disk encryption active"
+            echo -e "  ${GREEN}✓${NC} $(mole_t "FileVault")    $(mole_t "Disk encryption active")"
         else
-            echo -e "  ${RED}✗${NC} FileVault    ${RED}Disk encryption disabled${NC}"
+            echo -e "  ${RED}✗${NC} $(mole_t "FileVault")    ${RED}$(mole_t "Disk encryption disabled")${NC}"
             export FILEVAULT_DISABLED=true
         fi
     fi
@@ -137,16 +137,16 @@ check_firewall() {
     fi
 
     if [[ -n "$third_party_firewall" ]]; then
-        echo -e "  ${GREEN}✓${NC} Firewall     ${third_party_firewall} active"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Firewall")     ${third_party_firewall} $(mole_t "active")"
         return
     fi
 
     # Fall back to macOS built-in firewall check
     local firewall_output=$(sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2> /dev/null || echo "")
     if [[ "$firewall_output" == *"State = 1"* ]] || [[ "$firewall_output" == *"State = 2"* ]]; then
-        echo -e "  ${GREEN}✓${NC} Firewall     Network protection enabled"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Firewall")     $(mole_t "Network protection enabled")"
     else
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Firewall     ${YELLOW}Network protection disabled${NC}"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Firewall")     ${YELLOW}$(mole_t "Network protection disabled")${NC}"
         export FIREWALL_DISABLED=true
     fi
 }
@@ -158,10 +158,10 @@ check_gatekeeper() {
     if command -v spctl > /dev/null 2>&1; then
         local gk_status=$(spctl --status 2> /dev/null || echo "")
         if echo "$gk_status" | grep -q "enabled"; then
-            echo -e "  ${GREEN}✓${NC} Gatekeeper   App download protection active"
+            echo -e "  ${GREEN}✓${NC} $(mole_t "Gatekeeper")   $(mole_t "App download protection active")"
             unset GATEKEEPER_DISABLED
         else
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Gatekeeper   ${YELLOW}App security disabled${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Gatekeeper")   ${YELLOW}$(mole_t "App security disabled")${NC}"
             export GATEKEEPER_DISABLED=true
         fi
     fi
@@ -174,15 +174,15 @@ check_sip() {
     if command -v csrutil > /dev/null 2>&1; then
         local sip_status=$(csrutil status 2> /dev/null || echo "")
         if echo "$sip_status" | grep -q "enabled"; then
-            echo -e "  ${GREEN}✓${NC} SIP          System integrity protected"
+            echo -e "  ${GREEN}✓${NC} $(mole_t "SIP")          $(mole_t "System integrity protected")"
         else
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} SIP          ${YELLOW}System protection disabled${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "SIP")          ${YELLOW}$(mole_t "System protection disabled")${NC}"
         fi
     fi
 }
 
 check_all_security() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} Security Status"
+    echo -e "${BLUE}${ICON_ARROW}${NC} $(mole_t "Security Status")"
     check_filevault
     check_firewall
     check_gatekeeper
@@ -328,7 +328,7 @@ check_homebrew_updates() {
     export BREW_CASK_OUTDATED_COUNT=0
 
     if ! command -v brew > /dev/null 2>&1; then
-        printf "  ${GRAY}${ICON_EMPTY}${NC} %-12s %s\n" "Homebrew" "Not installed"
+        printf "  ${GRAY}${ICON_EMPTY}${NC} %-12s %s\n" "$(mole_t "Homebrew")" "$(mole_t "Not installed")"
         return
     fi
 
@@ -396,10 +396,10 @@ check_homebrew_updates() {
                 printf '%s %s\n' "$formula_count" "$cask_count" > "$cache_file" 2> /dev/null || true
             fi
         elif [[ $formula_status -eq 124 || $cask_status -eq 124 ]]; then
-            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "Homebrew" "Check timed out"
+            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "$(mole_t "Homebrew")" "$(mole_t "Check timed out")"
             return
         else
-            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "Homebrew" "Check failed"
+            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "$(mole_t "Homebrew")" "$(mole_t "Check failed")"
             return
         fi
     fi
@@ -419,9 +419,9 @@ check_homebrew_updates() {
             detail="${detail}${cask_count} cask"
         fi
         [[ -z "$detail" ]] && detail="${total_count} updates"
-        printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "Homebrew" "${detail} available"
+        printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "$(mole_t "Homebrew")" "$(printf "$(mole_t "%s available")" "$detail")"
     else
-        printf "  ${GREEN}✓${NC} %-12s %s\n" "Homebrew" "Up to date"
+        printf "  ${GREEN}✓${NC} %-12s %s\n" "$(mole_t "Homebrew")" "$(mole_t "Up to date")"
     fi
 }
 
@@ -455,12 +455,12 @@ check_macos_update() {
 
     if [[ "$updates_available" == "true" ]]; then
         if [[ -n "$macos_update_summary" ]]; then
-            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "macOS" "$macos_update_summary"
+            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "$(mole_t "macOS")" "$macos_update_summary"
         else
-            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "macOS" "Update available"
+            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "$(mole_t "macOS")" "$(mole_t "Update available")"
         fi
     else
-        printf "  ${GREEN}✓${NC} %-12s %s\n" "macOS" "System up to date"
+        printf "  ${GREEN}✓${NC} %-12s %s\n" "$(mole_t "macOS")" "$(mole_t "System up to date")"
     fi
 }
 
@@ -526,12 +526,12 @@ check_mole_update() {
         # Compare versions
         if [[ "$(printf '%s\n' "$current_version" "$latest_version" | sort -V | head -1)" == "$current_version" ]]; then
             export MOLE_UPDATE_AVAILABLE="true"
-            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}, running %s\n" "$ICON_WARNING" "Mole" "${latest_version} available" "${current_version}"
+            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}, $(mole_t "running") %s\n" "$ICON_WARNING" "$(mole_t "Mole")" "$(printf "$(mole_t "%s available")" "$latest_version")" "${current_version}"
         else
-            printf "  ${GREEN}✓${NC} %-12s %s\n" "Mole" "Latest version ${current_version}"
+            printf "  ${GREEN}✓${NC} %-12s %s\n" "$(mole_t "Mole")" "$(printf "$(mole_t "Latest version %s")" "${current_version}")"
         fi
     else
-        printf "  ${GREEN}✓${NC} %-12s %s\n" "Mole" "Latest version ${current_version}"
+        printf "  ${GREEN}✓${NC} %-12s %s\n" "$(mole_t "Mole")" "$(printf "$(mole_t "Latest version %s")" "${current_version}")"
     fi
 }
 
@@ -543,7 +543,7 @@ check_all_updates() {
     # Only redirect stdout, keep stderr for spinner display
     get_software_updates > /dev/null
 
-    echo -e "${BLUE}${ICON_ARROW}${NC} System Updates"
+    echo -e "${BLUE}${ICON_ARROW}${NC} $(mole_t "System Updates")"
     check_homebrew_updates
     check_appstore_updates
     check_macos_update
@@ -592,11 +592,11 @@ check_disk_space() {
     export DISK_FREE_GB=$free_num
 
     if [[ $free_num -lt 20 ]]; then
-        echo -e "  ${RED}✗${NC} Disk Space   ${RED}${free_gb}GB free${NC}, Critical"
+        echo -e "  ${RED}✗${NC} $(mole_t "Disk Space")   ${RED}${free_gb}GB $(mole_t "free")${NC}, $(mole_t "Critical")"
     elif [[ $free_num -lt 50 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Disk Space   ${YELLOW}${free_gb}GB free${NC}, Low"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Disk Space")   ${YELLOW}${free_gb}GB $(mole_t "free")${NC}, $(mole_t "Low")"
     else
-        echo -e "  ${GREEN}✓${NC} Disk Space   ${free_gb}GB free"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Disk Space")   ${free_gb}GB $(mole_t "free")"
     fi
 }
 
@@ -604,7 +604,7 @@ check_memory_usage() {
     local mem_total
     mem_total=$(sysctl -n hw.memsize 2> /dev/null || echo "0")
     if [[ -z "$mem_total" || "$mem_total" -le 0 ]]; then
-        echo -e "  ${GRAY}-${NC} Memory       Unable to determine"
+        echo -e "  ${GRAY}-${NC} $(mole_t "Memory")       $(mole_t "Unable to determine")"
         return
     fi
 
@@ -638,11 +638,11 @@ check_memory_usage() {
     ((used_percent < 0)) && used_percent=0
 
     if [[ $used_percent -gt 90 ]]; then
-        echo -e "  ${RED}✗${NC} Memory       ${RED}${used_percent}% used${NC}, Critical"
+        echo -e "  ${RED}✗${NC} $(mole_t "Memory")       ${RED}${used_percent}% $(mole_t "used")${NC}, $(mole_t "Critical")"
     elif [[ $used_percent -gt 80 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Memory       ${YELLOW}${used_percent}% used${NC}, High"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Memory")       ${YELLOW}${used_percent}% $(mole_t "used")${NC}, $(mole_t "High")"
     else
-        echo -e "  ${GREEN}✓${NC} Memory       ${used_percent}% used"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Memory")       ${used_percent}% $(mole_t "used")"
     fi
 }
 
@@ -670,11 +670,11 @@ check_login_items() {
     fi
 
     if [[ $login_items_count -gt 15 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Login Items  ${YELLOW}${login_items_count} apps${NC}"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Login Items")  ${YELLOW}${login_items_count} $(mole_t "apps")${NC}"
     elif [[ $login_items_count -gt 0 ]]; then
-        echo -e "  ${GREEN}✓${NC} Login Items  ${login_items_count} apps"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Login Items")  ${login_items_count} $(mole_t "apps")"
     else
-        echo -e "  ${GREEN}✓${NC} Login Items  None"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Login Items")  $(mole_t "None")"
         return
     fi
 
@@ -734,11 +734,11 @@ check_cache_size() {
     local cache_size_int=$(echo "$cache_size_gb" | cut -d'.' -f1)
 
     if [[ $cache_size_int -gt 10 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Cache Size   ${YELLOW}${cache_size_gb}GB${NC} cleanable"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Cache Size")   ${YELLOW}${cache_size_gb}GB${NC} $(mole_t "cleanable")"
     elif [[ $cache_size_int -gt 5 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Cache Size   ${YELLOW}${cache_size_gb}GB${NC} cleanable"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Cache Size")   ${YELLOW}${cache_size_gb}GB${NC} $(mole_t "cleanable")"
     else
-        echo -e "  ${GREEN}✓${NC} Cache Size   ${cache_size_gb}GB"
+        echo -e "  ${GREEN}✓${NC} $(mole_t "Cache Size")   ${cache_size_gb}GB"
     fi
 }
 
@@ -754,12 +754,12 @@ check_swap_usage() {
             if [[ "$swap_used" == *"G"* ]]; then
                 local swap_gb=${swap_num%.*}
                 if [[ $swap_gb -gt 2 ]]; then
-                    echo -e "  ${GRAY}${ICON_WARNING}${NC} Swap Usage   ${YELLOW}${swap_used}${NC}, High"
+                    echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Swap Usage")   ${YELLOW}${swap_used}${NC}, $(mole_t "High")"
                 else
-                    echo -e "  ${GREEN}✓${NC} Swap Usage   ${swap_used}"
+                    echo -e "  ${GREEN}✓${NC} $(mole_t "Swap Usage")   ${swap_used}"
                 fi
             else
-                echo -e "  ${GREEN}✓${NC} Swap Usage   ${swap_used}"
+                echo -e "  ${GREEN}✓${NC} $(mole_t "Swap Usage")   ${swap_used}"
             fi
         fi
     fi
@@ -771,7 +771,7 @@ check_brew_health() {
 }
 
 check_system_health() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} System Health"
+    echo -e "${BLUE}${ICON_ARROW}${NC} $(mole_t "System Health")"
     check_disk_space
     check_memory_usage
     check_swap_usage

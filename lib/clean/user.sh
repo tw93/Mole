@@ -26,7 +26,11 @@ clean_user_essentials() {
         [[ "$trash_count" =~ ^[0-9]+$ ]] || trash_count="0"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            [[ $trash_count -gt 0 ]] && echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Trash · would empty, $trash_count items" || echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
+            if [[ $trash_count -gt 0 ]]; then
+                printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Trash · would empty, %d items")\n" "$trash_count"
+            else
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Trash · already empty")"
+            fi
         elif [[ $trash_count -gt 0 ]]; then
             local emptied_via_finder=false
             # Skip AppleScript during tests to avoid permission dialogs
@@ -35,7 +39,7 @@ clean_user_essentials() {
             else
                 if run_with_timeout 5 osascript -e 'tell application "Finder" to empty trash' > /dev/null 2>&1; then
                     emptied_via_finder=true
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $trash_count items"
+                    printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Trash · emptied, %d items")\n" "$trash_count"
                     note_activity
                 fi
             fi
@@ -48,12 +52,12 @@ clean_user_essentials() {
                     fi
                 done < <(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
                 if [[ $cleaned_count -gt 0 ]]; then
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · emptied, $cleaned_count items"
+                    printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Trash · emptied, %d items")\n" "$cleaned_count"
                     note_activity
                 fi
             fi
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Trash · already empty"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Trash · already empty")"
         fi
     fi
 
@@ -100,7 +104,7 @@ _clean_incomplete_downloads() {
         for f in $pattern; do
             [[ -e "$f" ]] || continue
             if lsof -F n -- "$f" > /dev/null 2>&1; then
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} Skipping active download: $(basename "$f")"
+                printf "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Skipping active download: %s")\n" "$(basename "$f")"
                 continue
             fi
             safe_clean "$f" "$label" || true
@@ -157,7 +161,7 @@ _clean_mail_downloads() {
     if [[ $count -gt 0 ]]; then
         local cleaned_mb
         cleaned_mb=$(echo "$cleaned_kb" | awk '{printf "%.1f", $1/1024}' || echo "0.0")
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $count mail attachments older than ${mail_age_days}d, about ${cleaned_mb}MB"
+        printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Cleaned %d mail attachments older than %sd, about %sMB")\n" "$count" "$mail_age_days" "$cleaned_mb"
         note_activity
     fi
 }
@@ -171,7 +175,7 @@ clean_chrome_old_versions() {
 
     # Match the exact Chrome process name to avoid false positives
     if pgrep -x "Google Chrome" > /dev/null 2>&1; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Google Chrome running · old versions cleanup skipped"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Google Chrome running · old versions cleanup skipped")"
         return 0
     fi
 
@@ -196,7 +200,7 @@ clean_chrome_old_versions() {
         # Verify the Current symlink target exists. If broken, skip to avoid
         # accidentally deleting the active browser version.
         if [[ ! -d "$versions_dir/$current_version" ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Chrome Current symlink is broken · skipping version cleanup"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Chrome Current symlink is broken · skipping version cleanup")"
             continue
         fi
 
@@ -238,11 +242,11 @@ clean_chrome_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Chrome old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Chrome old versions, %d dirs, %s dry")${NC}\n" "${cleaned_count}" "$size_human"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Chrome old versions${NC}, ${line_color}${cleaned_count} dirs, $size_human${NC}"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Chrome old versions, %d dirs, %s")${NC}\n" "${cleaned_count}" "$size_human"
         fi
         files_cleaned=$((files_cleaned + cleaned_count))
         total_size_cleaned=$((total_size_cleaned + total_size))
@@ -266,7 +270,7 @@ clean_edge_old_versions() {
 
     # Match the exact Edge process name to avoid false positives (e.g., Microsoft Teams)
     if pgrep -x "Microsoft Edge" > /dev/null 2>&1; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Microsoft Edge running · old versions cleanup skipped"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Microsoft Edge running · old versions cleanup skipped")"
         return 0
     fi
 
@@ -291,7 +295,7 @@ clean_edge_old_versions() {
         # Verify the Current symlink target exists. If broken, skip to avoid
         # accidentally deleting the active browser version.
         if [[ ! -d "$versions_dir/$current_version" ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Edge Current symlink is broken · skipping version cleanup"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Edge Current symlink is broken · skipping version cleanup")"
             continue
         fi
 
@@ -333,11 +337,11 @@ clean_edge_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Edge old versions, %d dirs, %s dry")${NC}\n" "${cleaned_count}" "$size_human"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Edge old versions${NC}, ${line_color}${cleaned_count} dirs, $size_human${NC}"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Edge old versions, %d dirs, %s")${NC}\n" "${cleaned_count}" "$size_human"
         fi
         files_cleaned=$((files_cleaned + cleaned_count))
         total_size_cleaned=$((total_size_cleaned + total_size))
@@ -352,7 +356,7 @@ clean_edge_updater_old_versions() {
     [[ -d "$updater_dir" ]] || return 0
 
     if pgrep -x "Microsoft Edge" > /dev/null 2>&1; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Microsoft Edge running · updater cleanup skipped"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Microsoft Edge running · updater cleanup skipped")"
         return 0
     fi
 
@@ -397,11 +401,11 @@ clean_edge_updater_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Edge updater old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Edge updater old versions, %d dirs, %s dry")${NC}\n" "${cleaned_count}" "$size_human"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Edge updater old versions${NC}, ${line_color}${cleaned_count} dirs, $size_human${NC}"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Edge updater old versions, %d dirs, %s")${NC}\n" "${cleaned_count}" "$size_human"
         fi
         files_cleaned=$((files_cleaned + cleaned_count))
         total_size_cleaned=$((total_size_cleaned + total_size))
@@ -419,7 +423,7 @@ clean_brave_old_versions() {
 
     # Match the exact Brave process name to avoid false positives
     if pgrep -x "Brave Browser" > /dev/null 2>&1; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Brave Browser running · old versions cleanup skipped"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Brave Browser running · old versions cleanup skipped")"
         return 0
     fi
 
@@ -442,7 +446,7 @@ clean_brave_old_versions() {
         [[ -n "$current_version" ]] || continue
 
         if [[ ! -d "$versions_dir/$current_version" ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Brave Browser Current symlink is broken · skipping version cleanup"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Brave Browser Current symlink is broken · skipping version cleanup")"
             continue
         fi
 
@@ -484,11 +488,11 @@ clean_brave_old_versions() {
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Brave old versions${NC}, ${YELLOW}${cleaned_count} dirs, $size_human dry${NC}"
+            printf "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "Brave old versions, %d dirs, %s dry")${NC}\n" "${cleaned_count}" "$size_human"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Brave old versions${NC}, ${line_color}${cleaned_count} dirs, $size_human${NC}"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} $(mole_t "Brave old versions, %d dirs, %s")${NC}\n" "${cleaned_count}" "$size_human"
         fi
         files_cleaned=$((files_cleaned + cleaned_count))
         total_size_cleaned=$((total_size_cleaned + total_size))

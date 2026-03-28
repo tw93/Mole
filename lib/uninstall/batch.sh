@@ -247,7 +247,7 @@ batch_uninstall_applications() {
 
     # shellcheck disable=SC2154
     if [[ ${#selected_apps[@]} -eq 0 ]]; then
-        log_warning "No applications selected for uninstallation"
+        log_warning "$(mole_t "No applications selected for uninstallation")"
         return 0
     fi
 
@@ -380,14 +380,14 @@ batch_uninstall_applications() {
 
     local size_display=$(bytes_to_human "$((total_estimated_size * 1024))")
 
-    echo -e "\n${PURPLE_BOLD}Files to be removed:${NC}"
+    echo -e "\n${PURPLE_BOLD}$(mole_t "Files to be removed:")${NC}"
 
     # Warn if brew cask apps are present.
     local has_brew_cask=false
     [[ ${#brew_cask_apps[@]} -gt 0 ]] && has_brew_cask=true
 
     if [[ "$has_brew_cask" == "true" ]]; then
-        echo -e "${GRAY}${ICON_WARNING} Homebrew apps will be fully cleaned, --zap removes configs and data${NC}"
+        echo -e "${GRAY}${ICON_WARNING} $(mole_t "Homebrew apps will be fully cleaned, --zap removes configs and data")${NC}"
     fi
 
     echo ""
@@ -429,16 +429,18 @@ batch_uninstall_applications() {
 
     # Confirmation before requesting sudo.
     local app_total=${#selected_apps[@]}
-    local app_text="app"
-    [[ $app_total -gt 1 ]] && app_text="apps"
+    local app_text
+    app_text="$(mole_t "app")"
+    [[ $app_total -gt 1 ]] && app_text="$(mole_t "apps_word")"
 
     echo ""
-    local removal_note="Remove ${app_total} ${app_text}"
+    local removal_note
+    removal_note="$(printf "$(mole_t "Remove %d %s")" "${app_total}" "${app_text}")"
     [[ -n "$size_display" ]] && removal_note+=", ${size_display}"
     if [[ ${#running_apps[@]} -gt 0 ]]; then
-        removal_note+=" ${YELLOW}[Running]${NC}"
+        removal_note+=" ${YELLOW}[$(mole_t "Running")]${NC}"
     fi
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  $(mole_t "Enter confirm, ESC cancel: ")"
 
     drain_pending_input # Clean up any pending input before confirmation
     IFS= read -r -s -n1 key || key=""
@@ -479,7 +481,7 @@ batch_uninstall_applications() {
 
         if ! ensure_sudo_session "$admin_prompt"; then
             echo ""
-            log_error "Admin access denied"
+            log_error "$(mole_t "Admin access denied")"
             _restore_uninstall_traps
             return 1
         fi
@@ -698,17 +700,20 @@ batch_uninstall_applications() {
     local -a summary_details=()
 
     if [[ $success_count -gt 0 ]]; then
-        local success_text="app"
-        [[ $success_count -gt 1 ]] && success_text="apps"
+        local success_text
+        success_text="$(mole_t "app")"
+        [[ $success_count -gt 1 ]] && success_text="$(mole_t "apps_word")"
         local success_line="Removed ${success_count} ${success_text}"
         if is_uninstall_dry_run; then
-            success_line="Would remove ${success_count} ${success_text}"
+            success_line="$(printf "$(mole_t "Would remove %d %s")" "${success_count}" "${success_text}")"
+        else
+            success_line="$(printf "$(mole_t "Removed %d %s")" "${success_count}" "${success_text}")"
         fi
         if [[ -n "$freed_display" ]]; then
             if is_uninstall_dry_run; then
-                success_line+=", would free ${GREEN}${freed_display}${NC}"
+                success_line+=", $(mole_t "would free") ${GREEN}${freed_display}${NC}"
             else
-                success_line+=", freed ${GREEN}${freed_display}${NC}"
+                success_line+=", $(mole_t "freed") ${GREEN}${freed_display}${NC}"
             fi
         fi
 
@@ -756,7 +761,8 @@ batch_uninstall_applications() {
         done
         local failed_list="${failed_names[*]}"
 
-        local reason_summary="could not be removed"
+        local reason_summary
+        reason_summary="$(mole_t "could not be removed")"
         local suggestion_text=""
         if [[ $failed_count -eq 1 ]]; then
             # Extract reason and suggestion from format: app:reason:suggestion
@@ -772,14 +778,14 @@ batch_uninstall_applications() {
             fi
 
             case "$first_reason" in
-                still*running*) reason_summary="is still running" ;;
-                remove*failed*) reason_summary="could not be removed" ;;
-                permission*denied*) reason_summary="permission denied" ;;
-                owned*by*) reason_summary="$first_reason, try with sudo" ;;
+                still*running*) reason_summary="$(mole_t "is still running")" ;;
+                remove*failed*) reason_summary="$(mole_t "could not be removed")" ;;
+                permission*denied*) reason_summary="$(mole_t "permission denied")" ;;
+                owned*by*) reason_summary="$first_reason, $(mole_t "try with sudo")" ;;
                 *) reason_summary="$first_reason" ;;
             esac
         fi
-        summary_details+=("${ICON_LIST} Failed: ${RED}${failed_list}${NC} ${reason_summary}")
+        summary_details+=("${ICON_LIST} $(mole_t "Failed:") ${RED}${failed_list}${NC} ${reason_summary}")
         if [[ -n "$suggestion_text" ]]; then
             summary_details+=("$suggestion_text")
         fi
@@ -787,15 +793,16 @@ batch_uninstall_applications() {
 
     if [[ $success_count -eq 0 && $failed_count -eq 0 ]]; then
         summary_status="info"
-        summary_details+=("No applications were uninstalled.")
+        summary_details+=("$(mole_t "No applications were uninstalled.")")
     fi
 
-    local title="Uninstall complete"
+    local title
+    title="$(mole_t "Uninstall complete")"
     if [[ "$summary_status" == "warn" ]]; then
-        title="Uninstall incomplete"
+        title="$(mole_t "Uninstall incomplete")"
     fi
     if is_uninstall_dry_run; then
-        title="Uninstall dry run complete"
+        title="$(mole_t "Uninstall dry run complete")"
     fi
 
     echo ""

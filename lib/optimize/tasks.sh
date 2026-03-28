@@ -11,10 +11,12 @@ readonly MOLE_SQLITE_MAX_SIZE=104857600 # 100MB
 # Dry-run aware output.
 opt_msg() {
     local message="$1"
+    local translated
+    translated="$(mole_t "$message")"
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $message"
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $translated"
     else
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $message"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $translated"
     fi
 }
 
@@ -109,7 +111,7 @@ opt_system_maintenance() {
     local spotlight_status
     spotlight_status=$(mdutil -s / 2> /dev/null || echo "")
     if echo "$spotlight_status" | grep -qi "Indexing disabled"; then
-        echo -e "  ${GRAY}${ICON_EMPTY}${NC} Spotlight indexing disabled"
+        echo -e "  ${GRAY}${ICON_EMPTY}${NC} $(mole_t "Spotlight indexing disabled")"
     else
         opt_msg "Spotlight index verified"
     fi
@@ -223,7 +225,7 @@ opt_fix_broken_configs() {
 
     export OPTIMIZE_CONFIGS_REPAIRED="${broken_prefs}"
     if [[ $broken_prefs -gt 0 ]]; then
-        opt_msg "Repaired $broken_prefs corrupted preference files"
+        opt_msg "$(printf "$(mole_t "Repaired %d corrupted preference files")" "$broken_prefs")"
     else
         opt_msg "All preference files valid"
     fi
@@ -248,7 +250,7 @@ opt_network_optimization() {
         opt_msg "DNS cache refreshed"
         opt_msg "mDNSResponder restarted"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to refresh DNS cache"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to refresh DNS cache")"
     fi
 }
 
@@ -263,7 +265,7 @@ opt_sqlite_vacuum() {
     fi
 
     if ! command -v sqlite3 > /dev/null 2>&1; then
-        echo -e "  ${GRAY}-${NC} Database optimization already optimal, sqlite3 unavailable"
+        echo -e "  ${GRAY}-${NC} $(mole_t "Database optimization already optimal, sqlite3 unavailable")"
         return 0
     fi
 
@@ -277,7 +279,7 @@ opt_sqlite_vacuum() {
     done
 
     if [[ ${#busy_apps[@]} -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Close these apps before database optimization: ${busy_apps[*]}"
+        printf "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Close these apps before database optimization: %s")\n" "${busy_apps[*]}"
         return 0
     fi
 
@@ -372,23 +374,23 @@ opt_sqlite_vacuum() {
 
     export OPTIMIZE_DATABASES_COUNT="${vacuumed}"
     if [[ $vacuumed -gt 0 ]]; then
-        opt_msg "Optimized $vacuumed databases for Mail, Safari, Messages"
+        opt_msg "$(printf "$(mole_t "Optimized %d databases for Mail, Safari, Messages")" "$vacuumed")"
     elif [[ $timed_out -eq 0 && $failed -eq 0 ]]; then
         opt_msg "All databases already optimized"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Database optimization incomplete"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Database optimization incomplete")"
     fi
 
     if [[ $skipped -gt 0 ]]; then
-        opt_msg "Already optimal for $skipped databases"
+        opt_msg "$(printf "$(mole_t "Already optimal for %d databases")" "$skipped")"
     fi
 
     if [[ $timed_out -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Timed out on $timed_out databases"
+        printf "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Timed out on %d databases")\n" "$timed_out"
     fi
 
     if [[ $failed -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed on $failed databases"
+        printf "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed on %d databases")\n" "$failed"
     fi
 }
 
@@ -434,13 +436,13 @@ opt_launch_services_rebuild() {
             opt_msg "LaunchServices repaired"
             opt_msg "File associations refreshed"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to rebuild LaunchServices"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to rebuild LaunchServices")"
         fi
     else
         if [[ -t 1 ]]; then
             stop_inline_spinner
         fi
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} lsregister not found"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "lsregister not found")"
     fi
 }
 
@@ -501,7 +503,7 @@ opt_font_cache_rebuild() {
             local running_list
             running_list=$(printf "%s, " "${running_browsers[@]}")
             running_list="${running_list%, }"
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Font cache rebuild skipped · ${running_list} still running"
+            printf "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Font cache rebuild skipped · %s still running")\n" "${running_list}"
             return 0
         fi
 
@@ -516,7 +518,7 @@ opt_font_cache_rebuild() {
         opt_msg "Font cache cleared"
         opt_msg "System will rebuild font database automatically"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to clear font cache"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to clear font cache")"
     fi
 }
 
@@ -545,7 +547,7 @@ opt_memory_pressure_relief() {
             opt_msg "Inactive memory released"
             opt_msg "System responsiveness improved"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to release memory pressure"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to release memory pressure")"
         fi
     else
         opt_msg "Inactive memory released"
@@ -595,7 +597,7 @@ opt_network_stack_optimize() {
         if [[ "$route_flushed" == "true" ]]; then
             return 0
         fi
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to optimize network stack"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to optimize network stack")"
     fi
 }
 
@@ -635,7 +637,7 @@ opt_disk_permissions_repair() {
             opt_msg "User directory permissions repaired"
             opt_msg "File access issues resolved"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to repair permissions, may not be needed"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to repair permissions, may not be needed")"
         fi
     else
         opt_msg "User directory permissions repaired"
@@ -705,7 +707,7 @@ opt_bluetooth_reset() {
             if [[ "$spinner_started" == "true" ]]; then
                 stop_inline_spinner
             fi
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} ${GRAY}${disconnect_notice}${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} ${GRAY}$(mole_t "$disconnect_notice")${NC}"
             sleep 1
             if pgrep -x bluetoothd > /dev/null 2>&1; then
                 sudo pkill -KILL bluetoothd > /dev/null 2>&1 || true
@@ -722,7 +724,7 @@ opt_bluetooth_reset() {
         if [[ "$spinner_started" == "true" ]]; then
             stop_inline_spinner
         fi
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${disconnect_notice}"
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(mole_t "$disconnect_notice")"
         opt_msg "Bluetooth module restarted"
         opt_msg "Connectivity issues resolved"
     fi
@@ -734,7 +736,7 @@ opt_spotlight_index_optimize() {
     spotlight_status=$(mdutil -s / 2> /dev/null || echo "")
 
     if echo "$spotlight_status" | grep -qi "Indexing disabled"; then
-        echo -e "  ${GRAY}${ICON_EMPTY}${NC} Spotlight indexing is disabled"
+        echo -e "  ${GRAY}${ICON_EMPTY}${NC} $(mole_t "Spotlight indexing is disabled")"
         return 0
     fi
 
@@ -759,12 +761,12 @@ opt_spotlight_index_optimize() {
             fi
 
             if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
-                echo -e "  ${BLUE}${ICON_INFO}${NC} Spotlight search is slow, rebuilding index, may take 1-2 hours"
+                echo -e "  ${BLUE}${ICON_INFO}${NC} $(mole_t "Spotlight search is slow, rebuilding index, may take 1-2 hours")"
                 if sudo mdutil -E / > /dev/null 2>&1; then
                     opt_msg "Spotlight index rebuild started"
-                    echo -e "  ${GRAY}Indexing will continue in background${NC}"
+                    echo -e "  ${GRAY}$(mole_t "Indexing will continue in background")${NC}"
                 else
-                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to rebuild Spotlight index"
+                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(mole_t "Failed to rebuild Spotlight index")"
                 fi
             else
                 opt_msg "Spotlight index rebuild started"
@@ -826,7 +828,7 @@ execute_optimization() {
         bluetooth_reset) opt_bluetooth_reset ;;
         spotlight_index_optimize) opt_spotlight_index_optimize ;;
         *)
-            echo -e "${YELLOW}${ICON_ERROR}${NC} Unknown action: $action"
+            printf "${YELLOW}${ICON_ERROR}${NC} $(mole_t "Unknown action: %s")\n" "$action"
             return 1
             ;;
     esac

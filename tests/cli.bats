@@ -105,6 +105,27 @@ EOF
 	[[ "$output" == *"Unknown command: unknown-command"* ]]
 }
 
+@test "mole language --set zh-CN persists language choice" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" language --set zh-CN
+	[ "$status" -eq 0 ]
+
+	run cat "$HOME/.config/mole/language"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"LANG=zh-CN"* ]]
+}
+
+@test "mole --help prints Chinese copy when zh-CN is configured" {
+	mkdir -p "$HOME/.config/mole"
+	cat > "$HOME/.config/mole/language" <<'EOF'
+LANG=zh-CN
+EOF
+
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"主菜单"* ]]
+	[[ "$output" == *"释放磁盘空间"* ]]
+}
+
 @test "mole uninstall --whitelist returns unsupported option error" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --whitelist
 	[ "$status" -ne 0 ]
@@ -183,6 +204,24 @@ EOF
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" touchid status
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Touch ID"* ]]
+}
+
+@test "status wrapper exports configured language to Go binary" {
+	mkdir -p "$HOME/.config/mole"
+	cat > "$HOME/.config/mole/language" <<'EOF'
+LANG=zh-CN
+EOF
+
+	trap 'rm -f "$PROJECT_ROOT/bin/status-go"' RETURN
+	cat > "$PROJECT_ROOT/bin/status-go" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${MOLE_LANG:-}"
+EOF
+	chmod +x "$PROJECT_ROOT/bin/status-go"
+
+	run env HOME="$HOME" "$PROJECT_ROOT/bin/status.sh"
+	[ "$status" -eq 0 ]
+	[[ "$output" == "zh-CN" ]]
 }
 
 @test "mo optimize command is recognized" {

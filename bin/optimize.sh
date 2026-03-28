@@ -25,7 +25,7 @@ source "$SCRIPT_DIR/lib/manage/whitelist.sh"
 
 print_header() {
     printf '\n'
-    echo -e "${PURPLE_BOLD}Optimize and Check${NC}"
+    echo -e "${PURPLE_BOLD}$(mole_t "Optimize and Check")${NC}"
 }
 
 # Bash-native JSON parsing helpers (no jq dependency).
@@ -150,11 +150,11 @@ show_optimization_summary() {
     local total_applied=$((safe_count + confirm_count))
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        summary_title="Dry Run Complete, No Changes Made"
-        summary_details+=("Would apply ${YELLOW}${total_applied:-0}${NC} optimizations")
-        summary_details+=("Run without ${YELLOW}--dry-run${NC} to apply these changes")
+        summary_title="$(mole_t "Dry Run Complete, No Changes Made")"
+        summary_details+=("$(mole_t "Would apply") ${YELLOW}${total_applied:-0}${NC} $(mole_t "optimizations")")
+        summary_details+=("$(mole_t "Run without --dry-run to apply these changes")")
     else
-        summary_title="Optimization and Check Complete"
+        summary_title="$(mole_t "Optimization and Check Complete")"
 
         # Build statistics summary
         local -a stats=()
@@ -164,32 +164,32 @@ show_optimization_summary() {
 
         if [[ "$cache_kb" =~ ^[0-9]+$ ]] && [[ "$cache_kb" -gt 0 ]]; then
             local cache_human=$(bytes_to_human "$((cache_kb * 1024))")
-            stats+=("${cache_human} cache cleaned")
+            stats+=("${cache_human} $(mole_t "cache cleaned")")
         fi
 
         if [[ "$db_count" =~ ^[0-9]+$ ]] && [[ "$db_count" -gt 0 ]]; then
-            stats+=("${db_count} databases optimized")
+            stats+=("${db_count} $(mole_t "databases optimized")")
         fi
 
         if [[ "$config_count" =~ ^[0-9]+$ ]] && [[ "$config_count" -gt 0 ]]; then
-            stats+=("${config_count} configs repaired")
+            stats+=("${config_count} $(mole_t "configs repaired")")
         fi
 
         # Build first summary line with most important stat only
         local key_stat=""
         if [[ "$cache_kb" =~ ^[0-9]+$ ]] && [[ "$cache_kb" -gt 0 ]]; then
             local cache_human=$(bytes_to_human "$((cache_kb * 1024))")
-            key_stat="${cache_human} cache cleaned"
+            key_stat="${cache_human} $(mole_t "cache cleaned")"
         elif [[ "$db_count" =~ ^[0-9]+$ ]] && [[ "$db_count" -gt 0 ]]; then
-            key_stat="${db_count} databases optimized"
+            key_stat="${db_count} $(mole_t "databases optimized")"
         elif [[ "$config_count" =~ ^[0-9]+$ ]] && [[ "$config_count" -gt 0 ]]; then
-            key_stat="${config_count} configs repaired"
+            key_stat="${config_count} $(mole_t "configs repaired")"
         fi
 
         if [[ -n "$key_stat" ]]; then
-            summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, ${key_stat}")
+            summary_details+=("$(mole_t "Applied") ${GREEN}${total_applied:-0}${NC} $(mole_t "optimizations"), ${key_stat}")
         else
-            summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, all services tuned")
+            summary_details+=("$(mole_t "Applied") ${GREEN}${total_applied:-0}${NC} $(mole_t "optimizations"), $(mole_t "all services tuned")")
         fi
 
         local summary_line3=""
@@ -202,7 +202,7 @@ show_optimization_summary() {
             fi
             summary_details+=("$summary_line3")
         fi
-        summary_details+=("System fully optimized")
+        summary_details+=("$(mole_t "System fully optimized")")
     fi
 
     print_summary_block "$summary_title" "${summary_details[@]}"
@@ -225,7 +225,7 @@ show_system_health() {
     disk_percent=${disk_percent:-0}
     uptime=${uptime:-0}
 
-    printf "${ICON_ADMIN} System  %.0f/%.0f GB RAM | %.0f/%.0f GB Disk | Uptime %.0fd\n" \
+    printf "${ICON_ADMIN} $(mole_t "System")  %.0f/%.0f GB RAM | %.0f/%.0f GB $(mole_t "Disk") | $(mole_t "Uptime") %.0f$(mole_t "d")\n" \
         "$mem_used" "$mem_total" "$disk_used" "$disk_total" "$uptime"
 }
 
@@ -239,7 +239,7 @@ announce_action() {
     else
         echo ""
     fi
-    echo -e "${BLUE}${ICON_ARROW} ${name}${NC}"
+    echo -e "${BLUE}${ICON_ARROW} $(mole_t "$name")${NC}"
 }
 
 touchid_configured() {
@@ -271,7 +271,7 @@ cleanup_path() {
         return
     fi
     if should_protect_path "$expanded_path"; then
-        echo -e "${GRAY}${ICON_WARNING}${NC} Protected $label"
+        echo -e "${GRAY}${ICON_WARNING}${NC} $(mole_t "Protected") $label"
         return
     fi
 
@@ -285,7 +285,7 @@ cleanup_path() {
     local removed=false
     if safe_remove "$expanded_path" true; then
         removed=true
-    elif request_sudo_access "Removing $label requires admin access"; then
+    elif request_sudo_access "$(printf "$(mole_t "Removing %s requires admin access")" "$label")"; then
         if safe_sudo_remove "$expanded_path"; then
             removed=true
         fi
@@ -298,8 +298,8 @@ cleanup_path() {
             echo -e "${GREEN}${ICON_SUCCESS}${NC} $label"
         fi
     else
-        echo -e "${GRAY}${ICON_WARNING}${NC} Skipped $label${NC}"
-        echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}Grant Full Disk Access to your terminal, then retry${NC}"
+        echo -e "${GRAY}${ICON_WARNING}${NC} $(mole_t "Skipped") $label${NC}"
+        echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}$(mole_t "Grant Full Disk Access to your terminal, then retry")${NC}"
     fi
 }
 
@@ -315,14 +315,14 @@ collect_security_fix_actions() {
     SECURITY_FIXES=()
     if [[ "${FIREWALL_DISABLED:-}" == "true" ]]; then
         if ! is_whitelisted "firewall"; then
-            SECURITY_FIXES+=("firewall|Enable macOS firewall")
+            SECURITY_FIXES+=("firewall|$(mole_t "Enable macOS firewall")")
         fi
     fi
     # Gatekeeper state is intentionally user-managed. Optimize may report it,
     # but it must not change the user's "Anywhere" preference.
     if touchid_supported && ! touchid_configured; then
         if ! is_whitelisted "check_touchid"; then
-            SECURITY_FIXES+=("touchid|Enable Touch ID for sudo")
+            SECURITY_FIXES+=("touchid|$(mole_t "Enable Touch ID for sudo")")
         fi
     fi
 
@@ -335,19 +335,19 @@ ask_for_security_fixes() {
     fi
 
     echo ""
-    echo -e "${BLUE}SECURITY FIXES${NC}"
+    echo -e "${BLUE}$(mole_t "SECURITY FIXES")${NC}"
     for entry in "${SECURITY_FIXES[@]}"; do
         IFS='|' read -r _ label <<< "$entry"
         echo -e "  ${ICON_LIST} $label"
     done
     echo ""
     export MOLE_SECURITY_FIXES_SHOWN=true
-    echo -ne "${GRAY}${ICON_REVIEW}${NC} ${YELLOW}Apply now?${NC} ${GRAY}Enter confirm / Space cancel${NC}: "
+    echo -ne "${GRAY}${ICON_REVIEW}${NC} ${YELLOW}$(mole_t "Apply now?")${NC} ${GRAY}$(mole_t "Enter confirm / Space cancel")${NC}: "
 
     local key
     if ! key=$(read_key); then
         export MOLE_SECURITY_FIXES_SKIPPED=true
-        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} Security fixes skipped"
+        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Security fixes skipped")"
         echo ""
         return 1
     fi
@@ -357,7 +357,7 @@ ask_for_security_fixes() {
         return 0
     else
         export MOLE_SECURITY_FIXES_SKIPPED=true
-        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} Security fixes skipped"
+        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Security fixes skipped")"
         echo ""
         return 1
     fi
@@ -365,11 +365,11 @@ ask_for_security_fixes() {
 
 apply_firewall_fix() {
     if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on > /dev/null 2>&1; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Firewall enabled"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Firewall enabled")"
         FIREWALL_DISABLED=false
         return 0
     fi
-    echo -e "  ${GRAY}${ICON_WARNING}${NC} Failed to enable firewall, check permissions"
+    echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Failed to enable firewall, check permissions")"
     return 1
 }
 
@@ -382,7 +382,7 @@ apply_touchid_fix() {
 
 perform_security_fixes() {
     if ! ensure_sudo_session "Security changes require admin access"; then
-        echo -e "${GRAY}${ICON_WARNING}${NC} Skipped security fixes, sudo denied"
+        echo -e "${GRAY}${ICON_WARNING}${NC} $(mole_t "Skipped security fixes, sudo denied")"
         return 1
     fi
 
@@ -454,12 +454,12 @@ main() {
 
     # Dry-run indicator.
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
+        echo -e "${YELLOW}${ICON_DRY_RUN} $(mole_t "DRY RUN MODE, No files will be modified")\n"
     fi
 
     if ! command -v bc > /dev/null 2>&1; then
-        echo -e "${YELLOW}${ICON_ERROR}${NC} Missing dependency: bc"
-        echo -e "${GRAY}Install with: ${GREEN}brew install bc${NC}"
+        echo -e "${YELLOW}${ICON_ERROR}${NC} $(mole_t "Missing dependency: bc")"
+        echo -e "${GRAY}$(mole_t "Install with:") ${GREEN}brew install bc${NC}"
         exit 1
     fi
 
@@ -482,7 +482,7 @@ main() {
         fi
         echo ""
         log_error "Invalid system health data format"
-        echo -e "${GRAY}${ICON_REVIEW}${NC} Check if awk, sysctl, and df commands are available"
+        echo -e "${GRAY}${ICON_REVIEW}${NC} $(mole_t "Check if awk, sysctl, and df commands are available")"
         exit 1
     fi
 
@@ -500,7 +500,7 @@ main() {
                 IFS=', '
                 echo "${CURRENT_WHITELIST_PATTERNS[*]}"
             )
-            echo -e "${ICON_ADMIN} Active Whitelist: ${patterns_list}"
+            echo -e "${ICON_ADMIN} $(mole_t "Active Whitelist:") ${patterns_list}"
         fi
     fi
 

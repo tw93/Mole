@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 var (
@@ -141,10 +142,10 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 	}
 	compactHeader := termWidth <= 80
 
-	title := titleStyle.Render("Status")
+	title := titleStyle.Render(molei18n.T("Status"))
 
 	scoreStyle := getScoreStyle(m.HealthScore)
-	scoreText := subtleStyle.Render("Health ") + scoreStyle.Render(fmt.Sprintf("● %d", m.HealthScore))
+	scoreText := subtleStyle.Render(molei18n.T("Health ")) + scoreStyle.Render(fmt.Sprintf("● %d", m.HealthScore))
 
 	// Hardware info for a single line.
 	infoParts := []string{}
@@ -177,7 +178,7 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 		optionalInfoParts = append(optionalInfoParts, m.Hardware.OSVersion)
 	}
 	if !compactHeader && m.Uptime != "" {
-		optionalInfoParts = append(optionalInfoParts, subtleStyle.Render("up "+m.Uptime))
+		optionalInfoParts = append(optionalInfoParts, subtleStyle.Render(molei18n.F("up %s", m.Uptime)))
 	}
 
 	headLeft := title + "  " + scoreText
@@ -214,9 +215,9 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 
 	if errMsg != "" {
 		if mole == "" {
-			return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", dangerStyle.Render("ERROR: "+errMsg)), ""
+			return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", dangerStyle.Render(molei18n.F("ERROR: %s", errMsg))), ""
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", mole, dangerStyle.Render("ERROR: "+errMsg)), ""
+		return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", mole, dangerStyle.Render(molei18n.F("ERROR: %s", errMsg))), ""
 	}
 	if mole == "" {
 		return headerLine, ""
@@ -248,14 +249,14 @@ func renderProcessAlertBar(alerts []ProcessAlert, width int) string {
 	focus := active[0]
 
 	text := fmt.Sprintf(
-		"ALERT %s at %.1f%% for %s (threshold %.1f%%)",
+		molei18n.T("ALERT %s at %.1f%% for %s (threshold %.1f%%)"),
 		formatProcessLabel(ProcessInfo{PID: focus.PID, Name: focus.Name}),
 		focus.CPU,
 		focus.Window,
 		focus.Threshold,
 	)
 	if len(active) > 1 {
-		text += fmt.Sprintf(" · +%d more", len(active)-1)
+		text += molei18n.F(" · +%d more", len(active)-1)
 	}
 
 	return renderBanner(alertBarStyle, text, width)
@@ -279,10 +280,10 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 		headerText += fmt.Sprintf(" @ %s°C", colorizeTemp(thermal.CPUTemp))
 	}
 
-	lines = append(lines, fmt.Sprintf("Total  %s  %s", usageBar, headerText))
+	lines = append(lines, molei18n.F("Total  %s  %s", usageBar, headerText))
 
 	if cpu.PerCoreEstimated {
-		lines = append(lines, subtleStyle.Render("Per-core data unavailable, using averaged load"))
+		lines = append(lines, subtleStyle.Render(molei18n.T("Per-core data unavailable, using averaged load")))
 	} else if len(cpu.PerCore) > 0 {
 		type coreUsage struct {
 			idx int
@@ -297,20 +298,20 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 		maxCores := min(len(cores), 3)
 		for i := range maxCores {
 			c := cores[i]
-			lines = append(lines, fmt.Sprintf("Core%-2d %s  %5.1f%%", c.idx+1, progressBar(c.val), c.val))
+			lines = append(lines, molei18n.F("Core%-2d %s  %5.1f%%", c.idx+1, progressBar(c.val), c.val))
 		}
 	}
 
 	// Load line at the end
 	if cpu.PCoreCount > 0 && cpu.ECoreCount > 0 {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %dP+%dE",
+		lines = append(lines, molei18n.F("Load   %.2f / %.2f / %.2f, %dP+%dE",
 			cpu.Load1, cpu.Load5, cpu.Load15, cpu.PCoreCount, cpu.ECoreCount))
 	} else {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
+		lines = append(lines, molei18n.F("Load   %.2f / %.2f / %.2f, %d cores",
 			cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
 	}
 
-	return cardData{icon: iconCPU, title: "CPU", lines: lines}
+	return cardData{icon: iconCPU, title: molei18n.T("CPU"), lines: lines}
 }
 
 func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
@@ -319,11 +320,11 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 
 	var lines []string
 	// Line 1: Used
-	lines = append(lines, fmt.Sprintf("Used   %s  %5.1f%%", progressBar(mem.UsedPercent), mem.UsedPercent))
+	lines = append(lines, molei18n.F("Used   %s  %5.1f%%", progressBar(mem.UsedPercent), mem.UsedPercent))
 
 	// Line 2: Free
 	freePercent := 100 - mem.UsedPercent
-	lines = append(lines, fmt.Sprintf("Free   %s  %5.1f%%", progressBar(freePercent), freePercent))
+	lines = append(lines, molei18n.F("Free   %s  %5.1f%%", progressBar(freePercent), freePercent))
 
 	if hasSwap {
 		// Layout with Swap:
@@ -334,7 +335,7 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 		if mem.SwapTotal > 0 {
 			swapPercent = (float64(mem.SwapUsed) / float64(mem.SwapTotal)) * 100.0
 		}
-		swapLine := fmt.Sprintf("Swap   %s  %5.1f%%", progressBar(swapPercent), swapPercent)
+		swapLine := molei18n.F("Swap   %s  %5.1f%%", progressBar(swapPercent), swapPercent)
 		swapText := fmt.Sprintf("%s/%s", humanBytesCompact(mem.SwapUsed), humanBytesCompact(mem.SwapTotal))
 		swapLineWithText := swapLine + " " + swapText
 		if cardWidth > 0 && lipgloss.Width(swapLineWithText) <= cardWidth {
@@ -345,17 +346,17 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 			lines = append(lines, swapLine)
 		}
 
-		lines = append(lines, fmt.Sprintf("Total  %s / %s", humanBytes(mem.Used), humanBytes(mem.Total)))
-		lines = append(lines, fmt.Sprintf("Avail  %s", humanBytes(mem.Total-mem.Used))) // Simplified avail logic for consistency
+		lines = append(lines, molei18n.F("Total  %s / %s", humanBytes(mem.Used), humanBytes(mem.Total)))
+		lines = append(lines, molei18n.F("Avail  %s", humanBytes(mem.Total-mem.Used))) // Simplified avail logic for consistency
 	} else {
 		// Layout without Swap:
 		// 3. Total
 		// 4. Cached (if > 0)
 		// 5. Avail
-		lines = append(lines, fmt.Sprintf("Total  %s / %s", humanBytes(mem.Used), humanBytes(mem.Total)))
+		lines = append(lines, molei18n.F("Total  %s / %s", humanBytes(mem.Used), humanBytes(mem.Total)))
 
 		if mem.Cached > 0 {
-			lines = append(lines, fmt.Sprintf("Cached %s", humanBytes(mem.Cached)))
+			lines = append(lines, molei18n.F("Cached %s", humanBytes(mem.Cached)))
 		}
 		// Calculate available if not provided directly, or use Total-Used as proxy if needed,
 		// but typically available is more nuanced. Using what we have.
@@ -363,12 +364,12 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 		// in simple terms for this view or we could use the passed definition.
 		// Original code calculated: available := mem.Total - mem.Used
 		available := mem.Total - mem.Used
-		lines = append(lines, fmt.Sprintf("Avail  %s", humanBytes(available)))
+		lines = append(lines, molei18n.F("Avail  %s", humanBytes(available)))
 	}
 	// Memory pressure status.
 	if mem.Pressure != "" {
 		pressureStyle := okStyle
-		pressureText := "Status " + mem.Pressure
+		pressureText := molei18n.F("Status %s", translatePressure(mem.Pressure))
 		switch mem.Pressure {
 		case "warn":
 			pressureStyle = warnStyle
@@ -377,14 +378,20 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 		}
 		lines = append(lines, pressureStyle.Render(pressureText))
 	}
-	return cardData{icon: iconMemory, title: "Memory", lines: lines}
+	return cardData{icon: iconMemory, title: molei18n.T("Memory"), lines: lines}
 }
 
 func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
 	var lines []string
 	if len(disks) == 0 {
-		lines = append(lines, subtleStyle.Render("Collecting..."))
+		lines = append(lines, subtleStyle.Render(molei18n.T("Collecting...")))
 	} else {
+		internalPrefix := "INTR"
+		externalPrefix := "EXTR"
+		if molei18n.IsChinese() {
+			internalPrefix = "内置"
+			externalPrefix = "外置"
+		}
 		internal, external := splitDisks(disks)
 		addGroup := func(prefix string, list []DiskStatus) {
 			if len(list) == 0 {
@@ -395,19 +402,19 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
 				lines = append(lines, formatDiskLine(label, d))
 			}
 		}
-		addGroup("INTR", internal)
-		addGroup("EXTR", external)
+		addGroup(internalPrefix, internal)
+		addGroup(externalPrefix, external)
 		if len(lines) == 0 {
-			lines = append(lines, subtleStyle.Render("No disks detected"))
+			lines = append(lines, subtleStyle.Render(molei18n.T("No disks detected")))
 		} else if len(disks) == 1 {
 			lines = append(lines, formatDiskMetaLine(disks[0]))
 		}
 	}
 	readBar := ioBar(io.ReadRate)
 	writeBar := ioBar(io.WriteRate)
-	lines = append(lines, fmt.Sprintf("Read   %s  %.1f MB/s", readBar, io.ReadRate))
-	lines = append(lines, fmt.Sprintf("Write  %s  %.1f MB/s", writeBar, io.WriteRate))
-	return cardData{icon: iconDisk, title: "Disk", lines: lines}
+	lines = append(lines, molei18n.F("Read   %s  %.1f MB/s", readBar, io.ReadRate))
+	lines = append(lines, molei18n.F("Write  %s  %.1f MB/s", writeBar, io.WriteRate))
+	return cardData{icon: iconDisk, title: molei18n.T("Disk"), lines: lines}
 }
 
 func splitDisks(disks []DiskStatus) (internal, external []DiskStatus) {
@@ -438,7 +445,7 @@ func formatDiskLine(label string, d DiskStatus) string {
 	if d.Total > d.Used {
 		free = d.Total - d.Used
 	}
-	return fmt.Sprintf("%-6s %s  %s used, %s free", label, bar, used, humanBytesShort(free))
+	return molei18n.F("%-6s %s  %s used, %s free", label, bar, used, humanBytesShort(free))
 }
 
 func formatDiskMetaLine(d DiskStatus) string {
@@ -446,7 +453,24 @@ func formatDiskMetaLine(d DiskStatus) string {
 	if d.Fstype != "" {
 		parts = append(parts, strings.ToUpper(d.Fstype))
 	}
-	return fmt.Sprintf("Total  %s", strings.Join(parts, " · "))
+	return molei18n.F("Total  %s", strings.Join(parts, " · "))
+}
+
+func translatePressure(pressure string) string {
+	return molei18n.T(strings.ToLower(strings.TrimSpace(pressure)))
+}
+
+func translateBatteryStatus(status string) string {
+	if status == "" {
+		return ""
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(status))
+	translated := molei18n.T(lower)
+	if translated == lower {
+		return status
+	}
+	return translated
 }
 
 func ioBar(rate float64) string {
@@ -473,9 +497,9 @@ func renderProcessCard(procs []ProcessInfo) cardData {
 		lines = append(lines, fmt.Sprintf("%-12s  %s  %5.1f%%", name, cpuBar, p.CPU))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, subtleStyle.Render("No data"))
+		lines = append(lines, subtleStyle.Render(molei18n.T("No data")))
 	}
-	return cardData{icon: iconProcs, title: "Processes", lines: lines}
+	return cardData{icon: iconProcs, title: molei18n.T("Processes"), lines: lines}
 }
 
 func buildCards(m MetricsSnapshot, width int) []cardData {
@@ -513,7 +537,7 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 	}
 
 	if len(netStats) == 0 {
-		lines = []string{subtleStyle.Render("Collecting...")}
+		lines = []string{subtleStyle.Render(molei18n.T("Collecting..."))}
 	} else {
 		// Calculate dynamic width
 		// Layout: "Down   " (7) + graph + "  " (2) + rate (approx 10-12)
@@ -524,12 +548,12 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 		// sparkline graphs
 		rxSparkline := sparkline(history.RxHistory, totalRx, graphWidth)
 		txSparkline := sparkline(history.TxHistory, totalTx, graphWidth)
-		lines = append(lines, fmt.Sprintf("Down   %s  %s", rxSparkline, formatRate(totalRx)))
-		lines = append(lines, fmt.Sprintf("Up     %s  %s", txSparkline, formatRate(totalTx)))
+		lines = append(lines, molei18n.F("Down   %s  %s", rxSparkline, formatRate(totalRx)))
+		lines = append(lines, molei18n.F("Up     %s  %s", txSparkline, formatRate(totalTx)))
 		// Show proxy and IP on one line.
 		var infoParts []string
 		if proxy.Enabled {
-			infoParts = append(infoParts, "Proxy "+proxy.Type)
+			infoParts = append(infoParts, molei18n.F("Proxy %s", proxy.Type))
 		}
 		if primaryIP != "" {
 			infoParts = append(infoParts, primaryIP)
@@ -538,7 +562,7 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 			lines = append(lines, strings.Join(infoParts, " · "))
 		}
 	}
-	return cardData{icon: iconNetwork, title: "Network", lines: lines}
+	return cardData{icon: iconNetwork, title: molei18n.T("Network"), lines: lines}
 }
 
 // 8 levels: ▁▂▃▄▅▆▇█
@@ -591,7 +615,7 @@ func sparkline(history []float64, current float64, width int) string {
 func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 	var lines []string
 	if len(batts) == 0 {
-		lines = append(lines, subtleStyle.Render("No battery"))
+		lines = append(lines, subtleStyle.Render(molei18n.T("No battery")))
 	} else {
 		b := batts[0]
 		statusLower := strings.ToLower(b.Status)
@@ -599,7 +623,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		if b.Percent < 20 && statusLower != "charging" && statusLower != "charged" {
 			percentText = dangerStyle.Render(percentText)
 		}
-		lines = append(lines, fmt.Sprintf("Level  %s  %s", batteryProgressBar(b.Percent), percentText))
+		lines = append(lines, molei18n.F("Level  %s  %s", batteryProgressBar(b.Percent), percentText))
 
 		// Add capacity line if available.
 		if b.Capacity > 0 {
@@ -609,7 +633,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			} else if b.Capacity < 85 {
 				capacityText = warnStyle.Render(capacityText)
 			}
-			lines = append(lines, fmt.Sprintf("Health %s  %s", batteryProgressBar(float64(b.Capacity)), capacityText))
+			lines = append(lines, molei18n.F("Health %s  %s", batteryProgressBar(float64(b.Capacity)), capacityText))
 		}
 
 		statusIcon := ""
@@ -620,10 +644,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		} else if b.Percent < 20 {
 			statusStyle = dangerStyle
 		}
-		statusText := b.Status
-		if len(statusText) > 0 {
-			statusText = strings.ToUpper(statusText[:1]) + strings.ToLower(statusText[1:])
-		}
+		statusText := translateBatteryStatus(b.Status)
 		if b.TimeLeft != "" {
 			statusText += " · " + b.TimeLeft
 		}
@@ -632,7 +653,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			if thermal.SystemPower > 0 {
 				statusText += fmt.Sprintf(" · %.0fW", thermal.SystemPower)
 			} else if thermal.AdapterPower > 0 {
-				statusText += fmt.Sprintf(" · %.0fW Adapter", thermal.AdapterPower)
+				statusText += " · " + molei18n.F("%.0fW Adapter", thermal.AdapterPower)
 			}
 		} else if thermal.BatteryPower > 0 {
 			// Only show battery power when discharging (positive value)
@@ -642,10 +663,10 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 
 		healthParts := []string{}
 		if b.Health != "" {
-			healthParts = append(healthParts, b.Health)
+			healthParts = append(healthParts, translateBatteryStatus(b.Health))
 		}
 		if b.CycleCount > 0 {
-			healthParts = append(healthParts, fmt.Sprintf("%d cycles", b.CycleCount))
+			healthParts = append(healthParts, molei18n.F("%d cycles", b.CycleCount))
 		}
 
 		if thermal.CPUTemp > 0 {
@@ -662,7 +683,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		}
 	}
 
-	return cardData{icon: iconBattery, title: "Power", lines: lines}
+	return cardData{icon: iconBattery, title: molei18n.T("Power"), lines: lines}
 }
 
 func renderCard(data cardData, width int, height int) string {

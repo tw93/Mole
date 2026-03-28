@@ -7,7 +7,7 @@ set -euo pipefail
 # Ensure dependencies are loaded (only if running standalone)
 if [[ -z "${MOLE_FILE_OPS_LOADED:-}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-    source "$SCRIPT_DIR/lib/core/file_ops.sh"
+    source "$SCRIPT_DIR/lib/core/common.sh"
 fi
 
 # Get memory info in GB
@@ -155,8 +155,8 @@ EOF
 
         # Escape strings
         action=$(json_escape "$action")
-        name=$(json_escape "$name")
-        desc=$(json_escape "$desc")
+        name=$(json_escape "$(mole_t "$name")")
+        desc=$(json_escape "$(mole_t "$desc")")
 
         [[ "$first" == "true" ]] && first=false || echo ","
 

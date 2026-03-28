@@ -6,15 +6,17 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 func collectHardware(totalRAM uint64, disks []DiskStatus) HardwareInfo {
 	if runtime.GOOS != "darwin" {
 		return HardwareInfo{
-			Model:       "Unknown",
+			Model:       molei18n.T("Unknown"),
 			CPUModel:    runtime.GOARCH,
 			TotalRAM:    humanBytes(totalRAM),
-			DiskSize:    "Unknown",
+			DiskSize:    molei18n.T("Unknown"),
 			OSVersion:   runtime.GOOS,
 			RefreshRate: "",
 		}
@@ -67,7 +69,7 @@ func collectHardware(totalRAM uint64, disks []DiskStatus) HardwareInfo {
 		refreshRate = parseRefreshRate(out3)
 	}
 
-	diskSize := "Unknown"
+	diskSize := molei18n.T("Unknown")
 	if len(disks) > 0 {
 		diskSize = humanBytes(disks[0].Total)
 	}

@@ -199,14 +199,14 @@ trap 'cleanup TERM 143; exit 143' TERM
 start_section() {
     TRACK_SECTION=1
     SECTION_ACTIVITY=0
-    CURRENT_SECTION="$1"
+    CURRENT_SECTION="$(mole_t "$1")"
     echo ""
-    echo -e "${PURPLE_BOLD}${ICON_ARROW} $1${NC}"
+    echo -e "${PURPLE_BOLD}${ICON_ARROW} ${CURRENT_SECTION}${NC}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
         ensure_user_file "$EXPORT_LIST_FILE"
         echo "" >> "$EXPORT_LIST_FILE"
-        echo "=== $1 ===" >> "$EXPORT_LIST_FILE"
+        echo "=== ${CURRENT_SECTION} ===" >> "$EXPORT_LIST_FILE"
     fi
 }
 
@@ -754,27 +754,27 @@ start_cleanup() {
     fi
     printf '\n'
     if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
-        echo -e "${PURPLE_BOLD}Clean External Volume${NC}"
+        echo -e "${PURPLE_BOLD}$(mole_t "Clean External Volume")${NC}"
         echo -e "${GRAY}${EXTERNAL_VOLUME_TARGET}${NC}"
         echo ""
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+            echo -e "${YELLOW}$(mole_t "Dry Run Mode")${NC}, $(mole_t "Preview only, no deletions")"
             echo ""
         fi
         SYSTEM_CLEAN=false
         return 0
     fi
 
-    echo -e "${PURPLE_BOLD}Clean Your Mac${NC}"
+    echo -e "${PURPLE_BOLD}$(mole_t "Clean Your Mac")${NC}"
     echo ""
 
     if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
-        echo -e "${GRAY}${ICON_WARNING} Use --dry-run to preview, --whitelist to manage protected paths${NC}"
+        echo -e "${GRAY}${ICON_WARNING} $(mole_t "Use --dry-run to preview, --whitelist to manage protected paths")${NC}"
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+        echo -e "${YELLOW}$(mole_t "Dry Run Mode")${NC}, $(mole_t "Preview only, no deletions")"
         echo ""
 
         ensure_user_file "$EXPORT_LIST_FILE"
@@ -794,11 +794,11 @@ EOF
         # Preview system section when sudo is already cached (no password prompt).
         if has_sudo_session; then
             SYSTEM_CLEAN=true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access available, system preview included"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Admin access available, system preview included")"
             echo ""
         else
             SYSTEM_CLEAN=false
-            echo -e "${GRAY}${ICON_WARNING} System caches need sudo, run ${NC}sudo -v && mo clean --dry-run${GRAY} for full preview${NC}"
+            echo -e "${GRAY}${ICON_WARNING} $(mole_t "System caches need sudo, run sudo -v && mo clean --dry-run for full preview")${NC}"
             echo ""
         fi
         return
@@ -807,52 +807,52 @@ EOF
     if [[ -t 0 ]]; then
         if has_sudo_session; then
             SYSTEM_CLEAN=true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Admin access already available")"
             echo ""
         else
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} $(mole_t "System caches need sudo. Enter continue, Space skip: ")"
 
             local choice
             choice=$(read_key)
 
             # ESC/Q aborts, Space skips, Enter enables system cleanup.
             if [[ "$choice" == "QUIT" ]]; then
-                echo -e " ${GRAY}Canceled${NC}"
+                echo -e " ${GRAY}$(mole_t "Canceled")${NC}"
                 exit 0
             fi
 
             if [[ "$choice" == "SPACE" ]]; then
-                echo -e " ${GRAY}Skipped${NC}"
+                echo -e " ${GRAY}$(mole_t "Skipped")${NC}"
                 echo ""
                 SYSTEM_CLEAN=false
             elif [[ "$choice" == "ENTER" ]]; then
                 printf "\r\033[K" # Clear the prompt line
                 if ensure_sudo_session "System cleanup requires admin access"; then
                     SYSTEM_CLEAN=true
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Admin access granted")"
                     echo ""
                 else
                     SYSTEM_CLEAN=false
                     echo ""
-                    echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
+                    echo -e "${YELLOW}$(mole_t "Authentication failed")${NC}, $(mole_t "continuing with user-level cleanup")"
                 fi
             else
                 SYSTEM_CLEAN=false
-                echo -e " ${GRAY}Skipped${NC}"
+                echo -e " ${GRAY}$(mole_t "Skipped")${NC}"
                 echo ""
             fi
         fi
     else
         echo ""
-        echo "Running in non-interactive mode"
+        echo "$(mole_t "Running in non-interactive mode")"
         if has_sudo_session; then
             SYSTEM_CLEAN=true
-            echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
+            echo "  ${ICON_LIST} $(mole_t "System-level cleanup enabled, sudo session active")"
         else
             SYSTEM_CLEAN=false
-            echo "  ${ICON_LIST} System-level cleanup skipped, requires sudo"
+            echo "  ${ICON_LIST} $(mole_t "System-level cleanup skipped, requires sudo")"
         fi
-        echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
+        echo "  ${ICON_LIST} $(mole_t "User-level cleanup will proceed automatically")"
         echo ""
     fi
 }
@@ -869,10 +869,10 @@ perform_cleanup() {
     if [[ -z "$EXTERNAL_VOLUME_TARGET" && "${MOLE_TEST_MODE:-0}" == "1" ]]; then
         test_mode_enabled=true
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+            echo -e "${YELLOW}$(mole_t "Dry Run Mode")${NC}, $(mole_t "Preview only, no deletions")"
             echo ""
         fi
-        echo -e "${GREEN}${ICON_LIST}${NC} User app cache"
+        echo -e "${GREEN}${ICON_LIST}${NC} $(mole_t "User app cache")"
         if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
             local -a expanded_defaults
             expanded_defaults=()
@@ -889,11 +889,11 @@ perform_cleanup() {
                 done
                 [[ "$is_default" == "false" ]] && has_custom=true && break
             done
-            [[ "$has_custom" == "true" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Protected items found"
+            [[ "$has_custom" == "true" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Protected items found")"
         fi
         if [[ "$DRY_RUN" == "true" ]]; then
             echo ""
-            echo "Potential space: 0.00GB"
+            echo "$(mole_t "Potential space: 0.00GB")"
         fi
         total_items=1
         files_cleaned=0
@@ -908,7 +908,8 @@ perform_cleanup() {
         local summary_heading="Test mode complete"
         local -a summary_details
         summary_details=()
-        summary_details+=("Test mode - no actual cleanup performed")
+        summary_heading="$(mole_t "Test mode complete")"
+        summary_details+=("$(mole_t "Test mode - no actual cleanup performed")")
         print_summary_block "$summary_heading" "${summary_details[@]}"
         printf '\n'
         return 0
@@ -945,9 +946,9 @@ perform_cleanup() {
             [[ $predefined_count -gt 0 ]] && summary+="$predefined_count core"
             [[ $custom_count -gt 0 && $predefined_count -gt 0 ]] && summary+=" + "
             [[ $custom_count -gt 0 ]] && summary+="$custom_count custom"
-            summary+=" patterns active"
+            summary+=" $(mole_t "patterns active")"
 
-            echo -e "${BLUE}${ICON_SUCCESS}${NC} Whitelist: $summary"
+            echo -e "${BLUE}${ICON_SUCCESS}${NC} $(mole_t "Whitelist:") $summary"
 
             if [[ "$DRY_RUN" == "true" ]]; then
                 for pattern in "${WHITELIST_PATTERNS[@]}"; do
@@ -964,7 +965,7 @@ perform_cleanup() {
         fda_status=$?
         if [[ $fda_status -eq 1 ]]; then
             echo ""
-            echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}Grant Full Disk Access to your terminal in System Settings for best results${NC}"
+            echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}$(mole_t "Grant Full Disk Access to your terminal in System Settings for best results")${NC}"
         fi
     fi
 
@@ -1082,9 +1083,9 @@ perform_cleanup() {
     local summary_heading=""
     local summary_status="success"
     if [[ "$DRY_RUN" == "true" ]]; then
-        summary_heading="Dry run complete - no changes made"
+        summary_heading="$(mole_t "Dry run complete - no changes made")"
     else
-        summary_heading="Cleanup complete"
+        summary_heading="$(mole_t "Cleanup complete")"
     fi
 
     local -a summary_details=()
@@ -1094,32 +1095,32 @@ perform_cleanup() {
         freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_size_human}${NC}"
-            [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
-            [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
+            local stats="$(mole_t "Potential space:") ${GREEN}${freed_size_human}${NC}"
+            [[ $files_cleaned -gt 0 ]] && stats+=" | $(mole_t "Items:") $files_cleaned"
+            [[ $total_items -gt 0 ]] && stats+=" | $(mole_t "Categories:") $total_items"
             summary_details+=("$stats")
 
             {
                 echo ""
                 echo "# ============================================"
-                echo "# Summary"
+                echo "# $(mole_t "Summary")"
                 echo "# ============================================"
-                echo "# Potential cleanup: ${freed_size_human}"
-                echo "# Items: $files_cleaned"
-                echo "# Categories: $total_items"
+                echo "# $(mole_t "Potential cleanup:") ${freed_size_human}"
+                echo "# $(mole_t "Items:") $files_cleaned"
+                echo "# $(mole_t "Categories:") $total_items"
             } >> "$EXPORT_LIST_FILE"
 
-            summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
-            summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
+            summary_details+=("$(mole_t "Detailed file list:") ${GRAY}$EXPORT_LIST_FILE${NC}")
+            summary_details+=("$(mole_t "Use mo clean --whitelist to add protection rules")")
         else
-            local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
+            local summary_line="$(mole_t "Space freed:") ${GREEN}${freed_size_human}${NC}"
 
             if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
-                summary_line+=" | Items cleaned: $files_cleaned | Categories: $total_items"
+                summary_line+=" | $(mole_t "Items cleaned:") $files_cleaned | $(mole_t "Categories:") $total_items"
             elif [[ $files_cleaned -gt 0 ]]; then
-                summary_line+=" | Items cleaned: $files_cleaned"
+                summary_line+=" | $(mole_t "Items cleaned:") $files_cleaned"
             elif [[ $total_items -gt 0 ]]; then
-                summary_line+=" | Categories: $total_items"
+                summary_line+=" | $(mole_t "Categories:") $total_items"
             fi
 
             summary_details+=("$summary_line")
@@ -1131,25 +1132,25 @@ perform_cleanup() {
 
                 if [[ $movies -gt 0 ]]; then
                     if [[ $movies -eq 1 ]]; then
-                        summary_details+=("Equivalent to ~$movies 4K movie of storage.")
+                        summary_details+=("$(printf "$(mole_t "Equivalent to ~%d 4K movie of storage.")" "$movies")")
                     else
-                        summary_details+=("Equivalent to ~$movies 4K movies of storage.")
+                        summary_details+=("$(printf "$(mole_t "Equivalent to ~%d 4K movies of storage.")" "$movies")")
                     fi
                 fi
             fi
 
             local final_free_space
             final_free_space=$(get_free_space)
-            summary_details+=("Free space now: $final_free_space")
+            summary_details+=("$(mole_t "Free space now:") $final_free_space")
         fi
     else
         summary_status="info"
         if [[ "$DRY_RUN" == "true" ]]; then
-            summary_details+=("No significant reclaimable space detected, system already clean.")
+            summary_details+=("$(mole_t "No significant reclaimable space detected, system already clean.")")
         else
-            summary_details+=("System was already clean; no additional space freed.")
+            summary_details+=("$(mole_t "System was already clean; no additional space freed.")")
         fi
-        summary_details+=("Free space now: $(get_free_space)")
+        summary_details+=("$(mole_t "Free space now:") $(get_free_space)")
     fi
 
     if [[ $had_errexit -eq 1 ]]; then
@@ -1180,7 +1181,7 @@ main() {
             "--external")
                 shift
                 if [[ $# -eq 0 ]]; then
-                    echo "Missing path for --external" >&2
+                    echo "$(mole_t "Missing path for --external")" >&2
                     exit 1
                 fi
                 EXTERNAL_VOLUME_TARGET=$(validate_external_volume_target "$1") || exit 1

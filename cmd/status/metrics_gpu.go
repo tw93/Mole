@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 const (
@@ -51,8 +53,8 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 
 	if !commandExists("nvidia-smi") {
 		return []GPUStatus{{
-			Name: "No GPU metrics available",
-			Note: "Install nvidia-smi or use platform-specific metrics",
+			Name: molei18n.T("No GPU metrics available"),
+			Note: molei18n.T("Install nvidia-smi or use platform-specific metrics"),
 		}}, nil
 	}
 
@@ -82,8 +84,8 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 
 	if len(gpus) == 0 {
 		return []GPUStatus{{
-			Name: "GPU read failed",
-			Note: "Verify nvidia-smi availability",
+			Name: molei18n.T("GPU read failed"),
+			Note: molei18n.T("Verify nvidia-smi availability"),
 		}}, nil
 	}
 
@@ -143,8 +145,8 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 
 	if len(gpus) == 0 {
 		return []GPUStatus{{
-			Name: "GPU info unavailable",
-			Note: "Unable to parse system_profiler output",
+			Name: molei18n.T("GPU info unavailable"),
+			Note: molei18n.T("Unable to parse system_profiler output"),
 		}}, nil
 	}
 

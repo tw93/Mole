@@ -364,7 +364,7 @@ show_system_data_hint_notice() {
 
     if [[ ${#clue_labels[@]} -eq 0 ]]; then
         note_activity
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No common System Data clues detected"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "No common System Data clues detected")"
         return 0
     fi
 
@@ -373,10 +373,10 @@ show_system_data_hint_notice() {
     for i in "${!clue_labels[@]}"; do
         local human_size
         human_size=$(bytes_to_human "$((clue_sizes[i] * 1024))")
-        echo -e "  ${GREEN}${ICON_LIST}${NC} ${clue_labels[$i]}: ${human_size}"
-        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Path: ${GRAY}${clue_paths[$i]}${NC}"
+        printf "  ${GREEN}${ICON_LIST}${NC} %s: %s\n" "$(mole_t "${clue_labels[$i]}")" "${human_size}"
+        printf "  ${GRAY}${ICON_SUBLIST}${NC} %s ${GRAY}%s${NC}\n" "$(mole_t "Path:")" "${clue_paths[$i]}"
     done
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo analyze, Device backups, docker system df"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} $(mole_t "Review: mo analyze, Device backups, docker system df")"
 }
 
 # shellcheck disable=SC2329
@@ -410,18 +410,18 @@ show_project_artifact_hint_notice() {
         fi
 
         if [[ "$estimate_is_partial" == "true" ]]; then
-            echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} candidates, at least ${estimate_human} sampled from ${PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES} items"
+            printf "  ${GREEN}${ICON_LIST}${NC} %s\n" "$(printf "$(mole_t "%s candidates, at least %s sampled from %d items")" "${hint_count_label}" "${estimate_human}" "${PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES}")"
         else
-            echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} candidates, sampled ${estimate_human}"
+            printf "  ${GREEN}${ICON_LIST}${NC} %s\n" "$(printf "$(mole_t "%s candidates, sampled %s")" "${hint_count_label}" "${estimate_human}")"
         fi
     else
-        echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} candidates"
+        printf "  ${GREEN}${ICON_LIST}${NC} %s\n" "$(printf "$(mole_t "%s candidates")" "${hint_count_label}")"
     fi
 
     if [[ -n "$example_text" ]]; then
-        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Examples: ${GRAY}${example_text}${NC}"
+        printf "  ${GRAY}${ICON_SUBLIST}${NC} %s ${GRAY}%s${NC}\n" "$(mole_t "Examples:")" "${example_text}"
     fi
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo purge"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} $(mole_t "Review: mo purge")"
 }
 
 # shellcheck disable=SC2329
@@ -476,8 +476,8 @@ show_user_launch_agent_hint_notice() {
 
     local i
     for i in "${!labels[@]}"; do
-        echo -e "  ${GREEN}${ICON_LIST}${NC} Potential stale login item: ${labels[$i]}"
-        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} ${reasons[$i]}: ${GRAY}${targets[$i]}${NC}"
+        printf "  ${GREEN}${ICON_LIST}${NC} %s %s\n" "$(mole_t "Potential stale login item:")" "${labels[$i]}"
+        printf "  ${GRAY}${ICON_SUBLIST}${NC} %s: ${GRAY}%s${NC}\n" "$(mole_t "${reasons[$i]}")" "${targets[$i]}"
     done
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: open ~/Library/LaunchAgents and remove only items you recognize"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} $(mole_t "Review: open ~/Library/LaunchAgents and remove only items you recognize")"
 }

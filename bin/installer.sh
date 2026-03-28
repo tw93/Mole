@@ -223,7 +223,7 @@ collect_installers() {
 
     if [[ ${#all_files[@]} -eq 0 ]]; then
         if [[ "${IN_ALT_SCREEN:-0}" != "1" ]]; then
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Great! No installer files to clean")"
         fi
         return 1
     fi
@@ -387,7 +387,7 @@ select_installers() {
             scroll_indicator=" ${GRAY}[${current_pos}/${total_items}]${NC}"
         fi
 
-        printf "${PURPLE_BOLD}Select Installers to Remove${NC}%s ${GRAY}, ${selected_human}, ${selected_count} selected${NC}\n" "$scroll_indicator"
+        printf "${PURPLE_BOLD}%s${NC}%s ${GRAY}, ${selected_human}, ${selected_count} %s${NC}\n" "$(mole_t "Select Installers to Remove")" "$scroll_indicator" "$(mole_t "selected")"
         printf "%s\n" "$clear_line"
 
         # Calculate visible range
@@ -412,7 +412,7 @@ select_installers() {
         done
 
         printf "%s\n" "$clear_line"
-        printf "%s${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space Select  |  Enter Confirm  |  A All  |  I Invert  |  Q Quit${NC}\n" "$clear_line"
+        printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(mole_t "↑↓  |  Space Select  |  Enter Confirm  |  A All  |  I Invert  |  Q Quit")"
     }
 
     trap restore_terminal EXIT
@@ -539,7 +539,7 @@ delete_selected_installers() {
     confirm_human=$(bytes_to_human "$confirm_size")
 
     # Show files to be deleted
-    echo -e "${PURPLE_BOLD}Files to be removed:${NC}"
+    echo -e "${PURPLE_BOLD}$(mole_t "Files to be removed:")${NC}"
     for idx in "${selected_indices[@]}"; do
         if [[ "$idx" =~ ^[0-9]+$ ]] && [[ $idx -lt ${#INSTALLER_PATHS[@]} ]]; then
             local file_path="${INSTALLER_PATHS[$idx]}"
@@ -552,7 +552,7 @@ delete_selected_installers() {
 
     # Confirm deletion
     echo ""
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Delete ${#selected_indices[@]} installers, ${confirm_human}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    printf "${PURPLE}${ICON_ARROW}${NC} $(mole_t "Delete %d installers, %s  Enter confirm, ESC cancel: ")" "${#selected_indices[@]}" "${confirm_human}"
 
     IFS= read -r -s -n1 confirm || confirm=""
     case "$confirm" in
@@ -619,7 +619,7 @@ perform_installers() {
             IN_ALT_SCREEN=0
         fi
         printf '\n'
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Great! No installer files to clean")"
         printf '\n'
         return 2 # Nothing to clean
     fi
@@ -688,14 +688,14 @@ main() {
                 export MOLE_DRY_RUN=1
                 ;;
             *)
-                echo "Unknown option: $arg"
+                printf "$(mole_t "Unknown option: %s")\n" "$arg"
                 exit 1
                 ;;
         esac
     done
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No installer files will be removed"
+        echo -e "${YELLOW}${ICON_DRY_RUN} $(mole_t "DRY RUN MODE, No installer files will be removed")"
         printf '\n'
     fi
 

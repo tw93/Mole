@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 var (
@@ -24,7 +26,7 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Swallow panics to keep UI alive.
-			err = fmt.Errorf("battery collection failed: %v", r)
+			err = fmt.Errorf(molei18n.T("battery collection failed: %v"), r)
 		}
 	}()
 
@@ -52,7 +54,7 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 		percent, _ := strconv.ParseFloat(percentStr, 64)
 		status := strings.TrimSpace(string(statusData))
 		if status == "" {
-			status = "Unknown"
+			status = molei18n.T("Unknown")
 		}
 		batts = append(batts, BatteryStatus{
 			Percent: percent,
@@ -88,7 +90,7 @@ func parsePMSet(raw string, health string, cycles int, capacity int) []BatterySt
 		var (
 			percent float64
 			found   bool
-			status  = "Unknown"
+			status  = molei18n.T("Unknown")
 		)
 		for i, f := range fields {
 			if strings.Contains(f, "%") {

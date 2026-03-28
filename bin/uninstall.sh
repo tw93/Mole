@@ -44,7 +44,7 @@ uninstall_relative_time_from_epoch() {
     local now_epoch="${2:-0}"
 
     if [[ ! "$value_epoch" =~ ^[0-9]+$ || $value_epoch -le 0 ]]; then
-        echo "Unknown"
+        echo "$(mole_t "Unknown")"
         return 0
     fi
 
@@ -54,27 +54,27 @@ uninstall_relative_time_from_epoch() {
     fi
 
     if [[ $days_ago -eq 0 ]]; then
-        echo "Today"
+        echo "$(mole_t "Today")"
     elif [[ $days_ago -eq 1 ]]; then
-        echo "Yesterday"
+        echo "$(mole_t "Yesterday")"
     elif [[ $days_ago -lt 7 ]]; then
-        echo "${days_ago} days ago"
+        printf "$(mole_t "%d days ago")\n" "$days_ago"
     elif [[ $days_ago -lt 30 ]]; then
         local weeks_ago=$((days_ago / 7))
-        [[ $weeks_ago -eq 1 ]] && echo "1 week ago" || echo "${weeks_ago} weeks ago"
+        [[ $weeks_ago -eq 1 ]] && echo "$(mole_t "1 week ago")" || printf "$(mole_t "%d weeks ago")\n" "$weeks_ago"
     elif [[ $days_ago -lt 365 ]]; then
         local months_ago=$((days_ago / 30))
-        [[ $months_ago -eq 1 ]] && echo "1 month ago" || echo "${months_ago} months ago"
+        [[ $months_ago -eq 1 ]] && echo "$(mole_t "1 month ago")" || printf "$(mole_t "%d months ago")\n" "$months_ago"
     else
         local years_ago=$((days_ago / 365))
-        [[ $years_ago -eq 1 ]] && echo "1 year ago" || echo "${years_ago} years ago"
+        [[ $years_ago -eq 1 ]] && echo "$(mole_t "1 year ago")" || printf "$(mole_t "%d years ago")\n" "$years_ago"
     fi
 }
 
 uninstall_normalize_size_display() {
     local size="${1:-}"
     if [[ -z "$size" || "$size" == "0" || "$size" == "Unknown" ]]; then
-        echo "N/A"
+        echo "$(mole_t "N/A")"
         return 0
     fi
     echo "$size"
@@ -85,7 +85,7 @@ uninstall_normalize_last_used_display() {
     local display
     display=$(format_last_used_summary "$last_used")
     if [[ -z "$display" || "$display" == "Never" ]]; then
-        echo "Unknown"
+        echo "$(mole_t "Unknown")"
         return 0
     fi
     echo "$display"
@@ -524,7 +524,7 @@ scan_applications() {
         [[ $cache_source_is_temp == true ]] && rm -f "$cache_source" 2> /dev/null || true
         restore_scan_int_trap
         printf "\r\033[K" >&2
-        echo "No applications found to uninstall." >&2
+        echo "$(mole_t "No applications found to uninstall.")" >&2
         return 1
     fi
     # Pass 2: resolve display names in parallel.
@@ -626,7 +626,7 @@ scan_applications() {
 
     if [[ ! -s "$scan_raw_file" ]]; then
         stop_scan_spinner
-        echo "No applications found to uninstall" >&2
+        echo "$(mole_t "No applications found to uninstall")" >&2
         rm -f "$temp_file" "$scan_raw_file" "$merged_file" "$refresh_file" "$cache_snapshot_file" "${temp_file}.sorted" "$spinner_shown_file" 2> /dev/null || true
         [[ $cache_source_is_temp == true ]] && rm -f "$cache_source" 2> /dev/null || true
         restore_scan_int_trap
@@ -787,7 +787,7 @@ load_applications() {
     local apps_file="$1"
 
     if [[ ! -f "$apps_file" || ! -s "$apps_file" ]]; then
-        log_warning "No applications found for uninstallation"
+        log_warning "$(mole_t "No applications found for uninstallation")"
         return 1
     fi
 
@@ -848,19 +848,19 @@ main() {
                 export MOLE_DRY_RUN=1
                 ;;
             "--whitelist")
-                echo "Unknown uninstall option: $arg"
-                echo "Whitelist management is currently supported by: mo clean --whitelist / mo optimize --whitelist"
-                echo "Use 'mo uninstall --help' for supported options."
+                printf "$(mole_t "Unknown uninstall option: %s")\n" "$arg"
+                echo "$(mole_t "Whitelist management is currently supported by: mo clean --whitelist / mo optimize --whitelist")"
+                echo "$(mole_t "Use 'mo uninstall --help' for supported options.")"
                 exit 1
                 ;;
             -*)
-                echo "Unknown uninstall option: $arg"
-                echo "Use 'mo uninstall --help' for supported options."
+                printf "$(mole_t "Unknown uninstall option: %s")\n" "$arg"
+                echo "$(mole_t "Use 'mo uninstall --help' for supported options.")"
                 exit 1
                 ;;
             *)
-                echo "Unknown uninstall argument: $arg"
-                echo "Use 'mo uninstall --help' for supported options."
+                printf "$(mole_t "Unknown uninstall argument: %s")\n" "$arg"
+                echo "$(mole_t "Use 'mo uninstall --help' for supported options.")"
                 exit 1
                 ;;
         esac
@@ -868,7 +868,7 @@ main() {
 
     hide_cursor
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No app files or settings will be modified"
+        echo -e "${YELLOW}${ICON_DRY_RUN} $(mole_t "DRY RUN MODE, No app files or settings will be modified")"
         printf '\n'
     fi
 
@@ -877,7 +877,7 @@ main() {
         unset MOLE_INLINE_LOADING MOLE_MANAGED_ALT_SCREEN
 
         if [[ $first_scan == false ]]; then
-            echo -e "${GRAY}Refreshing application list...${NC}" >&2
+            echo -e "${GRAY}$(mole_t "Refreshing application list...")${NC}" >&2
         fi
         first_scan=false
 
@@ -914,11 +914,11 @@ main() {
         printf '\033[2J\033[H' >&2
         local selection_count=${#selected_apps[@]}
         if [[ $selection_count -eq 0 ]]; then
-            echo "No apps selected"
+            echo "$(mole_t "No apps selected")"
             rm -f "$apps_file"
             continue
         fi
-        echo -e "${BLUE}${ICON_CONFIRM}${NC} Selected ${selection_count} apps:"
+        printf "${BLUE}${ICON_CONFIRM}${NC} $(mole_t "Selected %d apps:")\n" "$selection_count"
         local -a summary_rows=()
         local max_name_display_width=0
         local max_size_width=0
@@ -1000,7 +1000,7 @@ main() {
             prompt_timeout=3
         fi
 
-        echo -e "${GRAY}Press Enter to return to the app list, press any other key or wait ${prompt_timeout}s to exit.${NC}"
+        printf "${GRAY}$(mole_t "Press Enter to return to the app list, press any other key or wait %ss to exit.")${NC}\n" "$prompt_timeout"
         local key
         local read_ok=false
         if IFS= read -r -s -n1 -t "$prompt_timeout" key; then

@@ -50,11 +50,11 @@ clean_ds_store_tree() {
         size_human=$(bytes_to_human "$total_bytes")
         local size_kb=$(((total_bytes + 1023) / 1024))
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $size_human dry${NC}"
+            printf "  ${YELLOW}${ICON_DRY_RUN}${NC} %s, %d %s, %s %s${NC}\n" "$(mole_t "$label")" "$file_count" "$(mole_t "files")" "$size_human" "$(mole_t "dry")"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$size_kb")
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} $label${NC}, ${line_color}$file_count files, $size_human${NC}"
+            printf "  ${line_color}${ICON_SUCCESS}${NC} %s, %d %s, %s${NC}\n" "$(mole_t "$label")" "$file_count" "$(mole_t "files")" "$size_human"
         fi
         files_cleaned=$((files_cleaned + file_count))
         total_size_cleaned=$((total_size_cleaned + size_kb))
@@ -305,7 +305,7 @@ is_claude_vm_bundle_orphaned() {
 clean_orphaned_app_data() {
     if ! ls "$HOME/Library/Caches" > /dev/null 2>&1; then
         stop_section_spinner
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Skipped: No permission to access Library folders"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Skipped: No permission to access Library folders")"
         return 0
     fi
     start_section_spinner "Scanning installed apps..."
@@ -313,7 +313,7 @@ clean_orphaned_app_data() {
     scan_installed_apps "$installed_bundles"
     stop_section_spinner
     local app_count=$(wc -l < "$installed_bundles" 2> /dev/null | tr -d ' ')
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Found $app_count active/installed apps"
+    printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Found %d active/installed apps")\n" "$app_count"
     local orphaned_count=0
     local total_orphaned_kb=0
     start_section_spinner "Scanning orphaned app resources..."
@@ -400,7 +400,7 @@ clean_orphaned_app_data() {
     stop_section_spinner
     if [[ $orphaned_count -gt 0 ]]; then
         local orphaned_mb=$(echo "$total_orphaned_kb" | awk '{printf "%.1f", $1/1024}')
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count items, about ${orphaned_mb}MB"
+        printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Cleaned %d items, about %sMB")\n" "$orphaned_count" "${orphaned_mb}"
         note_activity
     fi
     rm -f "$installed_bundles"
@@ -578,7 +578,7 @@ clean_orphaned_system_services() {
 
     # Report and clean
     if [[ $orphaned_count -gt 0 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Found $orphaned_count orphaned system services"
+        printf "  ${GRAY}${ICON_WARNING}${NC} $(mole_t "Found %d orphaned system services")\n" "$orphaned_count"
 
         for orphan_file in "${orphaned_files[@]}"; do
             local filename
@@ -603,7 +603,7 @@ clean_orphaned_system_services() {
         else
             orphaned_kb_display="${total_orphaned_kb}KB"
         fi
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count orphaned services, about $orphaned_kb_display"
+        printf "  ${GREEN}${ICON_SUCCESS}${NC} $(mole_t "Cleaned %d orphaned services, about %s")\n" "$orphaned_count" "$orphaned_kb_display"
         note_activity
     fi
 

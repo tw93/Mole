@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	molei18n "github.com/tw93/mole/internal/i18n"
 )
 
 const (
@@ -32,7 +34,7 @@ func (c *Collector) collectBluetooth(now time.Time) []BluetoothDevice {
 
 	c.lastBTAt = now
 	if len(c.lastBT) == 0 {
-		c.lastBT = []BluetoothDevice{{Name: "No Bluetooth info", Connected: false}}
+		c.lastBT = []BluetoothDevice{{Name: molei18n.T("No Bluetooth info"), Connected: false}}
 	}
 	return c.lastBT
 }
@@ -105,7 +107,7 @@ func parseSPBluetooth(raw string) []BluetoothDevice {
 		devices = append(devices, BluetoothDevice{Name: currentName, Connected: connected, Battery: battery})
 	}
 	if len(devices) == 0 {
-		return []BluetoothDevice{{Name: "No devices", Connected: false}}
+		return []BluetoothDevice{{Name: molei18n.T("No devices"), Connected: false}}
 	}
 	return devices
 }
@@ -132,7 +134,7 @@ func parseBluetoothctl(raw string) []BluetoothDevice {
 		devices = append(devices, current)
 	}
 	if len(devices) == 0 {
-		return []BluetoothDevice{{Name: "No devices", Connected: false}}
+		return []BluetoothDevice{{Name: molei18n.T("No devices"), Connected: false}}
 	}
 	return devices
 }

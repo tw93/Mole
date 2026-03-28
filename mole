@@ -153,12 +153,12 @@ check_for_updates() {
                     local brew_latest
                     brew_latest=$(get_homebrew_latest_version || true)
                     if [[ -n "$brew_latest" && "$brew_latest" != "$VERSION" && "$(printf '%s\n' "$VERSION" "$brew_latest" | sort -V | head -1)" == "$VERSION" ]]; then
-                        printf "\nUpdate %s available, run %smo update%s\n\n" "$brew_latest" "$GREEN" "$NC" > "$msg_cache"
+                        printf "\n$(mole_t "Update %s available, run mo update")\n\n" "$brew_latest" > "$msg_cache"
                     else
                         echo -n > "$msg_cache"
                     fi
                 else
-                    printf "\nUpdate %s available, run %smo update%s\n\n" "$latest" "$GREEN" "$NC" > "$msg_cache"
+                    printf "\n$(mole_t "Update %s available, run mo update")\n\n" "$latest" > "$msg_cache"
                 fi
             else
                 echo -n > "$msg_cache"
@@ -182,7 +182,7 @@ ${GREEN} __  __       _      ${NC}
 ${GREEN}|  \/  | ___ | | ___ ${NC}
 ${GREEN}| |\/| |/ _ \| |/ _ \\${NC}
 ${GREEN}| |  | | (_) | |  __/${NC}  ${BLUE}https://github.com/tw93/mole${NC}
-${GREEN}|_|  |_|\___/|_|\___|${NC}  ${GREEN}${MOLE_TAGLINE}${NC}
+${GREEN}|_|  |_|\___/|_|\___|${NC}  ${GREEN}$(mole_t "$MOLE_TAGLINE")${NC}
 
 EOF
 }
@@ -192,7 +192,7 @@ show_version() {
     if command -v sw_vers > /dev/null; then
         os_ver=$(sw_vers -productVersion)
     else
-        os_ver="Unknown"
+        os_ver="$(mole_t "Unknown")"
     fi
 
     local arch
@@ -206,13 +206,14 @@ show_version() {
         sip_status=$(csrutil status 2> /dev/null | grep -o "enabled\|disabled" || echo "Unknown")
         sip_status="$(LC_ALL=C tr '[:lower:]' '[:upper:]' <<< "${sip_status:0:1}")${sip_status:1}"
     else
-        sip_status="Unknown"
+        sip_status="$(mole_t "Unknown")"
     fi
 
     local disk_free
-    disk_free=$(df -h / 2> /dev/null | awk 'NR==2 {print $4}' || echo "Unknown")
+    disk_free=$(df -h / 2> /dev/null | awk 'NR==2 {print $4}' || echo "$(mole_t "Unknown")")
 
-    local install_method="Manual"
+    local install_method
+    install_method="$(mole_t "Manual")"
     if is_homebrew_install; then
         install_method="Homebrew"
     fi
@@ -220,58 +221,194 @@ show_version() {
     local channel
     channel=$(get_install_channel)
 
-    printf '\nMole version %s\n' "$VERSION"
+    printf "\n$(mole_t "Mole version %s")\n" "$VERSION"
     if [[ "$channel" == "nightly" ]]; then
         local commit
         commit=$(get_install_commit)
         if [[ -n "$commit" ]]; then
-            printf 'Channel: Nightly (%s)\n' "$commit"
+            printf "$(mole_t "Channel: Nightly (%s)")\n" "$commit"
         else
-            printf 'Channel: Nightly\n'
+            printf '%s\n' "$(mole_t "Channel: Nightly")"
         fi
     fi
-    printf 'macOS: %s\n' "$os_ver"
-    printf 'Architecture: %s\n' "$arch"
-    printf 'Kernel: %s\n' "$kernel"
-    printf 'SIP: %s\n' "$sip_status"
-    printf 'Disk Free: %s\n' "$disk_free"
-    printf 'Install: %s\n' "$install_method"
-    printf 'Shell: %s\n\n' "${SHELL:-Unknown}"
+    printf "$(mole_t "macOS: %s")\n" "$os_ver"
+    printf "$(mole_t "Architecture: %s")\n" "$arch"
+    printf "$(mole_t "Kernel: %s")\n" "$kernel"
+    printf "$(mole_t "SIP: %s")\n" "$sip_status"
+    printf "$(mole_t "Disk Free: %s")\n" "$disk_free"
+    printf "$(mole_t "Install: %s")\n" "$install_method"
+    printf "$(mole_t "Shell: %s")\n\n" "${SHELL:-$(mole_t "Unknown")}"
 }
 
 show_help() {
     show_brand_banner
     echo
-    printf "%s%s%s\n" "$BLUE" "COMMANDS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "Main menu"
+    printf "%s%s%s\n" "$BLUE" "$(mole_t "COMMANDS")" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "$(mole_t "Main menu")"
     for entry in "${MOLE_COMMANDS[@]}"; do
         local name="${entry%%:*}"
         local desc="${entry#*:}"
         local display="mo $name"
         [[ "$name" == "help" ]] && display="mo --help"
         [[ "$name" == "version" ]] && display="mo --version"
-        printf "  %s%-28s%s %s\n" "$GREEN" "$display" "$NC" "$desc"
+        printf "  %s%-28s%s %s\n" "$GREEN" "$display" "$NC" "$(mole_t "$desc")"
     done
     echo
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "Manage protected caches"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "$(mole_t "Preview cleanup")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "$(mole_t "Manage protected caches")"
 
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "Manage protected items"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "Preview project purge"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "Preview installer cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "Preview Touch ID setup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "Preview shell completion edits"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "Configure scan directories"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "Analyze external drives only"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest stable version"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "Install latest unreleased main branch build"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "Preview Mole removal"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "$(mole_t "Preview optimization")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "$(mole_t "Manage protected items")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "$(mole_t "Preview app uninstall")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "$(mole_t "Preview project purge")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "$(mole_t "Preview installer cleanup")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "$(mole_t "Preview Touch ID setup")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "$(mole_t "Preview shell completion edits")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "$(mole_t "Configure scan directories")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "$(mole_t "Analyze external drives only")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "$(mole_t "Force reinstall latest stable version")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "$(mole_t "Install latest unreleased main branch build")"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "$(mole_t "Preview Mole removal")"
     echo
-    printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
+    printf "%s%s%s\n" "$BLUE" "$(mole_t "OPTIONS")" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "$(mole_t "Show detailed operation logs")"
     echo
+}
+
+# 显示语言选择界面。
+# 入参：$1 int，当前高亮选项（1 表示中文，2 表示英文）。
+# 返回：0。
+show_language_menu() {
+    local selected="${1:-1}"
+
+    clear
+    show_brand_banner
+    echo
+    printf '%s%s%s\n' "$PURPLE_BOLD" "$(mole_t "Choose language")" "$NC"
+    printf '%s\n' "$(mole_t "Use ↑↓ and Enter to confirm")"
+    printf '%s\n\n' "$(mole_t "Press Q to cancel")"
+
+    printf '%s\n' "$(show_menu_option 1 "简体中文" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
+    printf '%s\n' "$(show_menu_option 2 "English" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
+    echo
+}
+
+# 交互式选择语言。
+# 入参：无。
+# 返回：string，返回用户选择的语言编码；取消时返回非 0。
+prompt_for_language_choice() {
+    local current_lang
+    current_lang="$(mole_read_saved_language)"
+    [[ -z "$current_lang" ]] && current_lang="$(mole_detect_system_language)"
+    local selected=1
+    [[ "$current_lang" == "$MOLE_LANG_EN_US" ]] && selected=2
+
+    export MOLE_READ_KEY_FORCE_CHAR=1
+    hide_cursor
+    while true; do
+        show_language_menu "$selected"
+        local key
+        key="$(read_key)"
+        case "$key" in
+            "UP")
+                ((selected > 1)) && ((selected--))
+                ;;
+            "DOWN")
+                ((selected < 2)) && ((selected++))
+                ;;
+            "ENTER" | "CHAR:1" | "CHAR:2")
+                if [[ "$key" == "CHAR:1" ]]; then
+                    selected=1
+                elif [[ "$key" == "CHAR:2" ]]; then
+                    selected=2
+                fi
+                show_cursor
+                unset MOLE_READ_KEY_FORCE_CHAR
+                if [[ $selected -eq 1 ]]; then
+                    printf '%s\n' "$MOLE_LANG_ZH_CN"
+                else
+                    printf '%s\n' "$MOLE_LANG_EN_US"
+                fi
+                return 0
+                ;;
+            "QUIT" | "CHAR:q" | "CHAR:Q")
+                show_cursor
+                unset MOLE_READ_KEY_FORCE_CHAR
+                return 1
+                ;;
+        esac
+    done
+}
+
+# 判断当前会话是否具备交互式终端能力。
+# 入参：无。
+# 返回：0 表示可交互，1 表示不可交互。
+mole_has_interactive_terminal() {
+    [[ -t 0 || -t 2 ]]
+}
+
+# 首次启动时确保已经完成语言选择。
+# 入参：无。
+# 返回：0 表示可以继续启动，1 表示用户取消。
+ensure_language_selected() {
+    if mole_has_saved_language; then
+        mole_init_language
+        return 0
+    fi
+
+    if ! mole_has_interactive_terminal; then
+        mole_init_language
+        return 0
+    fi
+
+    local selected_lang=""
+    if ! selected_lang="$(prompt_for_language_choice)"; then
+        return 1
+    fi
+
+    mole_set_language "$selected_lang"
+    mole_init_language
+    return 0
+}
+
+# 处理 language 子命令。
+# 入参：后续所有命令参数。
+# 返回：0 表示成功，非 0 表示失败。
+handle_language_command() {
+    local -a args=("$@")
+
+    case "${args[0]:-}" in
+        "" )
+            local selected_lang=""
+            if selected_lang="$(prompt_for_language_choice)"; then
+                mole_set_language "$selected_lang"
+                mole_init_language
+                printf "$(mole_t "Language switched to %s")\n" "$(mole_language_name "$selected_lang")"
+                return 0
+            fi
+            return 0
+            ;;
+        "--set")
+            local normalized=""
+            normalized="$(mole_normalize_language "${args[1]:-}")"
+            if [[ -z "$normalized" ]]; then
+                printf "$(mole_t "Unsupported language: %s")\n" "${args[1]:-}" >&2
+                return 1
+            fi
+            mole_set_language "$normalized"
+            mole_init_language
+            printf "$(mole_t "Language saved as %s")\n" "$(mole_language_name "$normalized")"
+            return 0
+            ;;
+        "-h" | "--help")
+            show_language_help
+            return 0
+            ;;
+        *)
+            printf "$(mole_t "Unsupported language: %s")\n" "${args[0]:-}" >&2
+            return 1
+            ;;
+    esac
 }
 
 # Update flow (Homebrew or installer).
@@ -750,21 +887,22 @@ show_main_menu() {
 
     printf '\r\033[2K\n'
 
-    printf '\r\033[2K%s\n' "$(show_menu_option 1 "Clean        Free up disk space" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 2 "Uninstall    Remove apps completely" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Check and maintain system" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze      Explore disk usage" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 5 "Status       Monitor system health" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 1 "$(mole_t "Clean        Free up disk space")" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 2 "$(mole_t "Uninstall    Remove apps completely")" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 3 "$(mole_t "Optimize     Check and maintain system")" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 4 "$(mole_t "Analyze      Explore disk usage")" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 5 "$(mole_t "Status       Monitor system health")" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
-        local controls="${GRAY}↑↓  |  Enter  |  M More  |  V Version"
+        local controls="${GRAY}$(mole_t "↑↓  |  Enter  |  M More  |  V Version")"
+        controls="${controls}  |  L $(mole_t "Language")"
         if ! is_touchid_configured; then
-            controls="${controls}  |  T TouchID"
+            controls="${controls}  |  T $(mole_t "TouchID")"
         elif [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]]; then
-            controls="${controls}  |  U Update"
+            controls="${controls}  |  U $(mole_t "Update")"
         fi
-        controls="${controls}  |  Q Quit${NC}"
+        controls="${controls}  |  Q $(mole_t "Quit")${NC}"
         printf '\r\033[2K%s\n' "$controls"
         printf '\r\033[2K\n'
     fi
@@ -863,6 +1001,23 @@ interactive_main_menu() {
                 update_mole
                 exit 0
                 ;;
+            "RIGHT")
+                show_cursor
+                if handle_language_command; then
+                    brand_banner="$(show_brand_banner)"
+                    MAIN_MENU_BANNER="$brand_banner"
+                    if [[ -f "$msg_cache" && -s "$msg_cache" ]]; then
+                        update_message="$(cat "$msg_cache" 2> /dev/null || echo "")"
+                    else
+                        update_message=""
+                    fi
+                    MAIN_MENU_UPDATE_MESSAGE="$update_message"
+                    MAIN_MENU_SHOW_UPDATE="$([[ -n "$update_message" ]] && echo true || echo false)"
+                    hide_cursor
+                    continue
+                fi
+                hide_cursor
+                ;;
             "QUIT") cleanup_and_exit ;;
         esac
 
@@ -909,6 +1064,10 @@ main() {
         "touchid")
             exec "$SCRIPT_DIR/bin/touchid.sh" "${args[@]:1}"
             ;;
+        "language")
+            handle_language_command "${args[@]:1}"
+            exit $?
+            ;;
         "completion")
             exec "$SCRIPT_DIR/bin/completion.sh" "${args[@]:1}"
             ;;
@@ -920,8 +1079,8 @@ main() {
                     --force | -f) force_update=true ;;
                     --nightly) nightly_update=true ;;
                     *)
-                        echo "Unknown update option: $arg"
-                        echo "Use 'mole update [--force] [--nightly]' for supported options."
+                        printf "$(mole_t "Unknown update option: %s")\n" "$arg"
+                        printf '%s\n' "$(mole_t "Use 'mole update [--force] [--nightly]' for supported options.")"
                         exit 1
                         ;;
                 esac
@@ -935,8 +1094,8 @@ main() {
                 case "$arg" in
                     "--dry-run" | "-n") dry_run_remove=true ;;
                     *)
-                        echo "Unknown remove option: $arg"
-                        echo "Use 'mole remove [--dry-run]' for supported options."
+                        printf "$(mole_t "Unknown remove option: %s")\n" "$arg"
+                        printf '%s\n' "$(mole_t "Use 'mole remove [--dry-run]' for supported options.")"
                         exit 1
                         ;;
                 esac
@@ -952,12 +1111,13 @@ main() {
             exit 0
             ;;
         "")
+            ensure_language_selected || exit 0
             check_for_updates
             interactive_main_menu
             ;;
         *)
-            echo "Unknown command: ${args[0]}"
-            echo "Use 'mole --help' for usage information."
+            printf "$(mole_t "Unknown command: %s")\n" "${args[0]}"
+            printf '%s\n' "$(mole_t "Use 'mole --help' for usage information.")"
             exit 1
             ;;
     esac

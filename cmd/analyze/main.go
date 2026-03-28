@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	jsonMode = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	jsonMode = flag.Bool("json", false, tr("output analysis as JSON instead of TUI"))
 )
 
 type dirEntry struct {
@@ -149,7 +149,7 @@ func main() {
 		var err error
 		abs, err = filepath.Abs(target)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cannot resolve %q: %v\n", target, err)
+			fmt.Fprintln(os.Stderr, ftr("cannot resolve %q: %v", target, err))
 			os.Exit(1)
 		}
 		isOverview = false
@@ -170,7 +170,7 @@ func runTUIMode(path string, isOverview bool) {
 
 	p := tea.NewProgram(newModel(path, isOverview), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "analyzer error: %v\n", err)
+		fmt.Fprintln(os.Stderr, ftr("analyzer error: %v", err))
 		os.Exit(1)
 	}
 }
@@ -185,7 +185,7 @@ func newModel(path string, isOverview bool) model {
 	m := model{
 		path:                 path,
 		selected:             0,
-		status:               "Preparing scan...",
+		status:               tr("Preparing scan..."),
 		scanning:             !isOverview,
 		filesScanned:         &filesScanned,
 		dirsScanned:          &dirsScanned,
@@ -211,9 +211,9 @@ func newModel(path string, isOverview bool) model {
 		m.offset = 0
 		if nextPendingOverviewIndex(m.entries) >= 0 {
 			m.overviewScanning = true
-			m.status = "Checking system folders..."
+			m.status = tr("Checking system folders...")
 		} else {
-			m.status = "Ready"
+			m.status = tr("Ready")
 		}
 	}
 
@@ -233,17 +233,17 @@ func createOverviewEntries() []dirEntry {
 
 	// Separate Home and ~/Library to avoid double counting.
 	if home != "" {
-		entries = append(entries, dirEntry{Name: "Home", Path: home, IsDir: true, Size: -1})
+		entries = append(entries, dirEntry{Name: tr("Home"), Path: home, IsDir: true, Size: -1})
 
 		userLibrary := filepath.Join(home, "Library")
 		if _, err := os.Stat(userLibrary); err == nil {
-			entries = append(entries, dirEntry{Name: "App Library", Path: userLibrary, IsDir: true, Size: -1})
+			entries = append(entries, dirEntry{Name: tr("App Library"), Path: userLibrary, IsDir: true, Size: -1})
 		}
 	}
 
 	entries = append(entries,
-		dirEntry{Name: "Applications", Path: "/Applications", IsDir: true, Size: -1},
-		dirEntry{Name: "System Library", Path: "/Library", IsDir: true, Size: -1},
+		dirEntry{Name: tr("Applications"), Path: "/Applications", IsDir: true, Size: -1},
+		dirEntry{Name: tr("System Library"), Path: "/Library", IsDir: true, Size: -1},
 	)
 
 	return entries
@@ -293,7 +293,7 @@ func (m *model) scheduleOverviewScans() tea.Cmd {
 		m.overviewScanning = false
 		if !hasPendingOverviewEntries(m.entries) {
 			m.sortOverviewEntriesBySize()
-			m.status = "Ready"
+			m.status = tr("Ready")
 		}
 		return nil
 	}
@@ -316,9 +316,9 @@ func (m *model) scheduleOverviewScans() tea.Cmd {
 	if len(pendingIndices) > 0 {
 		firstEntry := m.entries[pendingIndices[0]]
 		if len(pendingIndices) == 1 {
-			m.status = fmt.Sprintf("Scanning %s..., %d left", firstEntry.Name, remaining)
+			m.status = ftr("Scanning %s..., %d left", firstEntry.Name, remaining)
 		} else {
-			m.status = fmt.Sprintf("Scanning %d directories..., %d left", len(pendingIndices), remaining)
+			m.status = ftr("Scanning %d directories..., %d left", len(pendingIndices), remaining)
 		}
 	}
 
@@ -429,14 +429,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.multiSelected = make(map[string]bool)
 			m.largeMultiSelected = make(map[string]bool)
 			if msg.err != nil {
-				m.status = fmt.Sprintf("Failed to delete: %v", msg.err)
+				m.status = ftr("Failed to delete: %v", msg.err)
 			} else {
 				if msg.path != "" {
 					m.removePathFromView(msg.path)
 					invalidateCache(msg.path)
 				}
 				invalidateCache(m.path)
-				m.status = fmt.Sprintf("Deleted %d items", msg.count)
+				m.status = ftr("Deleted %d items", msg.count)
 				for i := range m.history {
 					m.history[i].Dirty = true
 				}
@@ -462,7 +462,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.scanning = false
 		if msg.err != nil {
-			m.status = fmt.Sprintf("Scan failed: %v", msg.err)
+			m.status = ftr("Scan failed: %v", msg.err)
 			return m, nil
 		}
 		filteredEntries := make([]dirEntry, 0, len(msg.result.Entries))
@@ -489,7 +489,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.stale {
-			m.status = fmt.Sprintf("Loaded cached data for %s, refreshing...", displayPath(m.path))
+			m.status = ftr("Loaded cached data for %s, refreshing...", displayPath(m.path))
 			m.scanning = true
 			if m.totalFiles > 0 {
 				m.lastTotalFiles = m.totalFiles
@@ -503,7 +503,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.scanFreshCmd(m.path), tickCmd())
 		}
 
-		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		m.status = ftr("Scanned %s", humanizeBytes(m.totalSize))
 		return m, nil
 	case overviewSizeMsg:
 		delete(m.overviewScanningSet, msg.Path)
@@ -529,7 +529,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.totalSize = sumKnownEntrySizes(m.entries)
 
 			if msg.Err != nil {
-				m.status = fmt.Sprintf("Unable to measure %s: %v", displayPath(msg.Path), msg.Err)
+				m.status = ftr("Unable to measure %s: %v", displayPath(msg.Path), msg.Err)
 			}
 
 			cmd := m.scheduleOverviewScans()
@@ -551,7 +551,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.deleting && m.deleteCount != nil {
 				count := atomic.LoadInt64(m.deleteCount)
 				if count > 0 {
-					m.status = fmt.Sprintf("Moving to Trash... %s items", formatNumber(count))
+					m.status = ftr("Moving to Trash... %s items", formatNumber(count))
 				}
 			}
 			return m, tickCmd()
@@ -595,20 +595,20 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deleteTarget = nil
 			if len(pathsToDelete) == 0 {
 				m.deleting = false
-				m.status = "Nothing to delete"
+				m.status = tr("Nothing to delete")
 				return m, nil
 			}
 
 			if len(pathsToDelete) == 1 {
 				targetPath := pathsToDelete[0]
-				m.status = fmt.Sprintf("Deleting %s...", filepath.Base(targetPath))
+				m.status = ftr("Deleting %s...", filepath.Base(targetPath))
 				return m, tea.Batch(deletePathCmd(targetPath, m.deleteCount), tickCmd())
 			}
 
-			m.status = fmt.Sprintf("Deleting %d items...", len(pathsToDelete))
+			m.status = ftr("Deleting %d items...", len(pathsToDelete))
 			return m, tea.Batch(deleteMultiplePathsCmd(pathsToDelete, m.deleteCount), tickCmd())
 		case "esc", "q":
-			m.status = "Cancelled"
+			m.status = tr("Cancelled")
 			m.deleteConfirm = false
 			m.deleteTarget = nil
 			return m, nil
@@ -688,13 +688,13 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.totalSize = 0
 
-			m.status = "Refreshing..."
+			m.status = tr("Refreshing...")
 			m.overviewScanning = true
 			return m, tea.Batch(m.scheduleOverviewScans(), tickCmd())
 		}
 
 		invalidateCache(m.path)
-		m.status = "Refreshing..."
+		m.status = tr("Refreshing...")
 		m.scanning = true
 		if m.totalFiles > 0 {
 			m.lastTotalFiles = m.totalFiles
@@ -716,7 +716,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.multiSelected = make(map[string]bool)
 			}
-			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+			m.status = ftr("Scanned %s", humanizeBytes(m.totalSize))
 		}
 	case "o", "O":
 		// Open selected entries (multi-select aware).
@@ -726,7 +726,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if len(m.largeMultiSelected) > 0 {
 					count := len(m.largeMultiSelected)
 					if count > maxBatchOpen {
-						m.status = fmt.Sprintf("Too many items to open, max %d, selected %d", maxBatchOpen, count)
+						m.status = ftr("Too many items to open, max %d, selected %d", maxBatchOpen, count)
 						return m, nil
 					}
 					for path := range m.largeMultiSelected {
@@ -734,20 +734,20 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							_ = safeOpen(p, false)
 						}(path)
 					}
-					m.status = fmt.Sprintf("Opening %d items...", count)
+					m.status = ftr("Opening %d items...", count)
 				} else {
 					selected := m.largeFiles[m.largeSelected]
 					go func(path string) {
 						_ = safeOpen(path, false)
 					}(selected.Path)
-					m.status = fmt.Sprintf("Opening %s...", selected.Name)
+					m.status = ftr("Opening %s...", selected.Name)
 				}
 			}
 		} else if len(m.entries) > 0 {
 			if len(m.multiSelected) > 0 {
 				count := len(m.multiSelected)
 				if count > maxBatchOpen {
-					m.status = fmt.Sprintf("Too many items to open, max %d, selected %d", maxBatchOpen, count)
+					m.status = ftr("Too many items to open, max %d, selected %d", maxBatchOpen, count)
 					return m, nil
 				}
 				for path := range m.multiSelected {
@@ -755,13 +755,13 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						_ = safeOpen(p, false)
 					}(path)
 				}
-				m.status = fmt.Sprintf("Opening %d items...", count)
+				m.status = ftr("Opening %d items...", count)
 			} else {
 				selected := m.entries[m.selected]
 				go func(path string) {
 					_ = safeOpen(path, false)
 				}(selected.Path)
-				m.status = fmt.Sprintf("Opening %s...", selected.Name)
+				m.status = ftr("Opening %s...", selected.Name)
 			}
 		}
 	case "f", "F":
@@ -772,7 +772,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if len(m.largeMultiSelected) > 0 {
 					count := len(m.largeMultiSelected)
 					if count > maxBatchReveal {
-						m.status = fmt.Sprintf("Too many items to reveal, max %d, selected %d", maxBatchReveal, count)
+						m.status = ftr("Too many items to reveal, max %d, selected %d", maxBatchReveal, count)
 						return m, nil
 					}
 					for path := range m.largeMultiSelected {
@@ -780,20 +780,20 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							_ = safeOpen(p, true)
 						}(path)
 					}
-					m.status = fmt.Sprintf("Showing %d items in Finder...", count)
+					m.status = ftr("Showing %d items in Finder...", count)
 				} else {
 					selected := m.largeFiles[m.largeSelected]
 					go func(path string) {
 						_ = safeOpen(path, true)
 					}(selected.Path)
-					m.status = fmt.Sprintf("Showing %s in Finder...", selected.Name)
+					m.status = ftr("Showing %s in Finder...", selected.Name)
 				}
 			}
 		} else if len(m.entries) > 0 {
 			if len(m.multiSelected) > 0 {
 				count := len(m.multiSelected)
 				if count > maxBatchReveal {
-					m.status = fmt.Sprintf("Too many items to reveal, max %d, selected %d", maxBatchReveal, count)
+					m.status = ftr("Too many items to reveal, max %d, selected %d", maxBatchReveal, count)
 					return m, nil
 				}
 				for path := range m.multiSelected {
@@ -801,13 +801,13 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						_ = safeOpen(p, true)
 					}(path)
 				}
-				m.status = fmt.Sprintf("Showing %d items in Finder...", count)
+				m.status = ftr("Showing %d items in Finder...", count)
 			} else {
 				selected := m.entries[m.selected]
 				go func(path string) {
 					_ = safeOpen(path, true)
 				}(selected.Path)
-				m.status = fmt.Sprintf("Showing %s in Finder...", selected.Name)
+				m.status = ftr("Showing %s in Finder...", selected.Name)
 			}
 		}
 	case " ":
@@ -834,9 +834,9 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							}
 						}
 					}
-					m.status = fmt.Sprintf("%d selected, %s", count, humanizeBytes(totalSize))
+					m.status = ftr("%d selected, %s", count, humanizeBytes(totalSize))
 				} else {
-					m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+					m.status = ftr("Scanned %s", humanizeBytes(m.totalSize))
 				}
 			}
 		} else if len(m.entries) > 0 && !m.inOverviewMode() && m.selected < len(m.entries) {
@@ -860,9 +860,9 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
-				m.status = fmt.Sprintf("%d selected, %s", count, humanizeBytes(totalSize))
+				m.status = ftr("%d selected, %s", count, humanizeBytes(totalSize))
 			} else {
-				m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+				m.status = ftr("Scanned %s", humanizeBytes(m.totalSize))
 			}
 		}
 	case "delete", "backspace":
@@ -939,7 +939,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 		if last.IsOverview {
 			m.hydrateOverviewEntries()
 			m.totalSize = sumKnownEntrySizes(m.entries)
-			m.status = "Ready"
+			m.status = tr("Ready")
 			m.scanning = false
 			if nextPendingOverviewIndex(m.entries) >= 0 {
 				m.overviewScanning = true
@@ -947,7 +947,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.status = "Scanning..."
+		m.status = tr("Scanning...")
 		m.scanning = true
 		return m, tea.Batch(m.scanCmd(m.path), tickCmd())
 	}
@@ -964,7 +964,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 	if m.selected < 0 {
 		m.selected = 0
 	}
-	m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+	m.status = ftr("Scanned %s", humanizeBytes(m.totalSize))
 	m.scanning = false
 	return m, nil
 }
@@ -984,7 +984,7 @@ func (m *model) switchToOverviewMode() tea.Cmd {
 	m.hydrateOverviewEntries()
 	cmd := m.scheduleOverviewScans()
 	if cmd == nil {
-		m.status = "Ready"
+		m.status = tr("Ready")
 		return nil
 	}
 	return tea.Batch(cmd, tickCmd())
@@ -1002,7 +1002,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 		m.path = selected.Path
 		m.selected = 0
 		m.offset = 0
-		m.status = "Scanning..."
+		m.status = tr("Scanning...")
 		m.scanning = true
 		m.isOverview = false
 		m.multiSelected = make(map[string]bool)
@@ -1026,7 +1026,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 			m.largeOffset = cached.LargeOffset
 			m.clampEntrySelection()
 			m.clampLargeSelection()
-			m.status = fmt.Sprintf("Cached view for %s", displayPath(m.path))
+			m.status = ftr("Cached view for %s", displayPath(m.path))
 			m.scanning = false
 			return m, nil
 		}
@@ -1036,7 +1036,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.scanCmd(m.path), tickCmd())
 	}
-	m.status = fmt.Sprintf("File: %s, %s", selected.Name, humanizeBytes(selected.Size))
+	m.status = ftr("File: %s, %s", selected.Name, humanizeBytes(selected.Size))
 	return m, nil
 }
 
