@@ -444,7 +444,7 @@ paginated_multi_select() {
             for ((i = 0; i < items_per_page; i++)); do
                 printf "${clear_line}\n" >&2
             done
-            printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space  |  Enter  |  Q Exit${NC}\n" >&2
+            printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}/Ctrl+P/N  |  Space  |  Enter  |  Q Exit${NC}\n" >&2
             printf "${clear_line}" >&2
             return
         fi
@@ -501,7 +501,7 @@ paginated_multi_select() {
         }
 
         # Common menu items
-        local nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}${NC}"
+        local nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}/Ctrl+P/N${NC}"
         local space_select="${GRAY}Space Select${NC}"
         local enter="${GRAY}Enter${NC}"
         local exit="${GRAY}Q Exit${NC}"

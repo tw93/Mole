@@ -290,7 +290,23 @@ EOF
     [ "$output" = "UP" ]
 }
 
+@test "read_key maps Ctrl+N/Ctrl+P to navigation" {
+    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; printf '\016' | read_key"
+    [ "$output" = "DOWN" ]
+
+    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; printf '\020' | read_key"
+    [ "$output" = "UP" ]
+}
+
 @test "read_key respects MOLE_READ_KEY_FORCE_CHAR" {
     run bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "CHAR:j" ]
+}
+
+@test "read_key maps Ctrl+N/Ctrl+P in forced char mode" {
+    run bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; printf '\016' | read_key"
+    [ "$output" = "DOWN" ]
+
+    run bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; printf '\020' | read_key"
+    [ "$output" = "UP" ]
 }

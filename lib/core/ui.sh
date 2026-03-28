@@ -169,6 +169,8 @@ read_key() {
         }
         case "$key" in
             $'\n' | $'\r') echo "ENTER" ;;
+            $'\x0e') echo "DOWN" ;; # Ctrl+N
+            $'\x10') echo "UP" ;;   # Ctrl+P
             $'\x7f' | $'\x08') echo "DELETE" ;;
             $'\x15') echo "CLEAR_LINE" ;; # Ctrl+U (often mapped from Cmd+Delete in terminals)
             $'\x1b')
@@ -229,6 +231,8 @@ read_key() {
         'k' | 'K') echo "UP" ;;
         'h' | 'H') echo "LEFT" ;;
         'l' | 'L') echo "RIGHT" ;;
+        $'\x0e') echo "DOWN" ;; # Ctrl+N
+        $'\x10') echo "UP" ;;   # Ctrl+P
         $'\x03') echo "QUIT" ;;
         $'\x7f' | $'\x08') echo "DELETE" ;;
         $'\x15') echo "CLEAR_LINE" ;; # Ctrl+U

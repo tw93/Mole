@@ -759,7 +759,7 @@ show_main_menu() {
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
-        local controls="${GRAY}↑↓  |  Enter  |  M More"
+        local controls="${GRAY}↑↓/Ctrl+P/N  |  Enter  |  M More"
         if ! is_touchid_configured; then
             controls="${controls}  |  T TouchID"
         elif [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]]; then
