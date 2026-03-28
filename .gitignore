@@ -63,8 +63,11 @@ mole-analyze
 # Go binaries
 bin/analyze-go
 bin/status-go
+bin/doctor-go
 bin/analyze-darwin-*
 bin/status-darwin-*
+bin/doctor-darwin-*
+/doctor
 
 # Test artifacts
 tests/tmp-*/

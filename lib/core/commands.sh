@@ -7,6 +7,7 @@ MOLE_COMMANDS=(
     "optimize:Check and maintain system"
     "analyze:Explore disk usage"
     "status:Monitor system health"
+    "doctor:Diagnose Mac health"
     "purge:Remove old project artifacts"
     "installer:Find and remove installer files"
     "touchid:Configure Touch ID for sudo"

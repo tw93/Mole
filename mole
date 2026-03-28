@@ -900,6 +900,9 @@ main() {
         "status")
             exec "$SCRIPT_DIR/bin/status.sh" "${args[@]:1}"
             ;;
+        "doctor")
+            exec "$SCRIPT_DIR/bin/doctor.sh" "${args[@]:1}"
+            ;;
         "purge")
             exec "$SCRIPT_DIR/bin/purge.sh" "${args[@]:1}"
             ;;
