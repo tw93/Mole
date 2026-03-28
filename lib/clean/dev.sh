@@ -1084,6 +1084,7 @@ clean_dev_editors() {
     safe_clean ~/Library/Application\ Support/Code/GPUCache/* "VS Code GPU cache"
     safe_clean ~/Library/Application\ Support/Code/CachedExtensionVSIXs/* "VS Code extension cache"
     clean_service_worker_cache "VS Code" "$HOME/Library/Application Support/Code/Service Worker/CacheStorage"
+    safe_clean ~/Library/Application\ Support/Code/Service\ Worker/ScriptCache/* "VS Code Service Worker ScriptCache"
     safe_clean ~/Library/Caches/Zed/* "Zed cache"
 }
 # Main developer tools cleanup sequence.

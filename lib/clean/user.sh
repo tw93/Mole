@@ -668,6 +668,8 @@ clean_app_caches() {
     safe_clean ~/Library/Containers/com.apple.configurator.xpc.InternetService/Data/tmp/* "Apple Configurator temp files"
     safe_clean ~/Library/Containers/com.apple.wallpaper.extension.aerials/Data/tmp/* "Wallpaper aerials temp files"
     safe_clean ~/Library/Containers/com.apple.geod/Data/tmp/* "Geod temp files"
+    safe_clean ~/Library/Containers/com.apple.stocks/Data/Library/Caches/* "Stocks cache"
+    safe_clean ~/Library/Application\ Support/com.apple.wallpaper/aerials/thumbnails/* "Wallpaper aerials thumbnails"
     local containers_dir="$HOME/Library/Containers"
     [[ ! -d "$containers_dir" ]] && return 0
     start_section_spinner "Scanning sandboxed apps..."
@@ -1094,6 +1096,7 @@ clean_browsers() {
     local _chrome_profile
     for _chrome_profile in "$HOME/Library/Application Support/Google/Chrome"/*/; do
         clean_service_worker_cache "Chrome" "$_chrome_profile/Service Worker/CacheStorage"
+        safe_clean "$_chrome_profile"/Service\ Worker/ScriptCache/* "Chrome Service Worker ScriptCache"
     done
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/crx_cache/* "GoogleUpdater CRX cache"
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/*.old "GoogleUpdater old files"
@@ -1165,9 +1168,11 @@ clean_office_applications() {
     safe_clean ~/Library/Caches/com.microsoft.Word "Microsoft Word cache"
     safe_clean ~/Library/Containers/com.microsoft.Word/Data/Library/Caches/* "Microsoft Word container cache"
     safe_clean ~/Library/Containers/com.microsoft.Word/Data/tmp/* "Microsoft Word temp files"
+    safe_clean ~/Library/Containers/com.microsoft.Word/Data/Library/Logs/* "Microsoft Word container logs"
     safe_clean ~/Library/Caches/com.microsoft.Excel "Microsoft Excel cache"
     safe_clean ~/Library/Containers/com.microsoft.Excel/Data/Library/Caches/* "Microsoft Excel container cache"
     safe_clean ~/Library/Containers/com.microsoft.Excel/Data/tmp/* "Microsoft Excel temp files"
+    safe_clean ~/Library/Containers/com.microsoft.Excel/Data/Library/Logs/* "Microsoft Excel container logs"
     safe_clean ~/Library/Caches/com.microsoft.Powerpoint "Microsoft PowerPoint cache"
     safe_clean ~/Library/Caches/com.microsoft.Outlook/* "Microsoft Outlook cache"
     safe_clean ~/Library/Caches/com.apple.iWork.* "Apple iWork cache"
