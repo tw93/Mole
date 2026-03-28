@@ -186,6 +186,11 @@ clean_gaming_platforms() {
     safe_clean ~/.lunarclient/logs/* "Lunar Client logs"
     safe_clean ~/.lunarclient/offline/*/logs/* "Lunar Client offline logs"
     safe_clean ~/.lunarclient/offline/files/*/logs/* "Lunar Client offline file logs"
+    safe_clean ~/Library/Caches/net.pcsx2.PCSX2/* "PCSX2 cache"
+    safe_clean ~/Library/Application\ Support/PCSX2/cache/* "PCSX2 shader cache"
+    safe_clean ~/Library/Logs/PCSX2/* "PCSX2 logs"
+    safe_clean ~/Library/Caches/net.rpcs3.rpcs3/* "RPCS3 cache"
+    safe_clean ~/Library/Application\ Support/rpcs3/logs/* "RPCS3 logs"
 }
 # Translation/dictionary apps.
 clean_translation_apps() {
