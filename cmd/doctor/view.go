@@ -58,6 +58,25 @@ func (m model) View() string {
 		return b.String()
 	}
 
+	// Hardware profile header.
+	hw := m.result.Hardware
+	if hw.Model != "" {
+		fmt.Fprintf(&b, "  %s%s · %s · %s%s\n",
+			colorGray, hw.Model, hw.Chip, hw.RAM, colorReset)
+		macosLine := "macOS " + hw.MacOS
+		if hw.Build != "" {
+			macosLine += " (" + hw.Build + ")"
+		}
+		if hw.SSDTotal != "" {
+			macosLine += " · " + hw.SSDTotal + " SSD (" + hw.SSDFree + " free)"
+		}
+		fmt.Fprintf(&b, "  %s%s%s\n", colorGray, macosLine, colorReset)
+		if !hw.ThermalOK {
+			fmt.Fprintf(&b, "  %s⚠ Thermal throttling detected%s\n", colorYellow, colorReset)
+		}
+		fmt.Fprintln(&b)
+	}
+
 	// Header with score.
 	scoreColor := colorGreen
 	ratio := 0.0
@@ -106,6 +125,13 @@ func (m model) View() string {
 				checkIcon := statusIcon(check.Status)
 				fmt.Fprintf(&b, "      %s %s — %s\n",
 					checkIcon, check.Name, check.Detail)
+
+				// Cache breakdown sub-items.
+				for _, item := range check.Breakdown {
+					bdIcon := statusIcon(item.Status)
+					fmt.Fprintf(&b, "          %s %s: %s\n",
+						bdIcon, item.Name, humanizeBytes(item.Size))
+				}
 			}
 			fmt.Fprintln(&b)
 		}

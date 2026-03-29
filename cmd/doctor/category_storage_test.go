@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -44,5 +45,28 @@ func TestExpandHomeContainsHome(t *testing.T) {
 	got := expandHome("~/test")
 	if !strings.HasPrefix(got, home) {
 		t.Errorf("expandHome(\"~/test\") = %q, should start with %q", got, home)
+	}
+}
+
+func TestDirSizeBytes(t *testing.T) {
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, "testfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, 4096)
+	f.Write(data)
+	f.Close()
+
+	size := dirSizeBytes(dir)
+	if size < 4096 {
+		t.Errorf("dirSizeBytes() = %d, want >= 4096", size)
+	}
+}
+
+func TestDirSizeBytes_NonExistent(t *testing.T) {
+	size := dirSizeBytes("/nonexistent/path/that/does/not/exist")
+	if size != 0 {
+		t.Errorf("dirSizeBytes(nonexistent) = %d, want 0", size)
 	}
 }

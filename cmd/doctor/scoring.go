@@ -83,7 +83,12 @@ func generateTips(categories []categoryResult) []string {
 			for _, check := range c.Checks {
 				if check.Name == "Recoverable cache" && check.Status != statusPass {
 					tips = append(tips, "Run 'mo clean' to reclaim cache space")
-					break
+				}
+				if check.Name == "node_modules" && check.Status != statusPass {
+					tips = append(tips, "Run 'mo clean' to prune old node_modules")
+				}
+				if check.Name == "iOS backups" && check.Status != statusPass {
+					tips = append(tips, "Old iOS backups are using disk space — remove in Finder > Manage Storage")
 				}
 			}
 		case "Performance":
@@ -119,6 +124,15 @@ func generateTips(categories []categoryResult) []string {
 				}
 				if check.Name == "Heavy processes" && check.Status != statusPass {
 					tips = append(tips, "Close heavy background processes to improve performance")
+				}
+			}
+		case "Dev Environment":
+			for _, check := range c.Checks {
+				if check.Name == "Common tools" && check.Status != statusPass {
+					tips = append(tips, check.Detail)
+				}
+				if check.Name == "IDE extensions" && check.Status != statusPass {
+					tips = append(tips, "Remove duplicate IDE extensions to save disk and avoid conflicts")
 				}
 			}
 		case "Mole":

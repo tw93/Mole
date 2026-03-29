@@ -28,11 +28,12 @@ func TestCalculateTotalScore(t *testing.T) {
 		{
 			name: "all categories perfect",
 			categories: []categoryResult{
-				{Name: "Storage", Score: 20, MaxScore: 20},
+				{Name: "Storage", Score: 15, MaxScore: 15},
 				{Name: "Performance", Score: 20, MaxScore: 20},
-				{Name: "Battery", Score: 20, MaxScore: 20},
-				{Name: "Security", Score: 20, MaxScore: 20},
+				{Name: "Battery", Score: 15, MaxScore: 15},
+				{Name: "Security", Score: 15, MaxScore: 15},
 				{Name: "Maintenance", Score: 15, MaxScore: 15},
+				{Name: "Dev Environment", Score: 15, MaxScore: 15},
 				{Name: "Mole", Score: 5, MaxScore: 5},
 			},
 			wantTotal: 100,
@@ -80,11 +81,12 @@ func TestRedistributeBatteryScore_WithBattery(t *testing.T) {
 
 func TestRedistributeBatteryScore_NoBattery(t *testing.T) {
 	categories := []categoryResult{
-		{Name: "Storage", Score: 20, MaxScore: 20},
+		{Name: "Storage", Score: 15, MaxScore: 15},
 		{Name: "Performance", Score: 20, MaxScore: 20},
 		{Name: "Battery", Score: 0, MaxScore: 0},
-		{Name: "Security", Score: 20, MaxScore: 20},
+		{Name: "Security", Score: 15, MaxScore: 15},
 		{Name: "Maintenance", Score: 15, MaxScore: 15},
+		{Name: "Dev Environment", Score: 15, MaxScore: 15},
 		{Name: "Mole", Score: 5, MaxScore: 5},
 	}
 
@@ -109,12 +111,13 @@ func TestRedistributeBatteryScore_NoBattery(t *testing.T) {
 
 func TestRedistributeBatteryScore_ScoresProportional(t *testing.T) {
 	categories := []categoryResult{
-		{Name: "Storage", Score: 10, MaxScore: 20},     // 50%
-		{Name: "Performance", Score: 20, MaxScore: 20}, // 100%
-		{Name: "Battery", Score: 0, MaxScore: 0},       // skipped
-		{Name: "Security", Score: 15, MaxScore: 20},    // 75%
-		{Name: "Maintenance", Score: 15, MaxScore: 15}, // 100%
-		{Name: "Mole", Score: 5, MaxScore: 5},          // 100%
+		{Name: "Storage", Score: 8, MaxScore: 15},          // ~53%
+		{Name: "Performance", Score: 20, MaxScore: 20},     // 100%
+		{Name: "Battery", Score: 0, MaxScore: 0},           // skipped
+		{Name: "Security", Score: 11, MaxScore: 15},        // ~73%
+		{Name: "Maintenance", Score: 15, MaxScore: 15},     // 100%
+		{Name: "Dev Environment", Score: 10, MaxScore: 15}, // ~67%
+		{Name: "Mole", Score: 5, MaxScore: 5},              // 100%
 	}
 
 	result := redistributeBatteryScore(categories)
@@ -147,7 +150,7 @@ func TestGenerateTips_AllGood(t *testing.T) {
 
 func TestGenerateTips_StorageCache(t *testing.T) {
 	categories := []categoryResult{
-		{Name: "Storage", Score: 10, MaxScore: 20, Checks: []checkResult{
+		{Name: "Storage", Score: 5, MaxScore: 15, Checks: []checkResult{
 			{Name: "Free space", Status: statusPass},
 			{Name: "Recoverable cache", Status: statusWarn},
 		}},
@@ -187,7 +190,7 @@ func TestGenerateTips_HeavyProcesses(t *testing.T) {
 
 func TestGenerateTips_SecurityAggregated(t *testing.T) {
 	categories := []categoryResult{
-		{Name: "Security", Score: 5, MaxScore: 20, Checks: []checkResult{
+		{Name: "Security", Score: 5, MaxScore: 15, Checks: []checkResult{
 			{Name: "FileVault", Status: statusFail},
 			{Name: "Firewall", Status: statusFail},
 			{Name: "SIP", Status: statusPass},
@@ -210,7 +213,7 @@ func TestGenerateTips_SecurityAggregated(t *testing.T) {
 func TestGenerateTips_BatteryOnlyWhenFailing(t *testing.T) {
 	// Battery all pass, ratio >= 0.8 → no tip.
 	categories := []categoryResult{
-		{Name: "Battery", Score: 20, MaxScore: 20, Checks: []checkResult{
+		{Name: "Battery", Score: 15, MaxScore: 15, Checks: []checkResult{
 			{Name: "Cycle count", Status: statusPass},
 			{Name: "Health", Status: statusPass},
 		}},
@@ -221,6 +224,35 @@ func TestGenerateTips_BatteryOnlyWhenFailing(t *testing.T) {
 		if tip == "Battery health is low — consider Apple service" {
 			t.Error("generateTips() should not show battery tip when battery is healthy")
 		}
+	}
+}
+
+func TestGenerateTips_DevEnvironment(t *testing.T) {
+	categories := []categoryResult{
+		{Name: "Dev Environment", Score: 5, MaxScore: 15, Checks: []checkResult{
+			{Name: "Common tools", Status: statusWarn, Detail: "Missing: docker, go"},
+			{Name: "IDE extensions", Status: statusWarn, Detail: "2 duplicates: publisher.ext, other.ext"},
+		}},
+	}
+
+	tips := generateTips(categories)
+	if len(tips) != 2 {
+		t.Errorf("generateTips() = %d tips, want 2: %v", len(tips), tips)
+	}
+	foundTools, foundIDE := false, false
+	for _, tip := range tips {
+		if tip == "Missing: docker, go" {
+			foundTools = true
+		}
+		if tip == "Remove duplicate IDE extensions to save disk and avoid conflicts" {
+			foundIDE = true
+		}
+	}
+	if !foundTools {
+		t.Error("missing tools tip")
+	}
+	if !foundIDE {
+		t.Error("missing IDE tip")
 	}
 }
 

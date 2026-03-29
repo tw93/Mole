@@ -3,19 +3,52 @@
 package main
 
 import (
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func runAllChecks(_ bool) diagnosisResult {
-	categories := []categoryResult{
-		checkStorage(),
-		checkPerformance(),
-		checkBattery(),
-		checkSecurity(),
-		checkMaintenance(),
-		checkMole(),
+	var hardware hardwareProfile
+	var wg sync.WaitGroup
+
+	// Collect hardware in parallel with category checks.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		hardware = collectHardware()
+	}()
+
+	// Run all category checks in parallel.
+	type indexedResult struct {
+		index int
+		result categoryResult
+	}
+	checks := []func() categoryResult{
+		checkStorage,
+		checkPerformance,
+		checkBattery,
+		checkSecurity,
+		checkMaintenance,
+		checkDevEnvironment,
+		checkMole,
+	}
+	ch := make(chan indexedResult, len(checks))
+	for i, fn := range checks {
+		wg.Add(1)
+		go func(idx int, f func() categoryResult) {
+			defer wg.Done()
+			ch <- indexedResult{index: idx, result: f()}
+		}(i, fn)
+	}
+
+	wg.Wait()
+	close(ch)
+
+	categories := make([]categoryResult, len(checks))
+	for r := range ch {
+		categories[r.index] = r.result
 	}
 
 	categories = redistributeBatteryScore(categories)
@@ -23,6 +56,7 @@ func runAllChecks(_ bool) diagnosisResult {
 	tips := generateTips(categories)
 
 	return diagnosisResult{
+		Hardware:   hardware,
 		Categories: categories,
 		TotalScore: totalScore,
 		MaxScore:   maxScore,

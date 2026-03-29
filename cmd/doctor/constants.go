@@ -37,10 +37,6 @@ const (
 	nodeModulesMedGB  = 5.0
 	iosBackupHighGB   = 5.0
 
-	// Dev environment thresholds
-	brewOutdatedHigh = 10
-	brewOutdatedMed  = 3
-
 	// Cache breakdown thresholds (bytes)
 	cacheBreakdownWarnDefault int64 = 1024 * 1024 * 1024
 	cacheBreakdownFailDefault int64 = 3 * 1024 * 1024 * 1024
