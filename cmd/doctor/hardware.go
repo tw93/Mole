@@ -52,7 +52,7 @@ func collectHardware() hardwareProfile {
 }
 
 func parseSystemProfilerValue(output, key string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, key+":") {
 			parts := strings.SplitN(trimmed, ":", 2)

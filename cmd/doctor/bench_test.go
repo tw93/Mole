@@ -15,11 +15,9 @@ func TestBenchRunAllChecks(t *testing.T) {
 	var hardware hardwareProfile
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		hardware = collectHardware()
-	}()
+	})
 
 	type indexedResult struct {
 		index  int
@@ -27,11 +25,10 @@ func TestBenchRunAllChecks(t *testing.T) {
 	}
 	ch := make(chan indexedResult, len(categorySpecs))
 	for i, spec := range categorySpecs {
-		wg.Add(1)
-		go func(idx int, fn func() categoryResult) {
-			defer wg.Done()
+		idx, fn := i, spec.fn
+		wg.Go(func() {
 			ch <- indexedResult{index: idx, result: fn()}
-		}(i, spec.fn)
+		})
 	}
 
 	wg.Wait()

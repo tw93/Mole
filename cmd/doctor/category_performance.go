@@ -52,7 +52,7 @@ func checkRAMPressure() checkResult {
 	}
 
 	var freePages, inactivePages, wiredPages, compressedPages int64
-	for _, line := range strings.Split(string(vmOut), "\n") {
+	for line := range strings.SplitSeq(string(vmOut), "\n") {
 		if strings.HasPrefix(line, "Pages free:") {
 			freePages = parseVMStatValue(line)
 		} else if strings.HasPrefix(line, "Pages inactive:") {

@@ -243,9 +243,7 @@ func (m model) viewInteractive() string {
 	viewportHeight := max(m.height-11, 5)
 	start := min(m.offset, len(catLines))
 	end := start + viewportHeight
-	if end > len(catLines) {
-		end = len(catLines)
-	}
+	end = min(end, len(catLines))
 	visible := catLines[start:end]
 
 	if start > 0 {

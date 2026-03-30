@@ -3,14 +3,11 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-var hasSudo = flag.Bool("sudo", false, "enable checks requiring admin access")
 
 type checkStatus int
 
@@ -105,8 +102,7 @@ type model struct {
 	// UI state.
 	selected int
 	expanded map[int]bool
-	offset   int
-	err      error
+	offset int
 }
 
 func newModel() model {
@@ -131,8 +127,6 @@ func (m model) allRevealed() bool {
 }
 
 func main() {
-	flag.Parse()
-
 	p := tea.NewProgram(newModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

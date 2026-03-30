@@ -172,7 +172,7 @@ func checkPurgeableSpace() checkResult {
 		return r
 	}
 
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.Contains(line, "Purgeable") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
