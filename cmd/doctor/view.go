@@ -19,29 +19,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "up", "k":
-			if m.selected > 0 {
+			if m.finalized && m.selected > 0 {
 				m.selected--
 				m.ensureSelectedVisible()
 			}
 		case "down", "j":
-			if m.selected+1 < len(m.result.Categories) {
+			if m.finalized && m.selected+1 < len(m.categories) {
 				m.selected++
 				m.ensureSelectedVisible()
 			}
 		case "enter", " ":
-			m.expanded[m.selected] = !m.expanded[m.selected]
+			if m.finalized {
+				m.expanded[m.selected] = !m.expanded[m.selected]
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-	case diagnosisDoneMsg:
-		m.result = msg.result
-		m.ready = true
-		m.running = false
-		m.err = msg.err
+	case hardwareDoneMsg:
+		m.hardware = msg.hardware
+		m.hardwareDone = true
+	case categoryDoneMsg:
+		m.categories[msg.index] = msg.result
+		m.catDone[msg.index] = true
+	case revealTickMsg:
+		// Reveal the next category in order, if its data is ready.
+		if m.revealedCount < len(m.catDone) && m.catDone[m.revealedCount] {
+			m.revealedCount++
+		}
+		if !m.allRevealed() {
+			return m, scheduleReveal()
+		}
+		// All revealed — finalize scores and tips.
+		if !m.finalized {
+			m.categories = redistributeBatteryScore(m.categories)
+			m.totalScore, m.maxScore = calculateTotalScore(m.categories)
+			m.tips = generateTips(m.categories)
+			m.finalized = true
+		}
 	case tickMsg:
 		m.spinner = (m.spinner + 1) % len(spinnerFrames)
-		if m.running {
+		if !m.finalized {
 			return m, tickSpinner()
 		}
 	}
@@ -50,20 +68,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ensureSelectedVisible adjusts the scroll offset so the selected category is on screen.
 func (m *model) ensureSelectedVisible() {
-	// Estimate the line number of the selected category within the scrollable area.
 	line := 0
 	for i := 0; i < m.selected; i++ {
 		line++ // category header line
 		if m.expanded[i] {
-			for _, check := range m.result.Categories[i].Checks {
-				line++ // check line
+			for _, check := range m.categories[i].Checks {
+				line++
 				line += len(check.Breakdown)
 			}
 			line++ // blank line after expanded
 		}
 	}
 
-	// Reserve lines for header (~6) and footer (~5).
 	viewportHeight := max(m.height-11, 5)
 
 	if line < m.offset {
@@ -77,20 +93,9 @@ func (m model) View() string {
 	var b strings.Builder
 	fmt.Fprintln(&b)
 
-	if m.running {
-		fmt.Fprintf(&b, "  %sMac Doctor%s\n\n", colorPurpleBold, colorReset)
-		fmt.Fprintf(&b, "  %s%s%s Running checks...\n", colorCyan, spinnerFrames[m.spinner], colorReset)
-		return b.String()
-	}
-
-	if m.err != nil {
-		fmt.Fprintf(&b, "  %sError:%s %v\n", colorRed, colorReset, m.err)
-		return b.String()
-	}
-
-	// Hardware profile header.
-	hw := m.result.Hardware
-	if hw.Model != "" {
+	// Hardware profile header (shown as soon as available).
+	hw := m.hardware
+	if m.hardwareDone && hw.Model != "" {
 		fmt.Fprintf(&b, "  %s%s · %s · %s%s\n",
 			colorGray, hw.Model, hw.Chip, hw.RAM, colorReset)
 		macosLine := "macOS " + hw.MacOS
@@ -107,47 +112,116 @@ func (m model) View() string {
 		fmt.Fprintln(&b)
 	}
 
-	// Header with score.
-	scoreColor := colorGreen
-	ratio := 0.0
-	if m.result.MaxScore > 0 {
-		ratio = float64(m.result.TotalScore) / float64(m.result.MaxScore)
-	}
-	if ratio < 0.6 {
-		scoreColor = colorRed
-	} else if ratio < 0.8 {
-		scoreColor = colorYellow
-	}
+	// Title line.
 	fmt.Fprintf(&b, "  %sMac Doctor%s", colorPurpleBold, colorReset)
-	fmt.Fprintf(&b, "                        %sScore: %d%s/%d\n",
-		scoreColor, m.result.TotalScore, colorReset, m.result.MaxScore)
 
-	// Progress bar.
-	fmt.Fprintf(&b, "  %s\n\n", progressBar(m.result.TotalScore, m.result.MaxScore, 36))
-
-	// Categories — build scrollable lines, then apply viewport.
-	var catLines []string
-	for i, cat := range m.result.Categories {
-		cursor := "  "
-		if i == m.selected {
-			cursor = colorPurple + "▸ " + colorReset
+	if m.finalized {
+		// Show final score.
+		scoreColor := colorGreen
+		ratio := 0.0
+		if m.maxScore > 0 {
+			ratio = float64(m.totalScore) / float64(m.maxScore)
 		}
+		if ratio < 0.6 {
+			scoreColor = colorRed
+		} else if ratio < 0.8 {
+			scoreColor = colorYellow
+		}
+		fmt.Fprintf(&b, "                        %sScore: %d%s/%d\n",
+			scoreColor, m.totalScore, colorReset, m.maxScore)
+		fmt.Fprintf(&b, "  %s\n\n", progressBar(m.totalScore, m.maxScore, 36))
+	} else {
+		// Show progress counter.
+		fmt.Fprintf(&b, "  %s(%d/%d)%s\n\n",
+			colorGray, m.revealedCount, len(m.catDone), colorReset)
+	}
 
-		arrow := "▸"
+	if m.finalized {
+		// Interactive mode — expandable categories with scroll.
+		b.WriteString(m.viewInteractive())
+	} else {
+		// Progressive mode — streaming results.
+		b.WriteString(m.viewProgressive())
+	}
+
+	// Footer.
+	fmt.Fprintln(&b)
+	if m.finalized {
+		fmt.Fprintf(&b, "  %s↑↓%s navigate  %sEnter%s expand  %sq%s quit\n",
+			colorBold, colorReset, colorBold, colorReset, colorBold, colorReset)
+	} else {
+		fmt.Fprintf(&b, "  %sq%s quit\n", colorBold, colorReset)
+	}
+
+	// Tips (only after finalized).
+	if m.finalized && len(m.tips) > 0 {
+		fmt.Fprintf(&b, "  ─────────────────────────────────────────\n")
+		for i, tip := range m.tips {
+			if i == 0 {
+				fmt.Fprintf(&b, "  %sTips:%s %s\n", colorCyan, colorReset, tip)
+			} else {
+				fmt.Fprintf(&b, "        %s\n", tip)
+			}
+		}
+	}
+
+	fmt.Fprintln(&b)
+	return b.String()
+}
+
+// viewProgressive renders compact one-liners during scanning.
+// Full check details only appear in the final interactive view.
+func (m model) viewProgressive() string {
+	var b strings.Builder
+
+	// Compact one-liners for revealed categories.
+	for i := 0; i < m.revealedCount; i++ {
+		cat := m.categories[i]
+		icon := categoryIcon(cat.Score, cat.MaxScore)
+		padding := max(28-len(cat.Name), 1)
+		bar := progressBar(cat.Score, cat.MaxScore, 12)
+		fmt.Fprintf(&b, "  %s %s%s%s %s%d/%d%s\n",
+			icon, cat.Name, strings.Repeat(" ", padding),
+			bar, colorGray, cat.Score, cat.MaxScore, colorReset)
+	}
+
+	// Spinner for the category currently being checked.
+	if m.revealedCount < len(categorySpecs) {
+		spec := categorySpecs[m.revealedCount]
+		frame := spinnerFrames[m.spinner]
+		fmt.Fprintf(&b, "  %s%s%s %sChecking %s ...%s\n",
+			colorCyan, frame, colorReset,
+			colorGray, spec.name, colorReset)
+	}
+
+	return b.String()
+}
+
+// viewInteractive renders the final expandable/scrollable view.
+func (m model) viewInteractive() string {
+	var catLines []string
+	for i, cat := range m.categories {
+		arrow := "  ▸"
 		if m.expanded[i] {
-			arrow = "▾"
+			arrow = "  ▾"
+		}
+		if i == m.selected {
+			if m.expanded[i] {
+				arrow = colorPurple + "▸ ▾" + colorReset
+			} else {
+				arrow = colorPurple + "▸ ▸" + colorReset
+			}
 		}
 
 		icon := categoryIcon(cat.Score, cat.MaxScore)
-		scoreStr := fmt.Sprintf("%d/%d", cat.Score, cat.MaxScore)
-
 		name := cat.Name
 		padding := max(24-len(name), 1)
+		bar := progressBar(cat.Score, cat.MaxScore, 12)
 
-		catLines = append(catLines, fmt.Sprintf("%s%s %s%s%s %s",
-			cursor, arrow, name, strings.Repeat(" ", padding), icon, scoreStr))
+		catLines = append(catLines, fmt.Sprintf("%s %s %s%s%s %s%d/%d%s",
+			arrow, name, icon, strings.Repeat(" ", padding),
+			bar, colorGray, cat.Score, cat.MaxScore, colorReset))
 
-		// Expanded checks.
 		if m.expanded[i] {
 			for _, check := range cat.Checks {
 				checkIcon := statusIcon(check.Status)
@@ -165,6 +239,7 @@ func (m model) View() string {
 	}
 
 	// Apply viewport scrolling.
+	var b strings.Builder
 	viewportHeight := max(m.height-11, 5)
 	start := min(m.offset, len(catLines))
 	end := start + viewportHeight
@@ -183,23 +258,5 @@ func (m model) View() string {
 		fmt.Fprintf(&b, "  %s↓ %d more%s\n", colorGray, len(catLines)-end, colorReset)
 	}
 
-	// Footer.
-	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "  %s↑↓%s navigate  %sEnter%s expand  %sq%s quit\n",
-		colorBold, colorReset, colorBold, colorReset, colorBold, colorReset)
-
-	// Tips.
-	if len(m.result.Tips) > 0 {
-		fmt.Fprintf(&b, "  ─────────────────────────────────────────\n")
-		for i, tip := range m.result.Tips {
-			if i == 0 {
-				fmt.Fprintf(&b, "  %sTips:%s %s\n", colorCyan, colorReset, tip)
-			} else {
-				fmt.Fprintf(&b, "        %s\n", tip)
-			}
-		}
-	}
-
-	fmt.Fprintln(&b)
 	return b.String()
 }
