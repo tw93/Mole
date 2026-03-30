@@ -13,15 +13,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q", "ctrl+c", "esc":
+			if diagCancel != nil {
+				diagCancel()
+			}
 			return m, tea.Quit
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
+				m.ensureSelectedVisible()
 			}
 		case "down", "j":
 			if m.selected+1 < len(m.result.Categories) {
 				m.selected++
+				m.ensureSelectedVisible()
 			}
 		case "enter", " ":
 			m.expanded[m.selected] = !m.expanded[m.selected]
@@ -41,6 +46,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// ensureSelectedVisible adjusts the scroll offset so the selected category is on screen.
+func (m *model) ensureSelectedVisible() {
+	// Estimate the line number of the selected category within the scrollable area.
+	line := 0
+	for i := 0; i < m.selected; i++ {
+		line++ // category header line
+		if m.expanded[i] {
+			for _, check := range m.result.Categories[i].Checks {
+				line++ // check line
+				line += len(check.Breakdown)
+			}
+			line++ // blank line after expanded
+		}
+	}
+
+	// Reserve lines for header (~6) and footer (~5).
+	viewportHeight := m.height - 11
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+
+	if line < m.offset {
+		m.offset = line
+	} else if line >= m.offset+viewportHeight {
+		m.offset = line - viewportHeight + 1
+	}
 }
 
 func (m model) View() string {
@@ -95,7 +128,8 @@ func (m model) View() string {
 	// Progress bar.
 	fmt.Fprintf(&b, "  %s\n\n", progressBar(m.result.TotalScore, m.result.MaxScore, 36))
 
-	// Categories.
+	// Categories — build scrollable lines, then apply viewport.
+	var catLines []string
 	for i, cat := range m.result.Categories {
 		cursor := "  "
 		if i == m.selected {
@@ -116,25 +150,49 @@ func (m model) View() string {
 			padding = 1
 		}
 
-		fmt.Fprintf(&b, "%s%s %s%s%s %s\n",
-			cursor, arrow, name, strings.Repeat(" ", padding), icon, scoreStr)
+		catLines = append(catLines, fmt.Sprintf("%s%s %s%s%s %s",
+			cursor, arrow, name, strings.Repeat(" ", padding), icon, scoreStr))
 
 		// Expanded checks.
 		if m.expanded[i] {
 			for _, check := range cat.Checks {
 				checkIcon := statusIcon(check.Status)
-				fmt.Fprintf(&b, "      %s %s — %s\n",
-					checkIcon, check.Name, check.Detail)
+				catLines = append(catLines, fmt.Sprintf("      %s %s — %s",
+					checkIcon, check.Name, check.Detail))
 
-				// Cache breakdown sub-items.
 				for _, item := range check.Breakdown {
 					bdIcon := statusIcon(item.Status)
-					fmt.Fprintf(&b, "          %s %s: %s\n",
-						bdIcon, item.Name, humanizeBytes(item.Size))
+					catLines = append(catLines, fmt.Sprintf("          %s %s: %s",
+						bdIcon, item.Name, humanizeBytes(item.Size)))
 				}
 			}
-			fmt.Fprintln(&b)
+			catLines = append(catLines, "")
 		}
+	}
+
+	// Apply viewport scrolling.
+	viewportHeight := m.height - 11
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+	start := m.offset
+	if start > len(catLines) {
+		start = len(catLines)
+	}
+	end := start + viewportHeight
+	if end > len(catLines) {
+		end = len(catLines)
+	}
+	visible := catLines[start:end]
+
+	if start > 0 {
+		fmt.Fprintf(&b, "  %s↑ %d more%s\n", colorGray, start, colorReset)
+	}
+	for _, line := range visible {
+		fmt.Fprintln(&b, line)
+	}
+	if end < len(catLines) {
+		fmt.Fprintf(&b, "  %s↓ %d more%s\n", colorGray, len(catLines)-end, colorReset)
 	}
 
 	// Footer.
@@ -145,7 +203,13 @@ func (m model) View() string {
 	// Tips.
 	if len(m.result.Tips) > 0 {
 		fmt.Fprintf(&b, "  ─────────────────────────────────────────\n")
-		fmt.Fprintf(&b, "  %sTip:%s %s\n", colorCyan, colorReset, m.result.Tips[0])
+		for i, tip := range m.result.Tips {
+			if i == 0 {
+				fmt.Fprintf(&b, "  %sTips:%s %s\n", colorCyan, colorReset, tip)
+			} else {
+				fmt.Fprintf(&b, "        %s\n", tip)
+			}
+		}
 	}
 
 	fmt.Fprintln(&b)

@@ -11,22 +11,12 @@ import (
 )
 
 func checkPerformance() categoryResult {
-	cat := categoryResult{
-		Name:     "Performance",
-		MaxScore: scorePerformance,
+	checks := []checkResult{
+		checkRAMPressure(),
+		checkSwapUsage(),
+		checkUptime(),
 	}
-
-	cat.Checks = append(cat.Checks, checkRAMPressure())
-	cat.Checks = append(cat.Checks, checkSwapUsage())
-	cat.Checks = append(cat.Checks, checkUptime())
-
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
-	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Performance", scorePerformance, checks)
 }
 
 func checkRAMPressure() checkResult {

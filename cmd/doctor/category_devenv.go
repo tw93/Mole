@@ -14,11 +14,6 @@ import (
 )
 
 func checkDevEnvironment() categoryResult {
-	cat := categoryResult{
-		Name:     "Dev Environment",
-		MaxScore: scoreDevEnv,
-	}
-
 	checks := []func() checkResult{
 		checkVersionMismatches,
 		checkMissingTools,
@@ -37,16 +32,8 @@ func checkDevEnvironment() categoryResult {
 	}
 	wg.Wait()
 
-	cat.Checks = results
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
-	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Dev Environment", scoreDevEnv, results)
 }
-
 
 func checkVersionMismatches() checkResult {
 	r := checkResult{Name: "Version mismatches", MaxScore: 5}

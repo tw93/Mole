@@ -14,22 +14,12 @@ import (
 )
 
 func checkMole() categoryResult {
-	cat := categoryResult{
-		Name:     "Mole",
-		MaxScore: scoreMole,
+	checks := []checkResult{
+		checkMoleVersion(),
+		checkMoleConfig(),
+		checkMolePermissions(),
 	}
-
-	cat.Checks = append(cat.Checks, checkMoleVersion())
-	cat.Checks = append(cat.Checks, checkMoleConfig())
-	cat.Checks = append(cat.Checks, checkMolePermissions())
-
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
-	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Mole", scoreMole, checks)
 }
 
 func checkMoleVersion() checkResult {
@@ -86,6 +76,20 @@ func checkMoleVersion() checkResult {
 	return r
 }
 
+func countWhitelistErrors(content string) int {
+	errorCount := 0
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "..") || strings.Contains(line, "/..") {
+			errorCount++
+		}
+	}
+	return errorCount
+}
+
 func checkMoleConfig() checkResult {
 	r := checkResult{Name: "Config", MaxScore: 2}
 
@@ -112,16 +116,7 @@ func checkMoleConfig() checkResult {
 		return r
 	}
 
-	errorCount := 0
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(line, "..") || strings.Contains(line, "/..") {
-			errorCount++
-		}
-	}
+	errorCount := countWhitelistErrors(string(data))
 
 	if errorCount > 0 {
 		r.Status = statusWarn
@@ -170,14 +165,15 @@ func checkMolePermissions() checkResult {
 	}
 	configDir := filepath.Join(home, ".config", "mole")
 	if _, err := os.Stat(configDir); err == nil {
-		testFile := filepath.Join(configDir, ".doctor_check")
-		if err := os.WriteFile(testFile, []byte("ok"), 0644); err != nil {
+		f, err := os.CreateTemp(configDir, ".doctor_check_*")
+		if err != nil {
 			r.Status = statusWarn
 			r.Score = 0
 			r.Detail = "Config directory not writable"
 			return r
 		}
-		_ = os.Remove(testFile)
+		f.Close()
+		_ = os.Remove(f.Name())
 	}
 
 	r.Status = statusPass

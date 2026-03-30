@@ -268,3 +268,105 @@ func TestGenerateTips_SkippedCategoryIgnored(t *testing.T) {
 		t.Errorf("generateTips() should ignore skipped categories, got %v", tips)
 	}
 }
+
+func TestBuildCategory(t *testing.T) {
+	tests := []struct {
+		name           string
+		categoryName   string
+		maxScore       int
+		checks         []checkResult
+		wantScore      int
+		wantMaxScore   int
+		wantCheckCount int
+	}{
+		{
+			name:           "empty checks",
+			categoryName:   "Storage",
+			maxScore:       20,
+			checks:         []checkResult{},
+			wantScore:      0,
+			wantMaxScore:   20,
+			wantCheckCount: 0,
+		},
+		{
+			name:         "single check full score",
+			categoryName: "Performance",
+			maxScore:     15,
+			checks: []checkResult{
+				{Name: "Uptime", Score: 8, MaxScore: 8, Status: statusPass},
+			},
+			wantScore:      8,
+			wantMaxScore:   15,
+			wantCheckCount: 1,
+		},
+		{
+			name:         "multiple checks sum correctly",
+			categoryName: "Security",
+			maxScore:     15,
+			checks: []checkResult{
+				{Name: "FileVault", Score: 4, MaxScore: 4, Status: statusPass},
+				{Name: "Firewall", Score: 4, MaxScore: 4, Status: statusPass},
+				{Name: "SIP", Score: 3, MaxScore: 4, Status: statusWarn},
+			},
+			wantScore:      11,
+			wantMaxScore:   15,
+			wantCheckCount: 3,
+		},
+		{
+			name:         "score capped at maxScore",
+			categoryName: "Test",
+			maxScore:     10,
+			checks: []checkResult{
+				{Name: "Check1", Score: 7, MaxScore: 10, Status: statusPass},
+				{Name: "Check2", Score: 5, MaxScore: 10, Status: statusPass},
+				{Name: "Check3", Score: 3, MaxScore: 10, Status: statusPass},
+			},
+			wantScore:      10, // capped at maxScore of 10
+			wantMaxScore:   10,
+			wantCheckCount: 3,
+		},
+		{
+			name:         "partial scores",
+			categoryName: "Battery",
+			maxScore:     10,
+			checks: []checkResult{
+				{Name: "Cycles", Score: 5, MaxScore: 8, Status: statusWarn},
+				{Name: "Health", Score: 2, MaxScore: 2, Status: statusFail},
+			},
+			wantScore:      7,
+			wantMaxScore:   10,
+			wantCheckCount: 2,
+		},
+		{
+			name:         "zero scores",
+			categoryName: "Test",
+			maxScore:     15,
+			checks: []checkResult{
+				{Name: "Check1", Score: 0, MaxScore: 5, Status: statusFail},
+				{Name: "Check2", Score: 0, MaxScore: 5, Status: statusFail},
+			},
+			wantScore:      0,
+			wantMaxScore:   15,
+			wantCheckCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildCategory(tt.categoryName, tt.maxScore, tt.checks)
+
+			if result.Name != tt.categoryName {
+				t.Errorf("buildCategory() name = %q, want %q", result.Name, tt.categoryName)
+			}
+			if result.MaxScore != tt.wantMaxScore {
+				t.Errorf("buildCategory() maxScore = %d, want %d", result.MaxScore, tt.wantMaxScore)
+			}
+			if result.Score != tt.wantScore {
+				t.Errorf("buildCategory() score = %d, want %d", result.Score, tt.wantScore)
+			}
+			if len(result.Checks) != tt.wantCheckCount {
+				t.Errorf("buildCategory() checks count = %d, want %d", len(result.Checks), tt.wantCheckCount)
+			}
+		})
+	}
+}

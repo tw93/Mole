@@ -72,6 +72,7 @@ type model struct {
 	spinner  int
 	selected int
 	expanded map[int]bool
+	offset   int // viewport scroll offset
 	err      error
 }
 

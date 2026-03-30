@@ -9,26 +9,29 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
+// System processes that commonly show high resource usage but are expected.
+var systemProcesses = map[string]bool{
+	"kernel_task":    true,
+	"WindowServer":   true,
+	"mds":            true,
+	"mds_stores":     true,
+	"distnoted":      true,
+	"launchd":        true,
+	"syslogd":        true,
+	"opendirectoryd": true,
+}
+
 func checkMaintenance() categoryResult {
-	cat := categoryResult{
-		Name:     "Maintenance",
-		MaxScore: scoreMaintenance,
+	checks := []checkResult{
+		checkBrokenLaunchAgents(),
+		checkUnusedApps(),
+		checkHeavyProcesses(),
 	}
-
-	cat.Checks = append(cat.Checks, checkBrokenLaunchAgents())
-	cat.Checks = append(cat.Checks, checkUnusedApps())
-	cat.Checks = append(cat.Checks, checkHeavyProcesses())
-
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
-	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Maintenance", scoreMaintenance, checks)
 }
 
 func checkBrokenLaunchAgents() checkResult {
@@ -110,39 +113,63 @@ func checkUnusedApps() checkResult {
 		return r
 	}
 
-	unusedCount := 0
-	threshold := time.Now().AddDate(0, 0, -unusedAppsDays)
-
+	var apps []string
 	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".app") {
-			continue
+		if strings.HasSuffix(entry.Name(), ".app") {
+			apps = append(apps, filepath.Join("/Applications", entry.Name()))
 		}
-		appPath := filepath.Join("/Applications", entry.Name())
-		out, err := exec.Command("mdls", "-name", "kMDItemLastUsedDate", "-raw", appPath).Output()
-		if err != nil {
-			continue
-		}
+	}
 
-		dateStr := strings.TrimSpace(string(out))
-		if dateStr == "(null)" || dateStr == "" {
-			continue
-		}
+	threshold := time.Now().AddDate(0, 0, -unusedAppsDays)
+	type result struct{ unused bool }
+	ch := make(chan result, len(apps))
+	sem := make(chan struct{}, 10) // bounded concurrency
 
-		var t time.Time
-		for _, layout := range []string{
-			"2006-01-02 15:04:05 +0000",
-			"2006-01-02 15:04:05 -0700",
-		} {
-			if parsed, err := time.Parse(layout, dateStr); err == nil {
-				t = parsed
-				break
+	var wg sync.WaitGroup
+	for _, appPath := range apps {
+		wg.Add(1)
+		go func(path string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			out, err := exec.Command("mdls", "-name", "kMDItemLastUsedDate", "-raw", path).Output()
+			if err != nil {
+				ch <- result{false}
+				return
 			}
-		}
-		if t.IsZero() {
-			continue
-		}
 
-		if t.Before(threshold) {
+			dateStr := strings.TrimSpace(string(out))
+			if dateStr == "(null)" || dateStr == "" {
+				ch <- result{false}
+				return
+			}
+
+			var t time.Time
+			for _, layout := range []string{
+				"2006-01-02 15:04:05 +0000",
+				"2006-01-02 15:04:05 -0700",
+			} {
+				if parsed, err := time.Parse(layout, dateStr); err == nil {
+					t = parsed
+					break
+				}
+			}
+			if t.IsZero() {
+				ch <- result{false}
+				return
+			}
+
+			ch <- result{unused: t.Before(threshold)}
+		}(appPath)
+	}
+
+	wg.Wait()
+	close(ch)
+
+	unusedCount := 0
+	for r := range ch {
+		if r.unused {
 			unusedCount++
 		}
 	}
@@ -187,7 +214,11 @@ func checkHeavyProcesses() checkResult {
 		rssMB := float64(rssKB) / 1024
 		name := filepath.Base(fields[3])
 
-		if name == "kernel_task" || name == "WindowServer" || name == "doctor-go" {
+		if systemProcesses[name] {
+			continue
+		}
+		// Skip our own process.
+		if name == "mo" || strings.HasPrefix(name, "doctor") {
 			continue
 		}
 

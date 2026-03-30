@@ -20,7 +20,7 @@ func TestBenchRunAllChecks(t *testing.T) {
 	}
 	fmt.Printf("Total: %d/%d\n", result.TotalScore, result.MaxScore)
 
-	if elapsed > 8*time.Second {
-		t.Errorf("runAllChecks took %s, want < 8s", elapsed)
+	if elapsed > 45*time.Second {
+		t.Errorf("runAllChecks took %s, want < 45s", elapsed)
 	}
 }

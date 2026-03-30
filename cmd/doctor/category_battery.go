@@ -10,34 +10,26 @@ import (
 )
 
 func checkBattery() categoryResult {
-	cat := categoryResult{
-		Name:     "Battery",
-		MaxScore: scoreBattery,
-	}
-
 	out, err := exec.Command("ioreg", "-r", "-c", "AppleSmartBattery", "-d", "1").Output()
 	if err != nil || len(out) == 0 || !strings.Contains(string(out), "AppleSmartBattery") {
-		cat.MaxScore = 0
-		cat.Checks = append(cat.Checks, checkResult{
-			Name:   "Battery",
-			Status: statusSkipped,
-			Detail: "No battery detected (desktop Mac)",
-		})
-		return cat
+		return categoryResult{
+			Name:     "Battery",
+			MaxScore: 0,
+			Checks: []checkResult{{
+				Name:   "Battery",
+				Status: statusSkipped,
+				Detail: "No battery detected (desktop Mac)",
+			}},
+		}
 	}
 
 	ioregOutput := string(out)
 
-	cat.Checks = append(cat.Checks, checkBatteryCycles(ioregOutput))
-	cat.Checks = append(cat.Checks, checkBatteryHealth(ioregOutput))
-
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
+	checks := []checkResult{
+		checkBatteryCycles(ioregOutput),
+		checkBatteryHealth(ioregOutput),
 	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Battery", scoreBattery, checks)
 }
 
 func checkBatteryCycles(ioregOutput string) checkResult {

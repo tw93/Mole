@@ -9,23 +9,13 @@ import (
 )
 
 func checkSecurity() categoryResult {
-	cat := categoryResult{
-		Name:     "Security",
-		MaxScore: scoreSecurity,
+	checks := []checkResult{
+		checkFileVault(),
+		checkFirewall(),
+		checkSIP(),
+		checkMacOSUpdated(),
 	}
-
-	cat.Checks = append(cat.Checks, checkFileVault())
-	cat.Checks = append(cat.Checks, checkFirewall())
-	cat.Checks = append(cat.Checks, checkSIP())
-	cat.Checks = append(cat.Checks, checkMacOSUpdated())
-
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
-	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Security", scoreSecurity, checks)
 }
 
 func checkFileVault() checkResult {
@@ -133,17 +123,38 @@ func checkMacOSUpdated() checkResult {
 	version := strings.TrimSpace(string(out))
 	r.Detail = "macOS " + version
 
-	// Consider macOS 15+ (Sequoia) as current.
-	parts := strings.SplitN(version, ".", 2)
+	parts := strings.Split(version, ".")
 	if len(parts) == 0 {
 		r.Status = statusSkipped
 		r.Detail = "Could not parse macOS version"
 		return r
 	}
+
 	majorNum, _ := strconv.Atoi(parts[0])
-	if majorNum >= 15 {
+
+	// Apple supports the current and two prior major macOS releases with security updates.
+	// Use the build version prefix to derive the current release generation:
+	// Build prefix 20=macOS 11, 21=12, 22=13, 23=14, 24=15, 25=16, 26=17...
+	// Formula: latestMajor = buildPrefix - 9
+	latestMajor := majorNum // default: assume we're on latest
+	buildOut, err := exec.Command("sw_vers", "-buildVersion").Output()
+	if err == nil {
+		buildStr := strings.TrimSpace(string(buildOut))
+		if len(buildStr) >= 2 {
+			if bp, e := strconv.Atoi(buildStr[:2]); e == nil && bp >= 20 {
+				latestMajor = bp - 9
+			}
+		}
+	}
+
+	// Warn if more than 1 major version behind the latest supported.
+	if majorNum >= latestMajor {
 		r.Status = statusPass
 		r.Score = 3
+	} else if majorNum >= latestMajor-1 {
+		r.Status = statusWarn
+		r.Score = 2
+		r.Detail = "macOS " + version + " — one version behind"
 	} else {
 		r.Status = statusWarn
 		r.Score = 1

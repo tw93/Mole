@@ -68,8 +68,12 @@ func parseThermalOK(output string) bool {
 	if strings.Contains(output, "No thermal warning") {
 		return true
 	}
-	if strings.Contains(output, "Speed Limit") {
+	if strings.Contains(output, "Speed Limit") ||
+		strings.Contains(output, "CPU_Thermal") ||
+		strings.Contains(output, "GPU_Thermal") ||
+		strings.Contains(output, "thermal warning level") {
 		return false
 	}
+	// Default true for unrecognized output — pmset may vary across macOS versions.
 	return true
 }

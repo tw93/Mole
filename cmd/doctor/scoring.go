@@ -7,6 +7,21 @@ import (
 	"strings"
 )
 
+func buildCategory(name string, maxScore int, checks []checkResult) categoryResult {
+	cat := categoryResult{
+		Name:     name,
+		MaxScore: maxScore,
+		Checks:   checks,
+	}
+	for _, c := range checks {
+		cat.Score += c.Score
+	}
+	if cat.Score > cat.MaxScore {
+		cat.Score = cat.MaxScore
+	}
+	return cat
+}
+
 func calculateTotalScore(categories []categoryResult) (int, int) {
 	total := 0
 	max := 0
@@ -55,7 +70,7 @@ func redistributeBatteryScore(categories []categoryResult) []categoryResult {
 		originalMax := c.MaxScore
 		c.MaxScore += bonus
 		if originalMax > 0 {
-			c.Score = c.Score * c.MaxScore / originalMax
+			c.Score = (c.Score*c.MaxScore + originalMax/2) / originalMax
 			if c.Score > c.MaxScore {
 				c.Score = c.MaxScore
 			}

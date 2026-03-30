@@ -15,11 +15,6 @@ import (
 )
 
 func checkStorage() categoryResult {
-	cat := categoryResult{
-		Name:     "Storage",
-		MaxScore: scoreStorage,
-	}
-
 	checks := []func() checkResult{
 		checkFreeSpace,
 		checkRecoverableCache,
@@ -39,14 +34,7 @@ func checkStorage() categoryResult {
 	}
 	wg.Wait()
 
-	cat.Checks = results
-	for _, c := range cat.Checks {
-		cat.Score += c.Score
-	}
-	if cat.Score > cat.MaxScore {
-		cat.Score = cat.MaxScore
-	}
-	return cat
+	return buildCategory("Storage", scoreStorage, results)
 }
 
 func checkFreeSpace() checkResult {

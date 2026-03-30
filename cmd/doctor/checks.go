@@ -3,11 +3,17 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// diagCtx holds the cancellable context for the current diagnosis run.
+// Cancelled when the user quits the TUI during a running diagnosis.
+var diagCtx context.Context
+var diagCancel context.CancelFunc
 
 func runAllChecks(_ bool) diagnosisResult {
 	var hardware hardwareProfile
@@ -22,7 +28,7 @@ func runAllChecks(_ bool) diagnosisResult {
 
 	// Run all category checks in parallel.
 	type indexedResult struct {
-		index int
+		index  int
 		result categoryResult
 	}
 	checks := []func() categoryResult{
@@ -66,6 +72,7 @@ func runAllChecks(_ bool) diagnosisResult {
 
 func runDiagnosis(sudo bool) tea.Cmd {
 	return func() tea.Msg {
+		diagCtx, diagCancel = context.WithCancel(context.Background())
 		result := runAllChecks(sudo)
 		return diagnosisDoneMsg{result: result}
 	}
