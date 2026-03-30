@@ -69,8 +69,8 @@ func checkBrokenLaunchAgents() checkResult {
 
 		program := strings.TrimSpace(string(out))
 		if strings.HasPrefix(program, "(") {
-			lines := strings.Split(program, "\n")
-			for _, line := range lines {
+			lines := strings.SplitSeq(program, "\n")
+			for line := range lines {
 				trimmed := strings.Trim(strings.TrimSpace(line), "(\",)")
 				if trimmed != "" && !strings.HasPrefix(trimmed, "(") && !strings.HasPrefix(trimmed, ")") {
 					program = trimmed

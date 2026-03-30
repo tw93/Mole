@@ -78,7 +78,7 @@ func checkMoleVersion() checkResult {
 
 func countWhitelistErrors(content string) int {
 	errorCount := 0
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -172,7 +172,7 @@ func checkMolePermissions() checkResult {
 			r.Detail = "Config directory not writable"
 			return r
 		}
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(f.Name())
 	}
 

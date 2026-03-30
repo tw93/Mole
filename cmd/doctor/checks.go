@@ -10,9 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// diagCtx holds the cancellable context for the current diagnosis run.
-// Cancelled when the user quits the TUI during a running diagnosis.
-var diagCtx context.Context
+// diagCancel cancels in-flight checks when the user quits the TUI.
 var diagCancel context.CancelFunc
 
 func runAllChecks(_ bool) diagnosisResult {
@@ -20,11 +18,9 @@ func runAllChecks(_ bool) diagnosisResult {
 	var wg sync.WaitGroup
 
 	// Collect hardware in parallel with category checks.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		hardware = collectHardware()
-	}()
+	})
 
 	// Run all category checks in parallel.
 	type indexedResult struct {
@@ -42,11 +38,10 @@ func runAllChecks(_ bool) diagnosisResult {
 	}
 	ch := make(chan indexedResult, len(checks))
 	for i, fn := range checks {
-		wg.Add(1)
-		go func(idx int, f func() categoryResult) {
-			defer wg.Done()
+		idx, f := i, fn
+		wg.Go(func() {
 			ch <- indexedResult{index: idx, result: f()}
-		}(i, fn)
+		})
 	}
 
 	wg.Wait()
@@ -72,7 +67,7 @@ func runAllChecks(_ bool) diagnosisResult {
 
 func runDiagnosis(sudo bool) tea.Cmd {
 	return func() tea.Msg {
-		diagCtx, diagCancel = context.WithCancel(context.Background())
+		_, diagCancel = context.WithCancel(context.Background())
 		result := runAllChecks(sudo)
 		return diagnosisDoneMsg{result: result}
 	}

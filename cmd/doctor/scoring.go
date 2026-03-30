@@ -71,9 +71,7 @@ func redistributeBatteryScore(categories []categoryResult) []categoryResult {
 		c.MaxScore += bonus
 		if originalMax > 0 {
 			c.Score = (c.Score*c.MaxScore + originalMax/2) / originalMax
-			if c.Score > c.MaxScore {
-				c.Score = c.MaxScore
-			}
+			c.Score = min(c.Score, c.MaxScore)
 		}
 		result = append(result, c)
 		idx++

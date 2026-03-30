@@ -64,10 +64,7 @@ func (m *model) ensureSelectedVisible() {
 	}
 
 	// Reserve lines for header (~6) and footer (~5).
-	viewportHeight := m.height - 11
-	if viewportHeight < 5 {
-		viewportHeight = 5
-	}
+	viewportHeight := max(m.height-11, 5)
 
 	if line < m.offset {
 		m.offset = line
@@ -145,10 +142,7 @@ func (m model) View() string {
 		scoreStr := fmt.Sprintf("%d/%d", cat.Score, cat.MaxScore)
 
 		name := cat.Name
-		padding := 24 - len(name)
-		if padding < 1 {
-			padding = 1
-		}
+		padding := max(24-len(name), 1)
 
 		catLines = append(catLines, fmt.Sprintf("%s%s %s%s%s %s",
 			cursor, arrow, name, strings.Repeat(" ", padding), icon, scoreStr))
@@ -171,14 +165,8 @@ func (m model) View() string {
 	}
 
 	// Apply viewport scrolling.
-	viewportHeight := m.height - 11
-	if viewportHeight < 5 {
-		viewportHeight = 5
-	}
-	start := m.offset
-	if start > len(catLines) {
-		start = len(catLines)
-	}
+	viewportHeight := max(m.height-11, 5)
+	start := min(m.offset, len(catLines))
 	end := start + viewportHeight
 	if end > len(catLines) {
 		end = len(catLines)

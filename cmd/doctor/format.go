@@ -32,14 +32,8 @@ func progressBar(score, maxScore, width int) string {
 	if maxScore == 0 {
 		return strings.Repeat("░", width)
 	}
-	filled := score * width / maxScore
-	if filled > width {
-		filled = width
-	}
-	empty := width - filled
-	if empty < 0 {
-		empty = 0
-	}
+	filled := min(score*width/maxScore, width)
+	empty := max(width-filled, 0)
 
 	color := colorGreen
 	ratio := float64(score) / float64(maxScore)
