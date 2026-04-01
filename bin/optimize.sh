@@ -21,6 +21,7 @@ source "$SCRIPT_DIR/lib/optimize/maintenance.sh"
 source "$SCRIPT_DIR/lib/optimize/tasks.sh"
 source "$SCRIPT_DIR/lib/check/health_json.sh"
 source "$SCRIPT_DIR/lib/check/all.sh"
+source "$SCRIPT_DIR/lib/check/dev_environment.sh"
 source "$SCRIPT_DIR/lib/manage/whitelist.sh"
 
 print_header() {
@@ -127,6 +128,8 @@ run_system_checks() {
 
     check_all_config
     echo ""
+
+    check_all_dev_environment
 
     show_suggestions
 

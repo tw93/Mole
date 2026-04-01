@@ -14,6 +14,7 @@ source "$SCRIPT_DIR/lib/manage/update.sh"
 source "$SCRIPT_DIR/lib/manage/autofix.sh"
 
 source "$SCRIPT_DIR/lib/check/all.sh"
+source "$SCRIPT_DIR/lib/check/dev_environment.sh"
 
 cleanup_all() {
     stop_inline_spinner 2> /dev/null || true
@@ -42,6 +43,7 @@ main() {
     local health_file=$(mktemp_file)
     local security_file=$(mktemp_file)
     local config_file=$(mktemp_file)
+    local dev_file=$(mktemp_file)
 
     # Run all checks in parallel with spinner
     if [[ -t 1 ]]; then
@@ -58,6 +60,7 @@ main() {
         check_system_health > "$health_file" 2>&1 &
         check_all_security > "$security_file" 2>&1 &
         check_all_config > "$config_file" 2>&1 &
+        check_all_dev_environment > "$dev_file" 2>&1 &
         wait
     }
 
@@ -66,21 +69,20 @@ main() {
         printf '\n'
     fi
 
-    # Display results
-    echo -e "${BLUE}${ICON_ARROW}${NC} System updates"
+    # Display results (headers are printed by the check_all_* functions)
     cat "$updates_file"
 
     printf '\n'
-    echo -e "${BLUE}${ICON_ARROW}${NC} System health"
     cat "$health_file"
 
     printf '\n'
-    echo -e "${BLUE}${ICON_ARROW}${NC} Security posture"
     cat "$security_file"
 
     printf '\n'
-    echo -e "${BLUE}${ICON_ARROW}${NC} Configuration"
     cat "$config_file"
+
+    printf '\n'
+    cat "$dev_file"
 
     # Show suggestions
     show_suggestions
