@@ -153,6 +153,8 @@ clean_video_players() {
     safe_clean ~/Library/Caches/tv.danmaku.bili/* "Bilibili cache"
     safe_clean ~/Library/Caches/com.douyu.*/* "Douyu cache"
     safe_clean ~/Library/Caches/com.huya.*/* "Huya cache"
+    safe_clean ~/Library/Caches/smart.stremio*/* "Stremio cache"
+    safe_clean ~/Library/Application\ Support/stremio/stremio-server/stremio-cache/* "Stremio server cache"
 }
 # Download managers.
 clean_download_managers() {

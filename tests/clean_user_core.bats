@@ -594,6 +594,29 @@ EOF
     [[ "$output" == *"Puppeteer browser cache"* ]]
 }
 
+@test "clean_browsers cleans Brave Service Worker caches" {
+    mkdir -p "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default/Service Worker/ScriptCache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2"; }
+clean_service_worker_cache() { echo "Brave SW $1"; }
+note_activity() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Brave SW Brave"* ]]
+    [[ "$output" == *"Brave Service Worker ScriptCache"* ]]
+
+    rm -rf "$HOME/Library"
+}
+
 @test "clean_application_support_logs skips when no access" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail

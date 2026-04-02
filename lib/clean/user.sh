@@ -1115,6 +1115,11 @@ clean_browsers() {
     safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/ShaderCache/* "Brave shader cache"
     safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/GrShaderCache/* "Brave GR shader cache"
     safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/GraphiteDawnCache/* "Brave Dawn cache"
+    local _brave_profile
+    for _brave_profile in "$HOME/Library/Application Support/BraveSoftware/Brave-Browser"/*/; do
+        clean_service_worker_cache "Brave" "$_brave_profile/Service Worker/CacheStorage"
+        safe_clean "$_brave_profile"/Service\ Worker/ScriptCache/* "Brave Service Worker ScriptCache"
+    done
     # Helium Browser.
     safe_clean ~/Library/Caches/net.imput.helium/* "Helium cache"
     safe_clean ~/Library/Application\ Support/net.imput.helium/*/GPUCache/* "Helium GPU cache"

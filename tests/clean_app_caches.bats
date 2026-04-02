@@ -232,3 +232,17 @@ EOF
     [[ "$output" == *"Minecraft logs"* ]]
     [[ "$output" == *"Lunar Client logs"* ]]
 }
+
+@test "clean_video_players includes Stremio caches" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_video_players
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Stremio cache"* ]]
+    [[ "$output" == *"Stremio server cache"* ]]
+}
