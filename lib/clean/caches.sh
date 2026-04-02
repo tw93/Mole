@@ -214,6 +214,12 @@ scan_project_cache_root() {
     if [[ -s "$tmp_file" ]]; then
         while IFS= read -r match_path; do
             [[ -z "$match_path" ]] && continue
+            # Skip __pycache__ dirs with no .pyc/.pyo files (empty or already cleaned)
+            if [[ "${match_path##*/}" == "__pycache__" ]]; then
+                local has_bytecode
+                has_bytecode=$(find "$match_path" -maxdepth 1 \( -name '*.pyc' -o -name '*.pyo' \) 2>/dev/null | head -1)
+                [[ -z "$has_bytecode" ]] && continue
+            fi
             local project_root=""
             project_root=$(project_cache_group_root "$root" "$match_path")
             [[ -z "$project_root" ]] && project_root="$root"

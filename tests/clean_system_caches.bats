@@ -196,6 +196,27 @@ EOF
     rm -rf "$HOME/Projects"
 }
 
+@test "clean_project_caches skips empty pycache directories" {
+    mkdir -p "$HOME/Projects/python-app/pkg/__pycache__"
+    mkdir -p "$HOME/Projects/python-app/empty/__pycache__"
+    touch "$HOME/Projects/python-app/pyproject.toml"
+    touch "$HOME/Projects/python-app/pkg/__pycache__/module.pyc"
+    # empty/__pycache__ has no .pyc files
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+DRY_RUN=true
+clean_project_caches
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Python bytecode cache"* ]]
+    [[ "$output" == *"1 dirs"* ]]
+
+    rm -rf "$HOME/Projects"
+}
+
 @test "clean_project_caches pycache dry-run exports grouped targets and counts skips" {
     mkdir -p "$HOME/Projects/python-app/pkg/__pycache__"
     mkdir -p "$HOME/Projects/python-app/protected/__pycache__"
