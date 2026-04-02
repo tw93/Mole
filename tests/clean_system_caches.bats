@@ -399,6 +399,34 @@ EOF
     rm -rf "$HOME/.config/mole" "$HOME/SlowProjects" "$fake_bin"
 }
 
+@test "scan_project_cache_root prunes conda and site-packages" {
+    mkdir -p "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg1/__pycache__"
+    mkdir -p "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg2/__pycache__"
+    mkdir -p "$HOME/Projects/app/__pycache__"
+    touch "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg1/__pycache__/mod.pyc"
+    touch "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg2/__pycache__/mod.pyc"
+    touch "$HOME/Projects/app/pyproject.toml"
+    touch "$HOME/Projects/app/__pycache__/mod.pyc"
+
+    local output_file
+    output_file=$(mktemp)
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/lib/clean/caches.sh"
+run_with_timeout() { shift; "\$@"; }
+scan_project_cache_root "$HOME/Projects" "$output_file"
+cat "$output_file"
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"app/__pycache__"* ]]
+    [[ "$output" != *"miniconda3"* ]]
+    [[ "$output" != *"site-packages"* ]]
+
+    rm -rf "$HOME/Projects" "$output_file"
+}
+
 @test "clean_project_caches excludes Library and Trash directories" {
     mkdir -p "$HOME/Library/.next/cache"
     mkdir -p "$HOME/.Trash/.next/cache"
