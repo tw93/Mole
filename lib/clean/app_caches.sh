@@ -1,6 +1,61 @@
 #!/bin/bash
 # User GUI Applications Cleanup Module (desktop apps, media, utilities).
 set -euo pipefail
+# Xcode DerivedData cleanup with project count and size reporting.
+# Fully regenerated on next build — safe to remove.
+clean_xcode_derived_data() {
+    local dd_dir="$HOME/Library/Developer/Xcode/DerivedData"
+
+    [[ -d "$dd_dir" ]] || return 0
+
+    # Skip while Xcode is running to avoid build failures.
+    if pgrep -x "Xcode" > /dev/null 2>&1; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode is running, skipping DerivedData cleanup"
+        return 0
+    fi
+
+    # Count projects (each subdirectory is a project build).
+    local -a projects=()
+    while IFS= read -r -d '' dir; do
+        projects+=("$dir")
+    done < <(find "$dd_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+
+    local project_count=${#projects[@]}
+    [[ $project_count -eq 0 ]] && return 0
+
+    # Calculate total size.
+    local size_kb=0
+    size_kb=$(du -skP "$dd_dir" 2>/dev/null | awk '{print $1}') || size_kb=0
+    local size_human
+    size_human=$(bytes_to_human "$((size_kb * 1024))")
+
+    local project_label="projects"
+    [[ $project_count -eq 1 ]] && project_label="project"
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode DerivedData · ${project_count} ${project_label}, ${size_human}"
+        note_activity
+        return 0
+    fi
+
+    # Remove all project build dirs.
+    local removed=0
+    for dir in "${projects[@]}"; do
+        if rm -rf "$dir" 2>/dev/null; then
+            removed=$((removed + 1))
+        fi
+    done
+
+    if [[ $removed -gt 0 ]]; then
+        local line_color
+        line_color=$(cleanup_result_color_kb "$size_kb" 2>/dev/null || echo "$GREEN")
+        echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode DerivedData · ${project_count} ${project_label}, ${line_color}${size_human}${NC}"
+        files_cleaned=$(( ${files_cleaned:-0} + removed))
+        total_size_cleaned=$(( ${total_size_cleaned:-0} + size_kb))
+        total_items=$(( ${total_items:-0} + removed))
+        note_activity
+    fi
+}
 # Xcode and iOS tooling.
 clean_xcode_tools() {
     # Skip DerivedData/Archives while Xcode is running.
@@ -25,7 +80,7 @@ clean_xcode_tools() {
     safe_clean ~/Library/Developer/Xcode/watchOS\ Device\ Logs/* "watchOS device logs"
     safe_clean ~/Library/Developer/Xcode/Products/* "Xcode build products"
     if [[ "$xcode_running" == "false" ]]; then
-        safe_clean ~/Library/Developer/Xcode/DerivedData/* "Xcode derived data"
+        clean_xcode_derived_data
         safe_clean ~/Library/Developer/Xcode/Archives/* "Xcode archives"
         safe_clean ~/Library/Developer/Xcode/DocumentationCache/* "Xcode documentation cache"
         safe_clean ~/Library/Developer/Xcode/DocumentationIndex/* "Xcode documentation index"
