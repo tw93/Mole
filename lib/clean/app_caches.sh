@@ -38,10 +38,10 @@ clean_xcode_derived_data() {
         return 0
     fi
 
-    # Remove all project build dirs.
+    # Remove all project build dirs using safe_remove.
     local removed=0
     for dir in "${projects[@]}"; do
-        if rm -rf "$dir" 2>/dev/null; then
+        if safe_remove "$dir" "true"; then
             removed=$((removed + 1))
         fi
     done
