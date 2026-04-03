@@ -766,6 +766,30 @@ check_swap_usage() {
     fi
 }
 
+check_disk_smart() {
+    # Check whitelist
+    if command -v is_whitelisted > /dev/null && is_whitelisted "check_disk_smart"; then return; fi
+
+    if ! command -v diskutil > /dev/null 2>&1; then
+        return
+    fi
+
+    local smart_status
+    smart_status=$(diskutil info disk0 2> /dev/null | awk -F: '/SMART Status/ {gsub(/^[ \t]+/, "", $2); print $2}')
+
+    if [[ -z "$smart_status" ]]; then
+        return
+    fi
+
+    if [[ "$smart_status" == "Verified" ]]; then
+        echo -e "  ${GREEN}✓${NC} Disk Health  SMART Verified"
+    elif [[ "$smart_status" == "Failing" ]]; then
+        echo -e "  ${RED}✗${NC} Disk Health  ${RED}SMART Failing — back up immediately${NC}"
+    else
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Disk Health  ${YELLOW}SMART: ${smart_status}${NC}"
+    fi
+}
+
 check_brew_health() {
     # Check whitelist
     if command -v is_whitelisted > /dev/null && is_whitelisted "check_brew_health"; then return; fi
@@ -777,6 +801,7 @@ check_system_health() {
     check_memory_usage
     check_swap_usage
     check_login_items
+    check_disk_smart
     check_cache_size
     # Time Machine check is optional; skip by default to avoid noise on systems without backups
 }
