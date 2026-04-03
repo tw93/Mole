@@ -457,6 +457,7 @@ clean_dev_editors() { :; }
 clean_code_editors() { :; }
 clean_dev_jetbrains_toolbox() { :; }
 clean_xcode_tools() { :; }
+clean_homebrew_old_versions() { :; }
 safe_clean() { :; }
 debug_log() { :; }
 clean_developer_tools
