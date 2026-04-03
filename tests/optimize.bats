@@ -312,3 +312,87 @@ EOF
     [[ "$output" == *"lsregister not found"* ]]
     [[ "$output" == *"survived"* ]]
 }
+
+@test "opt_launch_agents_cleanup reports healthy when no directory" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+opt_launch_agents_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Launch Agents all healthy"* ]]
+}
+
+@test "opt_launch_agents_cleanup detects broken agents" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Create mock LaunchAgents with a broken binary reference.
+mkdir -p "$HOME/Library/LaunchAgents"
+cat > "$HOME/Library/LaunchAgents/com.test.broken.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.test.broken</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/nonexistent/binary</string>
+    </array>
+</dict>
+</plist>
+PLIST
+safe_remove() { return 0; }
+opt_launch_agents_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Cleaned 1 broken Launch Agent"* ]]
+}
+
+@test "opt_launch_agents_cleanup skips healthy agents" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Clean up any leftover plists from previous tests.
+rm -f "$HOME/Library/LaunchAgents"/*.plist 2>/dev/null || true
+# Create mock LaunchAgent pointing to an existing binary.
+mkdir -p "$HOME/Library/LaunchAgents"
+cat > "$HOME/Library/LaunchAgents/com.test.healthy.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.test.healthy</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+    </array>
+</dict>
+</plist>
+PLIST
+opt_launch_agents_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Launch Agents all healthy"* ]]
+}
+
+@test "execute_optimization dispatches launch_agents_cleanup" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+opt_launch_agents_cleanup() { echo "launch_agents"; }
+execute_optimization launch_agents_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"launch_agents"* ]]
+}

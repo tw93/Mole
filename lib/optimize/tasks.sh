@@ -858,6 +858,46 @@ opt_dock_refresh() {
     opt_msg "Dock refreshed"
 }
 
+# Broken LaunchAgent cleanup.
+opt_launch_agents_cleanup() {
+    local agents_dir="$HOME/Library/LaunchAgents"
+
+    if [[ ! -d "$agents_dir" ]]; then
+        opt_msg "Launch Agents all healthy"
+        return 0
+    fi
+
+    local broken_count=0
+    local -a broken_plists=()
+
+    for plist in "$agents_dir"/*.plist; do
+        [[ -f "$plist" ]] || continue
+
+        local binary=""
+        binary=$(/usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" "$plist" 2> /dev/null || true)
+        if [[ -z "$binary" ]]; then
+            binary=$(/usr/libexec/PlistBuddy -c "Print :Program" "$plist" 2> /dev/null || true)
+        fi
+
+        if [[ -n "$binary" && ! -e "$binary" ]]; then
+            broken_count=$((broken_count + 1))
+            broken_plists+=("$plist")
+        fi
+    done
+
+    if [[ $broken_count -eq 0 ]]; then
+        opt_msg "Launch Agents all healthy"
+        return 0
+    fi
+
+    for plist in "${broken_plists[@]}"; do
+        run_launchctl_unload "$plist"
+        safe_remove "$plist" true > /dev/null 2>&1 || true
+    done
+
+    opt_msg "Cleaned $broken_count broken Launch Agent(s)"
+}
+
 # Dispatch optimization by action name.
 execute_optimization() {
     local action="$1"
@@ -879,6 +919,7 @@ execute_optimization() {
         disk_permissions_repair) opt_disk_permissions_repair ;;
         bluetooth_reset) opt_bluetooth_reset ;;
         spotlight_index_optimize) opt_spotlight_index_optimize ;;
+        launch_agents_cleanup) opt_launch_agents_cleanup ;;
         *)
             echo -e "${YELLOW}${ICON_ERROR}${NC} Unknown action: $action"
             return 1
