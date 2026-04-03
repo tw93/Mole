@@ -131,6 +131,7 @@ EOF
     items+=('network_optimization|Network Cache Refresh|Optimize DNS cache & restart mDNSResponder|true')
 
     # Advanced optimizations (high value, auto-run with safety checks)
+    items+=('quarantine_cleanup|Quarantine Database Cleanup|Clear Gatekeeper download tracking history|true')
     items+=('sqlite_vacuum|Database Optimization|Compress SQLite databases for Mail, Safari & Messages (skips if apps are running)|true')
     items+=('launch_services_rebuild|LaunchServices Repair|Repair "Open with" menu & file associations|true')
     items+=('font_cache_rebuild|Font Cache Rebuild|Rebuild font database to fix rendering issues (skips if browsers are running)|true')

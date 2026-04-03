@@ -116,6 +116,65 @@ EOF
     [[ "$output" == *"mDNSResponder restarted"* ]]
 }
 
+@test "opt_quarantine_cleanup reports clean when no database" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+opt_quarantine_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already clean"* ]]
+}
+
+@test "opt_quarantine_cleanup reports entries in dry-run" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Stub whitelist check to always allow.
+should_protect_path() { return 1; }
+# Create a mock quarantine database with entries.
+mkdir -p "$HOME/Library/Preferences"
+local_db="$HOME/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2"
+sqlite3 "$local_db" "CREATE TABLE IF NOT EXISTS LSQuarantineEvent (id TEXT);"
+sqlite3 "$local_db" "INSERT INTO LSQuarantineEvent VALUES ('test1');"
+sqlite3 "$local_db" "INSERT INTO LSQuarantineEvent VALUES ('test2');"
+opt_quarantine_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Quarantine history cleared"* ]]
+    [[ "$output" == *"2 entries"* ]]
+}
+
+@test "opt_quarantine_cleanup skips when sqlite3 unavailable" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+export PATH="/nonexistent"
+opt_quarantine_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"sqlite3 unavailable"* ]]
+}
+
+@test "execute_optimization dispatches quarantine_cleanup" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+opt_quarantine_cleanup() { echo "quarantine"; }
+execute_optimization quarantine_cleanup
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"quarantine"* ]]
+}
+
 @test "opt_sqlite_vacuum reports sqlite3 unavailable" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
