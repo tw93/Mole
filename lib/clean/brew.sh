@@ -125,3 +125,44 @@ clean_homebrew() {
         get_epoch_seconds > "$brew_cache_file"
     fi
 }
+
+# Remove old Homebrew formula versions (>30 days).
+# Officially recommended by Homebrew. Only removes outdated versions.
+clean_homebrew_old_versions() {
+    command -v brew > /dev/null 2>&1 || return 0
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Homebrew old versions · would prune formulas older than 30 days"
+        return 0
+    fi
+
+    if [[ -t 1 ]]; then
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Pruning old Homebrew formula versions..."
+    fi
+
+    local prune_tmp
+    prune_tmp=$(create_temp_file)
+    local prune_exit=0
+    run_with_timeout 120 brew cleanup --prune=30 > "$prune_tmp" 2>&1 || prune_exit=$?
+
+    if [[ -t 1 ]]; then stop_inline_spinner; fi
+
+    if [[ $prune_exit -eq 0 && -f "$prune_tmp" ]]; then
+        local prune_output
+        prune_output=$(cat "$prune_tmp" 2>/dev/null || echo "")
+        local removed_count freed_space
+        removed_count=$(printf '%s\n' "$prune_output" | grep -c "Removing:" 2>/dev/null || true)
+        freed_space=$(printf '%s\n' "$prune_output" | grep -o "[0-9.]*[KMGT]B" 2>/dev/null | tail -1 || true)
+
+        if [[ $removed_count -gt 0 ]]; then
+            if [[ -n "$freed_space" ]]; then
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew old formula versions · ${removed_count} removed, ${GREEN}${freed_space}${NC}"
+            else
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew old formula versions · ${removed_count} removed"
+            fi
+            note_activity
+        fi
+    elif [[ $prune_exit -eq 124 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Homebrew prune timed out · run ${GRAY}brew cleanup --prune=30${NC} manually"
+    fi
+}

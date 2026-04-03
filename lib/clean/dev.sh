@@ -1178,4 +1178,5 @@ clean_developer_tools() {
         fi
     done
     clean_homebrew
+    clean_homebrew_old_versions
 }
