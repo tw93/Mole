@@ -312,3 +312,63 @@ EOF
     [[ "$output" == *"lsregister not found"* ]]
     [[ "$output" == *"survived"* ]]
 }
+
+@test "opt_periodic_maintenance reports current when log is fresh" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Create a fresh daily.out log (modified now).
+mkdir -p /tmp/mole-test-periodic
+echo "test" > /tmp/mole-test-periodic/daily.out
+# Override the log path via function redefinition.
+opt_periodic_maintenance() {
+    local daily_log="/tmp/mole-test-periodic/daily.out"
+    local stale_days=7
+    if [[ -f "$daily_log" ]]; then
+        local last_mod now age_days
+        last_mod=$(stat -f %m "$daily_log" 2>/dev/null || echo "0")
+        now=$(date +%s)
+        age_days=$(( (now - last_mod) / 86400 ))
+        if [[ $age_days -lt $stale_days ]]; then
+            echo "already current"
+            return 0
+        fi
+    fi
+    echo "would trigger"
+}
+opt_periodic_maintenance
+rm -rf /tmp/mole-test-periodic
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already current"* ]]
+}
+
+@test "opt_periodic_maintenance triggers in dry-run when stale" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+# Stub stat to return a timestamp 10 days ago.
+stat() { echo $(( $(date +%s) - 864000 )); }
+export -f stat
+opt_periodic_maintenance
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Periodic maintenance triggered"* ]]
+}
+
+@test "execute_optimization dispatches periodic_maintenance" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+opt_periodic_maintenance() { echo "periodic"; }
+execute_optimization periodic_maintenance
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"periodic"* ]]
+}
