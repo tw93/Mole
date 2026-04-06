@@ -340,9 +340,9 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Docker unused data · skipped by default"* ]]
     [[ "$output" == *"Review: docker system df"* ]]
+    [[ "$output" == *"Prune:  docker system prune"* ]]
     [[ "$output" == *"Docker BuildX cache"* ]]
     [[ "$output" != *"docker called"* ]]
-    [[ "$output" != *"docker system prune"* ]]
 }
 
 @test "clean_dev_docker keeps BuildX cache cleanup" {
@@ -387,7 +387,7 @@ EOF
     [[ "$output" != *"whitelisted"* ]]
     [[ "$output" != *"mo clean --whitelist"* ]]
     [[ "$output" != *"docker called"* ]]
-    [[ "$output" != *"docker system prune"* ]]
+    [[ "$output" == *"Prune:  docker system prune"* ]]
 }
 
 @test "clean_dev_mise respects MISE_CACHE_DIR and only targets cache" {
