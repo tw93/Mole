@@ -186,7 +186,7 @@ func newModel(path string, isOverview bool) model {
 
 	var diskFreeBytes int64
 	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err == nil {
+	if err := syscall.Statfs(path, &stat); err == nil {
 		diskFreeBytes = int64(stat.Bavail) * int64(stat.Bsize)
 	}
 
