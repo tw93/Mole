@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -125,6 +126,7 @@ type model struct {
 	largeMultiSelected   map[string]bool // Track multi-selected large files by path (safer than index)
 	totalFiles           int64           // Total files found in current/last scan
 	lastTotalFiles       int64           // Total files from previous scan (for progress bar)
+	diskFree             int64           // Free disk space in bytes
 }
 
 func (m model) inOverviewMode() bool {
@@ -182,10 +184,17 @@ func newModel(path string, isOverview bool) model {
 	var overviewFilesScanned, overviewDirsScanned, overviewBytesScanned int64
 	overviewCurrentPath := ""
 
+	var diskFreeBytes int64
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs("/", &stat); err == nil {
+		diskFreeBytes = int64(stat.Bavail) * int64(stat.Bsize)
+	}
+
 	m := model{
 		path:                 path,
 		selected:             0,
 		status:               "Preparing scan...",
+		diskFree:             diskFreeBytes,
 		scanning:             !isOverview,
 		filesScanned:         &filesScanned,
 		dirsScanned:          &dirsScanned,

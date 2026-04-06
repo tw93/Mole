@@ -14,7 +14,11 @@ func (m model) View() string {
 	fmt.Fprintln(&b)
 
 	if m.inOverviewMode() {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s\n", colorPurpleBold, colorReset)
+		freeLabel := ""
+		if m.diskFree > 0 {
+			freeLabel = fmt.Sprintf("  %s(%s free)%s", colorGray, humanizeBytes(m.diskFree), colorReset)
+		}
+		fmt.Fprintf(&b, "%sAnalyze Disk%s%s\n", colorPurpleBold, colorReset, freeLabel)
 		if m.overviewScanning {
 			allPending := true
 			for _, entry := range m.entries {
