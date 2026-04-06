@@ -279,6 +279,7 @@ clean_dev_docker() {
         note_activity
         echo -e "  ${GRAY}${ICON_WARNING}${NC} Docker unused data · skipped by default"
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: docker system df${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --filter until=720h${NC}"
         debug_log "Docker daemon-managed cleanup skipped by default"
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
