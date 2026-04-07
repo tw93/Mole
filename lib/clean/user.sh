@@ -1532,11 +1532,17 @@ clean_cached_device_firmware() {
         local size_kb
         size_kb=$(get_path_size_kb "$ipsw" || echo 0)
         size_kb="${size_kb:-0}"
-        total_size_kb=$((total_size_kb + size_kb))
-        cleaned_count=$((cleaned_count + 1))
-        cleaned_any=true
-        if [[ "$DRY_RUN" != "true" ]]; then
-            safe_remove "$ipsw" true > /dev/null 2>&1 || true
+        if [[ "$DRY_RUN" == "true" ]]; then
+            total_size_kb=$((total_size_kb + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            cleaned_any=true
+            return 0
+        fi
+
+        if safe_remove "$ipsw" true > /dev/null 2>&1; then
+            total_size_kb=$((total_size_kb + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            cleaned_any=true
         fi
     }
 
@@ -1575,7 +1581,6 @@ clean_cached_device_firmware() {
         note_activity
     fi
 }
-
 
 # iOS device backup info.
 check_ios_device_backups() {

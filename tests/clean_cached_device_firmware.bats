@@ -214,3 +214,41 @@ EOF
     [[ "$output" == *"Files: 0"* ]]
     [[ "$output" != *"Cached device firmware"* ]]
 }
+
+@test "clean_cached_device_firmware does not report success when deletion fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+IPHONE_DIR="$HOME/Library/iTunes/iPhone Software Updates"
+mkdir -p "$IPHONE_DIR"
+IPSW="$IPHONE_DIR/fail_firmware.ipsw"
+touch "$IPSW"
+
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { echo "1024"; }
+bytes_to_human() { echo "1M"; }
+note_activity() { :; }
+safe_remove() { return 1; }
+export -f is_path_whitelisted get_path_size_kb bytes_to_human note_activity safe_remove
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+clean_cached_device_firmware
+echo "Files: $files_cleaned Items: $total_items Size: $total_size_cleaned"
+
+if [[ ! -f "$IPSW" ]]; then
+    echo "FAIL: file deleted"
+    exit 30
+fi
+echo "PRESENT"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Files: 0 Items: 0 Size: 0"* ]]
+    [[ "$output" == *"PRESENT"* ]]
+    [[ "$output" != *"Cached device firmware"* ]]
+}
