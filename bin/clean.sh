@@ -1065,9 +1065,9 @@ perform_cleanup() {
         # ===== 11. Apple Silicon =====
         clean_apple_silicon_caches
 
-        # ===== 12. Device backups =====
-        start_section "Device backups"
-        clean_ios_software_updates
+        # ===== 12. Device backups & firmware =====
+        start_section "Device backups & firmware"
+        clean_cached_device_firmware
         check_ios_device_backups
         end_section
 

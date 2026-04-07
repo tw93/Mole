@@ -148,6 +148,8 @@ Font cache|$HOME/Library/Caches/com.apple.FontRegistry/*|system_cache
 Spotlight metadata cache|$HOME/Library/Caches/com.apple.spotlight/*|system_cache
 CloudKit cache|$HOME/Library/Caches/CloudKit/*|system_cache
 Trash|$HOME/.Trash|system_cache
+iOS/iPadOS device firmware (.ipsw) from iTunes/Finder|$HOME/Library/iTunes/*Software Updates/*.ipsw|system_cache
+Apple Configurator 2 device firmware (.ipsw)|$HOME/Library/Group Containers/*.group.com.apple.configurator/**/*.ipsw|system_cache
 EOF
     # Add FINDER_METADATA with constant reference
     echo "Finder metadata, .DS_Store|$FINDER_METADATA_SENTINEL|system_cache"
