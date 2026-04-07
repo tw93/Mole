@@ -95,6 +95,8 @@ clean_code_editors() {
     safe_clean ~/Library/Application\ Support/Code/CachedExtensions/* "VS Code extension cache"
     safe_clean ~/Library/Application\ Support/Code/CachedData/* "VS Code data cache"
     safe_clean ~/Library/Caches/com.sublimetext.*/* "Sublime Text cache"
+    safe_clean ~/Library/Caches/Zed/* "Zed cache"
+    safe_clean ~/Library/Logs/Zed/* "Zed logs"
 }
 # Communication apps.
 clean_communication_apps() {
@@ -289,6 +291,10 @@ clean_shell_utils() {
     safe_clean ~/.wget-hsts "wget HSTS cache"
     safe_clean ~/.cacher/logs/* "Cacher logs"
     safe_clean ~/.kite/logs/* "Kite logs"
+    safe_clean ~/Library/Caches/dev.warp.Warp-Stable/* "Warp cache"
+    safe_clean ~/Library/Logs/warp.log "Warp log"
+    safe_clean ~/Library/Caches/SentryCrash/Warp/* "Warp Sentry crash reports"
+    safe_clean ~/Library/Caches/com.mitchellh.ghostty/* "Ghostty cache"
 }
 # Input methods and system utilities.
 clean_system_utils() {

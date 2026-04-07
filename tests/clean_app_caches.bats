@@ -233,6 +233,36 @@ EOF
     [[ "$output" == *"Lunar Client logs"* ]]
 }
 
+@test "clean_code_editors includes Zed caches" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_code_editors
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Zed cache"* ]]
+    [[ "$output" == *"Zed logs"* ]]
+}
+
+@test "clean_shell_utils includes Warp and Ghostty caches" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_shell_utils
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Warp cache"* ]]
+    [[ "$output" == *"Warp log"* ]]
+    [[ "$output" == *"Warp Sentry crash reports"* ]]
+    [[ "$output" == *"Ghostty cache"* ]]
+}
+
 @test "clean_video_players includes Stremio caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
