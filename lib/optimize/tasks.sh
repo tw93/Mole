@@ -858,6 +858,44 @@ opt_dock_refresh() {
     opt_msg "Dock refreshed"
 }
 
+# Prevent .DS_Store on network and USB volumes.
+# Idempotent: writes two user defaults that stop Finder from creating
+# .DS_Store files on SMB/AFP/NFS shares and removable USB volumes.
+# Reversible with: defaults delete com.apple.desktopservices DSDontWrite{Network,USB}Stores
+opt_prevent_network_dsstore() {
+    local domain="com.apple.desktopservices"
+    local -a keys=("DSDontWriteNetworkStores" "DSDontWriteUSBStores")
+    local changed=0
+    local already=0
+
+    for key in "${keys[@]}"; do
+        local current
+        current=$(defaults read "$domain" "$key" 2> /dev/null || echo "")
+        if [[ "$current" == "1" ]]; then
+            already=$((already + 1))
+            continue
+        fi
+
+        if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+            changed=$((changed + 1))
+            continue
+        fi
+
+        if defaults write "$domain" "$key" -bool true 2> /dev/null; then
+            changed=$((changed + 1))
+        fi
+    done
+
+    if [[ $changed -eq 0 && $already -gt 0 ]]; then
+        opt_msg ".DS_Store prevention already enabled on network & USB volumes"
+        return 0
+    fi
+
+    if [[ $changed -gt 0 ]]; then
+        opt_msg ".DS_Store prevention enabled on network & USB volumes"
+    fi
+}
+
 # Broken LaunchAgent cleanup.
 opt_launch_agents_cleanup() {
     local agents_dir="$HOME/Library/LaunchAgents"
@@ -1127,6 +1165,7 @@ execute_optimization() {
         launch_services_rebuild) opt_launch_services_rebuild ;;
         font_cache_rebuild) opt_font_cache_rebuild ;;
         dock_refresh) opt_dock_refresh ;;
+        prevent_network_dsstore) opt_prevent_network_dsstore ;;
         memory_pressure_relief) opt_memory_pressure_relief ;;
         network_stack_optimize) opt_network_stack_optimize ;;
         disk_permissions_repair) opt_disk_permissions_repair ;;

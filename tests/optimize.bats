@@ -270,6 +270,43 @@ EOF
     [[ "$output" == *"Dock refreshed"* ]]
 }
 
+@test "opt_prevent_network_dsstore dry-run reports enabled" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+defaults() {
+    case "$1" in
+        read) return 1 ;;
+        write) return 0 ;;
+    esac
+}
+opt_prevent_network_dsstore
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".DS_Store prevention enabled"* ]]
+}
+
+@test "opt_prevent_network_dsstore idempotent when already set" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+defaults() {
+    if [[ "$1" == "read" ]]; then
+        echo "1"
+        return 0
+    fi
+    return 0
+}
+opt_prevent_network_dsstore
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already enabled"* ]]
+}
+
 @test "execute_optimization dispatches actions" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail

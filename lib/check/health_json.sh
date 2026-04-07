@@ -135,6 +135,7 @@ EOF
     items+=('launch_services_rebuild|LaunchServices Repair|Repair "Open with" menu & file associations|true')
     items+=('font_cache_rebuild|Font Cache Rebuild|Rebuild font database to fix rendering issues (skips if browsers are running)|true')
     items+=('dock_refresh|Dock Refresh|Fix broken icons and visual glitches in the Dock|true')
+    items+=('prevent_network_dsstore|Prevent Network .DS_Store|Stop Finder from writing .DS_Store on SMB/AFP/NFS and USB volumes|true')
 
     # System performance optimizations (auto-run, non-destructive)
     items+=('memory_pressure_relief|Memory Optimization|Release inactive memory to improve system responsiveness|true')
