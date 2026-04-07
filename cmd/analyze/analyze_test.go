@@ -246,6 +246,32 @@ func TestViewShowsEscBackAndCtrlCQuitHints(t *testing.T) {
 	}
 }
 
+func TestViewOverviewHeaderShowsFreeDiskSpace(t *testing.T) {
+	base := model{
+		path:       "/",
+		isOverview: true,
+		entries:    []dirEntry{{Name: "Applications", Path: "/Applications", Size: 1024, IsDir: true}},
+	}
+
+	t.Run("shows free suffix when diskFree > 0", func(t *testing.T) {
+		m := base
+		m.diskFree = 123 * 1024 * 1024 * 1024 // 123 GB
+		view := m.View()
+		if !strings.Contains(view, "free)") {
+			t.Fatalf("expected free-space suffix in overview header, got:\n%s", view)
+		}
+	})
+
+	t.Run("omits free suffix when diskFree is unavailable", func(t *testing.T) {
+		m := base
+		m.diskFree = 0
+		view := m.View()
+		if strings.Contains(view, "free)") {
+			t.Fatalf("expected no free-space suffix when diskFree=0, got:\n%s", view)
+		}
+	})
+}
+
 func TestCacheSaveLoadRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
