@@ -307,6 +307,25 @@ EOF
     [[ "$output" == *"already enabled"* ]]
 }
 
+@test "prevent_network_dsstore is optional in optimize health json" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/check/health_json.sh"
+json="$(generate_health_json | tr '\n' ' ')"
+
+if printf '%s\n' "$json" | grep -q '"action": "prevent_network_dsstore".*"safe": false'; then
+    echo "optional"
+fi
+if printf '%s\n' "$json" | grep -q 'persistent Finder preference'; then
+    echo "described"
+fi
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"optional"* ]]
+    [[ "$output" == *"described"* ]]
+}
+
 @test "execute_optimization dispatches actions" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
