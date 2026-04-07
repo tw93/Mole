@@ -1067,6 +1067,7 @@ perform_cleanup() {
 
         # ===== 12. Device backups =====
         start_section "Device backups"
+        clean_ios_software_updates
         check_ios_device_backups
         end_section
 

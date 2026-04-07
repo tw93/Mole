@@ -1501,6 +1501,61 @@ clean_application_support_logs() {
         note_activity
     fi
 }
+# Remove stale iOS/iPadOS/iPodOS .ipsw software updates cached by iTunes or Finder.
+# These are installers for firmware already applied (or superseded) — macOS will
+# re-download them on demand. Typical size: 5-8GB per file. Never touches backups.
+clean_ios_software_updates() {
+    local -a update_dirs=(
+        "$HOME/Library/iTunes/iPhone Software Updates"
+        "$HOME/Library/iTunes/iPad Software Updates"
+        "$HOME/Library/iTunes/iPod Software Updates"
+    )
+
+    local cleaned_count=0
+    local total_size_kb=0
+    local cleaned_any=false
+
+    local dir
+    for dir in "${update_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+
+        local ipsw
+        while IFS= read -r -d '' ipsw; do
+            [[ -f "$ipsw" ]] || continue
+            if is_path_whitelisted "$ipsw"; then
+                continue
+            fi
+
+            local size_kb
+            size_kb=$(get_path_size_kb "$ipsw" || echo 0)
+            size_kb="${size_kb:-0}"
+            total_size_kb=$((total_size_kb + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            cleaned_any=true
+
+            if [[ "$DRY_RUN" != "true" ]]; then
+                safe_remove "$ipsw" true > /dev/null 2>&1 || true
+            fi
+        done < <(command find "$dir" -maxdepth 1 -type f -name "*.ipsw" -print0 2> /dev/null)
+    done
+
+    if [[ "$cleaned_any" == "true" ]]; then
+        local size_human
+        size_human=$(bytes_to_human "$((total_size_kb * 1024))")
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} iOS software updates${NC}, ${YELLOW}${cleaned_count} files, $size_human dry${NC}"
+        else
+            local line_color
+            line_color=$(cleanup_result_color_kb "$total_size_kb")
+            echo -e "  ${line_color}${ICON_SUCCESS}${NC} iOS software updates${NC}, ${line_color}${cleaned_count} files, $size_human${NC}"
+        fi
+        files_cleaned=$((files_cleaned + cleaned_count))
+        total_size_cleaned=$((total_size_cleaned + total_size_kb))
+        total_items=$((total_items + 1))
+        note_activity
+    fi
+}
+
 # iOS device backup info.
 check_ios_device_backups() {
     local backup_dir="$HOME/Library/Application Support/MobileSync/Backup"
