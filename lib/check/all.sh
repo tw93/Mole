@@ -792,6 +792,39 @@ check_disk_smart() {
     fi
 }
 
+check_orphan_launch_agents() {
+    if command -v is_whitelisted > /dev/null && is_whitelisted "check_orphan_launch_agents"; then return; fi
+
+    local -a search_dirs orphans=()
+    IFS=: read -r -a search_dirs <<< "${MOLE_LAUNCH_AGENT_DIRS:-$HOME/Library/LaunchAgents:/Library/LaunchAgents}"
+
+    local plist label program
+    for dir in "${search_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+        while IFS= read -r -d '' plist; do
+            label=$(basename "$plist" .plist)
+            [[ "$label" == com.apple.* ]] && continue
+            program=$(/usr/bin/plutil -extract Program raw -o - "$plist" 2> /dev/null \
+                || /usr/bin/plutil -extract ProgramArguments.0 raw -o - "$plist" 2> /dev/null)
+            [[ "$program" == /* && ! -e "$program" ]] && orphans+=("$label")
+        done < <(find "$dir" -maxdepth 1 -name "*.plist" -print0 2> /dev/null)
+    done
+
+    local count=${#orphans[@]}
+    if [[ $count -eq 0 ]]; then
+        echo -e "  ${GREEN}✓${NC} Launch Agents None orphaned"
+        return
+    fi
+
+    local s=""; ((count > 1)) && s="s"
+    echo -e "  ${GRAY}${ICON_WARNING}${NC} Launch Agents ${YELLOW}${count} orphan${s}${NC}"
+    local preview="${orphans[0]}"
+    ((count > 1)) && preview="${preview}, ${orphans[1]}"
+    ((count > 2)) && preview="${preview}, ${orphans[2]}"
+    ((count > 3)) && preview="${preview} +$((count - 3))"
+    echo -e "    ${GRAY}${preview}${NC}"
+}
+
 check_brew_health() {
     # Check whitelist
     if command -v is_whitelisted > /dev/null && is_whitelisted "check_brew_health"; then return; fi
@@ -804,6 +837,7 @@ check_system_health() {
     check_swap_usage
     check_login_items
     check_disk_smart
+    check_orphan_launch_agents
     check_cache_size
     # Time Machine check is optional; skip by default to avoid noise on systems without backups
 }
