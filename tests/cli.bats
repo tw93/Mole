@@ -354,6 +354,7 @@ EOF
 import sys, json
 data = json.load(sys.stdin)
 assert 'path' in data, 'missing path'
+assert 'overview' in data, 'missing overview'
 assert 'entries' in data, 'missing entries'
 assert 'total_size' in data, 'missing total_size'
 assert 'total_files' in data, 'missing total_files'
@@ -372,6 +373,7 @@ assert isinstance(data['entries'], list), 'entries is not a list'
 	echo "$output" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
+assert data['overview'] is False, 'explicit path should not be overview mode'
 for entry in data['entries']:
     assert 'name' in entry, 'entry missing name'
     assert 'path' in entry, 'entry missing path'
