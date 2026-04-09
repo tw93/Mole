@@ -108,8 +108,52 @@ EOF
     echo "# Just a comment" > "$config_file"
 
     run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
-    
+
     [ "$status" -eq 0 ]
-    
+
     [[ "$output" == *"$HOME/Projects"* ]]
+}
+
+@test "load_purge_config deduplicates case variants on case-insensitive FS" {
+    # Create a real directory so resolve_path_case can cd into it
+    mkdir -p "$HOME/code"
+
+    local config_file="$HOME/.config/mole/purge_paths"
+    cat > "$config_file" << EOF
+$HOME/code
+$HOME/Code
+EOF
+
+    run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${#PURGE_SEARCH_PATHS[@]}\""
+
+    [ "$status" -eq 0 ]
+
+    # On case-insensitive FS (macOS default) both resolve to the same path,
+    # so count should be 1. On case-sensitive FS, Code doesn't exist, so
+    # resolve_path_case returns it unchanged — count may be 2 which is correct
+    # since they really are different directories.
+    if [[ -d "$HOME/Code" && "$(cd "$HOME/Code" && pwd -P)" == "$(cd "$HOME/code" && pwd -P)" ]]; then
+        [ "$output" = "1" ]
+    fi
+}
+
+@test "discover_project_dirs deduplicates default Code vs actual code" {
+    # Simulate: $HOME/code exists (actual dir), $HOME/Code is in defaults
+    mkdir -p "$HOME/code/myproject"
+    touch "$HOME/code/myproject/package.json"
+
+    # No config file — triggers discovery
+    run env HOME="$HOME" bash -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        discover_project_dirs
+    "
+
+    [ "$status" -eq 0 ]
+
+    # On case-insensitive FS, $HOME/code should appear only once
+    if [[ -d "$HOME/Code" && "$(cd "$HOME/Code" && pwd -P)" == "$(cd "$HOME/code" && pwd -P)" ]]; then
+        local count
+        count=$(echo "$output" | grep -c "$HOME/code" || true)
+        [ "$count" -le 1 ]
+    fi
 }

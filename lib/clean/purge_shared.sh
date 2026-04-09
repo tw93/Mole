@@ -124,6 +124,19 @@ mole_purge_quick_hint_target_names() {
     done
 }
 
+# Resolve a directory path to its canonical filesystem casing.
+# On case-insensitive macOS (APFS), ~/Code and ~/code point to the same
+# directory but with different display names.  This function returns the
+# real (on-disk) path so that string comparisons work correctly for dedup.
+mole_purge_resolve_path_case() {
+    local path="$1"
+    if [[ -d "$path" ]]; then
+        (cd "$path" 2>/dev/null && pwd -P) || printf '%s\n' "$path"
+    else
+        printf '%s\n' "$path"
+    fi
+}
+
 mole_purge_read_paths_config() {
     local config_file="${1:-$HOME/.config/mole/purge_paths}"
     [[ -f "$config_file" ]] || return 0
@@ -134,6 +147,7 @@ mole_purge_read_paths_config() {
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" =~ ^# ]] && continue
         line="${line/#\~/$HOME}"
+        line=$(mole_purge_resolve_path_case "$line")
         printf '%s\n' "$line"
     done < "$config_file"
 }
