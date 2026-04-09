@@ -149,11 +149,7 @@ func jsonEntriesFromDirEntries(entries []dirEntry, isOverview bool, insightPaths
 func jsonFileEntriesFromFileEntries(files []fileEntry) []jsonFileEntry {
 	output := make([]jsonFileEntry, 0, len(files))
 	for _, file := range files {
-		output = append(output, jsonFileEntry{
-			Name: file.Name,
-			Path: file.Path,
-			Size: file.Size,
-		})
+		output = append(output, jsonFileEntry(file))
 	}
 	return output
 }
