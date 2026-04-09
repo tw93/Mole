@@ -1033,13 +1033,22 @@ clean_project_artifacts() {
 
     # Collect all results and deduplicate (overlapping search roots on
     # case-insensitive filesystems can produce identical canonical paths).
-    local -A _seen_items=()
+    # Uses a simple linear search instead of associative arrays for bash 3 compat.
     for scan_output in "${scan_temps[@]+"${scan_temps[@]}"}"; do
         if [[ -f "$scan_output" ]]; then
             while IFS= read -r item; do
-                if [[ -n "$item" && -z "${_seen_items[$item]+x}" ]]; then
-                    _seen_items["$item"]=1
-                    all_found_items+=("$item")
+                if [[ -n "$item" ]]; then
+                    local _already_seen=false
+                    local _existing
+                    for _existing in "${all_found_items[@]+"${all_found_items[@]}"}"; do
+                        if [[ "$_existing" == "$item" ]]; then
+                            _already_seen=true
+                            break
+                        fi
+                    done
+                    if [[ "$_already_seen" == "false" ]]; then
+                        all_found_items+=("$item")
+                    fi
                 fi
             done < "$scan_output"
             rm -f "$scan_output"
