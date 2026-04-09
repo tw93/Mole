@@ -138,7 +138,7 @@ func TestPerformScanForJSONCountsTopLevelFiles(t *testing.T) {
 		t.Fatalf("write nested file: %v", err)
 	}
 
-	result := performScanForJSON(root)
+	result := performScanForJSON(root, false)
 
 	if result.TotalFiles != 2 {
 		t.Fatalf("expected 2 files in JSON output, got %d", result.TotalFiles)

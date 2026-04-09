@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,10 +62,14 @@ func trySend[T any](ch chan<- T, item T, timeout time.Duration) bool {
 }
 
 func scanPathConcurrent(root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (scanResult, error) {
-	return scanPathConcurrentWithOptions(root, filesScanned, dirsScanned, bytesScanned, currentPath, true)
+	return scanPathConcurrentWithOptions(root, filesScanned, dirsScanned, bytesScanned, currentPath, true, maxEntries)
 }
 
-func scanPathConcurrentWithOptions(root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, useSpotlight bool) (scanResult, error) {
+func scanPathConcurrentAllEntries(root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (scanResult, error) {
+	return scanPathConcurrentWithOptions(root, filesScanned, dirsScanned, bytesScanned, currentPath, true, 0)
+}
+
+func scanPathConcurrentWithOptions(root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, useSpotlight bool, entryLimit int) (scanResult, error) {
 	children, err := os.ReadDir(root)
 	if err != nil {
 		return scanResult{}, err
@@ -75,9 +80,14 @@ func scanPathConcurrentWithOptions(root string, filesScanned, dirsScanned, bytes
 	var localBytesScanned int64
 	var subtreeFilesScanned atomic.Int64
 
-	// Keep Top N heaps.
+	collectAllEntries := entryLimit <= 0
+	var collectedEntries []dirEntry
+
+	// Keep Top N heaps when a limit is requested.
 	entriesHeap := &entryHeap{}
-	heap.Init(entriesHeap)
+	if !collectAllEntries {
+		heap.Init(entriesHeap)
+	}
 
 	largeFilesHeap := &largeFileHeap{}
 	heap.Init(largeFilesHeap)
@@ -102,7 +112,12 @@ func scanPathConcurrentWithOptions(root string, filesScanned, dirsScanned, bytes
 	go func() {
 		defer collectorWg.Done()
 		for entry := range entryChan {
-			if entriesHeap.Len() < maxEntries {
+			if collectAllEntries {
+				collectedEntries = append(collectedEntries, entry)
+				continue
+			}
+
+			if entriesHeap.Len() < entryLimit {
 				heap.Push(entriesHeap, entry)
 			} else if entry.Size > (*entriesHeap)[0].Size {
 				heap.Pop(entriesHeap)
@@ -297,9 +312,17 @@ func scanPathConcurrentWithOptions(root string, filesScanned, dirsScanned, bytes
 	collectorWg.Wait()
 
 	// Convert heaps to sorted slices (descending).
-	entries := make([]dirEntry, entriesHeap.Len())
-	for i := len(entries) - 1; i >= 0; i-- {
-		entries[i] = heap.Pop(entriesHeap).(dirEntry)
+	var entries []dirEntry
+	if collectAllEntries {
+		entries = append(entries, collectedEntries...)
+		sort.SliceStable(entries, func(i, j int) bool {
+			return entries[i].Size > entries[j].Size
+		})
+	} else {
+		entries = make([]dirEntry, entriesHeap.Len())
+		for i := len(entries) - 1; i >= 0; i-- {
+			entries[i] = heap.Pop(entriesHeap).(dirEntry)
+		}
 	}
 
 	largeFiles := make([]fileEntry, largeFilesHeap.Len())
@@ -355,7 +378,7 @@ func scanSubdirWithCache(root string, largeFileChan chan<- fileEntry, largeFileM
 		return cached
 	}
 
-	result, err := scanPathConcurrentWithOptions(root, filesScanned, dirsScanned, bytesScanned, currentPath, false)
+	result, err := scanPathConcurrentWithOptions(root, filesScanned, dirsScanned, bytesScanned, currentPath, false, maxEntries)
 	if err == nil {
 		publishLargeFiles(result.LargeFiles, largeFileChan)
 		_ = saveCacheToDiskWithOptions(root, result, true)
