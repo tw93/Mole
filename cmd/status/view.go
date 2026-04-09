@@ -676,8 +676,8 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			healthParts = append(healthParts, cycleText)
 		}
 
-		if thermal.CPUTemp > 0 {
-			tempText := colorizeTemp(thermal.CPUTemp) + "°C"
+		if thermal.BatteryTemp > 0 {
+			tempText := "Battery " + colorizeTemp(thermal.BatteryTemp) + "°C"
 			healthParts = append(healthParts, tempText)
 		}
 

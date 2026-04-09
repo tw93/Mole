@@ -182,6 +182,7 @@ type BatteryStatus struct {
 type ThermalStatus struct {
 	CPUTemp      float64 `json:"cpu_temp"`
 	GPUTemp      float64 `json:"gpu_temp"`
+	BatteryTemp  float64 `json:"battery_temp"` // Battery temperature in Celsius when exposed by AppleSmartBattery
 	FanSpeed     int     `json:"fan_speed"`
 	FanCount     int     `json:"fan_count"`
 	SystemPower  float64 `json:"system_power"`  // System power consumption in Watts
