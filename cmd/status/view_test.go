@@ -831,7 +831,7 @@ func TestRenderDiskCardAddsMetaLineForSingleDisk(t *testing.T) {
 		Used:        263 << 30,
 		Total:       926 << 30,
 		Fstype:      "apfs",
-	}}, DiskIOStatus{ReadRate: 0, WriteRate: 0.1})
+	}}, DiskIOStatus{ReadRate: 0, WriteRate: 0.1}, 0)
 
 	if len(card.lines) != 4 {
 		t.Fatalf("renderDiskCard() single disk expected 4 lines, got %d", len(card.lines))
@@ -847,7 +847,7 @@ func TestRenderDiskCardDoesNotAddMetaLineForMultipleDisks(t *testing.T) {
 	card := renderDiskCard([]DiskStatus{
 		{UsedPercent: 28.4, Used: 263 << 30, Total: 926 << 30, Fstype: "apfs"},
 		{UsedPercent: 50.0, Used: 500 << 30, Total: 1000 << 30, Fstype: "apfs"},
-	}, DiskIOStatus{})
+	}, DiskIOStatus{}, 0)
 
 	if len(card.lines) != 4 {
 		t.Fatalf("renderDiskCard() multiple disks expected 4 lines, got %d", len(card.lines))

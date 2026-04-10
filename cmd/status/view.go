@@ -389,7 +389,7 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 	return cardData{icon: iconMemory, title: "Memory", lines: lines}
 }
 
-func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
+func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64) cardData {
 	var lines []string
 	if len(disks) == 0 {
 		lines = append(lines, subtleStyle.Render("Collecting..."))
@@ -411,6 +411,9 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus) cardData {
 		} else if len(disks) == 1 {
 			lines = append(lines, formatDiskMetaLine(disks[0]))
 		}
+	}
+	if trashSize > 0 {
+		lines = append(lines, fmt.Sprintf("Trash  %s", humanBytesShort(trashSize)))
 	}
 	readBar := ioBar(io.ReadRate)
 	writeBar := ioBar(io.WriteRate)
@@ -491,7 +494,7 @@ func buildCards(m MetricsSnapshot, width int) []cardData {
 	cards := []cardData{
 		renderCPUCard(m.CPU, m.Thermal),
 		renderMemoryCard(m.Memory, width),
-		renderDiskCard(m.Disks, m.DiskIO),
+		renderDiskCard(m.Disks, m.DiskIO, m.TrashSize),
 		renderBatteryCard(m.Batteries, m.Thermal),
 		renderProcessCard(m.TopProcesses),
 		renderNetworkCard(m.Network, m.NetworkHistory, m.Proxy, width),

@@ -71,6 +71,7 @@ type MetricsSnapshot struct {
 	GPU            []GPUStatus        `json:"gpu"`
 	Memory         MemoryStatus       `json:"memory"`
 	Disks          []DiskStatus       `json:"disks"`
+	TrashSize      uint64             `json:"trash_size"`
 	DiskIO         DiskIOStatus       `json:"disk_io"`
 	Network        []NetworkStatus    `json:"network"`
 	NetworkHistory NetworkHistory     `json:"network_history"`
@@ -297,6 +298,8 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 	collect(func() (err error) { cpuStats, err = collectCPU(); return })
 	collect(func() (err error) { memStats, err = collectMemory(); return })
 	collect(func() (err error) { diskStats, err = collectDisks(); return })
+	var trashSize uint64
+	collect(func() (err error) { trashSize = collectTrashSize(); return nil })
 	collect(func() (err error) { diskIO = c.collectDiskIO(now); return nil })
 	collect(func() (err error) { netStats, err = c.collectNetwork(now); return })
 	collect(func() (err error) { proxyStats = collectProxy(); return nil })
@@ -354,6 +357,7 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		GPU:            gpuStats,
 		Memory:         memStats,
 		Disks:          diskStats,
+		TrashSize:      trashSize,
 		DiskIO:         diskIO,
 		Network:        netStats,
 		NetworkHistory: NetworkHistory{

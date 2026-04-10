@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -428,4 +431,35 @@ func (c *Collector) collectDiskIO(now time.Time) DiskIOStatus {
 	}
 
 	return DiskIOStatus{ReadRate: readRate, WriteRate: writeRate}
+}
+
+// collectTrashSize returns the total size in bytes of ~/.Trash.
+// Bails out after 2 seconds to keep the status card responsive.
+func collectTrashSize() uint64 {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var total uint64
+	trashPath := filepath.Join(home, ".Trash")
+	_ = filepath.WalkDir(trashPath, func(_ string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return fs.SkipAll
+		}
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			if info, err := d.Info(); err == nil {
+				total += uint64(info.Size())
+			}
+		}
+		return nil
+	})
+	if ctx.Err() != nil {
+		return 0
+	}
+	return total
 }
