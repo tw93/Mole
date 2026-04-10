@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -1253,34 +1252,12 @@ func safeOpen(path string, reveal bool) error {
 	return exec.CommandContext(ctx, "open", args...).Run()
 }
 
-// safePreview opens a Quick Look preview via qlmanage.
-// Media files that crash qlmanage are revealed in Finder instead.
+// safePreview opens the file with the default macOS application.
 func safePreview(path string) error {
 	if err := validatePath(path); err != nil {
 		return err
 	}
-
-	if isMediaFile(path) {
-		ctx, cancel := context.WithTimeout(context.Background(), openCommandTimeout)
-		defer cancel()
-		return exec.CommandContext(ctx, "open", "-R", path).Run()
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), openCommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "qlmanage", "-p", path)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	return cmd.Run()
-}
-
-var mediaExts = map[string]bool{
-	".mp4": true, ".mov": true, ".avi": true, ".mkv": true, ".wmv": true,
-	".flv": true, ".webm": true, ".m4v": true, ".mp3": true, ".wav": true,
-	".aac": true, ".flac": true, ".ogg": true, ".m4a": true,
-}
-
-func isMediaFile(path string) bool {
-	return mediaExts[strings.ToLower(filepath.Ext(path))]
+	return exec.CommandContext(ctx, "open", path).Run()
 }
