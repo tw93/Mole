@@ -389,7 +389,7 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 	return cardData{icon: iconMemory, title: "Memory", lines: lines}
 }
 
-func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64) cardData {
+func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64, trashApprox bool) cardData {
 	var lines []string
 	if len(disks) == 0 {
 		lines = append(lines, subtleStyle.Render("Collecting..."))
@@ -413,7 +413,11 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64) cardD
 		}
 	}
 	if trashSize > 0 {
-		lines = append(lines, fmt.Sprintf("Trash  %s", humanBytesShort(trashSize)))
+		prefix := ""
+		if trashApprox {
+			prefix = "~"
+		}
+		lines = append(lines, fmt.Sprintf("%-6s %s%s", "Trash", prefix, humanBytesShort(trashSize)))
 	}
 	readBar := ioBar(io.ReadRate)
 	writeBar := ioBar(io.WriteRate)
@@ -494,7 +498,7 @@ func buildCards(m MetricsSnapshot, width int) []cardData {
 	cards := []cardData{
 		renderCPUCard(m.CPU, m.Thermal),
 		renderMemoryCard(m.Memory, width),
-		renderDiskCard(m.Disks, m.DiskIO, m.TrashSize),
+		renderDiskCard(m.Disks, m.DiskIO, m.TrashSize, m.TrashApprox),
 		renderBatteryCard(m.Batteries, m.Thermal),
 		renderProcessCard(m.TopProcesses),
 		renderNetworkCard(m.Network, m.NetworkHistory, m.Proxy, width),

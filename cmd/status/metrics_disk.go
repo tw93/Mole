@@ -433,12 +433,12 @@ func (c *Collector) collectDiskIO(now time.Time) DiskIOStatus {
 	return DiskIOStatus{ReadRate: readRate, WriteRate: writeRate}
 }
 
-// collectTrashSize returns the total size in bytes of ~/.Trash.
-// Bails out after 2 seconds to keep the status card responsive.
-func collectTrashSize() uint64 {
+// collectTrashSize returns the total size in bytes of ~/.Trash and whether
+// the result is approximate (true when the 2s timeout was reached).
+func collectTrashSize() (uint64, bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -451,6 +451,9 @@ func collectTrashSize() uint64 {
 		if err != nil {
 			return nil
 		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
 		if !d.IsDir() {
 			if info, err := d.Info(); err == nil {
 				total += uint64(info.Size())
@@ -458,8 +461,5 @@ func collectTrashSize() uint64 {
 		}
 		return nil
 	})
-	if ctx.Err() != nil {
-		return 0
-	}
-	return total
+	return total, ctx.Err() != nil
 }

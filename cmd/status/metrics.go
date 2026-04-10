@@ -72,6 +72,7 @@ type MetricsSnapshot struct {
 	Memory         MemoryStatus       `json:"memory"`
 	Disks          []DiskStatus       `json:"disks"`
 	TrashSize      uint64             `json:"trash_size"`
+	TrashApprox    bool               `json:"trash_approx"`
 	DiskIO         DiskIOStatus       `json:"disk_io"`
 	Network        []NetworkStatus    `json:"network"`
 	NetworkHistory NetworkHistory     `json:"network_history"`
@@ -299,7 +300,8 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 	collect(func() (err error) { memStats, err = collectMemory(); return })
 	collect(func() (err error) { diskStats, err = collectDisks(); return })
 	var trashSize uint64
-	collect(func() (err error) { trashSize = collectTrashSize(); return nil })
+	var trashApprox bool
+	collect(func() (err error) { trashSize, trashApprox = collectTrashSize(); return nil })
 	collect(func() (err error) { diskIO = c.collectDiskIO(now); return nil })
 	collect(func() (err error) { netStats, err = c.collectNetwork(now); return })
 	collect(func() (err error) { proxyStats = collectProxy(); return nil })
@@ -358,6 +360,7 @@ func (c *Collector) Collect() (MetricsSnapshot, error) {
 		Memory:         memStats,
 		Disks:          diskStats,
 		TrashSize:      trashSize,
+		TrashApprox:    trashApprox,
 		DiskIO:         diskIO,
 		Network:        netStats,
 		NetworkHistory: NetworkHistory{

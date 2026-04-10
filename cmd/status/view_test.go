@@ -831,7 +831,7 @@ func TestRenderDiskCardAddsMetaLineForSingleDisk(t *testing.T) {
 		Used:        263 << 30,
 		Total:       926 << 30,
 		Fstype:      "apfs",
-	}}, DiskIOStatus{ReadRate: 0, WriteRate: 0.1}, 0)
+	}}, DiskIOStatus{ReadRate: 0, WriteRate: 0.1}, 0, false)
 
 	if len(card.lines) != 4 {
 		t.Fatalf("renderDiskCard() single disk expected 4 lines, got %d", len(card.lines))
@@ -847,7 +847,7 @@ func TestRenderDiskCardDoesNotAddMetaLineForMultipleDisks(t *testing.T) {
 	card := renderDiskCard([]DiskStatus{
 		{UsedPercent: 28.4, Used: 263 << 30, Total: 926 << 30, Fstype: "apfs"},
 		{UsedPercent: 50.0, Used: 500 << 30, Total: 1000 << 30, Fstype: "apfs"},
-	}, DiskIOStatus{}, 0)
+	}, DiskIOStatus{}, 0, false)
 
 	if len(card.lines) != 4 {
 		t.Fatalf("renderDiskCard() multiple disks expected 4 lines, got %d", len(card.lines))
@@ -857,6 +857,38 @@ func TestRenderDiskCardDoesNotAddMetaLineForMultipleDisks(t *testing.T) {
 		if stripANSI(line) == "Total  926G · APFS" || stripANSI(line) == "Total  1000G · APFS" {
 			t.Fatalf("renderDiskCard() multiple disks should not add meta line, got %q", line)
 		}
+	}
+}
+
+func TestRenderDiskCardTrashLine(t *testing.T) {
+	disk := DiskStatus{UsedPercent: 50, Used: 500 << 30, Total: 1000 << 30, Fstype: "apfs"}
+	tests := []struct {
+		name      string
+		trashSize uint64
+		approx    bool
+		wantLine  string
+	}{
+		{"no trash", 0, false, ""},
+		{"1.5 GB exact", 1536 << 20, false, "Trash  2G"},
+		{"approx 12 GB", 12 << 30, true, "Trash  ~12G"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			card := renderDiskCard([]DiskStatus{disk}, DiskIOStatus{}, tt.trashSize, tt.approx)
+			found := ""
+			for _, line := range card.lines {
+				if s := stripANSI(line); len(s) > 5 && s[:5] == "Trash" {
+					found = s
+					break
+				}
+			}
+			if tt.wantLine == "" && found != "" {
+				t.Fatalf("expected no trash line, got %q", found)
+			}
+			if tt.wantLine != "" && found != tt.wantLine {
+				t.Fatalf("trash line = %q, want %q", found, tt.wantLine)
+			}
+		})
 	}
 }
 
