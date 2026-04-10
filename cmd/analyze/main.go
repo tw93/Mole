@@ -1254,6 +1254,8 @@ func safeOpen(path string, reveal bool) error {
 
 // safePreview opens a Quick Look preview via qlmanage.
 // Stdout/stderr are suppressed to avoid corrupting the TUI.
+// A new process group is used so that a qlmanage crash (e.g. on
+// video files) does not take down the parent process.
 func safePreview(path string) error {
 	if err := validatePath(path); err != nil {
 		return err
@@ -1263,5 +1265,6 @@ func safePreview(path string) error {
 	cmd := exec.CommandContext(ctx, "qlmanage", "-p", path)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return cmd.Run()
 }
