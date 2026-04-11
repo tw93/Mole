@@ -834,7 +834,8 @@ main() {
     export MOLE_CURRENT_COMMAND="uninstall"
     log_operation_session_start "uninstall"
 
-    # Global flags
+    # Global flags and positional app names
+    local -a target_app_names=()
     for arg in "$@"; do
         case "$arg" in
             "--help" | "-h")
@@ -859,9 +860,8 @@ main() {
                 exit 1
                 ;;
             *)
-                echo "Unknown uninstall argument: $arg"
-                echo "Use 'mo uninstall --help' for supported options."
-                exit 1
+                local cleaned_arg="${arg%.app}"
+                target_app_names+=("$cleaned_arg")
                 ;;
         esac
     done
@@ -870,6 +870,92 @@ main() {
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No app files or settings will be modified"
         printf '\n'
+    fi
+
+    # Direct uninstall by app name(s)
+    # TODO: optimize direct lookup to skip full scan (walk dirs + match only targeted names)
+    if [[ ${#target_app_names[@]} -gt 0 ]]; then
+        local apps_file=""
+        if ! apps_file=$(scan_applications); then
+            show_cursor
+            return 1
+        fi
+        if [[ ! -f "$apps_file" ]]; then
+            show_cursor
+            return 1
+        fi
+        if ! load_applications "$apps_file"; then
+            rm -f "$apps_file"
+            show_cursor
+            return 1
+        fi
+
+        selected_apps=()
+        local -a not_found=()
+        for target in "${target_app_names[@]}"; do
+            local target_lower
+            target_lower=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
+            local found=false
+            local -a matches=()
+            for app_entry in "${apps_data[@]}"; do
+                IFS='|' read -r _ _ app_name _ _ _ _ <<< "$app_entry"
+                local name_lower
+                name_lower=$(printf '%s' "$app_name" | tr '[:upper:]' '[:lower:]')
+                if [[ "$name_lower" == "$target_lower" ]]; then
+                    matches+=("$app_entry")
+                    found=true
+                fi
+            done
+            if [[ "$found" == "false" ]]; then
+                not_found+=("$target")
+            elif [[ ${#matches[@]} -gt 1 ]]; then
+                echo -e "${YELLOW}${ICON_WARNING}${NC} Multiple apps match '$target':"
+                local mi=1
+                for m in "${matches[@]}"; do
+                    IFS='|' read -r _ m_path m_name _ _ _ _ <<< "$m"
+                    printf "  %d. %s (%s)\n" "$mi" "$m_name" "$m_path"
+                    ((mi++))
+                done
+                echo "  Using first match. Use the interactive selector for precise control."
+                selected_apps+=("${matches[0]}")
+            else
+                selected_apps+=("${matches[0]}")
+            fi
+        done
+
+        if [[ ${#not_found[@]} -gt 0 ]]; then
+            for name in "${not_found[@]}"; do
+                echo -e "${RED}${ICON_ERROR}${NC} App not found: $name"
+            done
+        fi
+
+        if [[ ${#selected_apps[@]} -eq 0 ]]; then
+            echo "No matching apps found to uninstall."
+            rm -f "$apps_file"
+            show_cursor
+            return 1
+        fi
+
+        show_cursor
+        local selection_count=${#selected_apps[@]}
+        echo -e "${BLUE}${ICON_CONFIRM}${NC} Selected ${selection_count} app(s):"
+        local index=1
+        for selected_app in "${selected_apps[@]}"; do
+            IFS='|' read -r _ _ app_name _ size last_used _ <<< "$selected_app"
+            local size_display
+            size_display=$(uninstall_normalize_size_display "$size")
+            local last_display
+            last_display=$(uninstall_normalize_last_used_display "$last_used")
+            printf "%d. %s  %s  |  Last: %s\n" "$index" "$app_name" "$size_display" "$last_display"
+            ((index++))
+        done
+
+        batch_uninstall_applications
+        rm -f "$apps_file"
+        if [[ ${#not_found[@]} -gt 0 ]]; then
+            return 1
+        fi
+        return 0
     fi
 
     local first_scan=true

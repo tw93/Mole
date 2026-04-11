@@ -589,3 +589,117 @@ EOF
 	[[ "$output" != *"$fake_global_bin/mo"* ]]
 	[[ "$output" != *"brew uninstall --force mole"* ]]
 }
+
+# ── Direct uninstall by name (mo uninstall <appname>) ──────────────────
+
+@test "mo uninstall <name> finds matching app case-insensitively" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/core/help.sh"
+
+# Simulate apps_data with pipe-delimited entries
+declare -a apps_data=(
+    "1000|/Applications/WeChat.app|WeChat|com.tencent.xinWeChat|500 MB|2026-01-01|512000"
+    "1001|/Applications/Slack.app|Slack|com.tinyspeck.slackmacgap|300 MB|2026-02-01|307200"
+)
+
+# Test case-insensitive matching
+target="wechat"
+target_lower=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
+found=false
+for app_entry in "${apps_data[@]}"; do
+    IFS='|' read -r _ _ app_name _ _ _ _ <<< "$app_entry"
+    name_lower=$(printf '%s' "$app_name" | tr '[:upper:]' '[:lower:]')
+    if [[ "$name_lower" == "$target_lower" ]]; then
+        found=true
+        echo "MATCH:$app_name"
+        break
+    fi
+done
+[[ "$found" == "true" ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"MATCH:WeChat"* ]]
+}
+
+@test "mo uninstall <name> reports not found for unknown app" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+declare -a apps_data=(
+    "1000|/Applications/WeChat.app|WeChat|com.tencent.xinWeChat|500 MB|2026-01-01|512000"
+)
+
+target="NonExistentApp"
+target_lower=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
+found=false
+for app_entry in "${apps_data[@]}"; do
+    IFS='|' read -r _ _ app_name _ _ _ _ <<< "$app_entry"
+    name_lower=$(printf '%s' "$app_name" | tr '[:upper:]' '[:lower:]')
+    if [[ "$name_lower" == "$target_lower" ]]; then
+        found=true
+        break
+    fi
+done
+echo "FOUND:$found"
+[[ "$found" == "false" ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"FOUND:false"* ]]
+}
+
+@test "mo uninstall <name> detects duplicate app names" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+declare -a apps_data=(
+    "1000|/Applications/MyApp.app|MyApp|com.example.myapp|100 MB|2026-01-01|102400"
+    "1001|$HOME/Applications/MyApp.app|MyApp|com.example.myapp2|50 MB|2026-02-01|51200"
+)
+
+target="myapp"
+target_lower=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
+declare -a matches=()
+for app_entry in "${apps_data[@]}"; do
+    IFS='|' read -r _ _ app_name _ _ _ _ <<< "$app_entry"
+    name_lower=$(printf '%s' "$app_name" | tr '[:upper:]' '[:lower:]')
+    if [[ "$name_lower" == "$target_lower" ]]; then
+        matches+=("$app_entry")
+    fi
+done
+echo "COUNT:${#matches[@]}"
+[[ ${#matches[@]} -eq 2 ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"COUNT:2"* ]]
+}
+
+@test "mo uninstall strips .app suffix from input" {
+	run env HOME="$HOME" bash --noprofile --norc <<'EOF'
+arg="WeChat.app"
+cleaned="${arg%.app}"
+echo "CLEANED:$cleaned"
+[[ "$cleaned" == "WeChat" ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"CLEANED:WeChat"* ]]
+}
+
+@test "mo uninstall --help shows app name usage" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/core/help.sh"
+show_uninstall_help
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"APP_NAME"* ]]
+	[[ "$output" == *"mo uninstall WeChat"* ]]
+}

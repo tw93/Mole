@@ -54,10 +54,18 @@ show_touchid_help() {
 }
 
 show_uninstall_help() {
-    echo "Usage: mo uninstall [OPTIONS]"
+    echo "Usage: mo uninstall [APP_NAME...] [OPTIONS]"
     echo ""
-    echo "Interactively remove applications and their leftover files."
+    echo "Remove applications and their leftover files."
+    echo "Without app names, launches interactive selector."
+    echo "With app names, directly uninstalls the matching apps."
     echo "For leftovers from apps that are already gone, use mo clean."
+    echo ""
+    echo "Examples:"
+    echo "  mo uninstall                   Interactive app selector"
+    echo "  mo uninstall WeChat            Uninstall WeChat directly"
+    echo "  mo uninstall WeChat Slack      Uninstall multiple apps"
+    echo "  mo uninstall --dry-run WeChat  Preview without changes"
     echo ""
     echo "Options:"
     echo "  --dry-run         Preview app uninstallation without making changes"
