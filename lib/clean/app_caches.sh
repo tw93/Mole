@@ -72,6 +72,26 @@ clean_xcode_tools() {
         safe_clean ~/Library/Developer/CoreSimulator/Caches/* "Simulator cache"
         safe_clean ~/Library/Developer/CoreSimulator/Devices/*/data/tmp/* "Simulator temp files"
         safe_clean ~/Library/Logs/CoreSimulator/* "CoreSimulator logs"
+        # Remove unavailable simulator runtimes (old iOS/watchOS/tvOS versions).
+        if command -v xcrun > /dev/null 2>&1; then
+            if [[ "${DRY_RUN:-false}" == "true" ]]; then
+                local unavail_count
+                unavail_count=$(xcrun simctl list devices unavailable 2>/dev/null | grep -c "unavailable" || echo "0")
+                if [[ "$unavail_count" -gt 0 ]]; then
+                    echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Unavailable simulators · would delete ${unavail_count} devices"
+                    note_activity
+                fi
+            else
+                local sim_output
+                sim_output=$(xcrun simctl delete unavailable 2>&1 || true)
+                local deleted_count
+                deleted_count=$(printf '%s\n' "$sim_output" | grep -c "Deleting" 2>/dev/null || echo "0")
+                if [[ "$deleted_count" -gt 0 ]]; then
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Unavailable simulators · deleted ${deleted_count} devices"
+                    note_activity
+                fi
+            fi
+        fi
     else
         echo -e "  ${GRAY}${ICON_WARNING}${NC} Simulator is running, skipping Simulator cache/temp/log cleanup"
     fi
