@@ -1068,17 +1068,11 @@ clean_project_artifacts() {
         printf '\n'
         return 2 # Special code: nothing to clean
     fi
-    # Mark recently modified items and compute age in days for display.
+    # Mark recently modified items (for default selection state)
     local _now_epoch
     _now_epoch=$(get_epoch_seconds)
-    declare -A _item_age_days
     for item in "${all_found_items[@]}"; do
-        local _mod_time
-        _mod_time=$(get_file_mtime "$item" 2>/dev/null || echo "0")
-        local _age_secs=$((_now_epoch - _mod_time))
-        local _age_d=$((_age_secs / 86400))
-        _item_age_days["$item"]="$_age_d"
-        if [[ $_age_d -lt $MIN_AGE_DAYS ]]; then
+        if is_recently_modified "$item" "$_now_epoch"; then
             recently_modified+=("$item")
         fi
         # Add all items to safe_to_clean, let user choose
@@ -1426,8 +1420,11 @@ clean_project_artifacts() {
         item_sizes+=("$size_kb")
         item_size_unknown_flags+=("$size_unknown")
         item_recent_flags+=("$is_recent")
-        # Build human-readable age label from pre-computed days.
-        local _age_d="${_item_age_days[$item]:-0}"
+        # Build human-readable age label (bash 3.2 compatible — no assoc arrays).
+        local _mod_time _age_secs _age_d
+        _mod_time=$(get_file_mtime "$item" 2>/dev/null || echo "0")
+        _age_secs=$((_now_epoch - _mod_time))
+        _age_d=$((_age_secs / 86400))
         if [[ $_age_d -lt 1 ]]; then
             item_age_labels+=("<1d")
         elif [[ $_age_d -lt 30 ]]; then
