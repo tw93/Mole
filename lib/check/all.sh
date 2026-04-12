@@ -842,7 +842,7 @@ check_brew_health() {
         # Skip the core taps — they are always needed.
         [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" ]] && continue
         local count
-        count=$(brew list --full-name 2>/dev/null | grep -c "^${tap}/" || echo "0")
+        count=$(brew list --full-name 2>/dev/null | grep -c "^${tap}/" || true)
         if [[ "$count" -eq 0 ]]; then
             stale_taps+=("$tap")
         fi
