@@ -1211,6 +1211,19 @@ main() {
     done
 
     start_cleanup
+
+    # Final confirmation before cleanup (interactive, non-dry-run only).
+    if [[ "$DRY_RUN" != "true" && -t 0 && -z "$EXTERNAL_VOLUME_TARGET" ]]; then
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} Proceed with cleanup? ${GREEN}Enter${NC} continue, ${GRAY}Esc${NC} cancel: "
+        local confirm
+        confirm=$(read_key)
+        if [[ "$confirm" == "QUIT" ]]; then
+            echo -e " ${GRAY}Canceled${NC}"
+            exit 0
+        fi
+        printf "\r\033[K"
+    fi
+
     hide_cursor
     perform_cleanup
     show_cursor
