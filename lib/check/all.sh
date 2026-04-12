@@ -829,6 +829,37 @@ check_orphan_launch_agents() {
 check_brew_health() {
     # Check whitelist
     if command -v is_whitelisted > /dev/null && is_whitelisted "check_brew_health"; then return; fi
+
+    if ! command -v brew > /dev/null 2>&1; then
+        return
+    fi
+
+    # Detect taps with no installed formulae or casks.
+    local -a stale_taps=()
+    local tap
+    while IFS= read -r tap; do
+        [[ -z "$tap" ]] && continue
+        # Skip the core taps — they are always needed.
+        [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" ]] && continue
+        local count
+        count=$(brew list --full-name 2>/dev/null | grep -c "^${tap}/" || echo "0")
+        if [[ "$count" -eq 0 ]]; then
+            stale_taps+=("$tap")
+        fi
+    done < <(brew tap 2>/dev/null)
+
+    local n=${#stale_taps[@]}
+    if [[ $n -eq 0 ]]; then
+        echo -e "  ${GREEN}✓${NC} Brew Taps    All taps in use"
+    else
+        local s=""
+        ((n > 1)) && s="s"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Brew Taps    ${YELLOW}${n} unused tap${s}${NC}"
+        local preview="${stale_taps[0]}"
+        ((n > 1)) && preview="${preview}, ${stale_taps[1]}"
+        ((n > 2)) && preview="${preview} +$((n - 2))"
+        echo -e "    ${GRAY}${preview}${NC}"
+    fi
 }
 
 check_system_health() {
@@ -839,6 +870,7 @@ check_system_health() {
     check_login_items
     check_disk_smart
     check_orphan_launch_agents
+    check_brew_health
     check_cache_size
     # Time Machine check is optional; skip by default to avoid noise on systems without backups
 }
