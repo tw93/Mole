@@ -1217,7 +1217,7 @@ main() {
         echo -ne "${PURPLE}${ICON_ARROW}${NC} Proceed with cleanup? ${GREEN}Enter${NC} continue, ${GRAY}Esc${NC} cancel: "
         local confirm
         confirm=$(read_key)
-        if [[ "$confirm" == "QUIT" ]]; then
+        if [[ "$confirm" != "ENTER" ]]; then
             echo -e " ${GRAY}Canceled${NC}"
             exit 0
         fi
