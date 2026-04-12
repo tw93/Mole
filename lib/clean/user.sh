@@ -1113,7 +1113,17 @@ clean_browsers() {
     safe_clean ~/Library/Caches/Chromium/* "Chromium cache"
     safe_clean ~/.cache/puppeteer/* "Puppeteer browser cache"
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
+    # Arc Browser.
     safe_clean ~/Library/Caches/company.thebrowser.Browser/* "Arc cache"
+    safe_clean ~/Library/Application\ Support/Arc/*/GPUCache/* "Arc GPU cache"
+    safe_clean ~/Library/Application\ Support/Arc/ShaderCache/* "Arc shader cache"
+    safe_clean ~/Library/Application\ Support/Arc/GrShaderCache/* "Arc GR shader cache"
+    safe_clean ~/Library/Application\ Support/Arc/GraphiteDawnCache/* "Arc Dawn cache"
+    local _arc_profile
+    for _arc_profile in "$HOME/Library/Application Support/Arc"/*/; do
+        clean_service_worker_cache "Arc" "$_arc_profile/Service Worker/CacheStorage"
+        safe_clean "$_arc_profile"/Service\ Worker/ScriptCache/* "Arc Service Worker ScriptCache"
+    done
     safe_clean ~/Library/Caches/company.thebrowser.dia/* "Dia cache"
     safe_clean ~/Library/Caches/BraveSoftware/Brave-Browser/* "Brave cache"
     safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/*/Application\ Cache/* "Brave app cache"
@@ -1152,7 +1162,17 @@ clean_browsers() {
         safe_clean ~/Library/Caches/Firefox/* "Firefox cache"
     fi
     safe_clean ~/Library/Caches/com.operasoftware.Opera/* "Opera cache"
+    # Vivaldi Browser.
     safe_clean ~/Library/Caches/com.vivaldi.Vivaldi/* "Vivaldi cache"
+    safe_clean ~/Library/Application\ Support/Vivaldi/*/GPUCache/* "Vivaldi GPU cache"
+    safe_clean ~/Library/Application\ Support/Vivaldi/ShaderCache/* "Vivaldi shader cache"
+    safe_clean ~/Library/Application\ Support/Vivaldi/GrShaderCache/* "Vivaldi GR shader cache"
+    safe_clean ~/Library/Application\ Support/Vivaldi/GraphiteDawnCache/* "Vivaldi Dawn cache"
+    local _vivaldi_profile
+    for _vivaldi_profile in "$HOME/Library/Application Support/Vivaldi"/*/; do
+        clean_service_worker_cache "Vivaldi" "$_vivaldi_profile/Service Worker/CacheStorage"
+        safe_clean "$_vivaldi_profile"/Service\ Worker/ScriptCache/* "Vivaldi Service Worker ScriptCache"
+    done
     safe_clean ~/Library/Caches/Comet/* "Comet cache"
     safe_clean ~/Library/Caches/com.kagi.kagimacOS/* "Orion cache"
     safe_clean ~/Library/Caches/zen/* "Zen cache"
