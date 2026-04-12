@@ -39,7 +39,8 @@ check_touchid_sudo() {
     if command -v is_whitelisted > /dev/null && is_whitelisted "check_touchid"; then return; fi
     # Check if Touch ID is configured for sudo
     local pam_file="/etc/pam.d/sudo"
-    if [[ -f "$pam_file" ]] && grep -q "pam_tid.so" "$pam_file" 2> /dev/null; then
+    local pam_local="/etc/pam.d/sudo_local"
+    if grep -q "pam_tid.so" "$pam_file" "$pam_local" 2> /dev/null; then
         echo -e "  ${GREEN}✓${NC} Touch ID     Biometric authentication enabled"
     else
         # Check if Touch ID is supported
