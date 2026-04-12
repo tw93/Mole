@@ -763,11 +763,7 @@ select_purge_categories() {
             [[ ${selected[i]} == true ]] && checkbox="$ICON_SOLID"
             local recent_marker=""
             local _age="${age_labels[i]:-}"
-            if [[ ${recent_flags[i]:-false} == "true" ]]; then
-                recent_marker=" ${GRAY}| ${_age}${NC}"
-            elif [[ -n "$_age" ]]; then
-                recent_marker=" ${GRAY}| ${_age}${NC}"
-            fi
+            [[ -n "$_age" ]] && recent_marker=" ${GRAY}| ${_age}${NC}"
             local rel_pos=$((i - top_index))
             if [[ $rel_pos -eq $cursor_pos ]]; then
                 printf "%s${CYAN}${ICON_ARROW} %s %s%s${NC}\n" "$clear_line" "$checkbox" "${categories[i]}" "$recent_marker"
@@ -1082,7 +1078,7 @@ clean_project_artifacts() {
         local _age_secs=$((_now_epoch - _mod_time))
         local _age_d=$((_age_secs / 86400))
         _item_age_days["$item"]="$_age_d"
-        if is_recently_modified "$item" "$_now_epoch"; then
+        if [[ $_age_d -lt $MIN_AGE_DAYS ]]; then
             recently_modified+=("$item")
         fi
         # Add all items to safe_to_clean, let user choose
@@ -1463,7 +1459,7 @@ clean_project_artifacts() {
     [[ $max_artifact_width -lt 6 ]] && max_artifact_width=6
     [[ $max_artifact_width -gt 17 ]] && max_artifact_width=17
 
-    # Exact overhead: prefix(4) + space(1) + size(9) + " | "(3) + artifact_col + " | Recent"(9) = artifact_col + 26
+    # Exact overhead: prefix(4) + space(1) + size(9) + " | "(3) + artifact_col + " | 11mo"(7) = artifact_col + 24
     local fixed_overhead=$((max_artifact_width + 26))
     local available_for_path=$((terminal_width - fixed_overhead))
 
