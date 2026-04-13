@@ -866,8 +866,13 @@ is_path_whitelisted() {
     local target_path="$1"
     [[ -z "$target_path" ]] && return 1
 
-    # Normalize path (remove trailing slash)
+    # Normalize path (remove trailing slash and consecutive slashes)
     local normalized_target="${target_path%/}"
+    # Collapse consecutive slashes (e.g. /path//to -> /path/to)
+    # Glob-based paths from shell expansions like "$dir"/*/subpath produce double slashes
+    while [[ "$normalized_target" == *"//"* ]]; do
+        normalized_target="${normalized_target//\/\///}"
+    done
 
     # Empty whitelist means nothing is protected
     [[ ${#WHITELIST_PATTERNS[@]} -eq 0 ]] && return 1
