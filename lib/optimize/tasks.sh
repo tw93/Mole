@@ -956,6 +956,10 @@ opt_periodic_maintenance() {
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+        if ! sudo -n true 2> /dev/null; then
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Periodic maintenance skipped · requires sudo"
+            return 0
+        fi
         if sudo periodic daily weekly monthly 2> /dev/null; then
             opt_msg "Periodic maintenance triggered"
         else
