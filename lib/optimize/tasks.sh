@@ -1035,30 +1035,6 @@ opt_notification_cleanup() {
     fi
 }
 
-# Verify filesystem integrity via diskutil.
-opt_disk_verify() {
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        opt_msg "Disk verify · skipped in dry-run"
-        return 0
-    fi
-
-    if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Verifying disk filesystem..."
-    fi
-    local output
-    output=$(run_with_timeout 30 diskutil verifyVolume / 2>&1 || true)
-    if [[ -t 1 ]]; then
-        stop_inline_spinner
-    fi
-
-    if echo "$output" | grep -qi "appears to be OK\|volume appears to be ok"; then
-        opt_msg "Disk filesystem verified OK"
-    elif echo "$output" | grep -qi "error\|corrupt\|invalid"; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Disk issues detected · run: sudo diskutil repairVolume /"
-    else
-        opt_msg "Disk verify complete"
-    fi
-}
 
 # Clean Knowledge/CoreDuet usage tracking databases.
 opt_coreduet_cleanup() {
@@ -1205,7 +1181,6 @@ execute_optimization() {
         periodic_maintenance) opt_periodic_maintenance ;;
         shared_file_list_repair) opt_shared_file_list_repair ;;
         notification_cleanup) opt_notification_cleanup ;;
-        disk_verify) opt_disk_verify ;;
         coreduet_cleanup) opt_coreduet_cleanup ;;
         login_items_audit) opt_login_items_audit ;;
         *)

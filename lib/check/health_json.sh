@@ -145,7 +145,6 @@ EOF
     items+=('spotlight_index_optimize|Spotlight Optimization|Rebuild index if search is slow (smart detection)|true')
     items+=('periodic_maintenance|Periodic Maintenance|Run macOS daily/weekly/monthly maintenance scripts if stale|true')
     items+=('shared_file_list_repair|Shared File Lists|Repair corrupted Finder favorites and recent documents|true')
-    items+=('disk_verify|Disk Health|Verify filesystem integrity|true')
     items+=('login_items_audit|Login Items|Audit login items for broken entries|true')
 
     # System database cleanup (auto-run, low risk)
