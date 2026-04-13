@@ -836,14 +836,14 @@ check_brew_health() {
 
     # Detect taps with no installed formulae or casks.
     local -a stale_taps=()
+    local installed
+    installed=$(brew list --full-name 2>/dev/null || true)
     local tap
     while IFS= read -r tap; do
         [[ -z "$tap" ]] && continue
         # Skip the core taps — they are always needed.
         [[ "$tap" == "homebrew/core" || "$tap" == "homebrew/cask" ]] && continue
-        local count
-        count=$(brew list --full-name 2>/dev/null | grep -c "^${tap}/" || true)
-        if [[ "$count" -eq 0 ]]; then
+        if ! printf '%s\n' "$installed" | grep -q "^${tap}/"; then
             stale_taps+=("$tap")
         fi
     done < <(brew tap 2>/dev/null)
