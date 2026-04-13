@@ -837,7 +837,7 @@ check_brew_health() {
     # Detect taps with no installed formulae or casks.
     local -a stale_taps=()
     local installed
-    installed=$(brew list --full-name 2>/dev/null || true)
+    installed=$(run_with_timeout 5 brew list --full-name 2> /dev/null || true)
     local tap
     while IFS= read -r tap; do
         [[ -z "$tap" ]] && continue
@@ -846,7 +846,7 @@ check_brew_health() {
         if ! printf '%s\n' "$installed" | grep -q "^${tap}/"; then
             stale_taps+=("$tap")
         fi
-    done < <(brew tap 2>/dev/null)
+    done < <(run_with_timeout 5 brew tap 2> /dev/null)
 
     local n=${#stale_taps[@]}
     if [[ $n -eq 0 ]]; then
