@@ -956,6 +956,10 @@ opt_periodic_maintenance() {
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+        if ! command -v periodic > /dev/null 2>&1; then
+            opt_msg "Periodic maintenance not available on this macOS version"
+            return 0
+        fi
         if ! sudo -n true 2> /dev/null; then
             echo -e "  ${YELLOW}${ICON_WARNING}${NC} Periodic maintenance skipped · requires sudo"
             return 0
