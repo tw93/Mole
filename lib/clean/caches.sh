@@ -68,6 +68,10 @@ clean_service_worker_cache() {
                 break
             fi
         done
+        # Respect user whitelist (~/.config/mole/whitelist)
+        if [[ "$is_protected" == "false" ]] && declare -f is_path_whitelisted > /dev/null 2>&1 && is_path_whitelisted "$cache_dir"; then
+            is_protected=true
+        fi
         if [[ "$is_protected" == "false" ]]; then
             if [[ "$DRY_RUN" != "true" ]]; then
                 safe_remove "$cache_dir" true || true
