@@ -923,7 +923,7 @@ main() {
         "uninstall")
             exec "$SCRIPT_DIR/bin/uninstall.sh" "${args[@]:1}"
             ;;
-        "analyze")
+        "analyze" | "analyse")
             exec "$SCRIPT_DIR/bin/analyze.sh" "${args[@]:1}"
             ;;
         "status")
