@@ -1029,6 +1029,8 @@ main() {
             return 1
         fi
 
+        drain_pending_input
+
         set +e
         select_apps_for_uninstall
         local exit_code=$?
