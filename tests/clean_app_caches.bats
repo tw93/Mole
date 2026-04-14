@@ -263,6 +263,56 @@ EOF
     [[ "$output" == *"Ghostty cache"* ]]
 }
 
+@test "clean_xcode_tools handles zero unavailable simulators without syntax error" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_clean() { echo "$2"; }
+xcrun() {
+    if [[ "$*" == "simctl list devices unavailable" ]]; then
+        echo "== Devices =="
+        echo "-- iOS 17.0 --"
+        return 0
+    fi
+    return 0
+}
+export -f xcrun
+clean_xcode_tools
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"syntax error"* ]]
+    [[ "$output" != *"Unavailable simulators"* ]]
+}
+
+@test "clean_xcode_tools reports unavailable simulators when present" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_clean() { echo "$2"; }
+xcrun() {
+    if [[ "$*" == "simctl list devices unavailable" ]]; then
+        echo "== Devices =="
+        echo "-- Unavailable --"
+        echo "    iPhone 12 (ABCDEF01-2345-6789-ABCD-EF0123456789) (Shutdown) (unavailable)"
+        echo "    iPhone 13 (12345678-90AB-CDEF-1234-567890ABCDEF) (Shutdown) (unavailable)"
+        return 0
+    fi
+    return 0
+}
+export -f xcrun
+clean_xcode_tools
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"syntax error"* ]]
+    [[ "$output" == *"would delete 2 devices"* ]]
+}
+
 @test "clean_video_players includes Stremio caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
