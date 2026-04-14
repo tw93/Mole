@@ -189,6 +189,17 @@ EOF
     [ "$result" = "not-protected" ]
 }
 
+# Regression: CUPS prefs have a bundle-ID-style name but no parent .app,
+# so the orphan sweep deleted them and users lost their default printer
+# and recent-printer list. See #731.
+@test "should_protect_data protects CUPS printing prefs (#731)" {
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'org.cups.PrintingPrefs' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "protected" ]
+
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'org.cups.printers' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "protected" ]
+}
+
 @test "input methods are protected during cleanup but allowed for uninstall" {
     result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'com.tencent.inputmethod.QQInput' && echo 'protected' || echo 'not-protected'")
     [ "$result" = "protected" ]

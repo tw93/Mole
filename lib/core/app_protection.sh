@@ -56,6 +56,11 @@ readonly SYSTEM_CRITICAL_BUNDLES_FAST=(
     "GlobalPreferences"
     ".GlobalPreferences"
     "org.pqrs.Karabiner*"
+    # CUPS printing subsystem ships with macOS; there is no parent .app to
+    # anchor it, so org.cups.* prefs always look "orphaned" to bundle-ID
+    # matching. Deleting them wipes the default printer and recent-printer
+    # list, which users see as lost saved printers. See #731.
+    "org.cups.*"
 )
 
 # Detailed list for uninstall protection
@@ -663,6 +668,12 @@ should_protect_data() {
 
     case "$bundle_id" in
         com.apple.* | loginwindow | dock | systempreferences | finder | safari)
+            return 0
+            ;;
+        # CUPS is an OS-provided subsystem with no user-facing app; without this
+        # guard `~/Library/Preferences/org.cups.PrintingPrefs.plist` (which holds
+        # the default printer and recent printers) looks orphaned. See #731.
+        org.cups.*)
             return 0
             ;;
         backgroundtaskmanagement* | keychain* | security* | bluetooth* | wifi* | network* | tcc)
