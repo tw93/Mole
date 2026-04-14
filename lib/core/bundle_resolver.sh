@@ -11,47 +11,13 @@ if [[ -n "${_MOLE_BUNDLE_RESOLVER_LOADED:-}" ]]; then
 fi
 readonly _MOLE_BUNDLE_RESOLVER_LOADED=1
 
-# Session cache. Parallel indexed arrays because macOS ships bash 3.2 which has
-# no associative arrays. Cache is expected to stay small (dozens of entries at
-# most), so linear scan is fine.
-_MOLE_BUNDLE_CACHE_KEYS=()
-_MOLE_BUNDLE_CACHE_VALS=()
-
-# Standard locations for installed apps on macOS.
+# Standard locations for installed apps on macOS. Overridable from tests.
 _MOLE_BUNDLE_RESOLVER_APP_ROOTS=(
     "/Applications"
     "/Applications/Setapp"
     "/Applications/Utilities"
     "$HOME/Applications"
 )
-
-# Reset the resolver cache. Intended for tests.
-# shellcheck disable=SC2329
-mole_bundle_resolver_reset_cache() {
-    _MOLE_BUNDLE_CACHE_KEYS=()
-    _MOLE_BUNDLE_CACHE_VALS=()
-}
-
-# Lookup in the parallel-array cache. Echoes the cached value ("YES"/"NO") or
-# empty if the key is not cached.
-_mole_bundle_cache_get() {
-    local key="$1"
-    local i
-    for i in "${!_MOLE_BUNDLE_CACHE_KEYS[@]}"; do
-        if [[ "${_MOLE_BUNDLE_CACHE_KEYS[$i]}" == "$key" ]]; then
-            printf '%s\n' "${_MOLE_BUNDLE_CACHE_VALS[$i]}"
-            return 0
-        fi
-    done
-    return 1
-}
-
-_mole_bundle_cache_put() {
-    local key="$1"
-    local value="$2"
-    _MOLE_BUNDLE_CACHE_KEYS+=("$key")
-    _MOLE_BUNDLE_CACHE_VALS+=("$value")
-}
 
 # Return 0 if some installed app either has the given CFBundleIdentifier, or
 # registers a privileged helper with that ID via SMJobBless
@@ -66,12 +32,6 @@ bundle_has_installed_app() {
     # Reject obviously malformed IDs to avoid feeding junk into mdfind/find.
     [[ "$bundle_id" =~ ^[a-zA-Z0-9._-]+$ ]] || return 1
 
-    local cached
-    if cached=$(_mole_bundle_cache_get "$bundle_id"); then
-        [[ "$cached" == "YES" ]]
-        return $?
-    fi
-
     # Fast path: Spotlight. Gated with a timeout because mdfind has been known
     # to wedge on misconfigured indexes.
     if command -v mdfind > /dev/null 2>&1; then
@@ -81,10 +41,7 @@ bundle_has_installed_app() {
         else
             hit=$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1)
         fi
-        if [[ -n "$hit" ]]; then
-            _mole_bundle_cache_put "$bundle_id" "YES"
-            return 0
-        fi
+        [[ -n "$hit" ]] && return 0
     fi
 
     # Slow path: walk known app roots. Reads each Info.plist CFBundleIdentifier
@@ -100,19 +57,14 @@ bundle_has_installed_app() {
         [[ -d "$app_root" ]] || continue
         while IFS= read -r -d '' app; do
             if [[ -e "$app/Contents/Library/LaunchServices/$bundle_id" ]]; then
-                _mole_bundle_cache_put "$bundle_id" "YES"
                 return 0
             fi
             info="$app/Contents/Info.plist"
             [[ -f "$info" ]] || continue
             app_bundle=$(plutil -extract CFBundleIdentifier raw "$info" 2> /dev/null || echo "")
-            if [[ "$app_bundle" == "$bundle_id" ]]; then
-                _mole_bundle_cache_put "$bundle_id" "YES"
-                return 0
-            fi
+            [[ "$app_bundle" == "$bundle_id" ]] && return 0
         done < <(find "$app_root" -maxdepth 1 -name "*.app" -print0 2> /dev/null)
     done
 
-    _mole_bundle_cache_put "$bundle_id" "NO"
     return 1
 }

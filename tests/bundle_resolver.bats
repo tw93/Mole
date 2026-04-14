@@ -41,7 +41,6 @@ export -f mdfind
 
 # Override the hardcoded app roots for the test.
 _MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
-mole_bundle_resolver_reset_cache
 EOF
 }
 
@@ -108,35 +107,3 @@ EOF
     [ "$status" -ne 0 ]
 }
 
-@test "bundle_has_installed_app caches misses (no re-scan on repeated lookup)" {
-    make_app "$FAKE_APPS/Other.app" "com.example.other"
-
-    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
-$(prelude)
-
-# First lookup misses and populates the NO cache.
-if bundle_has_installed_app "com.ghost.app"; then
-    echo "unexpected hit" >&2; exit 1
-fi
-
-# Now create the app. Without caching this would flip to YES; with caching
-# it should remain NO within the same session.
-mkdir -p "$FAKE_APPS/Ghost.app/Contents"
-cat > "$FAKE_APPS/Ghost.app/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.ghost.app</string>
-</dict></plist>
-PLIST
-
-if bundle_has_installed_app "com.ghost.app"; then
-    echo "cache not honored" >&2; exit 1
-fi
-
-# Reset then it should resolve.
-mole_bundle_resolver_reset_cache
-bundle_has_installed_app "com.ghost.app"
-EOF
-
-    [ "$status" -eq 0 ]
-}
