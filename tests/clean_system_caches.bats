@@ -118,6 +118,52 @@ setup() {
     rm -rf "$test_cache"
 }
 
+# Regression for #724: MV3 extension SW caches are keyed by origin hash,
+# so the PROTECTED_SW_DOMAINS domain-match never fires for them. The
+# whitelist is the only escape hatch users have — respect it here.
+@test "clean_service_worker_cache honors is_path_whitelisted (#724)" {
+    local test_cache="$HOME/test_sw_cache_wl"
+    mkdir -p "$test_cache/abc123hash_extension"
+    mkdir -p "$test_cache/def456hash_other"
+
+    run bash -c "
+        export DRY_RUN=false
+        export PROTECTED_SW_DOMAINS=(nomatch.invalid)
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        source '$PROJECT_ROOT/lib/clean/caches.sh'
+        WHITELIST_PATTERNS=('$test_cache/abc123hash_extension')
+        safe_remove() { echo \"REMOVE:\$1\"; return 0; }
+        export -f safe_remove
+        note_activity() { :; }
+        export -f note_activity
+        run_with_timeout() {
+            local timeout=\"\$1\"
+            shift
+            if [[ \"\$1\" == \"sh\" ]]; then
+                printf '%s\n' '$test_cache/abc123hash_extension' '$test_cache/def456hash_other'
+                return 0
+            fi
+            if [[ \"\$1\" == \"du\" ]]; then
+                printf '2048\t%s\n' \"\$3\"
+                return 0
+            fi
+            \"\$@\"
+        }
+        export -f run_with_timeout
+        clean_service_worker_cache 'TestBrowser' '$test_cache'
+    "
+
+    [ "$status" -eq 0 ]
+    # Whitelisted dir must never be passed to safe_remove
+    [[ "$output" != *"REMOVE:$test_cache/abc123hash_extension"* ]]
+    # Non-whitelisted dir must be removed
+    [[ "$output" == *"REMOVE:$test_cache/def456hash_other"* ]]
+    # UI reports the protection count
+    [[ "$output" == *"1 protected"* ]]
+
+    rm -rf "$test_cache"
+}
+
 @test "clean_service_worker_cache colors cleaned size with success color" {
     local test_cache="$HOME/test_sw_cache_colored"
     mkdir -p "$test_cache/abc123_https_example.com_0"

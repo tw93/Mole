@@ -146,3 +146,37 @@ setup() {
     fi
     [ "$status" -eq 0 ]
 }
+
+# Regression for #724: when a caller concats a glob expansion that ends
+# in `/` with a sub-path that starts with `/`, the result contains `//`.
+# Without slash collapsing, the comparison with a single-slash whitelist
+# entry always fails and Chrome MV3 service workers get wiped.
+@test "is_path_whitelisted matches entries against paths containing double slashes (#724)" {
+    local status
+    if HOME="$HOME" bash --noprofile --norc -c "
+        source '$PROJECT_ROOT/lib/core/base.sh'
+        source '$PROJECT_ROOT/lib/core/app_protection.sh'
+        WHITELIST_PATTERNS=(\"\$HOME/Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage\")
+        is_path_whitelisted \"\$HOME/Library/Application Support/Google/Chrome/Default//Service Worker/CacheStorage\"
+    "; then
+        status=0
+    else
+        status=$?
+    fi
+    [ "$status" -eq 0 ]
+}
+
+@test "is_path_whitelisted collapses slashes in whitelist entries too (#724)" {
+    local status
+    if HOME="$HOME" bash --noprofile --norc -c "
+        source '$PROJECT_ROOT/lib/core/base.sh'
+        source '$PROJECT_ROOT/lib/core/app_protection.sh'
+        WHITELIST_PATTERNS=(\"\$HOME//Library//Caches//chrome-sw\")
+        is_path_whitelisted \"\$HOME/Library/Caches/chrome-sw\"
+    "; then
+        status=0
+    else
+        status=$?
+    fi
+    [ "$status" -eq 0 ]
+}

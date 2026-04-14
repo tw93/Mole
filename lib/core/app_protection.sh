@@ -866,8 +866,20 @@ is_path_whitelisted() {
     local target_path="$1"
     [[ -z "$target_path" ]] && return 1
 
-    # Normalize path (remove trailing slash)
+    # Normalize path (remove trailing slash, collapse consecutive slashes).
+    # Callers sometimes concat a glob expansion that already ends in `/`
+    # with a sub-path that begins with `/`, producing `.../Default//Service
+    # Worker/...`. Without collapsing, those never match a whitelist entry
+    # written with single separators. See #724.
+    #
+    # Note: on bash 3.2 (macOS default), `${var//\/\//\/}` leaves a literal
+    # backslash in the replacement. Indirect variables sidestep that.
+    local _slash_single="/"
+    local _slash_double="//"
     local normalized_target="${target_path%/}"
+    while [[ "$normalized_target" == *"$_slash_double"* ]]; do
+        normalized_target="${normalized_target//$_slash_double/$_slash_single}"
+    done
 
     # Empty whitelist means nothing is protected
     [[ ${#WHITELIST_PATTERNS[@]} -eq 0 ]] && return 1
@@ -875,6 +887,9 @@ is_path_whitelisted() {
     for pattern in "${WHITELIST_PATTERNS[@]}"; do
         # Pattern is already expanded/normalized in bin/clean.sh
         local check_pattern="${pattern%/}"
+        while [[ "$check_pattern" == *"$_slash_double"* ]]; do
+            check_pattern="${check_pattern//$_slash_double/$_slash_single}"
+        done
         local has_glob="false"
         case "$check_pattern" in
             *\** | *\?* | *\[*)

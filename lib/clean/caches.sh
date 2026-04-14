@@ -68,6 +68,14 @@ clean_service_worker_cache() {
                 break
             fi
         done
+        # Service Worker cache dirs are keyed by origin hash, so they never
+        # match PROTECTED_SW_DOMAINS even when the user added Chrome SW paths
+        # to their whitelist. Honor the whitelist explicitly — otherwise MV3
+        # extensions lose their registered workers mid-session. See #724.
+        if [[ "$is_protected" == "false" ]] && is_path_whitelisted "$cache_dir"; then
+            is_protected=true
+            protected_count=$((protected_count + 1))
+        fi
         if [[ "$is_protected" == "false" ]]; then
             if [[ "$DRY_RUN" != "true" ]]; then
                 safe_remove "$cache_dir" true || true
