@@ -186,6 +186,31 @@ uninstall_release_metadata_lock() {
     [[ -d "$lock_dir" ]] && rmdir "$lock_dir" 2> /dev/null || true
 }
 
+# Atomically replace the metadata cache file, healing stale root-owned copies.
+# stdin is closed so BSD mv/cp never blocks prompting on a non-writable target.
+uninstall_persist_cache_file() {
+    local src="$1"
+    local dst="$2"
+
+    [[ -s "$src" ]] || {
+        rm -f "$src" 2> /dev/null || true
+        return 0
+    }
+
+    # Heal stale file the user cannot write to (e.g. root-owned from a prior
+    # sudo run). The parent dir is user-owned, so rm succeeds regardless.
+    if [[ -e "$dst" && ! -w "$dst" ]]; then
+        rm -f "$dst" 2> /dev/null || true
+    fi
+
+    # shellcheck disable=SC2217 # BSD mv/cp read stdin when prompting; close it to avoid hang.
+    mv -f "$src" "$dst" < /dev/null 2> /dev/null || {
+        # shellcheck disable=SC2217
+        cp -f "$src" "$dst" < /dev/null 2> /dev/null || true
+        rm -f "$src" 2> /dev/null || true
+    }
+}
+
 uninstall_collect_inline_metadata() {
     local app_path="$1"
     local app_mtime="${2:-0}"
@@ -332,10 +357,7 @@ start_uninstall_metadata_refresh() {
             }
         ' "$updates_file" "$MOLE_UNINSTALL_META_CACHE_FILE" > "$merged_file"
 
-        mv "$merged_file" "$MOLE_UNINSTALL_META_CACHE_FILE" 2> /dev/null || {
-            cp "$merged_file" "$MOLE_UNINSTALL_META_CACHE_FILE" 2> /dev/null || true
-            rm -f "$merged_file"
-        }
+        uninstall_persist_cache_file "$merged_file" "$MOLE_UNINSTALL_META_CACHE_FILE"
 
         uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
         rm -f "$updates_file"
@@ -750,10 +772,7 @@ scan_applications() {
     update_scan_status "Updating cache..." "0" "0"
     if [[ -s "$cache_snapshot_file" ]]; then
         if uninstall_acquire_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"; then
-            mv "$cache_snapshot_file" "$MOLE_UNINSTALL_META_CACHE_FILE" 2> /dev/null || {
-                cp "$cache_snapshot_file" "$MOLE_UNINSTALL_META_CACHE_FILE" 2> /dev/null || true
-                rm -f "$cache_snapshot_file"
-            }
+            uninstall_persist_cache_file "$cache_snapshot_file" "$MOLE_UNINSTALL_META_CACHE_FILE"
             uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
         fi
     fi

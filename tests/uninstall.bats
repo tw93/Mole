@@ -307,6 +307,78 @@ EOF
 	[[ "$output" != *"more files"* ]]
 }
 
+@test "uninstall_persist_cache_file heals non-writable destination" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# Source only the helper by evaluating its function definition.
+eval "$(sed -n '/^uninstall_persist_cache_file()/,/^}$/p' "$PROJECT_ROOT/bin/uninstall.sh")"
+
+src="$HOME/cache.src"
+dst="$HOME/cache.dst"
+printf 'fresh-data\n' > "$src"
+printf 'stale-data\n' > "$dst"
+chmod 0444 "$dst"
+[[ ! -w "$dst" ]] || { echo "precondition: dst should be read-only" >&2; exit 1; }
+
+uninstall_persist_cache_file "$src" "$dst"
+
+[[ ! -e "$src" ]] || { echo "src should be gone" >&2; exit 1; }
+[[ -f "$dst" ]] || { echo "dst missing" >&2; exit 1; }
+grep -q 'fresh-data' "$dst" || { echo "dst not updated"; exit 1; }
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "uninstall_persist_cache_file does not hang when mv would prompt (stdin closed)" {
+	# Regression for #722: BSD mv without -f prompts on non-writable dst and
+	# blocks reading stdin. The helper must close stdin and use -f.
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+eval "$(sed -n '/^uninstall_persist_cache_file()/,/^}$/p' "$PROJECT_ROOT/bin/uninstall.sh")"
+
+src="$HOME/snap.src"
+dst="$HOME/snap.dst"
+printf 'x\n' > "$src"
+printf 'y\n' > "$dst"
+chmod 0444 "$dst"
+
+# Run helper in background with a watchdog. If it hangs reading stdin it
+# will be killed and the test fails.
+printf 'n\nn\nn\n' | uninstall_persist_cache_file "$src" "$dst" &
+pid=$!
+( sleep 5 && kill -9 "$pid" 2>/dev/null && echo HANG ) &
+watchdog=$!
+wait "$pid"
+rc=$?
+kill "$watchdog" 2>/dev/null || true
+exit "$rc"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"HANG"* ]]
+}
+
+@test "uninstall_persist_cache_file is a no-op when source is empty" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+eval "$(sed -n '/^uninstall_persist_cache_file()/,/^}$/p' "$PROJECT_ROOT/bin/uninstall.sh")"
+
+src="$HOME/empty.src"
+dst="$HOME/keep.dst"
+: > "$src"
+printf 'untouched\n' > "$dst"
+
+uninstall_persist_cache_file "$src" "$dst"
+
+[[ ! -e "$src" ]] || exit 1
+grep -q 'untouched' "$dst" || exit 1
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
 @test "safe_remove can remove a simple directory" {
 	mkdir -p "$HOME/test_dir"
 	touch "$HOME/test_dir/file.txt"
