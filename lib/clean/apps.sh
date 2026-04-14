@@ -323,6 +323,10 @@ clean_orphaned_app_data() {
     if [[ -d "$claude_support_dir" ]]; then
         while IFS= read -r -d '' claude_vm_bundle; do
             if is_claude_vm_bundle_orphaned "$claude_vm_bundle" "$installed_bundles"; then
+                if is_path_whitelisted "$claude_vm_bundle"; then
+                    debug_log "Skipping whitelisted orphan: $claude_vm_bundle"
+                    continue
+                fi
                 local claude_vm_size_kb
                 claude_vm_size_kb=$(get_path_size_kb "$claude_vm_bundle")
                 if [[ -n "$claude_vm_size_kb" && "$claude_vm_size_kb" != "0" ]]; then
@@ -388,6 +392,10 @@ clean_orphaned_app_data() {
                     bundle_id="${bundle_id%.binarycookies}"
                     bundle_id="${bundle_id%.plist}"
                     if is_bundle_orphaned "$bundle_id" "$match" "$installed_bundles"; then
+                        if is_path_whitelisted "$match"; then
+                            debug_log "Skipping whitelisted orphan: $match"
+                            continue
+                        fi
                         local size_kb
                         size_kb=$(get_path_size_kb "$match")
                         if [[ -z "$size_kb" || "$size_kb" == "0" ]]; then
@@ -595,6 +603,20 @@ clean_orphaned_system_services() {
     fi
 
     stop_section_spinner
+
+    # Drop whitelisted entries before reporting/cleaning.
+    if [[ $orphaned_count -gt 0 && ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
+        local -a kept_files=()
+        for orphan_file in "${orphaned_files[@]}"; do
+            if is_path_whitelisted "$orphan_file"; then
+                debug_log "Skipping whitelisted orphan service: $orphan_file"
+                continue
+            fi
+            kept_files+=("$orphan_file")
+        done
+        orphaned_count=${#kept_files[@]}
+        orphaned_files=("${kept_files[@]}")
+    fi
 
     # Report and clean
     if [[ $orphaned_count -gt 0 ]]; then

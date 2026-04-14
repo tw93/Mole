@@ -410,6 +410,75 @@ EOF
 }
 
 
+@test "clean_orphaned_app_data honors WHITELIST_PATTERNS for Claude VM bundle" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+scan_installed_apps() { : > "$1"; }
+mdfind() { return 0; }
+pgrep() { return 1; }
+run_with_timeout() { shift; "$@"; }
+get_file_mtime() { echo 0; }
+get_path_size_kb() { echo 4; }
+safe_clean() { echo "UNEXPECTED_CLEAN:$2"; rm -rf "$1"; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+
+mkdir -p "$HOME/Library/Caches"
+mkdir -p "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle"
+echo "vm data" > "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle/rootfs.img"
+
+WHITELIST_PATTERNS=("$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle")
+
+clean_orphaned_app_data
+
+if [[ -d "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle" ]]; then
+    echo "PASS: Claude VM preserved by whitelist"
+fi
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UNEXPECTED_CLEAN"* ]]
+    [[ "$output" == *"PASS: Claude VM preserved by whitelist"* ]]
+}
+
+@test "clean_orphaned_app_data honors WHITELIST_PATTERNS for orphaned caches" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+scan_installed_apps() { : > "$1"; }
+is_bundle_orphaned() { return 0; }
+is_claude_vm_bundle_orphaned() { return 1; }
+mdfind() { return 0; }
+pgrep() { return 1; }
+run_with_timeout() { shift; "$@"; }
+get_file_mtime() { echo 0; }
+get_path_size_kb() { echo 4; }
+safe_clean() { echo "UNEXPECTED_CLEAN:$2"; rm -rf "$1"; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+
+mkdir -p "$HOME/Library/Caches/com.devtool.localbuild"
+echo "c" > "$HOME/Library/Caches/com.devtool.localbuild/data"
+
+WHITELIST_PATTERNS=("$HOME/Library/Caches/com.devtool.localbuild")
+
+clean_orphaned_app_data
+
+if [[ -d "$HOME/Library/Caches/com.devtool.localbuild" ]]; then
+    echo "PASS: whitelisted orphan cache preserved"
+fi
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UNEXPECTED_CLEAN"* ]]
+    [[ "$output" == *"PASS: whitelisted orphan cache preserved"* ]]
+}
+
 @test "is_critical_system_component matches known system services" {
     run bash --noprofile --norc <<'EOF'
 set -euo pipefail
