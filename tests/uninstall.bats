@@ -705,3 +705,43 @@ EOF
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"count=1"* ]]
 }
+
+# Regression for #726: Enter keystrokes queued while the app scanner runs
+# must not flow into select_apps_for_uninstall — otherwise the first app
+# is auto-selected and the destructive path is entered without the user
+# ever seeing the list.
+@test "uninstall drains queued stdin before opening the app selector (#726)" {
+	run bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/ui.sh"
+
+# Simulate the scan/load phase holding stdin briefly while the user
+# mashes Enter, then the drain boundary, then a read that stands in
+# for select_apps_for_uninstall's first key read.
+(printf '\n\n\n\n'; sleep 0.2) | {
+	drain_pending_input
+	if IFS= read -r -s -n 1 -t 0.2 leftover; then
+		printf 'LEAKED:%q\n' "$leftover"
+		exit 1
+	fi
+	printf 'CLEAN\n'
+}
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"CLEAN"* ]]
+}
+
+# Structural lock-in for #726: the drain call must sit between the loader
+# and the selector. A well-meaning refactor that moves it or drops it
+# would silently reintroduce the bug.
+@test "uninstall.sh keeps drain between load_applications and select_apps_for_uninstall (#726)" {
+	awk '
+		/load_applications "\$apps_file"/ { seen_load = 1; next }
+		seen_load && /drain_pending_input/ { saw_drain = 1; next }
+		seen_load && /select_apps_for_uninstall/ {
+			if (saw_drain) { print "OK"; exit 0 }
+			print "MISSING"; exit 1
+		}
+	' "$PROJECT_ROOT/bin/uninstall.sh" | grep -q '^OK$'
+}
