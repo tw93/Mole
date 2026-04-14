@@ -581,9 +581,14 @@ clean_orphaned_system_services() {
                 fi
             done
 
-            # Generic detection: bundle-ID-style helpers not matched by hardcoded list
+            # Generic detection: bundle-ID-style helpers not matched by hardcoded list.
+            # Privileged helpers are frequently registered via SMJobBless and ship
+            # *inside* the parent app bundle at Contents/Library/LaunchServices/<id>,
+            # which Spotlight does not index. Use the shared resolver so we do not
+            # falsely flag Adobe / 1Password / Docker helpers as orphaned when their
+            # parent app is installed. See #733.
             if [[ "$matched_known" == "false" ]] && [[ "$bundle_id" =~ ^(com|org|net|io)\. ]]; then
-                if ! _system_service_app_exists "$bundle_id" ""; then
+                if ! bundle_has_installed_app "$bundle_id"; then
                     orphaned_files+=("$helper")
                     local size_kb
                     size_kb=$(sudo du -skP "$helper" 2> /dev/null | awk '{print $1}' || echo "0")

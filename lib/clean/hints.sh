@@ -119,11 +119,9 @@ hint_launch_agent_bundle_exists() {
 
     [[ -z "$bundle_id" ]] && return 1
 
-    if run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1 | grep -q .; then
-        return 0
-    fi
-
-    return 1
+    # Delegate to the shared resolver so Spotlight misses (e.g. KeePassXC
+    # installed via Homebrew) fall back to a direct /Applications scan. See #732.
+    bundle_has_installed_app "$bundle_id"
 }
 
 # shellcheck disable=SC2329
