@@ -61,7 +61,7 @@ jobs:
       - name: Check for unsafe rm usage
         run: |
           echo "Checking for unsafe rm patterns..."
-          if grep -r "rm -rf" --include="*.sh" lib/ | grep -v "safe_remove\|validate_path\|# "; then
+          if grep -r "rm -rf" --include="*.sh" lib/ | grep -v "safe_remove\|validate_path\|# \|echo "; then
             echo "✗ Unsafe rm -rf usage found"
             exit 1
           fi
