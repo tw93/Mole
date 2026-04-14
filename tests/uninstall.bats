@@ -334,26 +334,39 @@ EOF
 @test "uninstall_persist_cache_file does not hang when mv would prompt (stdin closed)" {
 	# Regression for #722: BSD mv without -f prompts on non-writable dst and
 	# blocks reading stdin. The helper must close stdin and use -f.
+	#
+	# The hang detector uses a marker file rather than a PID-based watchdog:
+	# PIDs get recycled quickly on CI and a stale `kill -9 $pid` can succeed
+	# against an unrelated process, producing a false HANG. The marker
+	# approach only cares about whether the helper itself completed.
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 eval "$(sed -n '/^uninstall_persist_cache_file()/,/^}$/p' "$PROJECT_ROOT/bin/uninstall.sh")"
 
 src="$HOME/snap.src"
 dst="$HOME/snap.dst"
+done_marker="$HOME/snap.done"
 printf 'x\n' > "$src"
 printf 'y\n' > "$dst"
 chmod 0444 "$dst"
 
-# Run helper in background with a watchdog. If it hangs reading stdin it
-# will be killed and the test fails.
-printf 'n\nn\nn\n' | uninstall_persist_cache_file "$src" "$dst" &
-pid=$!
-( sleep 5 && kill -9 "$pid" 2>/dev/null && echo HANG ) &
-watchdog=$!
-wait "$pid"
-rc=$?
-kill "$watchdog" 2>/dev/null || true
-exit "$rc"
+(
+    printf 'n\nn\nn\n' | uninstall_persist_cache_file "$src" "$dst"
+    : > "$done_marker"
+) &
+bgpid=$!
+
+# Poll for completion marker for up to ~5s.
+for _ in $(seq 1 50); do
+    [[ -e "$done_marker" ]] && break
+    sleep 0.1
+done
+
+if [[ ! -e "$done_marker" ]]; then
+    kill -9 "$bgpid" 2>/dev/null || true
+    echo HANG
+fi
+wait "$bgpid" 2>/dev/null || true
 EOF
 
 	[ "$status" -eq 0 ]
