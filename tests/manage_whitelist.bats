@@ -116,6 +116,35 @@ setup() {
     [ "$status" -eq 1 ]
 }
 
+
+
+@test "mo clean accepts valid whitelist paths with special and non-ASCII characters (#749)" {
+    local status
+    if HOME="$HOME" bash --noprofile --norc -c "
+        mkdir -p \"\$HOME/.config/mole\"
+        printf '%s\n' \"\$HOME/Library/Application Support/Foo & Bar\" \"\$HOME/Library/Caches/บริษัท\" > \"\$HOME/.config/mole/whitelist\"
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        source '$PROJECT_ROOT/bin/clean.sh'
+        printf 'COUNT=%s\n' \"\${#WHITELIST_PATTERNS[@]}\"
+        printf 'WARN=%s\n' \"\${WHITELIST_WARNINGS[*]}\"
+        printf 'ENTRY1=%s\n' \"\${WHITELIST_PATTERNS[0]}\"
+        printf 'ENTRY2=%s\n' \"\${WHITELIST_PATTERNS[1]}\"
+    " > "$HOME/whitelist-parse.txt"; then
+        status=0
+    else
+        status=$?
+    fi
+    [ "$status" -eq 0 ]
+    run grep -Fx "COUNT=2" "$HOME/whitelist-parse.txt"
+    [ "$status" -eq 0 ]
+    run grep -F "Invalid path format" "$HOME/whitelist-parse.txt"
+    [ "$status" -eq 1 ]
+    run grep -F "ENTRY1=$HOME/Library/Application Support/Foo & Bar" "$HOME/whitelist-parse.txt"
+    [ "$status" -eq 0 ]
+    run grep -F "ENTRY2=$HOME/Library/Caches/บริษัท" "$HOME/whitelist-parse.txt"
+    [ "$status" -eq 0 ]
+}
+
 @test "is_path_whitelisted protects parent directories of whitelisted nested paths" {
     local status
     if HOME="$HOME" bash --noprofile --norc -c "
