@@ -98,6 +98,39 @@ EOF
     [ "$status" -ne 0 ]
 }
 
+@test "bundle_has_installed_app finds parent app via .helper suffix (issue #753)" {
+    make_app "$FAKE_APPS/AlDente Pro.app" "com.apphousekitchen.aldente-pro"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.apphousekitchen.aldente-pro.helper"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "bundle_has_installed_app finds parent app via .daemon suffix" {
+    make_app "$FAKE_APPS/Example.app" "com.example.myapp"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.example.myapp.daemon"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "bundle_has_installed_app returns non-zero for .helper when parent app absent" {
+    make_app "$FAKE_APPS/Other.app" "com.example.other"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.apphousekitchen.aldente-pro.helper"
+EOF
+
+    [ "$status" -ne 0 ]
+}
+
 @test "bundle_has_installed_app rejects malformed bundle IDs" {
     run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
 $(prelude)

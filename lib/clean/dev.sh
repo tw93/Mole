@@ -767,7 +767,17 @@ clean_dev_mobile() {
 
         # Check if simctl is accessible and working; timeout prevents hang when CLT-only.
         local simctl_available=true
-        if ! run_with_timeout 2 xcrun simctl list devices > /dev/null 2>&1; then
+        local simctl_probe_ok=false
+        if declare -F xcrun > /dev/null 2>&1; then
+            if xcrun simctl list devices > /dev/null 2>&1; then
+                simctl_probe_ok=true
+            fi
+        else
+            if run_with_timeout 2 xcrun simctl list devices > /dev/null 2>&1; then
+                simctl_probe_ok=true
+            fi
+        fi
+        if [[ "$simctl_probe_ok" != "true" ]]; then
             debug_log "simctl not accessible or CoreSimulator service not running"
             echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators · simctl not available"
             note_activity

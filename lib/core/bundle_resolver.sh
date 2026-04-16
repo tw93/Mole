@@ -52,6 +52,15 @@ bundle_has_installed_app() {
     #   - Privileged helpers embedded in a parent .app under
     #     Contents/Library/LaunchServices/<helper-bundle-id> (e.g. the Adobe
     #     ARMDC helpers shipped inside Adobe Acrobat DC.app) -- issue #733
+    local parent_id=""
+    local suffix
+    for suffix in ".helper" ".daemon" ".agent" ".xpc"; do
+        if [[ "$bundle_id" == *"$suffix" ]]; then
+            parent_id="${bundle_id%"$suffix"}"
+            break
+        fi
+    done
+
     local app_root app info app_bundle
     for app_root in "${_MOLE_BUNDLE_RESOLVER_APP_ROOTS[@]}"; do
         [[ -d "$app_root" ]] || continue
@@ -63,6 +72,7 @@ bundle_has_installed_app() {
             [[ -f "$info" ]] || continue
             app_bundle=$(plutil -extract CFBundleIdentifier raw "$info" 2> /dev/null || echo "")
             [[ "$app_bundle" == "$bundle_id" ]] && return 0
+            [[ -n "$parent_id" && "$app_bundle" == "$parent_id" ]] && return 0
         done < <(find "$app_root" -maxdepth 1 -name "*.app" -print0 2> /dev/null)
     done
 
