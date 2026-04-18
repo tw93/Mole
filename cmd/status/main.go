@@ -20,12 +20,18 @@ var (
 	Version   = "dev"
 	BuildTime = ""
 
-	// Command-line flags
-	jsonOutput       = flag.Bool("json", false, "output metrics as JSON instead of TUI")
-	procCPUThreshold = flag.Float64("proc-cpu-threshold", 100, "alert when a process stays above this CPU percent")
-	procCPUWindow    = flag.Duration("proc-cpu-window", 5*time.Minute, "continuous duration a process must exceed the CPU threshold")
-	procCPUAlerts    = flag.Bool("proc-cpu-alerts", true, "enable persistent high-CPU process alerts")
+	jsonOutput       *bool
+	procCPUThreshold *float64
+	procCPUWindow    *time.Duration
+	procCPUAlerts    *bool
 )
+
+func init() {
+	jsonOutput = flag.Bool("json", false, t("output metrics as JSON instead of TUI", "Ölçümleri TUI yerine JSON olarak yaz"))
+	procCPUThreshold = flag.Float64("proc-cpu-threshold", 100, t("alert when a process stays above this CPU percent", "işlemci bu yüzde üstünde kalınca uyar"))
+	procCPUWindow = flag.Duration("proc-cpu-window", 5*time.Minute, t("continuous duration a process must exceed the CPU threshold", "eşik üstü kalma süresi (işlemci uyarısı)"))
+	procCPUAlerts = flag.Bool("proc-cpu-alerts", true, t("enable persistent high-CPU process alerts", "yüksek CPU işlem uyarılarını aç"))
+}
 
 func shouldUseJSONOutput(forceJSON bool, stdout *os.File) bool {
 	if forceJSON {
@@ -191,7 +197,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if !m.ready {
-		return "Loading..."
+		return t("Loading...", "Yükleniyor...")
 	}
 
 	termWidth := m.width

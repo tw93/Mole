@@ -58,7 +58,7 @@ paginated_multi_select() {
 
     # Validation
     if [[ ${#items[@]} -eq 0 ]]; then
-        echo "No items provided" >&2
+        echo "${TR_MENU_ERR_NO_ITEMS:-No items provided}" >&2
         return 1
     fi
 
@@ -163,10 +163,10 @@ paginated_multi_select() {
         done
 
         # Header
-        printf "${clear_line}${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d selected${NC}\n" "${title}" "$selected_count" "$total_items" >&2
+        printf "${clear_line}${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d ${TR_MENU_SELECTED:-selected}${NC}\n" "${title}" "$selected_count" "$total_items" >&2
 
         if [[ $total_items -eq 0 ]]; then
-            printf "${clear_line}${GRAY}No items available${NC}\n" >&2
+            printf "${clear_line}${GRAY}${TR_MENU_NO_ITEMS:-No items available}${NC}\n" >&2
             printf "${clear_line}\n" >&2
             printf "${clear_line}${GRAY}Q${NC} Quit\n" >&2
             printf "${clear_line}" >&2
@@ -212,7 +212,7 @@ paginated_multi_select() {
 
         # Clear any remaining lines at bottom
         printf "${clear_line}\n" >&2
-        printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN} | Space | Enter | Q Exit${NC}\n" >&2
+        printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN} | ${TR_MENU_SPACE_SELECT:-Space Select} | ${TR_MENU_ENTER:-Enter} | ${TR_MENU_Q_EXIT:-Q Exit}${NC}\n" >&2
 
         # Clear one more line to ensure no artifacts
         printf "${clear_line}" >&2

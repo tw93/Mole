@@ -202,7 +202,7 @@ collect_installers() {
 
     # Start scanning with spinner
     if [[ -t 1 ]]; then
-        start_inline_spinner "Scanning for installers..."
+        start_inline_spinner "${TR_INST_SCANNING:-Scanning for installers...}"
     fi
 
     # Start debug session
@@ -223,14 +223,14 @@ collect_installers() {
 
     if [[ ${#all_files[@]} -eq 0 ]]; then
         if [[ "${IN_ALT_SCREEN:-0}" != "1" ]]; then
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_INST_GREAT:-Great! No installer files to clean}"
         fi
         return 1
     fi
 
     # Calculate sizes with spinner
     if [[ -t 1 ]]; then
-        start_inline_spinner "Calculating sizes..."
+        start_inline_spinner "${TR_INST_SIZES:-Calculating sizes...}"
     fi
 
     # Process each installer
@@ -387,7 +387,7 @@ select_installers() {
             scroll_indicator=" ${GRAY}[${current_pos}/${total_items}]${NC}"
         fi
 
-        printf "${PURPLE_BOLD}Select Installers to Remove${NC}%s ${GRAY}, ${selected_human}, ${selected_count} selected${NC}\n" "$scroll_indicator"
+        printf "${PURPLE_BOLD}${TR_INST_SELECT_TITLE:-Select Installers to Remove}${NC}%s ${GRAY}, ${selected_human}, ${selected_count} ${TR_INST_SELECTED:-selected}${NC}\n" "$scroll_indicator"
         printf "%s\n" "$clear_line"
 
         # Calculate visible range
@@ -412,7 +412,7 @@ select_installers() {
         done
 
         printf "%s\n" "$clear_line"
-        printf "%s${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space Select  |  Enter Confirm  |  A All  |  I Invert  |  Q Quit${NC}\n" "$clear_line"
+        printf "%s${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  ${TR_INST_CONTROLS:-Space Select  |  Enter Confirm  |  A All  |  I Invert  |  Q Quit}${NC}\n" "$clear_line"
     }
 
     trap restore_terminal EXIT
@@ -539,7 +539,7 @@ delete_selected_installers() {
     confirm_human=$(bytes_to_human "$confirm_size")
 
     # Show files to be deleted
-    echo -e "${PURPLE_BOLD}Files to be removed:${NC}"
+    echo -e "${PURPLE_BOLD}${TR_INST_FILES_TO_RM:-Files to be removed:}${NC}"
     for idx in "${selected_indices[@]}"; do
         if [[ "$idx" =~ ^[0-9]+$ ]] && [[ $idx -lt ${#INSTALLER_PATHS[@]} ]]; then
             local file_path="${INSTALLER_PATHS[$idx]}"
@@ -552,7 +552,7 @@ delete_selected_installers() {
 
     # Confirm deletion
     echo ""
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Delete ${#selected_indices[@]} installers, ${confirm_human}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${TR_INST_DELETE_VERB:-Delete} ${#selected_indices[@]} ${TR_INST_DELETE_CONFIRM:-installers}, ${confirm_human}  ${GREEN}Enter${NC} ${TR_COMP_ENABLE_HINT:-confirm}, ${GRAY}ESC${NC} ${TR_COMP_CANCELLED:-cancel}: "
 
     IFS= read -r -s -n1 confirm || confirm=""
     case "$confirm" in
@@ -573,7 +573,7 @@ delete_selected_installers() {
     total_size_freed_kb=0
 
     if [[ -t 1 ]]; then
-        start_inline_spinner "Removing installers..."
+        start_inline_spinner "${TR_INST_REMOVING_MSG:-Removing installers...}"
     fi
 
     for idx in "${selected_indices[@]}"; do
@@ -619,7 +619,7 @@ perform_installers() {
             IN_ALT_SCREEN=0
         fi
         printf '\n'
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_INST_GREAT:-Great! No installer files to clean}"
         printf '\n'
         return 2 # Nothing to clean
     fi
@@ -648,12 +648,12 @@ perform_installers() {
 }
 
 show_summary() {
-    local summary_heading="Installers cleaned"
+    local summary_heading="${TR_INST_COMPLETE:-Installers cleaned}"
     local -a summary_details=()
     local dry_run_mode="${MOLE_DRY_RUN:-0}"
 
     if [[ "$dry_run_mode" == "1" ]]; then
-        summary_heading="Dry run complete - no changes made"
+        summary_heading="${TR_INST_DRY_COMPLETE:-Dry run complete - no changes made}"
     fi
 
     if [[ $total_deleted -gt 0 ]]; then
@@ -661,13 +661,13 @@ show_summary() {
         freed_mb=$(echo "$total_size_freed_kb" | awk '{printf "%.2f", $1/1024}')
 
         if [[ "$dry_run_mode" == "1" ]]; then
-            summary_details+=("Would remove ${GREEN}$total_deleted${NC} installers, free ${GREEN}${freed_mb}MB${NC}")
+            summary_details+=("${TR_INST_WOULD_REMOVE:-Would remove} ${GREEN}$total_deleted${NC} ${TR_INST_REMOVED_N:-installers}, ${TR_INST_WOULD_FREE:-free} ${GREEN}${freed_mb}MB${NC}")
         else
-            summary_details+=("Removed ${GREEN}$total_deleted${NC} installers, freed ${GREEN}${freed_mb}MB${NC}")
-            summary_details+=("Your Mac is cleaner now!")
+            summary_details+=("${TR_UNINSTALL_REMOVED:-Removed} ${GREEN}$total_deleted${NC} ${TR_INST_REMOVED_N:-installers}, ${TR_INST_WOULD_FREE:-freed} ${GREEN}${freed_mb}MB${NC}")
+            summary_details+=("${TR_INST_MAC_CLEANER:-Your Mac is cleaner now!}")
         fi
     else
-        summary_details+=("No installers were removed")
+        summary_details+=("${TR_INST_NO_REMOVED:-No installers were removed}")
     fi
 
     print_summary_block "$summary_heading" "${summary_details[@]}"
@@ -688,14 +688,14 @@ main() {
                 export MOLE_DRY_RUN=1
                 ;;
             *)
-                echo "Unknown option: $arg"
+                echo "${TR_INST_UNKNOWN_OPT_MSG:-Unknown option:} $arg"
                 exit 1
                 ;;
         esac
     done
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No installer files will be removed"
+        echo -e "${YELLOW}${ICON_DRY_RUN} ${TR_DRY_RUN_MODE:-DRY RUN MODE}${NC}, ${TR_INST_DRY_NO_FILES:-No installer files will be removed}"
         printf '\n'
     fi
 

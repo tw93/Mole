@@ -12,8 +12,8 @@ format_app_display() {
     # Use common function from ui.sh to format last used time
     local compact_last_used
     compact_last_used=$(format_last_used_summary "$last_used")
-    if [[ -z "$compact_last_used" || "$compact_last_used" == "Never" ]]; then
-        compact_last_used="Unknown"
+    if [[ -z "$compact_last_used" || "$compact_last_used" == "Never" || "$compact_last_used" == "Hiç" ]]; then
+        compact_last_used="${TR_UNKNOWN:-Unknown}"
     fi
 
     # Format size
@@ -74,7 +74,7 @@ MOLE_SELECTION_RESULT=""
 # shellcheck disable=SC2154  # apps_data is set by caller
 select_apps_for_uninstall() {
     if [[ ${#apps_data[@]} -eq 0 ]]; then
-        log_warning "No applications available for uninstallation"
+        log_warning "${TR_APPSEL_NO_APPS:-No applications available for uninstallation}"
         return 1
     fi
 
@@ -84,7 +84,7 @@ select_apps_for_uninstall() {
     local terminal_width=$(tput cols 2> /dev/null || echo 80)
     if [[ $app_count -gt 100 ]]; then
         if [[ -t 2 ]]; then
-            printf "\rPreparing %d applications...    " "$app_count" >&2
+            printf "\r${TR_APPSEL_PREPARING:-Preparing %d applications...}    " "$app_count" >&2
         fi
     fi
 
@@ -165,7 +165,7 @@ select_apps_for_uninstall() {
     # Use paginated menu - result will be stored in MOLE_SELECTION_RESULT
     # Note: paginated_multi_select enters alternate screen and handles clearing
     MOLE_SELECTION_RESULT=""
-    paginated_multi_select "Select Apps to Remove" "${menu_options[@]}"
+    paginated_multi_select "${TR_UNINSTALL_SELECT:-Select Apps to Remove}" "${menu_options[@]}"
     local exit_code=$?
 
     # Clean env leakage for safety
@@ -177,7 +177,7 @@ select_apps_for_uninstall() {
     fi
 
     if [[ -z "$MOLE_SELECTION_RESULT" ]]; then
-        echo "No apps selected"
+        echo "${TR_UNINSTALL_NO_SELECTED:-No apps selected}"
         return 1
     fi
 

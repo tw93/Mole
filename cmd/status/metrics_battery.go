@@ -52,7 +52,7 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 		percent, _ := strconv.ParseFloat(percentStr, 64)
 		status := strings.TrimSpace(string(statusData))
 		if status == "" {
-			status = "Unknown"
+			status = t("Unknown", "Bilinmiyor")
 		}
 		batts = append(batts, BatteryStatus{
 			Percent: percent,
@@ -88,7 +88,7 @@ func parsePMSet(raw string, health string, cycles int, capacity int) []BatterySt
 		var (
 			percent float64
 			found   bool
-			status  = "Unknown"
+			status  = t("Unknown", "Bilinmiyor")
 		)
 		for i, f := range fields {
 			if strings.Contains(f, "%") {

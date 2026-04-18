@@ -141,10 +141,10 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 	}
 	compactHeader := termWidth <= 80
 
-	title := titleStyle.Render("Status")
+	title := titleStyle.Render(t("Status", "Durum"))
 
 	scoreStyle := getScoreStyle(m.HealthScore)
-	scoreText := subtleStyle.Render("Health ") + scoreStyle.Render(fmt.Sprintf("● %d", m.HealthScore))
+	scoreText := subtleStyle.Render(t("Health ", "Sağlık ")) + scoreStyle.Render(fmt.Sprintf("● %d", m.HealthScore))
 
 	// Hardware info for a single line.
 	infoParts := []string{}
@@ -177,7 +177,7 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 		optionalInfoParts = append(optionalInfoParts, m.Hardware.OSVersion)
 	}
 	if !compactHeader && m.Uptime != "" {
-		uptimeText := "up " + m.Uptime
+		uptimeText := t("up ", "açık ") + m.Uptime
 		switch uptimeSeverity(m.UptimeSeconds) {
 		case "danger":
 			uptimeText = dangerStyle.Render(uptimeText + " ↻")
@@ -223,9 +223,9 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 
 	if errMsg != "" {
 		if mole == "" {
-			return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", dangerStyle.Render("ERROR: "+errMsg)), ""
+			return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", dangerStyle.Render(t("ERROR: ", "HATA: ")+errMsg)), ""
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", mole, dangerStyle.Render("ERROR: "+errMsg)), ""
+		return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", mole, dangerStyle.Render(t("ERROR: ", "HATA: ")+errMsg)), ""
 	}
 	if mole == "" {
 		return headerLine, ""
@@ -256,15 +256,16 @@ func renderProcessAlertBar(alerts []ProcessAlert, width int) string {
 
 	focus := active[0]
 
-	text := fmt.Sprintf(
+	text := tf(
 		"ALERT %s at %.1f%% for %s (threshold %.1f%%)",
+		"UYARI %s · CPU %.1f%% · süre %s · eşik %.1f%%",
 		formatProcessLabel(ProcessInfo{PID: focus.PID, Name: focus.Name}),
 		focus.CPU,
 		focus.Window,
 		focus.Threshold,
 	)
 	if len(active) > 1 {
-		text += fmt.Sprintf(" · +%d more", len(active)-1)
+		text += fmt.Sprintf(t(" · +%d more", " · +%d daha"), len(active)-1)
 	}
 
 	return renderBanner(alertBarStyle, text, width)
@@ -288,10 +289,10 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 		headerText += fmt.Sprintf(" @ %s°C", colorizeTemp(thermal.CPUTemp))
 	}
 
-	lines = append(lines, fmt.Sprintf("Total  %s  %s", usageBar, headerText))
+	lines = append(lines, fmt.Sprintf("%-6s %s  %s", t("Total", "Toplam"), usageBar, headerText))
 
 	if cpu.PerCoreEstimated {
-		lines = append(lines, subtleStyle.Render("Per-core data unavailable, using averaged load"))
+		lines = append(lines, subtleStyle.Render(t("Per-core data unavailable, using averaged load", "Çekirdek verisi tam okunamadı, ortalama kullanılıyor")))
 	} else if len(cpu.PerCore) > 0 {
 		type coreUsage struct {
 			idx int
@@ -306,20 +307,20 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 		maxCores := min(len(cores), 3)
 		for i := range maxCores {
 			c := cores[i]
-			lines = append(lines, fmt.Sprintf("Core%-2d %s  %5.1f%%", c.idx+1, progressBar(c.val), c.val))
+			lines = append(lines, fmt.Sprintf(t("Core%-2d", "Core%-2d")+" %s  %5.1f%%", c.idx+1, progressBar(c.val), c.val))
 		}
 	}
 
 	// Load line at the end
 	if cpu.PCoreCount > 0 && cpu.ECoreCount > 0 {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %dP+%dE",
+		lines = append(lines, fmt.Sprintf(t("Load   %.2f / %.2f / %.2f, %dP+%dE", "Yük    %.2f / %.2f / %.2f, %dP+%dE"),
 			cpu.Load1, cpu.Load5, cpu.Load15, cpu.PCoreCount, cpu.ECoreCount))
 	} else {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
+		lines = append(lines, fmt.Sprintf(t("Load   %.2f / %.2f / %.2f, %d cores", "Yük    %.2f / %.2f / %.2f, %d çek."),
 			cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
 	}
 
-	return cardData{icon: iconCPU, title: "CPU", lines: lines}
+	return cardData{icon: iconCPU, title: t("CPU", "İşlemci"), lines: lines}
 }
 
 func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
@@ -328,11 +329,11 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 
 	var lines []string
 	// Line 1: Used
-	lines = append(lines, fmt.Sprintf("Used   %s  %5.1f%%", progressBar(mem.UsedPercent), mem.UsedPercent))
+	lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", t("Used", "Kullan"), progressBar(mem.UsedPercent), mem.UsedPercent))
 
 	// Line 2: Free
 	freePercent := 100 - mem.UsedPercent
-	lines = append(lines, fmt.Sprintf("Free   %s  %5.1f%%", progressBar(freePercent), freePercent))
+	lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", t("Free", "Boş"), progressBar(freePercent), freePercent))
 
 	if hasSwap {
 		// Layout with Swap:
@@ -343,7 +344,7 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 		if mem.SwapTotal > 0 {
 			swapPercent = (float64(mem.SwapUsed) / float64(mem.SwapTotal)) * 100.0
 		}
-		swapLine := fmt.Sprintf("Swap   %s  %5.1f%%", progressBar(swapPercent), swapPercent)
+		swapLine := fmt.Sprintf(t("Swap   ", "Takas  ")+"%s  %5.1f%%", progressBar(swapPercent), swapPercent)
 		swapText := fmt.Sprintf("%s/%s", humanBytesCompact(mem.SwapUsed), humanBytesCompact(mem.SwapTotal))
 		swapLineWithText := swapLine + " " + swapText
 		if cardWidth > 0 && lipgloss.Width(swapLineWithText) <= cardWidth {
@@ -354,17 +355,17 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 			lines = append(lines, swapLine)
 		}
 
-		lines = append(lines, fmt.Sprintf("Total  %s / %s", humanBytes(mem.Used), humanBytes(mem.Total)))
-		lines = append(lines, fmt.Sprintf("Avail  %s", humanBytes(mem.Total-mem.Used))) // Simplified avail logic for consistency
+		lines = append(lines, fmt.Sprintf("%-6s %s / %s", t("Total", "Toplam"), humanBytes(mem.Used), humanBytes(mem.Total)))
+		lines = append(lines, fmt.Sprintf("%-6s %s", t("Avail", "Hazır"), humanBytes(mem.Total-mem.Used))) // Simplified avail logic for consistency
 	} else {
 		// Layout without Swap:
 		// 3. Total
 		// 4. Cached (if > 0)
 		// 5. Avail
-		lines = append(lines, fmt.Sprintf("Total  %s / %s", humanBytes(mem.Used), humanBytes(mem.Total)))
+		lines = append(lines, fmt.Sprintf("%-6s %s / %s", t("Total", "Toplam"), humanBytes(mem.Used), humanBytes(mem.Total)))
 
 		if mem.Cached > 0 {
-			lines = append(lines, fmt.Sprintf("Cached %s", humanBytes(mem.Cached)))
+			lines = append(lines, fmt.Sprintf("%-6s %s", t("Cached", "Önbllk"), humanBytes(mem.Cached)))
 		}
 		// Calculate available if not provided directly, or use Total-Used as proxy if needed,
 		// but typically available is more nuanced. Using what we have.
@@ -372,12 +373,12 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 		// in simple terms for this view or we could use the passed definition.
 		// Original code calculated: available := mem.Total - mem.Used
 		available := mem.Total - mem.Used
-		lines = append(lines, fmt.Sprintf("Avail  %s", humanBytes(available)))
+		lines = append(lines, fmt.Sprintf("%-6s %s", t("Avail", "Hazır"), humanBytes(available)))
 	}
 	// Memory pressure status.
 	if mem.Pressure != "" {
 		pressureStyle := okStyle
-		pressureText := "Status " + mem.Pressure
+		pressureText := t("Status ", "Durum ") + mem.Pressure
 		switch mem.Pressure {
 		case "warn":
 			pressureStyle = warnStyle
@@ -386,13 +387,13 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 		}
 		lines = append(lines, pressureStyle.Render(pressureText))
 	}
-	return cardData{icon: iconMemory, title: "Memory", lines: lines}
+	return cardData{icon: iconMemory, title: t("Memory", "Bellek"), lines: lines}
 }
 
 func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64, trashApprox bool) cardData {
 	var lines []string
 	if len(disks) == 0 {
-		lines = append(lines, subtleStyle.Render("Collecting..."))
+		lines = append(lines, subtleStyle.Render(t("Collecting...", "Toplanıyor...")))
 	} else {
 		internal, external := splitDisks(disks)
 		addGroup := func(prefix string, list []DiskStatus) {
@@ -404,10 +405,10 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64, trash
 				lines = append(lines, formatDiskLine(label, d))
 			}
 		}
-		addGroup("INTR", internal)
-		addGroup("EXTR", external)
+		addGroup(t("INTR", "DAHL"), internal)
+		addGroup(t("EXTR", "HARC"), external)
 		if len(lines) == 0 {
-			lines = append(lines, subtleStyle.Render("No disks detected"))
+			lines = append(lines, subtleStyle.Render(t("No disks detected", "Disk algılanmadı")))
 		} else if len(disks) == 1 {
 			lines = append(lines, formatDiskMetaLine(disks[0]))
 		}
@@ -417,13 +418,13 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus, trashSize uint64, trash
 		if trashApprox {
 			prefix = "~"
 		}
-		lines = append(lines, fmt.Sprintf("%-6s %s%s", "Trash", prefix, humanBytesShort(trashSize)))
+		lines = append(lines, fmt.Sprintf("%-6s %s%s", t("Trash", "Çöp"), prefix, humanBytesShort(trashSize)))
 	}
 	readBar := ioBar(io.ReadRate)
 	writeBar := ioBar(io.WriteRate)
-	lines = append(lines, fmt.Sprintf("Read   %s  %.1f MB/s", readBar, io.ReadRate))
-	lines = append(lines, fmt.Sprintf("Write  %s  %.1f MB/s", writeBar, io.WriteRate))
-	return cardData{icon: iconDisk, title: "Disk", lines: lines}
+	lines = append(lines, fmt.Sprintf("%-6s %s  %.1f MB/s", t("Read", "Okuma"), readBar, io.ReadRate))
+	lines = append(lines, fmt.Sprintf("%-6s %s  %.1f MB/s", t("Write", "Yazma"), writeBar, io.WriteRate))
+	return cardData{icon: iconDisk, title: t("Disk", "Disk"), lines: lines}
 }
 
 func splitDisks(disks []DiskStatus) (internal, external []DiskStatus) {
@@ -446,7 +447,7 @@ func diskLabel(prefix string, index int, total int) string {
 
 func formatDiskLine(label string, d DiskStatus) string {
 	if label == "" {
-		label = "DISK"
+		label = t("DISK", "DISK")
 	}
 	bar := progressBar(d.UsedPercent)
 	used := humanBytesShort(d.Used)
@@ -454,7 +455,7 @@ func formatDiskLine(label string, d DiskStatus) string {
 	if d.Total > d.Used {
 		free = d.Total - d.Used
 	}
-	return fmt.Sprintf("%-6s %s  %s used, %s free", label, bar, used, humanBytesShort(free))
+	return fmt.Sprintf(t("%-6s %s  %s used, %s free", "%-6s %s  %s dolu, %s boş"), label, bar, used, humanBytesShort(free))
 }
 
 func formatDiskMetaLine(d DiskStatus) string {
@@ -462,7 +463,7 @@ func formatDiskMetaLine(d DiskStatus) string {
 	if d.Fstype != "" {
 		parts = append(parts, strings.ToUpper(d.Fstype))
 	}
-	return fmt.Sprintf("Total  %s", strings.Join(parts, " · "))
+	return fmt.Sprintf(t("Total  %s", "Toplam %s"), strings.Join(parts, " · "))
 }
 
 func ioBar(rate float64) string {
@@ -489,9 +490,9 @@ func renderProcessCard(procs []ProcessInfo) cardData {
 		lines = append(lines, fmt.Sprintf("%-12s  %s  %5.1f%%", name, cpuBar, p.CPU))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, subtleStyle.Render("No data"))
+		lines = append(lines, subtleStyle.Render(t("No data", "Veri yok")))
 	}
-	return cardData{icon: iconProcs, title: "Processes", lines: lines}
+	return cardData{icon: iconProcs, title: t("Processes", "İşlemler"), lines: lines}
 }
 
 func buildCards(m MetricsSnapshot, width int) []cardData {
@@ -529,7 +530,7 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 	}
 
 	if len(netStats) == 0 {
-		lines = []string{subtleStyle.Render("Collecting...")}
+		lines = []string{subtleStyle.Render(t("Collecting...", "Toplanıyor..."))}
 	} else {
 		// Calculate dynamic width
 		// Layout: "Down   " (7) + graph + "  " (2) + rate (approx 10-12)
@@ -540,12 +541,12 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 		// sparkline graphs
 		rxSparkline := sparkline(history.RxHistory, totalRx, graphWidth)
 		txSparkline := sparkline(history.TxHistory, totalTx, graphWidth)
-		lines = append(lines, fmt.Sprintf("Down   %s  %s", rxSparkline, formatRate(totalRx)))
-		lines = append(lines, fmt.Sprintf("Up     %s  %s", txSparkline, formatRate(totalTx)))
+		lines = append(lines, fmt.Sprintf("%-6s %s  %s", t("Down", "İndrme"), rxSparkline, formatRate(totalRx)))
+		lines = append(lines, fmt.Sprintf("%-6s %s  %s", t("Up", "Yüklme"), txSparkline, formatRate(totalTx)))
 		// Show proxy and IP on one line.
 		var infoParts []string
 		if proxy.Enabled {
-			infoParts = append(infoParts, "Proxy "+proxy.Type)
+			infoParts = append(infoParts, t("Proxy ", "Vekil ")+proxy.Type)
 		}
 		if primaryIP != "" {
 			infoParts = append(infoParts, primaryIP)
@@ -554,7 +555,7 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 			lines = append(lines, strings.Join(infoParts, " · "))
 		}
 	}
-	return cardData{icon: iconNetwork, title: "Network", lines: lines}
+	return cardData{icon: iconNetwork, title: t("Network", "Ağ"), lines: lines}
 }
 
 // 8 levels: ▁▂▃▄▅▆▇█
@@ -607,7 +608,7 @@ func sparkline(history []float64, current float64, width int) string {
 func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 	var lines []string
 	if len(batts) == 0 {
-		lines = append(lines, subtleStyle.Render("No battery"))
+		lines = append(lines, subtleStyle.Render(t("No battery", "Pil yok")))
 	} else {
 		b := batts[0]
 		statusLower := strings.ToLower(b.Status)
@@ -615,7 +616,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		if b.Percent < 20 && statusLower != "charging" && statusLower != "charged" {
 			percentText = dangerStyle.Render(percentText)
 		}
-		lines = append(lines, fmt.Sprintf("Level  %s  %s", batteryProgressBar(b.Percent), percentText))
+		lines = append(lines, fmt.Sprintf("%-6s %s  %s", t("Level", "Seviye"), batteryProgressBar(b.Percent), percentText))
 
 		// Add capacity line if available.
 		if b.Capacity > 0 {
@@ -625,7 +626,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			} else if b.Capacity < 85 {
 				capacityText = warnStyle.Render(capacityText)
 			}
-			lines = append(lines, fmt.Sprintf("Health %s  %s", batteryProgressBar(float64(b.Capacity)), capacityText))
+			lines = append(lines, fmt.Sprintf(t("Health %s  %s", "Sağlık %s  %s"), batteryProgressBar(float64(b.Capacity)), capacityText))
 		}
 
 		statusIcon := ""
@@ -648,7 +649,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 			if thermal.SystemPower > 0 {
 				statusText += fmt.Sprintf(" · %.0fW", thermal.SystemPower)
 			} else if thermal.AdapterPower > 0 {
-				statusText += fmt.Sprintf(" · %.0fW Adapter", thermal.AdapterPower)
+				statusText += fmt.Sprintf(t(" · %.0fW Adapter", " · %.0fW Adaptör"), thermal.AdapterPower)
 			}
 		} else if thermal.BatteryPower > 0 {
 			// Only show battery power when discharging (positive value)
@@ -674,7 +675,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		}
 
 		if b.CycleCount > 0 {
-			cycleText := fmt.Sprintf("%d cycles", b.CycleCount)
+			cycleText := fmt.Sprintf(t("%d cycles", "%d devir"), b.CycleCount)
 			if b.CycleCount > batteryCycleDanger {
 				cycleText = dangerStyle.Render(cycleText)
 			} else if b.CycleCount > batteryCycleWarn {
@@ -684,7 +685,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		}
 
 		if thermal.BatteryTemp > 0 {
-			tempText := "Battery " + colorizeTemp(thermal.BatteryTemp) + "°C"
+			tempText := t("Battery ", "Pil ") + colorizeTemp(thermal.BatteryTemp) + "°C"
 			healthParts = append(healthParts, tempText)
 		}
 
@@ -697,7 +698,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 		}
 	}
 
-	return cardData{icon: iconBattery, title: "Power", lines: lines}
+	return cardData{icon: iconBattery, title: t("Power", "Güç"), lines: lines}
 }
 
 func renderCard(data cardData, width int, height int) string {

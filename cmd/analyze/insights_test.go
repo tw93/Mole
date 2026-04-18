@@ -36,23 +36,23 @@ func TestCreateInsightEntries(t *testing.T) {
 
 func TestInsightIcon(t *testing.T) {
 	tests := []struct {
-		name string
-		want string
+		label string
+		kind  string
+		want  string
 	}{
-		{"iOS Backups", "📱"},
-		{"Old Downloads (90d+)", "📥"},
-		{"Homebrew Cache", "💾"},
-		{"System Logs", "📋"},
-		{"Xcode Simulators", "📲"},
-		{"Docker Data", "🐳"},
-		{"Home", "📁"},
-		{"Applications", "📁"},
+		{"ios", insightKindIOSBackups, "📱"},
+		{"old_dl", insightKindOldDownloads, "📥"},
+		{"brew", insightKindHomebrewCache, "💾"},
+		{"logs", insightKindSystemLogs, "📋"},
+		{"sims", insightKindXcodeSims, "📲"},
+		{"docker", insightKindDockerData, "🐳"},
+		{"default", insightKindNone, "📁"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := insightIcon(dirEntry{Name: tt.name})
+		t.Run(tt.label, func(t *testing.T) {
+			got := insightIcon(dirEntry{InsightKind: tt.kind})
 			if got != tt.want {
-				t.Errorf("insightIcon(%q) = %q, want %q", tt.name, got, tt.want)
+				t.Errorf("insightIcon(%q) = %q, want %q", tt.label, got, tt.want)
 			}
 		})
 	}

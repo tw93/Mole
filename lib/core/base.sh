@@ -681,7 +681,7 @@ mktemp_file() {
     local error_msg
     # Add .XXXXXX suffix to work with both BSD and GNU mktemp
     if ! error_msg=$(mktemp "$(mole_temp_path_template "$prefix")" 2>&1); then
-        echo "Error: Failed to create temporary file: $error_msg" >&2
+        echo "${TR_ERR_TEMP_FILE:-Error: Failed to create temporary file:} $error_msg" >&2
         return 1
     fi
     temp="$error_msg"
@@ -732,7 +732,7 @@ start_section() {
 # Shows "Nothing to tidy" if no activity was recorded
 end_section() {
     if [[ "${TRACK_SECTION:-0}" == "1" && "${SECTION_ACTIVITY:-0}" == "0" ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Nothing to tidy"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_NOTHING_TO_CLEAN:-Nothing to tidy}"
     fi
     TRACK_SECTION=0
 }
@@ -747,7 +747,7 @@ note_activity() {
 # Start a section spinner with optional message
 # Usage: start_section_spinner "message"
 start_section_spinner() {
-    local message="${1:-Scanning...}"
+    local message="${1:-${TR_SCANNING:-Scanning...}}"
     stop_inline_spinner || true
     if [[ -t 1 ]]; then
         MOLE_SPINNER_PREFIX="  " start_inline_spinner "$message"
@@ -821,7 +821,7 @@ update_progress_if_needed() {
     if [[ $((current_time - last_time)) -ge $interval ]]; then
         # Update the spinner with progress
         stop_section_spinner
-        start_section_spinner "Scanning items... $completed/$total"
+        start_section_spinner "${TR_SCANNING_ITEMS:-Scanning items}... $completed/$total"
 
         # Update the last_update_time variable
         eval "$last_update_var=$current_time"

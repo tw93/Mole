@@ -402,33 +402,73 @@ format_last_used_summary() {
 
     case "$value" in
         "" | "Unknown")
-            echo "Unknown"
+            echo "${TR_UNKNOWN:-Unknown}"
             return 0
             ;;
-        "Never" | "Recent" | "Today" | "Yesterday" | "This year" | "Old")
-            echo "$value"
+        "Never")
+            echo "${TR_NEVER:-Never}"
+            return 0
+            ;;
+        "Recent")
+            echo "${TR_TIME_RECENT:-Recent}"
+            return 0
+            ;;
+        "Today")
+            echo "${TR_TIME_TODAY:-Today}"
+            return 0
+            ;;
+        "Yesterday")
+            echo "${TR_TIME_YESTERDAY:-Yesterday}"
+            return 0
+            ;;
+        "This year")
+            echo "${TR_TIME_THIS_YEAR:-This year}"
+            return 0
+            ;;
+        "Old")
+            echo "${TR_TIME_OLD:-Old}"
             return 0
             ;;
     esac
 
     if [[ $value =~ ^([0-9]+)[[:space:]]+days?\ ago$ ]]; then
-        echo "${BASH_REMATCH[1]}d ago"
+        if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+            echo "${BASH_REMATCH[1]}g önce"
+        else
+            echo "${BASH_REMATCH[1]}d ago"
+        fi
         return 0
     fi
     if [[ $value =~ ^([0-9]+)[[:space:]]+weeks?\ ago$ ]]; then
-        echo "${BASH_REMATCH[1]}w ago"
+        if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+            echo "${BASH_REMATCH[1]}h önce"
+        else
+            echo "${BASH_REMATCH[1]}w ago"
+        fi
         return 0
     fi
     if [[ $value =~ ^([0-9]+)[[:space:]]+months?\ ago$ ]]; then
-        echo "${BASH_REMATCH[1]}m ago"
+        if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+            echo "${BASH_REMATCH[1]}a önce"
+        else
+            echo "${BASH_REMATCH[1]}m ago"
+        fi
         return 0
     fi
     if [[ $value =~ ^([0-9]+)[[:space:]]+month\(s\)\ ago$ ]]; then
-        echo "${BASH_REMATCH[1]}m ago"
+        if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+            echo "${BASH_REMATCH[1]}a önce"
+        else
+            echo "${BASH_REMATCH[1]}m ago"
+        fi
         return 0
     fi
     if [[ $value =~ ^([0-9]+)[[:space:]]+years?\ ago$ ]]; then
-        echo "${BASH_REMATCH[1]}y ago"
+        if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+            echo "${BASH_REMATCH[1]}y önce"
+        else
+            echo "${BASH_REMATCH[1]}y ago"
+        fi
         return 0
     fi
     echo "$value"

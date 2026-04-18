@@ -12,6 +12,24 @@ import (
 	"time"
 )
 
+// Stable keys for insight rows (icon sizing, special size rules).
+const (
+	insightKindNone           = ""
+	insightKindIOSBackups     = "ios_backups"
+	insightKindOldDownloads   = "old_downloads"
+	insightKindSystemLogs     = "system_logs"
+	insightKindHomebrewCache  = "homebrew_cache"
+	insightKindXcodeDerived   = "xcode_derived"
+	insightKindXcodeSims      = "xcode_sims"
+	insightKindXcodeArchives  = "xcode_archives"
+	insightKindSpotifyCache   = "spotify_cache"
+	insightKindJetBrainsCache = "jetbrains_cache"
+	insightKindDockerData     = "docker_data"
+	insightKindPipCache       = "pip_cache"
+	insightKindGradleCache    = "gradle_cache"
+	insightKindCocoaPodsCache = "cocoapods_cache"
+)
+
 // createInsightEntries returns the list of hidden-space insight entries
 // to show in the overview screen alongside the standard directory entries.
 func createInsightEntries() []dirEntry {
@@ -26,10 +44,11 @@ func createInsightEntries() []dirEntry {
 	backupPath := filepath.Join(home, "Library", "Application Support", "MobileSync", "Backup")
 	if info, err := os.Stat(backupPath); err == nil && info.IsDir() {
 		entries = append(entries, dirEntry{
-			Name:  "iOS Backups",
-			Path:  backupPath,
-			IsDir: true,
-			Size:  -1,
+			Name:        t("iOS Backups", "iOS Yedekleri"),
+			Path:        backupPath,
+			IsDir:       true,
+			Size:        -1,
+			InsightKind: insightKindIOSBackups,
 		})
 	}
 
@@ -37,10 +56,11 @@ func createInsightEntries() []dirEntry {
 	downloadsPath := filepath.Join(home, "Downloads")
 	if info, err := os.Stat(downloadsPath); err == nil && info.IsDir() {
 		entries = append(entries, dirEntry{
-			Name:  "Old Downloads (90d+)",
-			Path:  downloadsPath,
-			IsDir: true,
-			Size:  -1,
+			Name:        t("Old Downloads (90d+)", "Eski İndirilenler (90g+)"),
+			Path:        downloadsPath,
+			IsDir:       true,
+			Size:        -1,
+			InsightKind: insightKindOldDownloads,
 		})
 	}
 
@@ -49,31 +69,34 @@ func createInsightEntries() []dirEntry {
 	// specific cache subdirectories below are already its children; listing both
 	// would double-count the same bytes.
 	cleanablePaths := []struct {
-		name string
+		kind string
+		en   string
+		tr   string
 		path string
 	}{
 		// Universal (everyone has these)
-		{"System Logs", filepath.Join(home, "Library", "Logs")},
-		{"Homebrew Cache", filepath.Join(home, "Library", "Caches", "Homebrew")},
+		{insightKindSystemLogs, "System Logs", "Sistem Günlükleri", filepath.Join(home, "Library", "Logs")},
+		{insightKindHomebrewCache, "Homebrew Cache", "Homebrew Önbelleği", filepath.Join(home, "Library", "Caches", "Homebrew")},
 
 		// Developer-specific (only shown if path exists)
-		{"Xcode DerivedData", filepath.Join(home, "Library", "Developer", "Xcode", "DerivedData")},
-		{"Xcode Simulators", filepath.Join(home, "Library", "Developer", "CoreSimulator", "Devices")},
-		{"Xcode Archives", filepath.Join(home, "Library", "Developer", "Xcode", "Archives")},
-		{"Spotify Cache", filepath.Join(home, "Library", "Application Support", "Spotify", "PersistentCache")},
-		{"JetBrains Cache", filepath.Join(home, "Library", "Caches", "JetBrains")},
-		{"Docker Data", filepath.Join(home, "Library", "Containers", "com.docker.docker", "Data")},
-		{"pip Cache", filepath.Join(home, "Library", "Caches", "pip")},
-		{"Gradle Cache", filepath.Join(home, ".gradle", "caches")},
-		{"CocoaPods Cache", filepath.Join(home, "Library", "Caches", "CocoaPods")},
+		{insightKindXcodeDerived, "Xcode DerivedData", "Xcode DerivedData", filepath.Join(home, "Library", "Developer", "Xcode", "DerivedData")},
+		{insightKindXcodeSims, "Xcode Simulators", "Xcode Simülatörleri", filepath.Join(home, "Library", "Developer", "CoreSimulator", "Devices")},
+		{insightKindXcodeArchives, "Xcode Archives", "Xcode Arşivleri", filepath.Join(home, "Library", "Developer", "Xcode", "Archives")},
+		{insightKindSpotifyCache, "Spotify Cache", "Spotify Önbelleği", filepath.Join(home, "Library", "Application Support", "Spotify", "PersistentCache")},
+		{insightKindJetBrainsCache, "JetBrains Cache", "JetBrains Önbelleği", filepath.Join(home, "Library", "Caches", "JetBrains")},
+		{insightKindDockerData, "Docker Data", "Docker Verisi", filepath.Join(home, "Library", "Containers", "com.docker.docker", "Data")},
+		{insightKindPipCache, "pip Cache", "pip Önbelleği", filepath.Join(home, "Library", "Caches", "pip")},
+		{insightKindGradleCache, "Gradle Cache", "Gradle Önbelleği", filepath.Join(home, ".gradle", "caches")},
+		{insightKindCocoaPodsCache, "CocoaPods Cache", "CocoaPods Önbelleği", filepath.Join(home, "Library", "Caches", "CocoaPods")},
 	}
 	for _, c := range cleanablePaths {
 		if info, err := os.Stat(c.path); err == nil && info.IsDir() {
 			entries = append(entries, dirEntry{
-				Name:  c.name,
-				Path:  c.path,
-				IsDir: true,
-				Size:  -1,
+				Name:        t(c.en, c.tr),
+				Path:        c.path,
+				IsDir:       true,
+				Size:        -1,
+				InsightKind: c.kind,
 			})
 		}
 	}
@@ -132,20 +155,20 @@ func measureOldDownloads(dir string, daysOld int) (int64, error) {
 
 // insightIcon returns an appropriate icon for an overview entry.
 func insightIcon(entry dirEntry) string {
-	switch entry.Name {
-	case "iOS Backups":
+	switch entry.InsightKind {
+	case insightKindIOSBackups:
 		return "📱"
-	case "Old Downloads (90d+)":
+	case insightKindOldDownloads:
 		return "📥"
-	case "Homebrew Cache", "pip Cache", "CocoaPods Cache", "Gradle Cache", "Spotify Cache", "JetBrains Cache":
+	case insightKindHomebrewCache, insightKindPipCache, insightKindCocoaPodsCache, insightKindGradleCache, insightKindSpotifyCache, insightKindJetBrainsCache:
 		return "💾"
-	case "System Logs":
+	case insightKindSystemLogs:
 		return "📋"
-	case "Xcode DerivedData", "Xcode Archives":
+	case insightKindXcodeDerived, insightKindXcodeArchives:
 		return "🔨"
-	case "Xcode Simulators":
+	case insightKindXcodeSims:
 		return "📲"
-	case "Docker Data":
+	case insightKindDockerData:
 		return "🐳"
 	default:
 		return "📁"
@@ -172,6 +195,6 @@ func getDirSizeFast(path string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
 	return kb * 1024, nil
 }
+

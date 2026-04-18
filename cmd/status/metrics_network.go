@@ -192,7 +192,7 @@ func collectProxyFromScutilOutput(out string) ProxyStatus {
 	if scutilProxyEnabled(out, "SOCKSEnable") {
 		host := joinHostPort(scutilProxyValue(out, "SOCKSProxy"), scutilProxyValue(out, "SOCKSPort"))
 		if host == "" {
-			host = "System Proxy"
+			host = t("System Proxy", "Sistem vekili")
 		}
 		return ProxyStatus{Enabled: true, Type: "SOCKS", Host: host}
 	}
@@ -200,7 +200,7 @@ func collectProxyFromScutilOutput(out string) ProxyStatus {
 	if scutilProxyEnabled(out, "HTTPSEnable") {
 		host := joinHostPort(scutilProxyValue(out, "HTTPSProxy"), scutilProxyValue(out, "HTTPSPort"))
 		if host == "" {
-			host = "System Proxy"
+			host = t("System Proxy", "Sistem vekili")
 		}
 		return ProxyStatus{Enabled: true, Type: "HTTPS", Host: host}
 	}
@@ -208,7 +208,7 @@ func collectProxyFromScutilOutput(out string) ProxyStatus {
 	if scutilProxyEnabled(out, "HTTPEnable") {
 		host := joinHostPort(scutilProxyValue(out, "HTTPProxy"), scutilProxyValue(out, "HTTPPort"))
 		if host == "" {
-			host = "System Proxy"
+			host = t("System Proxy", "Sistem vekili")
 		}
 		return ProxyStatus{Enabled: true, Type: "HTTP", Host: host}
 	}
@@ -223,7 +223,7 @@ func collectProxyFromScutilOutput(out string) ProxyStatus {
 	}
 
 	if scutilProxyEnabled(out, "ProxyAutoDiscoveryEnable") {
-		return ProxyStatus{Enabled: true, Type: "WPAD", Host: "Auto Discovery"}
+		return ProxyStatus{Enabled: true, Type: "WPAD", Host: t("Auto Discovery", "Otomatik keşif")}
 	}
 
 	return ProxyStatus{Enabled: false}

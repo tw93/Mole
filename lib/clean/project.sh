@@ -150,7 +150,7 @@ EOF
 warn_purge_config_write_failure() {
     [[ -t 1 ]] || return 0
     [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]] || return 0
-    echo -e "${YELLOW}${ICON_WARNING}${NC} Could not save purge paths to ${PURGE_CONFIG_FILE/#$HOME/~}, using discovered paths for this run" >&2
+    echo -e "${YELLOW}${ICON_WARNING}${NC} ${TR_PURGE_WARN_SAVE:-Could not save purge paths to} ${PURGE_CONFIG_FILE/#$HOME/~}, ${TR_PURGE_WARN_USE_DISC:-using discovered paths for this run}" >&2
 }
 
 # Save discovered paths to config.
@@ -172,7 +172,7 @@ load_purge_config() {
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
         if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
-            echo -e "${GRAY}First run: discovering project directories...${NC}" >&2
+            echo -e "${GRAY}${TR_PURGE_FIRST_RUN:-First run: discovering project directories...}${NC}" >&2
         fi
 
         local -a discovered=()
@@ -184,7 +184,7 @@ load_purge_config() {
             PURGE_SEARCH_PATHS=("${discovered[@]}")
             if save_discovered_paths "${discovered[@]}"; then
                 if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
-                    echo -e "${GRAY}Found ${#discovered[@]} project directories, saved to config${NC}" >&2
+                    echo -e "${GRAY}${TR_PURGE_FOUND:-Found} ${#discovered[@]} ${TR_PURGE_SAVED:-project directories, saved to config}${NC}" >&2
                 fi
             else
                 warn_purge_config_write_failure
@@ -748,7 +748,7 @@ select_purge_categories() {
             scroll_indicator=" ${GRAY}[${current_pos}/${total_items}]${NC}"
         fi
 
-        printf "%s${PURPLE_BOLD}Select Categories to Clean${NC}%s${GRAY}, ${selected_size_human}, ${selected_count} selected${NC}\n" "$clear_line" "$scroll_indicator"
+        printf "%s${PURPLE_BOLD}${TR_MENU_SELECT_CATS:-Select Categories to Clean}${NC}%s${GRAY}, ${selected_size_human}, ${selected_count} ${TR_MENU_SELECTED:-selected}${NC}\n" "$clear_line" "$scroll_indicator"
         printf "%s\n" "$clear_line"
 
         IFS=',' read -r -a recent_flags <<< "${PURGE_RECENT_CATEGORIES:-}"
@@ -761,7 +761,7 @@ select_purge_categories() {
             local checkbox="$ICON_EMPTY"
             [[ ${selected[i]} == true ]] && checkbox="$ICON_SOLID"
             local recent_marker=""
-            [[ ${recent_flags[i]:-false} == "true" ]] && recent_marker=" ${GRAY}| Recent${NC}"
+            [[ ${recent_flags[i]:-false} == "true" ]] && recent_marker=" ${GRAY}| ${TR_MENU_RECENT:-Recent}${NC}"
             local rel_pos=$((i - top_index))
             if [[ $rel_pos -eq $cursor_pos ]]; then
                 printf "%s${CYAN}${ICON_ARROW} %s %s%s${NC}\n" "$clear_line" "$checkbox" "${categories[i]}" "$recent_marker"
@@ -780,7 +780,7 @@ select_purge_categories() {
             current_full_path="${PURGE_CATEGORY_FULL_PATHS_ARRAY[current_index]}"
         fi
         if [[ -n "$current_full_path" ]]; then
-            printf "%s${GRAY}Full path:${NC} %s\n" "$clear_line" "$current_full_path"
+            printf "%s${GRAY}${TR_MENU_FULL_PATH:-Full path:}${NC} %s\n" "$clear_line" "$current_full_path"
             printf "%s\n" "$clear_line"
         fi
 
@@ -791,11 +791,11 @@ select_purge_categories() {
 
         local _sep=" ${GRAY}|${NC} "
         local _nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}${NC}"
-        local _space="${GRAY}Space Select${NC}"
-        local _enter="${GRAY}Enter Confirm${NC}"
-        local _all="${GRAY}A All${NC}"
-        local _invert="${GRAY}I Invert${NC}"
-        local _quit="${GRAY}Q Quit${NC}"
+        local _space="${GRAY}${TR_MENU_SPACE_SELECT:-Space Select}${NC}"
+        local _enter="${GRAY}${TR_MENU_ENTER:-Enter Confirm}${NC}"
+        local _all="${GRAY}${TR_MENU_A_ALL:-A All}${NC}"
+        local _invert="${GRAY}${TR_MENU_I_INVERT:-I Invert}${NC}"
+        local _quit="${GRAY}${TR_MENU_Q_EXIT:-Q Quit}${NC}"
 
         # Strip ANSI to measure real length
         _ph_len() { printf "%s" "$1" | LC_ALL=C awk '{gsub(/\033\[[0-9;]*[A-Za-z]/,""); printf "%d", length}'; }
@@ -931,22 +931,22 @@ confirm_purge_cleanup() {
     [[ "$total_size_kb" =~ ^[0-9]+$ ]] || total_size_kb=0
     [[ "$unknown_count" =~ ^[0-9]+$ ]] || unknown_count=0
 
-    local item_text="artifact"
-    [[ $item_count -ne 1 ]] && item_text="artifacts"
+    local item_text="${TR_PURGE_ARTIFACT:-artifact}"
+    [[ $item_count -ne 1 ]] && item_text="${TR_PURGE_ARTIFACTS:-artifacts}"
 
     local size_display
     size_display=$(bytes_to_human "$((total_size_kb * 1024))")
 
     local unknown_hint=""
     if [[ $unknown_count -gt 0 ]]; then
-        local unknown_text="unknown size"
-        [[ $unknown_count -gt 1 ]] && unknown_text="unknown sizes"
+        local unknown_text="${TR_PURGE_UNKNOWN_SIZE:-unknown size}"
+        [[ $unknown_count -gt 1 ]] && unknown_text="${TR_PURGE_UNKNOWN_SIZES:-unknown sizes}"
         unknown_hint=", ${unknown_count} ${unknown_text}"
     fi
 
     if [[ ${#selected_paths[@]} -gt 0 ]]; then
         echo ""
-        echo -e "${GRAY}Selected paths:${NC}"
+        echo -e "${GRAY}${TR_PURGE_SELECTED_PATHS:-Selected paths:}${NC}"
         local selected_path=""
         for selected_path in "${selected_paths[@]}"; do
             echo "  $selected_path"
@@ -1062,7 +1062,7 @@ clean_project_artifacts() {
     fi
     if [[ ${#all_found_items[@]} -eq 0 ]]; then
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No old project artifacts to clean"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_PURGE_NO_ARTIFACTS:-Great! No old project artifacts to clean}"
         printf '\n'
         return 2 # Special code: nothing to clean
     fi
@@ -1078,7 +1078,7 @@ clean_project_artifacts() {
     done
     # Build menu options - one per artifact
     if [[ -t 1 ]]; then
-        start_inline_spinner "Calculating sizes..."
+        start_inline_spinner "${TR_INST_SIZES:-Calculating sizes...}"
     fi
 
     # Pre-compute sizes in parallel with sliding-window throttle.
@@ -1390,7 +1390,7 @@ clean_project_artifacts() {
 
         if [[ "$size_raw" == "TIMEOUT" ]]; then
             size_unknown=true
-            size_human="unknown"
+            size_human="${TR_PURGE_UNKNOWN_SIZE:-unknown}"
         elif [[ "$size_raw" =~ ^[0-9]+$ ]]; then
             size_kb="$size_raw"
             # Skip empty directories (0 bytes)
@@ -1519,7 +1519,7 @@ clean_project_artifacts() {
     # when expanding empty arrays with set -u active.
     if [[ ${#menu_options[@]} -eq 0 ]]; then
         echo ""
-        echo -e "${GRAY}No artifacts found to purge${NC}"
+        echo -e "${GRAY}${TR_PURGE_NONE_FOUND:-No artifacts found to purge}${NC}"
         printf '\n'
         return 0
     fi
@@ -1552,7 +1552,7 @@ clean_project_artifacts() {
     fi
     if [[ -z "$PURGE_SELECTION_RESULT" ]]; then
         echo ""
-        echo -e "${GRAY}No items selected${NC}"
+        echo -e "${GRAY}${TR_PURGE_NO_SELECTED:-No items selected}${NC}"
         printf '\n'
         PURGE_CATEGORY_FULL_PATHS_ARRAY=()
         unset PURGE_CATEGORY_SIZES PURGE_RECENT_CATEGORIES PURGE_SELECTION_RESULT
@@ -1574,7 +1574,7 @@ clean_project_artifacts() {
 
     if [[ -t 0 ]]; then
         if ! confirm_purge_cleanup "${#selected_indices[@]}" "$selected_total_kb" "$selected_unknown_count" "${selected_display_paths[@]}"; then
-            echo -e "${GRAY}Purge cancelled${NC}"
+            echo -e "${GRAY}${TR_CANCELLED:-Purge cancelled}${NC}"
             printf '\n'
             PURGE_CATEGORY_FULL_PATHS_ARRAY=()
             unset PURGE_CATEGORY_SIZES PURGE_RECENT_CATEGORIES PURGE_SELECTION_RESULT
@@ -1596,7 +1596,7 @@ clean_project_artifacts() {
         local size_unknown="${item_size_unknown_flags[idx]:-false}"
         local size_human
         if [[ "$size_unknown" == "true" ]]; then
-            size_human="unknown"
+            size_human="${TR_PURGE_UNKNOWN_SIZE:-unknown}"
         else
             size_human=$(bytes_to_human "$((size_kb * 1024))")
         fi
@@ -1605,7 +1605,7 @@ clean_project_artifacts() {
             continue
         fi
         if [[ -t 1 ]]; then
-            start_inline_spinner "Cleaning $display_item_path..."
+            start_inline_spinner "$(printf "${TR_CLEAN_SPIN_CLEANING_FMT:-Cleaning %s...}" "$display_item_path")"
         fi
         local removal_recorded=false
         if [[ -e "$item_path" ]]; then
@@ -1623,7 +1623,7 @@ clean_project_artifacts() {
             stop_inline_spinner
             if [[ "$removal_recorded" == "true" ]]; then
                 if [[ "$dry_run_mode" == "1" ]]; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} [DRY RUN] $display_item_path${NC}, ${GREEN}$size_human${NC}"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} [${TR_DRY_RUN_MODE:-DRY RUN}] $display_item_path${NC}, ${GREEN}$size_human${NC}"
                 else
                     echo -e "${GREEN}${ICON_SUCCESS}${NC} $display_item_path${NC}, ${GREEN}$size_human${NC}"
                 fi

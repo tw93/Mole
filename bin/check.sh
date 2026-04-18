@@ -47,10 +47,10 @@ main() {
 
     # Run all checks in parallel with spinner
     if [[ -t 1 ]]; then
-        echo -ne "${PURPLE_BOLD}System Check${NC}  "
-        start_inline_spinner "Running checks..."
+        echo -ne "${PURPLE_BOLD}${TR_CHECK_TITLE:-System Check}${NC}  "
+        start_inline_spinner "${TR_CHECK_RUNNING:-Running checks...}"
     else
-        echo -e "${PURPLE_BOLD}System Check${NC}"
+        echo -e "${PURPLE_BOLD}${TR_CHECK_TITLE:-System Check}${NC}"
         echo ""
     fi
 

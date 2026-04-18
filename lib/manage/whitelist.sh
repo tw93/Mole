@@ -76,100 +76,100 @@ save_whitelist_patterns() {
 # Get all cache items with their patterns
 get_all_cache_items() {
     # Format: "display_name|pattern|category"
-    cat << 'EOF'
-Apple Mail cache|$HOME/Library/Caches/com.apple.mail/*|system_cache
-Gradle build cache (Android Studio, Gradle projects)|$HOME/.gradle/caches/*|ide_cache
-Gradle daemon processes cache|$HOME/.gradle/daemon/*|ide_cache
-Xcode DerivedData (build outputs, indexes)|$HOME/Library/Developer/Xcode/DerivedData/*|ide_cache
-Xcode archives (built app packages)|$HOME/Library/Developer/Xcode/Archives/*|ide_cache
-Xcode internal cache files|$HOME/Library/Caches/com.apple.dt.Xcode/*|ide_cache
-Xcode iOS device support symbols|$HOME/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*|ide_cache
-Maven local repository (Java dependencies)|$HOME/.m2/repository/*|ide_cache
-JetBrains IDEs data (IntelliJ, PyCharm, WebStorm, GoLand)|$HOME/Library/Application Support/JetBrains/*|ide_cache
-JetBrains IDEs cache|$HOME/Library/Caches/JetBrains/*|ide_cache
-Android Studio cache and indexes|$HOME/Library/Caches/Google/AndroidStudio*/*|ide_cache
-Android build cache|$HOME/.android/build-cache/*|ide_cache
-VS Code runtime cache|$HOME/Library/Application Support/Code/Cache/*|ide_cache
-VS Code extension and update cache|$HOME/Library/Application Support/Code/CachedData/*|ide_cache
-VS Code system cache (Cursor, VSCodium)|$HOME/Library/Caches/com.microsoft.VSCode/*|ide_cache
-Cursor editor cache|$HOME/Library/Caches/com.todesktop.230313mzl4w4u92/*|ide_cache
-Bazel build cache|$HOME/.cache/bazel/*|compiler_cache
-Go build cache|$HOME/Library/Caches/go-build/*|compiler_cache
-Go module cache|$HOME/go/pkg/mod/*|compiler_cache
-Rust Cargo registry cache|$HOME/.cargo/registry/cache/*|compiler_cache
-Rust documentation cache|$HOME/.rustup/toolchains/*/share/doc/*|compiler_cache
-Rustup toolchain downloads|$HOME/.rustup/downloads/*|compiler_cache
-ccache compiler cache|$HOME/.ccache/*|compiler_cache
-sccache distributed compiler cache|$HOME/.cache/sccache/*|compiler_cache
-SBT Scala build cache|$HOME/.sbt/*|compiler_cache
-Ivy dependency cache|$HOME/.ivy2/cache/*|compiler_cache
-Turbo monorepo build cache|$HOME/.turbo/*|compiler_cache
-Next.js build cache|$HOME/.next/*|compiler_cache
-Vite build cache|$HOME/.vite/*|compiler_cache
-Parcel bundler cache|$HOME/.parcel-cache/*|compiler_cache
-pre-commit hooks cache|$HOME/.cache/pre-commit/*|compiler_cache
-Ruff Python linter cache|$HOME/.cache/ruff/*|compiler_cache
-MyPy type checker cache|$HOME/.cache/mypy/*|compiler_cache
-Pytest test cache|$HOME/.pytest_cache/*|compiler_cache
-Flutter SDK cache|$HOME/.cache/flutter/*|compiler_cache
-Swift Package Manager cache|$HOME/.cache/swift-package-manager/*|compiler_cache
-Zig compiler cache|$HOME/.cache/zig/*|compiler_cache
-Deno cache|$HOME/Library/Caches/deno/*|compiler_cache
-CocoaPods cache (iOS dependencies)|$HOME/Library/Caches/CocoaPods/*|package_manager
-npm package cache|$HOME/.npm/_cacache/*|package_manager
-pip Python package cache|$HOME/.cache/pip/*|package_manager
-uv Python package cache|$HOME/.cache/uv/*|package_manager
-R renv global cache (virtual environments)|$HOME/Library/Caches/org.R-project.R/R/renv/*|package_manager
-tealdeer tldr pages cache|$HOME/Library/Caches/tealdeer/tldr-pages|package_manager
-Homebrew downloaded packages|$HOME/Library/Caches/Homebrew/*|package_manager
-Yarn package manager cache|$HOME/.cache/yarn/*|package_manager
-pnpm package store|$HOME/Library/pnpm/store/*|package_manager
-Composer PHP dependencies cache (legacy)|$HOME/.composer/cache/*|package_manager
-Composer PHP dependencies cache|$HOME/Library/Caches/composer/*|package_manager
-RubyGems cache|$HOME/.gem/cache/*|package_manager
-Conda packages cache|$HOME/.conda/pkgs/*|package_manager
-Anaconda packages cache|$HOME/anaconda3/pkgs/*|package_manager
-PyTorch model cache|$HOME/.cache/torch/*|ai_ml_cache
-TensorFlow model and dataset cache|$HOME/.cache/tensorflow/*|ai_ml_cache
-HuggingFace models and datasets|$HOME/.cache/huggingface/*|ai_ml_cache
-Playwright browser binaries|$HOME/Library/Caches/ms-playwright*|ai_ml_cache
-Selenium WebDriver binaries|$HOME/.cache/selenium/*|ai_ml_cache
-Ollama local AI models|$HOME/.ollama/models/*|ai_ml_cache
-Weights & Biases ML experiments cache|$HOME/.cache/wandb/*|ai_ml_cache
-Safari web browser cache|$HOME/Library/Caches/com.apple.Safari/*|browser_cache
-Chrome browser cache|$HOME/Library/Caches/Google/Chrome/*|browser_cache
-Firefox browser cache|$HOME/Library/Caches/Firefox/*|browser_cache
-Brave browser cache|$HOME/Library/Caches/BraveSoftware/Brave-Browser/*|browser_cache
-Surge proxy cache|$HOME/Library/Caches/com.nssurge.surge-mac/*|network_tools
-Surge configuration and data|$HOME/Library/Application Support/com.nssurge.surge-mac/*|network_tools
-Docker BuildX cache|$HOME/.docker/buildx/cache/*|container_cache
-Podman container cache|$HOME/.local/share/containers/cache/*|container_cache
-Font cache|$HOME/Library/Caches/com.apple.FontRegistry/*|system_cache
-Spotlight metadata cache|$HOME/Library/Caches/com.apple.spotlight/*|system_cache
-CloudKit cache|$HOME/Library/Caches/CloudKit/*|system_cache
-Trash|$HOME/.Trash|system_cache
-iOS/iPadOS device firmware (.ipsw) from iTunes/Finder|$HOME/Library/iTunes/*Software Updates/*.ipsw|system_cache
-Apple Configurator 2 device firmware (.ipsw)|$HOME/Library/Group Containers/*.group.com.apple.configurator/**/*.ipsw|system_cache
+    cat <<EOF
+${TR_WL_CACHE_001:-Apple Mail cache}|$HOME/Library/Caches/com.apple.mail/*|system_cache
+${TR_WL_CACHE_002:-Gradle build cache (Android Studio, Gradle projects)}|$HOME/.gradle/caches/*|ide_cache
+${TR_WL_CACHE_003:-Gradle daemon processes cache}|$HOME/.gradle/daemon/*|ide_cache
+${TR_WL_CACHE_004:-Xcode DerivedData (build outputs, indexes)}|$HOME/Library/Developer/Xcode/DerivedData/*|ide_cache
+${TR_WL_CACHE_005:-Xcode archives (built app packages)}|$HOME/Library/Developer/Xcode/Archives/*|ide_cache
+${TR_WL_CACHE_006:-Xcode internal cache files}|$HOME/Library/Caches/com.apple.dt.Xcode/*|ide_cache
+${TR_WL_CACHE_007:-Xcode iOS device support symbols}|$HOME/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*|ide_cache
+${TR_WL_CACHE_008:-Maven local repository (Java dependencies)}|$HOME/.m2/repository/*|ide_cache
+${TR_WL_CACHE_009:-JetBrains IDEs data (IntelliJ, PyCharm, WebStorm, GoLand)}|$HOME/Library/Application Support/JetBrains/*|ide_cache
+${TR_WL_CACHE_010:-JetBrains IDEs cache}|$HOME/Library/Caches/JetBrains/*|ide_cache
+${TR_WL_CACHE_011:-Android Studio cache and indexes}|$HOME/Library/Caches/Google/AndroidStudio*/*|ide_cache
+${TR_WL_CACHE_012:-Android build cache}|$HOME/.android/build-cache/*|ide_cache
+${TR_WL_CACHE_013:-VS Code runtime cache}|$HOME/Library/Application Support/Code/Cache/*|ide_cache
+${TR_WL_CACHE_014:-VS Code extension and update cache}|$HOME/Library/Application Support/Code/CachedData/*|ide_cache
+${TR_WL_CACHE_015:-VS Code system cache (Cursor, VSCodium)}|$HOME/Library/Caches/com.microsoft.VSCode/*|ide_cache
+${TR_WL_CACHE_016:-Cursor editor cache}|$HOME/Library/Caches/com.todesktop.230313mzl4w4u92/*|ide_cache
+${TR_WL_CACHE_017:-Bazel build cache}|$HOME/.cache/bazel/*|compiler_cache
+${TR_WL_CACHE_018:-Go build cache}|$HOME/Library/Caches/go-build/*|compiler_cache
+${TR_WL_CACHE_019:-Go module cache}|$HOME/go/pkg/mod/*|compiler_cache
+${TR_WL_CACHE_020:-Rust Cargo registry cache}|$HOME/.cargo/registry/cache/*|compiler_cache
+${TR_WL_CACHE_021:-Rust documentation cache}|$HOME/.rustup/toolchains/*/share/doc/*|compiler_cache
+${TR_WL_CACHE_022:-Rustup toolchain downloads}|$HOME/.rustup/downloads/*|compiler_cache
+${TR_WL_CACHE_023:-ccache compiler cache}|$HOME/.ccache/*|compiler_cache
+${TR_WL_CACHE_024:-sccache distributed compiler cache}|$HOME/.cache/sccache/*|compiler_cache
+${TR_WL_CACHE_025:-SBT Scala build cache}|$HOME/.sbt/*|compiler_cache
+${TR_WL_CACHE_026:-Ivy dependency cache}|$HOME/.ivy2/cache/*|compiler_cache
+${TR_WL_CACHE_027:-Turbo monorepo build cache}|$HOME/.turbo/*|compiler_cache
+${TR_WL_CACHE_028:-Next.js build cache}|$HOME/.next/*|compiler_cache
+${TR_WL_CACHE_029:-Vite build cache}|$HOME/.vite/*|compiler_cache
+${TR_WL_CACHE_030:-Parcel bundler cache}|$HOME/.parcel-cache/*|compiler_cache
+${TR_WL_CACHE_031:-pre-commit hooks cache}|$HOME/.cache/pre-commit/*|compiler_cache
+${TR_WL_CACHE_032:-Ruff Python linter cache}|$HOME/.cache/ruff/*|compiler_cache
+${TR_WL_CACHE_033:-MyPy type checker cache}|$HOME/.cache/mypy/*|compiler_cache
+${TR_WL_CACHE_034:-Pytest test cache}|$HOME/.pytest_cache/*|compiler_cache
+${TR_WL_CACHE_035:-Flutter SDK cache}|$HOME/.cache/flutter/*|compiler_cache
+${TR_WL_CACHE_036:-Swift Package Manager cache}|$HOME/.cache/swift-package-manager/*|compiler_cache
+${TR_WL_CACHE_037:-Zig compiler cache}|$HOME/.cache/zig/*|compiler_cache
+${TR_WL_CACHE_038:-Deno cache}|$HOME/Library/Caches/deno/*|compiler_cache
+${TR_WL_CACHE_039:-CocoaPods cache (iOS dependencies)}|$HOME/Library/Caches/CocoaPods/*|package_manager
+${TR_WL_CACHE_040:-npm package cache}|$HOME/.npm/_cacache/*|package_manager
+${TR_WL_CACHE_041:-pip Python package cache}|$HOME/.cache/pip/*|package_manager
+${TR_WL_CACHE_042:-uv Python package cache}|$HOME/.cache/uv/*|package_manager
+${TR_WL_CACHE_043:-R renv global cache (virtual environments)}|$HOME/Library/Caches/org.R-project.R/R/renv/*|package_manager
+${TR_WL_CACHE_044:-tealdeer tldr pages cache}|$HOME/Library/Caches/tealdeer/tldr-pages|package_manager
+${TR_WL_CACHE_045:-Homebrew downloaded packages}|$HOME/Library/Caches/Homebrew/*|package_manager
+${TR_WL_CACHE_046:-Yarn package manager cache}|$HOME/.cache/yarn/*|package_manager
+${TR_WL_CACHE_047:-pnpm package store}|$HOME/Library/pnpm/store/*|package_manager
+${TR_WL_CACHE_048:-Composer PHP dependencies cache (legacy)}|$HOME/.composer/cache/*|package_manager
+${TR_WL_CACHE_049:-Composer PHP dependencies cache}|$HOME/Library/Caches/composer/*|package_manager
+${TR_WL_CACHE_050:-RubyGems cache}|$HOME/.gem/cache/*|package_manager
+${TR_WL_CACHE_051:-Conda packages cache}|$HOME/.conda/pkgs/*|package_manager
+${TR_WL_CACHE_052:-Anaconda packages cache}|$HOME/anaconda3/pkgs/*|package_manager
+${TR_WL_CACHE_053:-PyTorch model cache}|$HOME/.cache/torch/*|ai_ml_cache
+${TR_WL_CACHE_054:-TensorFlow model and dataset cache}|$HOME/.cache/tensorflow/*|ai_ml_cache
+${TR_WL_CACHE_055:-HuggingFace models and datasets}|$HOME/.cache/huggingface/*|ai_ml_cache
+${TR_WL_CACHE_056:-Playwright browser binaries}|$HOME/Library/Caches/ms-playwright*|ai_ml_cache
+${TR_WL_CACHE_057:-Selenium WebDriver binaries}|$HOME/.cache/selenium/*|ai_ml_cache
+${TR_WL_CACHE_058:-Ollama local AI models}|$HOME/.ollama/models/*|ai_ml_cache
+${TR_WL_CACHE_059:-Weights & Biases ML experiments cache}|$HOME/.cache/wandb/*|ai_ml_cache
+${TR_WL_CACHE_060:-Safari web browser cache}|$HOME/Library/Caches/com.apple.Safari/*|browser_cache
+${TR_WL_CACHE_061:-Chrome browser cache}|$HOME/Library/Caches/Google/Chrome/*|browser_cache
+${TR_WL_CACHE_062:-Firefox browser cache}|$HOME/Library/Caches/Firefox/*|browser_cache
+${TR_WL_CACHE_063:-Brave browser cache}|$HOME/Library/Caches/BraveSoftware/Brave-Browser/*|browser_cache
+${TR_WL_CACHE_064:-Surge proxy cache}|$HOME/Library/Caches/com.nssurge.surge-mac/*|network_tools
+${TR_WL_CACHE_065:-Surge configuration and data}|$HOME/Library/Application Support/com.nssurge.surge-mac/*|network_tools
+${TR_WL_CACHE_066:-Docker BuildX cache}|$HOME/.docker/buildx/cache/*|container_cache
+${TR_WL_CACHE_067:-Podman container cache}|$HOME/.local/share/containers/cache/*|container_cache
+${TR_WL_CACHE_068:-Font cache}|$HOME/Library/Caches/com.apple.FontRegistry/*|system_cache
+${TR_WL_CACHE_069:-Spotlight metadata cache}|$HOME/Library/Caches/com.apple.spotlight/*|system_cache
+${TR_WL_CACHE_070:-CloudKit cache}|$HOME/Library/Caches/CloudKit/*|system_cache
+${TR_WL_CACHE_071:-Trash}|$HOME/.Trash|system_cache
+${TR_WL_CACHE_072:-iOS/iPadOS device firmware (.ipsw) from iTunes/Finder}|$HOME/Library/iTunes/*Software Updates/*.ipsw|system_cache
+${TR_WL_CACHE_073:-Apple Configurator 2 device firmware (.ipsw)}|$HOME/Library/Group Containers/*.group.com.apple.configurator/**/*.ipsw|system_cache
 EOF
     # Add FINDER_METADATA with constant reference
-    echo "Finder metadata, .DS_Store|$FINDER_METADATA_SENTINEL|system_cache"
+    echo "${TR_WL_CACHE_FINDER_META:-Finder metadata, .DS_Store}|$FINDER_METADATA_SENTINEL|system_cache"
 }
 
 # Get all optimize items with their patterns
 get_optimize_whitelist_items() {
     # Format: "display_name|pattern|category"
-    cat << 'EOF'
-macOS Firewall check|firewall|security_check
-Gatekeeper check|gatekeeper|security_check
-macOS system updates check|check_macos_updates|update_check
-Mole updates check|check_mole_update|update_check
-Homebrew health check (doctor)|check_brew_health|health_check
-SIP status check|check_sip|security_check
-FileVault status check|check_filevault|security_check
-TouchID sudo check|check_touchid|config_check
-Rosetta 2 check|check_rosetta|config_check
-Git configuration check|check_git_config|config_check
-Login items check|check_login_items|config_check
+    cat <<EOF
+${TR_WL_OPT_01:-macOS Firewall check}|firewall|security_check
+${TR_WL_OPT_02:-Gatekeeper check}|gatekeeper|security_check
+${TR_WL_OPT_03:-macOS system updates check}|check_macos_updates|update_check
+${TR_WL_OPT_04:-Mole updates check}|check_mole_update|update_check
+${TR_WL_OPT_05:-Homebrew health check (doctor)}|check_brew_health|health_check
+${TR_WL_OPT_06:-SIP status check}|check_sip|security_check
+${TR_WL_OPT_07:-FileVault status check}|check_filevault|security_check
+${TR_WL_OPT_08:-TouchID sudo check}|check_touchid|config_check
+${TR_WL_OPT_09:-Rosetta 2 check}|check_rosetta|config_check
+${TR_WL_OPT_10:-Git configuration check}|check_git_config|config_check
+${TR_WL_OPT_11:-Login items check}|check_login_items|config_check
 EOF
 }
 
@@ -288,13 +288,13 @@ manage_whitelist_categories() {
         items_source=$(get_optimize_whitelist_items)
         active_config_file="$WHITELIST_CONFIG_OPTIMIZE"
         local display_config="${active_config_file/#$HOME/~}"
-        menu_title="Whitelist Manager, Select system checks to ignore
+        menu_title="${TR_WL_OPT_TITLE:-Whitelist Manager, Select system checks to ignore}
 ${GRAY}Edit: ${display_config}${NC}"
     else
         items_source=$(get_all_cache_items)
         active_config_file="$WHITELIST_CONFIG_CLEAN"
         local display_config="${active_config_file/#$HOME/~}"
-        menu_title="Whitelist Manager, Select caches to protect
+        menu_title="${TR_WL_CLEAN_TITLE:-Whitelist Manager, Select caches to protect}
 ${GRAY}Edit: ${display_config}${NC}"
     fi
 
@@ -416,14 +416,14 @@ ${GRAY}Edit: ${display_config}${NC}"
 
     local total_protected=$((${#selected_patterns[@]} + ${#custom_patterns[@]}))
     local -a summary_lines=()
-    summary_lines+=("Whitelist Updated")
+    summary_lines+=("${TR_WL_UPDATED:-Whitelist Updated}")
     if [[ ${#custom_patterns[@]} -gt 0 ]]; then
-        summary_lines+=("Protected ${#selected_patterns[@]} predefined + ${#custom_patterns[@]} custom patterns")
+        summary_lines+=("${TR_WL_PROTECTED_MIXED:-Protected ${#selected_patterns[@]} predefined + ${#custom_patterns[@]} custom patterns}")
     else
-        summary_lines+=("Protected ${total_protected} caches")
+        summary_lines+=("${TR_WL_PROTECTED:-Protected ${total_protected} caches}")
     fi
     local display_config="${active_config_file/#$HOME/~}"
-    summary_lines+=("Config: ${GRAY}${display_config}${NC}")
+    summary_lines+=("${TR_WL_CONFIG_LABEL:-Config:} ${GRAY}${display_config}${NC}")
 
     print_summary_block "${summary_lines[@]}"
     printf '\n'

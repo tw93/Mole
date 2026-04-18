@@ -73,7 +73,7 @@ fi
 # Auto-install mode when run without arguments
 if [[ $# -eq 0 ]]; then
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, shell config files will not be modified"
+        echo -e "${YELLOW}${ICON_DRY_RUN} ${TR_DRY_RUN_MODE:-DRY RUN MODE}${NC}, ${TR_COMP_DRY_RUN_DETAIL:-shell config files will not be modified}"
         echo ""
     fi
 
@@ -103,16 +103,16 @@ if [[ $# -eq 0 ]]; then
             if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
                 remove_stale_completion_entries "$config_fish" "Removed stale completion entries from config.fish" || true
             fi
-            log_error "mole not found in PATH, install Mole before enabling completion"
+            log_error "${TR_COMP_NOT_IN_PATH:-mole not found in PATH, install Mole before enabling completion}"
             exit 1
         fi
 
         if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-            echo -e "${GRAY}${ICON_REVIEW} [DRY RUN] Would write Fish completions to:${NC}"
+            echo -e "${GRAY}${ICON_REVIEW} ${TR_COMP_DRY_FISH:-[DRY RUN] Would write Fish completions to:}${NC}"
             echo "  $mole_file"
             echo "  $mo_file"
             echo ""
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Dry run complete, no changes made"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_COMP_DRY_COMPLETE:-Dry run complete, no changes made}"
             exit 0
         fi
 
@@ -124,23 +124,23 @@ if [[ $# -eq 0 ]]; then
         # Prompt only on first install; silently update if files exist
         if [[ ! -f "$mole_file" ]]; then
             echo ""
-            echo -e "${GRAY}Will write Fish completions to:${NC}"
+            echo -e "${GRAY}${TR_COMP_FISH_TARGET:-Will write Fish completions to:}${NC}"
             echo "  $mole_file"
             echo "  $mo_file"
             echo ""
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}fish${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} ${TR_COMP_ENABLE_PROMPT:-Enable completion for} ${GREEN}fish${NC}? ${GRAY}${TR_COMP_ENABLE_HINT:-Enter confirm / Q cancel}${NC}: "
             IFS= read -r -s -n1 key || key=""
             drain_pending_input
             echo ""
 
             case "$key" in
                 $'\e' | [Qq] | [Nn])
-                    echo -e "${YELLOW}Cancelled${NC}"
+                    echo -e "${YELLOW}${TR_COMP_CANCELLED:-Cancelled}${NC}"
                     exit 0
                     ;;
                 "" | $'\n' | $'\r' | [Yy]) ;;
                 *)
-                    log_error "Invalid key"
+                    log_error "${TR_COMP_INVALID_KEY:-Invalid key}"
                     exit 1
                     ;;
             esac
@@ -153,7 +153,7 @@ if [[ $# -eq 0 ]]; then
         printf 'source %s\n' "$mole_file" >> "$mo_file"
 
         if [[ -f "$mole_file" ]]; then
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Fish completions written to $fish_dir"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_COMP_FISH_WRITTEN:-Fish completions written to} $fish_dir"
         fi
         echo ""
         exit 0
@@ -172,7 +172,7 @@ if [[ $# -eq 0 ]]; then
             completion_line='if output="$('"$completion_name"' completion zsh 2>/dev/null)"; then eval "$output"; fi'
             ;;
         *)
-            log_error "Unsupported shell: $current_shell"
+            log_error "${TR_COMP_UNSUPPORTED_SHELL:-Unsupported shell:} $current_shell"
             echo "  mole completion <bash|zsh|fish>"
             exit 1
             ;;
@@ -181,7 +181,7 @@ if [[ $# -eq 0 ]]; then
     if [[ -z "$completion_name" ]]; then
         if [[ -f "$config_file" ]] && grep -Eq "(^# Mole shell completion$|(mole|mo)[[:space:]]+completion)" "$config_file" 2> /dev/null; then
             if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-                echo -e "${GRAY}${ICON_REVIEW} [DRY RUN] Would remove stale completion entries from $config_file${NC}"
+                echo -e "${GRAY}${ICON_REVIEW} ${TR_COMP_DRY_REMOVE_STALE:-[DRY RUN] Would remove stale completion entries from} $config_file${NC}"
                 echo ""
             else
                 original_mode=""
@@ -192,18 +192,18 @@ if [[ $# -eq 0 ]]; then
                 if [[ -n "$original_mode" ]]; then
                     chmod "$original_mode" "$config_file" 2> /dev/null || true
                 fi
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Removed stale completion entries from $config_file"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_COMP_STALE_REMOVED:-Removed stale completion entries from} $config_file"
                 echo ""
             fi
         fi
-        log_error "mole not found in PATH, install Mole before enabling completion"
+        log_error "${TR_COMP_NOT_IN_PATH:-mole not found in PATH, install Mole before enabling completion}"
         exit 1
     fi
 
     # Check if already installed and normalize to latest line
     if [[ -f "$config_file" ]] && grep -Eq "(mole|mo)[[:space:]]+completion" "$config_file" 2> /dev/null; then
         if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-            echo -e "${GRAY}${ICON_REVIEW} [DRY RUN] Would normalize completion entry in $config_file${NC}"
+            echo -e "${GRAY}${ICON_REVIEW} ${TR_COMP_DRY_NORMALIZE:-[DRY RUN] Would normalize completion entry in} $config_file${NC}"
             echo ""
             exit 0
         fi
@@ -222,34 +222,34 @@ if [[ $# -eq 0 ]]; then
             echo "$completion_line"
         } >> "$config_file"
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Shell completion updated in $config_file"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_COMP_UPDATED:-Shell completion updated in} $config_file"
         echo ""
         exit 0
     fi
 
     # Prompt user for installation
     echo ""
-    echo -e "${GRAY}Will add to ${config_file}:${NC}"
+    echo -e "${GRAY}${TR_COMP_WILL_ADD:-Will add to} ${config_file}:${NC}"
     echo "  $completion_line"
     echo ""
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Dry run complete, no changes made"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_COMP_DRY_COMPLETE:-Dry run complete, no changes made}"
         exit 0
     fi
 
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}${current_shell}${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
+    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${TR_COMP_ENABLE_PROMPT:-Enable completion for} ${GREEN}${current_shell}${NC}? ${GRAY}${TR_COMP_ENABLE_HINT:-Enter confirm / Q cancel}${NC}: "
     IFS= read -r -s -n1 key || key=""
     drain_pending_input
     echo ""
 
     case "$key" in
         $'\e' | [Qq] | [Nn])
-            echo -e "${YELLOW}Cancelled${NC}"
+            echo -e "${YELLOW}${TR_COMP_CANCELLED:-Cancelled}${NC}"
             exit 0
             ;;
         "" | $'\n' | $'\r' | [Yy]) ;;
         *)
-            log_error "Invalid key"
+            log_error "${TR_COMP_INVALID_KEY:-Invalid key}"
             exit 1
             ;;
     esac
@@ -279,10 +279,10 @@ if [[ $# -eq 0 ]]; then
         echo "$completion_line"
     } >> "$config_file"
 
-    echo -e "${GREEN}${ICON_SUCCESS}${NC} Completion added to $config_file"
+    echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_COMP_ADDED:-Completion added to} $config_file"
     echo ""
     echo ""
-    echo -e "${GRAY}To activate now:${NC}"
+    echo -e "${GRAY}${TR_COMP_ACTIVATE_HINT:-To activate now:}${NC}"
     echo -e "  ${GREEN}source $config_file${NC}"
     exit 0
 fi

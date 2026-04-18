@@ -14,7 +14,7 @@ clean_ds_store_tree() {
     local spinner_active="false"
     if [[ -t 1 ]]; then
         MOLE_SPINNER_PREFIX="  "
-        start_inline_spinner "Cleaning Finder metadata..."
+        start_inline_spinner "${TR_CLEAN_SPIN_DS_META:-Cleaning Finder metadata...}"
         spinner_active="true"
     fi
     local -a exclude_paths=(
@@ -50,11 +50,11 @@ clean_ds_store_tree() {
         size_human=$(bytes_to_human "$total_bytes")
         local size_kb=$(((total_bytes + 1023) / 1024))
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $size_human dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$(printf "${TR_CLEAN_APPS_DS_META_DRY_FMT:-%s files, %s dry}" "$file_count" "$size_human")${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$size_kb")
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} $label${NC}, ${line_color}$file_count files, $size_human${NC}"
+            echo -e "  ${line_color}${ICON_SUCCESS}${NC} $label${NC}, ${line_color}$(printf "${TR_CLEAN_APPS_DS_META_OK_FMT:-%s files, %s}" "$file_count" "$size_human")${NC}"
         fi
         files_cleaned=$((files_cleaned + file_count))
         total_size_cleaned=$((total_size_cleaned + size_kb))
@@ -305,18 +305,18 @@ is_claude_vm_bundle_orphaned() {
 clean_orphaned_app_data() {
     if ! ls "$HOME/Library/Caches" > /dev/null 2>&1; then
         stop_section_spinner
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Skipped: No permission to access Library folders"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_APPS_SKIP_LIB_PERM:-Skipped: No permission to access Library folders}"
         return 0
     fi
-    start_section_spinner "Scanning installed apps..."
+    start_section_spinner "${TR_CLEAN_SPIN_SCAN_APPS_INST:-Scanning installed apps...}"
     local installed_bundles=$(create_temp_file)
     scan_installed_apps "$installed_bundles"
     stop_section_spinner
     local app_count=$(wc -l < "$installed_bundles" 2> /dev/null | tr -d ' ')
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Found $app_count active/installed apps"
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_APPS_FOUND_FMT:-Found %s active/installed apps}" "$app_count")"
     local orphaned_count=0
     local total_orphaned_kb=0
-    start_section_spinner "Scanning orphaned app resources..."
+    start_section_spinner "${TR_CLEAN_SPIN_ORPHAN_RES:-Scanning orphaned app resources...}"
 
     # Dynamically discover Claude VM bundles (path may vary across versions).
     local claude_support_dir="$HOME/Library/Application Support/Claude"
@@ -406,7 +406,7 @@ clean_orphaned_app_data() {
     stop_section_spinner
     if [[ $orphaned_count -gt 0 ]]; then
         local orphaned_mb=$(echo "$total_orphaned_kb" | awk '{printf "%.1f", $1/1024}')
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count items, about ${orphaned_mb}MB"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_APPS_CLEANED_ORPHAN_FMT:-Cleaned %s items, about %sMB}" "$orphaned_count" "$orphaned_mb")"
         note_activity
     fi
     rm -f "$installed_bundles"
@@ -420,7 +420,7 @@ clean_orphaned_system_services() {
         return 0
     fi
 
-    start_section_spinner "Scanning orphaned system services..."
+    start_section_spinner "${TR_CLEAN_SPIN_ORPHAN_SVC:-Scanning orphaned system services...}"
 
     local orphaned_count=0
     local total_orphaned_kb=0
@@ -598,7 +598,7 @@ clean_orphaned_system_services() {
 
     # Report and clean
     if [[ $orphaned_count -gt 0 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Found $orphaned_count orphaned system services"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} $(printf "${TR_CLEAN_APPS_FOUND_ORPH_SVC:-Found %s orphaned system services}" "$orphaned_count")"
 
         for orphan_file in "${orphaned_files[@]}"; do
             local filename
@@ -624,7 +624,7 @@ clean_orphaned_system_services() {
             orphaned_kb_display="${total_orphaned_kb}KB"
         fi
         if [[ "${DRY_RUN:-false}" != "true" ]]; then
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $orphaned_count orphaned services, about $orphaned_kb_display"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_APPS_CLEANED_SVC_FMT:-Cleaned %s orphaned services, about %s}" "$orphaned_count" "$orphaned_kb_display")"
             note_activity
         fi
     fi

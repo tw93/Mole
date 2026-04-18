@@ -11,5 +11,5 @@ clean_maven_repository() {
     # Only clean if the directory exists
     [[ -d "$maven_repo" ]] || return 0
 
-    safe_clean "$maven_repo"/* "Maven local repository"
+    safe_clean "$maven_repo"/* "${TR_CLEAN_MAVEN_LOCAL_REPO:-Maven local repository}"
 }

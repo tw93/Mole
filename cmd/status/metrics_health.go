@@ -64,7 +64,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	}
 	score -= cpuPenalty
 	if cpu.Usage > cpuHighThreshold {
-		issues = append(issues, "High CPU")
+		issues = append(issues, t("High CPU", "Yüksek İşlemci"))
 	}
 
 	// Memory penalty.
@@ -78,17 +78,17 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	}
 	score -= memPenalty
 	if mem.UsedPercent > memHighThreshold {
-		issues = append(issues, "High Memory")
+		issues = append(issues, t("High Memory", "Yüksek Bellek"))
 	}
 
 	// Memory pressure penalty.
 	switch mem.Pressure {
 	case "warn":
 		score -= memPressureWarnPenalty
-		issues = append(issues, "Memory Pressure")
+		issues = append(issues, t("Memory Pressure", "Bellek Baskısı"))
 	case "critical":
 		score -= memPressureCritPenalty
-		issues = append(issues, "Critical Memory")
+		issues = append(issues, t("Critical Memory", "Kritik Bellek"))
 	}
 
 	// Disk penalty.
@@ -104,7 +104,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		}
 		score -= diskPenalty
 		if diskUsage > diskCritThreshold {
-			issues = append(issues, "Disk Almost Full")
+			issues = append(issues, t("Disk Almost Full", "Disk Dolmak Üzere"))
 		}
 	}
 
@@ -114,7 +114,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		if thermal.CPUTemp > thermalNormalThreshold {
 			if thermal.CPUTemp > thermalHighThreshold {
 				thermalPenalty = healthThermalWeight
-				issues = append(issues, "Overheating")
+				issues = append(issues, t("Overheating", "Aşırı Isınma"))
 			} else {
 				thermalPenalty = healthThermalWeight * (thermal.CPUTemp - thermalNormalThreshold) / (thermalHighThreshold - thermalNormalThreshold)
 			}
@@ -128,7 +128,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	if totalIO > ioNormalThreshold {
 		if totalIO > ioHighThreshold {
 			ioPenalty = healthIOWeight
-			issues = append(issues, "Heavy Disk IO")
+			issues = append(issues, t("Heavy Disk IO", "Yoğun Disk İşlemi"))
 		} else {
 			ioPenalty = healthIOWeight * (totalIO - ioNormalThreshold) / (ioHighThreshold - ioNormalThreshold)
 		}
@@ -142,7 +142,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		switch sev {
 		case "danger":
 			score -= 5
-			issues = append(issues, "Battery Service Soon")
+			issues = append(issues, t("Battery Service Soon", "Pile Servis Gerekli"))
 		case "warn":
 			score -= 2
 		}
@@ -151,7 +151,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	// Uptime penalty (long uptime without restart).
 	if uptimeSecs > uptimeDangerSecs {
 		score -= 3
-		issues = append(issues, "Restart Recommended")
+		issues = append(issues, t("Restart Recommended", "Yeniden Başlatma Önerilir"))
 	} else if uptimeSecs > uptimeWarnSecs {
 		score -= 1
 	}
@@ -168,15 +168,15 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	var msg string
 	switch {
 	case score >= 90:
-		msg = "Excellent"
+		msg = t("Excellent", "Mükemmel")
 	case score >= 75:
-		msg = "Good"
+		msg = t("Good", "İyi")
 	case score >= 60:
-		msg = "Fair"
+		msg = t("Fair", "Orta")
 	case score >= 40:
-		msg = "Poor"
+		msg = t("Poor", "Zayıf")
 	default:
-		msg = "Critical"
+		msg = t("Critical", "Kritik")
 	}
 
 	if len(issues) > 0 {
@@ -190,12 +190,12 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 // Severity is "ok", "warn", or "danger".
 func batteryHealthLabel(cycles int, capacity int) (string, string) {
 	if cycles > batteryCycleDanger || (capacity > 0 && capacity < batteryCapDanger) {
-		return "Service Soon", "danger"
+		return t("Service Soon", "Servis Gerekli"), "danger"
 	}
 	if cycles > batteryCycleWarn || (capacity > 0 && capacity < batteryCapWarn) {
-		return "Fair", "warn"
+		return t("Fair", "Orta"), "warn"
 	}
-	return "Healthy", "ok"
+	return t("Healthy", "Sağlıklı"), "ok"
 }
 
 // uptimeSeverity returns "ok", "warn", or "danger" based on uptime seconds.
@@ -214,11 +214,10 @@ func formatUptime(secs uint64) string {
 	hours := (secs % 86400) / 3600
 	mins := (secs % 3600) / 60
 	if days > 0 {
-		// Only show days and hours when uptime is over 1 day (skip minutes for brevity)
-		return fmt.Sprintf("%dd %dh", days, hours)
+		return fmt.Sprintf(t("%dd %dh", "%dgn %dsa"), days, hours)
 	}
 	if hours > 0 {
-		return fmt.Sprintf("%dh %dm", hours, mins)
+		return fmt.Sprintf(t("%dh %dm", "%dsa %ddk"), hours, mins)
 	}
-	return fmt.Sprintf("%dm", mins)
+	return fmt.Sprintf(t("%dm", "%ddk"), mins)
 }

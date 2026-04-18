@@ -23,13 +23,13 @@ check_tcc_permissions() {
     fi
     if [[ "$needs_permission_check" == "true" ]]; then
         echo ""
-        echo -e "${BLUE}First-time setup${NC}"
-        echo -e "${GRAY}macOS will request permissions to access Library folders.${NC}"
-        echo -e "${GRAY}You may see ${GREEN}${#tcc_dirs[@]} permission dialogs${NC}${GRAY}, please approve them all.${NC}"
+        echo -e "${BLUE}${TR_CLEAN_CACHES_FIRST_SETUP:-First-time setup}${NC}"
+        echo -e "${GRAY}${TR_CLEAN_CACHES_TCC_BODY1:-macOS will request permissions to access Library folders.}${NC}"
+        echo -e "${GRAY}$(printf "${TR_CLEAN_CACHES_TCC_BODY2:-You may see %s permission dialogs, please approve them all.}" "${GREEN}${#tcc_dirs[@]}${NC}")${NC}"
         echo ""
-        echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to continue: "
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} ${TR_CLEAN_CACHES_PRESS_ENTER:-Press Enter to continue: }"
         read -r
-        MOLE_SPINNER_PREFIX="" start_inline_spinner "Requesting permissions..."
+        MOLE_SPINNER_PREFIX="" start_inline_spinner "${TR_CLEAN_SPIN_REQ_PERM:-Requesting permissions...}"
         # Touch each directory to trigger prompts without deep scanning.
         for dir in "${tcc_dirs[@]}"; do
             [[ -d "$dir" ]] && command find "$dir" -maxdepth 1 -type d > /dev/null 2>&1
@@ -86,16 +86,16 @@ clean_service_worker_cache() {
         line_color=$(cleanup_result_color_kb "$cleaned_size")
         if [[ "$DRY_RUN" != "true" ]]; then
             if [[ $protected_count -gt 0 ]]; then
-                echo -e "  ${line_color}${ICON_SUCCESS}${NC} $browser_name Service Worker${NC}, ${line_color}${cleaned_mb}MB${NC}, ${protected_count} protected"
+                echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_CACHES_SW_SUCC_PROT:-%s Service Worker, %sMB, %s protected}" "$browser_name" "${line_color}${cleaned_mb}MB${NC}" "$protected_count")${NC}"
             else
-                echo -e "  ${line_color}${ICON_SUCCESS}${NC} $browser_name Service Worker${NC}, ${line_color}${cleaned_mb}MB${NC}"
+                echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_CACHES_SW_SUCC:-%s Service Worker, %sMB}" "$browser_name" "${line_color}${cleaned_mb}MB${NC}")${NC}"
             fi
         else
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $browser_name Service Worker, would clean ${cleaned_mb}MB, ${protected_count} protected"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "${TR_CLEAN_CACHES_SW_DRY:-%s Service Worker, would clean %sMB, %s protected}" "$browser_name" "$cleaned_mb" "$protected_count")"
         fi
         note_activity
         if [[ "$spinner_was_running" == "true" ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning browser Service Worker caches..."
+            MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CLEAN_CACHES_BROWSER_SW:-Scanning browser Service Worker caches...}"
         fi
     fi
 }
@@ -408,17 +408,17 @@ clean_python_bytecode_cache_group() {
         fi
 
         if [[ $skipped_count -gt 0 ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Python bytecode cache · ${display_root}${NC}, ${YELLOW}${removed_count} dirs, ${size_human} dry, ${skipped_count} skipped${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "${TR_CLEAN_CACHES_PY_DRY_SKIPPED:-Python bytecode cache · %s, %s dirs, %s dry, %s skipped}" "$display_root" "$removed_count" "$size_human" "$skipped_count")${NC}"
         else
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Python bytecode cache · ${display_root}${NC}, ${YELLOW}${removed_count} dirs, ${size_human} dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "${TR_CLEAN_CACHES_PY_DRY:-Python bytecode cache · %s, %s dirs, %s dry}" "$display_root" "$removed_count" "$size_human")${NC}"
         fi
     else
         local line_color
         line_color=$(cleanup_result_color_kb "$total_size_kb")
         if [[ $skipped_count -gt 0 ]]; then
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Python bytecode cache · ${display_root}${NC}, ${line_color}${removed_count} dirs, ${size_human}${NC}, ${skipped_count} skipped"
+            echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_CACHES_PY_OK_SKIPPED:-Python bytecode cache · %s, %s dirs, %s, %s skipped}" "$display_root" "$removed_count" "${line_color}${size_human}${NC}" "$skipped_count")${NC}"
         else
-            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Python bytecode cache · ${display_root}${NC}, ${line_color}${removed_count} dirs, ${size_human}${NC}"
+            echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_CACHES_PY_OK:-Python bytecode cache · %s, %s dirs, %s}" "$display_root" "$removed_count" "${line_color}${size_human}${NC}")${NC}"
         fi
     fi
 
@@ -444,7 +444,7 @@ clean_project_caches() {
 
     if [[ -t 1 ]]; then
         MOLE_SPINNER_PREFIX="  "
-        start_inline_spinner "Searching project caches..."
+        start_inline_spinner "${TR_CLEAN_CACHES_PROJ_SEARCH:-Searching project caches...}"
     fi
 
     for root in "${scan_roots[@]}"; do
@@ -461,7 +461,7 @@ clean_project_caches() {
 
         if [[ -t 1 ]]; then
             MOLE_SPINNER_PREFIX="  "
-            start_inline_spinner "Searching project caches..."
+            start_inline_spinner "${TR_CLEAN_CACHES_PROJ_SEARCH:-Searching project caches...}"
         fi
     done
 

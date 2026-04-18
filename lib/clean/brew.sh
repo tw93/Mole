@@ -7,15 +7,15 @@ clean_homebrew() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         # Check if Homebrew cache is whitelisted
         if is_path_whitelisted "$HOME/Library/Caches/Homebrew"; then
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew · skipped whitelist"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_BREW_WL_SKIP:-Homebrew · skipped whitelist}"
         else
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Homebrew · would cleanup and autoremove"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${TR_CLEAN_BREW_DRY_CLEANUP:-Homebrew · would cleanup and autoremove}"
         fi
         return 0
     fi
     # Keep behavior consistent with dry-run preview.
     if is_path_whitelisted "$HOME/Library/Caches/Homebrew"; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew · skipped whitelist"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_BREW_WL_SKIP:-Homebrew · skipped whitelist}"
         return 0
     fi
     # Skip if cleaned recently to avoid repeated heavy operations.
@@ -31,7 +31,7 @@ clean_homebrew() {
         local days_diff=$((time_diff / 86400))
         if [[ $days_diff -lt $cache_valid_days ]]; then
             should_skip=true
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew · cleaned ${days_diff}d ago, skipped"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_BREW_SKIP_RECENT:-Homebrew · cleaned %sd ago, skipped}" "$days_diff")"
         fi
     fi
     [[ "$should_skip" == "true" ]] && return 0
@@ -48,9 +48,9 @@ clean_homebrew() {
     # Spinner reflects whether cleanup is skipped.
     if [[ -t 1 ]]; then
         if [[ "$skip_cleanup" == "true" ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Homebrew autoremove (cleanup skipped)..."
+            MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CLEAN_BREW_AUTOREMOVE_NOTE:-Homebrew autoremove (cleanup skipped)...}"
         else
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Homebrew cleanup and autoremove..."
+            MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CLEAN_BREW_CLEANUP_NOTE:-Homebrew cleanup and autoremove...}"
         fi
     fi
     # Run cleanup/autoremove in parallel with timeout guard per command.
@@ -87,7 +87,7 @@ clean_homebrew() {
     if [[ "$skip_cleanup" == "true" ]]; then
         # Cleanup was skipped due to small cache size
         local size_mb=$((brew_cache_size / 1024))
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cleanup · cache ${size_mb}MB, skipped"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_BREW_CACHE_SMALL:-Homebrew cleanup · cache %sMB, skipped}" "$size_mb")"
     elif [[ "$brew_success" == "true" && -f "$brew_tmp_file" ]]; then
         local brew_output
         brew_output=$(cat "$brew_tmp_file" 2> /dev/null || echo "")
@@ -96,13 +96,13 @@ clean_homebrew() {
         freed_space=$(printf '%s\n' "$brew_output" | grep -o "[0-9.]*[KMGT]B freed" 2> /dev/null | tail -1 || true)
         if [[ $removed_count -gt 0 ]] || [[ -n "$freed_space" ]]; then
             if [[ -n "$freed_space" ]]; then
-                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cleanup${NC}, ${GREEN}$freed_space${NC}"
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_BREW_CLEANUP_HDR:-Homebrew cleanup}${NC}, ${GREEN}$freed_space${NC}"
             else
-                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cleanup, ${removed_count} items"
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_BREW_CLEANUP_ITEMS:-Homebrew cleanup, %s items}" "$removed_count")"
             fi
         fi
     elif [[ $brew_exit -eq 124 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Homebrew cleanup timed out · run ${GRAY}brew cleanup${NC} manually"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_BREW_CLEANUP_TO:-Homebrew cleanup timed out · run brew cleanup manually}"
     fi
     # Process autoremove output - only show if packages were removed
     # Only surface autoremove output when packages were removed.
@@ -112,10 +112,10 @@ clean_homebrew() {
         local removed_packages
         removed_packages=$(printf '%s\n' "$autoremove_output" | grep -c "^Uninstalling" 2> /dev/null || true)
         if [[ $removed_packages -gt 0 ]]; then
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Removed orphaned dependencies, ${removed_packages} packages"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_BREW_ORPHAN:-Removed orphaned dependencies, %s packages}" "$removed_packages")"
         fi
     elif [[ $autoremove_exit -eq 124 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autoremove timed out · run ${GRAY}brew autoremove${NC} manually"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_BREW_AUTO_TO:-Autoremove timed out · run brew autoremove manually}"
     fi
     # Update cache timestamp on successful completion or when cleanup was intelligently skipped
     # This prevents repeated cache size checks within the 7-day window

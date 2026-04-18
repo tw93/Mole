@@ -26,7 +26,7 @@ source "$SCRIPT_DIR/lib/manage/whitelist.sh"
 
 print_header() {
     printf '\n'
-    echo -e "${PURPLE_BOLD}Optimize and Check${NC}"
+    echo -e "${PURPLE_BOLD}${TR_OPT_TITLE:-Optimize and Check}${NC}"
 }
 
 # Bash-native JSON parsing helpers (no jq dependency).
@@ -152,11 +152,15 @@ show_optimization_summary() {
     local total_applied=$safe_count
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        summary_title="Dry Run Complete, No Changes Made"
-        summary_details+=("Would apply ${YELLOW}${total_applied:-0}${NC} optimizations")
-        summary_details+=("Run without ${YELLOW}--dry-run${NC} to apply these changes")
+        summary_title="${TR_OPT_DRY_COMPLETE:-Dry Run Complete, No Changes Made}"
+        if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+            summary_details+=("${YELLOW}${total_applied:-0}${NC} ${TR_OPT_WOULD_DRY_AFTER:-optimizations would be applied}")
+        else
+            summary_details+=("${TR_OPT_WOULD_DRY_BEFORE:-Would apply} ${YELLOW}${total_applied:-0}${NC} ${TR_OPT_WOULD_DRY_AFTER:-optimizations}")
+        fi
+        summary_details+=("${TR_OPT_RUN_WITHOUT:-Run without ${YELLOW}--dry-run${NC} to apply these changes}")
     else
-        summary_title="Optimization and Check Complete"
+        summary_title="${TR_OPT_COMPLETE:-Optimization and Check Complete}"
 
         # Build statistics summary
         local -a stats=()
@@ -166,32 +170,40 @@ show_optimization_summary() {
 
         if [[ "$cache_kb" =~ ^[0-9]+$ ]] && [[ "$cache_kb" -gt 0 ]]; then
             local cache_human=$(bytes_to_human "$((cache_kb * 1024))")
-            stats+=("${cache_human} cache cleaned")
+            stats+=("${cache_human} ${TR_OPT_CACHE_CLEANED:-cache cleaned}")
         fi
 
         if [[ "$db_count" =~ ^[0-9]+$ ]] && [[ "$db_count" -gt 0 ]]; then
-            stats+=("${db_count} databases optimized")
+            stats+=("${db_count} ${TR_OPT_DB_OPTIMIZED:-databases optimized}")
         fi
 
         if [[ "$config_count" =~ ^[0-9]+$ ]] && [[ "$config_count" -gt 0 ]]; then
-            stats+=("${config_count} configs repaired")
+            stats+=("${config_count} ${TR_OPT_CONFIG_REPAIRED:-configs repaired}")
         fi
 
         # Build first summary line with most important stat only
         local key_stat=""
         if [[ "$cache_kb" =~ ^[0-9]+$ ]] && [[ "$cache_kb" -gt 0 ]]; then
             local cache_human=$(bytes_to_human "$((cache_kb * 1024))")
-            key_stat="${cache_human} cache cleaned"
+            key_stat="${cache_human} ${TR_OPT_CACHE_CLEANED:-cache cleaned}"
         elif [[ "$db_count" =~ ^[0-9]+$ ]] && [[ "$db_count" -gt 0 ]]; then
-            key_stat="${db_count} databases optimized"
+            key_stat="${db_count} ${TR_OPT_DB_OPTIMIZED:-databases optimized}"
         elif [[ "$config_count" =~ ^[0-9]+$ ]] && [[ "$config_count" -gt 0 ]]; then
-            key_stat="${config_count} configs repaired"
+            key_stat="${config_count} ${TR_OPT_CONFIG_REPAIRED:-configs repaired}"
         fi
 
         if [[ -n "$key_stat" ]]; then
-            summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, ${key_stat}")
+            if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+                summary_details+=("${GREEN}${total_applied:-0}${NC} ${TR_OPT_LINE_OPTIM_APPLIED:-optimizations applied}, ${key_stat}")
+            else
+                summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, ${key_stat}")
+            fi
         else
-            summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, all services tuned")
+            if [[ "${MOLE_IS_TURKISH_SYSTEM:-false}" == "true" ]]; then
+                summary_details+=("${GREEN}${total_applied:-0}${NC} ${TR_OPT_LINE_OPTIM_APPLIED:-optimizations applied}, ${TR_OPT_ALL_TUNED:-all services tuned}")
+            else
+                summary_details+=("Applied ${GREEN}${total_applied:-0}${NC} optimizations, ${TR_OPT_ALL_TUNED:-all services tuned}")
+            fi
         fi
 
         local summary_line3=""
@@ -204,7 +216,7 @@ show_optimization_summary() {
             fi
             summary_details+=("$summary_line3")
         fi
-        summary_details+=("System fully optimized")
+        summary_details+=("${TR_OPT_SYSTEM_FULL:-System fully optimized}")
     fi
 
     print_summary_block "$summary_title" "${summary_details[@]}"
@@ -227,7 +239,8 @@ show_system_health() {
     disk_percent=${disk_percent:-0}
     uptime=${uptime:-0}
 
-    printf "${ICON_ADMIN} System  %.0f/%.0f GB RAM | %.0f/%.0f GB Disk | Uptime %.0fd\n" \
+    # shellcheck disable=SC2059
+    printf "${ICON_ADMIN} ${TR_OPT_SYS_HEALTH_FMT:-System  %.0f/%.0f GB RAM | %.0f/%.0f GB Disk | Uptime %.0fd}\n" \
         "$mem_used" "$mem_total" "$disk_used" "$disk_total" "$uptime"
 }
 
@@ -273,7 +286,7 @@ cleanup_path() {
         return
     fi
     if should_protect_path "$expanded_path"; then
-        echo -e "${GRAY}${ICON_WARNING}${NC} Protected $label"
+        echo -e "${GRAY}${ICON_WARNING}${NC} ${TR_OPT_PROTECTED:-Protected} $label"
         return
     fi
 
@@ -300,8 +313,8 @@ cleanup_path() {
             echo -e "${GREEN}${ICON_SUCCESS}${NC} $label"
         fi
     else
-        echo -e "${GRAY}${ICON_WARNING}${NC} Skipped $label${NC}"
-        echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}Grant Full Disk Access to your terminal, then retry${NC}"
+        echo -e "${GRAY}${ICON_WARNING}${NC} ${TR_OPT_SKIPPED:-Skipped} $label${NC}"
+        echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}${TR_OPT_FDA_HINT:-Grant Full Disk Access to your terminal, then retry}${NC}"
     fi
 }
 
@@ -317,14 +330,14 @@ collect_security_fix_actions() {
     SECURITY_FIXES=()
     if [[ "${FIREWALL_DISABLED:-}" == "true" ]]; then
         if ! is_whitelisted "firewall"; then
-            SECURITY_FIXES+=("firewall|Enable macOS firewall")
+            SECURITY_FIXES+=("firewall|${TR_SECURITY_ENABLE_FW:-Enable macOS firewall}")
         fi
     fi
     # Gatekeeper state is intentionally user-managed. Optimize may report it,
     # but it must not change the user's "Anywhere" preference.
     if touchid_supported && ! touchid_configured; then
         if ! is_whitelisted "check_touchid"; then
-            SECURITY_FIXES+=("touchid|Enable Touch ID for sudo")
+            SECURITY_FIXES+=("touchid|${TR_SECURITY_ENABLE_TOUCHID:-Enable Touch ID for sudo}")
         fi
     fi
 
@@ -337,19 +350,19 @@ ask_for_security_fixes() {
     fi
 
     echo ""
-    echo -e "${BLUE}SECURITY FIXES${NC}"
+    echo -e "${BLUE}${TR_SECURITY_TITLE:-SECURITY FIXES}${NC}"
     for entry in "${SECURITY_FIXES[@]}"; do
         IFS='|' read -r _ label <<< "$entry"
         echo -e "  ${ICON_LIST} $label"
     done
     echo ""
     export MOLE_SECURITY_FIXES_SHOWN=true
-    echo -ne "${GRAY}${ICON_REVIEW}${NC} ${YELLOW}Apply now?${NC} ${GRAY}Enter confirm / Space cancel${NC}: "
+    echo -ne "${GRAY}${ICON_REVIEW}${NC} ${YELLOW}${TR_SECURITY_APPLY_NOW:-Apply now?}${NC} ${GRAY}${TR_SECURITY_CONFIRM_HINT:-Enter confirm / Space cancel}${NC}: "
 
     local key
     if ! key=$(read_key); then
         export MOLE_SECURITY_FIXES_SKIPPED=true
-        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} Security fixes skipped"
+        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} ${TR_SECURITY_SKIPPED:-Security fixes skipped}"
         echo ""
         return 1
     fi
@@ -359,7 +372,7 @@ ask_for_security_fixes() {
         return 0
     else
         export MOLE_SECURITY_FIXES_SKIPPED=true
-        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} Security fixes skipped"
+        echo -e "\n  ${GRAY}${ICON_WARNING}${NC} ${TR_SECURITY_SKIPPED:-Security fixes skipped}"
         echo ""
         return 1
     fi
@@ -367,11 +380,11 @@ ask_for_security_fixes() {
 
 apply_firewall_fix() {
     if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on > /dev/null 2>&1; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Firewall enabled"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_SECURITY_FW_ENABLED:-Firewall enabled}"
         FIREWALL_DISABLED=false
         return 0
     fi
-    echo -e "  ${GRAY}${ICON_WARNING}${NC} Failed to enable firewall, check permissions"
+    echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_SECURITY_FW_FAIL:-Failed to enable firewall, check permissions}"
     return 1
 }
 
@@ -383,8 +396,8 @@ apply_touchid_fix() {
 }
 
 perform_security_fixes() {
-    if ! ensure_sudo_session "Security changes require admin access"; then
-        echo -e "${GRAY}${ICON_WARNING}${NC} Skipped security fixes, sudo denied"
+    if ! ensure_sudo_session "${TR_SECURITY_ADMIN_REQ:-Security changes require admin access}"; then
+        echo -e "${GRAY}${ICON_WARNING}${NC} ${TR_SECURITY_SUDO_DENIED:-Skipped security fixes, sudo denied}"
         return 1
     fi
 
@@ -402,7 +415,7 @@ perform_security_fixes() {
     done
 
     if ((applied > 0)); then
-        log_success "Security settings updated"
+        log_success "${TR_SECURITY_UPDATED:-Security settings updated}"
     fi
     SECURITY_FIXES=()
 }
@@ -456,17 +469,17 @@ main() {
 
     # Dry-run indicator.
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
+        echo -e "${YELLOW}${ICON_DRY_RUN} ${TR_DRY_RUN_MODE:-DRY RUN MODE}${NC}, ${TR_OPT_DRY_NO_FILES:-No files will be modified}\n"
     fi
 
     if ! command -v bc > /dev/null 2>&1; then
-        echo -e "${YELLOW}${ICON_ERROR}${NC} Missing dependency: bc"
-        echo -e "${GRAY}Install with: ${GREEN}brew install bc${NC}"
+        echo -e "${YELLOW}${ICON_ERROR}${NC} ${TR_OPT_MISSING_BC:-Missing dependency: bc}"
+        echo -e "${GRAY}${TR_OPT_INSTALL_BC:-Install with:} ${GREEN}brew install bc${NC}"
         exit 1
     fi
 
     if [[ -t 1 ]]; then
-        start_inline_spinner "Collecting system info..."
+        start_inline_spinner "${TR_OPT_COLLECTING_INFO:-Collecting system info...}"
     fi
 
     if ! health_json=$(generate_health_json 2> /dev/null); then
@@ -474,7 +487,7 @@ main() {
             stop_inline_spinner
         fi
         echo ""
-        log_error "Failed to collect system health data"
+        log_error "${TR_OPT_HEALTH_FAIL:-Failed to collect system health data}"
         exit 1
     fi
 
@@ -483,8 +496,8 @@ main() {
             stop_inline_spinner
         fi
         echo ""
-        log_error "Invalid system health data format"
-        echo -e "${GRAY}${ICON_REVIEW}${NC} Check if awk, sysctl, and df commands are available"
+        log_error "${TR_OPT_HEALTH_INVALID:-Invalid system health data format}"
+        echo -e "${GRAY}${ICON_REVIEW}${NC} ${TR_OPT_CHECK_DEPS:-Check if awk, sysctl, and df commands are available}"
         exit 1
     fi
 
@@ -502,7 +515,7 @@ main() {
                 IFS=', '
                 echo "${CURRENT_WHITELIST_PATTERNS[*]}"
             )
-            echo -e "${ICON_ADMIN} Active Whitelist: ${patterns_list}"
+            echo -e "${ICON_ADMIN} ${TR_OPT_WL_ACTIVE:-Active Whitelist:} ${patterns_list}"
         fi
     fi
 
@@ -518,7 +531,7 @@ main() {
 
     echo ""
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
-        ensure_sudo_session "System optimization requires admin access" || true
+        ensure_sudo_session "${TR_OPT_ADMIN_REQ:-System optimization requires admin access}" || true
     fi
 
     export FIRST_ACTION=true

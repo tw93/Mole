@@ -32,7 +32,7 @@ func (c *Collector) collectBluetooth(now time.Time) []BluetoothDevice {
 
 	c.lastBTAt = now
 	if len(c.lastBT) == 0 {
-		c.lastBT = []BluetoothDevice{{Name: "No Bluetooth info", Connected: false}}
+		c.lastBT = []BluetoothDevice{{Name: t("No Bluetooth info", "Bluetooth bilgisi yok"), Connected: false}}
 	}
 	return c.lastBT
 }
@@ -105,7 +105,7 @@ func parseSPBluetooth(raw string) []BluetoothDevice {
 		devices = append(devices, BluetoothDevice{Name: currentName, Connected: connected, Battery: battery})
 	}
 	if len(devices) == 0 {
-		return []BluetoothDevice{{Name: "No devices", Connected: false}}
+		return []BluetoothDevice{{Name: t("No devices", "Cihaz yok"), Connected: false}}
 	}
 	return devices
 }
@@ -132,7 +132,7 @@ func parseBluetoothctl(raw string) []BluetoothDevice {
 		devices = append(devices, current)
 	}
 	if len(devices) == 0 {
-		return []BluetoothDevice{{Name: "No devices", Connected: false}}
+		return []BluetoothDevice{{Name: t("No devices", "Cihaz yok"), Connected: false}}
 	}
 	return devices
 }

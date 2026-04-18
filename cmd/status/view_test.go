@@ -748,6 +748,7 @@ func TestMiniBar(t *testing.T) {
 }
 
 func TestFormatDiskLine(t *testing.T) {
+	t.Setenv("MOLE_IS_TURKISH_SYSTEM", "false")
 	tests := []struct {
 		name         string
 		label        string
@@ -826,6 +827,7 @@ func TestFormatDiskLine(t *testing.T) {
 }
 
 func TestRenderDiskCardAddsMetaLineForSingleDisk(t *testing.T) {
+	t.Setenv("MOLE_IS_TURKISH_SYSTEM", "false")
 	card := renderDiskCard([]DiskStatus{{
 		UsedPercent: 28.4,
 		Used:        263 << 30,
@@ -844,6 +846,7 @@ func TestRenderDiskCardAddsMetaLineForSingleDisk(t *testing.T) {
 }
 
 func TestRenderDiskCardDoesNotAddMetaLineForMultipleDisks(t *testing.T) {
+	t.Setenv("MOLE_IS_TURKISH_SYSTEM", "false")
 	card := renderDiskCard([]DiskStatus{
 		{UsedPercent: 28.4, Used: 263 << 30, Total: 926 << 30, Fstype: "apfs"},
 		{UsedPercent: 50.0, Used: 500 << 30, Total: 1000 << 30, Fstype: "apfs"},
@@ -861,6 +864,7 @@ func TestRenderDiskCardDoesNotAddMetaLineForMultipleDisks(t *testing.T) {
 }
 
 func TestRenderDiskCardTrashLine(t *testing.T) {
+	t.Setenv("MOLE_IS_TURKISH_SYSTEM", "false")
 	disk := DiskStatus{UsedPercent: 50, Used: 500 << 30, Total: 1000 << 30, Fstype: "apfs"}
 	tests := []struct {
 		name      string

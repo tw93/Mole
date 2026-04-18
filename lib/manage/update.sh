@@ -15,10 +15,10 @@ format_brew_update_detail() {
     local formulas="${BREW_FORMULA_OUTDATED_COUNT:-0}"
     local casks="${BREW_CASK_OUTDATED_COUNT:-0}"
 
-    ((formulas > 0)) && details+=("${formulas} formula")
-    ((casks > 0)) && details+=("${casks} cask")
+    ((formulas > 0)) && details+=("${formulas} ${TR_CHK_HB_FORMULA:-formula}")
+    ((casks > 0)) && details+=("${casks} ${TR_CHK_HB_CASK:-cask}")
 
-    local detail_str="${total} updates"
+    local detail_str="${total} ${TR_UPD_UPDATES:-updates}"
     if ((${#details[@]} > 0)); then
         detail_str="$(
             IFS=', '
@@ -32,7 +32,7 @@ format_brew_update_detail() {
 format_brew_update_label() {
     local detail
     detail=$(format_brew_update_detail || true)
-    [[ -n "$detail" ]] && printf "Homebrew, %s" "$detail"
+    [[ -n "$detail" ]] && printf "${TR_UPD_BREW_LABEL_FMT:-Homebrew, %s}" "$detail"
 }
 
 populate_brew_update_counts_if_unset() {
@@ -102,28 +102,28 @@ ask_for_updates() {
     fi
 
     if [[ "${MOLE_UPDATE_AVAILABLE:-}" == "true" ]]; then
-        echo -ne "${YELLOW}Update Mole now?${NC} ${GRAY}Enter confirm / ESC cancel${NC}: "
+        echo -ne "${YELLOW}${TR_UPD_MOLE_PROMPT:-Update Mole now?}${NC} ${GRAY}${TR_UPD_CONFIRM:-Enter confirm / ESC cancel}${NC}: "
 
         local key
         if ! key=$(read_key); then
-            echo "skip"
+            echo "${TR_UPD_SKIP:-skip}"
             return 1
         fi
 
         if [[ "$key" == "ENTER" ]]; then
-            echo "yes"
+            echo "${TR_UPD_YES:-yes}"
             return 0
         fi
     fi
 
     if [[ -n "${BREW_OUTDATED_COUNT:-}" && "${BREW_OUTDATED_COUNT:-0}" -gt 0 ]]; then
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} Run ${GREEN}brew upgrade${NC} to update"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${TR_UPD_BREW_HINT:-Run ${GREEN}brew upgrade${NC} to update}"
     fi
     if [[ -n "${MACOS_UPDATE_AVAILABLE:-}" && "${MACOS_UPDATE_AVAILABLE}" == "true" ]]; then
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} Open ${GREEN}System Settings${NC} → ${GREEN}General${NC} → ${GREEN}Software Update${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${TR_UPD_MACOS_HINT:-Open ${GREEN}System Settings${NC} → ${GREEN}General${NC} → ${GREEN}Software Update${NC}}"
     fi
     if [[ -n "${APPSTORE_UPDATE_COUNT:-}" && "${APPSTORE_UPDATE_COUNT:-0}" -gt 0 ]]; then
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} Open ${GREEN}App Store${NC} → ${GREEN}Updates${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${TR_UPD_APPSTORE_HINT:-Open ${GREEN}App Store${NC} → ${GREEN}Updates${NC}}"
     fi
 
     return 1
@@ -137,33 +137,33 @@ perform_updates() {
     local total_count=0
 
     if [[ -n "${MOLE_UPDATE_AVAILABLE:-}" && "${MOLE_UPDATE_AVAILABLE}" == "true" ]]; then
-        echo -e "${BLUE}Updating Mole...${NC}"
+        echo -e "${BLUE}${TR_UPD_UPDATING_MOLE:-Updating Mole...}${NC}"
         local mole_bin="${SCRIPT_DIR}/../../mole"
         [[ ! -f "$mole_bin" ]] && mole_bin=$(command -v mole 2> /dev/null || echo "")
 
         if [[ -x "$mole_bin" ]]; then
             if "$mole_bin" update 2>&1 | grep -qE "(Updated|latest version)"; then
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} Mole updated"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_UPD_MOLE_UPDATED:-Mole updated}"
                 reset_mole_cache
                 updated_count=$((updated_count + 1))
             else
-                echo -e "${RED}✗${NC} Mole update failed"
+                echo -e "${RED}✗${NC} ${TR_UPD_MOLE_FAIL:-Mole update failed}"
             fi
         else
-            echo -e "${RED}✗${NC} Mole executable not found"
+            echo -e "${RED}✗${NC} ${TR_UPD_MOLE_NOT_FOUND:-Mole executable not found}"
         fi
         echo ""
         total_count=1
     fi
 
     if [[ $total_count -eq 0 ]]; then
-        echo -e "${GRAY}No updates to perform${NC}"
+        echo -e "${GRAY}${TR_UPD_NONE:-No updates to perform}${NC}"
         return 0
     elif [[ $updated_count -eq $total_count ]]; then
-        echo -e "${GREEN}All updates completed, ${updated_count}/${total_count}${NC}"
+        echo -e "${GREEN}${TR_UPD_ALL_COMPLETE:-All updates completed}, ${updated_count}/${total_count}${NC}"
         return 0
     else
-        echo -e "${RED}Update failed, ${updated_count}/${total_count}${NC}"
+        echo -e "${RED}${TR_UPD_FAIL:-Update failed}, ${updated_count}/${total_count}${NC}"
         return 1
     fi
 }

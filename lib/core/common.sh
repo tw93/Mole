@@ -22,6 +22,7 @@ source "$_MOLE_CORE_DIR/file_ops.sh"
 source "$_MOLE_CORE_DIR/help.sh"
 source "$_MOLE_CORE_DIR/ui.sh"
 source "$_MOLE_CORE_DIR/app_protection.sh"
+source "$_MOLE_CORE_DIR/tr.sh"
 
 # Load sudo management if available
 if [[ -f "$_MOLE_CORE_DIR/sudo.sh" ]]; then
@@ -79,9 +80,9 @@ update_via_homebrew() {
 
     # Update Homebrew
     if [[ -t 1 ]]; then
-        start_inline_spinner "Updating Homebrew..."
+        start_inline_spinner "${TR_UPD_UPDATING_HB:-Updating Homebrew...}"
     else
-        echo "Updating Homebrew..."
+        echo "${TR_UPD_UPDATING_HB:-Updating Homebrew...}"
     fi
 
     brew update > "$temp_update" 2>&1 &
@@ -94,9 +95,9 @@ update_via_homebrew() {
 
     # Upgrade Mole
     if [[ -t 1 ]]; then
-        start_inline_spinner "Upgrading Mole..."
+        start_inline_spinner "${TR_UPD_UPGRADING_MOLE:-Upgrading Mole...}"
     else
-        echo "Upgrading Mole..."
+        echo "${TR_UPD_UPGRADING_MOLE:-Upgrading Mole...}"
     fi
 
     brew upgrade mole > "$temp_upgrade" 2>&1 &
@@ -122,10 +123,10 @@ update_via_homebrew() {
         installed_version=$(brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$installed_version" ]] && installed_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${installed_version:-$current_version}"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_UPD_ALREADY_LATEST:-Already on latest version}, ${installed_version:-$current_version}"
         echo ""
     elif echo "$upgrade_output" | grep -q "Error:"; then
-        log_error "Homebrew upgrade failed"
+        log_error "${TR_UPD_HB_FAIL:-Homebrew upgrade failed}"
         echo "$upgrade_output" | grep "Error:" >&2
         return 1
     else
@@ -134,7 +135,7 @@ update_via_homebrew() {
         new_version=$(brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$new_version" ]] && new_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-$current_version}"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_UPD_UPDATED:-Updated to latest version}, ${new_version:-$current_version}"
         echo ""
     fi
 

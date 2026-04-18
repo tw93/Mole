@@ -320,36 +320,36 @@ classify_cleanup_risk() {
 
     # HIGH RISK: System files, preference files, require sudo
     if [[ "$description" =~ [Ss]ystem || "$description" =~ [Ss]udo || "$path" =~ ^/System || "$path" =~ ^/Library ]]; then
-        echo "HIGH|System files or requires admin access"
+        echo "HIGH|${TR_RISK_SYS_ADMIN:-System files or requires admin access}"
         return
     fi
 
     # HIGH RISK: Preference files that might affect app functionality
     if [[ "$description" =~ [Pp]reference || "$path" =~ /Preferences/ ]]; then
-        echo "HIGH|Preference files may affect app settings"
+        echo "HIGH|${TR_RISK_PREFS:-Preference files may affect app settings}"
         return
     fi
 
     # MEDIUM RISK: Installers, large files, app bundles
     if [[ "$description" =~ [Ii]nstaller || "$description" =~ [Aa]pp.*[Bb]undle || "$description" =~ [Ll]arge ]]; then
-        echo "MEDIUM|Installer packages or app data"
+        echo "MEDIUM|${TR_RISK_INSTALLERS:-Installer packages or app data}"
         return
     fi
 
     # MEDIUM RISK: Old backups, downloads
     if [[ "$description" =~ [Bb]ackup || "$description" =~ [Dd]ownload || "$description" =~ [Oo]rphan ]]; then
-        echo "MEDIUM|Backup or downloaded files"
+        echo "MEDIUM|${TR_RISK_BACKUPS:-Backup or downloaded files}"
         return
     fi
 
     # LOW RISK: Caches, logs, temporary files (automatically regenerated)
     if [[ "$description" =~ [Cc]ache || "$description" =~ [Ll]og || "$description" =~ [Tt]emp || "$description" =~ [Tt]humbnail ]]; then
-        echo "LOW|Cache/log files, automatically regenerated"
+        echo "LOW|${TR_RISK_CACHES:-Cache/log files, automatically regenerated}"
         return
     fi
 
     # DEFAULT: MEDIUM
-    echo "MEDIUM|User data files"
+    echo "MEDIUM|${TR_RISK_USER_DATA:-User data files}"
 }
 
 # shellcheck disable=SC2329
@@ -409,7 +409,7 @@ safe_clean() {
     if [[ ${#targets[@]} -gt 20 && -t 1 ]]; then
         show_scan_feedback=true
         stop_section_spinner
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning ${#targets[@]} items..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CLEAN_SCAN_ITEMS:-Scanning ${#targets[@]} items...}"
     fi
 
     local -a existing_paths=()
@@ -489,7 +489,7 @@ safe_clean() {
     if [[ ${#existing_paths[@]} -gt 10 ]]; then
         show_spinner=true
         local total_paths=${#existing_paths[@]}
-        if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."; fi
+        if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CLEAN_SCAN_ITEMS_SHORT:-Scanning items...}"; fi
     fi
 
     local cleaning_spinner_started=false
@@ -511,7 +511,7 @@ safe_clean() {
         # Heuristic: mostly files -> sequential stat is faster than subshells.
         if [[ $dir_count -lt 5 && ${#existing_paths[@]} -gt 20 ]]; then
             if [[ -t 1 && "$show_spinner" == "false" ]]; then
-                MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."
+                MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CLEAN_SCAN_ITEMS_SHORT:-Scanning items...}"
                 show_spinner=true
             fi
 
@@ -769,27 +769,27 @@ start_cleanup() {
     fi
     printf '\n'
     if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
-        echo -e "${PURPLE_BOLD}Clean External Volume${NC}"
+        echo -e "${PURPLE_BOLD}${TR_CLEAN_EXTERNAL:-Clean External Volume}${NC}"
         echo -e "${GRAY}${EXTERNAL_VOLUME_TARGET}${NC}"
         echo ""
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+            echo -e "${YELLOW}${TR_DRY_RUN_MODE:-Dry Run Mode}${NC}, ${TR_DRY_RUN_PREVIEW:-Preview only, no deletions}"
             echo ""
         fi
         SYSTEM_CLEAN=false
         return 0
     fi
 
-    echo -e "${PURPLE_BOLD}Clean Your Mac${NC}"
+    echo -e "${PURPLE_BOLD}${TR_CLEAN_YOUR_MAC:-Clean Your Mac}${NC}"
     echo ""
 
     if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
-        echo -e "${GRAY}${ICON_WARNING} Use --dry-run to preview, --whitelist to manage protected paths${NC}"
+        echo -e "${GRAY}${ICON_WARNING} ${TR_BIN_CLEAN_USE_DRY_RUN:-Use --dry-run to preview, --whitelist to manage protected paths}${NC}"
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+        echo -e "${YELLOW}${TR_DRY_RUN_MODE:-Dry Run Mode}${NC}, ${TR_DRY_RUN_PREVIEW:-Preview only, no deletions}"
         echo ""
 
         ensure_user_file "$EXPORT_LIST_FILE"
@@ -809,11 +809,11 @@ EOF
         # Preview system section when sudo is already cached (no password prompt).
         if has_sudo_session; then
             SYSTEM_CLEAN=true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access available, system preview included"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_BIN_CLEAN_ADMIN_AVAIL:-Admin access available, system preview included}"
             echo ""
         else
             SYSTEM_CLEAN=false
-            echo -e "${GRAY}${ICON_WARNING} System caches need sudo, run ${NC}sudo -v && mo clean --dry-run${GRAY} for full preview${NC}"
+            echo -e "${GRAY}${ICON_WARNING} ${TR_BIN_CLEAN_SYSTEM_SUDO_DRY:-System caches need sudo, run sudo -v && mo clean --dry-run for full preview}${NC}"
             echo ""
         fi
         return
@@ -822,52 +822,52 @@ EOF
     if [[ -t 0 ]]; then
         if has_sudo_session; then
             SYSTEM_CLEAN=true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_BIN_CLEAN_ADMIN_ALREADY:-Admin access already available}"
             echo ""
         else
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+            echo -ne "${PURPLE}${ICON_ARROW}${NC} ${TR_BIN_CLEAN_SYS_SUDO_PROMPT:-System caches need sudo. Enter continue, Space skip: }"
 
             local choice
             choice=$(read_key)
 
             # ESC/Q aborts, Space skips, Enter enables system cleanup.
             if [[ "$choice" == "QUIT" ]]; then
-                echo -e " ${GRAY}Canceled${NC}"
+                echo -e " ${GRAY}${TR_CANCELLED:-Canceled}${NC}"
                 exit 0
             fi
 
             if [[ "$choice" == "SPACE" ]]; then
-                echo -e " ${GRAY}Skipped${NC}"
+                echo -e " ${GRAY}${TR_BIN_CLEAN_SKIPPED:-Skipped}${NC}"
                 echo ""
                 SYSTEM_CLEAN=false
             elif [[ "$choice" == "ENTER" ]]; then
                 printf "\r\033[K" # Clear the prompt line
-                if ensure_sudo_session "System cleanup requires admin access"; then
+                if ensure_sudo_session "${TR_BIN_CLEAN_REQ_ADMIN:-System cleanup requires admin access}"; then
                     SYSTEM_CLEAN=true
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_BIN_CLEAN_ADMIN_GRANTED:-Admin access granted}"
                     echo ""
                 else
                     SYSTEM_CLEAN=false
                     echo ""
-                    echo -e "${YELLOW}Authentication failed${NC}, continuing with user-level cleanup"
+                    echo -e "${YELLOW}${TR_BIN_CLEAN_AUTH_FAIL:-Authentication failed}${NC}, ${TR_BIN_CLEAN_CONT_USER:-continuing with user-level cleanup}"
                 fi
             else
                 SYSTEM_CLEAN=false
-                echo -e " ${GRAY}Skipped${NC}"
+                echo -e " ${GRAY}${TR_BIN_CLEAN_SKIPPED:-Skipped}${NC}"
                 echo ""
             fi
         fi
     else
         echo ""
-        echo "Running in non-interactive mode"
+        echo "${TR_BIN_CLEAN_NON_INTERACTIVE:-Running in non-interactive mode}"
         if has_sudo_session; then
             SYSTEM_CLEAN=true
-            echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
+            echo "  ${ICON_LIST} ${TR_BIN_CLEAN_SYS_ENABLED:-System-level cleanup enabled, sudo session active}"
         else
             SYSTEM_CLEAN=false
-            echo "  ${ICON_LIST} System-level cleanup skipped, requires sudo"
+            echo "  ${ICON_LIST} ${TR_BIN_CLEAN_SYS_SKIPPED:-System-level cleanup skipped, requires sudo}"
         fi
-        echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
+        echo "  ${ICON_LIST} ${TR_BIN_CLEAN_USER_PROCEED:-User-level cleanup will proceed automatically}"
         echo ""
     fi
 }
@@ -884,10 +884,10 @@ perform_cleanup() {
     if [[ -z "$EXTERNAL_VOLUME_TARGET" && "${MOLE_TEST_MODE:-0}" == "1" ]]; then
         test_mode_enabled=true
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+            echo -e "${YELLOW}${TR_DRY_RUN_MODE:-Dry Run Mode}${NC}, ${TR_DRY_RUN_PREVIEW:-Preview only, no deletions}"
             echo ""
         fi
-        echo -e "${GREEN}${ICON_LIST}${NC} User app cache"
+        echo -e "${GREEN}${ICON_LIST}${NC} ${TR_BIN_CLEAN_USER_APP_CACHE:-User app cache}"
         if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
             local -a expanded_defaults
             expanded_defaults=()
@@ -904,11 +904,11 @@ perform_cleanup() {
                 done
                 [[ "$is_default" == "false" ]] && has_custom=true && break
             done
-            [[ "$has_custom" == "true" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Protected items found"
+            [[ "$has_custom" == "true" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_BIN_CLEAN_PROTECTED_FOUND:-Protected items found}"
         fi
         if [[ "$DRY_RUN" == "true" ]]; then
             echo ""
-            echo "Potential space: 0.00GB"
+            echo "${TR_BIN_CLEAN_POTENTIAL_SPACE:-Potential space: 0.00GB}"
         fi
         total_items=1
         files_cleaned=0
@@ -916,14 +916,14 @@ perform_cleanup() {
     fi
 
     if [[ "$test_mode_enabled" == "false" && -z "$EXTERNAL_VOLUME_TARGET" ]]; then
-        echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | Free space: $(get_free_space)"
+        echo -e "${BLUE}${ICON_ADMIN}${NC} $(detect_architecture) | ${TR_BIN_CLEAN_FREE_SPACE_LABEL:-Free space:} $(get_free_space)"
     fi
 
     if [[ "$test_mode_enabled" == "true" ]]; then
-        local summary_heading="Test mode complete"
+        local summary_heading="${TR_BIN_CLEAN_TEST_COMPLETE:-Test mode complete}"
         local -a summary_details
         summary_details=()
-        summary_details+=("Test mode - no actual cleanup performed")
+        summary_details+=("${TR_BIN_CLEAN_TEST_NO_CLEANUP:-Test mode - no actual cleanup performed}")
         print_summary_block "$summary_heading" "${summary_details[@]}"
         printf '\n'
         return 0
@@ -957,12 +957,12 @@ perform_cleanup() {
 
         if [[ $custom_count -gt 0 || $predefined_count -gt 0 ]]; then
             local summary=""
-            [[ $predefined_count -gt 0 ]] && summary+="$predefined_count core"
+            [[ $predefined_count -gt 0 ]] && summary+="$predefined_count ${TR_BIN_CLEAN_WL_CORE:-core}"
             [[ $custom_count -gt 0 && $predefined_count -gt 0 ]] && summary+=" + "
-            [[ $custom_count -gt 0 ]] && summary+="$custom_count custom"
-            summary+=" patterns active"
+            [[ $custom_count -gt 0 ]] && summary+="$custom_count ${TR_BIN_CLEAN_WL_CUSTOM:-custom}"
+            summary+=" ${TR_BIN_CLEAN_WL_PATTERNS_ACTIVE:-patterns active}"
 
-            echo -e "${BLUE}${ICON_SUCCESS}${NC} Whitelist: $summary"
+            echo -e "${BLUE}${ICON_SUCCESS}${NC} ${TR_BIN_CLEAN_WL_LABEL:-Whitelist:} $summary"
 
             if [[ "$DRY_RUN" == "true" ]]; then
                 for pattern in "${WHITELIST_PATTERNS[@]}"; do
@@ -979,7 +979,7 @@ perform_cleanup() {
         fda_status=$?
         if [[ $fda_status -eq 1 ]]; then
             echo ""
-            echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}Grant Full Disk Access to your terminal in System Settings for best results${NC}"
+            echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}${TR_BIN_CLEAN_FDA_HINT:-Grant Full Disk Access to your terminal in System Settings for best results}${NC}"
         fi
     fi
 
@@ -994,13 +994,13 @@ perform_cleanup() {
     set +e
 
     if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
-        start_section "External volume"
+        start_section "${TR_SEC_EXTERNAL_VOLUME:-External volume}"
         clean_external_volume_target "$EXTERNAL_VOLUME_TARGET"
         end_section
     else
         # ===== 1. System =====
         if [[ "$SYSTEM_CLEAN" == "true" ]]; then
-            start_section "System"
+            start_section "${TR_SEC_SYSTEM:-System}"
             clean_deep_system
             clean_local_snapshots
             end_section
@@ -1009,54 +1009,54 @@ perform_cleanup() {
         if [[ ${#WHITELIST_WARNINGS[@]} -gt 0 ]]; then
             echo ""
             for warning in "${WHITELIST_WARNINGS[@]}"; do
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} Whitelist: $warning"
+                echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_BIN_CLEAN_WL_LABEL:-Whitelist:} $warning"
             done
         fi
 
         # ===== 2. User essentials =====
-        start_section "User essentials"
+        start_section "${TR_SEC_USER_ESSENTIALS:-User essentials}"
         clean_user_essentials
         clean_finder_metadata
         end_section
 
         # ===== 3. App caches (merged sandboxed and standard app caches) =====
-        start_section "App caches"
+        start_section "${TR_SEC_APP_CACHES:-App caches}"
         clean_app_caches
         end_section
 
         # ===== 4. Browsers =====
-        start_section "Browsers"
+        start_section "${TR_SEC_BROWSERS:-Browsers}"
         clean_browsers
         end_section
 
         # ===== 5. Cloud & Office =====
-        start_section "Cloud & Office"
+        start_section "${TR_SEC_CLOUD_OFFICE:-Cloud & Office}"
         clean_cloud_storage
         clean_office_applications
         end_section
 
         # ===== 6. Developer tools (merged CLI and GUI tooling) =====
-        start_section "Developer tools"
+        start_section "${TR_SEC_DEV_TOOLS:-Developer tools}"
         clean_developer_tools
         end_section
 
         # ===== 7. Applications =====
-        start_section "Applications"
+        start_section "${TR_SEC_APPLICATIONS:-Applications}"
         clean_user_gui_applications
         end_section
 
         # ===== 8. Virtualization =====
-        start_section "Virtualization"
+        start_section "${TR_SEC_VIRTUALIZATION:-Virtualization}"
         clean_virtualization_tools
         end_section
 
         # ===== 9. Application Support =====
-        start_section "Application Support"
+        start_section "${TR_SEC_APP_SUPPORT:-Application Support}"
         clean_application_support_logs
         end_section
 
         # ===== 10. App leftovers =====
-        start_section "App leftovers"
+        start_section "${TR_SEC_APP_LEFTOVERS:-App leftovers}"
         clean_orphaned_app_data
         clean_orphaned_system_services
         show_user_launch_agent_hint_notice
@@ -1066,28 +1066,28 @@ perform_cleanup() {
         clean_apple_silicon_caches
 
         # ===== 12. Device backups & firmware =====
-        start_section "Device backups & firmware"
+        start_section "${TR_SEC_DEVICE_BACKUPS:-Device backups & firmware}"
         clean_cached_device_firmware
         check_ios_device_backups
         end_section
 
         # ===== 13. Time Machine =====
-        start_section "Time Machine"
+        start_section "${TR_SEC_TIME_MACHINE:-Time Machine}"
         clean_time_machine_failed_backups
         end_section
 
         # ===== 14. Large files =====
-        start_section "Large files"
+        start_section "${TR_SEC_LARGE_FILES:-Large files}"
         check_large_file_candidates
         end_section
 
         # ===== 15. System Data clues =====
-        start_section "System Data clues"
+        start_section "${TR_SEC_SYSTEM_DATA:-System Data clues}"
         show_system_data_hint_notice
         end_section
 
         # ===== 16. Project artifacts =====
-        start_section "Project artifacts"
+        start_section "${TR_SEC_PROJECT_ART:-Project artifacts}"
         show_project_artifact_hint_notice
         end_section
     fi
@@ -1098,9 +1098,9 @@ perform_cleanup() {
     local summary_heading=""
     local summary_status="success"
     if [[ "$DRY_RUN" == "true" ]]; then
-        summary_heading="Dry run complete - no changes made"
+        summary_heading="${TR_CLEAN_DRY_COMPLETE:-Dry run complete - no changes made}"
     else
-        summary_heading="Cleanup complete"
+        summary_heading="${TR_CLEAN_COMPLETE:-Cleanup complete}"
     fi
 
     local -a summary_details=()
@@ -1110,9 +1110,9 @@ perform_cleanup() {
         freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_size_human}${NC}"
-            [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
-            [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
+            local stats="${TR_CLEAN_POTENTIAL_SPACE:-Potential space:} ${GREEN}${freed_size_human}${NC}"
+            [[ $files_cleaned -gt 0 ]] && stats+=" | ${TR_CLEAN_ITEMS:-Items:} $files_cleaned"
+            [[ $total_items -gt 0 ]] && stats+=" | ${TR_CLEAN_CATEGORIES:-Categories:} $total_items"
             summary_details+=("$stats")
 
             {
@@ -1120,22 +1120,22 @@ perform_cleanup() {
                 echo "# ============================================"
                 echo "# Summary"
                 echo "# ============================================"
-                echo "# Potential cleanup: ${freed_size_human}"
-                echo "# Items: $files_cleaned"
-                echo "# Categories: $total_items"
+                echo "# ${TR_CLEAN_POTENTIAL_CLEANUP:-Potential cleanup:} ${freed_size_human}"
+                echo "# ${TR_CLEAN_ITEMS:-Items:} $files_cleaned"
+                echo "# ${TR_CLEAN_CATEGORIES:-Categories:} $total_items"
             } >> "$EXPORT_LIST_FILE"
 
-            summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
-            summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
+            summary_details+=("${TR_CLEAN_FILE_LIST:-Detailed file list:} ${GRAY}$EXPORT_LIST_FILE${NC}")
+            summary_details+=("${TR_CLEAN_WL_HINT:-Use ${GRAY}mo clean --whitelist${NC} to add protection rules}")
         else
-            local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
+            local summary_line="${TR_CLEAN_SPACE_FREED_LBL:-Space freed:} ${GREEN}${freed_size_human}${NC}"
 
             if [[ $files_cleaned -gt 0 && $total_items -gt 0 ]]; then
-                summary_line+=" | Items cleaned: $files_cleaned | Categories: $total_items"
+                summary_line+=" | ${TR_CLEAN_ITEMS_CLEANED_LBL:-Items cleaned:} $files_cleaned | ${TR_CLEAN_CATEGORIES:-Categories:} $total_items"
             elif [[ $files_cleaned -gt 0 ]]; then
-                summary_line+=" | Items cleaned: $files_cleaned"
+                summary_line+=" | ${TR_CLEAN_ITEMS_CLEANED_LBL:-Items cleaned:} $files_cleaned"
             elif [[ $total_items -gt 0 ]]; then
-                summary_line+=" | Categories: $total_items"
+                summary_line+=" | ${TR_CLEAN_CATEGORIES:-Categories:} $total_items"
             fi
 
             summary_details+=("$summary_line")
@@ -1147,25 +1147,25 @@ perform_cleanup() {
 
                 if [[ $movies -gt 0 ]]; then
                     if [[ $movies -eq 1 ]]; then
-                        summary_details+=("Equivalent to ~$movies 4K movie of storage.")
+                        summary_details+=("${TR_CLEAN_MOVIE_EQUIV_SINGLE:-Equivalent to ~$movies 4K movie of storage.}")
                     else
-                        summary_details+=("Equivalent to ~$movies 4K movies of storage.")
+                        summary_details+=("${TR_CLEAN_MOVIE_EQUIV_PLURAL:-Equivalent to ~$movies 4K movies of storage.}")
                     fi
                 fi
             fi
 
             local final_free_space
             final_free_space=$(get_free_space)
-            summary_details+=("Free space now: $final_free_space")
+            summary_details+=("${TR_CLEAN_FREE_SPACE_NOW:-Free space now:} $final_free_space")
         fi
     else
         summary_status="info"
         if [[ "$DRY_RUN" == "true" ]]; then
-            summary_details+=("No significant reclaimable space detected, system already clean.")
+            summary_details+=("${TR_CLEAN_ALREADY_CLEAN_DRY:-No significant reclaimable space detected, system already clean.}")
         else
-            summary_details+=("System was already clean; no additional space freed.")
+            summary_details+=("${TR_CLEAN_ALREADY_CLEAN:-System was already clean; no additional space freed.}")
         fi
-        summary_details+=("Free space now: $(get_free_space)")
+        summary_details+=("${TR_CLEAN_FREE_SPACE_NOW:-Free space now:} $(get_free_space)")
     fi
 
     if [[ $had_errexit -eq 1 ]]; then
@@ -1196,7 +1196,7 @@ main() {
             "--external")
                 shift
                 if [[ $# -eq 0 ]]; then
-                    echo "Missing path for --external" >&2
+                    echo "${TR_BIN_CLEAN_MISSING_EXT_PATH:-Missing path for --external}" >&2
                     exit 1
                 fi
                 EXTERNAL_VOLUME_TARGET=$(validate_external_volume_target "$1") || exit 1

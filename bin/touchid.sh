@@ -67,9 +67,9 @@ touchid_dry_run_enabled() {
 # Show current Touch ID status
 show_status() {
     if is_touchid_configured; then
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Touch ID is enabled for sudo"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_BIN_TID_ENABLED:-Touch ID is enabled for sudo}"
     else
-        echo -e "${YELLOW}☻${NC} Touch ID is not configured for sudo"
+        echo -e "${YELLOW}☻${NC} ${TR_BIN_TID_NOT_CONFIGURED:-Touch ID is not configured for sudo}"
     fi
 }
 
@@ -80,20 +80,20 @@ enable_touchid() {
 
     if touchid_dry_run_enabled; then
         if is_touchid_configured; then
-            echo -e "${GREEN}${ICON_SUCCESS} Touch ID is already enabled, no changes needed${NC}"
+            echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_ALREADY_ENABLED:-Touch ID is already enabled, no changes needed}${NC}"
         else
-            echo -e "${GREEN}${ICON_SUCCESS} [DRY RUN] Would enable Touch ID for sudo${NC}"
-            echo -e "${GRAY}${ICON_REVIEW} Target files: ${PAM_SUDO_FILE} and/or ${PAM_SUDO_LOCAL_FILE}${NC}"
+            echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_DRY_ENABLE:-[DRY RUN] Would enable Touch ID for sudo}${NC}"
+            echo -e "${GRAY}${ICON_REVIEW} ${TR_BIN_TARGET_FILES:-Target files: ${PAM_SUDO_FILE} and/or ${PAM_SUDO_LOCAL_FILE}}${NC}"
         fi
         return 0
     fi
 
     # First check if system supports Touch ID
     if ! supports_touchid; then
-        log_warning "This Mac may not support Touch ID"
-        read -rp "Continue anyway? [y/N] " confirm
-        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Cancelled${NC}"
+        log_warning "${TR_BIN_TID_MAY_NOT_SUPPORT:-This Mac may not support Touch ID}"
+        read -rp "${TR_BIN_CONTINUE_ANYWAY:-Continue anyway? [y/N]} " confirm
+        if [[ ! "$confirm" =~ ^[YyEe]$ ]]; then
+            echo -e "${YELLOW}${TR_BIN_CANCELLED:-Cancelled}${NC}"
             return 1
         fi
         echo ""
@@ -108,11 +108,11 @@ enable_touchid() {
                 # Clean up legacy config
                 temp_file=$(create_temp_file)
                 grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
-                if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
-                    echo -e "${GREEN}${ICON_SUCCESS} Cleanup legacy configuration${NC}"
+                if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2>/dev/null; then
+                    echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_CLEANUP_LEGACY:-Cleanup legacy configuration}${NC}"
                 fi
             fi
-            echo -e "${GREEN}${ICON_SUCCESS} Touch ID is already enabled${NC}"
+            echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_ALREADY:-Touch ID is already enabled}${NC}"
             return 0
         fi
 
@@ -153,13 +153,13 @@ enable_touchid() {
                 temp_file=$(create_temp_file)
                 grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
                 sudo mv "$temp_file" "$PAM_SUDO_FILE"
-                log_success "Touch ID migrated to sudo_local"
+                log_success "${TR_BIN_TID_MIGRATED:-Touch ID migrated to sudo_local}"
             else
-                log_success "Touch ID enabled, via sudo_local, try: sudo ls"
+                log_success "${TR_BIN_TID_ENABLED_LOCAL:-Touch ID enabled, via sudo_local, try: sudo ls}"
             fi
             return 0
         else
-            log_error "Failed to write to sudo_local"
+            log_error "${TR_BIN_TID_ERR_LOCAL:-Failed to write to sudo_local}"
             return 1
         fi
     fi
@@ -168,14 +168,14 @@ enable_touchid() {
 
     # Check if already configured (Legacy)
     if is_touchid_configured; then
-        echo -e "${GREEN}${ICON_SUCCESS} Touch ID is already enabled${NC}"
+        echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_ALREADY:-Touch ID is already enabled}${NC}"
         return 0
     fi
 
     # Create backup only if it doesn't exist to preserve original state
     if [[ ! -f "${PAM_SUDO_FILE}.mole-backup" ]]; then
-        if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
-            log_error "Failed to create backup"
+        if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2>/dev/null; then
+            log_error "${TR_BIN_ERR_BACKUP:-Failed to create backup}"
             return 1
         fi
     fi
@@ -196,16 +196,16 @@ enable_touchid() {
 
     # Verify content change
     if cmp -s "$PAM_SUDO_FILE" "$temp_file"; then
-        log_error "Failed to modify configuration"
+        log_error "${TR_BIN_ERR_MOD_CONF:-Failed to modify configuration}"
         return 1
     fi
 
     # Apply the changes
-    if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
-        log_success "Touch ID enabled, try: sudo ls"
+    if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2>/dev/null; then
+        log_success "${TR_BIN_TID_ENABLED_TRY:-Touch ID enabled, try: sudo ls}"
         return 0
     else
-        log_error "Failed to enable Touch ID"
+        log_error "${TR_BIN_ERR_ENABLE:-Failed to enable Touch ID}"
         return 1
     fi
 }
@@ -217,16 +217,16 @@ disable_touchid() {
 
     if touchid_dry_run_enabled; then
         if ! is_touchid_configured; then
-            echo -e "${YELLOW}Touch ID is not currently enabled${NC}"
+            echo -e "${YELLOW}${TR_BIN_TID_NOT_ENABLED:-Touch ID is not currently enabled}${NC}"
         else
-            echo -e "${GREEN}${ICON_SUCCESS} [DRY RUN] Would disable Touch ID for sudo${NC}"
-            echo -e "${GRAY}${ICON_REVIEW} Target files: ${PAM_SUDO_FILE} and/or ${PAM_SUDO_LOCAL_FILE}${NC}"
+            echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_DRY_DISABLE:-[DRY RUN] Would disable Touch ID for sudo}${NC}"
+            echo -e "${GRAY}${ICON_REVIEW} ${TR_BIN_TARGET_FILES:-Target files: ${PAM_SUDO_FILE} and/or ${PAM_SUDO_LOCAL_FILE}}${NC}"
         fi
         return 0
     fi
 
     if ! is_touchid_configured; then
-        echo -e "${YELLOW}Touch ID is not currently enabled${NC}"
+        echo -e "${YELLOW}${TR_BIN_TID_NOT_ENABLED:-Touch ID is not currently enabled}${NC}"
         return 0
     fi
 
@@ -243,11 +243,11 @@ disable_touchid() {
                 grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
                 sudo mv "$temp_file" "$PAM_SUDO_FILE"
             fi
-            echo -e "${GREEN}${ICON_SUCCESS} Touch ID disabled, removed from sudo_local${NC}"
+            echo -e "${GREEN}${ICON_SUCCESS} ${TR_TOUCHID_DISABLED:-Touch ID disabled, removed from sudo_local}${NC}"
             echo ""
             return 0
         else
-            log_error "Failed to disable Touch ID from sudo_local"
+            log_error "${TR_TOUCHID_DISABLE_FAILED:-Failed to disable Touch ID from sudo_local}"
             return 1
         fi
     fi
@@ -256,8 +256,8 @@ disable_touchid() {
     if grep -q "pam_tid.so" "$PAM_SUDO_FILE"; then
         # Create backup only if it doesn't exist
         if [[ ! -f "${PAM_SUDO_FILE}.mole-backup" ]]; then
-            if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
-                log_error "Failed to create backup"
+            if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2>/dev/null; then
+                log_error "${TR_BIN_ERR_BACKUP:-Failed to create backup}"
                 return 1
             fi
         fi
@@ -266,18 +266,18 @@ disable_touchid() {
         temp_file=$(create_temp_file)
         grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
 
-        if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2> /dev/null; then
-            echo -e "${GREEN}${ICON_SUCCESS} Touch ID disabled${NC}"
+        if sudo mv "$temp_file" "$PAM_SUDO_FILE" 2>/dev/null; then
+            echo -e "${GREEN}${ICON_SUCCESS} ${TR_BIN_TID_DISABLED:-Touch ID disabled}${NC}"
             echo ""
             return 0
         else
-            log_error "Failed to disable Touch ID"
+            log_error "${TR_BIN_ERR_DISABLE:-Failed to disable Touch ID}"
             return 1
         fi
     fi
 
     # Should not reach here if is_touchid_configured was true
-    log_error "Could not find Touch ID configuration to disable"
+    log_error "${TR_BIN_ERR_CONF_NOT_FOUND:-Could not find Touch ID configuration to disable}"
     return 1
 }
 
@@ -286,7 +286,7 @@ show_menu() {
     echo ""
     show_status
     if is_touchid_configured; then
-        echo -ne "${PURPLE}☛${NC} Press ${GREEN}Enter${NC} to disable, ${GRAY}Q${NC} to quit: "
+        echo -ne "${PURPLE}☛${NC} ${TR_BIN_PRESS_ENTER_DIS:-Press Enter to disable, Q to quit: } "
         IFS= read -r -s -n1 key || key=""
         drain_pending_input # Clean up any escape sequence remnants
         echo ""
@@ -301,11 +301,11 @@ show_menu() {
                 ;;
             *)
                 echo ""
-                log_error "Invalid key"
+                log_error "${TR_BIN_INVALID_KEY:-Invalid key}"
                 ;;
         esac
     else
-        echo -ne "${PURPLE}☛${NC} Press ${GREEN}Enter${NC} to enable, ${GRAY}Q${NC} to quit: "
+        echo -ne "${PURPLE}☛${NC} ${TR_BIN_PRESS_ENTER_EN:-Press Enter to enable, Q to quit: } "
         IFS= read -r -s -n1 key || key=""
         drain_pending_input # Clean up any escape sequence remnants
 
@@ -319,7 +319,7 @@ show_menu() {
                 ;;
             *)
                 echo ""
-                log_error "Invalid key"
+                log_error "${TR_BIN_INVALID_KEY:-Invalid key}"
                 ;;
         esac
     fi
@@ -343,19 +343,19 @@ main() {
                 if [[ -z "$command" ]]; then
                     command="$arg"
                 else
-                    log_error "Only one touchid command is supported per run"
+                    log_error "${TR_BIN_ONLY_ONE_CMD:-Only one touchid command is supported per run}"
                     return 1
                 fi
                 ;;
             *)
-                log_error "Unknown command: $arg"
+                log_error "${TR_BIN_UNKNOWN_CMD:-Unknown command: }$arg"
                 return 1
                 ;;
         esac
     done
 
     if touchid_dry_run_enabled; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No sudo authentication files will be modified"
+        echo -e "${YELLOW}${ICON_DRY_RUN} ${TR_BIN_DRY_RUN_MODE:-DRY RUN MODE, No authentication files will be modified}${NC}"
         echo ""
     fi
 
@@ -373,7 +373,7 @@ main() {
             show_menu
             ;;
         *)
-            log_error "Unknown command: $command"
+            log_error "${TR_UNKNOWN_COMMAND:-Unknown command}: $command"
             exit 1
             ;;
     esac

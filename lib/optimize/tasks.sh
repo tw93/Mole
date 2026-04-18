@@ -103,15 +103,15 @@ flush_dns_cache() {
 # Basic system maintenance.
 opt_system_maintenance() {
     if flush_dns_cache; then
-        opt_msg "DNS cache flushed"
+        opt_msg "${TR_OPT_DNS_FLUSHED:-DNS cache flushed}"
     fi
 
     local spotlight_status
     spotlight_status=$(mdutil -s / 2> /dev/null || echo "")
     if echo "$spotlight_status" | grep -qi "Indexing disabled"; then
-        echo -e "  ${GRAY}${ICON_EMPTY}${NC} Spotlight indexing disabled"
+        echo -e "  ${GRAY}${ICON_EMPTY}${NC} ${TR_OPT_SPOTLIGHT_OFF:-Spotlight indexing disabled}"
     else
-        opt_msg "Spotlight index verified"
+        opt_msg "${TR_OPT_SPOTLIGHT_OK:-Spotlight index verified}"
     fi
 }
 
@@ -170,8 +170,8 @@ opt_cache_refresh() {
     done
 
     export OPTIMIZE_CACHE_CLEANED_KB="${total_cache_size}"
-    opt_msg "QuickLook thumbnails refreshed"
-    opt_msg "Icon services cache rebuilt"
+    opt_msg "${TR_OPT_QL_REFRESHED:-QuickLook thumbnails refreshed}"
+    opt_msg "${TR_OPT_ICON_REBUILT:-Icon services cache rebuilt}"
 }
 
 # Removed: opt_maintenance_scripts - macOS handles log rotation automatically via launchd
@@ -199,7 +199,7 @@ opt_saved_state_cleanup() {
         done < <(command find "$state_dir" -type d -name "*.savedState" -mtime "+$MOLE_SAVED_STATE_AGE_DAYS" -print0 2> /dev/null)
     fi
 
-    opt_msg "App saved states optimized"
+    opt_msg "${TR_OPT_SAVED_STATE:-App saved states optimized}"
 }
 
 # Removed: opt_swap_cleanup - Direct virtual memory operations pose system crash risk
@@ -211,7 +211,7 @@ opt_saved_state_cleanup() {
 opt_fix_broken_configs() {
     local spinner_started="false"
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking preferences..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_OPT_CHECKING_PREFS:-Checking preferences...}"
         spinner_started="true"
     fi
 
@@ -223,9 +223,9 @@ opt_fix_broken_configs() {
 
     export OPTIMIZE_CONFIGS_REPAIRED="${broken_prefs}"
     if [[ $broken_prefs -gt 0 ]]; then
-        opt_msg "Repaired $broken_prefs corrupted preference files"
+        opt_msg "$(printf "${TR_OPT_PREFS_REPAIR_FMT:-Repaired %d corrupted preference files}" "$broken_prefs")"
     else
-        opt_msg "All preference files valid"
+        opt_msg "${TR_OPT_PREFS_OK:-All preference files valid}"
     fi
 }
 
@@ -239,16 +239,16 @@ opt_network_optimization() {
     fi
 
     if [[ "${MOLE_DNS_FLUSHED:-0}" == "1" ]]; then
-        opt_msg "DNS cache already refreshed"
-        opt_msg "mDNSResponder already restarted"
+        opt_msg "${TR_OPT_DNS_REFRESHED:-DNS cache already refreshed}"
+        opt_msg "${TR_OPT_DNS_RESTARTED:-mDNSResponder already restarted}"
         return 0
     fi
 
     if flush_dns_cache; then
-        opt_msg "DNS cache refreshed"
-        opt_msg "mDNSResponder restarted"
+        opt_msg "${TR_OPT_DNS_REFRESHED:-DNS cache refreshed}"
+        opt_msg "${TR_OPT_DNS_RESTARTED:-mDNSResponder restarted}"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to refresh DNS cache"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_DNS_FAIL:-Failed to refresh DNS cache}"
     fi
 }
 
@@ -263,19 +263,19 @@ opt_quarantine_cleanup() {
     fi
 
     if ! command -v sqlite3 > /dev/null 2>&1; then
-        echo -e "  ${GRAY}-${NC} Quarantine cleanup skipped, sqlite3 unavailable"
+        echo -e "  ${GRAY}-${NC} ${TR_OPT_QUARANTINE_SKIP:-Quarantine cleanup skipped, sqlite3 unavailable}"
         return 0
     fi
 
     local quarantine_db="$HOME/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2"
 
     if [[ ! -f "$quarantine_db" ]]; then
-        opt_msg "Quarantine database already clean"
+        opt_msg "${TR_OPT_QUARANTINE_OK:-Quarantine database already clean}"
         return 0
     fi
 
     if should_protect_path "$quarantine_db"; then
-        opt_msg "Quarantine database already clean"
+        opt_msg "${TR_OPT_QUARANTINE_OK:-Quarantine database already clean}"
         return 0
     fi
 
@@ -284,7 +284,7 @@ opt_quarantine_cleanup() {
     row_count=$(run_with_timeout 5 sqlite3 "$quarantine_db" "SELECT COUNT(*) FROM LSQuarantineEvent;" 2> /dev/null || echo "0")
 
     if [[ ! "$row_count" =~ ^[0-9]+$ ]] || [[ "$row_count" -eq 0 ]]; then
-        opt_msg "Quarantine database already clean"
+        opt_msg "${TR_OPT_QUARANTINE_OK:-Quarantine database already clean}"
         return 0
     fi
 
@@ -296,12 +296,12 @@ opt_quarantine_cleanup() {
         set -e
 
         if [[ $exit_code -eq 0 ]]; then
-            opt_msg "Quarantine history cleared ($row_count entries)"
+            opt_msg "${TR_OPT_QUARANTINE_CLEARED:-Quarantine history cleared} ($row_count ${TR_OPT_ENTRIES:-entries})"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to clean quarantine database"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_QUARANTINE_FAIL:-Failed to clean quarantine database}"
         fi
     else
-        opt_msg "Quarantine history cleared ($row_count entries)"
+        opt_msg "${TR_OPT_QUARANTINE_CLEARED:-Quarantine history cleared} ($row_count ${TR_OPT_ENTRIES:-entries})"
     fi
 }
 
@@ -316,7 +316,7 @@ opt_sqlite_vacuum() {
     fi
 
     if ! command -v sqlite3 > /dev/null 2>&1; then
-        echo -e "  ${GRAY}-${NC} Database optimization already optimal, sqlite3 unavailable"
+        echo -e "  ${GRAY}-${NC} ${TR_OPT_DB_SKIP_SQLITE:-Database optimization already optimal, sqlite3 unavailable}"
         return 0
     fi
 
@@ -330,13 +330,13 @@ opt_sqlite_vacuum() {
     done
 
     if [[ ${#busy_apps[@]} -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Close these apps before database optimization: ${busy_apps[*]}"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_DB_CLOSE_APPS:-Close these apps before database optimization:} ${busy_apps[*]}"
         return 0
     fi
 
     local spinner_started="false"
     if [[ "${MOLE_DRY_RUN:-0}" != "1" && -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Optimizing databases..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_OPT_OPTIMIZING_DBS:-Optimizing databases...}"
         spinner_started="true"
     fi
 
@@ -425,23 +425,23 @@ opt_sqlite_vacuum() {
 
     export OPTIMIZE_DATABASES_COUNT="${vacuumed}"
     if [[ $vacuumed -gt 0 ]]; then
-        opt_msg "Optimized $vacuumed databases for Mail, Safari, Messages"
+        opt_msg "${TR_OPT_DB_OPTIMIZED_N:-Optimized} $vacuumed ${TR_OPT_DB_OPTIMIZED:-databases for Mail, Safari, Messages}"
     elif [[ $timed_out -eq 0 && $failed -eq 0 ]]; then
-        opt_msg "All databases already optimized"
+        opt_msg "${TR_OPT_DB_ALREADY_OK:-All databases already optimized}"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Database optimization incomplete"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_DB_INCOMPLETE:-Database optimization incomplete}"
     fi
 
     if [[ $skipped -gt 0 ]]; then
-        opt_msg "Already optimal for $skipped databases"
+        opt_msg "$(printf "${TR_OPT_DB_ALREADY_OPTIMAL_FMT:-Already optimal for %s databases}" "$skipped")"
     fi
 
     if [[ $timed_out -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Timed out on $timed_out databases"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(printf "${TR_OPT_DB_TIMED_OUT_FMT:-Timed out on %s databases}" "$timed_out")"
     fi
 
     if [[ $failed -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed on $failed databases"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(printf "${TR_OPT_DB_FAILED_FMT:-Failed on %s databases}" "$failed")"
     fi
 }
 
@@ -456,7 +456,7 @@ opt_launch_services_rebuild() {
     fi
 
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Repairing LaunchServices..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_OPT_LS_REPAIRING:-Repairing LaunchServices...}"
     fi
 
     local lsregister
@@ -484,16 +484,16 @@ opt_launch_services_rebuild() {
         fi
 
         if [[ $success -eq 0 ]]; then
-            opt_msg "LaunchServices repaired"
-            opt_msg "File associations refreshed"
+            opt_msg "${TR_OPT_LS_REPAIRED:-LaunchServices repaired}"
+            opt_msg "${TR_OPT_FA_REFRESHED:-File associations refreshed}"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to rebuild LaunchServices"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_LS_FAIL:-Failed to rebuild LaunchServices}"
         fi
     else
         if [[ -t 1 ]]; then
             stop_inline_spinner
         fi
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} lsregister not found"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_LS_NOT_FOUND:-lsregister not found}"
     fi
 }
 
@@ -554,7 +554,7 @@ opt_font_cache_rebuild() {
             local running_list
             running_list=$(printf "%s, " "${running_browsers[@]}")
             running_list="${running_list%, }"
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Font cache rebuild skipped · ${running_list} still running"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_FONT_SKIP_RUNNING:-Font cache rebuild skipped} · ${running_list} ${TR_OPT_FONT_STILL_RUNNING:-still running}"
             return 0
         fi
 
@@ -566,10 +566,10 @@ opt_font_cache_rebuild() {
     fi
 
     if [[ "$success" == "true" ]]; then
-        opt_msg "Font cache cleared"
-        opt_msg "System will rebuild font database automatically"
+        opt_msg "${TR_OPT_FONT_CACHE:-Font cache cleared}"
+        opt_msg "${TR_OPT_FONT_REBUILD:-System will rebuild font database automatically}"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to clear font cache"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_FONT_FAIL:-Failed to clear font cache}"
     fi
 }
 
@@ -590,19 +590,19 @@ opt_memory_pressure_relief() {
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
         if ! is_memory_pressure_high; then
-            opt_msg "Memory pressure already optimal"
+            opt_msg "${TR_OPT_MEM_OPTIMAL:-Memory pressure already optimal}"
             return 0
         fi
 
-        if sudo purge > /dev/null 2>&1; then
-            opt_msg "Inactive memory released"
-            opt_msg "System responsiveness improved"
+        if sudo purge >/dev/null 2>&1; then
+            opt_msg "${TR_OPT_MEM_RELEASED:-Inactive memory released}"
+            opt_msg "${TR_OPT_MEM_IMPROVED:-System responsiveness improved}"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to release memory pressure"
+                echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_MEM_FAIL:-Failed to release memory pressure}"
         fi
     else
-        opt_msg "Inactive memory released"
-        opt_msg "System responsiveness improved"
+        opt_msg "${TR_OPT_MEM_RELEASED:-Inactive memory released}"
+        opt_msg "${TR_OPT_MEM_IMPROVED:-System responsiveness improved}"
     fi
 }
 
@@ -623,15 +623,15 @@ opt_network_stack_optimize() {
         fi
 
         if [[ "$route_ok" == "true" && "$dns_ok" == "true" ]]; then
-            opt_msg "Network stack already optimal"
+            opt_msg "${TR_OPT_NET_OPTIMAL:-Network stack already optimal}"
             return 0
         fi
 
-        if sudo route -n flush > /dev/null 2>&1; then
+        if sudo route -n flush >/dev/null 2>&1; then
             route_flushed="true"
         fi
 
-        if sudo arp -a -d > /dev/null 2>&1; then
+        if sudo arp -a -d >/dev/null 2>&1; then
             arp_flushed="true"
         fi
     else
@@ -640,15 +640,15 @@ opt_network_stack_optimize() {
     fi
 
     if [[ "$route_flushed" == "true" ]]; then
-        opt_msg "Network routing table refreshed"
+        opt_msg "${TR_OPT_ROUTE_REFRESHED:-Network routing table refreshed}"
     fi
     if [[ "$arp_flushed" == "true" ]]; then
-        opt_msg "ARP cache cleared"
+        opt_msg "${TR_OPT_ARP_CLEARED:-ARP cache cleared}"
     else
         if [[ "$route_flushed" == "true" ]]; then
             return 0
         fi
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to optimize network stack"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_NET_FAIL:-Failed to optimize network stack}"
     fi
 }
 
@@ -667,16 +667,16 @@ opt_disk_permissions_repair() {
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
         if ! needs_permissions_repair; then
-            opt_msg "User directory permissions already optimal"
+            opt_msg "${TR_OPT_PERM_OPTIMAL:-User directory permissions already optimal}"
             return 0
         fi
 
         if [[ -t 1 ]]; then
-            start_inline_spinner "Repairing disk permissions..."
+            start_inline_spinner "${TR_OPT_REPAIRING_DISK:-Repairing disk permissions...}"
         fi
 
         local success=false
-        if sudo diskutil resetUserPermissions / "$user_id" > /dev/null 2>&1; then
+        if sudo diskutil resetUserPermissions / "$user_id" >/dev/null 2>&1; then
             success=true
         fi
 
@@ -685,14 +685,14 @@ opt_disk_permissions_repair() {
         fi
 
         if [[ "$success" == "true" ]]; then
-            opt_msg "User directory permissions repaired"
-            opt_msg "File access issues resolved"
+            opt_msg "${TR_OPT_PERM_REPAIRED:-User directory permissions repaired}"
+            opt_msg "${TR_OPT_PERM_FIXED:-File access issues resolved}"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to repair permissions, may not be needed"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_PERM_FAIL:-Failed to repair permissions, may not be needed}"
         fi
     else
-        opt_msg "User directory permissions repaired"
-        opt_msg "File access issues resolved"
+        opt_msg "${TR_OPT_PERM_REPAIRED:-User directory permissions repaired}"
+        opt_msg "${TR_OPT_PERM_FIXED:-File access issues resolved}"
     fi
 }
 
@@ -707,9 +707,9 @@ opt_bluetooth_reset() {
     fi
 
     local spinner_started="false"
-    local disconnect_notice="Bluetooth devices may disconnect briefly during refresh"
+    local disconnect_notice="${TR_OPT_BT_DISCONNECT_NOTICE:-Bluetooth devices may disconnect briefly during refresh}"
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking Bluetooth..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_OPT_CHECKING_BT:-Checking Bluetooth...}"
         spinner_started="true"
     fi
 
@@ -718,7 +718,7 @@ opt_bluetooth_reset() {
             if [[ "$spinner_started" == "true" ]]; then
                 stop_inline_spinner
             fi
-            opt_msg "Bluetooth already optimal"
+            opt_msg "${TR_OPT_BT_OPTIMAL:-Bluetooth already optimal}"
             return 0
         fi
 
@@ -750,7 +750,7 @@ opt_bluetooth_reset() {
             if [[ "$spinner_started" == "true" ]]; then
                 stop_inline_spinner
             fi
-            opt_msg "Bluetooth already optimal"
+            opt_msg "${TR_OPT_BT_OPTIMAL:-Bluetooth already optimal}"
             return 0
         fi
 
@@ -763,21 +763,21 @@ opt_bluetooth_reset() {
             if pgrep -x bluetoothd > /dev/null 2>&1; then
                 sudo pkill -KILL bluetoothd > /dev/null 2>&1 || true
             fi
-            opt_msg "Bluetooth module restarted"
-            opt_msg "Connectivity issues resolved"
+            opt_msg "${TR_OPT_BT_RESTARTED:-Bluetooth module restarted}"
+            opt_msg "${TR_OPT_BT_RESOLVED:-Connectivity issues resolved}"
         else
             if [[ "$spinner_started" == "true" ]]; then
                 stop_inline_spinner
             fi
-            opt_msg "Bluetooth already optimal"
+            opt_msg "${TR_OPT_BT_OPTIMAL:-Bluetooth already optimal}"
         fi
     else
         if [[ "$spinner_started" == "true" ]]; then
             stop_inline_spinner
         fi
         echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} ${disconnect_notice}"
-        opt_msg "Bluetooth module restarted"
-        opt_msg "Connectivity issues resolved"
+        opt_msg "${TR_OPT_BT_RESTARTED:-Bluetooth module restarted}"
+        opt_msg "${TR_OPT_BT_RESOLVED:-Connectivity issues resolved}"
     fi
 }
 
@@ -787,7 +787,7 @@ opt_spotlight_index_optimize() {
     spotlight_status=$(mdutil -s / 2> /dev/null || echo "")
 
     if echo "$spotlight_status" | grep -qi "Indexing disabled"; then
-        echo -e "  ${GRAY}${ICON_EMPTY}${NC} Spotlight indexing is disabled"
+        echo -e "  ${GRAY}${ICON_EMPTY}${NC} ${TR_OPT_SPOTLIGHT_DISABLED:-Spotlight indexing is disabled}"
         return 0
     fi
 
@@ -807,26 +807,26 @@ opt_spotlight_index_optimize() {
 
         if [[ $slow_count -ge 2 ]]; then
             if ! is_ac_power; then
-                opt_msg "Spotlight index already optimal"
+                opt_msg "${TR_OPT_SPOTLIGHT_OPTIMAL:-Spotlight index already optimal}"
                 return 0
             fi
 
             if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
-                echo -e "  ${BLUE}${ICON_INFO}${NC} Spotlight search is slow, rebuilding index, may take 1-2 hours"
+                echo -e "  ${BLUE}${ICON_INFO}${NC} ${TR_OPT_SPOTLIGHT_SLOW:-Spotlight search is slow, rebuilding index, may take 1-2 hours}"
                 if sudo mdutil -E / > /dev/null 2>&1; then
-                    opt_msg "Spotlight index rebuild started"
-                    echo -e "  ${GRAY}Indexing will continue in background${NC}"
+                    opt_msg "${TR_OPT_SPOTLIGHT_REBUILD_START:-Spotlight index rebuild started}"
+                    echo -e "  ${GRAY}${TR_OPT_SPOTLIGHT_BG:-Indexing will continue in background}${NC}"
                 else
-                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to rebuild Spotlight index"
+                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_SPOTLIGHT_FAIL:-Failed to rebuild Spotlight index}"
                 fi
             else
-                opt_msg "Spotlight index rebuild started"
+                opt_msg "${TR_OPT_SPOTLIGHT_REBUILD_START:-Spotlight index rebuild started}"
             fi
         else
-            opt_msg "Spotlight index already optimal"
+            opt_msg "${TR_OPT_SPOTLIGHT_OPTIMAL:-Spotlight index already optimal}"
         fi
     else
-        opt_msg "Spotlight index verified"
+        opt_msg "${TR_OPT_SPOTLIGHT_VERIFIED:-Spotlight index verified}"
     fi
 }
 
@@ -853,9 +853,9 @@ opt_dock_refresh() {
     fi
 
     if [[ "$refreshed" == "true" ]]; then
-        opt_msg "Dock cache cleared"
+        opt_msg "${TR_OPT_DOCK_CLEARED:-Dock cache cleared}"
     fi
-    opt_msg "Dock refreshed"
+    opt_msg "${TR_OPT_DOCK_REFRESHED:-Dock refreshed}"
 }
 
 # Prevent .DS_Store on network and USB volumes.
@@ -887,12 +887,12 @@ opt_prevent_network_dsstore() {
     done
 
     if [[ $changed -eq 0 && $already -gt 0 ]]; then
-        opt_msg ".DS_Store prevention already enabled on network & USB volumes"
+        opt_msg "${TR_OPT_DSSTORE_ALREADY:-.DS_Store prevention already enabled on network & USB volumes}"
         return 0
     fi
 
     if [[ $changed -gt 0 ]]; then
-        opt_msg ".DS_Store prevention enabled on network & USB volumes"
+        opt_msg "${TR_OPT_DSSTORE_ENABLED:-.DS_Store prevention enabled on network & USB volumes}"
     fi
 }
 
@@ -901,7 +901,7 @@ opt_launch_agents_cleanup() {
     local agents_dir="$HOME/Library/LaunchAgents"
 
     if [[ ! -d "$agents_dir" ]]; then
-        opt_msg "Launch Agents all healthy"
+        opt_msg "${TR_OPT_LA_HEALTHY:-Launch Agents all healthy}"
         return 0
     fi
 
@@ -924,7 +924,7 @@ opt_launch_agents_cleanup() {
     done
 
     if [[ $broken_count -eq 0 ]]; then
-        opt_msg "Launch Agents all healthy"
+        opt_msg "${TR_OPT_LA_HEALTHY:-Launch Agents all healthy}"
         return 0
     fi
 
@@ -933,7 +933,7 @@ opt_launch_agents_cleanup() {
         safe_remove "$plist" true > /dev/null 2>&1 || true
     done
 
-    opt_msg "Cleaned $broken_count broken Launch Agent(s)"
+    opt_msg "$(printf "${TR_OPT_LA_CLEANED:-Cleaned %d broken Launch Agent(s)}" "$broken_count")"
 }
 
 # macOS periodic maintenance scripts (daily/weekly/monthly).
@@ -950,19 +950,19 @@ opt_periodic_maintenance() {
         age_days=$(((now - last_mod) / 86400))
 
         if [[ $age_days -lt $stale_days ]]; then
-            opt_msg "Periodic maintenance already current (${age_days}d ago)"
+            opt_msg "${TR_OPT_PERIODIC_CURRENT:-Periodic maintenance already current} (${age_days}d ago)"
             return 0
         fi
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
         if sudo periodic daily weekly monthly 2> /dev/null; then
-            opt_msg "Periodic maintenance triggered"
+            opt_msg "${TR_OPT_PERIODIC_TRIGGERED:-Periodic maintenance triggered}"
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to run periodic maintenance"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_PERIODIC_FAIL:-Failed to run periodic maintenance}"
         fi
     else
-        opt_msg "Periodic maintenance triggered"
+        opt_msg "${TR_OPT_PERIODIC_TRIGGERED:-Periodic maintenance triggered}"
     fi
 }
 
@@ -970,7 +970,7 @@ opt_periodic_maintenance() {
 opt_shared_file_list_repair() {
     local sfl_dir="$HOME/Library/Application Support/com.apple.sharedfilelist"
     if [[ ! -d "$sfl_dir" ]]; then
-        opt_msg "Shared file lists directory not found"
+        opt_msg "${TR_OPT_SFL_NOT_FOUND:-Shared file lists directory not found}"
         return 0
     fi
 
@@ -988,9 +988,9 @@ opt_shared_file_list_repair() {
     done < <(command find "$sfl_dir" \( -name "*.sfl2" -o -name "*.sfl3" \) -type f 2> /dev/null || true)
 
     if [[ $repaired -gt 0 ]]; then
-        opt_msg "Repaired $repaired corrupted shared file list(s)"
+        opt_msg "${TR_OPT_SFL_REPAIRED:-Repaired $repaired corrupted shared file list(s)}"
     else
-        opt_msg "Shared file lists all healthy"
+        opt_msg "${TR_OPT_SFL_HEALTHY:-Shared file lists all healthy}"
     fi
 }
 
@@ -1001,7 +1001,7 @@ opt_notification_cleanup() {
     local nc_db="$nc_db_dir/db"
 
     if [[ ! -f "$nc_db" ]]; then
-        opt_msg "Notification Center database not found"
+        opt_msg "${TR_OPT_NC_NOT_FOUND:-Notification Center database not found}"
         return 0
     fi
 
@@ -1011,7 +1011,7 @@ opt_notification_cleanup() {
 
     # Only clean if database exceeds 50MB (51200 KB)
     if [[ $db_size -lt 51200 ]]; then
-        opt_msg "Notification Center database is healthy ($(bytes_to_human $((db_size * 1024))))"
+        opt_msg "${TR_OPT_NC_HEALTHY:-Notification Center database is healthy} ($(bytes_to_human $((db_size * 1024))))"
         return 0
     fi
 
@@ -1023,27 +1023,27 @@ opt_notification_cleanup() {
                 2> /dev/null || sql_ok=$?
             if [[ $sql_ok -eq 0 ]]; then
                 killall NotificationCenter 2> /dev/null || true
-                opt_msg "Notification Center database cleaned (was $(bytes_to_human $((db_size * 1024))))"
+                opt_msg "${TR_OPT_NC_CLEANED:-Notification Center database cleaned} ($(bytes_to_human $((db_size * 1024))))"
             else
-                echo -e "  ${YELLOW}${ICON_WARNING}${NC} Notification Center cleanup skipped (database busy or locked)"
+                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_NC_SKIP:-Notification Center cleanup skipped (database busy or locked)}"
             fi
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} sqlite3 not available"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_SQLITE_UNAVAIL:-sqlite3 not available}"
         fi
     else
-        opt_msg "Notification Center database cleaned (was $(bytes_to_human $((db_size * 1024))))"
+        opt_msg "${TR_OPT_NC_CLEANED:-Notification Center database cleaned} ($(bytes_to_human $((db_size * 1024))))"
     fi
 }
 
 # Verify filesystem integrity via diskutil.
 opt_disk_verify() {
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        opt_msg "Disk verify · skipped in dry-run"
+        opt_msg "${TR_OPT_DISK_VERIFY_DRY:-Disk verify · skipped in dry-run}"
         return 0
     fi
 
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Verifying disk filesystem..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_OPT_DISK_VERIFYING:-Verifying disk filesystem...}"
     fi
     local output
     output=$(run_with_timeout 30 diskutil verifyVolume / 2>&1 || true)
@@ -1052,11 +1052,11 @@ opt_disk_verify() {
     fi
 
     if echo "$output" | grep -qi "appears to be OK\|volume appears to be ok"; then
-        opt_msg "Disk filesystem verified OK"
+        opt_msg "${TR_OPT_DISK_OK:-Disk filesystem verified OK}"
     elif echo "$output" | grep -qi "error\|corrupt\|invalid"; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Disk issues detected · run: sudo diskutil repairVolume /"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_DISK_ISSUES:-Disk issues detected · run: sudo diskutil repairVolume /}"
     else
-        opt_msg "Disk verify complete"
+        opt_msg "${TR_OPT_DISK_COMPLETE:-Disk verify complete}"
     fi
 }
 
@@ -1066,7 +1066,7 @@ opt_coreduet_cleanup() {
     local knowledge_db="$knowledge_dir/knowledgeC.db"
 
     if [[ ! -f "$knowledge_db" ]]; then
-        opt_msg "Knowledge database not found"
+        opt_msg "${TR_OPT_COREDUET_NOT_FOUND:-Knowledge database not found}"
         return 0
     fi
 
@@ -1085,7 +1085,7 @@ opt_coreduet_cleanup() {
 
     # Skip if combined size < 100MB (102400 KB)
     if [[ $total_size -lt 102400 ]]; then
-        opt_msg "Knowledge database is healthy ($(bytes_to_human $((total_size * 1024))))"
+        opt_msg "${TR_OPT_COREDUET_HEALTHY:-Knowledge database is healthy} ($(bytes_to_human $((total_size * 1024))))"
         return 0
     fi
 
@@ -1101,15 +1101,15 @@ opt_coreduet_cleanup() {
                 "DELETE FROM ZOBJECT WHERE ZCREATIONDATE < (strftime('%s','now','-90 days') - strftime('%s','2001-01-01')); VACUUM;" \
                 2> /dev/null || sql_ok=$?
             if [[ $sql_ok -eq 0 ]]; then
-                opt_msg "Knowledge database cleaned (was $(bytes_to_human $((total_size * 1024))))"
+                opt_msg "${TR_OPT_COREDUET_CLEANED:-Knowledge database cleaned} ($(bytes_to_human $((total_size * 1024))))"
             else
-                echo -e "  ${YELLOW}${ICON_WARNING}${NC} Knowledge database cleanup skipped (database busy or locked)"
+                echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_COREDUET_SKIP:-Knowledge database cleanup skipped (database busy or locked)}"
             fi
         else
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} sqlite3 not available"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_OPT_SQLITE_UNAVAIL:-sqlite3 not available}"
         fi
     else
-        opt_msg "Knowledge database cleaned (was $(bytes_to_human $((total_size * 1024))))"
+        opt_msg "${TR_OPT_COREDUET_CLEANED:-Knowledge database cleaned} ($(bytes_to_human $((total_size * 1024))))"
     fi
 }
 
@@ -1139,7 +1139,7 @@ _login_item_app_exists() {
 
 opt_login_items_audit() {
     if [[ "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-        opt_msg "Login items audit · skipped in test mode"
+        opt_msg "${TR_OPT_LOGIN_SKIP_TEST:-Login items audit · skipped in test mode}"
         return 0
     fi
 
@@ -1147,7 +1147,7 @@ opt_login_items_audit() {
     items_output=$(osascript -e 'tell application "System Events" to get the name of every login item' 2> /dev/null || true)
 
     if [[ -z "$items_output" ]]; then
-        opt_msg "No login items found"
+        opt_msg "${TR_OPT_LOGIN_NONE:-No login items found}"
         return 0
     fi
 
@@ -1168,14 +1168,16 @@ opt_login_items_audit() {
         if _login_item_app_exists "$item"; then
             continue
         fi
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Broken login item: $item (app not found)"
+        printf -v _login_brk "${TR_OPT_LOGIN_BROKEN:-Broken login item: %s (app not found)}" "$item"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${_login_brk}"
         broken=$((broken + 1))
     done
 
     if [[ $broken -eq 0 ]]; then
-        opt_msg "Login items all healthy ($checked checked)"
+        opt_msg "$(printf "${TR_OPT_LOGIN_HEALTHY_FMT:-Login items all healthy (%d checked)}" "$checked")"
     else
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $broken broken login item(s) · remove via System Settings > General > Login Items"
+        printf -v _login_hint "${TR_OPT_LOGIN_BROKEN_HINT_FMT:-%d broken login item(s) · remove via System Settings > General > Login Items}" "$broken"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${_login_hint}"
     fi
 }
 
@@ -1209,7 +1211,7 @@ execute_optimization() {
         coreduet_cleanup) opt_coreduet_cleanup ;;
         login_items_audit) opt_login_items_audit ;;
         *)
-            echo -e "${YELLOW}${ICON_ERROR}${NC} Unknown action: $action"
+            echo -e "${YELLOW}${ICON_ERROR}${NC} ${TR_OPT_UNKNOWN_ACTION:-Unknown action:} $action"
             return 1
             ;;
     esac

@@ -328,12 +328,12 @@ show_system_data_hint_notice() {
     local -a clue_paths=()
 
     local -a labels=(
-        "Xcode DerivedData"
-        "Xcode Archives"
-        "iPhone backups"
-        "Simulator data"
-        "Docker Desktop data"
-        "Mail data"
+        "${TR_HINT_XCODE_DD:-Xcode DerivedData}"
+        "${TR_HINT_XCODE_ARCH:-Xcode Archives}"
+        "${TR_HINT_IPHONE_BACKUPS:-iPhone backups}"
+        "${TR_HINT_SIM_DATA:-Simulator data}"
+        "${TR_HINT_DOCKER_DATA:-Docker Desktop data}"
+        "${TR_HINT_MAIL_DATA:-Mail data}"
     )
     local -a paths=(
         "$HOME/Library/Developer/Xcode/DerivedData"
@@ -364,7 +364,7 @@ show_system_data_hint_notice() {
 
     if [[ ${#clue_labels[@]} -eq 0 ]]; then
         note_activity
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No common System Data clues detected"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_HINTS_NO_CLUES:-No common System Data clues detected}"
         return 0
     fi
 
@@ -374,9 +374,9 @@ show_system_data_hint_notice() {
         local human_size
         human_size=$(bytes_to_human "$((clue_sizes[i] * 1024))")
         echo -e "  ${GREEN}${ICON_LIST}${NC} ${clue_labels[$i]}: ${human_size}"
-        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Path: ${GRAY}${clue_paths[$i]}${NC}"
+        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} ${TR_HINT_PATH:-Path}: ${GRAY}${clue_paths[$i]}${NC}"
     done
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo analyze, Device backups, docker system df"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${TR_HINT_REVIEW:-Review}: mo analyze, Device backups, docker system df"
 }
 
 # shellcheck disable=SC2329
@@ -410,18 +410,18 @@ show_project_artifact_hint_notice() {
         fi
 
         if [[ "$estimate_is_partial" == "true" ]]; then
-            echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} candidates, at least ${estimate_human} sampled from ${PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES} items"
+            echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} ${TR_HINT_CANDIDATES:-candidates}, ${TR_HINT_AT_LEAST:-at least} ${estimate_human} ${TR_HINT_SAMPLED_FROM:-sampled from} ${PROJECT_ARTIFACT_HINT_ESTIMATE_SAMPLES} ${TR_HINT_ITEMS:-items}"
         else
-            echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} candidates, sampled ${estimate_human}"
+            echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} ${TR_HINT_CANDIDATES:-candidates}, ${TR_HINT_SAMPLED:-sampled} ${estimate_human}"
         fi
     else
-        echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} candidates"
+        echo -e "  ${GREEN}${ICON_LIST}${NC} ${GREEN}${hint_count_label}${NC} ${TR_HINT_CANDIDATES:-candidates}"
     fi
 
     if [[ -n "$example_text" ]]; then
-        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Examples: ${GRAY}${example_text}${NC}"
+        echo -e "  ${GRAY}${ICON_SUBLIST}${NC} ${TR_HINT_EXAMPLES:-Examples:} ${GRAY}${example_text}${NC}"
     fi
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo purge"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${TR_HINT_REVIEW:-Review}: mo purge"
 }
 
 # shellcheck disable=SC2329
@@ -450,12 +450,12 @@ show_user_launch_agent_hint_notice() {
             continue
         fi
         if [[ -n "$program" ]] && hint_is_app_scoped_launch_target "$program" && [[ ! -e "$program" ]]; then
-            reason="Missing app/helper target"
+            reason="${TR_HINT_MISSING_APP:-Missing app/helper target}"
             target="${program/#$HOME/~}"
         else
             associated=$(hint_extract_launch_agent_associated_bundle "$plist")
             if [[ -n "$associated" ]] && ! hint_launch_agent_bundle_exists "$associated"; then
-                reason="Associated app not found"
+                reason="${TR_HINT_APP_NOT_FOUND:-Associated app not found}"
                 target="$associated"
             fi
         fi
@@ -476,8 +476,8 @@ show_user_launch_agent_hint_notice() {
 
     local i
     for i in "${!labels[@]}"; do
-        echo -e "  ${GREEN}${ICON_LIST}${NC} Potential stale login item: ${labels[$i]}"
+        echo -e "  ${GREEN}${ICON_LIST}${NC} ${TR_HINT_STALE_LOGIN:-Potential stale login item:} ${labels[$i]}"
         echo -e "  ${GRAY}${ICON_SUBLIST}${NC} ${reasons[$i]}: ${GRAY}${targets[$i]}${NC}"
     done
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: open ~/Library/LaunchAgents and remove only items you recognize"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${TR_HINT_LA_REVIEW:-open ~/Library/LaunchAgents and remove only items you recognize}"
 }

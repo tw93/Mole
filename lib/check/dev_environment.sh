@@ -21,7 +21,7 @@ check_launch_agents() {
     local agents_dir="$HOME/Library/LaunchAgents"
 
     if [[ ! -d "$agents_dir" ]]; then
-        echo -e "  ${GREEN}✓${NC} Launch Agents All healthy"
+        echo -e "  ${GREEN}✓${NC} ${TR_DEV_LA_HEALTHY:-Launch Agents All healthy}"
         return
     fi
 
@@ -47,9 +47,9 @@ check_launch_agents() {
     done
 
     if [[ $broken_count -eq 0 ]]; then
-        echo -e "  ${GREEN}✓${NC} Launch Agents All healthy"
+        echo -e "  ${GREEN}✓${NC} ${TR_DEV_LA_HEALTHY:-Launch Agents All healthy}"
     else
-        printf "  ${GRAY}%s${NC} %-14s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "Launch Agents" "${broken_count} broken"
+        printf "  ${GRAY}%s${NC} %-14s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "${TR_CHK_LAUNCH_AGENTS:-Launch Agents}" "${broken_count} ${TR_DEV_LA_BROKEN:-broken}"
 
         local preview_limit=3
         ((preview_limit > broken_count)) && preview_limit=$broken_count
@@ -86,12 +86,12 @@ check_dev_tools() {
     done
 
     if [[ ${#found[@]} -eq 0 ]]; then
-        echo -e "  ${GREEN}✓${NC} Dev Tools      None detected"
+        echo -e "  ${GREEN}✓${NC} ${TR_DEV_TOOLS_NONE:-Dev Tools      None detected}"
     else
         local found_list
         found_list=$(printf '%s, ' "${found[@]}")
         found_list="${found_list%, }"
-        echo -e "  ${GREEN}✓${NC} Dev Tools      ${#found[@]} found (${found_list})"
+        echo -e "  ${GREEN}✓${NC} Dev Tools      ${#found[@]} ${TR_DEV_TOOLS_FOUND:-found} (${found_list})"
     fi
 }
 
@@ -107,7 +107,7 @@ check_version_mismatches() {
         psql_ver=$(_extract_major_minor "$(psql --version 2> /dev/null || true)")
         postgres_ver=$(_extract_major_minor "$(postgres --version 2> /dev/null || true)")
         if [[ -n "$psql_ver" && -n "$postgres_ver" && "$psql_ver" != "$postgres_ver" ]]; then
-            conflicts+=("psql ${psql_ver} vs server ${postgres_ver}")
+            conflicts+=("$(printf "${TR_DEV_CONFLICT_PSQL_FMT:-psql %s vs server %s}" "$psql_ver" "$postgres_ver")")
         fi
     fi
 
@@ -119,23 +119,23 @@ check_version_mismatches() {
         if [[ -n "$pyenv_ver" && "$pyenv_ver" != "system" ]]; then
             pyenv_ver=$(_extract_major_minor "$pyenv_ver")
             if [[ -n "$python_ver" && -n "$pyenv_ver" && "$python_ver" != "$pyenv_ver" ]]; then
-                conflicts+=("python3 ${python_ver} vs pyenv ${pyenv_ver}")
+                conflicts+=("$(printf "${TR_DEV_CONFLICT_PY_FMT:-python3 %s vs pyenv %s}" "$python_ver" "$pyenv_ver")")
             fi
         fi
     fi
 
     if [[ ${#conflicts[@]} -eq 0 ]]; then
-        echo -e "  ${GREEN}✓${NC} Versions       No conflicts"
+        echo -e "  ${GREEN}✓${NC} Versions       ${TR_DEV_VERSIONS_OK:-No conflicts}"
     else
         local description
         description=$(printf '%s; ' "${conflicts[@]}")
         description="${description%; }"
-        printf "  ${GRAY}%s${NC} %-14s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "Versions" "$description"
+        printf "  ${GRAY}%s${NC} %-14s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "${TR_DEV_VERSIONS_LABEL:-Versions}" "$description"
     fi
 }
 
 check_all_dev_environment() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} Dev Environment"
+    echo -e "${BLUE}${ICON_ARROW}${NC} ${TR_DEV_ENVIRONMENT:-Dev Environment}"
     check_launch_agents
     check_dev_tools
     check_version_mismatches

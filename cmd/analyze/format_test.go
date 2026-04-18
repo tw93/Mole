@@ -312,6 +312,7 @@ func TestCalculateNameWidth(t *testing.T) {
 }
 
 func TestFormatUnusedTime(t *testing.T) {
+	t.Setenv("MOLE_IS_TURKISH_SYSTEM", "false")
 	now := time.Now().UTC()
 	tests := []struct {
 		name    string

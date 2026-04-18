@@ -44,7 +44,7 @@ uninstall_relative_time_from_epoch() {
     local now_epoch="${2:-0}"
 
     if [[ ! "$value_epoch" =~ ^[0-9]+$ || $value_epoch -le 0 ]]; then
-        echo "Unknown"
+        echo "${TR_UNKNOWN:-Unknown}"
         return 0
     fi
 
@@ -54,27 +54,27 @@ uninstall_relative_time_from_epoch() {
     fi
 
     if [[ $days_ago -eq 0 ]]; then
-        echo "Today"
+        echo "${TR_TIME_TODAY:-Today}"
     elif [[ $days_ago -eq 1 ]]; then
-        echo "Yesterday"
+        echo "${TR_TIME_YESTERDAY:-Yesterday}"
     elif [[ $days_ago -lt 7 ]]; then
-        echo "${days_ago} days ago"
+        echo "${days_ago} ${TR_TIME_DAYS_AGO:-days ago}"
     elif [[ $days_ago -lt 30 ]]; then
         local weeks_ago=$((days_ago / 7))
-        [[ $weeks_ago -eq 1 ]] && echo "1 week ago" || echo "${weeks_ago} weeks ago"
+        [[ $weeks_ago -eq 1 ]] && echo "${TR_TIME_ONE_WEEK_AGO:-1 week ago}" || echo "${weeks_ago} ${TR_TIME_WEEKS_AGO:-weeks ago}"
     elif [[ $days_ago -lt 365 ]]; then
         local months_ago=$((days_ago / 30))
-        [[ $months_ago -eq 1 ]] && echo "1 month ago" || echo "${months_ago} months ago"
+        [[ $months_ago -eq 1 ]] && echo "${TR_TIME_ONE_MONTH_AGO:-1 month ago}" || echo "${months_ago} ${TR_TIME_MONTHS_AGO:-months ago}"
     else
         local years_ago=$((days_ago / 365))
-        [[ $years_ago -eq 1 ]] && echo "1 year ago" || echo "${years_ago} years ago"
+        [[ $years_ago -eq 1 ]] && echo "${TR_TIME_ONE_YEAR_AGO:-1 year ago}" || echo "${years_ago} ${TR_TIME_YEARS_AGO:-years ago}"
     fi
 }
 
 uninstall_normalize_size_display() {
     local size="${1:-}"
     if [[ -z "$size" || "$size" == "0" || "$size" == "Unknown" ]]; then
-        echo "N/A"
+        echo "${TR_NA:-N/A}"
         return 0
     fi
     echo "$size"
@@ -85,7 +85,7 @@ uninstall_normalize_last_used_display() {
     local display
     display=$(format_last_used_summary "$last_used")
     if [[ -z "$display" || "$display" == "Never" ]]; then
-        echo "Unknown"
+        echo "${TR_UNKNOWN:-Unknown}"
         return 0
     fi
     echo "$display"
@@ -524,7 +524,7 @@ scan_applications() {
         [[ $cache_source_is_temp == true ]] && rm -f "$cache_source" 2> /dev/null || true
         restore_scan_int_trap
         printf "\r\033[K" >&2
-        echo "No applications found to uninstall." >&2
+        echo "${TR_UNINSTALL_NO_APPS_MSG:-No applications found to uninstall.}" >&2
         return 1
     fi
     # Pass 2: resolve display names in parallel.
@@ -578,7 +578,7 @@ scan_applications() {
         echo "${app_path}|${display_name}|${bundle_id}|${app_mtime}" >> "$output_file"
     }
 
-    update_scan_status "Scanning applications..." "0" "$total_apps"
+    update_scan_status "${TR_UNINSTALL_SCANNING:-Scanning applications...}" "0" "$total_apps"
 
     (
         # shellcheck disable=SC2329  # Function invoked indirectly via trap
@@ -593,7 +593,7 @@ scan_applications() {
             local status_line status_message status_completed status_total
             status_line=$(cat "$scan_status_file" 2> /dev/null || echo "")
             IFS='|' read -r status_message status_completed status_total <<< "$status_line"
-            [[ -z "$status_message" ]] && status_message="Scanning applications..."
+            [[ -z "$status_message" ]] && status_message="${TR_UNINSTALL_SCANNING:-Scanning applications...}"
             local c="${spinner_chars:$((i % 4)):1}"
             if [[ "$status_completed" =~ ^[0-9]+$ && "$status_total" =~ ^[0-9]+$ && $status_total -gt 0 ]]; then
                 printf "\r\033[K%s %s %d/%d" "$c" "$status_message" "$status_completed" "$status_total" >&2
@@ -610,7 +610,7 @@ scan_applications() {
         ((app_count++))
         process_app_metadata "$app_data_tuple" "$scan_raw_file" &
         pids+=($!)
-        update_scan_status "Scanning applications..." "$app_count" "$total_apps"
+        update_scan_status "${TR_UNINSTALL_SCANNING:-Scanning applications...}" "$app_count" "$total_apps"
 
         if ((${#pids[@]} >= max_parallel)); then
             wait "${pids[0]}" 2> /dev/null
@@ -622,18 +622,18 @@ scan_applications() {
         wait "$pid" 2> /dev/null
     done
 
-    update_scan_status "Building uninstall index..." "0" "0"
+    update_scan_status "${TR_UNINSTALL_BUILDING:-Building uninstall index...}" "0" "0"
 
     if [[ ! -s "$scan_raw_file" ]]; then
         stop_scan_spinner
-        echo "No applications found to uninstall" >&2
+        echo "${TR_UNINSTALL_NO_APPS:-No applications found to uninstall}" >&2
         rm -f "$temp_file" "$scan_raw_file" "$merged_file" "$refresh_file" "$cache_snapshot_file" "${temp_file}.sorted" "$spinner_shown_file" 2> /dev/null || true
         [[ $cache_source_is_temp == true ]] && rm -f "$cache_source" 2> /dev/null || true
         restore_scan_int_trap
         return 1
     fi
 
-    update_scan_status "Merging cache data..." "0" "0"
+    update_scan_status "${TR_UNINSTALL_MERGING:-Merging cache data...}" "0" "0"
     awk -F'|' '
         NR == FNR {
             cache_mtime[$1] = $2
@@ -661,12 +661,12 @@ scan_applications() {
     metadata_total=$(wc -l < "$merged_file" 2> /dev/null || echo "0")
     [[ "$metadata_total" =~ ^[0-9]+$ ]] || metadata_total=0
     local metadata_processed=0
-    update_scan_status "Collecting metadata..." "0" "$metadata_total"
+    update_scan_status "${TR_UNINSTALL_METADATA:-Collecting metadata...}" "0" "$metadata_total"
 
     while IFS='|' read -r app_path display_name bundle_id app_mtime cached_mtime cached_size_kb cached_epoch cached_updated_epoch cached_bundle_id cached_display_name; do
         ((metadata_processed++))
         if ((metadata_processed % 5 == 0 || metadata_processed == metadata_total)); then
-            update_scan_status "Collecting metadata..." "$metadata_processed" "$metadata_total"
+            update_scan_status "${TR_UNINSTALL_METADATA:-Collecting metadata...}" "$metadata_processed" "$metadata_total"
         fi
 
         [[ -n "$app_path" && -e "$app_path" ]] || continue
@@ -747,7 +747,7 @@ scan_applications() {
         echo "${final_epoch}|${app_path}|${display_name}|${bundle_id}|${final_size}|${final_last_used}|${final_size_kb}" >> "$temp_file"
     done < "$merged_file"
 
-    update_scan_status "Updating cache..." "0" "0"
+    update_scan_status "${TR_UNINSTALL_CACHE:-Updating cache...}" "0" "0"
     if [[ -s "$cache_snapshot_file" ]]; then
         if uninstall_acquire_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"; then
             mv "$cache_snapshot_file" "$MOLE_UNINSTALL_META_CACHE_FILE" 2> /dev/null || {
@@ -758,7 +758,7 @@ scan_applications() {
         fi
     fi
 
-    update_scan_status "Sorting application list..." "0" "0"
+    update_scan_status "${TR_UNINSTALL_SORTING:-Sorting application list...}" "0" "0"
     sort -t'|' -k1,1n "$temp_file" > "${temp_file}.sorted" || {
         stop_scan_spinner
         rm -f "$temp_file" "$scan_raw_file" "$merged_file" "$refresh_file" "$cache_snapshot_file"
@@ -769,7 +769,7 @@ scan_applications() {
     rm -f "$temp_file" "$scan_raw_file" "$merged_file" "$cache_snapshot_file"
     [[ $cache_source_is_temp == true ]] && rm -f "$cache_source" 2> /dev/null || true
 
-    update_scan_status "Finalizing list..." "0" "0"
+    update_scan_status "${TR_UNINSTALL_FINALIZING:-Finalizing list...}" "0" "0"
     start_uninstall_metadata_refresh "$refresh_file"
     stop_scan_spinner
 
@@ -787,7 +787,7 @@ load_applications() {
     local apps_file="$1"
 
     if [[ ! -f "$apps_file" || ! -s "$apps_file" ]]; then
-        log_warning "No applications found for uninstallation"
+        log_warning "${TR_UNINSTALL_LOG_WARN_FILE:-No applications found for uninstallation}"
         return 1
     fi
 
@@ -802,7 +802,7 @@ load_applications() {
     done < "$apps_file"
 
     if [[ ${#apps_data[@]} -eq 0 ]]; then
-        log_warning "No applications available for uninstallation"
+        log_warning "${TR_UNINSTALL_LOG_WARN_EMPTY:-No applications available for uninstallation}"
         return 1
     fi
 
@@ -905,7 +905,8 @@ match_apps_by_name() {
         fi
 
         if [[ "$found" == "false" ]]; then
-            echo -e "${YELLOW}Warning:${NC} No application found matching '$search_term'"
+            printf -v _un_no_match "${TR_UNINSTALL_NO_MATCH_FMT:-Warning: No application found matching '%s'}" "$search_term"
+            echo -e "${YELLOW}${_un_no_match}${NC}"
         fi
     done
 }
@@ -930,14 +931,14 @@ main() {
                 export MOLE_DRY_RUN=1
                 ;;
             "--whitelist")
-                echo "Unknown uninstall option: $arg"
-                echo "Whitelist management is currently supported by: mo clean --whitelist / mo optimize --whitelist"
-                echo "Use 'mo uninstall --help' for supported options."
+                echo "${TR_UNINSTALL_UNKNOWN_OPT:-Unknown uninstall option:} $arg"
+                echo "${TR_UNINSTALL_WL_HINT:-Whitelist management is currently supported by: mo clean --whitelist / mo optimize --whitelist}"
+                echo "${TR_UNINSTALL_HELP_HINT:-Use 'mo uninstall --help' for supported options.}"
                 exit 1
                 ;;
             -*)
-                echo "Unknown uninstall option: $arg"
-                echo "Use 'mo uninstall --help' for supported options."
+                echo "${TR_UNINSTALL_UNKNOWN_OPT:-Unknown uninstall option:} $arg"
+                echo "${TR_UNINSTALL_HELP_HINT:-Use 'mo uninstall --help' for supported options.}"
                 exit 1
                 ;;
             *)
@@ -948,7 +949,7 @@ main() {
 
     hide_cursor
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No app files or settings will be modified"
+        echo -e "${YELLOW}${ICON_DRY_RUN} ${TR_DRY_RUN_MODE:-DRY RUN MODE}${NC}, ${TR_UNINSTALL_DRY_RUN_DETAIL:-No app files or settings will be modified}"
         printf '\n'
     fi
 
@@ -974,14 +975,15 @@ main() {
 
         if [[ ${#selected_apps[@]} -eq 0 ]]; then
             show_cursor
-            echo "No matching applications found."
+            echo "${TR_UNINSTALL_NO_MATCH_FOUND:-No matching applications found.}"
             return 1
         fi
 
         show_cursor
         clear_screen
         local selection_count=${#selected_apps[@]}
-        echo -e "${BLUE}${ICON_CONFIRM}${NC} Matched ${selection_count} app(s):"
+        printf -v _un_matched "${TR_UNINSTALL_MATCHED_APPS:-Matched %d app(s):}" "$selection_count"
+        echo -e "${BLUE}${ICON_CONFIRM}${NC} ${_un_matched}"
         local index=1
         for selected_app in "${selected_apps[@]}"; do
             IFS='|' read -r _ app_path app_name _ size last_used _ <<< "$selected_app"
@@ -989,16 +991,16 @@ main() {
             size_display=$(uninstall_normalize_size_display "$size")
             local last_display
             last_display=$(uninstall_normalize_last_used_display "$last_used")
-            printf "%d. %s  %s  |  Last: %s\n" "$index" "$app_name" "$size_display" "$last_display"
+            printf "%d. %s  %s  |  %s %s\n" "$index" "$app_name" "$size_display" "${TR_UNINSTALL_LAST_LABEL:-Last:}" "$last_display"
             ((index++))
         done
 
         printf '\n'
-        printf "Proceed with uninstallation? [y/N] "
+        printf "%s" "${TR_UNINSTALL_CONFIRM_PROMPT:-Proceed with uninstallation? [y/N] }"
         local confirm
         read -r confirm
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-            echo "Aborted."
+        if [[ ! "$confirm" =~ ^[YyEe]$ ]]; then
+            echo "${TR_UNINSTALL_ABORTED:-Aborted.}"
             return 0
         fi
 
@@ -1011,7 +1013,7 @@ main() {
         unset MOLE_INLINE_LOADING MOLE_MANAGED_ALT_SCREEN
 
         if [[ $first_scan == false ]]; then
-            echo -e "${GRAY}Refreshing application list...${NC}" >&2
+            echo -e "${GRAY}${TR_UNINSTALL_REFRESHING:-Refreshing application list...}${NC}" >&2
         fi
         first_scan=false
 
@@ -1048,11 +1050,12 @@ main() {
         printf '\033[2J\033[H' >&2
         local selection_count=${#selected_apps[@]}
         if [[ $selection_count -eq 0 ]]; then
-            echo "No apps selected"
+            echo "${TR_UNINSTALL_NO_SELECTED:-No apps selected}"
             rm -f "$apps_file"
             continue
         fi
-        echo -e "${BLUE}${ICON_CONFIRM}${NC} Selected ${selection_count} apps:"
+        printf -v _un_selected "${TR_UNINSTALL_SELECTED_APPS:-Selected %d apps:}" "$selection_count"
+        echo -e "${BLUE}${ICON_CONFIRM}${NC} ${_un_selected}"
         local -a summary_rows=()
         local max_name_display_width=0
         local max_size_width=0
@@ -1121,7 +1124,7 @@ main() {
             local padding_needed=$((max_name_display_width - name_display_width))
             local printf_name_width=$((name_char_count + padding_needed))
 
-            printf "%d. %-*s  %*s  |  Last: %s\n" "$index" "$printf_name_width" "$name_cell" "$max_size_width" "$size_cell" "$last_cell"
+            printf "%d. %-*s  %*s  |  %s %s\n" "$index" "$printf_name_width" "$name_cell" "$max_size_width" "$size_cell" "${TR_UNINSTALL_LAST_LABEL:-Last:}" "$last_cell"
             ((index++))
         done
 
@@ -1133,7 +1136,7 @@ main() {
         local _key=""
         local _pressed=false
         while [[ $_countdown -gt 0 ]]; do
-            printf "\r${GRAY}Press Enter to return to the app list, press q to exit (%d)${NC} " "$_countdown"
+            printf "\r${GRAY}${TR_UNINSTALL_RETURN_PROMPT:-Press Enter to return to the app list, press q to exit (%d)}${NC} " "$_countdown"
             if IFS= read -r -s -n1 -t 1 _key; then
                 _pressed=true
                 break

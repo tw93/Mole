@@ -14,7 +14,7 @@ trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
 VERSION="1.34.0"
-MOLE_TAGLINE="Deep clean and optimize your Mac."
+MOLE_TAGLINE="${TR_BIN_MOLE_TAGLINE:-Deep clean and optimize your Mac.}"
 
 is_touchid_configured() {
     grep -q "pam_tid.so" /etc/pam.d/sudo /etc/pam.d/sudo_local 2> /dev/null
@@ -158,7 +158,7 @@ check_for_updates() {
                 latest_commit=$(get_latest_commit_from_github)
 
                 if [[ -n "$installed_commit" && -n "$latest_commit" && "${installed_commit:0:7}" != "${latest_commit:0:7}" ]]; then
-                    printf "\nNew nightly commit %s available, run %smo update --nightly%s\n\n" "${latest_commit:0:7}" "$GREEN" "$NC" > "$msg_cache"
+                    printf "\n${TR_BIN_NEW_NIGHTLY:-New nightly commit %s available, run} %smo update --nightly%s\n\n" "${latest_commit:0:7}" "$GREEN" "$NC" > "$msg_cache"
                 else
                     echo -n > "$msg_cache"
                 fi
@@ -176,12 +176,12 @@ check_for_updates() {
                         local brew_latest
                         brew_latest=$(get_homebrew_latest_version || true)
                         if [[ -n "$brew_latest" && "$brew_latest" != "$VERSION" && "$(printf '%s\n' "$VERSION" "$brew_latest" | sort -V | head -1)" == "$VERSION" ]]; then
-                            printf "\nUpdate %s available, run %smo update%s\n\n" "$brew_latest" "$GREEN" "$NC" > "$msg_cache"
+                            printf "\n${TR_BIN_UPDATE_MSG:-Update %s available, run} %smo update%s\n\n" "$brew_latest" "$GREEN" "$NC" > "$msg_cache"
                         else
                             echo -n > "$msg_cache"
                         fi
                     else
-                        printf "\nUpdate %s available, run %smo update%s\n\n" "$latest" "$GREEN" "$NC" > "$msg_cache"
+                        printf "\n${TR_BIN_UPDATE_MSG:-Update %s available, run} %smo update%s\n\n" "$latest" "$GREEN" "$NC" > "$msg_cache"
                     fi
                 else
                     echo -n > "$msg_cache"
@@ -227,47 +227,47 @@ show_version() {
 
     local sip_status
     if command -v csrutil > /dev/null; then
-        sip_status=$(csrutil status 2> /dev/null | grep -o "enabled\|disabled" || echo "Unknown")
+        sip_status=$(csrutil status 2> /dev/null | grep -o "enabled\|disabled" || echo "${TR_MOLE_VER_UNKNOWN:-Unknown}")
         sip_status="$(LC_ALL=C tr '[:lower:]' '[:upper:]' <<< "${sip_status:0:1}")${sip_status:1}"
     else
         sip_status="Unknown"
     fi
 
     local disk_free
-    disk_free=$(df -h / 2> /dev/null | awk 'NR==2 {print $4}' || echo "Unknown")
+    disk_free=$(df -h / 2> /dev/null | awk 'NR==2 {print $4}' || echo "${TR_MOLE_VER_UNKNOWN:-Unknown}")
 
-    local install_method="Manual"
+    local install_method="${TR_MOLE_VER_MANUAL:-Manual}"
     if is_homebrew_install; then
-        install_method="Homebrew"
+        install_method="${TR_MOLE_VER_HB:-Homebrew}"
     fi
 
     local channel
     channel=$(get_install_channel)
 
-    printf '\nMole version %s\n' "$VERSION"
+    printf "\n${TR_MOLE_VER_TITLE:-Mole version %s}\n" "$VERSION"
     if [[ "$channel" == "nightly" ]]; then
         local commit
         commit=$(get_install_commit)
         if [[ -n "$commit" ]]; then
-            printf 'Channel: Nightly (%s)\n' "$commit"
+            printf "${TR_MOLE_VER_CHANNEL_NIGHTLY:-Channel: Nightly (%s)}\n" "$commit"
         else
-            printf 'Channel: Nightly\n'
+            printf '%s\n' "${TR_MOLE_VER_CHANNEL_NIGHTLY_SHORT:-Channel: Nightly}"
         fi
     fi
-    printf 'macOS: %s\n' "$os_ver"
-    printf 'Architecture: %s\n' "$arch"
-    printf 'Kernel: %s\n' "$kernel"
-    printf 'SIP: %s\n' "$sip_status"
-    printf 'Disk Free: %s\n' "$disk_free"
-    printf 'Install: %s\n' "$install_method"
-    printf 'Shell: %s\n\n' "${SHELL:-Unknown}"
+    printf "${TR_MOLE_VER_MACOS:-macOS: %s}\n" "$os_ver"
+    printf "${TR_MOLE_VER_ARCH:-Architecture: %s}\n" "$arch"
+    printf "${TR_MOLE_VER_KERNEL:-Kernel: %s}\n" "$kernel"
+    printf "${TR_MOLE_VER_SIP:-SIP: %s}\n" "$sip_status"
+    printf "${TR_MOLE_VER_DISK_FREE:-Disk Free: %s}\n" "$disk_free"
+    printf "${TR_MOLE_VER_INSTALL:-Install: %s}\n" "$install_method"
+    printf "${TR_MOLE_VER_SHELL:-Shell: %s}\n\n" "${SHELL:-${TR_MOLE_VER_UNKNOWN:-Unknown}}"
 }
 
 show_help() {
     show_brand_banner
     echo
-    printf "%s%s%s\n" "$BLUE" "COMMANDS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "Main menu"
+    printf "%s%s%s\n" "$BLUE" "${TR_MOLE_HELP_CMDS:-COMMANDS}" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "${TR_MOLE_HELP_MAIN_MENU:-Main menu}"
     for entry in "${MOLE_COMMANDS[@]}"; do
         local name="${entry%%:*}"
         local desc="${entry#*:}"
@@ -277,24 +277,24 @@ show_help() {
         printf "  %s%-28s%s %s\n" "$GREEN" "$display" "$NC" "$desc"
     done
     echo
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "Manage protected caches"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_CLEAN:-Preview cleanup}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "${TR_MOLE_HELP_MANAGE_WL:-Manage protected caches}"
 
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "Manage protected items"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "Preview project purge"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "Preview installer cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "Preview Touch ID setup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "Preview shell completion edits"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "Configure scan directories"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "Analyze external drives only"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest stable version"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "Install latest unreleased main branch build"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "Preview Mole removal"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_OPT:-Preview optimization}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "${TR_MOLE_HELP_MANAGE_PROT:-Manage protected items}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_UN:-Preview app uninstall}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_PURGE:-Preview project purge}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_INST:-Preview installer cleanup}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_TID:-Preview Touch ID setup}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "${TR_MOLE_HELP_PREVIEW_COMP:-Preview shell completion edits}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "${TR_MOLE_HELP_PURGE_PATHS:-Configure scan directories}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "${TR_MOLE_HELP_ANALYZE_EXT:-Analyze external drives only}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "${TR_MOLE_HELP_UPDATE_FORCE:-Force reinstall latest stable version}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "${TR_MOLE_HELP_UPDATE_NIGHTLY:-Install latest unreleased main branch build}"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "${TR_MOLE_HELP_REMOVE_DRY:-Preview Mole removal}"
     echo
-    printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
+    printf "%s%s%s\n" "$BLUE" "${TR_MOLE_HELP_OPTS:-OPTIONS}" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "${TR_MOLE_HELP_DEBUG:-Show detailed operation logs}"
     echo
 }
 
@@ -313,9 +313,9 @@ update_mole() {
 
     if is_homebrew_install; then
         if [[ "$nightly_update" == "true" ]]; then
-            log_error "Nightly update is only available for script installations"
-            echo -e "${ICON_REVIEW} Homebrew installs follow stable releases."
-            echo -e "${ICON_REVIEW} Reinstall via script to use: ${GRAY}mo update --nightly${NC}"
+            log_error "${TR_MOLE_ERR_NIGHTLY_HB:-Nightly update is only available for script installations}"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_HB_STABLE:-Homebrew installs follow stable releases.}"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_HB_SCRIPT:-Reinstall via script to use:} ${GRAY}mo update --nightly${NC}"
             exit 1
         fi
         update_via_homebrew "$VERSION"
@@ -323,29 +323,29 @@ update_mole() {
     fi
 
     local latest=""
-    local download_label="Downloading latest version..."
-    local install_label="Installing update..."
-    local final_success_label="latest version"
+    local download_label="${TR_BIN_MOLE_DOWNLOADING:-Downloading latest version...}"
+    local install_label="${TR_BIN_MOLE_INSTALLING:-Installing update...}"
+    local final_success_label="${TR_BIN_MOLE_LATEST_LBL:-latest version}"
 
     if [[ "$nightly_update" == "true" ]]; then
         latest="main"
-        download_label="Downloading nightly installer..."
-        install_label="Installing nightly update..."
-        final_success_label="nightly build (main)"
+        download_label="${TR_BIN_MOLE_DOWN_NIGHTLY:-Downloading nightly installer...}"
+        install_label="${TR_BIN_MOLE_INSTALL_NIGHTLY:-Installing nightly update...}"
+        final_success_label="${TR_BIN_MOLE_NIGHTLY_BLD:-nightly build (main)}"
     else
         latest=$(get_latest_version_from_github)
         [[ -z "$latest" ]] && latest=$(get_latest_version)
 
         if [[ -z "$latest" ]]; then
-            log_error "Unable to check for updates. Check network connection."
-            echo -e "${ICON_REVIEW} Check if you can access GitHub, https://github.com"
-            echo -e "${ICON_REVIEW} Try again with: ${GRAY}mo update${NC}"
+            log_error "${TR_MOLE_ERR_UPDATE_CHECK:-Unable to check for updates. Check network connection.}"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_GITHUB:-Check if you can access GitHub, https://github.com}"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_TRY_UPDATE:-Try again with:} ${GRAY}mo update${NC}"
             exit 1
         fi
 
         if [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
             echo ""
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${VERSION}"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_UPDATE_LATEST:-Already on latest version}, ${VERSION}"
             echo ""
             exit 0
         fi
@@ -360,7 +360,7 @@ update_mole() {
     local installer_url="https://raw.githubusercontent.com/tw93/mole/main/install.sh"
     local tmp_installer
     tmp_installer="$(mktemp_file)" || {
-        log_error "Update failed"
+        log_error "${TR_MOLE_ERR_UPDATE_FAIL:-Update failed}"
         exit 1
     }
 
@@ -370,32 +370,32 @@ update_mole() {
             local curl_exit=$?
             if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
-            log_error "Update failed, curl error: $curl_exit"
+            log_error "$(printf '%s %s' "${TR_MOLE_ERR_CURL:-Update failed, curl error:}" "$curl_exit")"
 
             case $curl_exit in
-                6) echo -e "${ICON_REVIEW} Could not resolve host. Check DNS or network connection." ;;
-                7) echo -e "${ICON_REVIEW} Failed to connect. Check network or proxy settings." ;;
-                22) echo -e "${ICON_REVIEW} HTTP 404 Not Found. The installer may have moved." ;;
-                28) echo -e "${ICON_REVIEW} Connection timed out. Try again or check firewall." ;;
-                *) echo -e "${ICON_REVIEW} Check network connection and try again." ;;
+                6) echo -e "${ICON_REVIEW} ${TR_MOLE_ERR_NET_DNS:-Could not resolve host. Check DNS or network connection.}" ;;
+                7) echo -e "${ICON_REVIEW} ${TR_MOLE_ERR_NET_CONN:-Failed to connect. Check network or proxy settings.}" ;;
+                22) echo -e "${ICON_REVIEW} ${TR_MOLE_ERR_HTTP_404:-HTTP 404 Not Found. The installer may have moved.}" ;;
+                28) echo -e "${ICON_REVIEW} ${TR_MOLE_ERR_NET_TIMEOUT:-Connection timed out. Try again or check firewall.}" ;;
+                *) echo -e "${ICON_REVIEW} ${TR_MOLE_ERR_NET_GENERIC:-Check network connection and try again.}" ;;
             esac
-            echo -e "${ICON_REVIEW} URL: $installer_url"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_URL:-URL:} $installer_url"
             exit 1
         }
     elif command -v wget > /dev/null 2>&1; then
         download_error=$(wget --timeout=10 --tries=3 -qO "$tmp_installer" "$installer_url" 2>&1) || {
             if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
-            log_error "Update failed, wget error"
-            echo -e "${ICON_REVIEW} Check network connection and try again."
-            echo -e "${ICON_REVIEW} URL: $installer_url"
+            log_error "${TR_MOLE_ERR_WGET:-Update failed, wget error}"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_ERR_NET_GENERIC:-Check network connection and try again.}"
+            echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_URL:-URL:} $installer_url"
             exit 1
         }
     else
         if [[ -t 1 ]]; then stop_inline_spinner; fi
         rm -f "$tmp_installer"
-        log_error "curl or wget required"
-        echo -e "${ICON_REVIEW} Install curl with: ${GRAY}brew install curl${NC}"
+        log_error "${TR_MOLE_ERR_CURL_WGET:-curl or wget required}"
+        echo -e "${ICON_REVIEW} ${TR_MOLE_MSG_INSTALL_CURL:-Install curl with:} ${GRAY}brew install curl${NC}"
         exit 1
     fi
 
@@ -415,8 +415,8 @@ update_mole() {
     fi
 
     if [[ "$requires_sudo" == "true" ]]; then
-        if ! request_sudo_access "Mole update requires admin access"; then
-            log_error "Update aborted, admin access denied"
+        if ! request_sudo_access "${TR_MOLE_PROMPT_UPDATE_SUDO:-Mole update requires admin access}"; then
+            log_error "${TR_MOLE_ERR_UPDATE_ABORT:-Update aborted, admin access denied}"
             rm -f "$tmp_installer"
             exit 1
         fi
@@ -454,7 +454,7 @@ update_mole() {
             if [[ -z "$new_version" ]]; then
                 new_version="$fallback_version"
             fi
-            printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to ${success_label}, ${new_version:-unknown}"
+            printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} ${TR_MOLE_MSG_UPDATED_TO:-Updated to} ${success_label}, ${new_version:-unknown}"
         else
             printf '\n'
         fi
@@ -485,7 +485,7 @@ update_mole() {
             if [[ -t 1 ]]; then stop_inline_spinner; fi
             rm -f "$tmp_installer"
             _update_cleanup
-            log_error "Update failed"
+            log_error "${TR_MOLE_ERR_UPDATE_FAIL:-Update failed}"
             echo "$install_output" | tail -10 >&2 # Show last 10 lines of error
             exit 1
         fi
@@ -499,7 +499,7 @@ update_mole() {
                 if [[ -t 1 ]]; then stop_inline_spinner; fi
                 rm -f "$tmp_installer"
                 _update_cleanup
-                log_error "Update failed"
+                log_error "${TR_MOLE_ERR_UPDATE_FAIL:-Update failed}"
                 echo "$install_output" | tail -10 >&2 # Show last 10 lines of error
                 exit 1
             fi
@@ -523,9 +523,9 @@ remove_mole() {
     fi
 
     if [[ -t 1 ]]; then
-        start_inline_spinner "Detecting Mole installations..."
+        start_inline_spinner "${TR_REMOVE_DETECTING:-Detecting Mole installations...}"
     else
-        echo "Detecting installations..."
+        echo "${TR_REMOVE_DETECTING:-Detecting Mole installations...}"
     fi
 
     local is_homebrew=false
@@ -623,39 +623,39 @@ remove_mole() {
     local manual_count=${#manual_installs[@]}
     local alias_count=${#alias_installs[@]}
     if [[ "$is_homebrew" == "false" && ${manual_count:-0} -eq 0 && ${alias_count:-0} -eq 0 ]]; then
-        printf '%s\n\n' "${YELLOW}No Mole installation detected${NC}"
+        printf '%s\n\n' "${YELLOW}${TR_REMOVE_NO_INSTALL:-No Mole installation detected}${NC}"
         exit 0
     fi
 
     # Dry-run mode: show preview and exit without confirmation
     if [[ "$dry_run_mode" == "true" ]]; then
-        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, no files will be removed"
+        echo -e "${YELLOW}${ICON_DRY_RUN} ${TR_DRY_RUN_MODE:-DRY RUN MODE}${NC}, ${TR_DRY_NO_FILES:-no files will be removed}"
         echo ""
-        echo -e "${YELLOW}Remove Mole${NC}, would delete the following:"
+        echo -e "${YELLOW}${TR_REMOVE_TITLE:-Remove Mole}${NC}, ${TR_REMOVE_WOULD_DEL:-would delete the following:}"
         if [[ "$is_homebrew" == "true" ]]; then
-            echo -e "  ${GRAY}${ICON_LIST} Would run: brew uninstall --force mole${NC}"
+            echo -e "  ${GRAY}${ICON_LIST} ${TR_REMOVE_WOULD_RUN:-Would run}: brew uninstall --force mole${NC}"
         fi
         if [[ ${manual_count:-0} -gt 0 ]]; then
             for install in "${manual_installs[@]}"; do
-                [[ -f "$install" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: ${install}${NC}"
+                [[ -f "$install" ]] && echo -e "  ${GRAY}${ICON_LIST} ${TR_REMOVE_WOULD_DEL_ITEM:-Would remove}: ${install}${NC}"
             done
         fi
         if [[ ${alias_count:-0} -gt 0 ]]; then
             for alias in "${alias_installs[@]}"; do
-                [[ -f "$alias" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: ${alias}${NC}"
+                [[ -f "$alias" ]] && echo -e "  ${GRAY}${ICON_LIST} ${TR_REMOVE_WOULD_DEL_ITEM:-Would remove}: ${alias}${NC}"
             done
         fi
-        [[ -d "$HOME/.cache/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/.cache/mole${NC}"
-        [[ -d "$HOME/.config/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/.config/mole${NC}"
-        [[ -d "$HOME/Library/Logs/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/Library/Logs/mole${NC}"
+        [[ -d "$HOME/.cache/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} ${TR_REMOVE_WOULD_DEL_ITEM:-Would remove}: $HOME/.cache/mole${NC}"
+        [[ -d "$HOME/.config/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} ${TR_REMOVE_WOULD_DEL_ITEM:-Would remove}: $HOME/.config/mole${NC}"
+        [[ -d "$HOME/Library/Logs/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} ${TR_REMOVE_WOULD_DEL_ITEM:-Would remove}: $HOME/Library/Logs/mole${NC}"
 
-        printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Dry run complete, no changes made"
+        printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} ${TR_PURGE_DRY_COMPLETE:-Dry run complete, no changes made}"
         exit 0
     fi
 
-    echo -e "${YELLOW}Remove Mole${NC}, will delete the following:"
+    echo -e "${YELLOW}${TR_REMOVE_TITLE:-Remove Mole}${NC}, ${TR_REMOVE_WILL_DEL:-will delete the following:}"
     if [[ "$is_homebrew" == "true" ]]; then
-        echo "  ${ICON_LIST} Mole via Homebrew"
+        echo "  ${ICON_LIST} ${TR_REMOVE_VIA_BREW:-Mole via Homebrew}"
     fi
     for install in ${manual_installs[@]+"${manual_installs[@]}"} ${alias_installs[@]+"${alias_installs[@]}"}; do
         echo "  ${ICON_LIST} $install"
@@ -663,7 +663,7 @@ remove_mole() {
     echo "  ${ICON_LIST} ~/.config/mole"
     echo "  ${ICON_LIST} ~/.cache/mole"
     echo "  ${ICON_LIST} ~/Library/Logs/mole"
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
+    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${TR_REMOVE_CONFIRM:-Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: }"
 
     IFS= read -r -s -n1 key || key=""
     drain_pending_input # Clean up any escape sequence remnants
@@ -682,21 +682,21 @@ remove_mole() {
     local has_error=false
     if [[ "$is_homebrew" == "true" ]]; then
         if [[ -z "$brew_cmd" ]]; then
-            log_error "Homebrew command not found. Please ensure Homebrew is installed and in your PATH."
-            log_warning "Manual step: brew uninstall --force mole"
+            log_error "${TR_REMOVE_BREW_FAIL:-Homebrew command not found. Please ensure Homebrew is installed and in your PATH.}"
+            log_warning "${TR_REMOVE_MANUAL_STEP:-Manual step}: brew uninstall --force mole"
             exit 1
         fi
 
-        log_info "Attempting to uninstall Mole via Homebrew..."
+        log_info "${TR_REMOVE_ATTEMPT_BREW:-Attempting to uninstall Mole via Homebrew...}"
         local brew_uninstall_output
         if ! brew_uninstall_output=$("$brew_cmd" uninstall --force mole 2>&1); then
             has_error=true
-            log_error "Homebrew uninstallation failed:"
+            log_error "${TR_REMOVE_BREW_UN_FAIL:-Homebrew uninstallation failed:}"
             printf "%s\n" "$brew_uninstall_output" | sed "s/^/${RED}  | ${NC}/" >&2
-            log_warning "Manual step: ${YELLOW}brew uninstall --force mole${NC}"
+            log_warning "${TR_REMOVE_MANUAL_STEP:-Manual step}: ${YELLOW}brew uninstall --force mole${NC}"
             echo "" # Add a blank line for readability
         else
-            log_success "Mole uninstalled via Homebrew."
+            log_success "${TR_REMOVE_BREW_UN_SUCC:-Mole uninstalled via Homebrew.}"
         fi
     fi
     if [[ ${manual_count:-0} -gt 0 ]]; then
@@ -741,9 +741,9 @@ remove_mole() {
 
     local final_message
     if [[ "$has_error" == "true" ]]; then
-        final_message="${YELLOW}${ICON_ERROR} Mole uninstalled with some errors, thank you for using Mole!${NC}"
+        final_message="${YELLOW}${ICON_ERROR} ${TR_REMOVE_DONE_WARN:-Mole uninstalled with some errors, thank you for using Mole!}${NC}"
     else
-        final_message="${GREEN}${ICON_SUCCESS} Mole uninstalled successfully, thank you for using Mole!${NC}"
+        final_message="${GREEN}${ICON_SUCCESS} ${TR_REMOVE_DONE_SUCCESS:-Mole uninstalled successfully, thank you for using Mole!}${NC}"
     fi
     printf '\n%s\n\n' "$final_message"
 
@@ -779,21 +779,28 @@ show_main_menu() {
 
     printf '\r\033[2K\n'
 
-    printf '\r\033[2K%s\n' "$(show_menu_option 1 "Clean        Free up disk space" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 2 "Uninstall    Remove apps completely" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 3 "Optimize     Check and maintain system" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 4 "Analyze      Explore disk usage" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
-    printf '\r\033[2K%s\n' "$(show_menu_option 5 "Status       Monitor system health" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
+    local opt1 opt2 opt3 opt4 opt5
+    opt1=$(printf "%-13s %s" "${TR_MENU_CLEAN:-Clean}" "${TR_MENU_CLEAN_DESC:-Free up disk space}")
+    opt2=$(printf "%-13s %s" "${TR_MENU_UNINSTALL:-Uninstall}" "${TR_MENU_UNINSTALL_DESC:-Remove apps completely}")
+    opt3=$(printf "%-13s %s" "${TR_MENU_OPTIMIZE:-Optimize}" "${TR_MENU_OPTIMIZE_DESC:-Check and maintain system}")
+    opt4=$(printf "%-13s %s" "${TR_MENU_ANALYZE:-Analyze}" "${TR_MENU_ANALYZE_DESC:-Explore disk usage}")
+    opt5=$(printf "%-13s %s" "${TR_MENU_STATUS:-Status}" "${TR_MENU_STATUS_DESC:-Monitor system health}")
+
+    printf '\r\033[2K%s\n' "$(show_menu_option 1 "$opt1" "$([[ $selected -eq 1 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 2 "$opt2" "$([[ $selected -eq 2 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 3 "$opt3" "$([[ $selected -eq 3 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 4 "$opt4" "$([[ $selected -eq 4 ]] && echo true || echo false)")"
+    printf '\r\033[2K%s\n' "$(show_menu_option 5 "$opt5" "$([[ $selected -eq 5 ]] && echo true || echo false)")"
 
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
-        local controls="${GRAY}↑↓  |  Enter  |  M More  |  V Version"
+        local controls="${GRAY}${TR_MENU_HINT:-↑↓  |  Enter  |  M More  |  V Version}"
         if ! is_touchid_configured; then
-            controls="${controls}  |  T TouchID"
+            controls="${controls}  |  ${TR_MENU_T_TOUCHID:-T TouchID}"
         elif [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]]; then
-            controls="${controls}  |  U Update"
+            controls="${controls}  |  ${TR_MENU_U_UPDATE:-U Update}"
         fi
-        controls="${controls}  |  Q Quit${NC}"
+        controls="${controls}  |  ${TR_MENU_Q_EXIT:-Q Quit}${NC}"
         printf '\r\033[2K%s\n' "$controls"
         printf '\r\033[2K\n'
     fi
@@ -949,8 +956,8 @@ main() {
                     --force | -f) force_update=true ;;
                     --nightly) nightly_update=true ;;
                     *)
-                        echo "Unknown update option: $arg"
-                        echo "Use 'mole update [--force] [--nightly]' for supported options."
+                        echo "${TR_UNKNOWN_COMMAND:-Unknown command}: $arg"
+                        echo "${TR_MOLE_UPDATE_HINT:-Use 'mole update [--force] [--nightly]' for supported options.}"
                         exit 1
                         ;;
                 esac
@@ -964,8 +971,8 @@ main() {
                 case "$arg" in
                     "--dry-run" | "-n") dry_run_remove=true ;;
                     *)
-                        echo "Unknown remove option: $arg"
-                        echo "Use 'mole remove [--dry-run]' for supported options."
+                        echo "${TR_UNKNOWN_COMMAND:-Unknown command}: $arg"
+                        echo "${TR_MOLE_REMOVE_HINT:-Use 'mole remove [--dry-run]' for supported options.}"
                         exit 1
                         ;;
                 esac
@@ -985,8 +992,8 @@ main() {
             interactive_main_menu
             ;;
         *)
-            echo "Unknown command: ${args[0]}"
-            echo "Use 'mole --help' for usage information."
+            echo "${TR_UNKNOWN_COMMAND:-Unknown command}: ${args[0]}"
+            echo "${TR_MOLE_HELP_HINT:-Use 'mole --help' for usage information.}"
             exit 1
             ;;
     esac

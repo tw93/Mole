@@ -43,11 +43,11 @@ manage_purge_paths() {
         printf '\033[2J\033[H'
     fi
 
-    echo -e "${PURPLE_BOLD}Purge Paths Configuration${NC}"
+    echo -e "${PURPLE_BOLD}${TR_PP_TITLE:-Purge Paths Configuration}${NC}"
     echo ""
 
     # Show current status
-    echo -e "${YELLOW}Current Scan Paths:${NC}"
+    echo -e "${YELLOW}${TR_PP_CURRENT_PATHS:-Current Scan Paths:}${NC}"
 
     # Reload config
     load_purge_config
@@ -58,7 +58,7 @@ manage_purge_paths() {
             if [[ -d "$path" ]]; then
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $display_path"
             else
-                echo -e "  ${GRAY}${ICON_EMPTY}${NC} $display_path${GRAY}, not found${NC}"
+                echo -e "  ${GRAY}${ICON_EMPTY}${NC} $display_path${GRAY}, ${TR_PP_NOT_FOUND:-not found}${NC}"
             fi
         done
     fi
@@ -76,25 +76,25 @@ manage_purge_paths() {
 
     echo ""
     if [[ $custom_count -gt 0 ]]; then
-        echo -e "${GRAY}Using custom config with $custom_count paths${NC}"
+        echo -e "${GRAY}${TR_PP_CUSTOM_CONFIG:-Using custom config with $custom_count paths}${NC}"
     else
-        echo -e "${GRAY}Using ${#DEFAULT_PURGE_SEARCH_PATHS[@]} default paths${NC}"
+        echo -e "${GRAY}${TR_PP_DEFAULT_CONFIG:-Using ${#DEFAULT_PURGE_SEARCH_PATHS[@]} default paths}${NC}"
     fi
 
     echo ""
-    echo -e "${YELLOW}Default Paths:${NC}"
+    echo -e "${YELLOW}${TR_PP_DEFAULT_PATHS:-Default Paths:}${NC}"
     for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
         echo -e "  ${GRAY}-${NC} ${path/#$HOME/~}"
     done
 
     echo ""
-    echo -e "${YELLOW}Config File:${NC} $display_config"
+    echo -e "${YELLOW}${TR_PP_CONFIG_FILE:-Config File:}${NC} $display_config"
     echo ""
 
     # Open in editor
     local editor="${EDITOR:-${VISUAL:-vim}}"
-    echo -e "Opening in ${CYAN}$editor${NC}..."
-    echo -e "${GRAY}Save and exit to apply changes. Leave empty to use defaults.${NC}"
+    echo -e "${TR_PP_OPENING_EDITOR:-Opening in} ${CYAN}$editor${NC}..."
+    echo -e "${GRAY}${TR_PP_SAVE_HINT:-Save and exit to apply changes. Leave empty to use defaults.}${NC}"
     echo ""
 
     # Wait for user to read
@@ -107,8 +107,8 @@ manage_purge_paths() {
     load_purge_config
 
     echo ""
-    echo -e "${GREEN}${ICON_SUCCESS}${NC} Configuration updated"
-    echo -e "${GRAY}Run 'mo purge' to clean with new paths${NC}"
+    echo -e "${GREEN}${ICON_SUCCESS}${NC} ${TR_PP_CONFIG_UPDATED:-Configuration updated}"
+    echo -e "${GRAY}${TR_PP_RUN_HINT:-Run 'mo purge' to clean with new paths}${NC}"
     echo ""
 }
 

@@ -79,7 +79,7 @@ paginated_multi_select() {
 
     # Validation
     if [[ ${#items[@]} -eq 0 ]]; then
-        echo "No items provided" >&2
+        echo "${TR_MENU_ERR_NO_ITEMS:-No items provided}" >&2
         return 1
     fi
 
@@ -400,11 +400,11 @@ paginated_multi_select() {
     draw_header() {
         printf "\033[1;1H" >&2
         if [[ -n "$filter_text" ]]; then
-            printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${YELLOW}/ Search: ${filter_text}_${NC}  ${GRAY}(%d/%d)${NC}\n" "${title}" "${#view_indices[@]}" "$total_items" >&2
+            printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${YELLOW}/ ${TR_MENU_SEARCH_LABEL:-Search: }${filter_text}_${NC}  ${GRAY}(%d/%d)${NC}\n" "${title}" "${#view_indices[@]}" "$total_items" >&2
         elif [[ -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
-            printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${YELLOW}/ Search: _ ${NC}${GRAY}(type to search)${NC}\n" "${title}" >&2
+            printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${YELLOW}/ ${TR_MENU_SEARCH_LABEL:-Search: }_ ${NC}${GRAY}(${TR_MENU_TYPE_TO_SEARCH:-type to search})${NC}\n" "${title}" >&2
         else
-            printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d selected${NC}\n" "${title}" "$selected_count" "$total_items" >&2
+            printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d ${TR_MENU_SELECTED:-selected}${NC}\n" "${title}" "$selected_count" "$total_items" >&2
         fi
     }
 
@@ -440,11 +440,11 @@ paginated_multi_select() {
         # Visible slice
         local visible_total=${#view_indices[@]}
         if [[ $visible_total -eq 0 ]]; then
-            printf "${clear_line}No items available\n" >&2
+            printf "${clear_line}${TR_MENU_NO_ITEMS:-No items available}\n" >&2
             for ((i = 0; i < items_per_page; i++)); do
                 printf "${clear_line}\n" >&2
             done
-            printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space  |  Enter  |  Q Exit${NC}\n" >&2
+            printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space  |  Enter  |  ${TR_MENU_Q_EXIT:-Q Exit}${NC}\n" >&2
             printf "${clear_line}" >&2
             return
         fi
@@ -483,9 +483,9 @@ paginated_multi_select() {
         # Build sort status
         local sort_label=""
         case "$sort_mode" in
-            date) sort_label="Date" ;;
-            name) sort_label="Name" ;;
-            size) sort_label="Size" ;;
+            date) sort_label="${TR_MENU_SORT_DATE:-Date}" ;;
+            name) sort_label="${TR_MENU_SORT_NAME:-Name}" ;;
+            size) sort_label="${TR_MENU_SORT_SIZE:-Size}" ;;
         esac
         local sort_status="${sort_label}"
 
@@ -502,19 +502,19 @@ paginated_multi_select() {
 
         # Common menu items
         local nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}${NC}"
-        local space_select="${GRAY}Space Select${NC}"
-        local enter="${GRAY}Enter${NC}"
-        local exit="${GRAY}Q Exit${NC}"
+        local space_select="${GRAY}${TR_MENU_SPACE_SELECT:-Space Select}${NC}"
+        local enter="${GRAY}${TR_MENU_ENTER:-Enter}${NC}"
+        local exit="${GRAY}${TR_MENU_Q_EXIT:-Q Exit}${NC}"
 
         local reverse_arrow="↑"
         [[ "$sort_reverse" == "true" ]] && reverse_arrow="↓"
 
         local sort_ctrl="${GRAY}S ${sort_status}${NC}"
         local order_ctrl="${GRAY}O ${reverse_arrow}${NC}"
-        local filter_ctrl="${GRAY}/ Search${NC}"
+        local filter_ctrl="${GRAY}${TR_MENU_SEARCH:-/ Search}${NC}"
 
         if [[ -n "$filter_text" ]]; then
-            local -a _segs_filter=("${GRAY}Backspace${NC}" "${GRAY}Ctrl+U Clear${NC}" "${GRAY}ESC Clear${NC}")
+            local -a _segs_filter=("${GRAY}${TR_MENU_BACKSPACE:-Backspace}${NC}" "${GRAY}${TR_MENU_CTRL_CLEAR:-Ctrl+U Clear}${NC}" "${GRAY}${TR_MENU_ESC_CLEAR:-ESC Clear}${NC}")
             _print_wrapped_controls "$sep" "${_segs_filter[@]}"
         elif [[ "$has_metadata" == "true" ]]; then
             # With metadata: show sort controls
@@ -721,7 +721,7 @@ paginated_multi_select() {
 
                     # Incremental update: only redraw header (for count) and current row
                     # Header is at row 1
-                    printf "\033[1;1H\033[2K${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d selected${NC}\n" "${title}" "$selected_count" "$total_items" >&2
+                    printf "\033[1;1H\033[2K${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d ${TR_MENU_SELECTED:-selected}${NC}\n" "${title}" "$selected_count" "$total_items" >&2
 
                     # Redraw current item row (+3: row 1=header, row 2=blank, row 3=first item)
                     local item_row=$((cursor_pos + 3))

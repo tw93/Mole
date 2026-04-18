@@ -51,8 +51,8 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 
 	if !commandExists("nvidia-smi") {
 		return []GPUStatus{{
-			Name: "No GPU metrics available",
-			Note: "Install nvidia-smi or use platform-specific metrics",
+			Name: t("No GPU metrics available", "GPU ölçümü yok"),
+			Note: t("Install nvidia-smi or use platform-specific metrics", "nvidia-smi kurun veya platform ölçümlerini kullanın"),
 		}}, nil
 	}
 
@@ -82,8 +82,8 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 
 	if len(gpus) == 0 {
 		return []GPUStatus{{
-			Name: "GPU read failed",
-			Note: "Verify nvidia-smi availability",
+			Name: t("GPU read failed", "GPU okunamadı"),
+			Note: t("Verify nvidia-smi availability", "nvidia-smi erişilebilirliğini doğrulayın"),
 		}}, nil
 	}
 
@@ -143,8 +143,8 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 
 	if len(gpus) == 0 {
 		return []GPUStatus{{
-			Name: "GPU info unavailable",
-			Note: "Unable to parse system_profiler output",
+			Name: t("GPU info unavailable", "GPU bilgisi yok"),
+			Note: t("Unable to parse system_profiler output", "system_profiler çıktısı çözülemedi"),
 		}}, nil
 	}
 

@@ -8,6 +8,10 @@ import (
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "analyze is only supported on macOS")
+	msg := "analyze is only supported on macOS"
+	if os.Getenv("MOLE_IS_TURKISH_SYSTEM") == "true" {
+		msg = "analyze yalnızca macOS üzerinde desteklenir"
+	}
+	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }

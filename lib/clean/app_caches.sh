@@ -10,7 +10,7 @@ clean_xcode_derived_data() {
 
     # Skip while Xcode is running to avoid build failures.
     if pgrep -x "Xcode" > /dev/null 2>&1; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode is running, skipping DerivedData cleanup"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_APP_XCODE_DD_RUN:-Xcode is running, skipping DerivedData cleanup}"
         return 0
     fi
 
@@ -29,11 +29,11 @@ clean_xcode_derived_data() {
     local size_human
     size_human=$(bytes_to_human "$((size_kb * 1024))")
 
-    local project_label="projects"
-    [[ $project_count -eq 1 ]] && project_label="project"
+    local project_label="${TR_CLEAN_APP_XCODE_PROJ_N:-projects}"
+    [[ $project_count -eq 1 ]] && project_label="${TR_CLEAN_APP_XCODE_PROJ_1:-project}"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Xcode DerivedData · ${project_count} ${project_label}, ${size_human}"
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "${TR_CLEAN_APP_XCODE_DD_DRY:-Xcode DerivedData · %s %s, %s}" "$project_count" "$project_label" "$size_human")"
         note_activity
         return 0
     fi
@@ -49,7 +49,7 @@ clean_xcode_derived_data() {
     if [[ $removed -gt 0 ]]; then
         local line_color
         line_color=$(cleanup_result_color_kb "$size_kb" 2> /dev/null || echo "$GREEN")
-        echo -e "  ${line_color}${ICON_SUCCESS}${NC} Xcode DerivedData · ${project_count} ${project_label}, ${line_color}${size_human}${NC}"
+        echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_APP_XCODE_DD_OK:-Xcode DerivedData · %s %s, %s}" "$project_count" "$project_label" "${line_color}${size_human}${NC}")"
         files_cleaned=$((${files_cleaned:-0} + removed))
         total_size_cleaned=$((${total_size_cleaned:-0} + size_kb))
         total_items=$((${total_items:-0} + removed))
@@ -73,7 +73,7 @@ clean_xcode_tools() {
         safe_clean ~/Library/Developer/CoreSimulator/Devices/*/data/tmp/* "Simulator temp files"
         safe_clean ~/Library/Logs/CoreSimulator/* "CoreSimulator logs"
     else
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Simulator is running, skipping Simulator cache/temp/log cleanup"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_APP_SIM_RUN:-Simulator is running, skipping Simulator cache/temp/log cleanup}"
     fi
     safe_clean ~/Library/Caches/com.apple.dt.Xcode/* "Xcode cache"
     safe_clean ~/Library/Developer/Xcode/iOS\ Device\ Logs/* "iOS device logs"
@@ -85,7 +85,7 @@ clean_xcode_tools() {
         safe_clean ~/Library/Developer/Xcode/DocumentationCache/* "Xcode documentation cache"
         safe_clean ~/Library/Developer/Xcode/DocumentationIndex/* "Xcode documentation index"
     else
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode is running, skipping DerivedData/Archives/Documentation cleanup"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_APP_XCODE_SKIP_DD:-Xcode is running, skipping DerivedData/Archives/Documentation cleanup}"
     fi
 }
 # Code editors.
@@ -191,7 +191,7 @@ clean_media_players() {
         has_offline_music=true
     fi
     if [[ "$has_offline_music" == "true" ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Spotify cache protected · offline music detected"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CLEAN_APP_SPOTIFY_PROT:-Spotify cache protected · offline music detected}"
         note_activity
     else
         safe_clean ~/Library/Caches/com.spotify.client/* "Spotify cache"

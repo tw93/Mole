@@ -39,13 +39,13 @@ check_touchid_sudo() {
     if command -v is_whitelisted > /dev/null && is_whitelisted "check_touchid"; then return; fi
     # Check if Touch ID is configured for sudo
     local pam_file="/etc/pam.d/sudo"
-    if [[ -f "$pam_file" ]] && grep -q "pam_tid.so" "$pam_file" 2> /dev/null; then
-        echo -e "  ${GREEN}✓${NC} Touch ID     Biometric authentication enabled"
+    if [[ -f "$pam_file" ]] && grep -q "pam_tid.so" "$pam_file" 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} Touch ID     ${TR_CHK_TOUCH_ID_ON:-Biometric authentication enabled}"
     else
         # Check if Touch ID is supported
         local is_supported=false
-        if command -v bioutil > /dev/null 2>&1; then
-            if bioutil -r 2> /dev/null | grep -q "Touch ID"; then
+        if command -v bioutil >/dev/null 2>&1; then
+            if bioutil -r 2>/dev/null | grep -q "Touch ID"; then
                 is_supported=true
             fi
         elif [[ "$(uname -m)" == "arm64" ]]; then
@@ -53,7 +53,7 @@ check_touchid_sudo() {
         fi
 
         if [[ "$is_supported" == "true" ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Touch ID     ${YELLOW}Not configured for sudo${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Touch ID     ${YELLOW}${TR_CHK_TOUCH_ID_OFF:-Not configured for sudo}${NC}"
             export TOUCHID_NOT_CONFIGURED=true
         fi
     fi
@@ -65,9 +65,9 @@ check_rosetta() {
     # Check Rosetta 2 (for Apple Silicon Macs) - informational only, not auto-fixed
     if [[ "$(uname -m)" == "arm64" ]]; then
         if [[ -f "/Library/Apple/usr/share/rosetta/rosetta" ]]; then
-            echo -e "  ${GREEN}✓${NC} Rosetta 2    Intel app translation ready"
+            echo -e "  ${GREEN}✓${NC} Rosetta 2    ${TR_CHK_INTEL_READY:-Intel app translation ready}"
         else
-            echo -e "  ${GRAY}${ICON_EMPTY}${NC} Rosetta 2    ${GRAY}Not installed${NC}"
+            echo -e "  ${GRAY}${ICON_EMPTY}${NC} Rosetta 2    ${GRAY}${TR_CHK_NOT_INSTALLED:-Not installed}${NC}"
         fi
     fi
 }
@@ -81,15 +81,15 @@ check_git_config() {
         local git_email=$(git config --global user.email 2> /dev/null || echo "")
 
         if [[ -n "$git_name" && -n "$git_email" ]]; then
-            echo -e "  ${GREEN}✓${NC} Git          Global identity configured"
+            echo -e "  ${GREEN}✓${NC} Git          ${TR_CHK_GIT_OK:-Global identity configured}"
         else
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Git          ${YELLOW}User identity not set${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Git          ${YELLOW}${TR_CHK_GIT_OFF:-User identity not set}${NC}"
         fi
     fi
 }
 
 check_all_config() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} System Configuration"
+    echo -e "${BLUE}${ICON_ARROW}${NC} ${TR_CHK_SYS_CONFIG:-System Configuration}"
     check_touchid_sudo
     check_rosetta
     check_git_config
@@ -106,9 +106,9 @@ check_filevault() {
     if command -v fdesetup > /dev/null 2>&1; then
         local fv_status=$(fdesetup status 2> /dev/null || echo "")
         if echo "$fv_status" | grep -q "FileVault is On"; then
-            echo -e "  ${GREEN}✓${NC} FileVault    Disk encryption active"
+            echo -e "  ${GREEN}✓${NC} FileVault    ${TR_CHK_FV_ON:-Disk encryption active}"
         else
-            echo -e "  ${RED}✗${NC} FileVault    ${RED}Disk encryption disabled${NC}"
+            echo -e "  ${RED}✗${NC} FileVault    ${RED}${TR_CHK_FV_OFF:-Disk encryption disabled}${NC}"
             export FILEVAULT_DISABLED=true
         fi
     fi
@@ -137,16 +137,16 @@ check_firewall() {
     fi
 
     if [[ -n "$third_party_firewall" ]]; then
-        echo -e "  ${GREEN}✓${NC} Firewall     ${third_party_firewall} active"
+        echo -e "  ${GREEN}✓${NC} Firewall     ${third_party_firewall} ${TR_CHK_FW_ACTIVE:-active}"
         return
     fi
 
     # Fall back to macOS built-in firewall check (no sudo needed for read-only query)
-    local firewall_output=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2> /dev/null || echo "")
+    local firewall_output=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null || echo "")
     if [[ "$firewall_output" == *"State = 1"* ]] || [[ "$firewall_output" == *"State = 2"* ]]; then
-        echo -e "  ${GREEN}✓${NC} Firewall     Network protection enabled"
+        echo -e "  ${GREEN}✓${NC} Firewall     ${TR_CHK_FW_ON:-Network protection enabled}"
     else
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Firewall     ${YELLOW}Network protection disabled${NC}"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Firewall     ${YELLOW}${TR_CHK_FW_OFF:-Network protection disabled}${NC}"
         export FIREWALL_DISABLED=true
     fi
 }
@@ -158,10 +158,10 @@ check_gatekeeper() {
     if command -v spctl > /dev/null 2>&1; then
         local gk_status=$(spctl --status 2> /dev/null || echo "")
         if echo "$gk_status" | grep -q "enabled"; then
-            echo -e "  ${GREEN}✓${NC} Gatekeeper   App download protection active"
+            echo -e "  ${GREEN}✓${NC} Gatekeeper   ${TR_CHK_GK_ON:-App download protection active}"
             unset GATEKEEPER_DISABLED
         else
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Gatekeeper   ${YELLOW}App security disabled${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Gatekeeper   ${YELLOW}${TR_CHK_GK_OFF:-App security disabled}${NC}"
             export GATEKEEPER_DISABLED=true
         fi
     fi
@@ -174,15 +174,15 @@ check_sip() {
     if command -v csrutil > /dev/null 2>&1; then
         local sip_status=$(csrutil status 2> /dev/null || echo "")
         if echo "$sip_status" | grep -q "enabled"; then
-            echo -e "  ${GREEN}✓${NC} SIP          System integrity protected"
+            echo -e "  ${GREEN}✓${NC} SIP          ${TR_CHK_SIP_ON:-System integrity protected}"
         else
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} SIP          ${YELLOW}System protection disabled${NC}"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} SIP          ${YELLOW}${TR_CHK_SIP_OFF:-System protection disabled}${NC}"
         fi
     fi
 }
 
 check_all_security() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} Security Status"
+    echo -e "${BLUE}${ICON_ARROW}${NC} ${TR_CHK_SECURITY:-Security Status}"
     check_filevault
     check_firewall
     check_gatekeeper
@@ -290,7 +290,7 @@ get_software_updates() {
 
     local spinner_started=false
     if [[ -t 1 && -z "${SOFTWAREUPDATE_SPINNER_SHOWN:-}" ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking system updates..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CHK_CHECKING_UPDATES:-Checking system updates...}"
         spinner_started=true
         export SOFTWAREUPDATE_SPINNER_SHOWN=1
     fi
@@ -329,7 +329,7 @@ check_homebrew_updates() {
     export BREW_CASK_OUTDATED_COUNT=0
 
     if ! command -v brew > /dev/null 2>&1; then
-        printf "  ${GRAY}${ICON_EMPTY}${NC} %-12s %s\n" "Homebrew" "Not installed"
+        printf "  ${GRAY}${ICON_EMPTY}${NC} %-12s %s\n" "${TR_CHK_HOMEBREW_LABEL:-Homebrew}" "${TR_CHK_HB_NOT_INSTALLED:-Not installed}"
         return
     fi
 
@@ -358,7 +358,7 @@ check_homebrew_updates() {
         local spinner_started=false
 
         if [[ -t 1 ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking Homebrew updates..."
+            MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CHK_CHECKING_BREW:-Checking Homebrew updates...}"
             spinner_started=true
         fi
 
@@ -397,10 +397,10 @@ check_homebrew_updates() {
                 printf '%s %s\n' "$formula_count" "$cask_count" > "$cache_file" 2> /dev/null || true
             fi
         elif [[ $formula_status -eq 124 || $cask_status -eq 124 ]]; then
-            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "Homebrew" "Check timed out"
+            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "${TR_CHK_HOMEBREW_LABEL:-Homebrew}" "${TR_CHK_TIMED_OUT:-Check timed out}"
             return
         else
-            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "Homebrew" "Check failed"
+            printf "  ${GRAY}${ICON_WARNING}${NC} %-12s ${YELLOW}%s${NC}\n" "${TR_CHK_HOMEBREW_LABEL:-Homebrew}" "${TR_CHK_FAILED:-Check failed}"
             return
         fi
     fi
@@ -413,16 +413,16 @@ check_homebrew_updates() {
     if [[ $total_count -gt 0 ]]; then
         local detail=""
         if [[ $formula_count -gt 0 ]]; then
-            detail="${formula_count} formula"
+            detail="${formula_count} ${TR_CHK_HB_FORMULA:-formula}"
         fi
         if [[ $cask_count -gt 0 ]]; then
             [[ -n "$detail" ]] && detail="${detail}, "
-            detail="${detail}${cask_count} cask"
+            detail="${detail}${cask_count} ${TR_CHK_HB_CASK:-cask}"
         fi
-        [[ -z "$detail" ]] && detail="${total_count} updates"
-        printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "Homebrew" "${detail} available"
+        [[ -z "$detail" ]] && detail="${total_count} ${TR_UPD_AVAIL:-updates}"
+        printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "${TR_CHK_HOMEBREW_LABEL:-Homebrew}" "${detail} ${TR_UPD_AVAIL:-available}"
     else
-        printf "  ${GREEN}✓${NC} %-12s %s\n" "Homebrew" "Up to date"
+        printf "  ${GREEN}✓${NC} %-12s %s\n" "${TR_CHK_HOMEBREW_LABEL:-Homebrew}" "${TR_CHK_UP_TO_DATE:-Up to date}"
     fi
 }
 
@@ -456,12 +456,12 @@ check_macos_update() {
 
     if [[ "$updates_available" == "true" ]]; then
         if [[ -n "$macos_update_summary" ]]; then
-            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "macOS" "$macos_update_summary"
+            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "${TR_CHK_MACOS_LABEL:-macOS}" "$macos_update_summary"
         else
-            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "macOS" "Update available"
+            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}\n" "$ICON_WARNING" "${TR_CHK_MACOS_LABEL:-macOS}" "${TR_CHK_UPDATE_AVAIL:-Update available}"
         fi
     else
-        printf "  ${GREEN}✓${NC} %-12s %s\n" "macOS" "System up to date"
+        printf "  ${GREEN}✓${NC} %-12s %s\n" "${TR_CHK_MACOS_LABEL:-macOS}" "${TR_CHK_SYS_UP_TO_DATE:-System up to date}"
     fi
 }
 
@@ -488,7 +488,7 @@ check_mole_update() {
     else
         # Show spinner while checking
         if [[ -t 1 ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking Mole version..."
+            MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CHK_CHECKING_MOLE_VER:-Checking Mole version...}"
         fi
 
         # Try to get latest version from GitHub
@@ -527,12 +527,12 @@ check_mole_update() {
         # Compare versions
         if [[ "$(printf '%s\n' "$current_version" "$latest_version" | sort -V | head -1)" == "$current_version" ]]; then
             export MOLE_UPDATE_AVAILABLE="true"
-            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}, running %s\n" "$ICON_WARNING" "Mole" "${latest_version} available" "${current_version}"
+            printf "  ${GRAY}%s${NC} %-12s ${YELLOW}%s${NC}, ${TR_CHK_RUNNING_VERSION:-running} %s\n" "$ICON_WARNING" "${TR_CHK_MOLE_LABEL:-Mole}" "${latest_version} ${TR_CHK_UPDATE_AVAIL:-available}" "${current_version}"
         else
-            printf "  ${GREEN}✓${NC} %-12s %s\n" "Mole" "Latest version ${current_version}"
+            printf "  ${GREEN}✓${NC} %-12s %s\n" "${TR_CHK_MOLE_LABEL:-Mole}" "${TR_CHK_LATEST:-Latest version} ${current_version}"
         fi
     else
-        printf "  ${GREEN}✓${NC} %-12s %s\n" "Mole" "Latest version ${current_version}"
+        printf "  ${GREEN}✓${NC} %-12s %s\n" "${TR_CHK_MOLE_LABEL:-Mole}" "${TR_CHK_LATEST:-Latest version} ${current_version}"
     fi
 }
 
@@ -544,7 +544,7 @@ check_all_updates() {
     # Only redirect stdout, keep stderr for spinner display
     get_software_updates > /dev/null
 
-    echo -e "${BLUE}${ICON_ARROW}${NC} System Updates"
+    echo -e "${BLUE}${ICON_ARROW}${NC} ${TR_CHK_SYSTEM_UPDATES:-System Updates}"
     check_homebrew_updates
     check_appstore_updates
     check_macos_update
@@ -593,11 +593,11 @@ check_disk_space() {
     export DISK_FREE_GB=$free_num
 
     if [[ $free_num -lt 20 ]]; then
-        echo -e "  ${RED}✗${NC} Disk Space   ${RED}${free_gb}GB free${NC}, Critical"
+        echo -e "  ${RED}✗${NC} ${TR_CHK_DISK_SPACE:-Disk Space}   ${RED}${free_gb}GB ${TR_CHK_DISK_FREE:-free}${NC}, ${TR_CHK_DISK_CRIT:-Critical}"
     elif [[ $free_num -lt 50 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Disk Space   ${YELLOW}${free_gb}GB free${NC}, Low"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_DISK_SPACE:-Disk Space}   ${YELLOW}${free_gb}GB ${TR_CHK_DISK_FREE:-free}${NC}, ${TR_CHK_DISK_LOW:-Low}"
     else
-        echo -e "  ${GREEN}✓${NC} Disk Space   ${free_gb}GB free"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_DISK_SPACE:-Disk Space}   ${free_gb}GB ${TR_CHK_DISK_FREE:-free}"
     fi
 }
 
@@ -605,7 +605,7 @@ check_memory_usage() {
     local mem_total
     mem_total=$(sysctl -n hw.memsize 2> /dev/null || echo "0")
     if [[ -z "$mem_total" || "$mem_total" -le 0 ]]; then
-        echo -e "  ${GRAY}-${NC} Memory       Unable to determine"
+        echo -e "  ${GRAY}-${NC} ${TR_CHK_MEMORY:-Memory}       ${TR_CHK_MEM_UNKNOWN:-Unable to determine}"
         return
     fi
 
@@ -639,11 +639,11 @@ check_memory_usage() {
     ((used_percent < 0)) && used_percent=0
 
     if [[ $used_percent -gt 90 ]]; then
-        echo -e "  ${RED}✗${NC} Memory       ${RED}${used_percent}% used${NC}, Critical"
+        echo -e "  ${RED}✗${NC} ${TR_CHK_MEMORY:-Memory}       ${RED}${used_percent}% ${TR_CHK_MEM_USED:-used}${NC}, ${TR_CHK_MEM_CRIT:-Critical}"
     elif [[ $used_percent -gt 80 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Memory       ${YELLOW}${used_percent}% used${NC}, High"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_MEMORY:-Memory}       ${YELLOW}${used_percent}% ${TR_CHK_MEM_USED:-used}${NC}, ${TR_CHK_MEM_HIGH:-High}"
     else
-        echo -e "  ${GREEN}✓${NC} Memory       ${used_percent}% used"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_MEMORY:-Memory}       ${used_percent}% ${TR_CHK_MEM_USED:-used}"
     fi
 }
 
@@ -656,7 +656,7 @@ check_login_items() {
     if [[ -t 0 ]]; then
         # Show spinner while getting login items
         if [[ -t 1 ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking login items..."
+            MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CHK_CHECKING_ITEMS:-Checking login items...}"
         fi
 
         while IFS= read -r login_item; do
@@ -671,11 +671,11 @@ check_login_items() {
     fi
 
     if [[ $login_items_count -gt 15 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Login Items  ${YELLOW}${login_items_count} apps${NC}"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_LOGIN_ITEMS:-Login Items}  ${YELLOW}${login_items_count} ${TR_CHK_LOGIN_APPS:-apps}${NC}"
     elif [[ $login_items_count -gt 0 ]]; then
-        echo -e "  ${GREEN}✓${NC} Login Items  ${login_items_count} apps"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_LOGIN_ITEMS:-Login Items}  ${login_items_count} ${TR_CHK_LOGIN_APPS:-apps}"
     else
-        echo -e "  ${GREEN}✓${NC} Login Items  None"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_LOGIN_ITEMS:-Login Items}  ${TR_CHK_LOGIN_NONE:-None}"
         return
     fi
 
@@ -711,7 +711,7 @@ check_cache_size() {
 
     # Show spinner while calculating cache size
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning cache..."
+        MOLE_SPINNER_PREFIX="  " start_inline_spinner "${TR_CHK_SCANNING_CACHE:-Scanning cache...}"
     fi
 
     for cache_path in "${cache_paths[@]}"; do
@@ -735,11 +735,11 @@ check_cache_size() {
     local cache_size_int=$(echo "$cache_size_gb" | cut -d'.' -f1)
 
     if [[ $cache_size_int -gt 10 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Cache Size   ${YELLOW}${cache_size_gb}GB${NC} cleanable"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_CACHE_SIZE:-Cache Size}   ${YELLOW}${cache_size_gb}GB${NC} ${TR_CHK_CACHE_CLEANABLE_LBL:-cleanable}"
     elif [[ $cache_size_int -gt 5 ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Cache Size   ${YELLOW}${cache_size_gb}GB${NC} cleanable"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_CACHE_SIZE:-Cache Size}   ${YELLOW}${cache_size_gb}GB${NC} ${TR_CHK_CACHE_CLEANABLE_LBL:-cleanable}"
     else
-        echo -e "  ${GREEN}✓${NC} Cache Size   ${cache_size_gb}GB"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_CACHE_SIZE:-Cache Size}   ${cache_size_gb}GB"
     fi
 }
 
@@ -755,12 +755,12 @@ check_swap_usage() {
             if [[ "$swap_used" == *"G"* ]]; then
                 local swap_gb=${swap_num%.*}
                 if [[ $swap_gb -gt 2 ]]; then
-                    echo -e "  ${GRAY}${ICON_WARNING}${NC} Swap Usage   ${YELLOW}${swap_used}${NC}, High"
+                    echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_SWAP_USAGE:-Swap Usage}   ${YELLOW}${swap_used}${NC}, ${TR_CHK_SWAP_HIGH_LBL:-High}"
                 else
-                    echo -e "  ${GREEN}✓${NC} Swap Usage   ${swap_used}"
+                    echo -e "  ${GREEN}✓${NC} ${TR_CHK_SWAP_USAGE:-Swap Usage}   ${swap_used}"
                 fi
             else
-                echo -e "  ${GREEN}✓${NC} Swap Usage   ${swap_used}"
+                echo -e "  ${GREEN}✓${NC} ${TR_CHK_SWAP_USAGE:-Swap Usage}   ${swap_used}"
             fi
         fi
     fi
@@ -784,11 +784,11 @@ check_disk_smart() {
     fi
 
     if [[ "$smart_status" == "Verified" ]]; then
-        echo -e "  ${GREEN}✓${NC} Disk Health  SMART Verified"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_DISK_HEALTH:-Disk Health}  ${TR_CHK_DISK_HEALTH_VERF:-SMART Verified}"
     elif [[ "$smart_status" == "Failing" ]]; then
-        echo -e "  ${RED}✗${NC} Disk Health  ${RED}SMART Failing — back up immediately${NC}"
+        echo -e "  ${RED}✗${NC} ${TR_CHK_DISK_HEALTH:-Disk Health}  ${RED}${TR_CHK_DISK_HEALTH_FAIL:-SMART Failing — back up immediately}${NC}"
     else
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Disk Health  ${YELLOW}SMART: ${smart_status}${NC}"
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_DISK_HEALTH:-Disk Health}  ${YELLOW}SMART: ${smart_status}${NC}"
     fi
 }
 
@@ -812,13 +812,15 @@ check_orphan_launch_agents() {
 
     local count=${#orphans[@]}
     if [[ $count -eq 0 ]]; then
-        echo -e "  ${GREEN}✓${NC} Launch Agents None orphaned"
+        echo -e "  ${GREEN}✓${NC} ${TR_CHK_LAUNCH_AGENTS:-Launch Agents} ${TR_CHK_LA_NONE_ORPHANED:-None orphaned}"
         return
     fi
 
-    local s=""
-    ((count > 1)) && s="s"
-    echo -e "  ${GRAY}${ICON_WARNING}${NC} Launch Agents ${YELLOW}${count} orphan${s}${NC}"
+    if [[ $count -eq 1 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_LAUNCH_AGENTS:-Launch Agents} ${YELLOW}${count} ${TR_CHK_LA_ORPHAN:-orphan}${NC}"
+    else
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${TR_CHK_LAUNCH_AGENTS:-Launch Agents} ${YELLOW}${count} ${TR_CHK_LA_ORPHANS:-orphans}${NC}"
+    fi
     local preview="${orphans[0]}"
     ((count > 1)) && preview="${preview}, ${orphans[1]}"
     ((count > 2)) && preview="${preview}, ${orphans[2]}"
@@ -832,7 +834,7 @@ check_brew_health() {
 }
 
 check_system_health() {
-    echo -e "${BLUE}${ICON_ARROW}${NC} System Health"
+    echo -e "${BLUE}${ICON_ARROW}${NC} ${TR_CHK_SYSTEM_HEALTH:-System Health}"
     check_disk_space
     check_memory_usage
     check_swap_usage

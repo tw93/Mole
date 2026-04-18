@@ -5,7 +5,7 @@ set -euo pipefail
 clean_deep_system() {
     stop_section_spinner
     local cache_cleaned=0
-    start_section_spinner "Cleaning system caches..."
+    start_section_spinner "${TR_CLEAN_SPIN_SYSTEM_CACHES:-Cleaning system caches...}"
     # Optimized: Single pass for /Library/Caches (3 patterns in 1 scan)
     if sudo test -d "/Library/Caches" 2> /dev/null; then
         while IFS= read -r -d '' file; do
@@ -22,8 +22,8 @@ clean_deep_system() {
             \) -print0 2> /dev/null || true)
     fi
     stop_section_spinner
-    [[ $cache_cleaned -eq 1 ]] && log_success "System caches"
-    start_section_spinner "Cleaning system temporary files..."
+    [[ $cache_cleaned -eq 1 ]] && log_success "${TR_CLEAN_SYS_CACHES:-System caches}"
+    start_section_spinner "${TR_CLEAN_SPIN_SYS_TEMP:-Cleaning system temporary files...}"
     local tmp_cleaned=0
     local -a sys_temp_dirs=("/private/tmp" "/private/var/tmp")
     for tmp_dir in "${sys_temp_dirs[@]}"; do
@@ -34,22 +34,22 @@ clean_deep_system() {
         fi
     done
     stop_section_spinner
-    [[ $tmp_cleaned -eq 1 ]] && log_success "System temp files"
-    start_section_spinner "Cleaning system crash reports..."
+    [[ $tmp_cleaned -eq 1 ]] && log_success "${TR_CLEAN_SYS_TEMP:-System temp files}"
+    start_section_spinner "${TR_CLEAN_SPIN_SYS_CRASH:-Cleaning system crash reports...}"
     if sudo find "/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -mtime "+$MOLE_CRASH_REPORT_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
         safe_sudo_find_delete "/Library/Logs/DiagnosticReports" "*" "$MOLE_CRASH_REPORT_AGE_DAYS" "f" || true
     fi
     stop_section_spinner
-    log_success "System crash reports"
-    start_section_spinner "Cleaning system logs..."
+    log_success "${TR_CLEAN_SYS_CRASH:-System crash reports}"
+    start_section_spinner "${TR_CLEAN_SPIN_SYS_LOGS:-Cleaning system logs...}"
     if sudo find "/private/var/log" -maxdepth 3 -type f \( -name "*.log" -o -name "*.gz" -o -name "*.asl" \) -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
         safe_sudo_find_delete "/private/var/log" "*.log" "$MOLE_LOG_AGE_DAYS" "f" || true
         safe_sudo_find_delete "/private/var/log" "*.gz" "$MOLE_LOG_AGE_DAYS" "f" || true
         safe_sudo_find_delete "/private/var/log" "*.asl" "$MOLE_LOG_AGE_DAYS" "f" || true
     fi
     stop_section_spinner
-    log_success "System logs"
-    start_section_spinner "Cleaning third-party system logs..."
+    log_success "${TR_CLEAN_SYS_LOGS:-System logs}"
+    start_section_spinner "${TR_CLEAN_SPIN_SYS_LOGS_3P:-Cleaning third-party system logs...}"
     local -a third_party_log_dirs=(
         "/Library/Logs/Adobe"
         "/Library/Logs/CreativeCloud"
@@ -71,8 +71,8 @@ clean_deep_system() {
         fi
     fi
     stop_section_spinner
-    [[ $third_party_logs_cleaned -eq 1 ]] && log_success "Third-party system logs"
-    start_section_spinner "Scanning system library updates..."
+    [[ $third_party_logs_cleaned -eq 1 ]] && log_success "${TR_CLEAN_SYS_3P_LOGS:-Third-party system logs}"
+    start_section_spinner "${TR_CLEAN_SPIN_SYS_LIB_UPDATES:-Scanning system library updates...}"
     if [[ -d "/Library/Updates" && ! -L "/Library/Updates" ]]; then
         local updates_cleaned=0
         while IFS= read -r -d '' item; do
@@ -90,11 +90,11 @@ clean_deep_system() {
             fi
         done < <(find /Library/Updates -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
         stop_section_spinner
-        [[ $updates_cleaned -gt 0 ]] && log_success "System library updates"
+        [[ $updates_cleaned -gt 0 ]] && log_success "${TR_CLEAN_SYS_LIB_UPD:-System library updates}"
     else
         stop_section_spinner
     fi
-    start_section_spinner "Scanning macOS installer files..."
+    start_section_spinner "${TR_CLEAN_SPIN_MACOS_INST:-Scanning macOS installer files...}"
     if [[ -d "/macOS Install Data" ]]; then
         local mtime
         mtime=$(get_file_mtime "/macOS Install Data")
@@ -108,7 +108,7 @@ clean_deep_system() {
                 size_human=$(bytes_to_human "$((size_kb * 1024))")
                 debug_log "Cleaning macOS Install Data: $size_human, ${age_days} days old"
                 if safe_sudo_remove "/macOS Install Data"; then
-                    log_success "macOS Install Data, $size_human"
+                    log_success "${TR_CLEAN_SYS_MACOS_INST:-macOS Install Data}, $size_human"
                 fi
             fi
         else
@@ -165,7 +165,7 @@ clean_deep_system() {
     done
     stop_section_spinner
     [[ $installer_cleaned -gt 0 ]] && debug_log "Cleaned $installer_cleaned macOS installer(s)"
-    start_section_spinner "Scanning browser code signature caches..."
+    start_section_spinner "${TR_CLEAN_SPIN_CODE_SIG:-Scanning browser code signature caches...}"
     local code_sign_cleaned=0
     while IFS= read -r -d '' cache_dir; do
         if safe_sudo_remove "$cache_dir"; then
@@ -173,21 +173,21 @@ clean_deep_system() {
         fi
     done < <(run_with_timeout 5 command find /private/var/folders -maxdepth 5 -type d -name "*.code_sign_clone" -path "*/X/*" -print0 2> /dev/null || true)
     stop_section_spinner
-    [[ $code_sign_cleaned -gt 0 ]] && log_success "Browser code signature caches, $code_sign_cleaned items"
+    [[ $code_sign_cleaned -gt 0 ]] && log_success "${TR_CLEAN_SYS_CODE_SIGN:-Browser code signature caches}, $code_sign_cleaned ${TR_CLEAN_SYS_ITEMS:-items}"
 
     local diag_base="/private/var/db/diagnostics"
-    start_section_spinner "Cleaning system diagnostic logs..."
+    start_section_spinner "${TR_CLEAN_SPIN_DIAG:-Cleaning system diagnostic logs...}"
     safe_sudo_find_delete "$diag_base" "*" "$MOLE_LOG_AGE_DAYS" "f" || true
     safe_sudo_find_delete "$diag_base" "*.tracev3" "30" "f" || true
     safe_sudo_find_delete "/private/var/db/DiagnosticPipeline" "*" "$MOLE_LOG_AGE_DAYS" "f" || true
     stop_section_spinner
-    log_success "System diagnostic logs"
+    log_success "${TR_CLEAN_SYS_DIAG_LOGS:-System diagnostic logs}"
 
-    start_section_spinner "Cleaning power logs..."
+    start_section_spinner "${TR_CLEAN_SPIN_POWER:-Cleaning power logs...}"
     safe_sudo_find_delete "/private/var/db/powerlog" "*" "$MOLE_LOG_AGE_DAYS" "f" || true
     stop_section_spinner
-    log_success "Power logs"
-    start_section_spinner "Cleaning memory exception reports..."
+    log_success "${TR_CLEAN_SYS_POWER_LOGS:-Power logs}"
+    start_section_spinner "${TR_CLEAN_SPIN_MEM_EXC:-Cleaning memory exception reports...}"
     local mem_reports_dir="/private/var/db/reportmemoryexception/MemoryLimitViolations"
     local mem_cleaned=0
     if sudo test -d "$mem_reports_dir" 2> /dev/null; then
@@ -220,7 +220,7 @@ clean_deep_system() {
     fi
     stop_section_spinner
     if [[ $mem_cleaned -eq 1 ]]; then
-        log_success "Memory exception reports"
+        log_success "${TR_CLEAN_SYS_MEM_REPORTS:-Memory exception reports}"
     fi
     return 0
 }
@@ -228,15 +228,15 @@ clean_deep_system() {
 clean_time_machine_failed_backups() {
     local tm_cleaned=0
     if ! command -v tmutil > /dev/null 2>&1; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No incomplete backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_SYS_NO_INCOMPLETE_TM:-No incomplete backups found}"
         return 0
     fi
     # Fast pre-check: skip entirely if Time Machine is not configured (no tmutil needed)
     if ! defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No incomplete backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_SYS_NO_INCOMPLETE_TM:-No incomplete backups found}"
         return 0
     fi
-    start_section_spinner "Checking Time Machine configuration..."
+    start_section_spinner "${TR_CLEAN_SPIN_TM_CFG:-Checking Time Machine configuration...}"
     local spinner_active=true
     local tm_info
     tm_info=$(run_with_timeout 2 tmutil destinationinfo 2>&1 || echo "failed")
@@ -244,25 +244,25 @@ clean_time_machine_failed_backups() {
         if [[ "$spinner_active" == "true" ]]; then
             stop_section_spinner
         fi
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No incomplete backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_SYS_NO_INCOMPLETE_TM:-No incomplete backups found}"
         return 0
     fi
     if [[ ! -d "/Volumes" ]]; then
         if [[ "$spinner_active" == "true" ]]; then
             stop_section_spinner
         fi
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No incomplete backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_SYS_NO_INCOMPLETE_TM:-No incomplete backups found}"
         return 0
     fi
     if tm_is_running; then
         if [[ "$spinner_active" == "true" ]]; then
             stop_section_spinner
         fi
-        echo -e "  ${YELLOW}!${NC} Time Machine backup in progress, skipping cleanup"
+        echo -e "  ${YELLOW}!${NC} ${TR_CLEAN_SYS_TM_ACTIVE_SKIP:-Time Machine backup in progress, skipping cleanup}"
         return 0
     fi
     if [[ "$spinner_active" == "true" ]]; then
-        start_section_spinner "Checking backup volumes..."
+        start_section_spinner "${TR_CLEAN_SPIN_BACKUP_VOL:-Checking backup volumes...}"
     fi
     # Fast pre-scan for backup volumes to avoid slow tmutil checks.
     local -a backup_volumes=()
@@ -278,11 +278,11 @@ clean_time_machine_failed_backups() {
         if [[ "$spinner_active" == "true" ]]; then
             stop_section_spinner
         fi
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No incomplete backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_SYS_NO_INCOMPLETE_TM:-No incomplete backups found}"
         return 0
     fi
     if [[ "$spinner_active" == "true" ]]; then
-        start_section_spinner "Scanning backup volumes..."
+        start_section_spinner "${TR_CLEAN_SPIN_SCAN_BACKUP_VOL:-Scanning backup volumes...}"
     fi
     for volume in "${backup_volumes[@]}"; do
         local fs_type
@@ -315,26 +315,26 @@ clean_time_machine_failed_backups() {
                 local size_human
                 size_human=$(bytes_to_human "$((size_kb * 1024))")
                 if [[ "$DRY_RUN" == "true" ]]; then
-                    echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Incomplete backup: $backup_name${NC}, ${YELLOW}$size_human dry${NC}"
+                    echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "${TR_CLEAN_SYS_TM_INCOMPLETE_DRY:-Incomplete backup: %s, %s dry}" "$backup_name" "$size_human")${NC}"
                     tm_cleaned=$((tm_cleaned + 1))
                     note_activity
                     continue
                 fi
                 if ! command -v tmutil > /dev/null 2>&1; then
-                    echo -e "  ${YELLOW}!${NC} tmutil not available, skipping: $backup_name"
+                    echo -e "  ${YELLOW}!${NC} $(printf "${TR_CLEAN_SYS_TMUTIL_SKIP:-tmutil not available, skipping: %s}" "$backup_name")"
                     continue
                 fi
                 if tmutil delete "$inprogress_file" 2> /dev/null; then
                     local line_color
                     line_color=$(cleanup_result_color_kb "$size_kb")
-                    echo -e "  ${line_color}${ICON_SUCCESS}${NC} Incomplete backup: $backup_name${NC}, ${line_color}$size_human${NC}"
+                    echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_SYS_TM_INCOMPLETE_OK:-Incomplete backup: %s, %s}" "$backup_name" "$size_human")${NC}"
                     tm_cleaned=$((tm_cleaned + 1))
                     files_cleaned=$((files_cleaned + 1))
                     total_size_cleaned=$((total_size_cleaned + size_kb))
                     total_items=$((total_items + 1))
                     note_activity
                 else
-                    echo -e "  ${YELLOW}!${NC} Could not delete: $backup_name · try manually with sudo"
+                    echo -e "  ${YELLOW}!${NC} $(printf "${TR_CLEAN_SYS_TM_DEL_FAIL:-Could not delete: %s · try manually with sudo}" "$backup_name")"
                 fi
             done < <(run_with_timeout 15 find "$backupdb_dir" -maxdepth 3 -type d \( -name "*.inProgress" -o -name "*.inprogress" \) 2> /dev/null || true)
         fi
@@ -369,7 +369,7 @@ clean_time_machine_failed_backups() {
                     local size_human
                     size_human=$(bytes_to_human "$((size_kb * 1024))")
                     if [[ "$DRY_RUN" == "true" ]]; then
-                        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Incomplete APFS backup in $bundle_name: $backup_name${NC}, ${YELLOW}$size_human dry${NC}"
+                        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(printf "${TR_CLEAN_SYS_TM_APFS_DRY:-Incomplete APFS backup in %s: %s, %s dry}" "$bundle_name" "$backup_name" "$size_human")${NC}"
                         tm_cleaned=$((tm_cleaned + 1))
                         note_activity
                         continue
@@ -380,14 +380,14 @@ clean_time_machine_failed_backups() {
                     if tmutil delete "$inprogress_file" 2> /dev/null; then
                         local line_color
                         line_color=$(cleanup_result_color_kb "$size_kb")
-                        echo -e "  ${line_color}${ICON_SUCCESS}${NC} Incomplete APFS backup in $bundle_name: $backup_name${NC}, ${line_color}$size_human${NC}"
+                        echo -e "  ${line_color}${ICON_SUCCESS}${NC} $(printf "${TR_CLEAN_SYS_TM_APFS_OK:-Incomplete APFS backup in %s: %s, %s}" "$bundle_name" "$backup_name" "$size_human")${NC}"
                         tm_cleaned=$((tm_cleaned + 1))
                         files_cleaned=$((files_cleaned + 1))
                         total_size_cleaned=$((total_size_cleaned + size_kb))
                         total_items=$((total_items + 1))
                         note_activity
                     else
-                        echo -e "  ${YELLOW}!${NC} Could not delete from bundle: $backup_name"
+                        echo -e "  ${YELLOW}!${NC} $(printf "${TR_CLEAN_SYS_TM_BUNDLE_DEL_FAIL:-Could not delete from bundle: %s}" "$backup_name")"
                     fi
                 done < <(run_with_timeout 15 find "$mounted_path" -maxdepth 3 -type d \( -name "*.inProgress" -o -name "*.inprogress" \) 2> /dev/null || true)
             fi
@@ -397,7 +397,7 @@ clean_time_machine_failed_backups() {
         stop_section_spinner
     fi
     if [[ $tm_cleaned -eq 0 ]]; then
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No incomplete backups found"
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${TR_CLEAN_SYS_NO_INCOMPLETE_TM:-No incomplete backups found}"
     fi
 }
 # Returns 0 if a backup is actively running.
@@ -426,23 +426,23 @@ clean_local_snapshots() {
         return 0
     fi
 
-    start_section_spinner "Checking Time Machine status..."
+    start_section_spinner "${TR_CLEAN_SPIN_TM_STATUS:-Checking Time Machine status...}"
     local rc_running=0
     tm_is_running || rc_running=$?
 
     if [[ $rc_running -eq 2 ]]; then
         stop_section_spinner
-        echo -e "  ${YELLOW}!${NC} Could not determine Time Machine status; skipping snapshot check"
+        echo -e "  ${YELLOW}!${NC} ${TR_CLEAN_SYS_TM_STATUS_UNK:-Could not determine Time Machine status; skipping snapshot check}"
         return 0
     fi
 
     if [[ $rc_running -eq 0 ]]; then
         stop_section_spinner
-        echo -e "  ${YELLOW}!${NC} Time Machine is active; skipping snapshot check"
+        echo -e "  ${YELLOW}!${NC} ${TR_CLEAN_SYS_TM_ACTIVE_SNAP:-Time Machine is active; skipping snapshot check}"
         return 0
     fi
 
-    start_section_spinner "Checking local snapshots..."
+    start_section_spinner "${TR_CLEAN_SPIN_LOCAL_SNAP:-Checking local snapshots...}"
     local snapshot_list
     snapshot_list=$(run_with_timeout 3 tmutil listlocalsnapshots / 2> /dev/null || true)
     stop_section_spinner
@@ -451,8 +451,8 @@ clean_local_snapshots() {
     local snapshot_count
     snapshot_count=$(echo "$snapshot_list" | { grep -Eo 'com\.apple\.TimeMachine\.[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}' || true; } | wc -l | awk '{print $1}')
     if [[ "$snapshot_count" =~ ^[0-9]+$ && "$snapshot_count" -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Time Machine local snapshots: ${GREEN}${snapshot_count}${NC}"
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: tmutil listlocalsnapshots /${NC}"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${TR_CLEAN_SYS_TM_SNAP_WL:-Time Machine local snapshots:} ${GREEN}${snapshot_count}${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}${TR_CLEAN_SYS_TM_SNAP_REVIEW:-Review: tmutil listlocalsnapshots /}${NC}"
         note_activity
     fi
 }

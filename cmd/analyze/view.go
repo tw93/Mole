@@ -16,9 +16,9 @@ func (m model) View() string {
 	if m.inOverviewMode() {
 		freeLabel := ""
 		if m.diskFree > 0 {
-			freeLabel = fmt.Sprintf("  %s(%s free)%s", colorGray, humanizeBytes(m.diskFree), colorReset)
+			freeLabel = fmt.Sprintf("  %s(%s %s)%s", colorGray, humanizeBytes(m.diskFree), t("free", "boş"), colorReset)
 		}
-		fmt.Fprintf(&b, "%sAnalyze Disk%s%s\n", colorPurpleBold, colorReset, freeLabel)
+		fmt.Fprintf(&b, "%s%s%s%s\n", colorPurpleBold, t("Analyze Disk", "Disk Analizi"), colorReset, freeLabel)
 		if m.overviewScanning {
 			allPending := true
 			for _, entry := range m.entries {
@@ -29,13 +29,13 @@ func (m model) View() string {
 			}
 
 			if allPending {
-				fmt.Fprintf(&b, "%s%s%s%s Analyzing disk usage, please wait...%s\n",
+				fmt.Fprintf(&b, "%s%s%s%s %s%s\n",
 					colorCyan, colorBold,
 					spinnerFrames[m.spinner],
-					colorReset, colorReset)
+					colorReset, t("Analyzing disk usage, please wait...", "Disk kullanımı analiz ediliyor, lütfen bekleyin..."), colorReset)
 				return b.String()
 			} else {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, t("Select a location to explore:", "Keşfedilecek konumu seçin:"), colorReset)
 				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, m.status)
 			}
 		} else {
@@ -47,16 +47,16 @@ func (m model) View() string {
 				}
 			}
 			if hasPending {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, t("Select a location to explore:", "Keşfedilecek konumu seçin:"), colorReset)
 				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, m.status)
 			} else {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s\n\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s%s%s\n\n", colorGray, t("Select a location to explore:", "Keşfedilecek konumu seçin:"), colorReset)
 			}
 		}
 	} else {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s  %s%s%s", colorPurpleBold, colorReset, colorGray, displayPath(m.path), colorReset)
+		fmt.Fprintf(&b, "%s%s%s  %s%s%s", colorPurpleBold, t("Analyze Disk", "Disk Analizi"), colorReset, colorGray, displayPath(m.path), colorReset)
 		if !m.scanning {
-			fmt.Fprintf(&b, "  |  Total: %s", humanizeBytes(m.totalSize))
+			fmt.Fprintf(&b, "  |  %s %s", t("Total:", "Toplam:"), humanizeBytes(m.totalSize))
 		}
 		fmt.Fprintf(&b, "\n\n")
 	}
@@ -67,11 +67,13 @@ func (m model) View() string {
 			count = atomic.LoadInt64(m.deleteCount)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Deleting: %s%s items%s removed, please wait...\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s %s%s %s%s %s\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
-			colorYellow, formatNumber(count), colorReset)
+			t("Deleting:", "Siliniyor:"),
+			colorYellow, formatNumber(count), t("items", "öğe"), colorReset,
+			t("removed, please wait...", "kaldırıldı, lütfen bekleyin..."))
 
 		return b.String()
 	}
@@ -93,13 +95,14 @@ func (m model) View() string {
 			progressPrefix = fmt.Sprintf(" %s%.0f%%%s", colorCyan, percent, colorReset)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Scanning%s: %s%s files%s, %s%s dirs%s, %s%s%s\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s%s: %s%s %s%s, %s%s %s%s, %s%s%s\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
+			t("Scanning", "Taranıyor"),
 			progressPrefix,
-			colorYellow, formatNumber(filesScanned), colorReset,
-			colorYellow, formatNumber(dirsScanned), colorReset,
+			colorYellow, formatNumber(filesScanned), t("files", "dosya"), colorReset,
+			colorYellow, formatNumber(dirsScanned), t("dirs", "dizin"), colorReset,
 			colorGreen, humanizeBytes(bytesScanned), colorReset)
 
 		if m.currentPath != nil {
@@ -116,7 +119,7 @@ func (m model) View() string {
 
 	if m.showLargeFiles {
 		if len(m.largeFiles) == 0 {
-			fmt.Fprintln(&b, "  No large files found")
+			fmt.Fprintln(&b, "  "+t("No large files found", "Büyük dosya bulunamadı"))
 		} else {
 			viewport := calculateViewport(m.height, true)
 			start := max(m.largeOffset, 0)
@@ -161,7 +164,7 @@ func (m model) View() string {
 		}
 	} else {
 		if len(m.entries) == 0 {
-			fmt.Fprintln(&b, "  Empty directory")
+			fmt.Fprintln(&b, "  "+t("Empty directory", "Boş dizin"))
 		} else {
 			if m.inOverviewMode() {
 				maxSize := int64(1)
@@ -194,7 +197,7 @@ func (m model) View() string {
 						percentStr = "  --  "
 					}
 					bar := coloredProgressBar(barValue, maxSize, percent)
-					sizeText := "pending.."
+					sizeText := t("pending..", "bekliyor..")
 					if sizeVal >= 0 {
 						sizeText = humanizeBytes(sizeVal)
 					}
@@ -338,31 +341,39 @@ func (m model) View() string {
 	fmt.Fprintln(&b)
 	if m.inOverviewMode() {
 		if len(m.history) > 0 {
-			fmt.Fprintf(&b, "%s↑↓←→ | Enter | R Refresh | O Open | P Preview | F File | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s↑↓←→ | Enter | R %s | O %s | P %s | F %s | Esc %s | Q/Ctrl+C %s%s\n", colorGray,
+				t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"), t("File", "Dosya"),
+				t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s↑↓→ | Enter | R Refresh | O Open | P Preview | F File | Esc/Q Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s↑↓→ | Enter | R %s | O %s | P %s | F %s | Esc/Q %s%s\n", colorGray,
+				t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"), t("File", "Dosya"),
+				t("Quit", "Çıkış"), colorReset)
 		}
 	} else if m.showLargeFiles {
 		selectCount := len(m.largeMultiSelected)
 		if selectCount > 0 {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+			fmt.Fprintf(&b, "%s↑↓← | Space %s | R %s | O %s | P %s | F %s | ⌫ %s %d | Esc %s | Q/Ctrl+C %s%s\n",
+				colorGray, t("Select", "Seç"), t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"),
+				t("File", "Dosya"), t("Del", "Sil"), selectCount, t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			fmt.Fprintf(&b, "%s↑↓← | Space %s | R %s | O %s | P %s | F %s | ⌫ %s | Esc %s | Q/Ctrl+C %s%s\n",
+				colorGray, t("Select", "Seç"), t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"),
+				t("File", "Dosya"), t("Del", "Sil"), t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 		}
 	} else {
 		largeFileCount := len(m.largeFiles)
 		selectCount := len(m.multiSelected)
 		if selectCount > 0 {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | %s %s | %s | R %s | O %s | P %s | F %s | ⌫ %s %d | %s | Esc %s | Q/Ctrl+C %s%s\n", colorGray, t("Space", "Space"), t("Select", "Seç"), t("Enter", "Enter"), t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"), t("File", "Dosya"), t("Del", "Sil"), selectCount, tf("T Top %d", "T Üst %d", largeFileCount), t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | %s %s | %s | R %s | O %s | P %s | F %s | ⌫ %s %d | Esc %s | Q/Ctrl+C %s%s\n", colorGray, t("Space", "Space"), t("Select", "Seç"), t("Enter", "Enter"), t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"), t("File", "Dosya"), t("Del", "Sil"), selectCount, t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 			}
 		} else {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | %s %s | %s | R %s | O %s | P %s | F %s | ⌫ %s | %s | Esc %s | Q/Ctrl+C %s%s\n", colorGray, t("Space", "Space"), t("Select", "Seç"), t("Enter", "Enter"), t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"), t("File", "Dosya"), t("Del", "Sil"), tf("T Top %d", "T Üst %d", largeFileCount), t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | %s %s | %s | R %s | O %s | P %s | F %s | ⌫ %s | Esc %s | Q/Ctrl+C %s%s\n", colorGray, t("Space", "Space"), t("Select", "Seç"), t("Enter", "Enter"), t("Refresh", "Yenile"), t("Open", "Aç"), t("Preview", "Önizle"), t("File", "Dosya"), t("Del", "Sil"), t("Back", "Geri"), t("Quit", "Çıkış"), colorReset)
 			}
 		}
 	}
@@ -393,15 +404,15 @@ func (m model) View() string {
 		}
 
 		if deleteCount > 1 {
-			fmt.Fprintf(&b, "%sDelete:%s %d items, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
-				colorRed, colorReset,
-				deleteCount, humanizeBytes(totalDeleteSize),
-				colorGray, colorReset)
+			fmt.Fprintf(&b, "%s%s%s %d %s, %s  %s%s  |  ESC %s%s\n",
+				colorRed, t("Delete:", "Sil:"), colorReset,
+				deleteCount, t("items", "öğe"), humanizeBytes(totalDeleteSize),
+				colorGray, t("Press Enter to confirm", "Onaylamak için Enter"), t("cancel", "iptal"), colorReset)
 		} else {
-			fmt.Fprintf(&b, "%sDelete:%s %s, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
-				colorRed, colorReset,
+			fmt.Fprintf(&b, "%s%s%s %s, %s  %s%s  |  ESC %s%s\n",
+				colorRed, t("Delete:", "Sil:"), colorReset,
 				m.deleteTarget.Name, humanizeBytes(m.deleteTarget.Size),
-				colorGray, colorReset)
+				colorGray, t("Press Enter to confirm", "Onaylamak için Enter"), t("cancel", "iptal"), colorReset)
 		}
 	}
 	return b.String()

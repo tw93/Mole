@@ -67,21 +67,21 @@ decode_file_list() {
     # macOS uses -D, GNU uses -d. Always return 0 for set -e safety.
     if ! decoded=$(printf '%s' "$encoded" | base64 -D 2> /dev/null); then
         if ! decoded=$(printf '%s' "$encoded" | base64 -d 2> /dev/null); then
-            log_error "Failed to decode file list for $app_name" >&2
+            log_error "$(printf "${TR_BATCH_DECODE_FAIL:-Failed to decode file list for %s}" "$app_name")" >&2
             echo ""
             return 0 # Return success with empty string
         fi
     fi
 
     if [[ "$decoded" =~ $'\0' ]]; then
-        log_warning "File list for $app_name contains null bytes, rejecting" >&2
+        log_warning "$(printf "${TR_BATCH_NULL_BYTES:-File list for %s contains null bytes, rejecting}" "$app_name")" >&2
         echo ""
         return 0 # Return success with empty string
     fi
 
     while IFS= read -r line; do
         if [[ -n "$line" && ! "$line" =~ ^/ ]]; then
-            log_warning "Invalid path in file list for $app_name: $line" >&2
+            log_warning "$(printf "${TR_BATCH_INVALID_PATH:-Invalid path in file list for %s: %s}" "$app_name" "$line")" >&2
             echo ""
             return 0 # Return success with empty string
         fi
@@ -264,7 +264,7 @@ batch_uninstall_applications() {
 
     # shellcheck disable=SC2154
     if [[ ${#selected_apps[@]} -eq 0 ]]; then
-        log_warning "No applications selected for uninstallation"
+        log_warning "${TR_BATCH_NO_SELECTED:-No applications selected for uninstallation}"
         return 0
     fi
 
@@ -402,14 +402,14 @@ batch_uninstall_applications() {
 
     local size_display=$(bytes_to_human "$((total_estimated_size * 1024))")
 
-    echo -e "\n${PURPLE_BOLD}Files to be removed:${NC}"
+    echo -e "\n${PURPLE_BOLD}${TR_BATCH_FILES_HEADER:-Files to be removed:}${NC}"
 
     # Warn if brew cask apps are present.
     local has_brew_cask=false
     [[ ${#brew_cask_apps[@]} -gt 0 ]] && has_brew_cask=true
 
     if [[ "$has_brew_cask" == "true" ]]; then
-        echo -e "${GRAY}${ICON_WARNING} Homebrew apps will be fully cleaned, --zap removes configs and data${NC}"
+        echo -e "${GRAY}${ICON_WARNING} ${TR_BATCH_HB_ZAP:-Homebrew apps will be fully cleaned, --zap removes configs and data}${NC}"
     fi
 
     echo ""
@@ -460,7 +460,7 @@ batch_uninstall_applications() {
     if [[ ${#running_apps[@]} -gt 0 ]]; then
         removal_note+=" ${YELLOW}[Running]${NC}"
     fi
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
+    echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GRAY}${TR_BATCH_CONFIRM_KEYS:-Enter confirm, ESC cancel}${NC}: "
 
     drain_pending_input # Clean up any pending input before confirmation
     IFS= read -r -s -n1 key || key=""
@@ -501,7 +501,7 @@ batch_uninstall_applications() {
 
         if ! ensure_sudo_session "$admin_prompt"; then
             echo ""
-            log_error "Admin access denied"
+            log_error "${TR_BATCH_ADMIN_DENIED:-Admin access denied}"
             _restore_uninstall_traps
             return 1
         fi
@@ -557,7 +557,7 @@ batch_uninstall_applications() {
         if [[ -t 1 && $total_kb -gt 1048576 && -z "$reason" ]]; then
             local _wait_size
             _wait_size=$(bytes_to_human "$((total_kb * 1024))")
-            echo -e "  ${GRAY}Removing ${app_name} (${_wait_size}), please wait...${NC}"
+            echo -e "  ${GRAY}$(printf "${TR_BATCH_REMOVING_FMT:-Removing %s (%s), please wait...}" "$app_name" "$_wait_size")${NC}"
         fi
 
         local used_brew_successfully=false
@@ -710,16 +710,16 @@ batch_uninstall_applications() {
             # Show success
             if [[ -t 1 ]]; then
                 if [[ ${#app_details[@]} -gt 1 ]]; then
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} [$current_index/${#app_details[@]}] ${app_name}"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_BATCH_OK_INDEXED:-[%d/%d] %s}" "$current_index" "${#app_details[@]}" "$app_name")"
                 else
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} ${app_name}"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $(printf "${TR_BATCH_OK_APP:-%s}" "$app_name")"
                 fi
             fi
 
             # Warn about files that could not be removed and exclude them from freed total.
             if [[ ${#leftover_paths[@]} -gt 0 ]]; then
                 for _lpath in "${leftover_paths[@]}"; do
-                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} Could not remove: ${_lpath/$HOME/~}"
+                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $(printf "${TR_BATCH_COULD_NOT_RM:-Could not remove: %s}" "${_lpath/$HOME/~}")"
                 done
                 total_kb=$((total_kb - leftover_kb))
                 ((total_kb < 0)) && total_kb=0
@@ -744,9 +744,9 @@ batch_uninstall_applications() {
         else
             if [[ -t 1 ]]; then
                 if [[ ${#app_details[@]} -gt 1 ]]; then
-                    echo -e "${ICON_ERROR} [$current_index/${#app_details[@]}] ${app_name} ${GRAY}, $reason${NC}"
+                    echo -e "${ICON_ERROR} $(printf "${TR_BATCH_FAIL_INDEXED:-[%d/%d] %s}" "$current_index" "${#app_details[@]}" "$app_name") ${GRAY}, $reason${NC}"
                 else
-                    echo -e "${ICON_ERROR} ${app_name} failed: $reason"
+                    echo -e "${ICON_ERROR} $(printf "${TR_BATCH_FAIL_FMT:-%s failed: %s}" "$app_name" "$reason")"
                 fi
                 if [[ -n "${suggestion:-}" ]]; then
                     echo -e "${GRAY}   ${ICON_REVIEW} ${suggestion}${NC}"
