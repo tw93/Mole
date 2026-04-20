@@ -914,7 +914,7 @@ main() {
     done
 
     case "${args[0]:-""}" in
-        "optimize")
+        "optimize" | "optimise")
             exec "$SCRIPT_DIR/bin/optimize.sh" "${args[@]:1}"
             ;;
         "clean")
