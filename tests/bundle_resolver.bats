@@ -71,6 +71,33 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "bundle_has_installed_app falls back after run_with_timeout returns 124 (set -e + pipefail regression)" {
+    # Regression for the flake that blocked PR #770: under `set -euo pipefail`,
+    # `hit=$(run_with_timeout ... | head -1)` inside a command substitution
+    # killed the shell when run_with_timeout exited 124 on timeout. Forcing the
+    # timeout path here proves the filesystem fallback still executes.
+    make_app "$FAKE_APPS/KeePassXC.app" "org.keepassxc.KeePassXC"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/timeout.sh"
+source "$PROJECT_ROOT/lib/core/bundle_resolver.sh"
+
+# Make Spotlight appear available but force the timeout path to return 124.
+mdfind() { return 0; }
+export -f mdfind
+run_with_timeout() { return 124; }
+export -f run_with_timeout
+
+_MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
+
+bundle_has_installed_app "org.keepassxc.KeePassXC"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "bundle_has_installed_app finds an SMJobBless privileged helper inside a parent app" {
     # Simulate Adobe Acrobat DC shipping its ARMDC helper at
     # Contents/Library/LaunchServices/com.adobe.ARMDC.SMJobBlessHelper.

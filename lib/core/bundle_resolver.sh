@@ -35,11 +35,14 @@ bundle_has_installed_app() {
     # Fast path: Spotlight. Gated with a timeout because mdfind has been known
     # to wedge on misconfigured indexes.
     if command -v mdfind > /dev/null 2>&1; then
-        local hit
+        # `|| true` guards against two failure modes under `set -e` + `pipefail`:
+        # run_with_timeout returning 124 on timeout, and mdfind itself exiting
+        # non-zero. Both must fall through to the filesystem scan below.
+        local hit=""
         if declare -f run_with_timeout > /dev/null 2>&1; then
-            hit=$(run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1)
+            hit=$(run_with_timeout 2 mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1) || true
         else
-            hit=$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1)
+            hit=$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null | head -1) || true
         fi
         [[ -n "$hit" ]] && return 0
     fi
