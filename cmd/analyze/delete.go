@@ -22,12 +22,16 @@ const trashTimeout = 30 * time.Second
 func deletePathCmd(path string, counter *int64) tea.Cmd {
 	return func() tea.Msg {
 		count, err := trashPathWithProgress(path, counter)
-		return deleteProgressMsg{
+		msg := deleteProgressMsg{
 			done:  true,
 			err:   err,
 			count: count,
 			path:  path,
 		}
+		if err == nil {
+			msg.paths = []string{path}
+		}
+		return msg
 	}
 }
 
@@ -43,6 +47,7 @@ func deleteMultiplePathsCmd(paths []string, counter *int64) tea.Cmd {
 			return strings.Count(pathsToDelete[i], string(filepath.Separator)) > strings.Count(pathsToDelete[j], string(filepath.Separator))
 		})
 
+		var removed []string
 		for _, path := range pathsToDelete {
 			count, err := trashPathWithProgress(path, counter)
 			totalCount += count
@@ -51,7 +56,9 @@ func deleteMultiplePathsCmd(paths []string, counter *int64) tea.Cmd {
 					continue
 				}
 				errors = append(errors, err.Error())
+				continue
 			}
+			removed = append(removed, path)
 		}
 
 		var resultErr error
@@ -64,6 +71,7 @@ func deleteMultiplePathsCmd(paths []string, counter *int64) tea.Cmd {
 			err:   resultErr,
 			count: totalCount,
 			path:  "",
+			paths: removed,
 		}
 	}
 }

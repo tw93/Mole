@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -89,6 +90,7 @@ type deleteProgressMsg struct {
 	err   error
 	count int64
 	path  string
+	paths []string
 }
 
 type model struct {
@@ -447,30 +449,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.largeMultiSelected = make(map[string]bool)
 			if msg.err != nil {
 				m.status = fmt.Sprintf("Failed to delete: %v", msg.err)
-			} else {
-				if msg.path != "" {
-					m.removePathFromView(msg.path)
-					invalidateCache(msg.path)
-				}
-				invalidateCache(m.path)
-				m.status = fmt.Sprintf("Deleted %d items", msg.count)
-				for i := range m.history {
-					m.history[i].Dirty = true
-				}
-				for path := range m.cache {
-					entry := m.cache[path]
-					entry.Dirty = true
-					m.cache[path] = entry
-				}
-				m.scanning = true
-				atomic.StoreInt64(m.filesScanned, 0)
-				atomic.StoreInt64(m.dirsScanned, 0)
-				atomic.StoreInt64(m.bytesScanned, 0)
-				if m.currentPath != nil {
-					m.currentPath.Store("")
-				}
-				return m, tea.Batch(m.scanCmd(m.path), tickCmd())
+				return m, nil
 			}
+
+			removedPaths := msg.paths
+			if len(removedPaths) == 0 && msg.path != "" {
+				removedPaths = []string{msg.path}
+			}
+
+			// Capture sizes before removePathFromView mutates m.entries.
+			removedSizes := make(map[string]int64, len(removedPaths))
+			for _, p := range removedPaths {
+				for _, e := range m.entries {
+					if e.Path == p {
+						removedSizes[p] = e.Size
+						break
+					}
+				}
+			}
+
+			for _, p := range removedPaths {
+				m.removePathFromView(p)
+				invalidateCache(p)
+			}
+
+			for _, p := range removedPaths {
+				if size := removedSizes[p]; size > 0 {
+					m.subtractFromAncestors(p, size)
+				}
+			}
+
+			m.status = fmt.Sprintf("Deleted %d items", msg.count)
+
+			// Persist updated view off the UI thread; fsync on a large
+			// scanResult can stall the event loop.
+			var persistCmd tea.Cmd
+			if len(removedPaths) > 0 && !m.inOverviewMode() {
+				snapshot := scanResult{
+					Entries:    slices.Clone(m.entries),
+					LargeFiles: slices.Clone(m.largeFiles),
+					TotalSize:  m.totalSize,
+					TotalFiles: m.totalFiles,
+				}
+				path := m.path
+				persistCmd = func() tea.Msg {
+					_ = saveCacheToDiskWithOptions(path, snapshot, true)
+					return nil
+				}
+			}
+			return m, persistCmd
 		}
 		return m, nil
 	case scanResultMsg:
@@ -1224,6 +1251,73 @@ func (m *model) removePathFromView(path string) {
 		m.clampEntrySelection()
 	}
 	m.clampLargeSelection()
+}
+
+// subtractFromAncestors keeps back-navigation approximate after a delete:
+// ancestors of `deleted` lose `size` from their totals and get flagged for
+// background refresh, instead of a full rescan.
+func (m *model) subtractFromAncestors(deleted string, size int64) {
+	if deleted == "" || size <= 0 {
+		return
+	}
+
+	for i := range m.history {
+		entry := &m.history[i]
+		if !isAncestorOf(entry.Path, deleted) {
+			continue
+		}
+		entry.TotalSize = saturatingSub(entry.TotalSize, size)
+		entry.Entries = pruneEntryContaining(entry.Entries, deleted, size)
+		entry.NeedsRefresh = true
+	}
+
+	for path, entry := range m.cache {
+		if !isAncestorOf(path, deleted) {
+			continue
+		}
+		entry.TotalSize = saturatingSub(entry.TotalSize, size)
+		entry.Entries = pruneEntryContaining(entry.Entries, deleted, size)
+		entry.NeedsRefresh = true
+		m.cache[path] = entry
+	}
+}
+
+func saturatingSub(total, sub int64) int64 {
+	if sub >= total {
+		return 0
+	}
+	return total - sub
+}
+
+// isAncestorOf reports whether `ancestor` is a strict prefix directory of
+// `child`. Guards against lexical false positives like "/foo" vs "/foobar".
+func isAncestorOf(ancestor, child string) bool {
+	if ancestor == "" || child == "" || ancestor == child {
+		return false
+	}
+	if ancestor == "/" {
+		return strings.HasPrefix(child, "/")
+	}
+	return strings.HasPrefix(child, ancestor+string(filepath.Separator))
+}
+
+// pruneEntryContaining updates the top-level entry whose path is `deleted`
+// or contains it: drops it if it's the deleted path itself, otherwise
+// clamps its size to saturating(e.Size - size). Keeping the row (even at
+// 0 B) avoids silently vanishing legitimate entries when size accounting
+// drifts (APFS clones, symlinks, count-vs-bytes mismatches); background
+// refresh corrects the number.
+func pruneEntryContaining(entries []dirEntry, deleted string, size int64) []dirEntry {
+	for i, e := range entries {
+		if e.Path == deleted {
+			return append(entries[:i], entries[i+1:]...)
+		}
+		if isAncestorOf(e.Path, deleted) {
+			entries[i].Size = saturatingSub(e.Size, size)
+			return entries
+		}
+	}
+	return entries
 }
 
 func scanOverviewPathCmd(path string, index int) tea.Cmd {
