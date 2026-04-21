@@ -312,7 +312,11 @@ safe_sudo_remove() {
     local path="$1"
 
     if ! validate_path_for_deletion "$path"; then
-        log_error "Path validation failed for sudo remove: $path"
+        if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$path"; then
+            debug_log "Skipped sudo remove for protected path: $path"
+        else
+            log_error "Path validation failed for sudo remove: $path"
+        fi
         return 1
     fi
 
