@@ -956,6 +956,11 @@ opt_periodic_maintenance() {
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+        # macOS 26+ removed /usr/sbin/periodic and /etc/periodic; skip gracefully.
+        if ! command -v periodic &> /dev/null && [[ ! -x /usr/sbin/periodic ]]; then
+            opt_msg "Periodic maintenance unavailable (removed in macOS 26+)"
+            return 0
+        fi
         if ! sudo -n true 2> /dev/null; then
             opt_msg "Periodic maintenance skipped (requires sudo)"
             return 0
