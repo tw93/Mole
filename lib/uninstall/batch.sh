@@ -888,7 +888,7 @@ batch_uninstall_applications() {
     if [[ $brew_apps_removed -gt 0 && "${MOLE_DRY_RUN:-0}" != "1" ]]; then
         (
             HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 NONINTERACTIVE=1 \
-                run_with_timeout 30 brew autoremove > /dev/null 2>&1 || true
+                run_with_timeout 30 mole_brew autoremove > /dev/null 2>&1 || true
         ) &
         disown $! 2> /dev/null || true
     fi

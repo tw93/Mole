@@ -27,6 +27,64 @@ setup() {
     mkdir -p "$HOME/Caskroom/test-app/1.2.3/TestApp.app"
 }
 
+@test "mole_brew calls brew directly when not running as root" {
+    run bash <<EOF
+source "$PROJECT_ROOT/lib/core/common.sh" > /dev/null 2>&1
+source "$PROJECT_ROOT/lib/uninstall/brew.sh" > /dev/null 2>&1
+
+id() { echo "501"; }
+export -f id
+brew() { echo "brew-call:\$*"; }
+export -f brew
+
+mole_brew list --cask
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"brew-call:list --cask"* ]]
+}
+
+@test "mole_brew refuses to run as root without SUDO_USER" {
+    run bash <<EOF
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/brew.sh"
+
+id() { echo "0"; }
+export -f id
+unset SUDO_USER
+brew() { echo "should-not-run"; }
+export -f brew
+
+mole_brew list --cask
+EOF
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Homebrew cannot run as root"* ]]
+    [[ "$output" != *"should-not-run"* ]]
+}
+
+@test "mole_brew drops privileges via sudo -u when run as root" {
+    run bash <<EOF
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/brew.sh"
+
+id() { echo "0"; }
+export -f id
+export SUDO_USER="testuser"
+sudo() { echo "sudo $*"; }
+export -f sudo
+brew() { echo "should-not-run-directly"; }
+export -f brew
+
+mole_brew uninstall --cask --zap claude
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"-u testuser"* ]]
+    [[ "$output" == *"-- brew uninstall --cask --zap claude"* ]]
+    [[ "$output" != *"should-not-run-directly"* ]]
+}
+
 @test "get_brew_cask_name detects app in Caskroom (simulated)" {
     # Create fake Caskroom structure with symlink (modern Homebrew style)
     mkdir -p "$HOME/Caskroom/test-app/1.0.0"

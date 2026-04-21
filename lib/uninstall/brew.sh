@@ -35,6 +35,27 @@ is_homebrew_available() {
     command -v brew > /dev/null 2>&1
 }
 
+# Run brew, dropping privileges when invoked as root.
+# Homebrew refuses to run under EUID 0 ("Running Homebrew as root is extremely
+# dangerous..."). When mole is launched via `sudo mo …`, transparently re-run
+# brew as the invoking user so uninstall/list operations succeed.
+# Exits non-zero (and prints an error) when root but no SUDO_USER is available.
+mole_brew() {
+    if [[ "$(id -u)" -ne 0 ]]; then
+        brew "$@"
+        return
+    fi
+
+    local drop_user="${SUDO_USER:-}"
+    if [[ -z "$drop_user" || "$drop_user" == "root" ]]; then
+        printf 'Error: Homebrew cannot run as root. Re-run mole without sudo.\n' >&2
+        return 1
+    fi
+
+    sudo --preserve-env=HOMEBREW_NO_ENV_HINTS,HOMEBREW_NO_AUTO_UPDATE,HOMEBREW_NO_ANALYTICS,NONINTERACTIVE \
+        -u "$drop_user" -H -- brew "$@"
+}
+
 # Check whether a cask is still recorded as installed in Homebrew.
 # Exit codes:
 #   0 - cask is installed
@@ -46,7 +67,7 @@ is_brew_cask_installed() {
     is_homebrew_available || return 2
 
     local cask_list
-    cask_list=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null) || return 2
+    cask_list=$(HOMEBREW_NO_ENV_HINTS=1 mole_brew list --cask 2> /dev/null) || return 2
     grep -qxF "$cask_name" <<< "$cask_list"
 }
 
@@ -116,7 +137,7 @@ _detect_cask_via_caskroom_search() {
 
     # Only succeed if exactly one unique token found and it's installed
     if ((${#uniq[@]} == 1)) && [[ -n "${uniq[0]}" ]]; then
-        HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null | grep -qxF "${uniq[0]}" || return 1
+        HOMEBREW_NO_ENV_HINTS=1 mole_brew list --cask 2> /dev/null | grep -qxF "${uniq[0]}" || return 1
         echo "${uniq[0]}"
         return 0
     fi
@@ -142,10 +163,10 @@ _detect_cask_via_brew_list() {
     app_name_lower=$(echo "${app_bundle_name%.app}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
 
     local cask_name
-    cask_name=$(HOMEBREW_NO_ENV_HINTS=1 brew list --cask 2> /dev/null | grep -Fix "$app_name_lower") || return 1
+    cask_name=$(HOMEBREW_NO_ENV_HINTS=1 mole_brew list --cask 2> /dev/null | grep -Fix "$app_name_lower") || return 1
 
     # Verify this cask actually owns this app path
-    HOMEBREW_NO_ENV_HINTS=1 brew info --cask "$cask_name" 2> /dev/null | grep -qF "$app_path" || return 1
+    HOMEBREW_NO_ENV_HINTS=1 mole_brew info --cask "$cask_name" 2> /dev/null | grep -qF "$app_path" || return 1
     echo "$cask_name"
 }
 
@@ -211,7 +232,7 @@ brew_uninstall_cask() {
     # Run with timeout to prevent hangs from problematic cask scripts
     local brew_exit=0
     if HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 NONINTERACTIVE=1 \
-        run_with_timeout "$timeout" brew uninstall --cask --zap "$cask_name" 2>&1; then
+        run_with_timeout "$timeout" mole_brew uninstall --cask --zap "$cask_name" 2>&1; then
         uninstall_ok=true
     else
         brew_exit=$?
