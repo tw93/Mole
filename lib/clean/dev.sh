@@ -173,6 +173,7 @@ clean_dev_npm() {
     safe_clean ~/.tnpm/_cacache/* "tnpm cache directory"
     safe_clean ~/.tnpm/_logs/* "tnpm logs"
     safe_clean ~/.yarn/cache/* "Yarn cache"
+    safe_clean ~/Library/Caches/Yarn/* "Yarn v1 cache"
 }
 # Python/pip ecosystem caches.
 clean_dev_python() {
