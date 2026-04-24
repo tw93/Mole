@@ -148,3 +148,18 @@ func TestCorrectDiskTotalBytes(t *testing.T) {
 		}
 	})
 }
+
+func TestUsedPercentFromBytesUsesRawUsage(t *testing.T) {
+	const total = 460 * uint64(1<<30)
+	const rawUsed = 392 * uint64(1<<30)
+
+	got := usedPercentFromBytes(rawUsed, total)
+	want := float64(rawUsed) / float64(total) * 100.0
+	if got != want {
+		t.Fatalf("usedPercentFromBytes() = %f, want %f", got, want)
+	}
+
+	if got < 85.0 || got > 85.3 {
+		t.Fatalf("usedPercentFromBytes() = %f, want df-style raw APFS usage near 85%%", got)
+	}
+}

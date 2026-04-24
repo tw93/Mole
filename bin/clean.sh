@@ -1167,6 +1167,12 @@ perform_cleanup() {
         summary_details+=("Free space now: $(get_free_space)")
     fi
 
+    if [[ "$DRY_RUN" != "true" && -z "$EXTERNAL_VOLUME_TARGET" ]]; then
+        local snapshot_space_note
+        snapshot_space_note=$(get_apfs_snapshot_space_note || true)
+        [[ -n "$snapshot_space_note" ]] && summary_details+=("$snapshot_space_note")
+    fi
+
     if [[ $had_errexit -eq 1 ]]; then
         set -e
     fi

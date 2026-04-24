@@ -347,6 +347,46 @@ EOF
     [[ "$output" != *"Time Machine local snapshots"* ]]
 }
 
+@test "get_apfs_snapshot_space_note explains Finder df gap when snapshots exist" {
+    run bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+tmutil() { :; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000" \
+        "com.apple.TimeMachine.2023-10-24-120000"
+}
+
+get_apfs_snapshot_space_note
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Finder may show more available space than df"* ]]
+    [[ "$output" == *"2 APFS snapshots"* ]]
+    [[ "$output" == *"Mole reports df-style free space"* ]]
+}
+
+@test "get_apfs_snapshot_space_note is quiet when no snapshots exist" {
+    run bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+tmutil() { :; }
+run_with_timeout() { echo "Snapshots for disk /:"; }
+
+get_apfs_snapshot_space_note
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ -z "$output" ]]
+}
+
 @test "clean_homebrew skips when cleaned recently" {
     run bash --noprofile --norc << 'EOF'
 set -euo pipefail

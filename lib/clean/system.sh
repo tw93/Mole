@@ -456,3 +456,21 @@ clean_local_snapshots() {
         note_activity
     fi
 }
+
+get_apfs_snapshot_space_note() {
+    if ! command -v tmutil > /dev/null 2>&1; then
+        return 0
+    fi
+    if ! defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then
+        return 0
+    fi
+
+    local snapshot_list snapshot_count
+    snapshot_list=$(run_with_timeout 3 tmutil listlocalsnapshots / 2> /dev/null || true)
+    [[ -z "$snapshot_list" ]] && return 0
+
+    snapshot_count=$(echo "$snapshot_list" | { grep -Eo 'com\.apple\.TimeMachine\.[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}' || true; } | wc -l | awk '{print $1}')
+    if [[ "$snapshot_count" =~ ^[0-9]+$ && "$snapshot_count" -gt 0 ]]; then
+        printf 'Finder may show more available space than df while %s APFS snapshots remain purgeable; Mole reports df-style free space.\n' "$snapshot_count"
+    fi
+}
