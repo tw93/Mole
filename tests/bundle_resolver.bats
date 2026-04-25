@@ -180,6 +180,23 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "bundle_has_installed_app does not crash with unbound variable for unmapped bundle IDs under set -u (issue #790)" {
+    # Regression for issue #790: iterating over an empty mapped_app_bundles array
+    # under `set -euo pipefail` raised "unbound variable" in bash 3.2 (macOS default).
+    # This test forces the code path: a bundle ID with no case-statement mapping and
+    # multiple apps to scan, so the inner for-loop is reached with an empty array.
+    make_app "$FAKE_APPS/SomeApp.app" "com.example.someapp"
+    make_app "$FAKE_APPS/AnotherApp.app" "com.example.otherapp"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.example.unmapped.id"
+EOF
+
+    # Must exit cleanly (status 1 = not found) rather than crashing (status 2+ or unbound variable error)
+    [ "$status" -eq 1 ]
+}
+
 @test "bundle_has_installed_app does not use broad Microsoft vendor prefix" {
     make_app "$FAKE_APPS/Microsoft Teams.app" "com.microsoft.teams2"
 
