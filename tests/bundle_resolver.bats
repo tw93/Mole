@@ -190,3 +190,18 @@ EOF
 
     [ "$status" -ne 0 ]
 }
+
+@test "bundle_has_installed_app handles empty mapped_app_bundles under set -u" {
+    # Regression: bash 3.2 with set -u raises "unbound variable" when iterating
+    # over an empty array. Non-Microsoft bundle IDs leave mapped_app_bundles=().
+    make_app "$FAKE_APPS/SomeApp.app" "com.example.someapp"
+    make_app "$FAKE_APPS/AnotherApp.app" "com.example.otherapp"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.example.unmapped.id"
+EOF
+
+    # Exit 1 = not found (expected). Exit 2+ or crash = unbound variable bug.
+    [ "$status" -eq 1 ]
+}
