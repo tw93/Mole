@@ -89,10 +89,12 @@ bundle_has_installed_app() {
             app_bundle=$(plutil -extract CFBundleIdentifier raw "$info" 2> /dev/null || echo "")
             [[ "$app_bundle" == "$bundle_id" ]] && return 0
             [[ -n "$parent_id" && "$app_bundle" == "$parent_id" ]] && return 0
-            local mapped_bundle
-            for mapped_bundle in "${mapped_app_bundles[@]}"; do
-                [[ "$app_bundle" == "$mapped_bundle" ]] && return 0
-            done
+            if (( ${#mapped_app_bundles[@]} > 0 )); then
+                local mapped_bundle
+                for mapped_bundle in "${mapped_app_bundles[@]}"; do
+                    [[ "$app_bundle" == "$mapped_bundle" ]] && return 0
+                done
+            fi
         done < <(find "$app_root" -maxdepth 1 -name "*.app" -print0 2> /dev/null)
     done
 
