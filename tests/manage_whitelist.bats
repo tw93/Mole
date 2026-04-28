@@ -116,6 +116,22 @@ setup() {
     [ "$status" -eq 1 ]
 }
 
+@test "mo clean --whitelist cancel preserves existing file (#807)" {
+    whitelist_file="$HOME/.config/mole/whitelist"
+    mkdir -p "$(dirname "$whitelist_file")"
+
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./mo clean --whitelist"
+    [ "$status" -eq 0 ]
+    [[ -f "$whitelist_file" ]]
+    before_hash=$(shasum "$whitelist_file" | awk '{print $1}')
+
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf 'q' | HOME='$HOME' ./mo clean --whitelist"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Cancelled"* ]]
+    after_hash=$(shasum "$whitelist_file" | awk '{print $1}')
+    [ "$before_hash" = "$after_hash" ]
+}
+
 @test "whitelist validation accepts special and non-ASCII characters (#749)" {
     # Verify the [[:cntrl:]] guard accepts valid macOS path chars and rejects control chars.
     run bash --noprofile --norc -c "

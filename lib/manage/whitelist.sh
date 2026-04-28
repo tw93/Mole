@@ -372,13 +372,13 @@ ${GRAY}Edit: ${display_config}${NC}"
     fi
 
     MOLE_SELECTION_RESULT=""
-    paginated_multi_select "$menu_title" "${menu_options[@]}"
+    local exit_code=0
+    paginated_multi_select "$menu_title" "${menu_options[@]}" || exit_code=$?
     unset MOLE_PRESELECTED_INDICES
-    local exit_code=$?
 
-    # Normal exit or cancel
     if [[ $exit_code -ne 0 ]]; then
-        return 1
+        echo -e "${GRAY}Cancelled, no changes saved${NC}"
+        return 0
     fi
 
     # Convert selected indices to patterns

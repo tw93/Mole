@@ -444,7 +444,7 @@ paginated_multi_select() {
             for ((i = 0; i < items_per_page; i++)); do
                 printf "${clear_line}\n" >&2
             done
-            printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space  |  Enter  |  Q Exit${NC}\n" >&2
+            printf "${clear_line}${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}  |  Space  |  Enter  |  Q Cancel${NC}\n" >&2
             printf "${clear_line}" >&2
             return
         fi
@@ -504,7 +504,7 @@ paginated_multi_select() {
         local nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}${NC}"
         local space_select="${GRAY}Space Select${NC}"
         local enter="${GRAY}Enter${NC}"
-        local exit="${GRAY}Q Exit${NC}"
+        local cancel_label="${GRAY}Q Cancel${NC}"
 
         local reverse_arrow="↑"
         [[ "$sort_reverse" == "true" ]] && reverse_arrow="↓"
@@ -523,7 +523,7 @@ paginated_multi_select() {
             [[ "$term_width" =~ ^[0-9]+$ ]] || term_width=80
 
             # Full controls
-            local -a _segs=("$nav" "$space_select" "$enter" "$sort_ctrl" "$order_ctrl" "$filter_ctrl" "$exit")
+            local -a _segs=("$nav" "$space_select" "$enter" "$sort_ctrl" "$order_ctrl" "$filter_ctrl" "$cancel_label")
 
             # Calculate width
             local total_len=0 seg_count=${#_segs[@]}
@@ -534,7 +534,7 @@ paginated_multi_select() {
 
             # Level 1: Remove "Space Select" if too wide
             if [[ $total_len -gt $term_width ]]; then
-                _segs=("$nav" "$enter" "$sort_ctrl" "$order_ctrl" "$filter_ctrl" "$exit")
+                _segs=("$nav" "$enter" "$sort_ctrl" "$order_ctrl" "$filter_ctrl" "$cancel_label")
 
                 total_len=0
                 seg_count=${#_segs[@]}
@@ -545,14 +545,14 @@ paginated_multi_select() {
 
                 # Level 2: Remove sort label if still too wide
                 if [[ $total_len -gt $term_width ]]; then
-                    _segs=("$nav" "$enter" "$order_ctrl" "$filter_ctrl" "$exit")
+                    _segs=("$nav" "$enter" "$order_ctrl" "$filter_ctrl" "$cancel_label")
                 fi
             fi
 
             _print_wrapped_controls "$sep" "${_segs[@]}"
         else
             # Without metadata: basic controls
-            local -a _segs_simple=("$nav" "$space_select" "$enter" "$filter_ctrl" "$exit")
+            local -a _segs_simple=("$nav" "$space_select" "$enter" "$filter_ctrl" "$cancel_label")
             _print_wrapped_controls "$sep" "${_segs_simple[@]}"
         fi
         printf "${clear_line}" >&2
