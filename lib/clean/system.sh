@@ -467,7 +467,7 @@ clean_time_machine_failed_backups() {
                         total_items=$((total_items + 1))
                         note_activity
                     else
-                        echo -e "  ${YELLOW}!${NC} Could not delete from bundle: $backup_name"
+                        printf "  %s!%s Could not delete from bundle: %s\n" "${YELLOW}" "${NC}" "${backup_name}"
                     fi
                 done < <(run_with_timeout 15 find "$mounted_path" -maxdepth 3 -type d \( -name "*.inProgress" -o -name "*.inprogress" \) 2> /dev/null || true)
             fi
