@@ -506,7 +506,7 @@ readonly ORPHAN_DOTDIR_KNOWN_SAFE=(
     ".docker" ".kube" ".minikube" ".helm"
     ".aws" ".azure" ".terraform" ".vagrant"
     # Editors / IDEs
-    ".vim" ".vimrc" ".viminfo" ".emacs" ".emacs.d" ".nano" ".nanorc"
+    ".vim" ".vimrc" ".viminfo" ".emacs" ".emacs.d" ".doom.d" ".nano" ".nanorc"
     ".vscode" ".cursor" ".atom"
     # AI tools
     ".claude" ".copilot" ".ollama"
