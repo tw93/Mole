@@ -246,6 +246,9 @@ readonly DATA_PROTECTED_BUNDLES=(
     "Claude"
     "com.openai.chat*"
     "ChatGPT"
+    "com.openai.codex"
+    "Codex"
+    "codex-runtimes"
     "com.ollama.ollama"
     "Ollama"
     "com.lmstudio.lmstudio"
@@ -720,7 +723,7 @@ should_protect_data() {
         com.jetbrains.* | JetBrains* | com.microsoft.* | com.visualstudio.*)
             return 0
             ;;
-        com.sublimetext.* | com.sublimehq.* | Cursor | Claude | ChatGPT | Ollama)
+        com.sublimetext.* | com.sublimehq.* | Cursor | Claude | ChatGPT | com.openai.codex | Codex | codex-runtimes | Ollama)
             return 0
             ;;
         # Specific match to avoid ShellCheck redundancy warning with com.clash.*

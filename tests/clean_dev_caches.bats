@@ -411,6 +411,120 @@ EOF
     [[ "$output" == *"Prune:  docker system prune"* ]]
 }
 
+@test "clean_codex_runtimes reports active runtime for manual review" {
+    mkdir -p "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin"
+    touch "$HOME/.cache/codex-runtimes/codex-primary-runtime/runtime.json"
+    touch "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { echo "1024"; }
+bytes_to_human() { echo "1M"; }
+note_activity() { :; }
+clean_codex_runtimes
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Codex runtimes · manual review"* ]]
+    [[ "$output" != *"SAFE_CLEAN:Codex CLI runtimes|$HOME/.cache/codex-runtimes/codex-primary-runtime"* ]]
+}
+
+@test "clean_codex_runtimes cleans only stale incomplete runtime dirs" {
+    mkdir -p "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin"
+    mkdir -p "$HOME/.cache/codex-runtimes/incomplete-old"
+    touch "$HOME/.cache/codex-runtimes/codex-primary-runtime/runtime.json"
+    touch "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { echo "1024"; }
+bytes_to_human() { echo "1M"; }
+note_activity() { :; }
+clean_codex_runtimes
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SAFE_CLEAN:Codex CLI runtimes|$HOME/.cache/codex-runtimes/incomplete-old"* ]]
+    [[ "$output" != *"SAFE_CLEAN:Codex CLI runtimes|$HOME/.cache/codex-runtimes/codex-primary-runtime"* ]]
+}
+
+@test "clean_codex_runtimes skips all runtimes while Codex is running" {
+    mkdir -p "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin"
+    mkdir -p "$HOME/.cache/codex-runtimes/incomplete-old"
+    touch "$HOME/.cache/codex-runtimes/codex-primary-runtime/runtime.json"
+    touch "$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 0; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { echo "1024"; }
+bytes_to_human() { echo "1M"; }
+note_activity() { :; }
+clean_codex_runtimes
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Codex runtimes · skipped (Codex running)"* ]]
+    [[ "$output" != *"SAFE_CLEAN:"* ]]
+}
+
+@test "clean_codex_runtimes respects whitelist" {
+    mkdir -p "$HOME/.cache/codex-runtimes/incomplete-old"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
+is_path_whitelisted() { [[ "$1" == "$HOME/.cache/codex-runtimes"* || "$1" == "$HOME/.cache/codex-runtimes/incomplete-old" ]]; }
+get_path_size_kb() { echo "1024"; }
+bytes_to_human() { echo "1M"; }
+note_activity() { :; }
+clean_codex_runtimes
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Codex runtimes · skipped (whitelist)"* ]]
+    [[ "$output" != *"SAFE_CLEAN:"* ]]
+}
+
+@test "clean_codex_runtimes respects child runtime whitelist" {
+    mkdir -p "$HOME/.cache/codex-runtimes/incomplete-old"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
+is_path_whitelisted() { [[ "$1" == "$HOME/.cache/codex-runtimes/incomplete-old" ]]; }
+get_path_size_kb() { echo "1024"; }
+bytes_to_human() { echo "1M"; }
+note_activity() { :; }
+clean_codex_runtimes
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Codex runtimes · manual review"* ]]
+    [[ "$output" == *"Codex runtimes · skipped (whitelist)"* ]]
+    [[ "$output" != *"SAFE_CLEAN:"* ]]
+}
+
 @test "clean_dev_mise respects MISE_CACHE_DIR and only targets cache" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MISE_CACHE_DIR="/tmp/mise-cache" bash --noprofile --norc <<'EOF'
 set -euo pipefail

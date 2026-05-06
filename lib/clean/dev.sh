@@ -332,7 +332,7 @@ clean_dev_mise() {
     mise_cache_path=$(get_mise_cache_path)
 
     if command -v mise > /dev/null 2>&1; then
-        if [[ "$DRY_RUN" != "true" ]]; then
+        if [[ "${DRY_RUN:-false}" != "true" ]]; then
             clean_tool_cache "mise cache" "$mise_cache_path" bash -c 'mise cache clear > /dev/null 2>&1 || true'
             note_activity
         elif is_path_whitelisted "$mise_cache_path"; then
@@ -1280,6 +1280,107 @@ clean_dev_api_tools() {
     safe_clean ~/Library/Caches/com.charlesproxy.charles/* "Charles Proxy cache"
     safe_clean ~/Library/Caches/com.proxyman.NSProxy/* "Proxyman cache"
 }
+
+codex_desktop_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+
+    pgrep -x "Codex" > /dev/null 2>&1 && return 0
+    pgrep -f "/Codex.app/" > /dev/null 2>&1 && return 0
+    return 1
+}
+
+is_codex_runtime_active() {
+    local runtime_dir="$1"
+    [[ -d "$runtime_dir" ]] || return 1
+    [[ -f "$runtime_dir/runtime.json" ]] || return 1
+    [[ -d "$runtime_dir/dependencies/node" || -d "$runtime_dir/dependencies/python" ]] || return 1
+    return 0
+}
+
+is_codex_runtime_stale() {
+    local runtime_dir="$1"
+    [[ -d "$runtime_dir" ]] || return 1
+
+    local runtime_name
+    runtime_name="$(basename "$runtime_dir")"
+    case "$runtime_name" in
+        tmp* | temp* | *.tmp | incomplete* | *.incomplete | *-incomplete | partial* | *.partial)
+            return 0
+            ;;
+    esac
+
+    if [[ ! -e "$runtime_dir/runtime.json" && ! -e "$runtime_dir/dependencies" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+_codex_runtime_size_human() {
+    local target="$1"
+    local size_kb=0
+
+    if declare -f get_path_size_kb > /dev/null 2>&1; then
+        size_kb=$(get_path_size_kb "$target" 2> /dev/null || echo 0)
+    fi
+
+    if declare -f bytes_to_human > /dev/null 2>&1; then
+        bytes_to_human "$((size_kb * 1024))"
+    else
+        printf '%s KB' "$size_kb"
+    fi
+}
+
+clean_codex_runtimes() {
+    local runtime_root="$HOME/.cache/codex-runtimes"
+    [[ -d "$runtime_root" ]] || return 0
+
+    if declare -f is_path_whitelisted > /dev/null 2>&1 && is_path_whitelisted "$runtime_root"; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Codex runtimes · would skip (whitelist)"
+        else
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Codex runtimes · skipped (whitelist)"
+        fi
+        note_activity
+        return 0
+    fi
+
+    if codex_desktop_running; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Codex runtimes · skipped (Codex running)"
+        note_activity
+        return 0
+    fi
+
+    local size_human
+    size_human=$(_codex_runtime_size_human "$runtime_root")
+    echo -e "  ${GRAY}${ICON_WARNING}${NC} Codex runtimes · manual review (${size_human})"
+    note_activity
+
+    local runtime_dir
+    while IFS= read -r -d '' runtime_dir; do
+        if declare -f is_path_whitelisted > /dev/null 2>&1 && is_path_whitelisted "$runtime_dir"; then
+            if [[ "${DRY_RUN:-false}" == "true" ]]; then
+                echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Codex runtimes · would skip (whitelist)"
+            else
+                echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Codex runtimes · skipped (whitelist)"
+            fi
+            note_activity
+            continue
+        fi
+
+        if is_codex_runtime_active "$runtime_dir"; then
+            debug_log "Codex runtime left for manual review: $runtime_dir"
+            continue
+        fi
+
+        if is_codex_runtime_stale "$runtime_dir"; then
+            safe_clean "$runtime_dir" "Codex CLI runtimes"
+        else
+            debug_log "Codex runtime left for manual review: $runtime_dir"
+        fi
+    done < <(command find "$runtime_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+}
+
 # Misc dev tool caches.
 clean_dev_misc() {
     safe_clean ~/Library/Caches/com.unity3d.*/* "Unity cache"
@@ -1334,8 +1435,8 @@ clean_dev_misc() {
         safe_clean ~/.local/share/opencode/snapshot/* "OpenCode snapshots"
         safe_clean ~/.local/share/opencode/log/* "OpenCode logs"
     fi
-    # Codex CLI sandbox runtimes
-    safe_clean ~/.cache/codex-runtimes/* "Codex CLI runtimes"
+    # Codex Desktop runtimes contain active Node/Python dependencies.
+    clean_codex_runtimes
     # Cursor Agent session logs (versions cleaned separately in clean_dev_ai_agents)
     [[ -d "$HOME/.local/share/cursor-agent" ]] && safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$MOLE_LOG_AGE_DAYS" "f"
     # Playwright cached browser binaries

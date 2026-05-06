@@ -206,6 +206,21 @@ EOF
     [ "$result" = "protected" ]
 }
 
+@test "should_protect_data protects Codex runtime identifiers" {
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'Codex' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "protected" ]
+
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'com.openai.codex' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "protected" ]
+
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'codex-runtimes' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "protected" ]
+
+    local codex_runtimes_path="$HOME/.cache/codex-runtimes"
+    result=$(HOME="$HOME" TARGET_PATH="$codex_runtimes_path" bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+    [ "$result" = "protected" ]
+}
+
 @test "should_protect_path protects NetworkExtension VPN preferences" {
     result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_path '/Volumes/Data/Library/Preferences/com.apple.networkextension.plist' && echo 'protected' || echo 'not-protected'")
     [ "$result" = "protected" ]
