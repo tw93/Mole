@@ -1401,6 +1401,7 @@ main() {
             local orphan_bundle_id
             local orphan_app_name=""
             for name_arg in "${app_name_args[@]}"; do
+                echo -e "${GRAY}detecting leftover files for: ${name_arg}${NC}"
                 orphan_bundle_id=$(resolve_bundle_id_for_deleted_app "$name_arg") || true
                 if [[ -n "$orphan_bundle_id" ]]; then
                     orphan_app_name="$name_arg"
@@ -1409,7 +1410,7 @@ main() {
             done
 
             if [[ -z "$orphan_bundle_id" ]]; then
-                echo "No matching applications found."
+                echo "No matching applications or leftover files found."
                 return 1
             fi
 
