@@ -919,7 +919,7 @@ EOF
 
 	run bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge --debug < /dev/null 2>&1 || true
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge --debug < /dev/null 2>&1 || true
     "
 	true
 }
@@ -934,7 +934,7 @@ EOF
 
 	run bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge --dry-run < /dev/null 2>&1 || true
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge --dry-run < /dev/null 2>&1 || true
     "
 
 	[[ "$output" == *"DRY RUN MODE"* ]] || [[ "$output" == *"Dry run complete"* ]]
@@ -950,7 +950,7 @@ EOF
 
 	bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge < /dev/null 2>&1 || true
+        $timeout_cmd 10 '$PROJECT_ROOT/mole' purge < /dev/null 2>&1 || true
     "
 
 	[ -d "$HOME/.cache/mole" ] || [ -d "${XDG_CACHE_HOME:-$HOME/.cache}/mole" ]

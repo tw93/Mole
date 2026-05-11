@@ -1203,6 +1203,94 @@ INNER
 	[ "$status" -eq 0 ]
 }
 
+@test "main rescans cleanly after returning from a completed uninstall (#866)" {
+	local first_cache second_cache
+	first_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-866-first.XXXXXX")"
+	second_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-866-second.XXXXXX")"
+
+	mkdir -p "$HOME/Applications/FirstApp.app" "$HOME/Applications/SecondApp.app"
+	cat > "$first_cache" <<CACHE
+1700000000|$HOME/Applications/FirstApp.app|FirstApp|com.example.FirstApp|10MB|Today|10240
+CACHE
+	cat > "$second_cache" <<CACHE
+1700000001|$HOME/Applications/SecondApp.app|SecondApp|com.example.SecondApp|11MB|Today|11264
+CACHE
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FIRST_CACHE="$first_cache" SECOND_CACHE="$second_cache" \
+		bash --noprofile --norc <<'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+trace_file="$HOME/uninstall-866-trace.log"
+scan_state_file="$HOME/uninstall-866-scan-count"
+printf '0\n' > "$scan_state_file"
+select_count=0
+fingerprint_state="before"
+selected_apps=()
+
+log_operation_session_start() { :; }
+show_uninstall_help() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+clear_screen() { :; }
+drain_pending_input() { :; }
+uninstall_app_inventory_fingerprint() { printf '%s\n' "$fingerprint_state"; }
+batch_uninstall_applications() {
+    printf 'batch\n' >> "$trace_file"
+    rmdir "$HOME/Applications/FirstApp.app"
+    fingerprint_state="after"
+}
+uninstall_normalize_size_display() { printf '%s\n' "$1"; }
+uninstall_normalize_last_used_display() { printf '%s\n' "$1"; }
+scan_applications() {
+    local scan_count
+    scan_count=$(cat "$scan_state_file")
+    scan_count=$((scan_count + 1))
+    printf '%s\n' "$scan_count" > "$scan_state_file"
+    printf 'scan:%s\n' "$scan_count" >> "$trace_file"
+    if [[ $scan_count -eq 1 ]]; then
+        printf '%s\n' "$FIRST_CACHE"
+    else
+        printf '%s\n' "$SECOND_CACHE"
+    fi
+}
+load_applications() {
+    local apps_file="$1"
+    apps_data=()
+    selection_state=()
+    while IFS='|' read -r epoch app_path app_name bundle_id size last_used size_kb; do
+        [[ -e "$app_path" ]] || continue
+        apps_data+=("$epoch|$app_path|$app_name|$bundle_id|$size|$last_used|${size_kb:-0}")
+        selection_state+=(false)
+    done < "$apps_file"
+    printf 'load:%s\n' "${apps_data[0]#*|}" >> "$trace_file"
+}
+select_apps_for_uninstall() {
+    select_count=$((select_count + 1))
+    printf 'select:%s\n' "$select_count" >> "$trace_file"
+    if [[ $select_count -eq 1 ]]; then
+        selected_apps=("${apps_data[0]}")
+        return 0
+    fi
+    return 1
+}
+
+eval "$(sed -n '/^main()/,/^main "\$@"/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+
+printf '\n' | main
+
+expected=$(printf 'scan:1\nload:%s/Applications/FirstApp.app|FirstApp|com.example.FirstApp|10MB|Today|10240\nselect:1\nbatch\nscan:2\nload:%s/Applications/SecondApp.app|SecondApp|com.example.SecondApp|11MB|Today|11264\nselect:2\n' "$HOME" "$HOME")
+actual=$(cat "$trace_file")
+[[ "$actual" == "$expected" ]] || {
+    printf 'unexpected trace:\n%s\n' "$actual" >&2
+    exit 1
+}
+INNER
+
+	rm -f "$first_cache" "$second_cache"
+	[ "$status" -eq 0 ]
+}
+
 
 # ---------------------------------------------------------------------------
 # #723: Trash routing default and --permanent flag

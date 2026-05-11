@@ -769,21 +769,26 @@ scan_applications() {
     ) &
     spinner_pid=$!
 
-    for app_data_tuple in "${app_data_tuples[@]}"; do
-        ((app_count++))
-        process_app_metadata "$app_data_tuple" "$scan_raw_file" &
-        pids+=($!)
-        update_scan_status "Scanning applications..." "$app_count" "$total_apps"
+    # Skip Pass 2 when the warm cache already wrote every row to $scan_raw_file.
+    # Also avoids expanding an empty array — macOS bash 3.2 (the /bin/bash that
+    # this script targets) treats `"${empty[@]}"` as unbound under `set -u`.
+    if ((total_apps > 0)); then
+        for app_data_tuple in "${app_data_tuples[@]}"; do
+            ((app_count++))
+            process_app_metadata "$app_data_tuple" "$scan_raw_file" &
+            pids+=($!)
+            update_scan_status "Scanning applications..." "$app_count" "$total_apps"
 
-        if ((${#pids[@]} >= max_parallel)); then
-            wait "${pids[0]}" 2> /dev/null
-            pids=("${pids[@]:1}")
-        fi
-    done
+            if ((${#pids[@]} >= max_parallel)); then
+                wait "${pids[0]}" 2> /dev/null
+                pids=("${pids[@]:1}")
+            fi
+        done
 
-    for pid in "${pids[@]}"; do
-        wait "$pid" 2> /dev/null
-    done
+        for pid in "${pids[@]}"; do
+            wait "$pid" 2> /dev/null
+        done
+    fi
 
     update_scan_status "Building uninstall index..." "0" "0"
 

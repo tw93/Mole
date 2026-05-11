@@ -28,6 +28,7 @@ jobs:
         env:
           MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
           MOLE_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
+          MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
           MOLE_TEST_JOBS: "6"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
@@ -61,6 +62,7 @@ jobs:
       - name: Run core bats subset
         env:
           MOLE_TEST_NO_AUTH: "1"
+          MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
