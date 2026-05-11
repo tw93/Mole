@@ -1427,6 +1427,14 @@ main() {
             local orphan_system_files
             orphan_system_files=$(find_app_system_files "$orphan_bundle_id" "$orphan_app_name" || true)
 
+            # Diagnostic reports (app already deleted, pass empty app_path)
+            local orphan_diag_user
+            orphan_diag_user=$(get_diagnostic_report_paths_for_app "" "$orphan_app_name" "$HOME/Library/Logs/DiagnosticReports" || true)
+            local orphan_diag_system
+            orphan_diag_system=$(get_diagnostic_report_paths_for_app "" "$orphan_app_name" "/Library/Logs/DiagnosticReports" || true)
+            [[ -n "$orphan_diag_user" ]] && orphan_files="${orphan_files:+$orphan_files$'\n'}$orphan_diag_user"
+            [[ -n "$orphan_diag_system" ]] && orphan_system_files="${orphan_system_files:+$orphan_system_files$'\n'}$orphan_diag_system"
+
             if [[ -z "$orphan_files" && -z "$orphan_system_files" ]]; then
                 echo "No leftover files found."
                 return 0
