@@ -553,11 +553,6 @@ bytes_to_human_kb() {
 colorize_human_size() {
     local size_human="$1"
 
-    if ! is_ansi_supported; then
-        printf '%s' "$size_human"
-        return 0
-    fi
-
     local size_color=""
     case "$size_human" in
         *GB) size_color="$RED" ;;
@@ -921,10 +916,3 @@ is_ansi_supported() {
             ;;
     esac
 }
-
-# Prime ANSI support while the parent process still has the real stdout.
-# This keeps later command substitutions from misdetecting interactive output
-# as non-TTY while preserving no-color behavior for redirected runs.
-if [[ -z "${MOLE_ANSI_SUPPORTED_CACHE:-}" ]]; then
-    is_ansi_supported > /dev/null 2>&1 || true
-fi
