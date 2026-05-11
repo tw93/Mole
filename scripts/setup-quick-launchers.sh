@@ -37,7 +37,9 @@ prompt_enter() {
     fi
 }
 detect_mo() {
-    if command -v mo > /dev/null 2>&1; then
+    if [[ -n "${MOLE_CLI_PATH:-}" && -x "${MOLE_CLI_PATH:-}" ]]; then
+        printf '%s\n' "$MOLE_CLI_PATH"
+    elif command -v mo > /dev/null 2>&1; then
         command -v mo
     elif command -v mole > /dev/null 2>&1; then
         command -v mole

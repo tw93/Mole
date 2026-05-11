@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MoleUI UX Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #182026;
+      --muted: #63707a;
+      --line: rgba(24, 32, 38, 0.10);
+      --panel: rgba(255, 255, 255, 0.76);
+      --panel-strong: rgba(255, 255, 255, 0.92);
+      --blue: #0a84ff;
+      --green: #28c76f;
+      --amber: #f5a524;
+      --red: #e5484d;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #f7fbfc 0%, #edf4f6 50%, #e7eef0 100%);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 244px minmax(0, 1fr);
+    }
+
+    aside {
+      padding: 22px 14px;
+      background: rgba(32, 39, 43, 0.92);
+      color: white;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .traffic {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 26px 8px;
+    }
+
+    .traffic span {
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      display: block;
+    }
+
+    .traffic span:nth-child(1) { background: #ff5f57; }
+    .traffic span:nth-child(2) { background: #febc2e; }
+    .traffic span:nth-child(3) { background: #28c840; }
+
+    nav {
+      display: grid;
+      gap: 7px;
+    }
+
+    .nav-item {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 13px;
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.86);
+      font-weight: 650;
+    }
+
+    .nav-item.active {
+      background: #0b68d8;
+      color: white;
+    }
+
+    .glyph {
+      width: 22px;
+      text-align: center;
+      font-size: 17px;
+    }
+
+    main {
+      padding: 30px 34px 36px;
+      overflow: auto;
+    }
+
+    header {
+      display: flex;
+      gap: 18px;
+      align-items: start;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 5vw, 46px);
+      letter-spacing: 0;
+      line-height: 1.03;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 17px;
+      margin-top: 6px;
+    }
+
+    button {
+      min-height: 38px;
+      border: 0;
+      border-radius: 8px;
+      padding: 0 14px;
+      background: rgba(24, 32, 38, 0.08);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    button.primary {
+      color: white;
+      background: var(--blue);
+    }
+
+    button.danger {
+      color: white;
+      background: var(--red);
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .metrics {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .panel {
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 12px 28px rgba(24, 32, 38, 0.05);
+    }
+
+    .panel h2,
+    .band h2 {
+      margin: 0 0 12px;
+      font-size: 19px;
+      letter-spacing: 0;
+    }
+
+    .metric-value {
+      font-size: 32px;
+      font-weight: 760;
+      line-height: 1.05;
+      margin: 6px 0;
+    }
+
+    .metric-label,
+    .row small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .care-score {
+      display: grid;
+      gap: 9px;
+    }
+
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(24, 32, 38, 0.10);
+      overflow: hidden;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      width: 82%;
+      background: var(--green);
+    }
+
+    .band {
+      margin-top: 20px;
+    }
+
+    .table {
+      display: grid;
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+    }
+
+    .row {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto auto;
+      gap: 14px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .row strong,
+    .row span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(10, 132, 255, 0.10);
+      color: #0758a9;
+      font-weight: 680;
+      font-size: 12px;
+    }
+
+    .pill.safe {
+      color: #18794e;
+      background: rgba(40, 199, 111, 0.14);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .failure-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .notice {
+      min-width: 0;
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(229, 72, 77, 0.22);
+      background: rgba(229, 72, 77, 0.08);
+    }
+
+    .notice strong,
+    .notice span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .notice strong {
+      font-size: 15px;
+    }
+
+    .notice span {
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .notice .pill {
+      justify-self: start;
+      color: #a32328;
+      background: rgba(229, 72, 77, 0.14);
+    }
+
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 76px minmax(0, 1fr); }
+      aside { padding-inline: 10px; }
+      .nav-text { display: none; }
+      .nav-item { justify-content: center; padding-inline: 0; }
+      main { padding: 24px 20px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 680px) {
+      .app { grid-template-columns: 1fr; }
+      aside {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding: 10px;
+      }
+      .traffic { display: none; }
+      nav { display: flex; min-width: max-content; }
+      .nav-text { display: inline; }
+      .nav-item { padding-inline: 12px; }
+      header { display: grid; }
+      .metrics { grid-template-columns: 1fr; }
+      .failure-grid { grid-template-columns: 1fr; }
+      .row { grid-template-columns: minmax(160px, 1fr) auto; }
+      .row .secondary { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside data-ux-surface="sidebar">
+      <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+      <nav aria-label="Mole sections">
+        <div class="nav-item active"><span class="glyph">●</span><span class="nav-text">Home</span></div>
+        <div class="nav-item"><span class="glyph">✦</span><span class="nav-text">Cleanup</span></div>
+        <div class="nav-item"><span class="glyph">□</span><span class="nav-text">Applications</span></div>
+        <div class="nav-item"><span class="glyph">▤</span><span class="nav-text">Storage</span></div>
+        <div class="nav-item"><span class="glyph">◷</span><span class="nav-text">Performance</span></div>
+        <div class="nav-item"><span class="glyph">⌁</span><span class="nav-text">Monitor</span></div>
+        <div class="nav-item"><span class="glyph">⚙</span><span class="nav-text">Settings</span></div>
+      </nav>
+    </aside>
+
+    <main>
+      <header data-ux-surface="header">
+        <div>
+          <h1>Mole System Care</h1>
+          <div class="subtitle">Preview cleanup, protect important files, and keep the Mac responsive.</div>
+        </div>
+        <button class="primary">Start Care Scan</button>
+      </header>
+
+      <section class="grid metrics" aria-label="Care summary">
+        <article class="panel care-score" data-ux-surface="metric">
+          <div class="metric-label">Health Score</div>
+          <div class="metric-value">82</div>
+          <div class="bar"><span></span></div>
+          <div class="metric-label">Good, storage pressure needs review</div>
+        </article>
+        <article class="panel" data-ux-surface="metric">
+          <div class="metric-label">Potential Cleanup</div>
+          <div class="metric-value">22.6 GB</div>
+          <div class="metric-label">966 items across 51 groups</div>
+        </article>
+        <article class="panel" data-ux-surface="metric">
+          <div class="metric-label">Disk Pressure</div>
+          <div class="metric-value">86%</div>
+          <div class="metric-label">Root volume is getting tight</div>
+        </article>
+        <article class="panel" data-ux-surface="metric">
+          <div class="metric-label">Protection</div>
+          <div class="metric-value">2,606</div>
+          <div class="metric-label">Protected or whitelisted skips</div>
+        </article>
+      </section>
+
+      <section class="band failure-grid" aria-label="Recovery states">
+        <div class="notice" data-ux-surface="permission-denied">
+          <strong>Administrator action needs approval</strong>
+          <span>Cleanup can continue in preview mode while Mole waits for helper approval in System Settings.</span>
+          <span class="pill">Permission denied</span>
+        </div>
+        <div class="notice" data-ux-surface="partial-cleanup">
+          <strong>Partial cleanup is recoverable</strong>
+          <span>Moved items are tracked in the operation journal with source paths, outcomes, and Trash routing details.</span>
+          <span class="pill">Review journal</span>
+        </div>
+      </section>
+
+      <section class="band" data-ux-surface="cleanup-table">
+        <h2>Recommended Cleanup</h2>
+        <div class="table">
+          <div class="row">
+            <strong>User app cache</strong>
+            <span class="secondary">Low risk, regenerated by apps</span>
+            <span class="pill safe">8.1 GB</span>
+          </div>
+          <div class="row">
+            <strong>Browser cache</strong>
+            <span class="secondary">Chrome, updater, service workers</span>
+            <span class="pill safe">2.5 GB</span>
+          </div>
+          <div class="row">
+            <strong>Developer tools</strong>
+            <span class="secondary">npm, Xcode, Homebrew caches</span>
+            <span class="pill">11.9 GB</span>
+          </div>
+          <div class="row">
+            <strong>Project artifacts</strong>
+            <span class="secondary">Old node_modules, dist, build outputs</span>
+            <span class="pill">10.6 GB</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button>Preview Details</button>
+          <button class="danger">Clean Selected</button>
+          <button>Open Settings</button>
+        </div>
+      </section>
+
+      <section class="band" data-ux-surface="monitor-table">
+        <h2>Live Signals</h2>
+        <div class="table">
+          <div class="row">
+            <strong>Live refresh</strong>
+            <span class="secondary">Updates every 5 seconds, manual refresh available</span>
+            <span class="pill safe">On</span>
+          </div>
+          <div class="row">
+            <strong>CPU and memory</strong>
+            <span class="secondary">68% CPU · 68% memory</span>
+            <span class="pill">Fair</span>
+          </div>
+          <div class="row">
+            <strong>GPU, thermal, proxy</strong>
+            <span class="secondary">Apple M2 · Battery 30 C · TUN proxy</span>
+            <span class="pill">Visible</span>
+          </div>
+          <div class="row">
+            <strong>Quick launchers</strong>
+            <span class="secondary">Raycast and Alfred commands</span>
+            <span class="pill safe">Ready to install</span>
+          </div>
+          <div class="row">
+            <strong>Permissions</strong>
+            <span class="secondary">Open Full Disk Access from Settings</span>
+            <span class="pill safe">Guided</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

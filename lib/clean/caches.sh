@@ -77,10 +77,9 @@ clean_service_worker_cache() {
             protected_count=$((protected_count + 1))
         fi
         if [[ "$is_protected" == "false" ]]; then
-            if [[ "$DRY_RUN" != "true" ]]; then
-                safe_remove "$cache_dir" true || true
+            if [[ "$DRY_RUN" == "true" ]] || safe_remove "$cache_dir" true; then
+                cleaned_size=$((cleaned_size + size))
             fi
-            cleaned_size=$((cleaned_size + size))
         fi
     done < <(run_with_timeout 10 sh -c 'find "$1" -type d -depth 2 2>/dev/null || true' _ "$cache_path")
     if [[ $cleaned_size -gt 0 ]]; then

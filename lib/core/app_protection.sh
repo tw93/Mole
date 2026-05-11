@@ -1846,8 +1846,13 @@ force_kill_app() {
     local exec_name=""
     local bundle_id=""
     if [[ -n "$app_path" && -e "$app_path/Contents/Info.plist" ]]; then
-        exec_name=$(defaults read "$app_path/Contents/Info.plist" CFBundleExecutable 2> /dev/null || echo "")
-        bundle_id=$(defaults read "$app_path/Contents/Info.plist" CFBundleIdentifier 2> /dev/null || echo "")
+        local info_plist="$app_path/Contents/Info.plist"
+        if command -v plutil > /dev/null 2>&1; then
+            exec_name=$(plutil -extract CFBundleExecutable raw -o - "$info_plist" 2> /dev/null || echo "")
+            bundle_id=$(plutil -extract CFBundleIdentifier raw -o - "$info_plist" 2> /dev/null || echo "")
+        fi
+        [[ -n "$exec_name" ]] || exec_name=$(defaults read "$info_plist" CFBundleExecutable 2> /dev/null || echo "")
+        [[ -n "$bundle_id" ]] || bundle_id=$(defaults read "$info_plist" CFBundleIdentifier 2> /dev/null || echo "")
     fi
 
     # Use executable name for precise matching, fallback to app name

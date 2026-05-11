@@ -41,6 +41,16 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 
 > Note: Mole is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/tw93/Mole/tree/windows) for early adopters.
 
+### Release Status
+
+The supported Mole product today is the `mo` command-line tool distributed through Homebrew, the install script, and tagged GitHub releases. Release assets currently include Darwin helper binaries and Homebrew tarballs/checksums for `analyze` and `status`.
+
+`macos/MoleUI` is a native SwiftUI preview of a future desktop app. It is useful for local development and UX testing, but it is not part of the published release channel yet. The local bundle built by `npm run macos:build` is ad-hoc signed by default, can be Developer ID signed/notarized through build environment variables, and embeds a `MoleCLI` payload under `Contents/Resources` for Finder-launched runs.
+
+For local packaging, `npm run macos:dmg` builds an unsigned `.build/Mole.dmg` with [DMGMaker](https://github.com/saihgupr/DMGMaker), verifies it with `hdiutil` when available, and writes `.build/Mole.dmg.sha256`.
+
+Before MoleUI can be positioned as a downloadable macOS product, the release pipeline still needs release asset upload rules and update/install guidance that does not depend on a source checkout.
+
 **Run**
 
 ```bash

@@ -33,10 +33,9 @@ clean_ds_store_tree() {
     while IFS= read -r -d '' ds_file; do
         local size
         size=$(get_file_size "$ds_file")
-        total_bytes=$((total_bytes + size))
-        file_count=$((file_count + 1))
-        if [[ "$DRY_RUN" != "true" ]]; then
-            safe_remove "$ds_file" true 2> /dev/null || true
+        if [[ "$DRY_RUN" == "true" ]] || safe_remove "$ds_file" true 2> /dev/null; then
+            total_bytes=$((total_bytes + size))
+            file_count=$((file_count + 1))
         fi
         if [[ $file_count -ge $MOLE_MAX_DS_STORE_FILES ]]; then
             break
@@ -59,6 +58,9 @@ clean_ds_store_tree() {
         files_cleaned=$((files_cleaned + file_count))
         total_size_cleaned=$((total_size_cleaned + size_kb))
         total_items=$((total_items + 1))
+        if command -v api_capture_clean_record > /dev/null 2>&1; then
+            api_capture_clean_record "category" "$CURRENT_SECTION" "$label" "$target" "$size_kb" "$file_count" 0 ""
+        fi
         note_activity
     fi
 }

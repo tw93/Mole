@@ -51,7 +51,43 @@ printf 'mole test blocked launchctl: %s\n' "$*" >&2
 exit 0
 EOF
 
+if ! command -v gtimeout > /dev/null 2>&1 && ! command -v timeout > /dev/null 2>&1; then
+    cat > "$TEST_SYSTEM_STUB_DIR/gtimeout" << 'EOF'
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+my $seconds = shift @ARGV;
+exit 125 unless defined $seconds && @ARGV;
+exit 125 unless $seconds =~ /^[0-9]+(?:[.][0-9]+)?$/;
+
+my $pid = fork();
+exit 125 unless defined $pid;
+
+if ($pid == 0) {
+    exec @ARGV;
+    exit 126;
+}
+
+$SIG{ALRM} = sub {
+    kill 'TERM', $pid;
+    select undef, undef, undef, 0.2;
+    kill 'KILL', $pid;
+    waitpid $pid, 0;
+    exit 124;
+};
+alarm int($seconds) || 1;
+waitpid $pid, 0;
+my $status = $?;
+alarm 0;
+exit($status & 127 ? 128 + ($status & 127) : (($status >> 8) & 255));
+EOF
+fi
+
 chmod +x "$TEST_SYSTEM_STUB_DIR/sudo" "$TEST_SYSTEM_STUB_DIR/osascript" "$TEST_SYSTEM_STUB_DIR/launchctl"
+if [[ -f "$TEST_SYSTEM_STUB_DIR/gtimeout" ]]; then
+    chmod +x "$TEST_SYSTEM_STUB_DIR/gtimeout"
+fi
 export PATH="$TEST_SYSTEM_STUB_DIR:$PATH"
 
 # shellcheck source=lib/core/file_ops.sh
@@ -302,7 +338,22 @@ else
 fi
 echo ""
 
-echo "3. Running Go tests..."
+echo "3. Running API contract tests..."
+if [[ "${MOLE_SKIP_API_TESTS:-0}" == "1" ]]; then
+    printf "${YELLOW}${ICON_WARNING} API contract tests skipped by MOLE_SKIP_API_TESTS${NC}\n"
+elif command -v node > /dev/null 2>&1 && [[ -f "tests/api_contract.test.mjs" ]]; then
+    if node --test tests/api_contract.test.mjs; then
+        printf "${GREEN}${ICON_SUCCESS} API contract tests passed${NC}\n"
+    else
+        printf "${RED}${ICON_ERROR} API contract tests failed${NC}\n"
+        ((FAILED++))
+    fi
+else
+    printf "${YELLOW}${ICON_WARNING} node not installed or API contract tests missing, skipping${NC}\n"
+fi
+echo ""
+
+echo "4. Running Go tests..."
 if command -v go > /dev/null 2>&1; then
     mkdir -p "$GO_TEST_CACHE"
     if GOCACHE="$GO_TEST_CACHE" go build ./... > /dev/null 2>&1 &&
@@ -318,7 +369,7 @@ else
 fi
 echo ""
 
-echo "4. Testing module loading..."
+echo "5. Testing module loading..."
 if bash -c 'source lib/core/common.sh && echo "OK"' > /dev/null 2>&1; then
     printf "${GREEN}${ICON_SUCCESS} Module loading passed${NC}\n"
 else
@@ -327,7 +378,7 @@ else
 fi
 echo ""
 
-echo "5. Running integration tests..."
+echo "6. Running integration tests..."
 # Quick syntax check for main scripts
 if bash -n mole && bash -n bin/clean.sh && bash -n bin/optimize.sh; then
     printf "${GREEN}${ICON_SUCCESS} Integration tests passed${NC}\n"
@@ -337,7 +388,7 @@ else
 fi
 echo ""
 
-echo "6. Testing installation..."
+echo "7. Testing installation..."
 # Installation script is macOS-specific; skip this test on non-macOS platforms
 if [[ "$(uname -s)" != "Darwin" ]]; then
     printf "${YELLOW}${ICON_WARNING} Installation test skipped (non-macOS)${NC}\n"

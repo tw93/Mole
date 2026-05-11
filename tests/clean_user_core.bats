@@ -198,6 +198,67 @@ EOF
     [[ "$output" == *"SPIN_START:Scanning app caches..."* ]]
 }
 
+@test "clean_apple_silicon_caches skips system Rosetta cache without system cleanup" {
+    local rosetta_path="$HOME/SystemRosetta/rosetta_update_bundle"
+    mkdir -p "$rosetta_path"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ROSETTA_UPDATE_BUNDLE_PATH="$rosetta_path" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+IS_M_SERIES=true
+SYSTEM_CLEAN=false
+DRY_RUN=false
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+start_section() { :; }
+end_section() { :; }
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+safe_clean() { echo "SAFE:$1|$2"; }
+safe_sudo_remove() { echo "SUDO:$1"; return 0; }
+get_path_size_kb() { echo 4; }
+
+clean_apple_silicon_caches
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"SUDO:"* ]]
+    [[ "$output" != *"$rosetta_path"* ]]
+}
+
+@test "clean_apple_silicon_caches uses sudo path for system Rosetta cache when system cleanup enabled" {
+    local rosetta_path="$HOME/SystemRosetta/rosetta_update_bundle"
+    mkdir -p "$rosetta_path"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ROSETTA_UPDATE_BUNDLE_PATH="$rosetta_path" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+IS_M_SERIES=true
+SYSTEM_CLEAN=true
+DRY_RUN=false
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+start_section() { :; }
+end_section() { :; }
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+safe_clean() { echo "SAFE:$1|$2"; }
+safe_sudo_remove() { echo "SUDO:$1"; return 0; }
+get_path_size_kb() { echo 4; }
+cleanup_result_color_kb() { printf '%s' "$GREEN"; }
+
+clean_apple_silicon_caches
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SUDO:$rosetta_path"* ]]
+    [[ "$output" != *"SAFE:$rosetta_path"* ]]
+}
+
 @test "clean_support_app_data targets crash, idle assets, and messages preview caches only" {
     local support_home="$HOME/support-cache-home-1"
     run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
@@ -305,6 +366,36 @@ EOF
     [[ "$output" != *"SHOULD_NOT_SIZE_SCAN"* ]]
 }
 
+@test "process_container_cache does not report success when removal fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+is_critical_system_component() { return 1; }
+should_protect_data() { return 1; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+safe_remove() { return 1; }
+get_path_size_kb() { echo 4; }
+precise_size_limit=64
+precise_size_used=0
+total_size=0
+total_size_partial=false
+cleaned_count=0
+found_any=false
+
+container_dir="$HOME/Library/Containers/com.example.failed"
+mkdir -p "$container_dir/Data/Library/Caches"
+touch "$container_dir/Data/Library/Caches/item.tmp"
+
+process_container_cache "$container_dir"
+echo "found=$found_any count=$cleaned_count total=$total_size"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"found=false count=0 total=0"* ]]
+}
+
 @test "clean_application_support_logs counts nested directory contents in dry-run size summary" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -370,6 +461,37 @@ EOF
     [[ "$output" == *"Application Support logs/caches"* ]]
     [[ "$output" != *"151250 items"* ]]
     [[ "$output" != *"REMOVE:"* ]]
+}
+
+@test "clean_application_support_logs does not report success when removal fails" {
+    local support_home="$HOME/support-appsupport-fail"
+    run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+safe_remove() { return 1; }
+update_progress_if_needed() { return 1; }
+should_protect_data() { return 1; }
+is_critical_system_component() { return 1; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+mkdir -p "$HOME/Library/Application Support/TestApp/Code Cache"
+touch "$HOME/Library/Application Support/TestApp/Code Cache/item.tmp"
+
+clean_application_support_logs
+echo "Cleaned: $files_cleaned items"
+rm -rf "$HOME/Library/Application Support"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Application Support logs/caches"* ]]
+    [[ "$output" == *"Cleaned: 0 items"* ]]
 }
 
 @test "clean_application_support_logs does not clean generic Application Support logs" {
@@ -724,6 +846,34 @@ EOF
     [[ "$output" != *"SHOULD_NOT_SIZE_SCAN"* ]]
 }
 
+@test "clean_group_container_caches does not report bulk success when removal fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+bytes_to_human() { echo "0B"; }
+note_activity() { :; }
+safe_remove() { return 1; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+mkdir -p "$HOME/Library/Group Containers/group.com.example.large/Library/Caches"
+for i in $(seq 1 101); do
+    touch "$HOME/Library/Group Containers/group.com.example.large/Library/Caches/file-$i.tmp"
+done
+
+clean_group_container_caches
+echo "Cleaned: $files_cleaned items"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Group Containers logs/caches"* ]]
+    [[ "$output" == *"Cleaned: 0 items"* ]]
+}
+
 @test "clean_finder_metadata respects protection flag" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROTECT_FINDER_METADATA=true /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -737,6 +887,53 @@ EOF
     [ "$status" -eq 0 ]
     # Whitelist-protected items no longer show output (UX improvement in V1.22.0)
     [[ "$output" == "" ]]
+}
+
+@test "clean_ds_store_tree does not report success when removal fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+stop_section_spinner() { :; }
+note_activity() { :; }
+safe_remove() { return 1; }
+bytes_to_human() { echo "1B"; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+mkdir -p "$HOME/Documents"
+touch "$HOME/Documents/.DS_Store"
+
+clean_ds_store_tree "$HOME" "Finder metadata"
+echo "Cleaned: $files_cleaned items"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Finder metadata"* ]]
+    [[ "$output" == *"Cleaned: 0 items"* ]]
+}
+
+@test "clean_service_worker_cache does not report success when removal fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+PROTECTED_SW_DOMAINS=("protected.invalid")
+note_activity() { :; }
+safe_remove() { return 1; }
+bytes_to_human() { echo "0B"; }
+cleanup_result_color_kb() { printf '%s' "$GREEN"; }
+
+cache_root="$HOME/Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage"
+mkdir -p "$cache_root/example.com/cache"
+touch "$cache_root/example.com/cache/data"
+
+clean_service_worker_cache "Chrome" "$cache_root"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Chrome Service Worker"* ]]
 }
 
 @test "check_ios_device_backups returns when no backup dir" {

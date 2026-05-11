@@ -379,4 +379,12 @@ main() {
     esac
 }
 
+if [[ "${MOLE_SKIP_MAIN:-0}" == "1" ]]; then
+    if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+        return 0
+    else
+        exit 0
+    fi
+fi
+
 main "$@"

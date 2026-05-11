@@ -139,22 +139,27 @@ if [[ $# -eq 0 ]]; then
             echo "  $mole_file"
             echo "  $mo_file"
             echo ""
-            echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}fish${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
-            IFS= read -r -s -n1 key || key=""
-            drain_pending_input
-            echo ""
+            key=""
+            if [[ "${MOLE_API_AUTO_CONFIRM:-0}" != "1" ]]; then
+                echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}fish${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
+                IFS= read -r -s -n1 key || key=""
+                drain_pending_input
+                echo ""
+            fi
 
-            case "$key" in
-                $'\e' | [Qq] | [Nn])
-                    echo -e "${YELLOW}Cancelled${NC}"
-                    exit 0
-                    ;;
-                "" | $'\n' | $'\r' | [Yy]) ;;
-                *)
-                    log_error "Invalid key"
-                    exit 1
-                    ;;
-            esac
+            if [[ "${MOLE_API_AUTO_CONFIRM:-0}" != "1" ]]; then
+                case "$key" in
+                    $'\e' | [Qq] | [Nn])
+                        echo -e "${YELLOW}Cancelled${NC}"
+                        exit 0
+                        ;;
+                    "" | $'\n' | $'\r' | [Yy]) ;;
+                    *)
+                        log_error "Invalid key"
+                        exit 1
+                        ;;
+                esac
+            fi
         fi
 
         mkdir -p "$fish_dir"
@@ -248,22 +253,27 @@ if [[ $# -eq 0 ]]; then
         exit 0
     fi
 
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}${current_shell}${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
-    IFS= read -r -s -n1 key || key=""
-    drain_pending_input
-    echo ""
+    key=""
+    if [[ "${MOLE_API_AUTO_CONFIRM:-0}" != "1" ]]; then
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}${current_shell}${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
+        IFS= read -r -s -n1 key || key=""
+        drain_pending_input
+        echo ""
+    fi
 
-    case "$key" in
-        $'\e' | [Qq] | [Nn])
-            echo -e "${YELLOW}Cancelled${NC}"
-            exit 0
-            ;;
-        "" | $'\n' | $'\r' | [Yy]) ;;
-        *)
-            log_error "Invalid key"
-            exit 1
-            ;;
-    esac
+    if [[ "${MOLE_API_AUTO_CONFIRM:-0}" != "1" ]]; then
+        case "$key" in
+            $'\e' | [Qq] | [Nn])
+                echo -e "${YELLOW}Cancelled${NC}"
+                exit 0
+                ;;
+            "" | $'\n' | $'\r' | [Yy]) ;;
+            *)
+                log_error "Invalid key"
+                exit 1
+                ;;
+        esac
+    fi
 
     # Create config file if it doesn't exist
     if [[ ! -f "$config_file" ]]; then

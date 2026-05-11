@@ -25,6 +25,7 @@ temp/
 *.tmp
 *.temp
 *.dmg
+*.dmg.sha256
 tests/tmp-*
 
 # Cache
@@ -32,6 +33,11 @@ tests/tmp-*
 *.cache
 .gocache/
 .gomod/
+.build/
+.mole-ui/
+dist/
+*.xcarchive
+*.notarization.zip
 
 # Backup files
 *.bak
@@ -72,6 +78,16 @@ bin/status-darwin-*
 tests/tmp-*/
 tests/*.tmp
 tests/*.log
+test-results/
+playwright-report/
+node_modules/
+
+# Local design/reference clones
+awesome-design-md/
+
+# Local signing/notarization credentials
+.env
+.env.*
 
 # Go test coverage files
 *.out

@@ -107,7 +107,43 @@ EOF
 	[[ "$output" == *"Cleaned: 2 items"* ]]
 }
 
+@test "clean_chrome_old_versions does not report success when removal fails" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+has_sudo_session() { return 1; }
+safe_remove() { return 1; }
+get_path_size_kb() { echo "10240"; }
+bytes_to_human() { echo "10M"; }
+note_activity() { :; }
+export -f pgrep is_path_whitelisted has_sudo_session safe_remove get_path_size_kb bytes_to_human note_activity
+
+CHROME_APP="$HOME/Applications/Google Chrome.app"
+VERSIONS_DIR="$CHROME_APP/Contents/Frameworks/Google Chrome Framework.framework/Versions"
+mkdir -p "$VERSIONS_DIR"/{128.0.0.0,129.0.0.0,130.0.0.0}
+ln -s "130.0.0.0" "$VERSIONS_DIR/Current"
+export MOLE_CHROME_APP_PATHS="$CHROME_APP"
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+clean_chrome_old_versions
+echo "Cleaned: $files_cleaned items"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"Chrome old versions"* ]]
+	[[ "$output" == *"Cleaned: 0 items"* ]]
+}
+
 @test "clean_chrome_old_versions respects whitelist" {
+	rm -rf "$HOME/Applications/Google Chrome.app"
+
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -220,6 +256,36 @@ EOF
 	[[ "$output" == *"Edge updater old versions"* ]]
 	[[ "$output" == *"dry"* ]]
 	[[ "$output" == *"Cleaned: 2 items"* ]]
+}
+
+@test "clean_edge_updater_old_versions does not report success when removal fails" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+safe_remove() { return 1; }
+get_path_size_kb() { echo "10240"; }
+bytes_to_human() { echo "10M"; }
+note_activity() { :; }
+export -f pgrep is_path_whitelisted safe_remove get_path_size_kb bytes_to_human note_activity
+
+UPDATER_DIR="$HOME/Library/Application Support/Microsoft/EdgeUpdater/apps/msedge-stable"
+mkdir -p "$UPDATER_DIR"/{117.0.2045.60,118.0.2088.46,119.0.2108.9}
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+clean_edge_updater_old_versions
+echo "Cleaned: $files_cleaned items"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"Edge updater old versions"* ]]
+	[[ "$output" == *"Cleaned: 0 items"* ]]
 }
 
 @test "clean_chrome_old_versions DRY_RUN mode does not delete files" {

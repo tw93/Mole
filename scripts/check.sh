@@ -8,15 +8,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MODE="all"
+STRICT=0
 
 usage() {
     cat << 'EOF'
-Usage: ./scripts/check.sh [--format|--no-format]
+Usage: ./scripts/check.sh [--format|--no-format] [--strict]
 
 Options:
   --format     Apply formatting fixes only, shfmt, gofmt
   --no-format  Skip formatting and run checks only
-  --help     Show this help
+  --strict     Fail when optional tools are missing and run native UI/API checks
+  --help       Show this help
 EOF
 }
 
@@ -28,6 +30,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-format)
             MODE="check"
+            shift
+            ;;
+        --strict)
+            STRICT=1
             shift
             ;;
         --help | -h)
@@ -44,6 +50,14 @@ done
 
 cd "$PROJECT_ROOT"
 
+if [[ -z "${GOCACHE:-}" ]]; then
+    export GOCACHE="$PROJECT_ROOT/.cache/go-build"
+fi
+if [[ -z "${GOLANGCI_LINT_CACHE:-}" ]]; then
+    export GOLANGCI_LINT_CACHE="$PROJECT_ROOT/.cache/golangci-lint"
+fi
+mkdir -p "$GOCACHE" "$GOLANGCI_LINT_CACHE" 2> /dev/null || true
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -56,6 +70,22 @@ readonly ICON_WARNING="●"
 readonly ICON_LIST="•"
 
 echo -e "${BLUE}=== Mole Check, ${MODE} ===${NC}\n"
+
+require_strict_tool() {
+    local tool="$1"
+    local install_hint="$2"
+
+    if [[ $STRICT -eq 0 ]]; then
+        return 0
+    fi
+    if command -v "$tool" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    echo -e "${RED}${ICON_ERROR} $tool not installed${NC}"
+    echo -e "${YELLOW}${ICON_WARNING} $install_hint${NC}\n"
+    exit 1
+}
 
 SHELL_FILES=$(find . -type f \( -name "*.sh" -o -name "mole" \) \
     -not -path "./.git/*" \
@@ -96,6 +126,7 @@ if [[ "$MODE" != "check" ]]; then
         echo "$SHELL_FILES" | xargs shfmt -i 4 -ci -sr -w
         echo -e "${GREEN}${ICON_SUCCESS} Shell formatting applied${NC}\n"
     else
+        require_strict_tool "shfmt" "Install shfmt, for example: brew install shfmt"
         echo -e "${YELLOW}${ICON_WARNING} shfmt not installed, skipping${NC}\n"
     fi
 
@@ -123,6 +154,7 @@ if command -v golangci-lint > /dev/null 2>&1; then
         exit 1
     fi
 elif command -v go > /dev/null 2>&1; then
+    require_strict_tool "golangci-lint" "Install golangci-lint to run strict checks"
     echo -e "${YELLOW}${ICON_WARNING} golangci-lint not installed, falling back to go vet${NC}"
     if go vet ./cmd/...; then
         echo -e "${GREEN}${ICON_SUCCESS} go vet passed${NC}\n"
@@ -131,6 +163,7 @@ elif command -v go > /dev/null 2>&1; then
         exit 1
     fi
 else
+    require_strict_tool "go" "Install Go to run strict checks"
     echo -e "${YELLOW}${ICON_WARNING} Go not installed, skipping Go checks${NC}\n"
 fi
 
@@ -143,6 +176,7 @@ if command -v shellcheck > /dev/null 2>&1; then
         exit 1
     fi
 else
+    require_strict_tool "shellcheck" "Install ShellCheck, for example: brew install shellcheck"
     echo -e "${YELLOW}${ICON_WARNING} shellcheck not installed, skipping${NC}\n"
 fi
 
@@ -212,6 +246,28 @@ else
 fi
 
 echo -e "${BLUE}  Optimization score: $OPTIMIZATION_SCORE/$TOTAL_CHECKS${NC}\n"
+
+if [[ $STRICT -eq 1 ]]; then
+    echo -e "${YELLOW}7. Running strict test and native UI/API checks...${NC}"
+    require_strict_tool "bats" "Install Bats, for example: brew install bats-core"
+    require_strict_tool "npm" "Install Node.js/npm to run API and UX checks"
+    require_strict_tool "swift" "Install Xcode or Swift toolchain to run native tests"
+
+    MOLE_SKIP_API_TESTS=1 ./scripts/test.sh
+
+    if [[ -f "package-lock.json" ]]; then
+        npm ci
+    else
+        echo -e "${RED}${ICON_ERROR} package-lock.json missing${NC}\n"
+        exit 1
+    fi
+
+    npm run test:api
+    swift test --package-path macos/MoleUI
+    npm run test:ux
+    npm run macos:build
+    echo -e "${GREEN}${ICON_SUCCESS} Strict test and native UI/API checks passed${NC}\n"
+fi
 
 echo -e "${GREEN}=== Checks Completed ===${NC}"
 if [[ $OPTIMIZATION_SCORE -eq $TOTAL_CHECKS ]]; then

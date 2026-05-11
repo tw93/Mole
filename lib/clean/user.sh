@@ -322,6 +322,20 @@ is_google_chrome_running() {
     return 1
 }
 
+remove_browser_old_version_dir() {
+    local dir="$1"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        return 0
+    fi
+
+    if has_sudo_session; then
+        safe_sudo_remove "$dir" > /dev/null 2>&1
+    else
+        safe_remove "$dir" true > /dev/null 2>&1
+    fi
+}
+
 clean_chrome_old_versions() {
     local -a app_paths
     if [[ -n "${MOLE_CHROME_APP_PATHS:-}" ]]; then
@@ -406,15 +420,10 @@ clean_chrome_old_versions() {
             local size_kb
             size_kb=$(get_path_size_kb "$dir" || echo 0)
             size_kb="${size_kb:-0}"
-            total_size=$((total_size + size_kb))
-            cleaned_count=$((cleaned_count + 1))
-            cleaned_any=true
-            if [[ "$DRY_RUN" != "true" ]]; then
-                if has_sudo_session; then
-                    safe_sudo_remove "$dir" > /dev/null 2>&1 || true
-                else
-                    safe_remove "$dir" true > /dev/null 2>&1 || true
-                fi
+            if remove_browser_old_version_dir "$dir"; then
+                total_size=$((total_size + size_kb))
+                cleaned_count=$((cleaned_count + 1))
+                cleaned_any=true
             fi
         done
     done
@@ -501,15 +510,10 @@ clean_edge_old_versions() {
             local size_kb
             size_kb=$(get_path_size_kb "$dir" || echo 0)
             size_kb="${size_kb:-0}"
-            total_size=$((total_size + size_kb))
-            cleaned_count=$((cleaned_count + 1))
-            cleaned_any=true
-            if [[ "$DRY_RUN" != "true" ]]; then
-                if has_sudo_session; then
-                    safe_sudo_remove "$dir" > /dev/null 2>&1 || true
-                else
-                    safe_remove "$dir" true > /dev/null 2>&1 || true
-                fi
+            if remove_browser_old_version_dir "$dir"; then
+                total_size=$((total_size + size_kb))
+                cleaned_count=$((cleaned_count + 1))
+                cleaned_any=true
             fi
         done
     done
@@ -570,11 +574,10 @@ clean_edge_updater_old_versions() {
         local size_kb
         size_kb=$(get_path_size_kb "$dir" || echo 0)
         size_kb="${size_kb:-0}"
-        total_size=$((total_size + size_kb))
-        cleaned_count=$((cleaned_count + 1))
-        cleaned_any=true
-        if [[ "$DRY_RUN" != "true" ]]; then
-            safe_remove "$dir" true > /dev/null 2>&1 || true
+        if [[ "$DRY_RUN" == "true" ]] || safe_remove "$dir" true > /dev/null 2>&1; then
+            total_size=$((total_size + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            cleaned_any=true
         fi
     done
 
@@ -657,15 +660,10 @@ clean_brave_old_versions() {
             local size_kb
             size_kb=$(get_path_size_kb "$dir" || echo 0)
             size_kb="${size_kb:-0}"
-            total_size=$((total_size + size_kb))
-            cleaned_count=$((cleaned_count + 1))
-            cleaned_any=true
-            if [[ "$DRY_RUN" != "true" ]]; then
-                if has_sudo_session; then
-                    safe_sudo_remove "$dir" > /dev/null 2>&1 || true
-                else
-                    safe_remove "$dir" true > /dev/null 2>&1 || true
-                fi
+            if remove_browser_old_version_dir "$dir"; then
+                total_size=$((total_size + size_kb))
+                cleaned_count=$((cleaned_count + 1))
+                cleaned_any=true
             fi
         done
     done
@@ -943,19 +941,21 @@ process_container_cache() {
     [[ "$item_count" =~ ^[0-9]+$ ]] || item_count=0
     [[ "$item_count" -eq 0 ]] && return 0
 
+    local size=0
     if [[ "$item_count" -le 100 && "$precise_size_used" -lt "$precise_size_limit" ]]; then
-        local size
         size=$(get_path_size_kb "$cache_dir" 2> /dev/null || echo "0")
         [[ "$size" =~ ^[0-9]+$ ]] || size=0
-        total_size=$((total_size + size))
         precise_size_used=$((precise_size_used + 1))
     else
         total_size_partial=true
     fi
 
-    found_any=true
-    cleaned_count=$((cleaned_count + 1))
-    if [[ "$DRY_RUN" != "true" ]]; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+        total_size=$((total_size + size))
+        found_any=true
+        cleaned_count=$((cleaned_count + 1))
+    else
+        local removed_any=false
         local _nullglob_state
         local _dotglob_state
         _nullglob_state=$(shopt -p nullglob || true)
@@ -964,10 +964,18 @@ process_container_cache() {
         local item
         for item in "$cache_dir"/*; do
             [[ -e "$item" ]] || continue
-            safe_remove "$item" true || true
+            if safe_remove "$item" true; then
+                removed_any=true
+            fi
         done
         eval "$_nullglob_state"
         eval "$_dotglob_state"
+
+        if [[ "$removed_any" == "true" ]]; then
+            total_size=$((total_size + size))
+            found_any=true
+            cleaned_count=$((cleaned_count + 1))
+        fi
     fi
 }
 
@@ -1065,17 +1073,28 @@ clean_group_container_caches() {
 
             if [[ "$quick_count" -gt 100 ]]; then
                 total_size_partial=true
-                for item in "$candidate"/*; do
-                    [[ -e "$item" ]] || continue
-                    [[ -L "$item" ]] && continue
-                    if should_protect_path "$item" 2> /dev/null || is_path_whitelisted "$item" 2> /dev/null; then
-                        continue
-                    fi
-                    candidate_changed=true
-                    if [[ "$DRY_RUN" != "true" ]]; then
-                        safe_remove "$item" true 2> /dev/null || true
-                    fi
-                done
+                if [[ "$DRY_RUN" == "true" ]]; then
+                    for item in "$candidate"/*; do
+                        [[ -e "$item" ]] || continue
+                        [[ -L "$item" ]] && continue
+                        if should_protect_path "$item" 2> /dev/null || is_path_whitelisted "$item" 2> /dev/null; then
+                            continue
+                        fi
+                        candidate_changed=true
+                        break
+                    done
+                else
+                    for item in "$candidate"/*; do
+                        [[ -e "$item" ]] || continue
+                        [[ -L "$item" ]] && continue
+                        if should_protect_path "$item" 2> /dev/null || is_path_whitelisted "$item" 2> /dev/null; then
+                            continue
+                        fi
+                        if safe_remove "$item" true 2> /dev/null; then
+                            candidate_changed=true
+                        fi
+                    done
+                fi
             else
                 for item in "$candidate"/*; do
                     [[ -e "$item" ]] || continue
@@ -1253,10 +1272,16 @@ clean_external_volume_target() {
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
+            if command -v api_capture_clean_record > /dev/null 2>&1; then
+                api_capture_clean_record "category" "$CURRENT_SECTION" "${volume_name} volume, $(basename "$target_path")" "$target_path" "$size_kb" 1 0 ""
+            fi
         elif safe_remove "$target_path" true > /dev/null 2>&1; then
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
+            if command -v api_capture_clean_record > /dev/null 2>&1; then
+                api_capture_clean_record "category" "$CURRENT_SECTION" "${volume_name} volume, $(basename "$target_path")" "$target_path" "$size_kb" 1 0 ""
+            fi
         fi
     done
 
@@ -1266,6 +1291,8 @@ clean_external_volume_target() {
 
     local metadata_scan_timeout="${MOLE_EXTERNAL_VOLUME_SCAN_TIMEOUT:-15}"
     [[ "$metadata_scan_timeout" =~ ^[0-9]+$ ]] || metadata_scan_timeout=15
+    local metadata_count=0
+    local metadata_total_size=0
     while IFS= read -r -d '' metadata_file; do
         [[ -e "$metadata_file" ]] || continue
         if should_protect_path "$metadata_file" 2> /dev/null || is_path_whitelisted "$metadata_file" 2> /dev/null; then
@@ -1280,12 +1307,20 @@ clean_external_volume_target() {
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
+            metadata_count=$((metadata_count + 1))
+            metadata_total_size=$((metadata_total_size + size_kb))
         elif safe_remove "$metadata_file" true > /dev/null 2>&1; then
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
+            metadata_count=$((metadata_count + 1))
+            metadata_total_size=$((metadata_total_size + size_kb))
         fi
     done < <(run_with_timeout "$metadata_scan_timeout" find -P "$volume" -xdev -type f -name "._*" -print0 2> /dev/null || true)
+
+    if [[ "$metadata_count" -gt 0 ]] && command -v api_capture_clean_record > /dev/null 2>&1; then
+        api_capture_clean_record "category" "$CURRENT_SECTION" "${volume_name} volume, AppleDouble metadata" "$volume" "$metadata_total_size" "$metadata_count" 0 ""
+    fi
 
     stop_section_spinner
 
@@ -1694,17 +1729,20 @@ clean_application_support_logs() {
                     fi
                     stop_section_spinner
                     start_section_spinner "Scanning Application Support... $app_count/$total_apps [$app_label, bulk clean]"
-                    if [[ "$DRY_RUN" != "true" ]]; then
+                    if [[ "$DRY_RUN" == "true" ]]; then
+                        found_any=true
+                        cleaned_count=$((cleaned_count + 1))
+                        total_size_partial=true
+                    elif safe_remove "$candidate" true > /dev/null 2>&1; then
                         # Remove entire candidate directory in one go
-                        safe_remove "$candidate" true > /dev/null 2>&1 || true
+                        found_any=true
+                        cleaned_count=$((cleaned_count + 1))
+                        total_size_partial=true
                     fi
-                    found_any=true
-                    cleaned_count=$((cleaned_count + 1))
-                    total_size_partial=true
                     continue
                 fi
 
-                local item_found=false
+                local candidate_changed=false
                 local candidate_size_bytes=0
                 local candidate_size_partial=false
                 local candidate_item_count=0
@@ -1713,17 +1751,16 @@ clean_application_support_logs() {
                     if should_protect_path "$item" 2> /dev/null || is_path_whitelisted "$item" 2> /dev/null; then
                         continue
                     fi
-                    item_found=true
                     candidate_item_count=$((candidate_item_count + 1))
+                    local item_size_bytes=""
                     if [[ ! -L "$item" && (-f "$item" || -d "$item") ]]; then
-                        local item_size_bytes=""
                         if item_size_bytes=$(app_support_item_size_bytes "$item" "$size_timeout_seconds"); then
-                            if [[ "$item_size_bytes" =~ ^[0-9]+$ ]]; then
-                                candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
-                            else
+                            if [[ ! "$item_size_bytes" =~ ^[0-9]+$ ]]; then
+                                item_size_bytes=0
                                 candidate_size_partial=true
                             fi
                         else
+                            item_size_bytes=0
                             candidate_size_partial=true
                         fi
                     fi
@@ -1740,11 +1777,15 @@ clean_application_support_logs() {
                             last_progress_update=$current_time
                         fi
                     fi
-                    if [[ "$DRY_RUN" != "true" ]]; then
-                        safe_remove "$item" true > /dev/null 2>&1 || true
+                    if [[ "$DRY_RUN" == "true" ]]; then
+                        candidate_changed=true
+                        candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
+                    elif safe_remove "$item" true > /dev/null 2>&1; then
+                        candidate_changed=true
+                        candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
                     fi
                 done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
-                if [[ "$item_found" == "true" ]]; then
+                if [[ "$candidate_changed" == "true" ]]; then
                     total_size_bytes=$((total_size_bytes + candidate_size_bytes))
                     [[ "$candidate_size_partial" == "true" ]] && total_size_partial=true
                     cleaned_count=$((cleaned_count + 1))
@@ -1772,32 +1813,34 @@ clean_application_support_logs() {
                     fi
                     stop_section_spinner
                     start_section_spinner "Scanning Application Support... group [$container_label, bulk clean]"
-                    if [[ "$DRY_RUN" != "true" ]]; then
-                        safe_remove "$candidate" true > /dev/null 2>&1 || true
+                    if [[ "$DRY_RUN" == "true" ]]; then
+                        found_any=true
+                        cleaned_count=$((cleaned_count + 1))
+                        total_size_partial=true
+                    elif safe_remove "$candidate" true > /dev/null 2>&1; then
+                        found_any=true
+                        cleaned_count=$((cleaned_count + 1))
+                        total_size_partial=true
                     fi
-                    found_any=true
-                    cleaned_count=$((cleaned_count + 1))
-                    total_size_partial=true
                     continue
                 fi
 
-                local item_found=false
+                local candidate_changed=false
                 local candidate_size_bytes=0
                 local candidate_size_partial=false
                 local candidate_item_count=0
                 while IFS= read -r -d '' item; do
                     [[ -e "$item" ]] || continue
-                    item_found=true
                     candidate_item_count=$((candidate_item_count + 1))
+                    local item_size_bytes=""
                     if [[ ! -L "$item" && (-f "$item" || -d "$item") ]]; then
-                        local item_size_bytes=""
                         if item_size_bytes=$(app_support_item_size_bytes "$item" "$size_timeout_seconds"); then
-                            if [[ "$item_size_bytes" =~ ^[0-9]+$ ]]; then
-                                candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
-                            else
+                            if [[ ! "$item_size_bytes" =~ ^[0-9]+$ ]]; then
+                                item_size_bytes=0
                                 candidate_size_partial=true
                             fi
                         else
+                            item_size_bytes=0
                             candidate_size_partial=true
                         fi
                     fi
@@ -1814,11 +1857,15 @@ clean_application_support_logs() {
                             last_progress_update=$current_time
                         fi
                     fi
-                    if [[ "$DRY_RUN" != "true" ]]; then
-                        safe_remove "$item" true > /dev/null 2>&1 || true
+                    if [[ "$DRY_RUN" == "true" ]]; then
+                        candidate_changed=true
+                        candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
+                    elif safe_remove "$item" true > /dev/null 2>&1; then
+                        candidate_changed=true
+                        candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
                     fi
                 done < <(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
-                if [[ "$item_found" == "true" ]]; then
+                if [[ "$candidate_changed" == "true" ]]; then
                     total_size_bytes=$((total_size_bytes + candidate_size_bytes))
                     [[ "$candidate_size_partial" == "true" ]] && total_size_partial=true
                     cleaned_count=$((cleaned_count + 1))
@@ -2097,8 +2144,53 @@ clean_apple_silicon_caches() {
         return 0
     fi
     start_section "Apple Silicon updates"
-    safe_clean /Library/Apple/usr/share/rosetta/rosetta_update_bundle "Rosetta 2 cache"
+    clean_apple_silicon_system_rosetta_cache
     safe_clean ~/Library/Caches/com.apple.rosetta.update "Rosetta 2 user cache"
     safe_clean ~/Library/Caches/com.apple.amp.mediasevicesd "Apple Silicon media service cache"
     end_section
+}
+
+clean_apple_silicon_system_rosetta_cache() {
+    [[ "${SYSTEM_CLEAN:-false}" == "true" ]] || return 0
+
+    local rosetta_system_cache="${MOLE_ROSETTA_UPDATE_BUNDLE_PATH:-/Library/Apple/usr/share/rosetta/rosetta_update_bundle}"
+    [[ -e "$rosetta_system_cache" ]] || return 0
+    [[ -L "$rosetta_system_cache" ]] && return 0
+
+    if should_protect_path "$rosetta_system_cache" 2> /dev/null || is_path_whitelisted "$rosetta_system_cache" 2> /dev/null; then
+        return 0
+    fi
+
+    local size_kb
+    size_kb=$(get_path_size_kb "$rosetta_system_cache" 2> /dev/null || echo "0")
+    [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        local size_human
+        size_human=$(bytes_to_human "$((size_kb * 1024))")
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Rosetta 2 cache${NC}, ${YELLOW}$size_human dry${NC}"
+        files_cleaned=$((files_cleaned + 1))
+        total_size_cleaned=$((total_size_cleaned + size_kb))
+        total_items=$((total_items + 1))
+        if command -v api_capture_clean_record > /dev/null 2>&1; then
+            api_capture_clean_record "category" "$CURRENT_SECTION" "Rosetta 2 cache" "$rosetta_system_cache" "$size_kb" 1 0 ""
+        fi
+        note_activity
+        return 0
+    fi
+
+    if safe_sudo_remove "$rosetta_system_cache"; then
+        local size_human
+        local line_color
+        size_human=$(bytes_to_human "$((size_kb * 1024))")
+        line_color=$(cleanup_result_color_kb "$size_kb")
+        echo -e "  ${line_color}${ICON_SUCCESS}${NC} Rosetta 2 cache${NC}, ${line_color}$size_human${NC}"
+        files_cleaned=$((files_cleaned + 1))
+        total_size_cleaned=$((total_size_cleaned + size_kb))
+        total_items=$((total_items + 1))
+        if command -v api_capture_clean_record > /dev/null 2>&1; then
+            api_capture_clean_record "category" "$CURRENT_SECTION" "Rosetta 2 cache" "$rosetta_system_cache" "$size_kb" 1 0 ""
+        fi
+        note_activity
+    fi
 }

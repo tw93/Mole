@@ -724,21 +724,25 @@ remove_mole() {
     echo "  ${ICON_LIST} ~/.config/mole"
     echo "  ${ICON_LIST} ~/.cache/mole"
     echo "  ${ICON_LIST} ~/Library/Logs/mole"
-    echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
+    if [[ "${MOLE_API_AUTO_CONFIRM:-0}" == "1" ]]; then
+        echo -e "${GRAY}Confirmed by Mole API plan.${NC}"
+    else
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
 
-    IFS= read -r -s -n1 key || key=""
-    drain_pending_input # Clean up any escape sequence remnants
-    case "$key" in
-        $'\e')
-            exit 0
-            ;;
-        "" | $'\n' | $'\r')
-            printf "\r\033[K" # Clear the prompt line
-            ;;
-        *)
-            exit 0
-            ;;
-    esac
+        IFS= read -r -s -n1 key || key=""
+        drain_pending_input # Clean up any escape sequence remnants
+        case "$key" in
+            $'\e')
+                exit 0
+                ;;
+            "" | $'\n' | $'\r')
+                printf "\r\033[K" # Clear the prompt line
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
+    fi
 
     local has_error=false
     if [[ "$is_homebrew" == "true" ]]; then
@@ -995,6 +999,9 @@ main() {
             ;;
         "installer")
             exec "$SCRIPT_DIR/bin/installer.sh" "${args[@]:1}"
+            ;;
+        "api")
+            exec "$SCRIPT_DIR/bin/api.sh" "${args[@]:1}"
             ;;
         "touchid")
             exec "$SCRIPT_DIR/bin/touchid.sh" "${args[@]:1}"

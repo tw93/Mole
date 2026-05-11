@@ -3,14 +3,17 @@
 ## Setup
 
 ```bash
-# Install development tools
-brew install shfmt shellcheck bats-core golangci-lint
-
-# Install goimports for better Go formatting
-go install golang.org/x/tools/cmd/goimports@latest
+# Install development tools, Node dependencies, Playwright Chromium, and goimports
+scripts/bootstrap-dev.sh
 
 # Install pre-commit hook (runs format/lint checks on every commit)
 git config core.hooksPath .githooks
+```
+
+For a faster bootstrap that skips the Playwright browser download, use:
+
+```bash
+scripts/bootstrap-dev.sh --skip-playwright
 ```
 
 ## Development
@@ -19,6 +22,12 @@ Run quality checks before committing (auto-formats code):
 
 ```bash
 ./scripts/check.sh
+```
+
+Run the stricter preflight used for native UI/API changes:
+
+```bash
+./scripts/check.sh --no-format --strict
 ```
 
 Run tests:

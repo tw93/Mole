@@ -1,0 +1,16 @@
+{
+  "name": "mole-native-ui-ux",
+  "private": true,
+  "scripts": {
+    "macos:build": "scripts/build-app.sh",
+    "macos:dmg": "scripts/build-dmg.sh",
+    "macos:run": "scripts/build-app.sh && open .build/MoleUI.app",
+    "macos:test": "swift test --package-path macos/MoleUI",
+    "release:preflight": "scripts/release-preflight.sh",
+    "test:api": "node --test tests/api_contract.test.mjs",
+    "test:ux": "playwright test tests/ux/mole-ui.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  }
+}

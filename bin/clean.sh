@@ -27,7 +27,8 @@ PROTECT_FINDER_METADATA=false
 EXTERNAL_VOLUME_TARGET=""
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
-EXPORT_LIST_FILE="$HOME/.config/mole/clean-list.txt"
+MOLE_CONFIG_DIR="${MOLE_CONFIG_DIR:-$HOME/.config/mole}"
+EXPORT_LIST_FILE="$MOLE_CONFIG_DIR/clean-list.txt"
 CURRENT_SECTION=""
 readonly PROTECTED_SW_DOMAINS=(
     # Web editors
@@ -56,7 +57,7 @@ readonly PROTECTED_SW_DOMAINS=(
 
 declare -a WHITELIST_PATTERNS=()
 WHITELIST_WARNINGS=()
-if [[ -f "$HOME/.config/mole/whitelist" ]]; then
+if [[ -f "$MOLE_CONFIG_DIR/whitelist" ]]; then
     while IFS= read -r line; do
         # shellcheck disable=SC2295
         line="${line#"${line%%[![:space:]]*}"}"
@@ -107,7 +108,7 @@ if [[ -f "$HOME/.config/mole/whitelist" ]]; then
         fi
         [[ "$duplicate" == "true" ]] && continue
         WHITELIST_PATTERNS+=("$line")
-    done < "$HOME/.config/mole/whitelist"
+    done < "$MOLE_CONFIG_DIR/whitelist"
 else
     WHITELIST_PATTERNS=("${DEFAULT_WHITELIST_PATTERNS[@]}")
 fi
@@ -170,6 +171,44 @@ register_dry_run_cleanup_target() {
 
     DRY_RUN_SEEN_IDENTITIES+=("$identity")
     return 0
+}
+
+# shellcheck disable=SC2329
+api_capture_clean_record() {
+    [[ -n "${MOLE_API_CLEAN_CAPTURE_FILE:-}" ]] || return 0
+
+    local kind="$1"
+    local section="${2:-}"
+    local description="${3:-}"
+    local sample_path="${4:-}"
+    local size_kb="${5:-0}"
+    local item_count="${6:-0}"
+    local skipped_count="${7:-0}"
+    local skip_reason="${8:-}"
+
+    [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+    [[ "$item_count" =~ ^[0-9]+$ ]] || item_count=0
+    [[ "$skipped_count" =~ ^[0-9]+$ ]] || skipped_count=0
+
+    local risk_info risk_level risk_reason admin_required="false"
+    risk_info=$(classify_cleanup_risk "$description" "$sample_path")
+    risk_level="${risk_info%%|*}"
+    risk_reason="${risk_info#*|}"
+
+    case "$sample_path" in
+        /System | /System/* | /Library | /Library/* | /private/var/db/* | /var/db/*)
+            admin_required="true"
+            ;;
+    esac
+
+    if [[ "$risk_level" == "HIGH" ]]; then
+        admin_required="true"
+    fi
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$kind" "$section" "$description" "$size_kb" "$item_count" \
+        "$skipped_count" "$risk_level" "$risk_reason" "$admin_required" "$skip_reason" \
+        >> "$MOLE_API_CLEAN_CAPTURE_FILE" 2> /dev/null || true
 }
 
 CLEANUP_DONE=false
@@ -459,6 +498,7 @@ safe_clean() {
             skip=true
             skipped_count=$((skipped_count + 1))
             log_operation "clean" "SKIPPED" "$path" "protected"
+            api_capture_clean_record "skipped" "$CURRENT_SECTION" "$description" "$path" 0 0 1 "protected"
         fi
 
         [[ "$skip" == "true" ]] && continue
@@ -467,6 +507,7 @@ safe_clean() {
             skip=true
             skipped_count=$((skipped_count + 1))
             log_operation "clean" "SKIPPED" "$path" "whitelist"
+            api_capture_clean_record "skipped" "$CURRENT_SECTION" "$description" "$path" 0 0 1 "whitelist"
         fi
         [[ "$skip" == "true" ]] && continue
         if [[ -e "$path" ]]; then
@@ -739,6 +780,8 @@ safe_clean() {
     fi
 
     if [[ $removed_any -eq 1 ]]; then
+        api_capture_clean_record "category" "$CURRENT_SECTION" "$description" "${existing_paths[0]:-}" "$total_size_kb" "$total_count" "$skipped_count" ""
+
         # Stop spinner before output
         stop_section_spinner
 
@@ -863,7 +906,7 @@ start_cleanup() {
 # Mole Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
 #
 # How to protect files:
-# 1. Copy any path below to ~/.config/mole/whitelist
+# 1. Copy any path below to ${MOLE_CONFIG_DIR/#$HOME/~}/whitelist
 # 2. Run: mo clean --whitelist
 #
 # Example:
@@ -1255,6 +1298,28 @@ perform_cleanup() {
 
     # Log session end with summary
     log_operation_session_end "clean" "$files_cleaned" "$total_size_cleaned"
+
+    if [[ -n "${MOLE_API_CLEAN_METRICS_FILE:-}" ]]; then
+        local metrics_free_space metrics_movies=0 metrics_equivalent=""
+        metrics_free_space=$(get_free_space)
+        if ((total_size_cleaned >= MOLE_ONE_GIB_KB)); then
+            local metrics_freed_gb=$((total_size_cleaned / MOLE_ONE_GIB_KB))
+            metrics_movies=$((metrics_freed_gb * 10 / 45))
+            if [[ $metrics_movies -eq 1 ]]; then
+                metrics_equivalent="Equivalent to ~1 4K movie of storage."
+            elif [[ $metrics_movies -gt 1 ]]; then
+                metrics_equivalent="Equivalent to ~$metrics_movies 4K movies of storage."
+            fi
+        fi
+
+        {
+            printf 'bytes\t%s\n' "$((total_size_cleaned * 1024))"
+            printf 'item_count\t%s\n' "$files_cleaned"
+            printf 'category_count\t%s\n' "$total_items"
+            printf 'free_space\t%s\n' "$metrics_free_space"
+            printf 'equivalent\t%s\n' "$metrics_equivalent"
+        } > "$MOLE_API_CLEAN_METRICS_FILE" 2> /dev/null || true
+    fi
 
     print_summary_block "$summary_heading" "${summary_details[@]}"
     printf '\n'

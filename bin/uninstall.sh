@@ -31,7 +31,8 @@ total_items=0
 files_cleaned=0
 total_size_cleaned=0
 
-readonly MOLE_UNINSTALL_META_CACHE_DIR="$HOME/.cache/mole"
+MOLE_CACHE_DIR="${MOLE_CACHE_DIR:-$HOME/.cache/mole}"
+readonly MOLE_UNINSTALL_META_CACHE_DIR="$MOLE_CACHE_DIR"
 readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v1"
 readonly MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
 readonly MOLE_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
@@ -1197,6 +1198,43 @@ uninstall_list_json_escape() {
     printf '%s' "$s"
 }
 
+uninstall_list_detect_cask() {
+    local app_path="$1"
+    local cask_list="$2"
+    local token=""
+
+    if [[ -n "$cask_list" ]]; then
+        token=$(_detect_cask_via_resolved_path "$app_path" 2> /dev/null || true)
+        if [[ -n "$token" ]] && grep -qxF "$token" <<< "$cask_list"; then
+            printf '%s\n' "$token"
+            return 0
+        fi
+
+        token=$(_detect_cask_via_symlink_check "$app_path" 2> /dev/null || true)
+        if [[ -n "$token" ]] && grep -qxF "$token" <<< "$cask_list"; then
+            printf '%s\n' "$token"
+            return 0
+        fi
+
+        local app_name_lower
+        app_name_lower=$(basename "${app_path%.app}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+        if [[ -n "$app_name_lower" ]] && grep -qxF "$app_name_lower" <<< "$cask_list"; then
+            printf '%s\n' "$app_name_lower"
+            return 0
+        fi
+    fi
+
+    if command -v get_brew_cask_name > /dev/null 2>&1; then
+        token=$(get_brew_cask_name "$app_path" 2> /dev/null || true)
+    fi
+    if [[ -n "$token" ]]; then
+        printf '%s\n' "$token"
+        return 0
+    fi
+
+    return 1
+}
+
 # Read-only listing: surface each installed app's display name, bundle id,
 # the exact name `mo uninstall` accepts, and human-readable size. Reuses the
 # existing scanner so the output stays in lockstep with what the destructive
@@ -1221,6 +1259,11 @@ uninstall_list_apps() {
         format="json"
     fi
 
+    local cask_list=""
+    if is_homebrew_available; then
+        cask_list=$(HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 brew list --cask 2> /dev/null || true)
+    fi
+
     if [[ "$format" == "json" ]]; then
         printf '['
         local first=1
@@ -1228,9 +1271,7 @@ uninstall_list_apps() {
         for app_data in "${apps_data[@]+"${apps_data[@]}"}"; do
             IFS='|' read -r _ app_path app_name bundle_id size _ _ <<< "$app_data"
             local cask=""
-            if is_homebrew_available; then
-                cask=$(get_brew_cask_name "$app_path" 2> /dev/null || true)
-            fi
+            cask=$(uninstall_list_detect_cask "$app_path" "$cask_list" 2> /dev/null || true)
             local uninstall_name="${cask:-$app_name}"
             local source_label="App"
             [[ -n "$cask" ]] && source_label="Homebrew"
@@ -1272,9 +1313,7 @@ uninstall_list_apps() {
     for app_data in "${apps_data[@]+"${apps_data[@]}"}"; do
         IFS='|' read -r _ app_path app_name bundle_id size _ _ <<< "$app_data"
         local cask=""
-        if is_homebrew_available; then
-            cask=$(get_brew_cask_name "$app_path" 2> /dev/null || true)
-        fi
+        cask=$(uninstall_list_detect_cask "$app_path" "$cask_list" 2> /dev/null || true)
         local uninstall_name="${cask:-$app_name}"
         local size_display
         size_display=$(uninstall_normalize_size_display "$size")
@@ -1412,12 +1451,16 @@ main() {
         done
 
         printf '\n'
-        printf "Proceed with uninstallation? [y/N] "
-        local confirm
-        read -r confirm
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-            echo "Aborted."
-            return 0
+        if [[ "${MOLE_API_AUTO_CONFIRM:-0}" == "1" ]]; then
+            echo "Proceed with uninstallation? [auto-confirmed]"
+        else
+            printf "Proceed with uninstallation? [y/N] "
+            local confirm
+            read -r confirm
+            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+                echo "Aborted."
+                return 0
+            fi
         fi
 
         batch_uninstall_applications

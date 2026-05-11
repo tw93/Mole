@@ -1,0 +1,92 @@
+{
+  "responses": {
+    "apps": {
+      "schema_version": "number",
+      "apps": "array"
+    },
+    "cleanup_preview": {
+      "schema_version": "number",
+      "command": "string",
+      "dry_run": "boolean",
+      "estimated_bytes": "number",
+      "categories": "array"
+    },
+    "completion_status": {
+      "schema_version": "number",
+      "shell": "string",
+      "installed": "boolean",
+      "command_name": "string"
+    },
+    "installer_preview": {
+      "schema_version": "number",
+      "command": "string",
+      "estimated_bytes": "number",
+      "items": "array"
+    },
+    "launchers_status": {
+      "schema_version": "number",
+      "command_count": "number",
+      "commands": "array"
+    },
+    "maintenance_status": {
+      "schema_version": "number",
+      "version": "string",
+      "install_method": "string",
+      "cli_path": "string"
+    },
+    "optimize_preview": {
+      "optimizations": "array"
+    },
+    "purge_paths": {
+      "schema_version": "number",
+      "config_path": "string",
+      "paths": "array",
+      "default_paths": "array"
+    },
+    "purge_preview": {
+      "schema_version": "number",
+      "command": "string",
+      "estimated_bytes": "number",
+      "items": "array"
+    },
+    "status": {
+      "host": "string?",
+      "health_score": "number?"
+    },
+    "storage_scan": {
+      "path": "string",
+      "entries": "array",
+      "large_files": "array",
+      "total_size": "number"
+    },
+    "touchid_status": {
+      "schema_version": "number",
+      "configured": "boolean",
+      "supported": "boolean"
+    },
+    "whitelist": {
+      "schema_version": "number",
+      "mode": "string",
+      "items": "array"
+    }
+  },
+  "events": {
+    "base": {
+      "event": "string",
+      "domain": "string"
+    },
+    "completion": {
+      "event": "completed",
+      "domain": "string"
+    },
+    "failure": {
+      "event": "failed",
+      "domain": "string"
+    }
+  },
+  "errors": {
+    "base": {
+      "error": "object"
+    }
+  }
+}

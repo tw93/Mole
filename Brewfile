@@ -1,0 +1,8 @@
+brew "bats-core"
+brew "coreutils"
+brew "go"
+brew "golangci-lint"
+brew "node"
+brew "parallel"
+brew "shellcheck"
+brew "shfmt"

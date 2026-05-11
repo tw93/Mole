@@ -5,14 +5,21 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 9 * * 1'
 
 permissions:
   contents: read
 
 jobs:
-  tests:
-    name: Unit & Integration Tests
-    runs-on: macos-latest
+  core-tests:
+    name: Shell, Go & Integration Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
@@ -26,6 +33,7 @@ jobs:
 
       - name: Run test script
         env:
+          MOLE_SKIP_API_TESTS: "1"
           MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
           MOLE_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
           MOLE_TEST_JOBS: "6"
@@ -33,6 +41,118 @@ jobs:
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
         run: ./scripts/test.sh
+
+  release-preflight:
+    name: Release Hygiene Preflight
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Run release hygiene checks
+        run: scripts/release-preflight.sh
+
+      - name: Validate Brewfile toolchain
+        run: brew bundle check --file=Brewfile || brew bundle install --file=Brewfile
+
+  api-contracts:
+    name: API Contract Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run API contract tests
+        run: npm run test:api
+
+  native-swift:
+    name: Native Swift Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Run native Swift tests
+        run: swift test --package-path macos/MoleUI
+
+  ui-ux:
+    name: Native UI UX Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Run native UI UX tests
+        run: npm run test:ux
+
+  native-app-build:
+    name: Native App Build Smoke
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build native macOS app
+        env:
+          SIGN_IDENTITY: "-"
+        run: scripts/build-app.sh
+
+      - name: Verify ad-hoc signature
+        run: codesign --verify --deep --strict .build/MoleUI.app
+
+  native-dmg-build:
+    name: Native DMG Build Smoke
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build unsigned DMG
+        env:
+          SKIP_SIGN: "1"
+          DMGMAKER_REF: v1.0.3
+        run: scripts/build-dmg.sh
+
+      - name: Upload unsigned DMG artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Mole-unsigned-dmg
+          path: |
+            .build/Mole.dmg
+            .build/Mole.dmg.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   compatibility:
     name: macOS

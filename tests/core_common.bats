@@ -101,6 +101,33 @@ EOF
     grep -Fq "[clean] REMOVED /tmp/example (1KB)" "$oplog"
 }
 
+@test "log_operation writes structured operation journal JSONL" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+log_operation_session_start "clean"
+log_operation "clean" "TRASHED" "/tmp/example path" "1KB -> ~/.Trash/example path"
+log_operation_session_end "clean" 1 1
+EOF
+    [ "$status" -eq 0 ]
+
+    local journal="$HOME/Library/Logs/mole/operation_journal.jsonl"
+    [[ -f "$journal" ]]
+    python3 - "$journal" <<'PY'
+import json
+import sys
+
+records = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+assert any(record["record_type"] == "session" and record["action"] == "STARTED" for record in records)
+operation = next(record for record in records if record["record_type"] == "operation" and record["action"] == "TRASHED")
+assert operation["command"] == "clean"
+assert operation["action"] == "TRASHED"
+assert operation["path"] == "/tmp/example path"
+assert "Trash" in operation["detail"]
+assert records[-1]["action"] == "ENDED"
+PY
+}
+
 @test "should_protect_path protects Mole runtime logs" {
     result="$(
         HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc -c \

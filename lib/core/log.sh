@@ -21,9 +21,11 @@ fi
 # Logging Configuration
 # ============================================================================
 
-readonly LOG_FILE="${HOME}/Library/Logs/mole/mole.log"
-readonly DEBUG_LOG_FILE="${HOME}/Library/Logs/mole/mole_debug_session.log"
-readonly OPERATIONS_LOG_FILE="${HOME}/Library/Logs/mole/operations.log"
+MOLE_LOG_DIR="${MOLE_LOG_DIR:-${HOME}/Library/Logs/mole}"
+readonly LOG_FILE="${MOLE_LOG_DIR}/mole.log"
+readonly DEBUG_LOG_FILE="${MOLE_LOG_DIR}/mole_debug_session.log"
+readonly OPERATIONS_LOG_FILE="${MOLE_LOG_DIR}/operations.log"
+readonly OPERATION_JOURNAL_FILE="${MOLE_OPERATION_JOURNAL_FILE:-${MOLE_LOG_DIR}/operation_journal.jsonl}"
 readonly LOG_MAX_SIZE_DEFAULT=1048576   # 1MB
 readonly OPLOG_MAX_SIZE_DEFAULT=5242880 # 5MB
 
@@ -31,6 +33,7 @@ readonly OPLOG_MAX_SIZE_DEFAULT=5242880 # 5MB
 ensure_user_file "$LOG_FILE"
 if [[ "${MO_NO_OPLOG:-}" != "1" ]]; then
     ensure_user_file "$OPERATIONS_LOG_FILE"
+    ensure_user_file "$OPERATION_JOURNAL_FILE"
 fi
 
 # ============================================================================
@@ -78,6 +81,14 @@ rotate_log_once() {
             if [[ "$size" -gt "$oplog_max_size" ]]; then
                 mv "$OPERATIONS_LOG_FILE" "${OPERATIONS_LOG_FILE}.old" 2> /dev/null || true
                 ensure_user_file "$OPERATIONS_LOG_FILE"
+            fi
+        fi
+        if [[ -f "$OPERATION_JOURNAL_FILE" ]]; then
+            local journal_size
+            journal_size=$(get_file_size "$OPERATION_JOURNAL_FILE")
+            if [[ "$journal_size" -gt "$oplog_max_size" ]]; then
+                mv "$OPERATION_JOURNAL_FILE" "${OPERATION_JOURNAL_FILE}.old" 2> /dev/null || true
+                ensure_user_file "$OPERATION_JOURNAL_FILE"
             fi
         fi
     fi
@@ -180,6 +191,53 @@ oplog_enabled() {
     [[ "${MO_NO_OPLOG:-}" != "1" ]]
 }
 
+operation_journal_escape() {
+    local s="${1:-}"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\n'/\\n}"
+    printf '%s' "$s"
+}
+
+log_operation_journal_record() {
+    oplog_enabled || return 0
+
+    local record_type="${1:-operation}"
+    local command="${2:-mole}"
+    local action="${3:-UNKNOWN}"
+    local path="${4:-}"
+    local detail="${5:-}"
+    local timestamp
+    timestamp=$(get_timestamp)
+
+    local record
+    record=$(printf '{"schema_version":1,"timestamp":"%s","record_type":"%s","command":"%s","action":"%s","path":"%s","detail":"%s"}' \
+        "$(operation_journal_escape "$timestamp")" \
+        "$(operation_journal_escape "$record_type")" \
+        "$(operation_journal_escape "$command")" \
+        "$(operation_journal_escape "$action")" \
+        "$(operation_journal_escape "$path")" \
+        "$(operation_journal_escape "$detail")")
+    append_log_line "$OPERATION_JOURNAL_FILE" "$record"
+}
+
+log_operation_event_json() {
+    oplog_enabled || return 0
+
+    local source="${1:-api}"
+    local payload="${2:-}"
+    [[ -n "$payload" ]] || return 0
+
+    local timestamp
+    timestamp=$(get_timestamp)
+    append_log_line "$OPERATION_JOURNAL_FILE" "$(printf '{"schema_version":1,"timestamp":"%s","record_type":"event","source":"%s","payload":%s}' \
+        "$(operation_journal_escape "$timestamp")" \
+        "$(operation_journal_escape "$source")" \
+        "$payload")"
+}
+
 # Log an operation to the operations log file
 # Usage: log_operation <command> <action> <path> [detail]
 # Example: log_operation "clean" "REMOVED" "/path/to/file" "15.2MB"
@@ -204,6 +262,7 @@ log_operation() {
     [[ -n "$detail" ]] && log_line+=" ($detail)"
 
     append_log_line "$OPERATIONS_LOG_FILE" "$log_line"
+    log_operation_journal_record "operation" "$command" "$action" "$path" "$detail"
 }
 
 # Log session start marker
@@ -219,6 +278,7 @@ log_operation_session_start() {
         "$OPERATIONS_LOG_FILE" \
         "" \
         "# ========== $command session started at $timestamp =========="
+    log_operation_journal_record "session" "$command" "STARTED" "" ""
 }
 
 # shellcheck disable=SC2329
@@ -241,6 +301,7 @@ log_operation_session_end() {
     append_log_line \
         "$OPERATIONS_LOG_FILE" \
         "# ========== $command session ended at $timestamp, $items items, $size_human =========="
+    log_operation_journal_record "session" "$command" "ENDED" "" "$items items, $size_human"
 }
 
 # Enhanced debug logging for operations
