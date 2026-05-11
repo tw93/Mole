@@ -207,12 +207,14 @@ pycache_has_bytecode() {
     local pycache_dir="$1"
     [[ -d "$pycache_dir" ]] || return 1
 
+    local prev_nullglob
+    prev_nullglob=$(shopt -p nullglob || true)
+    shopt -s nullglob
     local -a bytecode_files=("$pycache_dir"/*.pyc "$pycache_dir"/*.pyo)
-    local bytecode_file
-    for bytecode_file in "${bytecode_files[@]}"; do
-        [[ -e "$bytecode_file" ]] && return 0
-    done
-    return 1
+    $prev_nullglob
+
+    [[ ${#bytecode_files[@]} -eq 0 ]] && return 1
+    return 0
 }
 
 # Scan a project root for supported build caches while pruning heavy subtrees.
