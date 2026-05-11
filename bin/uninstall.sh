@@ -1392,8 +1392,136 @@ main() {
 
         if [[ ${#selected_apps[@]} -eq 0 ]]; then
             show_cursor
-            echo "No matching applications found."
-            return 1
+
+            # Fallback: the .app bundle may already be manually deleted.
+            # Try to resolve the app name to a bundle ID through alternative
+            # methods and clean up leftover files.
+            source "${_MOLE_CORE_DIR}/../uninstall/orphan_resolver.sh"
+
+            local orphan_bundle_id
+            local orphan_app_name=""
+            for name_arg in "${app_name_args[@]}"; do
+                orphan_bundle_id=$(resolve_bundle_id_for_deleted_app "$name_arg") || true
+                if [[ -n "$orphan_bundle_id" ]]; then
+                    orphan_app_name="$name_arg"
+                    break
+                fi
+            done
+
+            if [[ -z "$orphan_bundle_id" ]]; then
+                echo "No matching applications found."
+                return 1
+            fi
+
+            # Resolve a display name for the orphan bundle
+            local orphan_display
+            orphan_display=$(resolve_app_name_for_bundle_id "$orphan_bundle_id" 2> /dev/null || echo "$orphan_bundle_id")
+
+            echo -e "${BLUE}${ICON_CONFIRM}${NC} App '${orphan_app_name}' is not installed,"
+            echo -e "but detected leftover files for: ${GREEN}${orphan_display}${NC} (${orphan_bundle_id})"
+            printf '\n'
+
+            # Discover leftover files
+            local orphan_files
+            orphan_files=$(find_app_files "$orphan_bundle_id" "$orphan_app_name" || true)
+            local orphan_system_files
+            orphan_system_files=$(find_app_system_files "$orphan_bundle_id" "$orphan_app_name" || true)
+
+            if [[ -z "$orphan_files" && -z "$orphan_system_files" ]]; then
+                echo "No leftover files found."
+                return 0
+            fi
+
+            # Display found files
+            local orphan_items=0
+            local orphan_total_kb=0
+            echo -e "${PURPLE_BOLD}Leftover files to be removed:${NC}"
+            while IFS= read -r f; do
+                [[ -n "$f" && -e "$f" ]] || continue
+                local display_f="${f/$HOME/~}"
+                local item_size=$(get_path_size_kb "$f" 2> /dev/null || echo 0)
+                orphan_total_kb=$((orphan_total_kb + item_size))
+                if [[ -d "$f" ]]; then
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${display_f}/"
+                else
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${display_f}"
+                fi
+                ((orphan_items++))
+            done <<< "$orphan_files"
+
+            while IFS= read -r f; do
+                [[ -n "$f" && -e "$f" ]] || continue
+                local item_size=$(get_path_size_kb "$f" 2> /dev/null || echo 0)
+                orphan_total_kb=$((orphan_total_kb + item_size))
+                echo -e "  ${BLUE}${ICON_WARNING}${NC} ${f}"
+                ((orphan_items++))
+            done <<< "$orphan_system_files"
+
+            if [[ $orphan_items -eq 0 ]]; then
+                echo "No existing leftover files found."
+                return 0
+            fi
+
+            local orphan_size_human
+            orphan_size_human=$(bytes_to_human $((orphan_total_kb * 1024)))
+            printf '\n'
+            printf "${ICON_ARROW} Remove ${orphan_items} leftover item(s), ${orphan_size_human}  Enter confirm, ESC cancel: "
+
+            drain_pending_input
+            local key
+            IFS= read -r -s -n1 key || key=""
+            drain_pending_input
+            case "$key" in
+                $'\e' | q | Q)
+                    echo ""
+                    echo "Aborted."
+                    return 0
+                    ;;
+                "" | $'\n' | $'\r' | y | Y)
+                    echo ""
+                    ;;
+                *)
+                    echo ""
+                    echo "Aborted."
+                    return 0
+                    ;;
+            esac
+
+            if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+                echo -e "${YELLOW}${ICON_DRY_RUN}${NC} Dry run — no files removed."
+                return 0
+            fi
+
+            # Perform cleanup
+            export MOLE_UNINSTALL_MODE=1
+
+            local has_system_files="false"
+            [[ -n "$orphan_system_files" ]] && has_system_files="true"
+            stop_launch_services "$orphan_bundle_id" "$has_system_files" ""
+
+            remove_login_item "$orphan_app_name" "$orphan_bundle_id"
+
+            if [[ -n "$orphan_files" ]]; then
+                remove_file_list "$orphan_files" "false" > /dev/null
+            fi
+
+            if [[ -n "$orphan_system_files" ]]; then
+                if ! ensure_sudo_session "Admin required to remove system files for ${orphan_app_name}"; then
+                    echo ""
+                    log_error "Admin access denied — system files were not removed"
+                else
+                    remove_file_list "$orphan_system_files" "true" > /dev/null
+                fi
+            fi
+
+            if [[ -n "$orphan_bundle_id" ]]; then
+                defaults delete "$orphan_bundle_id" 2> /dev/null || true
+            fi
+
+            unset MOLE_UNINSTALL_MODE
+
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} Cleaned leftover files for ${orphan_display}"
+            return 0
         fi
 
         show_cursor
