@@ -1435,6 +1435,16 @@ main() {
             [[ -n "$orphan_diag_user" ]] && orphan_files="${orphan_files:+$orphan_files$'\n'}$orphan_diag_user"
             [[ -n "$orphan_diag_system" ]] && orphan_system_files="${orphan_system_files:+$orphan_system_files$'\n'}$orphan_diag_system"
 
+            # Interactive file selection before confirmation
+            MOLE_SFR_USER_FILES="$orphan_files"
+            MOLE_SFR_SYSTEM_FILES="$orphan_system_files"
+            if ! select_files_for_removal "$orphan_app_name"; then
+                echo "Aborted."
+                return 0
+            fi
+            orphan_files="${MOLE_SFR_USER_FILES}"
+            orphan_system_files="${MOLE_SFR_SYSTEM_FILES}"
+
             if [[ -z "$orphan_files" && -z "$orphan_system_files" ]]; then
                 echo "No leftover files found."
                 return 0
@@ -1473,7 +1483,7 @@ main() {
             local orphan_size_human
             orphan_size_human=$(bytes_to_human $((orphan_total_kb * 1024)))
             printf '\n'
-            printf "${ICON_ARROW} Remove ${orphan_items} leftover item(s), ${orphan_size_human}  Enter confirm, ESC cancel: "
+            printf "${ICON_ARROW} Remove ${orphan_items} leftover item(s), ${orphan_size_human}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
 
             drain_pending_input
             local key

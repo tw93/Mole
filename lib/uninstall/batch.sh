@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Load Homebrew cask support (provides get_brew_cask_name, brew_uninstall_cask)
 [[ -f "$SCRIPT_DIR/lib/uninstall/brew.sh" ]] && source "$SCRIPT_DIR/lib/uninstall/brew.sh"
 
+# Load interactive file selection for uninstall
+[[ -f "$SCRIPT_DIR/lib/uninstall/file_selector.sh" ]] && source "$SCRIPT_DIR/lib/uninstall/file_selector.sh"
+
 # Batch uninstall with a single confirmation.
 
 is_uninstall_dry_run() {
@@ -462,6 +465,87 @@ batch_uninstall_applications() {
     done
     if [[ -t 1 ]]; then stop_inline_spinner; fi
 
+    # Interactive file selection before confirmation.
+    local -a _new_app_details=()
+    local -a _new_selected_apps=()
+    local _new_total_estimated_size=0
+    local _fs_i _fs_detail _fs_an _fs_ap _fs_bi _fs_tk _fs_ef _fs_esf _fs_hs _fs_ns _fs_ib _fs_cn _fs_eds _fs_hln
+    local _fs_rel _fs_sys _fs_diag _fs_rel_kb _fs_sys_kb _fs_app_kb _fs_new_tk _fs_new_ef _fs_new_esf
+
+    for ((_fs_i = 0; _fs_i < ${#app_details[@]}; _fs_i++)); do
+        _fs_detail="${app_details[_fs_i]}"
+        IFS='|' read -r _fs_an _fs_ap _fs_bi _fs_tk _fs_ef _fs_esf _fs_hs _fs_ns _fs_ib _fs_cn _fs_eds _fs_hln <<< "$_fs_detail"
+
+        _fs_rel=$(decode_file_list "$_fs_ef" "$_fs_an")
+        _fs_sys=$(decode_file_list "$_fs_esf" "$_fs_an")
+        _fs_diag=$(decode_file_list "$_fs_eds" "$_fs_an")
+        if [[ -n "$_fs_diag" ]]; then
+            if [[ -n "$_fs_sys" ]]; then
+                _fs_sys+=$'\n'
+            fi
+            _fs_sys+="$_fs_diag"
+        fi
+
+        # Include app bundle itself in the selection list
+        local _fs_all_user="$_fs_ap"
+        if [[ -n "$_fs_rel" ]]; then
+            _fs_all_user+=$'\n'
+            _fs_all_user+="$_fs_rel"
+        fi
+
+        MOLE_SFR_USER_FILES="$_fs_all_user"
+        MOLE_SFR_SYSTEM_FILES="$_fs_sys"
+        if ! select_files_for_removal "$_fs_an"; then
+            echo -e "${GRAY}Skipped ${_fs_an}${NC}"
+            continue
+        fi
+        _fs_rel="${MOLE_SFR_USER_FILES}"
+        _fs_sys="${MOLE_SFR_SYSTEM_FILES}"
+
+        if [[ -z "$_fs_rel" && -z "$_fs_sys" ]]; then
+            echo -e "${GRAY}Skipped ${_fs_an} (no files selected)${NC}"
+            continue
+        fi
+
+        # Check whether the app bundle itself was selected
+        local _fs_has_app=false
+        if printf '%s\n' "$_fs_rel" | grep -qxF "$_fs_ap"; then
+            _fs_has_app=true
+            # Remove app path from related files
+            _fs_rel=$(printf '%s\n' "$_fs_rel" | grep -vxF "$_fs_ap" || true)
+        fi
+
+        _fs_rel_kb=$(calculate_total_size "$_fs_rel" || echo "0")
+        _fs_sys_kb=$(calculate_total_size "$_fs_sys" || echo "0")
+        _fs_app_kb=0
+        if [[ "$_fs_has_app" == true ]]; then
+            _fs_app_kb=$(get_path_size_kb "$_fs_ap" || echo "0")
+        fi
+        _fs_new_tk=$((_fs_app_kb + _fs_rel_kb + _fs_sys_kb))
+        _new_total_estimated_size=$((_new_total_estimated_size + _fs_new_tk))
+
+        # If app was deselected, clear app_path so execution skips bundle removal
+        local _fs_ap_final="$_fs_ap"
+        [[ "$_fs_has_app" != true ]] && _fs_ap_final=""
+
+        _fs_new_ef=$(printf '%s' "$_fs_rel" | base64 | tr -d '\n' || echo "")
+        _fs_new_esf=$(printf '%s' "$_fs_sys" | base64 | tr -d '\n' || echo "")
+
+        _new_app_details+=("$_fs_an|$_fs_ap_final|$_fs_bi|$_fs_new_tk|$_fs_new_ef|$_fs_new_esf|$_fs_hs|$_fs_ns|$_fs_ib|$_fs_cn||$_fs_hln")
+        _new_selected_apps+=("${selected_apps[_fs_i]}")
+    done
+
+    app_details=("${_new_app_details[@]}")
+    selected_apps=("${_new_selected_apps[@]}")
+    total_estimated_size=$_new_total_estimated_size
+
+    if [[ ${#app_details[@]} -eq 0 ]]; then
+        echo ""
+        echo "No files selected for removal."
+        _restore_uninstall_traps
+        return 0
+    fi
+
     local size_display=$(bytes_to_human "$((total_estimated_size * 1024))")
 
     echo -e "\n${PURPLE_BOLD}Files to be removed:${NC}"
@@ -606,6 +690,7 @@ batch_uninstall_applications() {
         local has_system_files="false"
         [[ -n "$system_files" ]] && has_system_files="true"
 
+        if [[ -n "$app_path" ]]; then
         stop_launch_services "$bundle_id" "$has_system_files" "$app_path"
         unregister_app_bundle "$app_path"
 
@@ -618,6 +703,7 @@ batch_uninstall_applications() {
         # warning at the end without scaring the user with a "failed" status.
         if ! force_kill_app "$app_name" "$app_path"; then
             running_at_uninstall_apps+=("$app_name")
+        fi
         fi
 
         # Keep the spinner alive through the heavy work. For large apps the
@@ -635,6 +721,7 @@ batch_uninstall_applications() {
             start_inline_spinner "${_phase_prefix}Removing ${app_name} (${_phase_size})..."
         fi
 
+        if [[ -n "$app_path" ]]; then
         local used_brew_successfully=false
         if [[ -z "$reason" ]]; then
             if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
@@ -718,6 +805,7 @@ batch_uninstall_applications() {
                 fi
             fi
         fi
+        fi  # [[ -n "$app_path" ]]
 
         # Remove related files if app removal succeeded.
         if [[ -z "$reason" ]]; then
