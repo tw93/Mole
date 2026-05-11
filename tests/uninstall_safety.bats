@@ -238,7 +238,7 @@ files_cleaned=0
 total_items=0
 total_size_cleaned=0
 
-batch_uninstall_applications
+printf '\n' | batch_uninstall_applications
 
 if grep -q "ByHost.*com.example.TestApp.*plist|true" "$trace"; then
 	echo "ByHost plist routed through sudo mole_delete"

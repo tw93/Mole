@@ -206,7 +206,7 @@ files_cleaned=0
 total_items=0
 total_size_cleaned=0
 
-batch_uninstall_applications
+printf '\n' | batch_uninstall_applications
 
 [[ ! -d "$app_bundle" ]] || exit 1
 [[ ! -d "$HOME/Library/Application Support/TestApp" ]] || exit 1
@@ -390,7 +390,7 @@ total_size_cleaned=0
 # `read -r -s -n1 key` does not steal a byte from the heredoc script source
 # (which would silently corrupt the next bash command into 127).
 output_file="$HOME/batch_output.log"
-batch_uninstall_applications < /dev/null > "$output_file" 2>&1
+printf '\n' | batch_uninstall_applications > "$output_file" 2>&1
 output=$(cat "$output_file")
 
 # Bundle and leftovers must be gone even though kill failed.
@@ -583,7 +583,7 @@ files_cleaned=0
 total_items=0
 total_size_cleaned=0
 
-printf 'q' | batch_uninstall_applications
+printf '\nq' | batch_uninstall_applications
 EOF
 
 	[ "$status" -eq 0 ]

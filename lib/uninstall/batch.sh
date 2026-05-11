@@ -691,19 +691,19 @@ batch_uninstall_applications() {
         [[ -n "$system_files" ]] && has_system_files="true"
 
         if [[ -n "$app_path" ]]; then
-        stop_launch_services "$bundle_id" "$has_system_files" "$app_path"
-        unregister_app_bundle "$app_path"
+            stop_launch_services "$bundle_id" "$has_system_files" "$app_path"
+            unregister_app_bundle "$app_path"
 
-        # Remove from Login Items
-        remove_login_item "$app_name" "$bundle_id"
+            # Remove from Login Items
+            remove_login_item "$app_name" "$bundle_id"
 
-        # Best-effort termination. macOS allows removing a running app bundle
-        # (the running process keeps using its mmap'd code), so a stuck app
-        # process must NOT block the uninstall. Track it so we can surface a
-        # warning at the end without scaring the user with a "failed" status.
-        if ! force_kill_app "$app_name" "$app_path"; then
-            running_at_uninstall_apps+=("$app_name")
-        fi
+            # Best-effort termination. macOS allows removing a running app bundle
+            # (the running process keeps using its mmap'd code), so a stuck app
+            # process must NOT block the uninstall. Track it so we can surface a
+            # warning at the end without scaring the user with a "failed" status.
+            if ! force_kill_app "$app_name" "$app_path"; then
+                running_at_uninstall_apps+=("$app_name")
+            fi
         fi
 
         # Keep the spinner alive through the heavy work. For large apps the
@@ -722,90 +722,90 @@ batch_uninstall_applications() {
         fi
 
         if [[ -n "$app_path" ]]; then
-        local used_brew_successfully=false
-        if [[ -z "$reason" ]]; then
-            if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
-                # Use brew_uninstall_cask helper (handles env vars, timeout, verification)
-                if brew_uninstall_cask "$cask_name" "$app_path"; then
-                    used_brew_successfully=true
-                else
-                    # Only fall back to manual app removal when Homebrew no longer
-                    # tracks the cask. Otherwise we would recreate the mismatch
-                    # where brew still reports the app as installed after Mole
-                    # removes the bundle manually.
-                    local cask_state=2
-                    if command -v is_brew_cask_installed > /dev/null 2>&1; then
-                        if is_brew_cask_installed "$cask_name"; then
-                            cask_state=0
-                        else
-                            cask_state=$?
+            local used_brew_successfully=false
+            if [[ -z "$reason" ]]; then
+                if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
+                    # Use brew_uninstall_cask helper (handles env vars, timeout, verification)
+                    if brew_uninstall_cask "$cask_name" "$app_path"; then
+                        used_brew_successfully=true
+                    else
+                        # Only fall back to manual app removal when Homebrew no longer
+                        # tracks the cask. Otherwise we would recreate the mismatch
+                        # where brew still reports the app as installed after Mole
+                        # removes the bundle manually.
+                        local cask_state=2
+                        if command -v is_brew_cask_installed > /dev/null 2>&1; then
+                            if is_brew_cask_installed "$cask_name"; then
+                                cask_state=0
+                            else
+                                cask_state=$?
+                            fi
                         fi
-                    fi
 
-                    if [[ $cask_state -eq 1 ]]; then
-                        if ! mole_delete "$app_path" "$needs_sudo"; then
-                            reason="brew cleanup incomplete, manual removal failed"
+                        if [[ $cask_state -eq 1 ]]; then
+                            if ! mole_delete "$app_path" "$needs_sudo"; then
+                                reason="brew cleanup incomplete, manual removal failed"
+                            fi
+                        elif [[ $cask_state -eq 0 ]]; then
+                            reason="brew uninstall failed, package still installed"
+                            suggestion="Run brew uninstall --cask --zap $cask_name"
+                        else
+                            reason="brew uninstall failed, package state unknown"
+                            suggestion="Run brew uninstall --cask --zap $cask_name"
                         fi
-                    elif [[ $cask_state -eq 0 ]]; then
-                        reason="brew uninstall failed, package still installed"
-                        suggestion="Run brew uninstall --cask --zap $cask_name"
-                    else
-                        reason="brew uninstall failed, package state unknown"
-                        suggestion="Run brew uninstall --cask --zap $cask_name"
                     fi
-                fi
-            elif [[ "$needs_sudo" == true ]]; then
-                if [[ -L "$app_path" ]]; then
-                    local link_target
-                    link_target=$(readlink "$app_path" 2> /dev/null)
-                    if [[ -n "$link_target" ]]; then
-                        local resolved_target="$link_target"
-                        if [[ "$link_target" != /* ]]; then
-                            local link_dir
-                            link_dir=$(dirname "$app_path")
-                            resolved_target=$(cd "$link_dir" 2> /dev/null && cd "$(dirname "$link_target")" 2> /dev/null && pwd)/$(basename "$link_target") 2> /dev/null || echo ""
+                elif [[ "$needs_sudo" == true ]]; then
+                    if [[ -L "$app_path" ]]; then
+                        local link_target
+                        link_target=$(readlink "$app_path" 2> /dev/null)
+                        if [[ -n "$link_target" ]]; then
+                            local resolved_target="$link_target"
+                            if [[ "$link_target" != /* ]]; then
+                                local link_dir
+                                link_dir=$(dirname "$app_path")
+                                resolved_target=$(cd "$link_dir" 2> /dev/null && cd "$(dirname "$link_target")" 2> /dev/null && pwd)/$(basename "$link_target") 2> /dev/null || echo ""
+                            fi
+                            case "$resolved_target" in
+                                /System/* | /usr/bin/* | /usr/lib/* | /bin/* | /sbin/* | /private/etc/*)
+                                    reason="protected system symlink, cannot remove"
+                                    ;;
+                                *)
+                                    if ! mole_delete "$app_path" "true"; then
+                                        reason="failed to remove symlink"
+                                    fi
+                                    ;;
+                            esac
+                        else
+                            if ! mole_delete "$app_path" "true"; then
+                                reason="failed to remove symlink"
+                            fi
                         fi
-                        case "$resolved_target" in
-                            /System/* | /usr/bin/* | /usr/lib/* | /bin/* | /sbin/* | /private/etc/*)
-                                reason="protected system symlink, cannot remove"
-                                ;;
-                            *)
-                                if ! mole_delete "$app_path" "true"; then
-                                    reason="failed to remove symlink"
-                                fi
-                                ;;
-                        esac
                     else
-                        if ! mole_delete "$app_path" "true"; then
-                            reason="failed to remove symlink"
+                        if is_uninstall_dry_run; then
+                            if ! mole_delete "$app_path" "false"; then
+                                reason="dry-run path validation failed"
+                            fi
+                        else
+                            local ret=0
+                            mole_delete "$app_path" "true" || ret=$?
+                            if [[ $ret -ne 0 ]]; then
+                                local diagnosis
+                                diagnosis=$(diagnose_removal_failure "$ret" "$app_name")
+                                IFS='|' read -r reason suggestion <<< "$diagnosis"
+                            fi
                         fi
                     fi
                 else
-                    if is_uninstall_dry_run; then
-                        if ! mole_delete "$app_path" "false"; then
-                            reason="dry-run path validation failed"
+                    if ! mole_delete "$app_path" "false"; then
+                        if [[ ! -w "$(dirname "$app_path")" ]]; then
+                            reason="parent directory not writable"
+                        else
+                            reason="remove failed, check permissions"
                         fi
-                    else
-                        local ret=0
-                        mole_delete "$app_path" "true" || ret=$?
-                        if [[ $ret -ne 0 ]]; then
-                            local diagnosis
-                            diagnosis=$(diagnose_removal_failure "$ret" "$app_name")
-                            IFS='|' read -r reason suggestion <<< "$diagnosis"
-                        fi
-                    fi
-                fi
-            else
-                if ! mole_delete "$app_path" "false"; then
-                    if [[ ! -w "$(dirname "$app_path")" ]]; then
-                        reason="parent directory not writable"
-                    else
-                        reason="remove failed, check permissions"
                     fi
                 fi
             fi
-        fi
-        fi  # [[ -n "$app_path" ]]
+        fi # [[ -n "$app_path" ]]
 
         # Remove related files if app removal succeeded.
         if [[ -z "$reason" ]]; then

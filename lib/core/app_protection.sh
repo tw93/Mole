@@ -1151,7 +1151,7 @@ find_shared_app_paths() {
 find_app_files() {
     local bundle_id="$1"
     local app_name="$2"
-    local app_path="${3:-}"  # optional, used for team-id Group Container lookup
+    local app_path="${3:-}" # optional, used for team-id Group Container lookup
 
     # Early validation: require at least one valid identifier
     # Skip scanning if both bundle_id and app_name are invalid
@@ -1360,7 +1360,10 @@ find_app_files() {
                     while IFS= read -r -d '' container; do
                         local _gc_already_added=false
                         for _gc_existing in "${files_to_clean[@]}"; do
-                            [[ "$_gc_existing" == "$container" ]] && { _gc_already_added=true; break; }
+                            [[ "$_gc_existing" == "$container" ]] && {
+                                _gc_already_added=true
+                                break
+                            }
                         done
                         [[ "$_gc_already_added" == "true" ]] && continue
                         files_to_clean+=("$container")
@@ -1375,7 +1378,10 @@ find_app_files() {
                     while IFS= read -r -d '' container; do
                         local _gc_already_added=false
                         for _gc_existing in "${files_to_clean[@]}"; do
-                            [[ "$_gc_existing" == "$container" ]] && { _gc_already_added=true; break; }
+                            [[ "$_gc_existing" == "$container" ]] && {
+                                _gc_already_added=true
+                                break
+                            }
                         done
                         [[ "$_gc_already_added" == "true" ]] && continue
                         files_to_clean+=("$container")

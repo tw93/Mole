@@ -14,15 +14,15 @@ is_team_prefix_path() {
 }
 
 # Terminal helpers — lightweight, no dependency on menu scripts.
-_sfr_enter_alt_screen() { tput smcup 2>/dev/null || true; }
-_sfr_leave_alt_screen() { tput rmcup 2>/dev/null || true; }
+_sfr_enter_alt_screen() { tput smcup 2> /dev/null || true; }
+_sfr_leave_alt_screen() { tput rmcup 2> /dev/null || true; }
 
 _sfr_get_terminal_height() {
     local h
     if [[ -t 0 ]] || [[ -t 2 ]]; then
-        h=$(stty size < /dev/tty 2>/dev/null | awk '{print $1}')
+        h=$(stty size < /dev/tty 2> /dev/null | awk '{print $1}')
     fi
-    [[ -n "$h" && $h -gt 0 ]] && echo "$h" || { tput lines 2>/dev/null || echo 24; }
+    if [[ -n "$h" && $h -gt 0 ]]; then echo "$h"; else tput lines 2> /dev/null || echo 24; fi
 }
 
 # Lightweight multi-select menu — no sort, no filter, no pagination.
@@ -64,25 +64,28 @@ _sfr_multi_select() {
 
     # Preserve TTY settings
     local original_stty=""
-    if [[ -t 0 ]] && command -v stty >/dev/null 2>&1; then
-        original_stty=$(stty -g 2>/dev/null || echo "")
+    if [[ -t 0 ]] && command -v stty > /dev/null 2>&1; then
+        original_stty=$(stty -g 2> /dev/null || echo "")
     fi
 
     _sfr_restore_terminal() {
         show_cursor
         if [[ -n "${original_stty:-}" ]]; then
-            stty "${original_stty}" 2>/dev/null || stty sane 2>/dev/null || true
+            stty "${original_stty}" 2> /dev/null || stty sane 2> /dev/null || true
         else
-            stty sane 2>/dev/null || stty echo icanon 2>/dev/null || true
+            stty sane 2> /dev/null || stty echo icanon 2> /dev/null || true
         fi
         _sfr_leave_alt_screen
     }
 
-    _sfr_cleanup() { trap - EXIT INT TERM; _sfr_restore_terminal; }
+    _sfr_cleanup() {
+        trap - EXIT INT TERM
+        _sfr_restore_terminal
+    }
     trap _sfr_cleanup EXIT
     trap '_sfr_cleanup; exit 130' INT TERM
 
-    stty -echo -icanon intr ^C 2>/dev/null || true
+    stty -echo -icanon intr ^C 2> /dev/null || true
     _sfr_enter_alt_screen
     printf "\033[2J\033[H" >&2
     hide_cursor
@@ -170,7 +173,7 @@ _sfr_multi_select() {
                     fi
                 fi
                 ;;
-            LEFT|RIGHT)
+            LEFT | RIGHT)
                 # Swallow — no horizontal navigation in this view
                 :
                 ;;
@@ -219,10 +222,10 @@ select_files_for_removal() {
         _paths+=("$_f")
         _is_system+=(false)
         _disp="${_f/$HOME/~}"
-        _kb=$(get_path_size_kb "$_f" 2>/dev/null || echo 0)
+        _kb=$(get_path_size_kb "$_f" 2> /dev/null || echo 0)
         _hum=$(bytes_to_human $((_kb * 1024)))
         _dw=$(get_display_width "$_disp")
-        (( _dw > _maxw )) && _maxw=$_dw
+        ((_dw > _maxw)) && _maxw=$_dw
         if is_team_prefix_path "$_f"; then
             _pre+=(false)
         else
@@ -235,10 +238,10 @@ select_files_for_removal() {
         [[ -n "$_f" && -e "$_f" ]] || continue
         _paths+=("$_f")
         _is_system+=(true)
-        _kb=$(get_path_size_kb "$_f" 2>/dev/null || echo 0)
+        _kb=$(get_path_size_kb "$_f" 2> /dev/null || echo 0)
         _hum=$(bytes_to_human $((_kb * 1024)))
         _dw=$(get_display_width "$_f")
-        (( _dw > _maxw )) && _maxw=$_dw
+        ((_dw > _maxw)) && _maxw=$_dw
         if is_team_prefix_path "$_f"; then
             _pre+=(false)
         else
@@ -254,7 +257,7 @@ select_files_for_removal() {
 
     # ---- format menu items with aligned size column --------------------------
     local _min_col=30
-    (( _maxw < _min_col )) && _maxw=$_min_col
+    ((_maxw < _min_col)) && _maxw=$_min_col
     local _gap=2
 
     local -a _items=()
