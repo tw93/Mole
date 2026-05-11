@@ -921,3 +921,10 @@ is_ansi_supported() {
             ;;
     esac
 }
+
+# Prime ANSI support while the parent process still has the real stdout.
+# This keeps later command substitutions from misdetecting interactive output
+# as non-TTY while preserving no-color behavior for redirected runs.
+if [[ -z "${MOLE_ANSI_SUPPORTED_CACHE:-}" ]]; then
+    is_ansi_supported > /dev/null 2>&1 || true
+fi
