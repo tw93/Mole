@@ -48,9 +48,10 @@ STUB
 </dict></plist>
 PLIST
 
-    # CreateGroup Containers: one with TeamID prefix, one without
+    # Create Group Containers: one with TeamID prefix, one without, one unrelated
     mkdir -p "$HOME/Library/Group Containers/FN2V63AD2J.com.example"
     mkdir -p "$HOME/Library/Group Containers/group.com.example.TestApp"
+    mkdir -p "$HOME/Library/Group Containers/FN2V63AD2J.com.unrelated"
 
     result="$(
         HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$stubdir:$PATH" bash --noprofile --norc <<'EOF'
@@ -64,6 +65,8 @@ EOF
     [[ "$result" =~ FN2V63AD2J\.com\.example ]]
     # Should also find the bundle-ID-matching container (Tier 1)
     [[ "$result" =~ group\.com\.example\.TestApp ]]
+    # Should not include unrelated containers from the same developer Team ID
+    [[ ! "$result" =~ FN2V63AD2J\.com\.unrelated ]]
 }
 
 @test "find_app_files without app_path falls back to domain prefix matching" {
@@ -85,6 +88,30 @@ EOF
     [[ "$result" =~ FN2V63AD2J\.com\.tencent ]]
     # Should also find the full bundle ID match
     [[ "$result" =~ group\.com\.tencent\.xinWeChat ]]
+}
+
+@test "find_app_files tolerates unsigned apps without aborting Group Container scan" {
+    local stubdir="$HOME/stubs"
+    mkdir -p "$stubdir"
+    cat > "$stubdir/codesign" <<'STUB'
+#!/bin/bash
+echo "code object is not signed at all" >&2
+exit 1
+STUB
+    chmod +x "$stubdir/codesign"
+
+    mkdir -p "$HOME/Applications/TestApp.app/Contents"
+    mkdir -p "$HOME/Library/Group Containers/group.com.example.TestApp"
+
+    result="$(
+        HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$stubdir:$PATH" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+find_app_files "com.example.TestApp" "TestApp" "$HOME/Applications/TestApp.app"
+EOF
+    )"
+
+    [[ "$result" =~ group\.com\.example\.TestApp ]]
 }
 
 @test "Group Container deduplication prevents duplicate entries" {

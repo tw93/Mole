@@ -1349,14 +1349,17 @@ find_app_files() {
                 files_to_clean+=("$container")
             done < <(command find ~/Library/Group\ Containers -maxdepth 1 \( -name "*$bundle_id*" \) -print0 2> /dev/null)
 
-            # Also search by team ID from code signature.
+            # Also search by team ID plus bundle-domain prefix.
             # Group Containers are named <TeamID>.<group-id> (e.g. FN2V63AD2J.com.tencent).
-            # When the group-id doesn't contain the full bundle_id substring, the bundle_id
-            # search above misses them. We extract the team ID and search for that too.
+            # A raw Team ID match is too broad because one developer account can own
+            # unrelated apps; pair it with the bundle domain prefix instead.
             if [[ -n "$app_path" && -d "$app_path" ]]; then
-                local _gc_team_id
-                _gc_team_id=$(codesign -dv "$app_path" 2>&1 | grep -o 'TeamIdentifier=[^ )][^ )]*' | head -1 | cut -d= -f2)
-                if [[ -n "$_gc_team_id" && ${#_gc_team_id} -ge 5 ]]; then
+                local _gc_team_id _gc_domain_prefix
+                _gc_team_id=$(codesign -dv "$app_path" 2>&1 | grep -o 'TeamIdentifier=[^ )][^ )]*' | head -1 | cut -d= -f2 || true)
+                _gc_domain_prefix="${bundle_id%.*}"
+                if [[ "$bundle_id_valid" == "true" &&
+                    "$_gc_domain_prefix" == *.* &&
+                    "$_gc_team_id" =~ ^[A-Z0-9]{5,}$ ]]; then
                     while IFS= read -r -d '' container; do
                         local _gc_already_added=false
                         for _gc_existing in "${files_to_clean[@]}"; do
@@ -1367,7 +1370,13 @@ find_app_files() {
                         done
                         [[ "$_gc_already_added" == "true" ]] && continue
                         files_to_clean+=("$container")
-                    done < <(command find ~/Library/Group\ Containers -maxdepth 1 \( -name "*$_gc_team_id*" \) -print0 2> /dev/null)
+                    done < <(
+                        command find ~/Library/Group\ Containers -maxdepth 1 \
+                            \( -name "${_gc_team_id}.${_gc_domain_prefix}*" \
+                            -o -name "${_gc_team_id}.group.${_gc_domain_prefix}*" \
+                            -o -name "${_gc_team_id}.*.${_gc_domain_prefix}*" \) \
+                            -print0 2> /dev/null || true
+                    )
                 fi
             elif [[ "$bundle_id_valid" == "true" ]]; then
                 # Fallback: when app_path is unavailable (e.g., orphan cleanup),
