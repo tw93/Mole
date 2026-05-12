@@ -472,6 +472,9 @@ batch_uninstall_applications() {
     local _fs_i _fs_detail _fs_an _fs_ap _fs_bi _fs_tk _fs_ef _fs_esf _fs_hs _fs_ns _fs_ib _fs_cn _fs_eds _fs_hln
     local _fs_rel _fs_sys _fs_diag _fs_rel_kb _fs_sys_kb _fs_app_kb _fs_new_tk _fs_new_ef _fs_new_esf
 
+    sudo_apps=()
+    brew_cask_apps=()
+
     for ((_fs_i = 0; _fs_i < ${#app_details[@]}; _fs_i++)); do
         _fs_detail="${app_details[_fs_i]}"
         IFS='|' read -r _fs_an _fs_ap _fs_bi _fs_tk _fs_ef _fs_esf _fs_hs _fs_ns _fs_ib _fs_cn _fs_eds _fs_hln <<< "$_fs_detail"
@@ -528,10 +531,27 @@ batch_uninstall_applications() {
         local _fs_ap_final="$_fs_ap"
         [[ "$_fs_has_app" != true ]] && _fs_ap_final=""
 
+        local _fs_new_ns="false"
+        if [[ "$_fs_has_app" == true ]]; then
+            local _fs_app_owner
+            _fs_app_owner=$(get_file_owner "$_fs_ap")
+            if [[ ! -w "$(dirname "$_fs_ap")" ]] ||
+                [[ "$_fs_app_owner" == "root" ]] ||
+                [[ -n "$_fs_app_owner" && "$_fs_app_owner" != "$current_user" ]]; then
+                _fs_new_ns="true"
+            fi
+        fi
+        [[ -n "$_fs_sys" ]] && _fs_new_ns="true"
+        [[ "$_fs_new_ns" == "true" ]] && sudo_apps+=("$_fs_an")
+        [[ "$_fs_has_app" == true && "$_fs_ib" == "true" ]] && brew_cask_apps+=("$_fs_an")
+
+        local _fs_hln_final="$_fs_hln"
+        [[ "$_fs_has_app" != true ]] && _fs_hln_final="false"
+
         _fs_new_ef=$(printf '%s' "$_fs_rel" | base64 | tr -d '\n' || echo "")
         _fs_new_esf=$(printf '%s' "$_fs_sys" | base64 | tr -d '\n' || echo "")
 
-        _new_app_details+=("$_fs_an|$_fs_ap_final|$_fs_bi|$_fs_new_tk|$_fs_new_ef|$_fs_new_esf|$_fs_hs|$_fs_ns|$_fs_ib|$_fs_cn||$_fs_hln")
+        _new_app_details+=("$_fs_an|$_fs_ap_final|$_fs_bi|$_fs_new_tk|$_fs_new_ef|$_fs_new_esf|$_fs_hs|$_fs_new_ns|$_fs_ib|$_fs_cn||$_fs_hln_final")
         _new_selected_apps+=("${selected_apps[_fs_i]}")
     done
 
@@ -578,7 +598,9 @@ batch_uninstall_applications() {
             echo "$diag_system_display"
         )
 
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${app_path/$HOME/~}"
+        if [[ -n "$app_path" ]]; then
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${app_path/$HOME/~}"
+        fi
 
         # Show all related files so users can fully review before deletion.
         while IFS= read -r file; do
@@ -721,8 +743,8 @@ batch_uninstall_applications() {
             start_inline_spinner "${_phase_prefix}Removing ${app_name} (${_phase_size})..."
         fi
 
+        local used_brew_successfully=false
         if [[ -n "$app_path" ]]; then
-            local used_brew_successfully=false
             if [[ -z "$reason" ]]; then
                 if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
                     # Use brew_uninstall_cask helper (handles env vars, timeout, verification)
@@ -924,13 +946,13 @@ batch_uninstall_applications() {
             [[ "$used_brew_successfully" == "true" ]] && brew_apps_removed=$((brew_apps_removed + 1))
             files_cleaned=$((files_cleaned + 1))
             total_items=$((total_items + 1))
-            success_items+=("$app_path")
-            if [[ "$has_local_network_usage" == "true" ]]; then
+            [[ -n "$app_path" ]] && success_items+=("$app_path")
+            if [[ -n "$app_path" && "$has_local_network_usage" == "true" ]]; then
                 local_network_warning_apps+=("$app_name")
             fi
 
             # Check for orphaned system extensions (camera, network, endpoint security, etc.)
-            if [[ -n "$bundle_id" && "$bundle_id" != "unknown" && "$bundle_id" =~ ^[A-Za-z0-9._-]+$ && -d /Library/SystemExtensions ]]; then
+            if [[ -n "$app_path" && -n "$bundle_id" && "$bundle_id" != "unknown" && "$bundle_id" =~ ^[A-Za-z0-9._-]+$ && -d /Library/SystemExtensions ]]; then
                 if command find /Library/SystemExtensions -maxdepth 3 -name "*.systemextension" -path "*${bundle_id}*" -print -quit 2> /dev/null | grep -q .; then
                     system_extension_warning_apps+=("$app_name")
                 fi

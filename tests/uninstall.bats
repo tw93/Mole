@@ -1537,6 +1537,82 @@ INNER
 # File selector regression: defaults delete / ByHost cleanup respect selection
 # ---------------------------------------------------------------------------
 
+@test "file selector deselecting app bundle does not request sudo for leftover-only cleanup" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() {
+	printf 'dock %s\n' "$*" >> "$trace"
+}
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+has_sensitive_data() { return 1; }
+find_app_system_files() { return 0; }
+get_brew_cask_name() { echo "testapp"; }
+ensure_sudo_session() {
+	printf 'ensure_sudo %s\n' "$*" >> "$trace"
+	return 0
+}
+
+trace="$HOME/leftover_only_trace.log"
+mole_delete() {
+	printf 'mole_delete %s %s\n' "$1" "$2" >> "$trace"
+	return 0
+}
+defaults() { return 1; }
+
+app_bundle="$HOME/Applications/TestApp.app"
+leftover="$HOME/Library/Caches/TestApp"
+mkdir -p "$app_bundle" "$leftover"
+
+find_app_files() {
+	printf '%s\n' "$leftover"
+}
+
+select_files_for_removal() {
+	MOLE_SFR_USER_FILES="$leftover"
+	MOLE_SFR_SYSTEM_FILES=""
+	return 0
+}
+
+selected_apps=()
+selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications
+
+if grep -q 'ensure_sudo' "$trace"; then
+	echo "FAIL: sudo requested for leftover-only cleanup"
+	cat "$trace"
+	exit 1
+fi
+if grep -q "mole_delete $app_bundle" "$trace"; then
+	echo "FAIL: app bundle removed despite deselection"
+	cat "$trace"
+	exit 1
+fi
+grep -q "mole_delete $leftover false" "$trace"
+if grep -q '^dock ' "$trace"; then
+	echo "FAIL: Dock cleanup ran without a removed app bundle"
+	cat "$trace"
+	exit 1
+fi
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
 @test "defaults delete is skipped when preferences plist is deselected in file selector" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
