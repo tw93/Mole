@@ -1,11 +1,11 @@
 import Darwin
 import Foundation
-import MoleUIPrivileged
+import RoomyUIPrivileged
 import Security
 
-final class MolePrivilegedHelperService: NSObject, MolePrivilegedHelperProtocol {
+final class RoomyPrivilegedHelperService: NSObject, RoomyPrivilegedHelperProtocol {
     func helperVersion(withReply reply: @escaping (NSString) -> Void) {
-        reply(MolePrivilegedHelperConstants.protocolVersion as NSString)
+        reply(RoomyPrivilegedHelperConstants.protocolVersion as NSString)
     }
 
     func runCommand(_ request: NSDictionary, withReply reply: @escaping (NSDictionary) -> Void) {
@@ -33,13 +33,13 @@ final class MolePrivilegedHelperService: NSObject, MolePrivilegedHelperProtocol 
 }
 
 final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
-    private let service = MolePrivilegedHelperService()
+    private let service = RoomyPrivilegedHelperService()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         guard ClientVerifier.isAuthorized(connection) else {
             return false
         }
-        connection.exportedInterface = NSXPCInterface(with: MolePrivilegedHelperProtocol.self)
+        connection.exportedInterface = NSXPCInterface(with: RoomyPrivilegedHelperProtocol.self)
         connection.exportedObject = service
         connection.resume()
         return true
@@ -78,7 +78,7 @@ enum ClientVerifier {
             return false
         }
 
-        return identifier == MolePrivilegedHelperConstants.appBundleIdentifier
+        return identifier == RoomyPrivilegedHelperConstants.appBundleIdentifier
     }
 
     private static func clientExecutablePath(_ pid: pid_t) -> String? {
@@ -97,7 +97,7 @@ enum ClientVerifier {
             return nil
         }
         return contentsURL
-            .appendingPathComponent("MacOS/MoleUI")
+            .appendingPathComponent("MacOS/RoomyUI")
             .resolvingSymlinksInPath()
             .path
     }
@@ -112,11 +112,11 @@ enum RuntimeCommandPolicy {
     static func validateExecutable(_ executablePath: String) throws {
         let allowedPaths = allowedCLIPaths()
         guard allowedPaths.contains(executablePath) else {
-            throw PrivilegedCommandPolicyError.refused("Privileged helper refused unbundled Mole CLI path")
+            throw PrivilegedCommandPolicyError.refused("Privileged helper refused unbundled Roomy CLI path")
         }
         try validateAppBundleSignature()
         guard FileManager.default.isExecutableFile(atPath: executablePath) else {
-            throw PrivilegedCommandPolicyError.refused("Privileged helper Mole CLI path is not executable")
+            throw PrivilegedCommandPolicyError.refused("Privileged helper Roomy CLI path is not executable")
         }
     }
 
@@ -148,14 +148,14 @@ enum RuntimeCommandPolicy {
         var paths = Set<String>()
         if let contentsURL = BundleLayout.appContentsURL(fromExecutablePath: BundleLayout.currentExecutablePath()) {
             let resourcesURL = contentsURL.appendingPathComponent("Resources", isDirectory: true)
-            let cliURL = resourcesURL.appendingPathComponent("MoleCLI", isDirectory: true)
+            let cliURL = resourcesURL.appendingPathComponent("RoomyCLI", isDirectory: true)
 
+            paths.insert(contentsURL.appendingPathComponent("MacOS/roomy").path)
             paths.insert(contentsURL.appendingPathComponent("MacOS/mo").path)
-            paths.insert(contentsURL.appendingPathComponent("MacOS/mole").path)
+            paths.insert(resourcesURL.appendingPathComponent("roomy").path)
             paths.insert(resourcesURL.appendingPathComponent("mo").path)
-            paths.insert(resourcesURL.appendingPathComponent("mole").path)
+            paths.insert(cliURL.appendingPathComponent("roomy").path)
             paths.insert(cliURL.appendingPathComponent("mo").path)
-            paths.insert(cliURL.appendingPathComponent("mole").path)
         }
 
         return paths
@@ -200,7 +200,7 @@ enum RuntimeCommandPolicy {
     }
 
     private static func writePrivatePlanCopy(_ data: Data) throws -> URL {
-        var template = Array("/private/tmp/mole-helper-plan.XXXXXX".utf8CString)
+        var template = Array("/private/tmp/roomy-helper-plan.XXXXXX".utf8CString)
         let fd = template.withUnsafeMutableBufferPointer { pointer in
             mkstemp(pointer.baseAddress)
         }
@@ -383,7 +383,7 @@ final class PipeCapture {
     }
 }
 
-let listener = NSXPCListener(machServiceName: MolePrivilegedHelperConstants.machServiceName)
+let listener = NSXPCListener(machServiceName: RoomyPrivilegedHelperConstants.machServiceName)
 let delegate = ListenerDelegate()
 listener.delegate = delegate
 listener.resume()

@@ -2,20 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_DIR="$ROOT_DIR/macos/MoleUI"
-APP_NAME="MoleUI"
-DISPLAY_NAME="Mole"
+PACKAGE_DIR="$ROOT_DIR/macos/RoomyUI"
+APP_NAME="RoomyUI"
+DISPLAY_NAME="Roomy"
 CONFIGURATION="${CONFIGURATION:-release}"
 APP_BUNDLE="${APP_BUNDLE:-$ROOT_DIR/.build/$APP_NAME.app}"
 CONTENTS_DIR="$APP_BUNDLE/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
-CLI_PAYLOAD_DIR="$RESOURCES_DIR/MoleCLI"
+CLI_PAYLOAD_DIR="$RESOURCES_DIR/RoomyCLI"
 LAUNCH_SERVICES_DIR="$CONTENTS_DIR/Library/LaunchServices"
 LAUNCH_DAEMONS_DIR="$CONTENTS_DIR/Library/LaunchDaemons"
-ICON_FILE="$RESOURCES_DIR/Mole.icns"
-HELPER_NAME="MolePrivilegedHelper"
-HELPER_LABEL="dev.mole.native-ui.privileged-helper"
+ICON_FILE="$RESOURCES_DIR/Roomy.icns"
+HELPER_NAME="RoomyPrivilegedHelper"
+HELPER_LABEL="dev.roomy.native-ui.privileged-helper"
 HELPER_PLIST="$LAUNCH_DAEMONS_DIR/$HELPER_LABEL.plist"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 SKIP_SIGN="${SKIP_SIGN:-0}"
@@ -74,23 +74,23 @@ notarize_app_bundle() {
     xcrun stapler staple "$APP_BUNDLE"
 }
 
-if [[ ! -x "$ROOT_DIR/mo" ]]; then
-    echo "error: expected executable Mole CLI at $ROOT_DIR/mo" >&2
+if [[ ! -x "$ROOT_DIR/roomy" ]]; then
+    echo "error: expected executable Roomy CLI at $ROOT_DIR/roomy" >&2
     exit 1
 fi
 
-VERSION="$("$ROOT_DIR/mo" --version 2> /dev/null | sed -nE 's/.*([0-9]+[.][0-9]+[.][0-9]+).*/\1/p' | head -n 1)"
+VERSION="$("$ROOT_DIR/roomy" --version 2> /dev/null | sed -nE 's/.*([0-9]+[.][0-9]+[.][0-9]+).*/\1/p' | head -n 1)"
 VERSION="${VERSION:-1.0.0}"
 
 if command -v go > /dev/null 2>&1; then
-    echo "Building Mole helper binaries..."
+    echo "Building Roomy helper binaries..."
     (cd "$ROOT_DIR" && go build -o "$ROOT_DIR/bin/analyze-go" ./cmd/analyze)
     (cd "$ROOT_DIR" && go build -o "$ROOT_DIR/bin/status-go" ./cmd/status)
 elif [[ ! -x "$ROOT_DIR/bin/analyze-go" || ! -x "$ROOT_DIR/bin/status-go" ]]; then
     echo "error: go is required to build missing analyze-go/status-go helpers" >&2
     exit 1
 else
-    echo "Using existing Mole helper binaries."
+    echo "Using existing Roomy helper binaries."
 fi
 
 echo "Building $APP_NAME ($CONFIGURATION)..."
@@ -116,20 +116,22 @@ chmod 755 "$MACOS_DIR/$APP_NAME"
 cp "$HELPER_EXECUTABLE" "$LAUNCH_SERVICES_DIR/$HELPER_NAME"
 chmod 755 "$LAUNCH_SERVICES_DIR/$HELPER_NAME"
 
-cp "$ROOT_DIR/mo" "$ROOT_DIR/mole" "$CLI_PAYLOAD_DIR/"
+cp "$ROOT_DIR/roomy" "$CLI_PAYLOAD_DIR/"
+[[ ! -x "$ROOT_DIR/mo" ]] || cp "$ROOT_DIR/mo" "$CLI_PAYLOAD_DIR/"
 cp -R "$ROOT_DIR/bin" "$CLI_PAYLOAD_DIR/bin"
 cp -R "$ROOT_DIR/lib" "$CLI_PAYLOAD_DIR/lib"
 mkdir -p "$CLI_PAYLOAD_DIR/scripts"
 cp "$ROOT_DIR/scripts/setup-quick-launchers.sh" "$CLI_PAYLOAD_DIR/scripts/setup-quick-launchers.sh"
 [[ ! -f "$ROOT_DIR/install_channel" ]] || cp "$ROOT_DIR/install_channel" "$CLI_PAYLOAD_DIR/install_channel"
-chmod 755 "$CLI_PAYLOAD_DIR/mo" "$CLI_PAYLOAD_DIR/mole" "$CLI_PAYLOAD_DIR"/bin/*.sh "$CLI_PAYLOAD_DIR"/bin/*-go "$CLI_PAYLOAD_DIR/scripts/setup-quick-launchers.sh" 2> /dev/null || true
+chmod 755 "$CLI_PAYLOAD_DIR/roomy" "$CLI_PAYLOAD_DIR"/bin/*.sh "$CLI_PAYLOAD_DIR"/bin/*-go "$CLI_PAYLOAD_DIR/scripts/setup-quick-launchers.sh" 2> /dev/null || true
+[[ ! -f "$CLI_PAYLOAD_DIR/mo" ]] || chmod 755 "$CLI_PAYLOAD_DIR/mo"
 
-printf '%s\n' "$CLI_PAYLOAD_DIR" > "$RESOURCES_DIR/mole-project-root"
+printf '%s\n' "$CLI_PAYLOAD_DIR" > "$RESOURCES_DIR/roomy-project-root"
 
 if command -v iconutil > /dev/null 2>&1; then
-    ICON_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mole-icon.XXXXXX")"
-    swift "$PACKAGE_DIR/Support/GenerateIcon.swift" "$ICON_WORK_DIR/Mole.iconset"
-    iconutil -c icns "$ICON_WORK_DIR/Mole.iconset" -o "$ICON_FILE"
+    ICON_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/roomy-icon.XXXXXX")"
+    swift "$PACKAGE_DIR/Support/GenerateIcon.swift" "$ICON_WORK_DIR/Roomy.iconset"
+    iconutil -c icns "$ICON_WORK_DIR/Roomy.iconset" -o "$ICON_FILE"
     rm -rf "$ICON_WORK_DIR"
 else
     echo "warning: iconutil not available; building app without a custom icon" >&2
@@ -147,9 +149,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleExecutable</key>
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.mole.native-ui</string>
+  <string>dev.roomy.native-ui</string>
   <key>CFBundleIconFile</key>
-  <string>Mole</string>
+  <string>Roomy</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -164,10 +166,20 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Roomy scans Desktop only when you explicitly preview or clean files there.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Roomy scans Documents only when you explicitly preview or clean files there.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Roomy scans Downloads only when you explicitly find installers or clean files there.</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>Roomy scans network volumes only when you explicitly choose one.</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Roomy scans removable volumes only when you explicitly choose one.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>
@@ -190,7 +202,7 @@ cat > "$HELPER_PLIST" <<PLIST
   <string>Contents/Library/LaunchServices/$HELPER_NAME</string>
   <key>AssociatedBundleIdentifiers</key>
   <array>
-    <string>dev.mole.native-ui</string>
+    <string>dev.roomy.native-ui</string>
   </array>
 </dict>
 </plist>

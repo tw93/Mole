@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mole - Installer for manual installs.
+# Roomy - Installer for manual installs.
 # Fetches source/binaries and installs to prefix.
 # Supports update and edge installs.
 
@@ -88,7 +88,7 @@ safe_rm() {
 
 # Install defaults
 INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="$HOME/.config/mole"
+CONFIG_DIR="$HOME/.config/roomy"
 SOURCE_DIR=""
 
 ACTION="install"
@@ -107,7 +107,7 @@ needs_sudo() {
 
 maybe_sudo() {
     if needs_sudo; then
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
             log_error "Admin access required, blocked in test mode"
             return 1
         fi
@@ -118,20 +118,20 @@ maybe_sudo() {
 }
 
 resolve_source_dir() {
-    if [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && -f "$SOURCE_DIR/mole" ]]; then
+    if [[ -n "$SOURCE_DIR" && -d "$SOURCE_DIR" && -f "$SOURCE_DIR/roomy" ]]; then
         return 0
     fi
 
     if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
         local script_dir
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if [[ -f "$script_dir/mole" ]]; then
+        if [[ -f "$script_dir/roomy" ]]; then
             SOURCE_DIR="$script_dir"
             return 0
         fi
     fi
 
-    if [[ -n "${CLEAN_SOURCE_DIR:-}" && -d "$CLEAN_SOURCE_DIR" && -f "$CLEAN_SOURCE_DIR/mole" ]]; then
+    if [[ -n "${CLEAN_SOURCE_DIR:-}" && -d "$CLEAN_SOURCE_DIR" && -f "$CLEAN_SOURCE_DIR/roomy" ]]; then
         SOURCE_DIR="$CLEAN_SOURCE_DIR"
         return 0
     fi
@@ -149,7 +149,7 @@ resolve_source_dir() {
     }
     trap cleanup_tmp EXIT
 
-    local branch="${MOLE_VERSION:-}"
+    local branch="${ROOMY_VERSION:-}"
     if [[ -z "$branch" ]]; then
         branch="$(get_latest_release_tag || true)"
     fi
@@ -162,24 +162,24 @@ resolve_source_dir() {
     if [[ "$branch" != "main" && "$branch" != "dev" ]]; then
         branch="$(normalize_release_tag "$branch")"
     fi
-    local url="https://github.com/tw93/mole/archive/refs/heads/main.tar.gz"
+    local url="https://github.com/tw93/roomy/archive/refs/heads/main.tar.gz"
 
     if [[ "$branch" == "dev" ]]; then
-        url="https://github.com/tw93/mole/archive/refs/heads/dev.tar.gz"
+        url="https://github.com/tw93/roomy/archive/refs/heads/dev.tar.gz"
     elif [[ "$branch" != "main" ]]; then
-        url="https://github.com/tw93/mole/archive/refs/tags/${branch}.tar.gz"
+        url="https://github.com/tw93/roomy/archive/refs/tags/${branch}.tar.gz"
     fi
 
-    start_line_spinner "Fetching Mole source, ${branch}..."
+    start_line_spinner "Fetching Roomy source, ${branch}..."
     if command -v curl > /dev/null 2>&1; then
-        if curl -fsSL --connect-timeout 10 --max-time 60 -o "$tmp/mole.tar.gz" "$url" 2> /dev/null; then
-            if tar -xzf "$tmp/mole.tar.gz" -C "$tmp" 2> /dev/null; then
+        if curl -fsSL --connect-timeout 10 --max-time 60 -o "$tmp/roomy.tar.gz" "$url" 2> /dev/null; then
+            if tar -xzf "$tmp/roomy.tar.gz" -C "$tmp" 2> /dev/null; then
                 stop_line_spinner
 
                 local extracted_dir
                 extracted_dir=$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
-                if [[ -n "$extracted_dir" && -f "$extracted_dir/mole" ]]; then
+                if [[ -n "$extracted_dir" && -f "$extracted_dir/roomy" ]]; then
                     SOURCE_DIR="$extracted_dir"
                     return 0
                 fi
@@ -195,16 +195,16 @@ resolve_source_dir() {
     fi
     stop_line_spinner
 
-    start_line_spinner "Cloning Mole source..."
+    start_line_spinner "Cloning Roomy source..."
     if command -v git > /dev/null 2>&1; then
         local git_args=("--depth=1")
         if [[ "$branch" != "main" ]]; then
             git_args+=("--branch" "$branch")
         fi
 
-        if git clone "${git_args[@]}" https://github.com/tw93/mole.git "$tmp/mole" > /dev/null 2>&1; then
+        if git clone "${git_args[@]}" https://github.com/tw93/roomy.git "$tmp/roomy" > /dev/null 2>&1; then
             stop_line_spinner
-            SOURCE_DIR="$tmp/mole"
+            SOURCE_DIR="$tmp/roomy"
             return 0
         fi
     fi
@@ -216,9 +216,9 @@ resolve_source_dir() {
 
 # Version helpers
 get_source_version() {
-    local source_mole="$SOURCE_DIR/mole"
-    if [[ -f "$source_mole" ]]; then
-        sed -n 's/^VERSION="\(.*\)"$/\1/p' "$source_mole" | head -n1
+    local source_roomy="$SOURCE_DIR/roomy"
+    if [[ -f "$source_roomy" ]]; then
+        sed -n 's/^VERSION="\(.*\)"$/\1/p' "$source_roomy" | head -n1
     fi
 }
 
@@ -229,7 +229,7 @@ get_source_commit_hash() {
     fi
     # Fallback to GitHub API
     curl -fsSL --connect-timeout 3 \
-        "https://api.github.com/repos/tw93/mole/commits/main" 2> /dev/null |
+        "https://api.github.com/repos/tw93/roomy/commits/main" 2> /dev/null |
         sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]\{7\}\).*/\1/p' | head -1
 }
 
@@ -239,7 +239,7 @@ get_latest_release_tag() {
         return 1
     fi
     tag=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/mole/releases/latest" 2> /dev/null |
+        "https://api.github.com/repos/tw93/roomy/releases/latest" 2> /dev/null |
         sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
     if [[ -z "$tag" ]]; then
         return 1
@@ -251,7 +251,7 @@ get_latest_release_tag_from_git() {
     if ! command -v git > /dev/null 2>&1; then
         return 1
     fi
-    git ls-remote --tags --refs https://github.com/tw93/mole.git 2> /dev/null |
+    git ls-remote --tags --refs https://github.com/tw93/roomy.git 2> /dev/null |
         awk -F/ '{print $NF}' |
         grep -E '^V[0-9]' |
         sort -V |
@@ -271,7 +271,7 @@ normalize_release_tag() {
 
 release_checksums_url() {
     local tag="$1"
-    printf 'https://github.com/tw93/mole/releases/download/%s/SHA256SUMS\n' "$tag"
+    printf 'https://github.com/tw93/roomy/releases/download/%s/SHA256SUMS\n' "$tag"
 }
 
 download_release_checksums() {
@@ -310,7 +310,7 @@ verify_release_asset_checksum() {
     local asset_name="$2"
     local file="$3"
     local checksums_file
-    checksums_file="$(mktemp "${TMPDIR:-/tmp}/mole-checksums.XXXXXX")" || return 1
+    checksums_file="$(mktemp "${TMPDIR:-/tmp}/roomy-checksums.XXXXXX")" || return 1
 
     local expected=""
     local actual=""
@@ -329,10 +329,10 @@ verify_release_asset_checksum() {
 }
 
 get_installed_version() {
-    local binary="$INSTALL_DIR/mole"
+    local binary="$INSTALL_DIR/roomy"
     if [[ -x "$binary" ]]; then
         local version
-        version=$("$binary" --version 2> /dev/null | awk '/Mole version/ {print $NF; exit}')
+        version=$("$binary" --version 2> /dev/null | awk '/Roomy version/ {print $NF; exit}')
         if [[ -n "$version" ]]; then
             echo "$version"
         else
@@ -342,7 +342,7 @@ get_installed_version() {
 }
 
 resolve_install_channel() {
-    case "${MOLE_VERSION:-}" in
+    case "${ROOMY_VERSION:-}" in
         main | latest)
             printf 'nightly\n'
             return 0
@@ -353,7 +353,7 @@ resolve_install_channel() {
             ;;
     esac
 
-    if [[ "${MOLE_EDGE_INSTALL:-}" == "true" ]]; then
+    if [[ "${ROOMY_EDGE_INSTALL:-}" == "true" ]]; then
         printf 'nightly\n'
         return 0
     fi
@@ -415,19 +415,19 @@ parse_args() {
         fi
         case "$token" in
             latest | main)
-                export MOLE_VERSION="main"
-                export MOLE_EDGE_INSTALL="true"
+                export ROOMY_VERSION="main"
+                export ROOMY_EDGE_INSTALL="true"
                 version_token="$token"
                 unset 'args[$i]'
                 ;;
             dev)
-                export MOLE_VERSION="dev"
-                export MOLE_EDGE_INSTALL="true"
+                export ROOMY_VERSION="dev"
+                export ROOMY_EDGE_INSTALL="true"
                 version_token="$token"
                 unset 'args[$i]'
                 ;;
             [0-9]* | V[0-9]* | v[0-9]*)
-                export MOLE_VERSION="$token"
+                export ROOMY_VERSION="$token"
                 version_token="$token"
                 unset 'args[$i]'
                 ;;
@@ -488,13 +488,13 @@ check_requirements() {
         exit 1
     fi
 
-    if command -v brew > /dev/null 2>&1 && brew list mole > /dev/null 2>&1; then
-        local mole_path
-        mole_path=$(command -v mole 2> /dev/null || true)
+    if command -v brew > /dev/null 2>&1 && brew list roomy > /dev/null 2>&1; then
+        local roomy_path
+        roomy_path=$(command -v roomy 2> /dev/null || true)
         local is_homebrew_binary=false
 
-        if [[ -n "$mole_path" && -L "$mole_path" ]]; then
-            if readlink "$mole_path" | grep -q "Cellar/mole"; then
+        if [[ -n "$roomy_path" && -L "$roomy_path" ]]; then
+            if readlink "$roomy_path" | grep -q "Cellar/roomy"; then
                 is_homebrew_binary=true
             fi
         fi
@@ -504,16 +504,16 @@ check_requirements() {
                 return 0
             fi
 
-            echo -e "${YELLOW}Mole is installed via Homebrew${NC}"
+            echo -e "${YELLOW}Roomy is installed via Homebrew${NC}"
             echo ""
             echo "Choose one:"
-            echo -e "  1. Update via Homebrew: ${GREEN}brew upgrade mole${NC}"
-            echo -e "  2. Switch to manual: ${GREEN}brew uninstall --force mole${NC} then re-run this"
+            echo -e "  1. Update via Homebrew: ${GREEN}brew upgrade roomy${NC}"
+            echo -e "  2. Switch to manual: ${GREEN}brew uninstall --force roomy${NC} then re-run this"
             echo ""
             exit 1
         else
             log_warning "Cleaning up stale Homebrew installation..."
-            brew uninstall --force mole > /dev/null 2>&1 || true
+            brew uninstall --force roomy > /dev/null 2>&1 || true
         fi
     fi
 
@@ -601,7 +601,7 @@ download_binary() {
         return 0
     fi
 
-    if [[ "${MOLE_EDGE_INSTALL:-}" == "true" ]]; then
+    if [[ "${ROOMY_EDGE_INSTALL:-}" == "true" ]]; then
         if build_binary_from_source "$binary_name" "$target_path"; then
             return 0
         fi
@@ -619,7 +619,7 @@ download_binary() {
     local release_tag
     release_tag="$(normalize_release_tag "$version")"
     local asset_name="${binary_name}-darwin-${arch_suffix}"
-    local url="https://github.com/tw93/mole/releases/download/${release_tag}/${asset_name}"
+    local url="https://github.com/tw93/roomy/releases/download/${release_tag}/${asset_name}"
 
     # Skip preflight network checks to avoid false negatives.
 
@@ -650,7 +650,7 @@ download_binary() {
     local fallback_tag
     fallback_tag=$(get_latest_release_tag 2> /dev/null || true)
     if [[ -n "$fallback_tag" && "$fallback_tag" != "$release_tag" ]]; then
-        local fallback_url="https://github.com/tw93/mole/releases/download/${fallback_tag}/${asset_name}"
+        local fallback_url="https://github.com/tw93/roomy/releases/download/${fallback_tag}/${asset_name}"
         if [[ -t 1 ]]; then
             start_line_spinner "Retrying ${binary_name} from ${fallback_tag}..."
         else
@@ -690,11 +690,11 @@ install_files() {
     install_dir_abs="$(cd "$INSTALL_DIR" && pwd)"
     config_dir_abs="$(cd "$CONFIG_DIR" && pwd)"
 
-    if [[ -f "$SOURCE_DIR/mole" ]]; then
+    if [[ -f "$SOURCE_DIR/roomy" ]]; then
         if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
             if needs_sudo; then
                 log_admin "Admin access required for /usr/local/bin"
-                if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+                if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
                     log_error "Admin access required, blocked in test mode"
                     return 1
                 fi
@@ -702,14 +702,14 @@ install_files() {
             fi
 
             # Atomic update: copy to temporary name first, then move
-            maybe_sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new"
-            maybe_sudo chmod +x "$INSTALL_DIR/mole.new"
-            maybe_sudo mv -f "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"
+            maybe_sudo cp "$SOURCE_DIR/roomy" "$INSTALL_DIR/roomy.new"
+            maybe_sudo chmod +x "$INSTALL_DIR/roomy.new"
+            maybe_sudo mv -f "$INSTALL_DIR/roomy.new" "$INSTALL_DIR/roomy"
 
-            log_success "Installed mole to $INSTALL_DIR"
+            log_success "Installed roomy to $INSTALL_DIR"
         fi
     else
-        log_error "mole executable not found in ${SOURCE_DIR:-unknown}"
+        log_error "roomy executable not found in ${SOURCE_DIR:-unknown}"
         exit 1
     fi
 
@@ -770,7 +770,7 @@ install_files() {
     if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
         # Use absolute /usr/bin/sed (always BSD on macOS) so PATH-shadowed
         # GNU sed from Homebrew gnu-sed does not break the -i '' syntax.
-        maybe_sudo /usr/bin/sed -i '' "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$CONFIG_DIR\"|" "$INSTALL_DIR/mole"
+        maybe_sudo /usr/bin/sed -i '' "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$CONFIG_DIR\"|" "$INSTALL_DIR/roomy"
     fi
 
     if ! download_binary "analyze"; then
@@ -784,12 +784,12 @@ install_files() {
 # Verification and PATH hint
 verify_installation() {
 
-    if [[ -x "$INSTALL_DIR/mole" ]] && [[ -f "$CONFIG_DIR/lib/core/common.sh" ]]; then
+    if [[ -x "$INSTALL_DIR/roomy" ]] && [[ -f "$CONFIG_DIR/lib/core/common.sh" ]]; then
 
-        if "$INSTALL_DIR/mole" --help > /dev/null 2>&1; then
+        if "$INSTALL_DIR/roomy" --help > /dev/null 2>&1; then
             return 0
         else
-            log_warning "Mole command installed but may not be working properly"
+            log_warning "Roomy command installed but may not be working properly"
         fi
     else
         log_error "Installation verification failed"
@@ -805,7 +805,7 @@ setup_path() {
     if [[ "$INSTALL_DIR" != "/usr/local/bin" ]]; then
         log_warning "$INSTALL_DIR is not in your PATH"
         echo ""
-        echo "To use mole from anywhere, add this line to your shell profile:"
+        echo "To use roomy from anywhere, add this line to your shell profile:"
         echo "export PATH=\"$INSTALL_DIR:\$PATH\""
         echo ""
         echo "For example, add it to ~/.zshrc or ~/.bash_profile"
@@ -823,7 +823,7 @@ print_usage_summary() {
 
     echo ""
 
-    local message="Mole ${action} successfully"
+    local message="Roomy ${action} successfully"
 
     if [[ "$action" == "updated" && -n "$previous_version" && -n "$new_version" && "$previous_version" != "$new_version" ]]; then
         message+=", ${previous_version} -> ${new_version}"
@@ -836,25 +836,25 @@ print_usage_summary() {
     echo ""
     echo "Usage:"
     if [[ ":$PATH:" == *":$INSTALL_DIR:"* ]]; then
-        echo "  mo                           # Interactive menu"
-        echo "  mo clean                     # Deep cleanup"
-        echo "  mo uninstall                 # Remove apps + leftovers"
-        echo "  mo optimize                  # Check and maintain system"
-        echo "  mo analyze                   # Explore disk usage"
-        echo "  mo status                    # Monitor system health"
-        echo "  mo touchid                   # Configure Touch ID for sudo"
-        echo "  mo update                    # Update to latest version"
-        echo "  mo --help                    # Show all commands"
+        echo "  roomy                           # Interactive menu"
+        echo "  roomy clean                     # Deep cleanup"
+        echo "  roomy uninstall                 # Remove apps + leftovers"
+        echo "  roomy optimize                  # Check and maintain system"
+        echo "  roomy analyze                   # Explore disk usage"
+        echo "  roomy status                    # Monitor system health"
+        echo "  roomy touchid                   # Configure Touch ID for sudo"
+        echo "  roomy update                    # Update to latest version"
+        echo "  roomy --help                    # Show all commands"
     else
-        echo "  $INSTALL_DIR/mo                           # Interactive menu"
-        echo "  $INSTALL_DIR/mo clean                     # Deep cleanup"
-        echo "  $INSTALL_DIR/mo uninstall                 # Remove apps + leftovers"
-        echo "  $INSTALL_DIR/mo optimize                  # Check and maintain system"
-        echo "  $INSTALL_DIR/mo analyze                   # Explore disk usage"
-        echo "  $INSTALL_DIR/mo status                    # Monitor system health"
-        echo "  $INSTALL_DIR/mo touchid                   # Configure Touch ID for sudo"
-        echo "  $INSTALL_DIR/mo update                    # Update to latest version"
-        echo "  $INSTALL_DIR/mo --help                    # Show all commands"
+        echo "  $INSTALL_DIR/roomy                           # Interactive menu"
+        echo "  $INSTALL_DIR/roomy clean                     # Deep cleanup"
+        echo "  $INSTALL_DIR/roomy uninstall                 # Remove apps + leftovers"
+        echo "  $INSTALL_DIR/roomy optimize                  # Check and maintain system"
+        echo "  $INSTALL_DIR/roomy analyze                   # Explore disk usage"
+        echo "  $INSTALL_DIR/roomy status                    # Monitor system health"
+        echo "  $INSTALL_DIR/roomy touchid                   # Configure Touch ID for sudo"
+        echo "  $INSTALL_DIR/roomy update                    # Update to latest version"
+        echo "  $INSTALL_DIR/roomy --help                    # Show all commands"
     fi
     echo ""
 }
@@ -888,12 +888,12 @@ perform_install() {
     fi
 
     # Edge installs get a suffix to make the version explicit.
-    if [[ "${MOLE_EDGE_INSTALL:-}" == "true" ]]; then
+    if [[ "${ROOMY_EDGE_INSTALL:-}" == "true" ]]; then
         installed_version="${installed_version}-edge"
         echo ""
-        local branch_name="${MOLE_VERSION:-main}"
+        local branch_name="${ROOMY_VERSION:-main}"
         log_warning "Edge version installed on ${branch_name} branch"
-        log_info "This is a testing version; use 'mo update' to switch to stable"
+        log_info "This is a testing version; use 'roomy update' to switch to stable"
     fi
 
     print_usage_summary "installed" "$installed_version"
@@ -902,7 +902,7 @@ perform_install() {
 perform_update() {
     check_requirements
 
-    if command -v brew > /dev/null 2>&1 && brew list mole > /dev/null 2>&1; then
+    if command -v brew > /dev/null 2>&1 && brew list roomy > /dev/null 2>&1; then
         resolve_source_dir 2> /dev/null || true
         local current_version
         current_version=$(get_installed_version || echo "unknown")
@@ -911,10 +911,10 @@ perform_update() {
             source "$SOURCE_DIR/lib/core/common.sh"
             update_via_homebrew "$current_version"
         else
-            log_error "Cannot update Homebrew-managed Mole without full installation"
+            log_error "Cannot update Homebrew-managed Roomy without full installation"
             echo ""
             echo "Please update via Homebrew:"
-            echo -e "  ${GREEN}brew upgrade mole${NC}"
+            echo -e "  ${GREEN}brew upgrade roomy${NC}"
             exit 1
         fi
         exit 0
@@ -924,7 +924,7 @@ perform_update() {
     installed_version="$(get_installed_version || true)"
 
     if [[ -z "$installed_version" ]]; then
-        log_warning "Mole is not currently installed in $INSTALL_DIR. Running fresh installation."
+        log_warning "Roomy is not currently installed in $INSTALL_DIR. Running fresh installation."
         perform_install
         return
     fi
@@ -934,7 +934,7 @@ perform_update() {
     target_version="$(get_source_version || true)"
 
     if [[ -z "$target_version" ]]; then
-        log_error "Unable to determine the latest Mole version."
+        log_error "Unable to determine the latest Roomy version."
         exit 1
     fi
 

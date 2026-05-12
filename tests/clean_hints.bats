@@ -20,7 +20,7 @@ teardown_file() {
 
 setup() {
     rm -rf "${HOME:?}"/*
-    mkdir -p "$HOME/.config/mole"
+    mkdir -p "$HOME/.config/roomy"
 }
 
 teardown() {
@@ -31,7 +31,7 @@ teardown() {
     local root="$HOME/hints-root"
     mkdir -p "$root/proj/node_modules" "$root/proj/vendor" "$root/proj/bin"
     touch "$root/proj/package.json"
-    printf '%s\n' "$root" > "$HOME/.config/mole/purge_paths"
+    printf '%s\n' "$root" > "$HOME/.config/roomy/purge_paths"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOT1'
 set -euo pipefail
@@ -73,7 +73,7 @@ EOT2
     [[ "$output" == *"5+"* ]]
     [[ "$output" == *"at least 2.00MB sampled from 2 items"* ]]
     [[ "$output" == *"Examples:"* ]]
-    [[ "$output" == *"Review: mo purge"* ]]
+    [[ "$output" == *"Review: roomy purge"* ]]
 }
 
 @test "show_system_data_hint_notice reports large clue paths" {
@@ -99,7 +99,7 @@ EOT3
     [ "$status" -eq 0 ]
     [[ "$output" == *"Xcode DerivedData: 3.00GB"* ]]
     [[ "$output" == *"~/Library/Developer/Xcode/DerivedData"* ]]
-    [[ "$output" == *"Review: mo analyze, Device backups, docker system df"* ]]
+    [[ "$output" == *"Review: roomy analyze, Device backups, docker system df"* ]]
 }
 
 @test "show_user_launch_agent_hint_notice reports missing app-backed target" {

@@ -11,8 +11,8 @@ setup_file() {
     export HOME
 
     # Prevent AppleScript permission dialogs during tests
-    MOLE_TEST_MODE=1
-    export MOLE_TEST_MODE
+    ROOMY_TEST_MODE=1
+    export ROOMY_TEST_MODE
 
     mkdir -p "$HOME"
 }
@@ -75,8 +75,8 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"
-mkdir -p "$HOME/.cache/mole"
-echo "com.example.App" > "$HOME/.cache/mole/installed_apps_cache"
+mkdir -p "$HOME/.cache/roomy"
+echo "com.example.App" > "$HOME/.cache/roomy/installed_apps_cache"
 get_file_mtime() { date +%s; }
 debug_log() { :; }
 scan_installed_apps "$HOME/installed.txt"
@@ -88,7 +88,7 @@ EOF
 }
 
 @test "scan_installed_apps filters missing value from osascript output" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"
@@ -506,7 +506,7 @@ EOF
 }
 
 @test "clean_orphaned_system_services respects dry-run" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"
@@ -552,7 +552,7 @@ EOF
 }
 
 @test "clean_orphaned_system_services does not count protected skips as cleaned" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_DRY_RUN=0 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false ROOMY_DRY_RUN=0 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"
@@ -604,7 +604,7 @@ EOF
 }
 
 @test "clean_orphaned_system_services protects AmneziaWG helpers" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_DRY_RUN=0 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false ROOMY_DRY_RUN=0 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"

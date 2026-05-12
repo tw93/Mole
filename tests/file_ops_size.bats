@@ -14,7 +14,7 @@ setup_file() {
 setup() {
     SANDBOX="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-fileops-size.XXXXXX")"
     export SANDBOX
-    export MOLE_TEST_NO_AUTH=1
+    export ROOMY_TEST_NO_AUTH=1
 }
 
 teardown() {
@@ -24,7 +24,7 @@ teardown() {
 prelude() {
     cat << EOF
 set -euo pipefail
-export MOLE_TEST_NO_AUTH=1
+export ROOMY_TEST_NO_AUTH=1
 source "$PROJECT_ROOT/lib/core/common.sh"
 EOF
 }

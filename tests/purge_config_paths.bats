@@ -22,7 +22,7 @@ teardown_file() {
 
 setup() {
     rm -rf "$HOME/.config"
-    mkdir -p "$HOME/.config/mole"
+    mkdir -p "$HOME/.config/roomy"
 }
 
 @test "load_purge_config loads default paths when config file is missing" {
@@ -36,7 +36,7 @@ setup() {
 }
 
 @test "load_purge_config loads custom paths from config file" {
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     
     cat > "$config_file" << EOF
 $HOME/custom/projects
@@ -53,7 +53,7 @@ EOF
 }
 
 @test "load_purge_config expands tilde in paths" {
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     
     cat > "$config_file" << EOF
 ~/tilde/expanded
@@ -70,7 +70,7 @@ EOF
 }
 
 @test "load_purge_config ignores comments and empty lines" {
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     
     cat > "$config_file" << EOF
 $HOME/valid/path
@@ -93,7 +93,7 @@ EOF
 }
 
 @test "load_purge_config falls back to defaults if config file is empty" {
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     touch "$config_file"
 
     run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
@@ -104,7 +104,7 @@ EOF
 }
 
 @test "load_purge_config falls back to defaults if config file has only comments" {
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     echo "# Just a comment" > "$config_file"
 
     run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
@@ -118,7 +118,7 @@ EOF
     # Create a real directory so resolve_path_case can cd into it
     mkdir -p "$HOME/code"
 
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     cat > "$config_file" << EOF
 $HOME/code
 $HOME/Code

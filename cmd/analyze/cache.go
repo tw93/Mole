@@ -190,7 +190,7 @@ func getCacheDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cacheDir := filepath.Join(home, ".cache", "mole")
+	cacheDir := filepath.Join(home, ".cache", "roomy")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return "", err
 	}

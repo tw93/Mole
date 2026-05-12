@@ -1,15 +1,15 @@
 import Foundation
 
-public enum MolePrivilegedHelperConstants {
-    public static let machServiceName = "dev.mole.native-ui.privileged-helper"
-    public static let daemonPlistName = "dev.mole.native-ui.privileged-helper.plist"
-    public static let helperExecutableName = "MolePrivilegedHelper"
-    public static let appBundleIdentifier = "dev.mole.native-ui"
+public enum RoomyPrivilegedHelperConstants {
+    public static let machServiceName = "dev.roomy.native-ui.privileged-helper"
+    public static let daemonPlistName = "dev.roomy.native-ui.privileged-helper.plist"
+    public static let helperExecutableName = "RoomyPrivilegedHelper"
+    public static let appBundleIdentifier = "dev.roomy.native-ui"
     public static let protocolVersion = "1"
 }
 
-@objc(MolePrivilegedHelperProtocol)
-public protocol MolePrivilegedHelperProtocol: NSObjectProtocol {
+@objc(RoomyPrivilegedHelperProtocol)
+public protocol RoomyPrivilegedHelperProtocol: NSObjectProtocol {
     func helperVersion(withReply reply: @escaping (NSString) -> Void)
     func runCommand(_ request: NSDictionary, withReply reply: @escaping (NSDictionary) -> Void)
 }
@@ -131,10 +131,10 @@ public enum PrivilegedCommandPolicy {
         "SHELL",
         "USER",
         "LOGNAME",
-        "MOLE_CONFIG_DIR",
-        "MOLE_LOG_DIR",
-        "MOLE_CACHE_DIR",
-        "MOLE_DELETE_LOG",
+        "ROOMY_CONFIG_DIR",
+        "ROOMY_LOG_DIR",
+        "ROOMY_CACHE_DIR",
+        "ROOMY_DELETE_LOG",
         "TERM"
     ]
 
@@ -162,8 +162,8 @@ public enum PrivilegedCommandPolicy {
             throw PrivilegedCommandPolicyError.refused("Privileged helper refused executable path traversal")
         }
         let executableName = URL(fileURLWithPath: command.executablePath).lastPathComponent
-        guard executableName == "mo" || executableName == "mole" else {
-            throw PrivilegedCommandPolicyError.refused("Privileged helper only runs Mole CLI entrypoints")
+        guard executableName == "roomy" || executableName == "mo" else {
+            throw PrivilegedCommandPolicyError.refused("Privileged helper only runs Roomy CLI entrypoints")
         }
         guard command.timeoutSeconds >= 0 else {
             throw PrivilegedCommandPolicyError.refused("Privileged helper refused a negative timeout")
@@ -190,7 +190,7 @@ public enum PrivilegedCommandPolicy {
 
     private static func validateArguments(_ arguments: [String]) throws {
         guard arguments.count >= 5, arguments[0] == "api" else {
-            throw PrivilegedCommandPolicyError.refused("Privileged helper only runs Mole API execute commands")
+            throw PrivilegedCommandPolicyError.refused("Privileged helper only runs Roomy API execute commands")
         }
 
         if arguments[1] == "touchid" {
@@ -203,7 +203,7 @@ public enum PrivilegedCommandPolicy {
             throw PrivilegedCommandPolicyError.refused("Privileged helper refused unsupported domain: \(domain)")
         }
         guard arguments.count == 5, arguments[2] == "execute", arguments[3] == "--plan" else {
-            throw PrivilegedCommandPolicyError.refused("Privileged helper refused non-execute Mole API command")
+            throw PrivilegedCommandPolicyError.refused("Privileged helper refused non-execute Roomy API command")
         }
         try validatePlanPath(arguments[4])
     }

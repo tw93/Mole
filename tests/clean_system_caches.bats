@@ -11,7 +11,7 @@ setup_file() {
     export HOME
 
     mkdir -p "$HOME"
-    mkdir -p "$HOME/.cache/mole"
+    mkdir -p "$HOME/.cache/roomy"
     mkdir -p "$HOME/Library/Caches"
     mkdir -p "$HOME/Library/Logs"
 }
@@ -35,18 +35,18 @@ setup() {
     }
     export -f run_with_timeout
 
-    rm -f "$HOME/.cache/mole/permissions_granted"
+    rm -f "$HOME/.cache/roomy/permissions_granted"
 }
 
 @test "check_tcc_permissions skips in non-interactive mode" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; check_tcc_permissions" < /dev/null
     [ "$status" -eq 0 ]
-    [[ ! -f "$HOME/.cache/mole/permissions_granted" ]]
+    [[ ! -f "$HOME/.cache/roomy/permissions_granted" ]]
 }
 
 @test "check_tcc_permissions skips when permissions already granted" {
-    mkdir -p "$HOME/.cache/mole"
-    touch "$HOME/.cache/mole/permissions_granted"
+    mkdir -p "$HOME/.cache/roomy"
+    touch "$HOME/.cache/roomy/permissions_granted"
 
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; [[ -t 1 ]] || true; check_tcc_permissions"
     [ "$status" -eq 0 ]
@@ -56,7 +56,7 @@ setup() {
 
     [[ -d "$HOME/Library/Caches" ]]
     [[ -d "$HOME/Library/Logs" ]]
-    [[ -d "$HOME/.cache/mole" ]]
+    [[ -d "$HOME/.cache/roomy" ]]
 
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; check_tcc_permissions < /dev/null"
     [ "$status" -eq 0 ]
@@ -319,7 +319,7 @@ EOF
 }
 
 @test "clean_project_caches scans configured roots instead of HOME" {
-    mkdir -p "$HOME/.config/mole"
+    mkdir -p "$HOME/.config/roomy"
     mkdir -p "$HOME/CustomProjects/app/.next/cache"
     touch "$HOME/CustomProjects/app/package.json"
 
@@ -347,7 +347,7 @@ EOF
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$fake_bin:$PATH" bash --noprofile --norc <<'EOF'
 set -euo pipefail
-printf '%s\n' "$HOME/CustomProjects" > "$HOME/.config/mole/purge_paths"
+printf '%s\n' "$HOME/CustomProjects" > "$HOME/.config/roomy/purge_paths"
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/caches.sh"
 run_with_timeout() { shift; "$@"; }
@@ -360,7 +360,7 @@ EOF
     run grep -q -- "-P $HOME " "$find_log"
     [ "$status" -eq 1 ]
 
-    rm -rf "$HOME/CustomProjects" "$HOME/.config/mole" "$fake_bin" "$find_log"
+    rm -rf "$HOME/CustomProjects" "$HOME/.config/roomy" "$fake_bin" "$find_log"
 }
 
 @test "clean_project_caches auto-detects top-level project containers" {
@@ -402,9 +402,9 @@ EOF
 @test "discover_project_cache_roots dedupes aliased roots by filesystem identity" {
     mkdir -p "$HOME/code/demo/.dart_tool"
     touch "$HOME/code/demo/pubspec.yaml"
-    mkdir -p "$HOME/.config/mole"
+    mkdir -p "$HOME/.config/roomy"
     ln -s "$HOME/code" "$HOME/Code"
-    printf '%s\n' "$HOME/Code" > "$HOME/.config/mole/purge_paths"
+    printf '%s\n' "$HOME/Code" > "$HOME/.config/roomy/purge_paths"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -419,9 +419,9 @@ EOF
 }
 
 @test "clean_project_caches skips stalled root scans" {
-    mkdir -p "$HOME/.config/mole"
+    mkdir -p "$HOME/.config/roomy"
     mkdir -p "$HOME/SlowProjects/app"
-    printf '%s\n' "$HOME/SlowProjects" > "$HOME/.config/mole/purge_paths"
+    printf '%s\n' "$HOME/SlowProjects" > "$HOME/.config/roomy/purge_paths"
 
     local fake_bin
     fake_bin="$(mktemp -d "$HOME/find-timeout.XXXXXX")"
@@ -450,10 +450,10 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/caches.sh"
-MO_TIMEOUT_BIN=""
-MO_TIMEOUT_PERL_BIN="${MO_TIMEOUT_PERL_BIN:-$(command -v perl)}"
-export MOLE_PROJECT_CACHE_DISCOVERY_TIMEOUT=0.5
-export MOLE_PROJECT_CACHE_SCAN_TIMEOUT=0.5
+ROOMY_TIMEOUT_BIN=""
+ROOMY_TIMEOUT_PERL_BIN="${ROOMY_TIMEOUT_PERL_BIN:-$(command -v perl)}"
+export ROOMY_PROJECT_CACHE_DISCOVERY_TIMEOUT=0.5
+export ROOMY_PROJECT_CACHE_SCAN_TIMEOUT=0.5
 SECONDS=0
 clean_project_caches
 echo "ELAPSED=$SECONDS"
@@ -464,7 +464,7 @@ EOF
     [[ "$elapsed" =~ ^[0-9]+$ ]]
     (( elapsed < 5 ))
 
-    rm -rf "$HOME/.config/mole" "$HOME/SlowProjects" "$fake_bin"
+    rm -rf "$HOME/.config/roomy" "$HOME/SlowProjects" "$fake_bin"
 }
 
 @test "scan_project_cache_root prunes conda and site-packages" {

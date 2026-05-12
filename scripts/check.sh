@@ -1,5 +1,5 @@
 #!/bin/bash
-# Code quality checks for Mole.
+# Code quality checks for Roomy.
 # Auto-formats code, then runs lint and syntax checks.
 
 set -euo pipefail
@@ -69,7 +69,7 @@ readonly ICON_ERROR="☻"
 readonly ICON_WARNING="●"
 readonly ICON_LIST="•"
 
-echo -e "${BLUE}=== Mole Check, ${MODE} ===${NC}\n"
+echo -e "${BLUE}=== Roomy Check, ${MODE} ===${NC}\n"
 
 require_strict_tool() {
     local tool="$1"
@@ -87,7 +87,7 @@ require_strict_tool() {
     exit 1
 }
 
-SHELL_FILES=$(find . -type f \( -name "*.sh" -o -name "mole" \) \
+SHELL_FILES=$(find . -type f \( -name "*.sh" -o -name "roomy" \) \
     -not -path "./.git/*" \
     -not -path "*/node_modules/*" \
     -not -path "*/tests/tmp-*/*" \
@@ -106,7 +106,7 @@ if [[ "$MODE" == "format" ]]; then
 
     if command -v goimports > /dev/null 2>&1; then
         echo -e "${YELLOW}Formatting Go code, goimports...${NC}"
-        goimports -w -local github.com/tw93/Mole ./cmd
+        goimports -w -local github.com/tw93/roomy ./cmd
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting complete${NC}\n"
     elif command -v go > /dev/null 2>&1; then
         echo -e "${YELLOW}Formatting Go code, gofmt...${NC}"
@@ -132,7 +132,7 @@ if [[ "$MODE" != "check" ]]; then
 
     if command -v goimports > /dev/null 2>&1; then
         echo -e "${YELLOW}2. Formatting Go code, goimports...${NC}"
-        goimports -w -local github.com/tw93/Mole ./cmd
+        goimports -w -local github.com/tw93/roomy ./cmd
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting applied${NC}\n"
     elif command -v go > /dev/null 2>&1; then
         echo -e "${YELLOW}2. Formatting Go code, gofmt...${NC}"
@@ -169,7 +169,7 @@ fi
 
 echo -e "${YELLOW}4. Running ShellCheck...${NC}"
 if command -v shellcheck > /dev/null 2>&1; then
-    if shellcheck mole bin/*.sh lib/*/*.sh scripts/*.sh; then
+    if shellcheck roomy bin/*.sh lib/*/*.sh scripts/*.sh; then
         echo -e "${GREEN}${ICON_SUCCESS} ShellCheck passed${NC}\n"
     else
         echo -e "${RED}${ICON_ERROR} ShellCheck failed${NC}\n"
@@ -181,8 +181,8 @@ else
 fi
 
 echo -e "${YELLOW}5. Running syntax check...${NC}"
-if ! bash -n mole; then
-    echo -e "${RED}${ICON_ERROR} Syntax check failed, mole${NC}\n"
+if ! bash -n roomy; then
+    echo -e "${RED}${ICON_ERROR} Syntax check failed, roomy${NC}\n"
     exit 1
 fi
 for script in bin/*.sh; do
@@ -253,7 +253,7 @@ if [[ $STRICT -eq 1 ]]; then
     require_strict_tool "npm" "Install Node.js/npm to run API and UX checks"
     require_strict_tool "swift" "Install Xcode or Swift toolchain to run native tests"
 
-    MOLE_SKIP_API_TESTS=1 ./scripts/test.sh
+    ROOMY_SKIP_API_TESTS=1 ./scripts/test.sh
 
     if [[ -f "package-lock.json" ]]; then
         npm ci
@@ -263,7 +263,7 @@ if [[ $STRICT -eq 1 ]]; then
     fi
 
     npm run test:api
-    swift test --package-path macos/MoleUI
+    swift test --package-path macos/RoomyUI
     npm run test:ux
     npm run macos:build
     echo -e "${GREEN}${ICON_SUCCESS} Strict test and native UI/API checks passed${NC}\n"

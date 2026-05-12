@@ -34,7 +34,7 @@ tests/tmp-*
 .gocache/
 .gomod/
 .build/
-.mole-ui/
+.roomy-ui/
 dist/
 *.xcarchive
 *.notarization.zip
@@ -67,7 +67,7 @@ cmd/analyze/analyze
 cmd/status/status
 /status
 /analyze
-mole-analyze
+roomy-analyze
 # Go binaries
 bin/analyze-go
 bin/status-go
@@ -96,4 +96,4 @@ coverage.html
 
 session.json
 run_tests.ps1
-mole_guidelines.md
+roomy_guidelines.md

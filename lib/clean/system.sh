@@ -25,7 +25,7 @@ is_rebuildable_gpu_cache_dir() {
 
 gpu_cache_dir_is_stale() {
     local cache_dir="$1"
-    local age_days="${2:-${MOLE_GPU_CACHE_AGE_DAYS:-1}}"
+    local age_days="${2:-${ROOMY_GPU_CACHE_AGE_DAYS:-1}}"
 
     [[ "$age_days" =~ ^[0-9]+$ ]] || age_days=1
     [[ -d "$cache_dir" ]] || return 1
@@ -55,9 +55,9 @@ clean_deep_system() {
                 cache_cleaned=1
             fi
         done < <(sudo find "/Library/Caches" -maxdepth 5 -type f \( \
-            \( -name "*.cache" -mtime "+$MOLE_TEMP_FILE_AGE_DAYS" \) -o \
-            \( -name "*.tmp" -mtime "+$MOLE_TEMP_FILE_AGE_DAYS" \) -o \
-            \( -name "*.log" -mtime "+$MOLE_LOG_AGE_DAYS" \) \
+            \( -name "*.cache" -mtime "+$ROOMY_TEMP_FILE_AGE_DAYS" \) -o \
+            \( -name "*.tmp" -mtime "+$ROOMY_TEMP_FILE_AGE_DAYS" \) -o \
+            \( -name "*.log" -mtime "+$ROOMY_LOG_AGE_DAYS" \) \
             \) -print0 2> /dev/null || true)
     fi
     stop_section_spinner
@@ -66,8 +66,8 @@ clean_deep_system() {
     local tmp_cleaned=0
     local -a sys_temp_dirs=("/private/tmp" "/private/var/tmp")
     for tmp_dir in "${sys_temp_dirs[@]}"; do
-        if sudo find "$tmp_dir" -maxdepth 1 -type f -mtime "+${MOLE_TEMP_FILE_AGE_DAYS}" -print -quit 2> /dev/null | grep -q .; then
-            if safe_sudo_find_delete "$tmp_dir" "*" "${MOLE_TEMP_FILE_AGE_DAYS}" "f"; then
+        if sudo find "$tmp_dir" -maxdepth 1 -type f -mtime "+${ROOMY_TEMP_FILE_AGE_DAYS}" -print -quit 2> /dev/null | grep -q .; then
+            if safe_sudo_find_delete "$tmp_dir" "*" "${ROOMY_TEMP_FILE_AGE_DAYS}" "f"; then
                 tmp_cleaned=1
             fi
         fi
@@ -75,16 +75,16 @@ clean_deep_system() {
     stop_section_spinner
     [[ $tmp_cleaned -eq 1 ]] && log_success "System temp files"
     start_section_spinner "Cleaning system crash reports..."
-    if sudo find "/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -mtime "+$MOLE_CRASH_REPORT_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
-        safe_sudo_find_delete "/Library/Logs/DiagnosticReports" "*" "$MOLE_CRASH_REPORT_AGE_DAYS" "f" || true
+    if sudo find "/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -mtime "+$ROOMY_CRASH_REPORT_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+        safe_sudo_find_delete "/Library/Logs/DiagnosticReports" "*" "$ROOMY_CRASH_REPORT_AGE_DAYS" "f" || true
     fi
     stop_section_spinner
     log_success "System crash reports"
     start_section_spinner "Cleaning system logs..."
-    if sudo find "/private/var/log" -maxdepth 3 -type f \( -name "*.log" -o -name "*.gz" -o -name "*.asl" \) -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
-        safe_sudo_find_delete "/private/var/log" "*.log" "$MOLE_LOG_AGE_DAYS" "f" || true
-        safe_sudo_find_delete "/private/var/log" "*.gz" "$MOLE_LOG_AGE_DAYS" "f" || true
-        safe_sudo_find_delete "/private/var/log" "*.asl" "$MOLE_LOG_AGE_DAYS" "f" || true
+    if sudo find "/private/var/log" -maxdepth 3 -type f \( -name "*.log" -o -name "*.gz" -o -name "*.asl" \) -mtime "+$ROOMY_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+        safe_sudo_find_delete "/private/var/log" "*.log" "$ROOMY_LOG_AGE_DAYS" "f" || true
+        safe_sudo_find_delete "/private/var/log" "*.gz" "$ROOMY_LOG_AGE_DAYS" "f" || true
+        safe_sudo_find_delete "/private/var/log" "*.asl" "$ROOMY_LOG_AGE_DAYS" "f" || true
     fi
     stop_section_spinner
     log_success "System logs"
@@ -97,14 +97,14 @@ clean_deep_system() {
     local third_party_log_dir=""
     for third_party_log_dir in "${third_party_log_dirs[@]}"; do
         if sudo test -d "$third_party_log_dir" 2> /dev/null; then
-            if sudo find "$third_party_log_dir" -maxdepth 5 -type f -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
-                if safe_sudo_find_delete "$third_party_log_dir" "*" "$MOLE_LOG_AGE_DAYS" "f"; then
+            if sudo find "$third_party_log_dir" -maxdepth 5 -type f -mtime "+$ROOMY_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+                if safe_sudo_find_delete "$third_party_log_dir" "*" "$ROOMY_LOG_AGE_DAYS" "f"; then
                     third_party_logs_cleaned=1
                 fi
             fi
         fi
     done
-    if sudo find "/Library/Logs" -maxdepth 1 -type f -name "adobegc.log" -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+    if sudo find "/Library/Logs" -maxdepth 1 -type f -name "adobegc.log" -mtime "+$ROOMY_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
         if safe_sudo_remove "/Library/Logs/adobegc.log"; then
             third_party_logs_cleaned=1
         fi
@@ -239,7 +239,7 @@ clean_deep_system() {
     local gpu_cache_dir=""
     while IFS= read -r -d '' gpu_cache_dir; do
         is_rebuildable_gpu_cache_dir "$gpu_cache_dir" || continue
-        gpu_cache_dir_is_stale "$gpu_cache_dir" "$MOLE_GPU_CACHE_AGE_DAYS" || continue
+        gpu_cache_dir_is_stale "$gpu_cache_dir" "$ROOMY_GPU_CACHE_AGE_DAYS" || continue
         if safe_sudo_remove "$gpu_cache_dir"; then
             gpu_cache_cleaned=$((gpu_cache_cleaned + 1))
         fi
@@ -257,14 +257,14 @@ clean_deep_system() {
 
     local diag_base="/private/var/db/diagnostics"
     start_section_spinner "Cleaning system diagnostic logs..."
-    safe_sudo_find_delete "$diag_base" "*" "$MOLE_LOG_AGE_DAYS" "f" || true
+    safe_sudo_find_delete "$diag_base" "*" "$ROOMY_LOG_AGE_DAYS" "f" || true
     safe_sudo_find_delete "$diag_base" "*.tracev3" "30" "f" || true
-    safe_sudo_find_delete "/private/var/db/DiagnosticPipeline" "*" "$MOLE_LOG_AGE_DAYS" "f" || true
+    safe_sudo_find_delete "/private/var/db/DiagnosticPipeline" "*" "$ROOMY_LOG_AGE_DAYS" "f" || true
     stop_section_spinner
     log_success "System diagnostic logs"
 
     start_section_spinner "Cleaning power logs..."
-    safe_sudo_find_delete "/private/var/db/powerlog" "*" "$MOLE_LOG_AGE_DAYS" "f" || true
+    safe_sudo_find_delete "/private/var/db/powerlog" "*" "$ROOMY_LOG_AGE_DAYS" "f" || true
     stop_section_spinner
     log_success "Power logs"
     start_section_spinner "Cleaning memory exception reports..."
@@ -380,7 +380,7 @@ clean_time_machine_failed_backups() {
                 local current_time
                 current_time=$(get_epoch_seconds)
                 local hours_old=$(((current_time - file_mtime) / 3600))
-                if [[ $hours_old -lt $MOLE_TM_BACKUP_SAFE_HOURS ]]; then
+                if [[ $hours_old -lt $ROOMY_TM_BACKUP_SAFE_HOURS ]]; then
                     continue
                 fi
                 local size_kb
@@ -434,7 +434,7 @@ clean_time_machine_failed_backups() {
                     local current_time
                     current_time=$(get_epoch_seconds)
                     local hours_old=$(((current_time - file_mtime) / 3600))
-                    if [[ $hours_old -lt $MOLE_TM_BACKUP_SAFE_HOURS ]]; then
+                    if [[ $hours_old -lt $ROOMY_TM_BACKUP_SAFE_HOURS ]]; then
                         continue
                     fi
                     local size_kb

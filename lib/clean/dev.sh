@@ -75,7 +75,7 @@ conda_cache_whitelisted() {
     local root
     for root in "$@"; do
         [[ -n "$root" ]] || continue
-        if is_path_whitelisted "$root" 2> /dev/null || is_path_whitelisted "$root/.mole-cache-guard" 2> /dev/null; then
+        if is_path_whitelisted "$root" 2> /dev/null || is_path_whitelisted "$root/.roomy-cache-guard" 2> /dev/null; then
             return 0
         fi
     done
@@ -454,7 +454,7 @@ check_android_ndk() {
 }
 
 clean_xcode_documentation_cache() {
-    local doc_cache_root="${MOLE_XCODE_DOCUMENTATION_CACHE_DIR:-/Library/Developer/Xcode/DocumentationCache}"
+    local doc_cache_root="${ROOMY_XCODE_DOCUMENTATION_CACHE_DIR:-/Library/Developer/Xcode/DocumentationCache}"
     [[ -d "$doc_cache_root" ]] || return 0
 
     if pgrep -x "Xcode" > /dev/null 2>&1; then
@@ -549,7 +549,7 @@ clean_xcode_documentation_cache() {
 clean_xcode_device_support() {
     local ds_dir="$1"
     local display_name="$2"
-    local keep_count="${MOLE_XCODE_DEVICE_SUPPORT_KEEP:-2}"
+    local keep_count="${ROOMY_XCODE_DEVICE_SUPPORT_KEEP:-2}"
     [[ "$keep_count" =~ ^[0-9]+$ ]] || keep_count=2
 
     [[ -d "$ds_dir" ]] || return 0
@@ -617,8 +617,8 @@ clean_xcode_device_support() {
 }
 
 _sim_runtime_mount_points() {
-    if [[ -n "${MOLE_XCODE_SIM_RUNTIME_MOUNT_POINTS:-}" ]]; then
-        printf '%s\n' "$MOLE_XCODE_SIM_RUNTIME_MOUNT_POINTS"
+    if [[ -n "${ROOMY_XCODE_SIM_RUNTIME_MOUNT_POINTS:-}" ]]; then
+        printf '%s\n' "$ROOMY_XCODE_SIM_RUNTIME_MOUNT_POINTS"
         return 0
     fi
     mount 2> /dev/null | command awk '{print $3}' || true
@@ -651,8 +651,8 @@ _sim_runtime_size_kb() {
 }
 
 clean_xcode_simulator_runtime_volumes() {
-    local volumes_root="${MOLE_XCODE_SIM_RUNTIME_VOLUMES_ROOT:-/Library/Developer/CoreSimulator/Volumes}"
-    local cryptex_root="${MOLE_XCODE_SIM_RUNTIME_CRYPTEX_ROOT:-/Library/Developer/CoreSimulator/Cryptex}"
+    local volumes_root="${ROOMY_XCODE_SIM_RUNTIME_VOLUMES_ROOT:-/Library/Developer/CoreSimulator/Volumes}"
+    local cryptex_root="${ROOMY_XCODE_SIM_RUNTIME_CRYPTEX_ROOT:-/Library/Developer/CoreSimulator/Cryptex}"
 
     local -a candidates=()
     local candidate
@@ -680,7 +680,7 @@ clean_xcode_simulator_runtime_volumes() {
     done < <(printf '%s\n' "${candidates[@]}" | LC_ALL=C sort)
 
     # Only show scanning message in debug mode; spinner provides visual feedback otherwise
-    if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
         echo -e "  ${GRAY}${ICON_LIST}${NC} Xcode runtime volumes · scanning ${#sorted_candidates[@]} entries"
     fi
     local runtime_scan_spinner=false
@@ -734,7 +734,7 @@ clean_xcode_simulator_runtime_volumes() {
         dryrun_in_use_human=$(bytes_to_human "$((in_use_kb * 1024))")
         echo -e "  ${GRAY}${ICON_LIST}${NC} Runtime volumes total: ${dryrun_total_human} (unused ${dryrun_unused_human}, in-use ${dryrun_in_use_human})"
 
-        local dryrun_max_items="${MOLE_SIM_RUNTIME_DRYRUN_MAX_ITEMS:-20}"
+        local dryrun_max_items="${ROOMY_SIM_RUNTIME_DRYRUN_MAX_ITEMS:-20}"
         [[ "$dryrun_max_items" =~ ^[0-9]+$ ]] || dryrun_max_items=20
         if [[ "$dryrun_max_items" -le 0 ]]; then
             dryrun_max_items=20
@@ -1018,7 +1018,7 @@ clean_dev_mobile() {
     safe_clean ~/.expo/versions-cache/* "Expo versions cache"
 }
 # JVM ecosystem caches.
-# Gradle: Respects whitelist, cleaned when not protected via: mo clean --whitelist
+# Gradle: Respects whitelist, cleaned when not protected via: roomy clean --whitelist
 clean_dev_jvm() {
     # Source Maven cleanup module (requires bash for BASH_SOURCE)
     # shellcheck disable=SC1091
@@ -1043,7 +1043,7 @@ clean_dev_jetbrains_toolbox() {
     local toolbox_root="$HOME/Library/Application Support/JetBrains/Toolbox/apps"
     [[ -d "$toolbox_root" ]] || return 0
 
-    local keep_previous="${MOLE_JETBRAINS_TOOLBOX_KEEP:-1}"
+    local keep_previous="${ROOMY_JETBRAINS_TOOLBOX_KEEP:-1}"
     [[ "$keep_previous" =~ ^[0-9]+$ ]] || keep_previous=1
 
     # Save and filter whitelist patterns for toolbox path
@@ -1157,7 +1157,7 @@ clean_dev_jetbrains_logs() {
 # unreliable: Claude Code pre-downloads the next version before flipping
 # the symlink, so newest mtime is not always the active version).
 clean_dev_ai_agents() {
-    local keep_previous="${MOLE_AI_AGENTS_KEEP:-1}"
+    local keep_previous="${ROOMY_AI_AGENTS_KEEP:-1}"
     [[ "$keep_previous" =~ ^[0-9]+$ ]] || keep_previous=1
 
     local -a agent_specs=(
@@ -1438,7 +1438,7 @@ clean_dev_misc() {
     # Codex Desktop runtimes contain active Node/Python dependencies.
     clean_codex_runtimes
     # Cursor Agent session logs (versions cleaned separately in clean_dev_ai_agents)
-    [[ -d "$HOME/.local/share/cursor-agent" ]] && safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$MOLE_LOG_AGE_DAYS" "f"
+    [[ -d "$HOME/.local/share/cursor-agent" ]] && safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$ROOMY_LOG_AGE_DAYS" "f"
     # Playwright cached browser binaries
     safe_clean ~/Library/Caches/ms-playwright/* "Playwright browsers"
     # Claude Code state under ~/.claude can include persistent memory,

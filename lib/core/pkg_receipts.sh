@@ -1,15 +1,15 @@
 #!/bin/bash
-# Mole - pkgutil receipt helpers.
+# Roomy - pkgutil receipt helpers.
 # Finds package-installed app bundles outside the standard app locations.
 
 set -euo pipefail
 
-if [[ -n "${MOLE_PKG_RECEIPTS_LOADED:-}" ]]; then
+if [[ -n "${ROOMY_PKG_RECEIPTS_LOADED:-}" ]]; then
     return 0
 fi
-readonly MOLE_PKG_RECEIPTS_LOADED=1
+readonly ROOMY_PKG_RECEIPTS_LOADED=1
 
-_mole_pkg_receipt_app_root() {
+_roomy_pkg_receipt_app_root() {
     local rel_path="${1#/}"
     [[ -n "$rel_path" ]] || return 1
 
@@ -33,8 +33,8 @@ pkg_receipt_nonstandard_app_paths() {
         return 0
     fi
 
-    local cache_file="${MOLE_PKG_RECEIPT_CACHE_FILE:-$HOME/.cache/mole/pkg_receipt_apps_v1}"
-    local cache_ttl="${MOLE_PKG_RECEIPT_CACHE_TTL:-3600}"
+    local cache_file="${ROOMY_PKG_RECEIPT_CACHE_FILE:-$HOME/.cache/roomy/pkg_receipt_apps_v1}"
+    local cache_ttl="${ROOMY_PKG_RECEIPT_CACHE_TTL:-3600}"
     local now_epoch=0
     if declare -f get_epoch_seconds > /dev/null 2>&1; then
         now_epoch=$(get_epoch_seconds)
@@ -42,7 +42,7 @@ pkg_receipt_nonstandard_app_paths() {
         now_epoch=$(date +%s 2> /dev/null || echo 0)
     fi
 
-    if [[ "${MOLE_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -r "$cache_file" ]]; then
+    if [[ "${ROOMY_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -r "$cache_file" ]]; then
         local cache_mtime=0
         if declare -f get_file_mtime > /dev/null 2>&1; then
             cache_mtime=$(get_file_mtime "$cache_file")
@@ -61,7 +61,7 @@ pkg_receipt_nonstandard_app_paths() {
 
     local pkgs_output
     if declare -f run_with_timeout > /dev/null 2>&1; then
-        pkgs_output=$(run_with_timeout "${MOLE_PKG_RECEIPT_LIST_TIMEOUT:-3}" pkgutil --pkgs 2> /dev/null || true)
+        pkgs_output=$(run_with_timeout "${ROOMY_PKG_RECEIPT_LIST_TIMEOUT:-3}" pkgutil --pkgs 2> /dev/null || true)
     else
         pkgs_output=$(pkgutil --pkgs 2> /dev/null || true)
     fi
@@ -69,7 +69,7 @@ pkg_receipt_nonstandard_app_paths() {
 
     local -a seen_apps=()
     local scan_start=$SECONDS
-    local scan_timeout="${MOLE_PKG_RECEIPT_SCAN_TIMEOUT:-8}"
+    local scan_timeout="${ROOMY_PKG_RECEIPT_SCAN_TIMEOUT:-8}"
     local pkg_id
     while IFS= read -r pkg_id; do
         if [[ "$scan_timeout" =~ ^[0-9]+$ && $scan_timeout -gt 0 && $((SECONDS - scan_start)) -ge $scan_timeout ]]; then
@@ -121,7 +121,7 @@ pkg_receipt_nonstandard_app_paths() {
         printf '%s\n' "${seen_apps[@]}" | sort -u
     fi
 
-    if [[ "${MOLE_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -n "$cache_file" ]]; then
+    if [[ "${ROOMY_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -n "$cache_file" ]]; then
         local cache_dir="${cache_file%/*}"
         if [[ -n "$cache_dir" && "$cache_dir" != "$cache_file" ]]; then
             if declare -f ensure_user_dir > /dev/null 2>&1; then
@@ -131,7 +131,7 @@ pkg_receipt_nonstandard_app_paths() {
             fi
         fi
         local cache_tmp
-        cache_tmp=$(mktemp "${TMPDIR:-/tmp}/mole.pkg_receipts.XXXXXX" 2> /dev/null || true)
+        cache_tmp=$(mktemp "${TMPDIR:-/tmp}/roomy.pkg_receipts.XXXXXX" 2> /dev/null || true)
         if [[ -n "$cache_tmp" ]]; then
             if [[ ${#seen_apps[@]} -gt 0 ]]; then
                 printf '%s\n' "${seen_apps[@]}" | sort -u > "$cache_tmp"

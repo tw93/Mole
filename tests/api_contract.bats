@@ -20,10 +20,10 @@ teardown_file() {
 
 setup() {
     rm -rf "${HOME:?}"/*
-    mkdir -p "$HOME/.config/mole" "$HOME/bin"
+    mkdir -p "$HOME/.config/roomy" "$HOME/bin"
 }
 
-@test "mo api status delegates to status JSON binary" {
+@test "roomy api status delegates to status JSON binary" {
     cat > "$HOME/bin/status-go" <<'SCRIPT'
 #!/usr/bin/env bash
 [[ "$1" == "--json" ]] || exit 2
@@ -31,13 +31,13 @@ printf '{"host":"api-test","health_score":91,"cpu":{"usage":4,"logical_cpu":8},"
 SCRIPT
     chmod +x "$HOME/bin/status-go"
 
-    run env HOME="$HOME" MOLE_TEST_STATUS_BIN="$HOME/bin/status-go" "$PROJECT_ROOT/mo" api status
+    run env HOME="$HOME" ROOMY_TEST_STATUS_BIN="$HOME/bin/status-go" "$PROJECT_ROOT/roomy" api status
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["host"]=="api-test"; assert data["health_score"]==91'
 }
 
-@test "mo api storage scan delegates path to analyze JSON binary" {
+@test "roomy api storage scan delegates path to analyze JSON binary" {
     cat > "$HOME/bin/analyze-go" <<'SCRIPT'
 #!/usr/bin/env bash
 [[ "$1" == "--json" ]] || exit 2
@@ -45,13 +45,13 @@ printf '{"path":"%s","overview":false,"entries":[],"large_files":[],"total_size"
 SCRIPT
     chmod +x "$HOME/bin/analyze-go"
 
-    run env HOME="$HOME" MOLE_TEST_ANALYZE_BIN="$HOME/bin/analyze-go" "$PROJECT_ROOT/mo" api storage scan --path "$HOME"
+    run env HOME="$HOME" ROOMY_TEST_ANALYZE_BIN="$HOME/bin/analyze-go" "$PROJECT_ROOT/roomy" api storage scan --path "$HOME"
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["path"]'
 }
 
-@test "mo api storage execute streams dry-run Trash events for scanned files" {
+@test "roomy api storage execute streams dry-run Trash events for scanned files" {
     scan_root="$HOME/Downloads"
     target="$scan_root/Large.bin"
     mkdir -p "$scan_root"
@@ -59,7 +59,7 @@ SCRIPT
     plan="$HOME/storage-plan.json"
     printf '{"confirmed": true, "dry_run": true, "operation": "trash", "scan_path": "%s", "targets": ["%s"]}\n' "$scan_root" "$target" > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api storage execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api storage execute --plan "$plan"
 
     [ "$status" -eq 0 ]
     [ -f "$target" ]
@@ -73,7 +73,7 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api storage execute refuses targets outside scan root" {
+@test "roomy api storage execute refuses targets outside scan root" {
     scan_root="$HOME/Downloads"
     outside="$HOME/Desktop/Outside.bin"
     mkdir -p "$scan_root" "$HOME/Desktop"
@@ -81,7 +81,7 @@ assert events[-1]["event"] == "completed"
     plan="$HOME/storage-refuse-plan.json"
     printf '{"confirmed": true, "dry_run": true, "operation": "trash", "scan_path": "%s", "targets": ["%s"]}\n' "$scan_root" "$outside" > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api storage execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api storage execute --plan "$plan"
 
     [ "$status" -ne 0 ]
     [ -f "$outside" ]
@@ -93,11 +93,11 @@ assert any(event.get("event") == "skipped" for event in events)
 '
 }
 
-@test "mo api clean preview returns structured cleanup JSON" {
+@test "roomy api clean preview returns structured cleanup JSON" {
     mkdir -p "$HOME/Library/Caches/TestApp"
     printf 'cache' > "$HOME/Library/Caches/TestApp/file.tmp"
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mo" api clean preview --json
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" api clean preview --json
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -110,14 +110,14 @@ assert "estimated_bytes" in data
 '
 }
 
-@test "mo api clean preview supports external volume cleanup" {
+@test "roomy api clean preview supports external volume cleanup" {
     root="$HOME/Volumes"
     volume="$root/TestVolume"
     mkdir -p "$volume/.Trashes" "$volume/Folder"
     printf 'trash' > "$volume/.Trashes/item"
     printf 'metadata' > "$volume/Folder/._file"
 
-    run env HOME="$HOME" MOLE_EXTERNAL_VOLUMES_ROOT="$root" "$PROJECT_ROOT/mo" api clean preview --json --external "$volume"
+    run env HOME="$HOME" ROOMY_EXTERNAL_VOLUMES_ROOT="$root" "$PROJECT_ROOT/roomy" api clean preview --json --external "$volume"
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -129,19 +129,19 @@ assert any(category["section"] == "External volume" for category in data["catego
 '
 }
 
-@test "mo api optimize preview returns health JSON" {
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api optimize preview
+@test "roomy api optimize preview returns health JSON" {
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api optimize preview
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert "optimizations" in data; assert len(data["optimizations"]) > 0'
 }
 
-@test "mo api installer preview returns selectable installer files" {
+@test "roomy api installer preview returns selectable installer files" {
     target="$HOME/Downloads/Test.dmg"
     mkdir -p "$HOME/Downloads"
     printf 'dmg' > "$target"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api installer preview --json
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api installer preview --json
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -153,13 +153,13 @@ assert data["items"][0]["path"].endswith("Test.dmg")
 '
 }
 
-@test "mo api purge preview returns revalidatable project artifacts" {
+@test "roomy api purge preview returns revalidatable project artifacts" {
     artifact="$HOME/Projects/App/node_modules"
     mkdir -p "$artifact"
     printf 'module' > "$artifact/package.txt"
     printf '{}\n' > "$HOME/Projects/App/package.json"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api purge preview --json
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api purge preview --json
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -171,11 +171,11 @@ assert any(item["path"].endswith("node_modules") for item in data["items"])
 '
 }
 
-@test "mo api execute refuses unconfirmed plans with NDJSON failure event" {
+@test "roomy api execute refuses unconfirmed plans with NDJSON failure event" {
     plan="$HOME/plan.json"
     printf '{"confirmed": false, "dry_run": true}\n' > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api clean execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api clean execute --plan "$plan"
 
     [ "$status" -ne 0 ]
     echo "$output" | python3 -c '
@@ -186,11 +186,11 @@ assert events[-1]["event"] == "failed"
 '
 }
 
-@test "mo api execute validates plan schema before action dispatch" {
+@test "roomy api execute validates plan schema before action dispatch" {
     plan="$HOME/bad-installer-plan.json"
     printf '{"confirmed": true, "dry_run": true, "targets": "%s"}\n' "$HOME/Downloads/Test.dmg" > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api installer execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api installer execute --plan "$plan"
 
     [ "$status" -ne 0 ]
     echo "$output" | python3 -c '
@@ -203,8 +203,8 @@ assert "array" in events[-1]["message"]
 '
 }
 
-@test "mo api completion status returns shell integration JSON" {
-    run env HOME="$HOME" SHELL=/bin/zsh "$PROJECT_ROOT/mo" api completion status
+@test "roomy api completion status returns shell integration JSON" {
+    run env HOME="$HOME" SHELL=/bin/zsh "$PROJECT_ROOT/roomy" api completion status
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -216,8 +216,8 @@ assert "installed" in data
 '
 }
 
-@test "mo api launchers status returns Raycast and Alfred setup JSON" {
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api launchers status
+@test "roomy api launchers status returns Raycast and Alfred setup JSON" {
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api launchers status
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -231,8 +231,8 @@ assert "alfred_dir" in data
 '
 }
 
-@test "mo api update status returns Mole maintenance JSON" {
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api update status
+@test "roomy api update status returns Roomy maintenance JSON" {
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api update status
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -241,20 +241,20 @@ data = json.load(sys.stdin)
 assert data["schema_version"] == 1
 assert data["version"]
 assert data["channel"] in ("stable", "nightly", "dev")
-assert data["cli_path"].endswith("/mo")
+assert data["cli_path"].endswith("/roomy")
 '
 }
 
-@test "mo api purge paths update writes scan roots through a plan" {
+@test "roomy api purge paths update writes scan roots through a plan" {
     plan="$HOME/purge-paths-plan.json"
     mkdir -p "$HOME/Work"
     printf '{"confirmed": true, "paths": ["%s"]}\n' "$HOME/Work" > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api purge paths update --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api purge paths update --plan "$plan"
 
     [ "$status" -eq 0 ]
     expected_config_path="${HOME/#$HOME/~}/Work"
-    grep -q "$expected_config_path" "$HOME/.config/mole/purge_paths"
+    grep -q "$expected_config_path" "$HOME/.config/roomy/purge_paths"
     echo "$output" | python3 -c '
 import json, sys
 events = [json.loads(line) for line in sys.stdin if line.strip()]
@@ -262,7 +262,7 @@ assert events[-1]["event"] == "completed"
 assert events[-1]["domain"] == "purge_paths"
 '
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api purge paths --json
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api purge paths --json
 
     [ "$status" -eq 0 ]
     echo "$output" | HOME="$HOME" python3 -c '
@@ -272,11 +272,11 @@ assert os.path.join(os.environ["HOME"], "Work") in data["paths"]
 '
 }
 
-@test "mo api launchers execute streams dry-run events" {
+@test "roomy api launchers execute streams dry-run events" {
     plan="$HOME/launchers-plan.json"
     printf '{"confirmed": true, "dry_run": true}\n' > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api launchers execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api launchers execute --plan "$plan"
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -288,11 +288,11 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api touchid execute streams dry-run events" {
+@test "roomy api touchid execute streams dry-run events" {
     plan="$HOME/touchid-plan.json"
     printf '{"confirmed": true, "dry_run": true}\n' > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api touchid execute --action enable --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api touchid execute --action enable --plan "$plan"
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -304,11 +304,11 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api completion execute streams dry-run events" {
+@test "roomy api completion execute streams dry-run events" {
     plan="$HOME/completion-plan.json"
     printf '{"confirmed": true, "dry_run": true}\n' > "$plan"
 
-    run env HOME="$HOME" SHELL=/bin/zsh PATH="$PROJECT_ROOT:$PATH" "$PROJECT_ROOT/mo" api completion execute --plan "$plan"
+    run env HOME="$HOME" SHELL=/bin/zsh PATH="$PROJECT_ROOT:$PATH" "$PROJECT_ROOT/roomy" api completion execute --plan "$plan"
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -319,11 +319,11 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api update execute streams dry-run events" {
+@test "roomy api update execute streams dry-run events" {
     plan="$HOME/update-plan.json"
     printf '{"confirmed": true, "dry_run": true, "force": true}\n' > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api update execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api update execute --plan "$plan"
 
     [ "$status" -eq 0 ]
     echo "$output" | python3 -c '
@@ -335,17 +335,17 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api remove execute streams dry-run events" {
-    mkdir -p "$HOME/.local/bin" "$HOME/.config/mole"
-    printf '#!/usr/bin/env bash\n' > "$HOME/.local/bin/mole"
-    chmod +x "$HOME/.local/bin/mole"
+@test "roomy api remove execute streams dry-run events" {
+    mkdir -p "$HOME/.local/bin" "$HOME/.config/roomy"
+    printf '#!/usr/bin/env bash\n' > "$HOME/.local/bin/roomy"
+    chmod +x "$HOME/.local/bin/roomy"
     plan="$HOME/remove-plan.json"
     printf '{"confirmed": true, "dry_run": true}\n' > "$plan"
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mo" api remove execute --plan "$plan"
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" api remove execute --plan "$plan"
 
     [ "$status" -eq 0 ]
-    [ -f "$HOME/.local/bin/mole" ]
+    [ -f "$HOME/.local/bin/roomy" ]
     echo "$output" | python3 -c '
 import json, sys
 events = [json.loads(line) for line in sys.stdin if line.strip()]
@@ -355,14 +355,14 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api installer execute streams dry-run events" {
+@test "roomy api installer execute streams dry-run events" {
     target="$HOME/Downloads/Test.pkg"
     mkdir -p "$HOME/Downloads"
     printf 'pkg' > "$target"
     plan="$HOME/installer-plan.json"
     printf '{"confirmed": true, "dry_run": true, "targets": ["%s"]}\n' "$target" > "$plan"
 
-    run env HOME="$HOME" "$PROJECT_ROOT/mo" api installer execute --plan "$plan"
+    run env HOME="$HOME" "$PROJECT_ROOT/roomy" api installer execute --plan "$plan"
 
     [ "$status" -eq 0 ]
     [ -f "$target" ]
@@ -375,7 +375,7 @@ assert events[-1]["event"] == "completed"
 '
 }
 
-@test "mo api clean execute streams external dry-run events" {
+@test "roomy api clean execute streams external dry-run events" {
     root="$HOME/Volumes"
     volume="$root/TestVolume"
     mkdir -p "$volume/.Trashes"
@@ -383,7 +383,7 @@ assert events[-1]["event"] == "completed"
     plan="$HOME/external-clean-plan.json"
     printf '{"confirmed": true, "dry_run": true, "external_path": "%s"}\n' "$volume" > "$plan"
 
-    run env HOME="$HOME" MOLE_EXTERNAL_VOLUMES_ROOT="$root" "$PROJECT_ROOT/mo" api clean execute --plan "$plan"
+    run env HOME="$HOME" ROOMY_EXTERNAL_VOLUMES_ROOT="$root" "$PROJECT_ROOT/roomy" api clean execute --plan "$plan"
 
     [ "$status" -eq 0 ]
     [ -f "$volume/.Trashes/item" ]

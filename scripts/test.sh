@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test runner for Mole.
+# Test runner for Roomy.
 # Runs unit, Go, and integration tests.
 # Exits non-zero on failures.
 
@@ -11,9 +11,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 # Never allow the scripted test run to trigger real sudo or Touch ID prompts.
-export MOLE_TEST_NO_AUTH=1
+export ROOMY_TEST_NO_AUTH=1
 
-TEST_SYSTEM_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mole-test-stubs.XXXXXX")"
+TEST_SYSTEM_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/roomy-test-stubs.XXXXXX")"
 TEST_GO_HELPER_DIR=""
 # shellcheck disable=SC2329  # Invoked by trap.
 cleanup_test_stubs() {
@@ -35,19 +35,19 @@ case "${1:-}" in
         ;;
 esac
 
-printf 'mole test blocked sudo: %s\n' "$*" >&2
+printf 'roomy test blocked sudo: %s\n' "$*" >&2
 exit 1
 EOF
 
 cat > "$TEST_SYSTEM_STUB_DIR/osascript" << 'EOF'
 #!/bin/bash
-printf 'mole test blocked osascript: %s\n' "$*" >&2
+printf 'roomy test blocked osascript: %s\n' "$*" >&2
 exit 1
 EOF
 
 cat > "$TEST_SYSTEM_STUB_DIR/launchctl" << 'EOF'
 #!/bin/bash
-printf 'mole test blocked launchctl: %s\n' "$*" >&2
+printf 'roomy test blocked launchctl: %s\n' "$*" >&2
 exit 0
 EOF
 
@@ -94,7 +94,7 @@ export PATH="$TEST_SYSTEM_STUB_DIR:$PATH"
 source "$PROJECT_ROOT/lib/core/file_ops.sh"
 
 echo "==============================="
-echo "Mole Test Runner"
+echo "Roomy Test Runner"
 echo "==============================="
 echo ""
 
@@ -125,8 +125,8 @@ report_unit_result() {
 
 enforce_timeout_dependency_in_ci
 
-GO_TEST_CACHE="${MOLE_GO_TEST_CACHE:-/tmp/mole-go-build-cache}"
-export MOLE_GO_TEST_CACHE="$GO_TEST_CACHE"
+GO_TEST_CACHE="${ROOMY_GO_TEST_CACHE:-/tmp/roomy-go-build-cache}"
+export ROOMY_GO_TEST_CACHE="$GO_TEST_CACHE"
 
 test_selection_needs_go_helpers() {
     local test_file
@@ -143,13 +143,13 @@ test_selection_needs_go_helpers() {
 prepare_go_test_helpers() {
     command -v go > /dev/null 2>&1 || return 0
 
-    TEST_GO_HELPER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mole-go-helpers.XXXXXX")"
+    TEST_GO_HELPER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/roomy-go-helpers.XXXXXX")"
     mkdir -p "$GO_TEST_CACHE"
 
     if GOCACHE="$GO_TEST_CACHE" go build -o "$TEST_GO_HELPER_DIR/analyze-go" ./cmd/analyze > /dev/null 2>&1 &&
         GOCACHE="$GO_TEST_CACHE" go build -o "$TEST_GO_HELPER_DIR/status-go" ./cmd/status > /dev/null 2>&1; then
-        export MOLE_TEST_ANALYZE_BIN="$TEST_GO_HELPER_DIR/analyze-go"
-        export MOLE_TEST_STATUS_BIN="$TEST_GO_HELPER_DIR/status-go"
+        export ROOMY_TEST_ANALYZE_BIN="$TEST_GO_HELPER_DIR/analyze-go"
+        export ROOMY_TEST_STATUS_BIN="$TEST_GO_HELPER_DIR/status-go"
     else
         rm -rf "$TEST_GO_HELPER_DIR"
         TEST_GO_HELPER_DIR=""
@@ -244,8 +244,8 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
     bats_opts=()
     if $bats_has_jobs && { command -v parallel > /dev/null 2>&1 || command -v rush > /dev/null 2>&1; }; then
         _ncpu="$(sysctl -n hw.logicalcpu 2> /dev/null || nproc 2> /dev/null || echo 4)"
-        if [[ "${MOLE_TEST_JOBS:-}" =~ ^[0-9]+$ && "${MOLE_TEST_JOBS:-0}" -gt 0 ]]; then
-            _jobs="$MOLE_TEST_JOBS"
+        if [[ "${ROOMY_TEST_JOBS:-}" =~ ^[0-9]+$ && "${ROOMY_TEST_JOBS:-0}" -gt 0 ]]; then
+            _jobs="$ROOMY_TEST_JOBS"
         else
             _jobs="$((_ncpu > 6 ? 6 : (_ncpu < 2 ? 2 : _ncpu)))"
         fi
@@ -255,7 +255,7 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
         bats_opts+=("--jobs" "$_jobs" "--no-parallelize-within-files")
         unset _ncpu _jobs
     fi
-    if [[ "${MOLE_TEST_TIMING:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_TIMING:-0}" == "1" ]]; then
         bats_opts+=("--timing")
     fi
 
@@ -324,7 +324,7 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
     # Post-run: timing-sensitive perf tests run after parallel workers have
     # finished so CPU contention does not skew wall-clock assertions.
     for _pf in ${_perf_files[@]+"${_perf_files[@]}"}; do
-        if [[ "${MOLE_TEST_TIMING:-0}" == "1" ]]; then
+        if [[ "${ROOMY_TEST_TIMING:-0}" == "1" ]]; then
             bats --timing "$_pf" || _unit_rc=1
         else
             bats "$_pf" || _unit_rc=1
@@ -339,8 +339,8 @@ fi
 echo ""
 
 echo "3. Running API contract tests..."
-if [[ "${MOLE_SKIP_API_TESTS:-0}" == "1" ]]; then
-    printf "${YELLOW}${ICON_WARNING} API contract tests skipped by MOLE_SKIP_API_TESTS${NC}\n"
+if [[ "${ROOMY_SKIP_API_TESTS:-0}" == "1" ]]; then
+    printf "${YELLOW}${ICON_WARNING} API contract tests skipped by ROOMY_SKIP_API_TESTS${NC}\n"
 elif command -v node > /dev/null 2>&1 && [[ -f "tests/api_contract.test.mjs" ]]; then
     if node --test tests/api_contract.test.mjs; then
         printf "${GREEN}${ICON_SUCCESS} API contract tests passed${NC}\n"
@@ -380,7 +380,7 @@ echo ""
 
 echo "6. Running integration tests..."
 # Quick syntax check for main scripts
-if bash -n mole && bash -n bin/clean.sh && bash -n bin/optimize.sh; then
+if bash -n roomy && bash -n bin/clean.sh && bash -n bin/optimize.sh; then
     printf "${GREEN}${ICON_SUCCESS} Integration tests passed${NC}\n"
 else
     printf "${RED}${ICON_ERROR} Integration tests failed${NC}\n"
@@ -393,14 +393,14 @@ echo "7. Testing installation..."
 if [[ "$(uname -s)" != "Darwin" ]]; then
     printf "${YELLOW}${ICON_WARNING} Installation test skipped (non-macOS)${NC}\n"
 else
-    # Skip if Homebrew mole is installed (install.sh will refuse to overwrite)
+    # Skip if Homebrew roomy is installed (install.sh will refuse to overwrite)
     install_test_home=""
-    if command -v brew > /dev/null 2>&1 && brew list mole &> /dev/null; then
+    if command -v brew > /dev/null 2>&1 && brew list roomy &> /dev/null; then
         printf "${GREEN}${ICON_SUCCESS} Installation test skipped, Homebrew${NC}\n"
     else
-        install_test_home="$(mktemp -d /tmp/mole-test-home.XXXXXX 2> /dev/null || true)"
+        install_test_home="$(mktemp -d /tmp/roomy-test-home.XXXXXX 2> /dev/null || true)"
         if [[ -z "$install_test_home" ]]; then
-            install_test_home="/tmp/mole-test-home"
+            install_test_home="/tmp/roomy-test-home"
             mkdir -p "$install_test_home"
         fi
     fi
@@ -409,9 +409,9 @@ else
     elif HOME="$install_test_home" \
         XDG_CONFIG_HOME="$install_test_home/.config" \
         XDG_CACHE_HOME="$install_test_home/.cache" \
-        MO_NO_OPLOG=1 \
-        ./install.sh --prefix /tmp/mole-test > /dev/null 2>&1; then
-        if [[ -f "/tmp/mole-test/mole" ]]; then
+        ROOMY_NO_OPLOG=1 \
+        ./install.sh --prefix /tmp/roomy-test > /dev/null 2>&1; then
+        if [[ -f "/tmp/roomy-test/roomy" ]]; then
             printf "${GREEN}${ICON_SUCCESS} Installation test passed${NC}\n"
         else
             printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
@@ -421,9 +421,9 @@ else
         printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
         ((FAILED++))
     fi
-    MO_NO_OPLOG=1 safe_remove "/tmp/mole-test" true || true
+    ROOMY_NO_OPLOG=1 safe_remove "/tmp/roomy-test" true || true
     if [[ -n "$install_test_home" ]]; then
-        MO_NO_OPLOG=1 safe_remove "$install_test_home" true || true
+        ROOMY_NO_OPLOG=1 safe_remove "$install_test_home" true || true
     fi
 fi
 echo ""

@@ -61,14 +61,14 @@ echo ""
 out=$(get_diagnostic_report_paths_for_app "/Applications/Foo.app" "Foo" "/nonexistent/dir" 2> /dev/null || true)
 assert_empty "$out" "missing directory returns empty"
 
-TMP_EMPTY=$(mktemp -d 2> /dev/null || mktemp -d -t mole-test 2> /dev/null || echo "")
-[[ -z "$TMP_EMPTY" ]] && TMP_EMPTY="/tmp/mole-test-$$" && mkdir -p "$TMP_EMPTY"
+TMP_EMPTY=$(mktemp -d 2> /dev/null || mktemp -d -t roomy-test 2> /dev/null || echo "")
+[[ -z "$TMP_EMPTY" ]] && TMP_EMPTY="/tmp/roomy-test-$$" && mkdir -p "$TMP_EMPTY"
 out=$(get_diagnostic_report_paths_for_app "" "Ab" "$TMP_EMPTY" 2> /dev/null || true)
 assert_empty "$out" "empty app_path returns empty"
 rm -rf "$TMP_EMPTY" 2> /dev/null || true
 
-TMP_DIAG=$(mktemp -d 2> /dev/null || mktemp -d -t mole-diag 2> /dev/null || echo "/tmp/mole-diag-$$")
-TMP_APP=$(mktemp -d 2> /dev/null || mktemp -d -t mole-app 2> /dev/null || echo "/tmp/mole-app-$$")
+TMP_DIAG=$(mktemp -d 2> /dev/null || mktemp -d -t roomy-diag 2> /dev/null || echo "/tmp/roomy-diag-$$")
+TMP_APP=$(mktemp -d 2> /dev/null || mktemp -d -t roomy-app 2> /dev/null || echo "/tmp/roomy-app-$$")
 mkdir -p "$TMP_DIAG" "$TMP_APP"
 mkdir -p "$TMP_APP/Contents"
 printf '%s' '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>MyApp</string></dict></plist>' > "$TMP_APP/Contents/Info.plist"
@@ -111,8 +111,8 @@ fi
 
 rm -rf "$TMP_DIAG" "$TMP_APP" 2> /dev/null || true
 
-TMP_DIAG2=$(mktemp -d 2> /dev/null || mktemp -d -t mole-diag2 2> /dev/null || echo "/tmp/mole-diag2-$$")
-TMP_APP2=$(mktemp -d 2> /dev/null || mktemp -d -t mole-app2 2> /dev/null || echo "/tmp/mole-app2-$$")
+TMP_DIAG2=$(mktemp -d 2> /dev/null || mktemp -d -t roomy-diag2 2> /dev/null || echo "/tmp/roomy-diag2-$$")
+TMP_APP2=$(mktemp -d 2> /dev/null || mktemp -d -t roomy-app2 2> /dev/null || echo "/tmp/roomy-app2-$$")
 mkdir -p "$TMP_DIAG2" "$TMP_APP2"
 mkdir -p "$TMP_APP2/Contents"
 touch "$TMP_DIAG2/TestApp_2025-02-10.ips"

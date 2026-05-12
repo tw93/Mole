@@ -10,7 +10,7 @@ clean_trash() {
     local trash_count
     local trash_count_status=0
     # Skip AppleScript during tests to avoid permission dialogs
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         trash_count=$(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null |
             tr -dc '\0' | wc -c | tr -d ' ' || echo "0")
     else
@@ -28,7 +28,7 @@ clean_trash() {
     elif [[ $trash_count -gt 0 ]]; then
         local emptied_via_finder=false
         # Skip AppleScript during tests to avoid permission dialogs
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
             debug_log "Skipping Finder AppleScript in test mode"
         else
             if run_with_timeout 5 osascript -e 'tell application "Finder" to empty trash' > /dev/null 2>&1; then
@@ -64,7 +64,7 @@ clean_user_essentials() {
 
     _clean_darwin_user_runtime_dirs
 
-    if [[ "${MOLE_SKIP_TRASH_CLEANUP:-0}" != "1" ]]; then
+    if [[ "${ROOMY_SKIP_TRASH_CLEANUP:-0}" != "1" ]]; then
         clean_trash
     fi
 
@@ -121,7 +121,7 @@ _clean_incomplete_downloads() {
 
 # Internal: Clean old mail downloads.
 _clean_mail_downloads() {
-    local mail_age_days=${MOLE_MAIL_AGE_DAYS:-}
+    local mail_age_days=${ROOMY_MAIL_AGE_DAYS:-}
     if ! [[ "$mail_age_days" =~ ^[0-9]+$ ]]; then
         mail_age_days=30
     fi
@@ -149,7 +149,7 @@ _clean_mail_downloads() {
             if ! [[ "$dir_size_kb" =~ ^[0-9]+$ ]]; then
                 dir_size_kb=0
             fi
-            local min_kb="${MOLE_MAIL_DOWNLOADS_MIN_KB:-}"
+            local min_kb="${ROOMY_MAIL_DOWNLOADS_MIN_KB:-}"
             if ! [[ "$min_kb" =~ ^[0-9]+$ ]]; then
                 min_kb=5120
             fi
@@ -209,9 +209,9 @@ _clean_darwin_user_runtime_dir() {
     local runtime_dir="$1"
     local kind="$2"
     local label="$3"
-    local age_days="${MOLE_DARWIN_USER_RUNTIME_AGE_DAYS:-7}"
-    local max_items="${MOLE_DARWIN_USER_RUNTIME_MAX_ITEMS:-1500}"
-    local scan_timeout="${MOLE_DARWIN_USER_RUNTIME_SCAN_TIMEOUT:-8}"
+    local age_days="${ROOMY_DARWIN_USER_RUNTIME_AGE_DAYS:-7}"
+    local max_items="${ROOMY_DARWIN_USER_RUNTIME_MAX_ITEMS:-1500}"
+    local scan_timeout="${ROOMY_DARWIN_USER_RUNTIME_SCAN_TIMEOUT:-8}"
 
     [[ "$age_days" =~ ^[0-9]+$ ]] || age_days=7
     [[ "$max_items" =~ ^[0-9]+$ ]] || max_items=1500
@@ -301,8 +301,8 @@ _clean_darwin_user_runtime_dir() {
 }
 
 _clean_darwin_user_runtime_dirs() {
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-        [[ "${MOLE_ENABLE_DARWIN_RUNTIME_CLEANUP_IN_TESTS:-0}" == "1" ]] || return 0
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
+        [[ "${ROOMY_ENABLE_DARWIN_RUNTIME_CLEANUP_IN_TESTS:-0}" == "1" ]] || return 0
     fi
 
     local temp_dir=""
@@ -338,8 +338,8 @@ remove_browser_old_version_dir() {
 
 clean_chrome_old_versions() {
     local -a app_paths
-    if [[ -n "${MOLE_CHROME_APP_PATHS:-}" ]]; then
-        IFS=':' read -ra app_paths <<< "$MOLE_CHROME_APP_PATHS"
+    if [[ -n "${ROOMY_CHROME_APP_PATHS:-}" ]]; then
+        IFS=':' read -ra app_paths <<< "$ROOMY_CHROME_APP_PATHS"
     else
         app_paths=(
             "/Applications/Google Chrome.app"
@@ -449,8 +449,8 @@ clean_chrome_old_versions() {
 clean_edge_old_versions() {
     # Allow override for testing
     local -a app_paths
-    if [[ -n "${MOLE_EDGE_APP_PATHS:-}" ]]; then
-        IFS=':' read -ra app_paths <<< "$MOLE_EDGE_APP_PATHS"
+    if [[ -n "${ROOMY_EDGE_APP_PATHS:-}" ]]; then
+        IFS=':' read -ra app_paths <<< "$ROOMY_EDGE_APP_PATHS"
     else
         app_paths=(
             "/Applications/Microsoft Edge.app"
@@ -601,8 +601,8 @@ clean_edge_updater_old_versions() {
 # Remove old Brave Browser versions while keeping Current.
 clean_brave_old_versions() {
     local -a app_paths
-    if [[ -n "${MOLE_BRAVE_APP_PATHS:-}" ]]; then
-        IFS=':' read -ra app_paths <<< "$MOLE_BRAVE_APP_PATHS"
+    if [[ -n "${ROOMY_BRAVE_APP_PATHS:-}" ]]; then
+        IFS=':' read -ra app_paths <<< "$ROOMY_BRAVE_APP_PATHS"
     else
         app_paths=(
             "/Applications/Brave Browser.app"
@@ -745,7 +745,7 @@ clean_finder_metadata() {
 
 # Conservative cleanup for support caches not covered by generic rules.
 clean_support_app_data() {
-    local support_age_days="${MOLE_SUPPORT_CACHE_AGE_DAYS:-30}"
+    local support_age_days="${ROOMY_SUPPORT_CACHE_AGE_DAYS:-30}"
     [[ "$support_age_days" =~ ^[0-9]+$ ]] || support_age_days=30
 
     local crash_reporter_dir="$HOME/Library/Application Support/CrashReporter"
@@ -762,7 +762,7 @@ clean_support_app_data() {
     # Clean system-level idle/aerial screensaver videos (macOS re-downloads as needed).
     local sys_idle_assets_dir="/Library/Application Support/com.apple.idleassetsd/Customer"
     # Skip sudo operations during tests to avoid password prompts
-    if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" != "1" && "${ROOMY_TEST_NO_AUTH:-0}" != "1" ]]; then
         if sudo test -d "$sys_idle_assets_dir" 2> /dev/null; then
             safe_sudo_find_delete "$sys_idle_assets_dir" "*" "$support_age_days" "f" || true
         fi
@@ -878,7 +878,7 @@ clean_app_caches() {
     local total_size_partial=false
     local cleaned_count=0
     local found_any=false
-    local precise_size_limit="${MOLE_CONTAINER_CACHE_PRECISE_SIZE_LIMIT:-64}"
+    local precise_size_limit="${ROOMY_CONTAINER_CACHE_PRECISE_SIZE_LIMIT:-64}"
     [[ "$precise_size_limit" =~ ^[0-9]+$ ]] || precise_size_limit=64
     local precise_size_used=0
 
@@ -1172,7 +1172,7 @@ resolve_existing_path() {
 }
 
 external_volume_root() {
-    printf '%s\n' "${MOLE_EXTERNAL_VOLUMES_ROOT:-/Volumes}"
+    printf '%s\n' "${ROOMY_EXTERNAL_VOLUMES_ROOT:-/Volumes}"
 }
 
 validate_external_volume_target() {
@@ -1289,7 +1289,7 @@ clean_external_volume_target() {
         clean_ds_store_tree "$volume" "${volume_name} volume, .DS_Store"
     fi
 
-    local metadata_scan_timeout="${MOLE_EXTERNAL_VOLUME_SCAN_TIMEOUT:-15}"
+    local metadata_scan_timeout="${ROOMY_EXTERNAL_VOLUME_SCAN_TIMEOUT:-15}"
     [[ "$metadata_scan_timeout" =~ ^[0-9]+$ ]] || metadata_scan_timeout=15
     local metadata_count=0
     local metadata_total_size=0
@@ -1499,7 +1499,7 @@ clean_browsers() {
 
 # Cloud storage caches.
 clean_cloud_storage() {
-    if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
         echo "[DEBUG] Cleaning cloud storage caches..." >&2
     fi
     if pgrep -x "Dropbox" > /dev/null 2>&1; then
@@ -1525,18 +1525,18 @@ clean_cloud_storage() {
 
 # Office app caches.
 clean_office_applications() {
-    if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
         echo "[DEBUG] Cleaning office application caches..." >&2
     fi
     safe_clean ~/Library/Caches/com.microsoft.Word "Microsoft Word cache"
-    if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
         echo "[DEBUG] Cleaning Word container cache..." >&2
     fi
     safe_clean ~/Library/Containers/com.microsoft.Word/Data/Library/Caches/* "Microsoft Word container cache"
     safe_clean ~/Library/Containers/com.microsoft.Word/Data/tmp/* "Microsoft Word temp files"
     safe_clean ~/Library/Containers/com.microsoft.Word/Data/Library/Logs/* "Microsoft Word container logs"
     safe_clean ~/Library/Caches/com.microsoft.Excel "Microsoft Excel cache"
-    if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
         echo "[DEBUG] Cleaning Excel container cache..." >&2
     fi
     safe_clean ~/Library/Containers/com.microsoft.Excel/Data/Library/Caches/* "Microsoft Excel container cache"
@@ -1646,7 +1646,7 @@ clean_application_support_logs() {
     local total_size_partial=false
     local cleaned_count=0
     local found_any=false
-    local size_timeout_seconds="${MOLE_APP_SUPPORT_ITEM_SIZE_TIMEOUT_SEC:-0.4}"
+    local size_timeout_seconds="${ROOMY_APP_SUPPORT_ITEM_SIZE_TIMEOUT_SEC:-0.4}"
     if [[ ! "$size_timeout_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
         size_timeout_seconds=0.4
     fi
@@ -2012,7 +2012,7 @@ check_large_file_candidates() {
 
     _large_candidate_size_kb() {
         local path="$1"
-        local timeout_seconds="${MOLE_LARGE_CANDIDATE_SIZE_TIMEOUT:-3}"
+        local timeout_seconds="${ROOMY_LARGE_CANDIDATE_SIZE_TIMEOUT:-3}"
         [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || timeout_seconds=3
         local du_output=""
         du_output=$(run_with_timeout "$timeout_seconds" du -skP "$path" 2> /dev/null || true)
@@ -2153,7 +2153,7 @@ clean_apple_silicon_caches() {
 clean_apple_silicon_system_rosetta_cache() {
     [[ "${SYSTEM_CLEAN:-false}" == "true" ]] || return 0
 
-    local rosetta_system_cache="${MOLE_ROSETTA_UPDATE_BUNDLE_PATH:-/Library/Apple/usr/share/rosetta/rosetta_update_bundle}"
+    local rosetta_system_cache="${ROOMY_ROSETTA_UPDATE_BUNDLE_PATH:-/Library/Apple/usr/share/rosetta/rosetta_update_bundle}"
     [[ -e "$rosetta_system_cache" ]] || return 0
     [[ -L "$rosetta_system_cache" ]] && return 0
 

@@ -11,8 +11,8 @@ setup_file() {
     export HOME
 
     # Prevent AppleScript permission dialogs during tests
-    MOLE_TEST_MODE=1
-    export MOLE_TEST_MODE
+    ROOMY_TEST_MODE=1
+    export ROOMY_TEST_MODE
 
     mkdir -p "$HOME"
 }
@@ -80,10 +80,10 @@ EOF
     [[ "$output" == *"Trash · emptied, 2 items"* ]]
 }
 
-@test "clean_user_essentials keeps Mole runtime logs while cleaning other user logs" {
-    mkdir -p "$HOME/Library/Logs/mole"
+@test "clean_user_essentials keeps Roomy runtime logs while cleaning other user logs" {
+    mkdir -p "$HOME/Library/Logs/roomy"
     mkdir -p "$HOME/Library/Logs/OtherApp"
-    touch "$HOME/Library/Logs/mole/operations.log"
+    touch "$HOME/Library/Logs/roomy/operations.log"
     touch "$HOME/Library/Logs/OtherApp/old.log"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
@@ -107,8 +107,8 @@ safe_clean() {
 
 clean_user_essentials
 
-[[ -d "$HOME/Library/Logs/mole" ]]
-[[ -f "$HOME/Library/Logs/mole/operations.log" ]]
+[[ -d "$HOME/Library/Logs/roomy" ]]
+[[ -f "$HOME/Library/Logs/roomy/operations.log" ]]
 [[ ! -e "$HOME/Library/Logs/OtherApp/old.log" ]]
 EOF
 
@@ -202,7 +202,7 @@ EOF
     local rosetta_path="$HOME/SystemRosetta/rosetta_update_bundle"
     mkdir -p "$rosetta_path"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ROSETTA_UPDATE_BUNDLE_PATH="$rosetta_path" bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_ROSETTA_UPDATE_BUNDLE_PATH="$rosetta_path" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -232,7 +232,7 @@ EOF
     local rosetta_path="$HOME/SystemRosetta/rosetta_update_bundle"
     mkdir -p "$rosetta_path"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ROSETTA_UPDATE_BUNDLE_PATH="$rosetta_path" bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_ROSETTA_UPDATE_BUNDLE_PATH="$rosetta_path" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -1092,7 +1092,7 @@ real_root="$(mktemp -d "$HOME/ext-real.XXXXXX")"
 link_root="$HOME/ext-link"
 ln -s "$real_root" "$link_root"
 mkdir -p "$link_root/USB"
-export MOLE_EXTERNAL_VOLUMES_ROOT="$link_root"
+export ROOMY_EXTERNAL_VOLUMES_ROOT="$link_root"
 
 resolved=$(validate_external_volume_target "$link_root/USB")
 echo "RESOLVED=$resolved"
@@ -1104,7 +1104,7 @@ EOF
 }
 
 @test "clean_app_caches caps precise sandbox size scans when many containers exist" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_CONTAINER_CACHE_PRECISE_SIZE_LIMIT=2 bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true ROOMY_CONTAINER_CACHE_PRECISE_SIZE_LIMIT=2 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"

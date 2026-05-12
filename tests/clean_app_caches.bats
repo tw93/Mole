@@ -11,8 +11,8 @@ setup_file() {
     export HOME
 
     # Prevent AppleScript permission dialogs during tests
-    MOLE_TEST_MODE=1
-    export MOLE_TEST_MODE
+    ROOMY_TEST_MODE=1
+    export ROOMY_TEST_MODE
 
     mkdir -p "$HOME"
 }

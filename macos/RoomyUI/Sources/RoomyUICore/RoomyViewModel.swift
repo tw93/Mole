@@ -2,8 +2,8 @@ import Foundation
 import SwiftUI
 
 @MainActor
-public final class MoleViewModel: ObservableObject {
-    @Published public var selectedSection: MoleSection = .home
+public final class RoomyViewModel: ObservableObject {
+    @Published public var selectedSection: RoomySection = .home
     @Published public var status: StatusSnapshot?
     @Published public var cleanupPreview: CleanupPreview?
     @Published public var externalCleanupPreview: CleanupPreview?
@@ -18,30 +18,35 @@ public final class MoleViewModel: ObservableObject {
     @Published public var touchIDStatus: TouchIDStatus?
     @Published public var completionStatus: CompletionStatus?
     @Published public var launcherStatus: LauncherStatus?
-    @Published public var maintenanceStatus: MoleMaintenanceStatus?
+    @Published public var maintenanceStatus: RoomyMaintenanceStatus?
     @Published public var privilegedHelperStatus: PrivilegedHelperStatusSnapshot?
+    @Published public var fullDiskAccessStatus: FullDiskAccessStatus
+    @Published public var permissionOnboardingDismissed: Bool
+    @Published public var operationJournalEntries: [OperationJournalEntry] = []
     @Published public var executionEvents: [ExecutionEvent] = []
     @Published public var executionState: PreviewExecutionState = .idle
     @Published public var isLoading = false
     @Published public var errorMessage: String?
-    @Published public var sectionErrors: [MoleSection: String] = [:]
+    @Published public var sectionErrors: [RoomySection: String] = [:]
     @Published public var cliPath: String
     @Published public var configPath: String
     @Published public var logPath: String
 
-    public var apiClient: MoleAPIClient
-    public var privilegedHelperInstaller: MolePrivilegedHelperInstaller
+    public var apiClient: RoomyAPIClient
+    public var privilegedHelperInstaller: RoomyPrivilegedHelperInstaller
 
     public init(
-        apiClient: MoleAPIClient = MoleAPIClient(),
-        privilegedHelperInstaller: MolePrivilegedHelperInstaller = MolePrivilegedHelperInstaller()
+        apiClient: RoomyAPIClient = RoomyAPIClient(),
+        privilegedHelperInstaller: RoomyPrivilegedHelperInstaller = RoomyPrivilegedHelperInstaller()
     ) {
         self.apiClient = apiClient
         self.privilegedHelperInstaller = privilegedHelperInstaller
         self.cliPath = apiClient.commandBuilder.executableURL.path
-        self.configPath = apiClient.environment["MOLE_CONFIG_DIR"] ?? "~/.config/mole"
-        self.logPath = apiClient.environment["MOLE_LOG_DIR"] ?? "~/Library/Logs/mole"
+        self.configPath = apiClient.environment["ROOMY_CONFIG_DIR"] ?? "~/.config/roomy"
+        self.logPath = apiClient.environment["ROOMY_LOG_DIR"] ?? "~/Library/Logs/roomy"
         self.privilegedHelperStatus = privilegedHelperInstaller.status()
+        self.fullDiskAccessStatus = RoomyFullDiskAccessDetector.detect()
+        self.permissionOnboardingDismissed = UserDefaults.standard.bool(forKey: Self.permissionOnboardingDismissedKey)
     }
 
     public var healthScore: Int {
@@ -83,11 +88,6 @@ public final class MoleViewModel: ObservableObject {
         } catch {
             failures.append("Monitor: \(Self.displayMessage(for: error))")
         }
-        do {
-            optimizePreview = try await apiClient.optimizePreview()
-        } catch {
-            failures.append("Performance: \(Self.displayMessage(for: error))")
-        }
 
         if failures.isEmpty {
             sectionErrors[.home] = nil
@@ -101,6 +101,19 @@ public final class MoleViewModel: ObservableObject {
         await runLoadingTask(section: .monitor) {
             status = try await apiClient.status()
         }
+    }
+
+    public func refreshFullDiskAccessStatus() {
+        fullDiskAccessStatus = RoomyFullDiskAccessDetector.detect()
+    }
+
+    public func continueWithLimitedAccess() {
+        permissionOnboardingDismissed = true
+        UserDefaults.standard.set(true, forKey: Self.permissionOnboardingDismissedKey)
+    }
+
+    public func loadOperationJournal(limit: Int = 24) {
+        operationJournalEntries = apiClient.operationJournalEntries(limit: limit)
     }
 
     public func loadCleanupPreview() async {
@@ -269,7 +282,7 @@ public final class MoleViewModel: ObservableObject {
         }
     }
 
-    public func error(for section: MoleSection) -> String? {
+    public func error(for section: RoomySection) -> String? {
         sectionErrors[section] ?? errorMessage
     }
 
@@ -296,13 +309,13 @@ public final class MoleViewModel: ObservableObject {
         case "completed":
             return .completed
         case "failed":
-            return .failed(event.message ?? "Execution failed")
+            return .failed(userFacingMessage(event.message ?? "Execution failed"))
         default:
             return state
         }
     }
 
-    private func runLoadingTask(section: MoleSection, _ operation: () async throws -> Void) async {
+    private func runLoadingTask(section: RoomySection, _ operation: () async throws -> Void) async {
         isLoading = true
         errorMessage = nil
         sectionErrors[section] = nil
@@ -344,7 +357,7 @@ public final class MoleViewModel: ObservableObject {
 
     private func writeTemporaryPlan(_ plan: ExecutionPlan) throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mole-plan-\(UUID().uuidString)")
+            .appendingPathComponent("roomy-plan-\(UUID().uuidString)")
             .appendingPathExtension("json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -352,7 +365,7 @@ public final class MoleViewModel: ObservableObject {
         return url
     }
 
-    private func section(for domain: ExecutionDomain) -> MoleSection {
+    private func section(for domain: ExecutionDomain) -> RoomySection {
         switch domain {
         case .clean: .cleanup
         case .uninstall: .applications
@@ -362,14 +375,33 @@ public final class MoleViewModel: ObservableObject {
         }
     }
 
-    private static func displayMessage(for error: Error) -> String {
+    nonisolated public static func displayMessage(for error: Error) -> String {
         if let localized = error as? LocalizedError,
            let description = localized.errorDescription,
            !description.isEmpty {
-            return description
+            return userFacingMessage(description)
         }
-        return error.localizedDescription
+        return userFacingMessage(error.localizedDescription)
     }
+
+    nonisolated public static func userFacingMessage(_ rawMessage: String) -> String {
+        let lowercased = rawMessage.lowercased()
+        let permissionMarkers = [
+            "operation not permitted",
+            "permission denied",
+            "not authorized",
+            "privacy",
+            "tcc"
+        ]
+
+        if permissionMarkers.contains(where: { lowercased.contains($0) }) {
+            return "macOS denied access to part of the scan. Enable Full Disk Access once in System Settings, or choose a narrower folder and try again."
+        }
+
+        return rawMessage
+    }
+
+    private static let permissionOnboardingDismissedKey = "RoomyUI.permissionOnboardingDismissed"
 }
 
 public enum PreviewExecutionState: Equatable {

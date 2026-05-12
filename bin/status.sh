@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mole - Status command.
+# Roomy - Status command.
 # Runs the Go system status panel.
 # Shows live system metrics.
 
@@ -11,5 +11,5 @@ if [[ -x "$GO_BIN" ]]; then
     exec "$GO_BIN" "$@"
 fi
 
-echo "Bundled status binary not found. Please reinstall Mole or run mo update to restore it." >&2
+echo "Bundled status binary not found. Please reinstall Roomy or run roomy update to restore it." >&2
 exit 1

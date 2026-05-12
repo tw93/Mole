@@ -9,7 +9,7 @@ fail() {
     exit 1
 }
 
-printf 'Running Mole release preflight...\n'
+printf 'Running Roomy release preflight...\n'
 
 git diff --check
 
@@ -17,7 +17,7 @@ if [[ -f package.json && ! -f package-lock.json ]]; then
     fail "package.json is present but package-lock.json is missing"
 fi
 
-tracked_generated=$(git ls-files -- .cache .build .mole-ui node_modules test-results playwright-report awesome-design-md)
+tracked_generated=$(git ls-files -- .cache .build .roomy-ui node_modules test-results playwright-report awesome-design-md)
 if [[ -n "$tracked_generated" ]]; then
     printf '%s\n' "$tracked_generated" >&2
     fail "generated, local runtime, or reference directories are tracked"

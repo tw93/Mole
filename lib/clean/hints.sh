@@ -1,25 +1,25 @@
 #!/bin/bash
-# Hint notices used by `mo clean` (non-destructive guidance only).
+# Hint notices used by `roomy clean` (non-destructive guidance only).
 
 set -euo pipefail
 
-mole_hints_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+roomy_hints_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1090
-source "$mole_hints_dir/purge_shared.sh"
+source "$roomy_hints_dir/purge_shared.sh"
 
-# Quick reminder probe for project build artifacts handled by `mo purge`.
+# Quick reminder probe for project build artifacts handled by `roomy purge`.
 # Designed to be very fast: shallow directory checks only, no deep find scans.
 # shellcheck disable=SC2329
 load_quick_purge_hint_paths() {
-    local config_file="$HOME/.config/mole/purge_paths"
+    local config_file="$HOME/.config/roomy/purge_paths"
     local -a paths=()
 
     while IFS= read -r line; do
         [[ -n "$line" ]] && paths+=("$line")
-    done < <(mole_purge_read_paths_config "$config_file")
+    done < <(roomy_purge_read_paths_config "$config_file")
 
     if [[ ${#paths[@]} -eq 0 ]]; then
-        paths=("${MOLE_PURGE_DEFAULT_SEARCH_PATHS[@]}")
+        paths=("${ROOMY_PURGE_DEFAULT_SEARCH_PATHS[@]}")
     fi
 
     if [[ ${#paths[@]} -gt 0 ]]; then
@@ -172,7 +172,7 @@ record_project_artifact_hint() {
 
 # shellcheck disable=SC2329
 is_quick_purge_project_root() {
-    mole_purge_is_project_root "$1"
+    roomy_purge_is_project_root "$1"
 }
 
 # shellcheck disable=SC2329
@@ -193,7 +193,7 @@ probe_project_artifact_hints() {
     local -a target_names=()
     while IFS= read -r target_name; do
         [[ -n "$target_name" ]] && target_names+=("$target_name")
-    done < <(mole_purge_quick_hint_target_names)
+    done < <(roomy_purge_quick_hint_target_names)
 
     local -a scan_roots=()
     while IFS= read -r path; do
@@ -388,7 +388,7 @@ show_system_data_hint_notice() {
         echo -e "  ${GREEN}${ICON_LIST}${NC} ${clue_labels[$i]}: ${human_size}"
         echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Path: ${GRAY}${clue_paths[$i]}${NC}"
     done
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo analyze, Device backups, docker system df"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: roomy analyze, Device backups, docker system df"
 }
 
 # shellcheck disable=SC2329
@@ -433,7 +433,7 @@ show_project_artifact_hint_notice() {
     if [[ -n "$example_text" ]]; then
         echo -e "  ${GRAY}${ICON_SUBLIST}${NC} Examples: ${GRAY}${example_text}${NC}"
     fi
-    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: mo purge"
+    echo -e "  ${GRAY}${ICON_REVIEW}${NC} Review: roomy purge"
 }
 
 # shellcheck disable=SC2329
@@ -508,7 +508,7 @@ readonly ORPHAN_DOTDIR_KNOWN_SAFE=(
     ".ssh" ".gnupg" ".gpg" ".pass""word-store"
     # Git
     ".gitconfig" ".gitignore_global" ".git-credentials" ".gitattributes_global"
-    # Language tools (Mole handles their caches separately)
+    # Language tools (Roomy handles their caches separately)
     ".pyenv" ".rbenv" ".nvm" ".nodenv" ".goenv" ".jenv"
     ".rustup" ".cargo" ".ghcup" ".stack" ".cabal"
     ".sdkman" ".jabba" ".asdf" ".mise" ".rtx" ".volta" ".fnm"
@@ -548,7 +548,7 @@ readonly ORPHAN_DOTDIR_KNOWN_SAFE=(
 # shellcheck disable=SC2329
 show_orphan_dotdir_hint_notice() {
     local max_hits=5
-    local age_days="${MOLE_DOTDIR_ORPHAN_AGE_DAYS:-60}"
+    local age_days="${ROOMY_DOTDIR_ORPHAN_AGE_DAYS:-60}"
     local now
     now=$(date +%s)
 

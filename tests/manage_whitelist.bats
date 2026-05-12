@@ -23,7 +23,7 @@ teardown_file() {
 setup() {
     rm -rf "$HOME/.config"
     mkdir -p "$HOME"
-    WHITELIST_PATH="$HOME/.config/mole/whitelist"
+    WHITELIST_PATH="$HOME/.config/roomy/whitelist"
 }
 
 @test "patterns_equivalent treats paths with tilde expansion as equal" {
@@ -62,7 +62,7 @@ setup() {
 
 @test "load_whitelist falls back to defaults when config missing" {
     rm -f "$WHITELIST_PATH"
-    HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; rm -f \"\$HOME/.config/mole/whitelist\"; load_whitelist; printf '%s\n' \"\${CURRENT_WHITELIST_PATTERNS[@]}\"" > "$HOME/current_whitelist.txt"
+    HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; rm -f \"\$HOME/.config/roomy/whitelist\"; load_whitelist; printf '%s\n' \"\${CURRENT_WHITELIST_PATTERNS[@]}\"" > "$HOME/current_whitelist.txt"
     HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; printf '%s\n' \"\${DEFAULT_WHITELIST_PATTERNS[@]}\"" > "$HOME/default_whitelist.txt"
 
     current=()
@@ -96,36 +96,36 @@ setup() {
     [ "$status" -ne 0 ]
 }
 
-@test "mo clean --whitelist persists selections" {
-    whitelist_file="$HOME/.config/mole/whitelist"
+@test "roomy clean --whitelist persists selections" {
+    whitelist_file="$HOME/.config/roomy/whitelist"
     mkdir -p "$(dirname "$whitelist_file")"
 
-    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./mo clean --whitelist"
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./roomy clean --whitelist"
     [ "$status" -eq 0 ]
     first_pattern=$(grep -v '^[[:space:]]*#' "$whitelist_file" | grep -v '^[[:space:]]*$' | head -n 1)
     [ -n "$first_pattern" ]
 
-    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$' \\n' | HOME='$HOME' ./mo clean --whitelist"
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$' \\n' | HOME='$HOME' ./roomy clean --whitelist"
     [ "$status" -eq 0 ]
     run grep -Fxq "$first_pattern" "$whitelist_file"
     [ "$status" -eq 1 ]
 
-    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./mo clean --whitelist"
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./roomy clean --whitelist"
     [ "$status" -eq 0 ]
     run grep -Fxq "$first_pattern" "$whitelist_file"
     [ "$status" -eq 1 ]
 }
 
-@test "mo clean --whitelist cancel preserves existing file (#807)" {
-    whitelist_file="$HOME/.config/mole/whitelist"
+@test "roomy clean --whitelist cancel preserves existing file (#807)" {
+    whitelist_file="$HOME/.config/roomy/whitelist"
     mkdir -p "$(dirname "$whitelist_file")"
 
-    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./mo clean --whitelist"
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$HOME' ./roomy clean --whitelist"
     [ "$status" -eq 0 ]
     [[ -f "$whitelist_file" ]]
     before_hash=$(shasum "$whitelist_file" | awk '{print $1}')
 
-    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf 'q' | HOME='$HOME' ./mo clean --whitelist"
+    run bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf 'q' | HOME='$HOME' ./roomy clean --whitelist"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Cancelled"* ]]
     after_hash=$(shasum "$whitelist_file" | awk '{print $1}')
@@ -170,7 +170,7 @@ setup() {
     local status
     if HOME="$HOME" bash --noprofile --norc -c "
         source '$PROJECT_ROOT/lib/manage/whitelist.sh'
-        rm -f \"\$HOME/.config/mole/whitelist\"
+        rm -f \"\$HOME/.config/roomy/whitelist\"
         load_whitelist
         WHITELIST_PATTERNS=(\"\${CURRENT_WHITELIST_PATTERNS[@]}\")
         is_path_whitelisted \"\$HOME/Library/Caches/tealdeer\"

@@ -22,7 +22,7 @@ teardown_file() {
 
 setup() {
 	export TERM="xterm-256color"
-	export MO_DEBUG=0
+	export ROOMY_DEBUG=0
 
 	# Create standard scan directories
 	mkdir -p "$HOME/Downloads"
@@ -63,7 +63,7 @@ setup() {
 	touch "$HOME/Downloads/Chrome.dmg"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -79,7 +79,7 @@ setup() {
 	touch "$HOME/Downloads/App.mpkg"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -99,7 +99,7 @@ setup() {
 	touch "$HOME/Downloads/level1/level2/level3/too-deep.dmg"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -112,13 +112,13 @@ setup() {
 	[[ "$output" != *"too-deep.dmg"* ]]
 }
 
-@test "scan_installers_in_path (fallback find): honors MOLE_INSTALLER_SCAN_MAX_DEPTH" {
+@test "scan_installers_in_path (fallback find): honors ROOMY_INSTALLER_SCAN_MAX_DEPTH" {
 	mkdir -p "$HOME/Downloads/level1"
 	touch "$HOME/Downloads/top.dmg"
 	touch "$HOME/Downloads/level1/nested.dmg"
 
-	run env PATH="/usr/bin:/bin" MOLE_INSTALLER_SCAN_MAX_DEPTH=1 bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+	run env PATH="/usr/bin:/bin" ROOMY_INSTALLER_SCAN_MAX_DEPTH=1 bash -euo pipefail -c "
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -130,7 +130,7 @@ setup() {
 
 @test "scan_installers_in_path (fallback find): handles non-existent directory" {
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/NonExistent"
@@ -146,7 +146,7 @@ setup() {
 	touch "$HOME/Downloads/Installer.dmg"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -172,7 +172,7 @@ setup() {
 	touch "$HOME/Downloads/test.dmg"
 
 	run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_all_installers
     ' bash "$PROJECT_ROOT/bin/installer.sh"
@@ -189,7 +189,7 @@ setup() {
 	touch "$HOME/Downloads/My App Installer.dmg"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -202,7 +202,7 @@ setup() {
 	touch "$HOME/Downloads/App-v1.2.3_beta.pkg"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -217,7 +217,7 @@ setup() {
 	touch "$HOME/Downloads/image.png"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -234,7 +234,7 @@ setup() {
 	ln -s /nonexistent "$HOME/Downloads/dangling.lnk"
 
 	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"

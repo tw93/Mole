@@ -127,10 +127,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          curl -fsSL -o /tmp/SHA256SUMS "https://github.com/tw93/Mole/releases/download/${TAG}/SHA256SUMS"
+          curl -fsSL -o /tmp/SHA256SUMS "https://github.com/tw93/Roomy/releases/download/${TAG}/SHA256SUMS"
           ARM_SHA=$(awk '$2 == "binaries-darwin-arm64.tar.gz" { print $1 }' /tmp/SHA256SUMS)
           AMD_SHA=$(awk '$2 == "binaries-darwin-amd64.tar.gz" { print $1 }' /tmp/SHA256SUMS)
-          SOURCE_SHA=$(curl -fsSL "https://github.com/tw93/Mole/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
+          SOURCE_SHA=$(curl -fsSL "https://github.com/tw93/Roomy/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
 
           if [[ -z "$ARM_SHA" || -z "$AMD_SHA" || -z "$SOURCE_SHA" ]]; then
             echo "Failed to resolve release checksums"
@@ -139,7 +139,7 @@ jobs:
 
           git clone "https://x-access-token:${PAT_TOKEN}@github.com/tw93/homebrew-tap.git" /tmp/homebrew-tap
           ./scripts/update_homebrew_tap_formula.sh \
-            --formula /tmp/homebrew-tap/Formula/mole.rb \
+            --formula /tmp/homebrew-tap/Formula/roomy.rb \
             --tag "${TAG}" \
             --source-sha "${SOURCE_SHA}" \
             --arm-sha "${ARM_SHA}" \
@@ -149,23 +149,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet -- Formula/mole.rb; then
+          if git diff --quiet -- Formula/roomy.rb; then
             echo "No Homebrew formula changes to push"
             exit 0
           fi
 
-          git add Formula/mole.rb
-          git commit -m "mole ${VERSION}" -m "Automated release via GitHub Actions"
+          git add Formula/roomy.rb
+          git commit -m "roomy ${VERSION}" -m "Automated release via GitHub Actions"
           git push origin HEAD:main
 
       - name: Update Homebrew formula (Official Core)
         uses: mislav/bump-homebrew-formula-action@ccf2332299a883f6af50a1d2d41e5df7904dd769 # v4.1
         with:
-          formula-name: mole
+          formula-name: roomy
           homebrew-tap: Homebrew/homebrew-core
           tag-name: ${{ steps.tag_version.outputs.tag }}
           commit-message: |
-            mole ${{ steps.tag_version.outputs.version }}
+            roomy ${{ steps.tag_version.outputs.version }}
 
             Automated release via GitHub Actions
         env:

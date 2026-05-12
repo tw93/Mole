@@ -1,4 +1,4 @@
-# golangci-lint configuration for Mole
+# golangci-lint configuration for Roomy
 # https://golangci-lint.run/usage/configuration/
 
 version: "2"

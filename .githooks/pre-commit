@@ -24,7 +24,7 @@ echo ""
 
 # Only check staged shell/Go files to keep commits fast.
 STAGED=$(git diff --cached --name-only --diff-filter=ACM)
-HAS_SHELL=$(echo "$STAGED" | grep -E '\.sh$|^mole$|^bin/' || true)
+HAS_SHELL=$(echo "$STAGED" | grep -E '\.sh$|^roomy$|^bin/' || true)
 HAS_GO=$(echo "$STAGED" | grep -E '\.go$' || true)
 
 FAILED=0

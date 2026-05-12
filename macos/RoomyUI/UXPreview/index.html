@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MoleUI UX Preview</title>
+  <title>RoomyUI UX Preview</title>
   <style>
     :root {
       color-scheme: light;
       --ink: #182026;
       --muted: #63707a;
-      --line: rgba(24, 32, 38, 0.10);
-      --panel: rgba(255, 255, 255, 0.76);
-      --panel-strong: rgba(255, 255, 255, 0.92);
+      --line: rgba(24, 32, 38, 0.09);
+      --glass-line: rgba(255, 255, 255, 0.62);
+      --panel: rgba(255, 255, 255, 0.58);
+      --panel-strong: rgba(255, 255, 255, 0.70);
       --blue: #0a84ff;
       --green: #28c76f;
       --amber: #f5a524;
@@ -26,7 +27,8 @@
       min-height: 100vh;
       color: var(--ink);
       background:
-        linear-gradient(180deg, #f7fbfc 0%, #edf4f6 50%, #e7eef0 100%);
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 247, 250, 0.68) 48%, rgba(248, 250, 251, 0.95)),
+        linear-gradient(180deg, #f8fbfc 0%, #eef4f6 100%);
     }
 
     .app {
@@ -37,7 +39,8 @@
 
     aside {
       padding: 22px 14px;
-      background: rgba(32, 39, 43, 0.92);
+      background: rgba(24, 31, 36, 0.82);
+      backdrop-filter: blur(24px) saturate(160%);
       color: white;
       border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
@@ -76,7 +79,8 @@
     }
 
     .nav-item.active {
-      background: #0b68d8;
+      background: rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
       color: white;
     }
 
@@ -149,7 +153,10 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
-      box-shadow: 0 12px 28px rgba(24, 32, 38, 0.05);
+      backdrop-filter: blur(24px) saturate(165%);
+      box-shadow:
+        inset 0 1px 0 var(--glass-line),
+        0 16px 36px rgba(24, 32, 38, 0.06);
     }
 
     .panel h2,
@@ -202,6 +209,8 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel-strong);
+      backdrop-filter: blur(24px) saturate(165%);
+      box-shadow: inset 0 1px 0 var(--glass-line);
     }
 
     .row {
@@ -319,7 +328,7 @@
   <div class="app">
     <aside data-ux-surface="sidebar">
       <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
-      <nav aria-label="Mole sections">
+      <nav aria-label="Roomy sections">
         <div class="nav-item active"><span class="glyph">●</span><span class="nav-text">Home</span></div>
         <div class="nav-item"><span class="glyph">✦</span><span class="nav-text">Cleanup</span></div>
         <div class="nav-item"><span class="glyph">□</span><span class="nav-text">Applications</span></div>
@@ -333,18 +342,23 @@
     <main>
       <header data-ux-surface="header">
         <div>
-          <h1>Mole System Care</h1>
-          <div class="subtitle">Preview cleanup, protect important files, and keep the Mac responsive.</div>
+          <h1>Free Up Your Mac</h1>
+          <div class="subtitle">Start with disk space, preview cleanup, and move recoverable items to Trash.</div>
         </div>
-        <button class="primary">Start Care Scan</button>
+        <button class="primary">Preview Cleanup</button>
       </header>
 
       <section class="grid metrics" aria-label="Care summary">
         <article class="panel care-score" data-ux-surface="metric">
-          <div class="metric-label">Health Score</div>
-          <div class="metric-value">82</div>
+          <div class="metric-label">Free Space</div>
+          <div class="metric-value">91 GB</div>
           <div class="bar"><span></span></div>
-          <div class="metric-label">Good, storage pressure needs review</div>
+          <div class="metric-label">Root volume available</div>
+        </article>
+        <article class="panel" data-ux-surface="metric">
+          <div class="metric-label">Disk Used</div>
+          <div class="metric-value">86%</div>
+          <div class="metric-label">548 GB of 637 GB used</div>
         </article>
         <article class="panel" data-ux-surface="metric">
           <div class="metric-label">Potential Cleanup</div>
@@ -352,27 +366,19 @@
           <div class="metric-label">966 items across 51 groups</div>
         </article>
         <article class="panel" data-ux-surface="metric">
-          <div class="metric-label">Disk Pressure</div>
-          <div class="metric-value">86%</div>
-          <div class="metric-label">Root volume is getting tight</div>
-        </article>
-        <article class="panel" data-ux-surface="metric">
-          <div class="metric-label">Protection</div>
-          <div class="metric-value">2,606</div>
-          <div class="metric-label">Protected or whitelisted skips</div>
+          <div class="metric-label">Selected</div>
+          <div class="metric-value">0 KB</div>
+          <div class="metric-label">Choose files after preview</div>
         </article>
       </section>
 
-      <section class="band failure-grid" aria-label="Recovery states">
-        <div class="notice" data-ux-surface="permission-denied">
-          <strong>Administrator action needs approval</strong>
-          <span>Cleanup can continue in preview mode while Mole waits for helper approval in System Settings.</span>
-          <span class="pill">Permission denied</span>
-        </div>
-        <div class="notice" data-ux-surface="partial-cleanup">
-          <strong>Partial cleanup is recoverable</strong>
-          <span>Moved items are tracked in the operation journal with source paths, outcomes, and Trash routing details.</span>
-          <span class="pill">Review journal</span>
+      <section class="band" data-ux-surface="scan-presets">
+        <h2>Free Up Space</h2>
+        <div class="actions">
+          <button>Preview Cleanup</button>
+          <button>Scan Home</button>
+          <button>Find Installers</button>
+          <button>Scan Project Artifacts</button>
         </div>
       </section>
 
@@ -407,6 +413,22 @@
         </div>
       </section>
 
+      <section class="band" data-ux-surface="operation-journal">
+        <h2>Recent Activity</h2>
+        <div class="table">
+          <div class="row">
+            <strong>Storage completed</strong>
+            <span class="secondary">Scan complete · 3 items</span>
+            <span class="pill safe">Journal</span>
+          </div>
+          <div class="row">
+            <strong>Clean TRASHED</strong>
+            <span class="secondary">Moved selected cache files to Trash</span>
+            <span class="pill safe">Recoverable</span>
+          </div>
+        </div>
+      </section>
+
       <section class="band" data-ux-surface="monitor-table">
         <h2>Live Signals</h2>
         <div class="table">
@@ -416,9 +438,9 @@
             <span class="pill safe">On</span>
           </div>
           <div class="row">
-            <strong>CPU and memory</strong>
-            <span class="secondary">68% CPU · 68% memory</span>
-            <span class="pill">Fair</span>
+            <strong>Disk I/O</strong>
+            <span class="secondary">Read/write activity for cleanup context</span>
+            <span class="pill">Quiet</span>
           </div>
           <div class="row">
             <strong>GPU, thermal, proxy</strong>

@@ -70,7 +70,7 @@ request_sudo_access() {
     local prompt_msg="${1:-Admin access required}"
 
     # Tests must never trigger real password or Touch ID prompts.
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
     fi
 
@@ -97,7 +97,7 @@ request_sudo_access() {
 
         # Display native macOS password dialog
         local password
-        password=$(osascript -e "display dialog \"$prompt_msg\" default answer \"\" with title \"Mole\" with icon caution with hidden answer" -e 'text returned of result' 2> /dev/null)
+        password=$(osascript -e "display dialog \"$prompt_msg\" default answer \"\" with title \"Roomy\" with icon caution with hidden answer" -e 'text returned of result' 2> /dev/null)
 
         if [[ -z "$password" ]]; then
             # User cancelled the dialog
@@ -203,8 +203,8 @@ request_sudo_access() {
 # ============================================================================
 
 # Global state
-MOLE_SUDO_KEEPALIVE_PID=""
-MOLE_SUDO_ESTABLISHED="false"
+ROOMY_SUDO_KEEPALIVE_PID=""
+ROOMY_SUDO_ESTABLISHED="false"
 
 # Start sudo keepalive
 _start_sudo_keepalive() {
@@ -246,7 +246,7 @@ _stop_sudo_keepalive() {
 
 # Check if sudo session is active
 has_sudo_session() {
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
     fi
 
@@ -274,41 +274,41 @@ ensure_sudo_session() {
     local prompt="${1:-Admin access required}"
 
     # Check if already established
-    if has_sudo_session && [[ "$MOLE_SUDO_ESTABLISHED" == "true" ]]; then
+    if has_sudo_session && [[ "$ROOMY_SUDO_ESTABLISHED" == "true" ]]; then
         return 0
     fi
 
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-        MOLE_SUDO_ESTABLISHED="false"
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
+        ROOMY_SUDO_ESTABLISHED="false"
         return 1
     fi
 
     # Stop old keepalive if exists
-    if [[ -n "$MOLE_SUDO_KEEPALIVE_PID" ]]; then
-        _stop_sudo_keepalive "$MOLE_SUDO_KEEPALIVE_PID"
-        MOLE_SUDO_KEEPALIVE_PID=""
+    if [[ -n "$ROOMY_SUDO_KEEPALIVE_PID" ]]; then
+        _stop_sudo_keepalive "$ROOMY_SUDO_KEEPALIVE_PID"
+        ROOMY_SUDO_KEEPALIVE_PID=""
     fi
 
     # Request sudo access
     if ! request_sudo "$prompt"; then
-        MOLE_SUDO_ESTABLISHED="false"
+        ROOMY_SUDO_ESTABLISHED="false"
         return 1
     fi
 
     # Start keepalive
-    MOLE_SUDO_KEEPALIVE_PID=$(_start_sudo_keepalive)
+    ROOMY_SUDO_KEEPALIVE_PID=$(_start_sudo_keepalive)
 
-    MOLE_SUDO_ESTABLISHED="true"
+    ROOMY_SUDO_ESTABLISHED="true"
     return 0
 }
 
 # Stop sudo session and cleanup
 stop_sudo_session() {
-    if [[ -n "$MOLE_SUDO_KEEPALIVE_PID" ]]; then
-        _stop_sudo_keepalive "$MOLE_SUDO_KEEPALIVE_PID"
-        MOLE_SUDO_KEEPALIVE_PID=""
+    if [[ -n "$ROOMY_SUDO_KEEPALIVE_PID" ]]; then
+        _stop_sudo_keepalive "$ROOMY_SUDO_KEEPALIVE_PID"
+        ROOMY_SUDO_KEEPALIVE_PID=""
     fi
-    MOLE_SUDO_ESTABLISHED="false"
+    ROOMY_SUDO_ESTABLISHED="false"
 }
 
 # Register cleanup on script exit

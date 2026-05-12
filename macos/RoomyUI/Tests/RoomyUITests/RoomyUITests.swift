@@ -1,10 +1,10 @@
 import XCTest
-@testable import MoleUIPrivileged
-@testable import MoleUICore
+@testable import RoomyUIPrivileged
+@testable import RoomyUICore
 
-final class MoleUITests: XCTestCase {
+final class RoomyUITests: XCTestCase {
     func testCommandBuilderProducesAPIArguments() {
-        let builder = MoleCommandBuilder(executableURL: URL(fileURLWithPath: "/tmp/mo"))
+        let builder = RoomyCommandBuilder(executableURL: URL(fileURLWithPath: "/tmp/roomy"))
 
         XCTAssertEqual(builder.arguments(for: .status), ["api", "status"])
         XCTAssertEqual(builder.arguments(for: .cleanupPreview), ["api", "clean", "preview", "--json"])
@@ -60,32 +60,32 @@ final class MoleUITests: XCTestCase {
     }
 
     func testCLIPathResolverHonorsEnvironmentOverride() {
-        let resolved = MoleCLIPathResolver.resolve(
-            environment: ["MOLE_CLI_PATH": "/custom/mo"],
+        let resolved = RoomyCLIPathResolver.resolve(
+            environment: ["ROOMY_CLI_PATH": "/custom/roomy"],
             currentDirectory: URL(fileURLWithPath: "/tmp")
         )
 
-        XCTAssertEqual(resolved.path, "/custom/mo")
+        XCTAssertEqual(resolved.path, "/custom/roomy")
     }
 
     func testCLIPathResolverUsesBundledProjectRootMarker() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let resources = root.appendingPathComponent("Resources", isDirectory: true)
-        let project = root.appendingPathComponent("MoleProject", isDirectory: true)
-        let cli = project.appendingPathComponent("mo")
+        let project = root.appendingPathComponent("RoomyProject", isDirectory: true)
+        let cli = project.appendingPathComponent("roomy")
 
         try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: cli.path, contents: Data("#!/bin/sh\n".utf8))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
         try project.path.write(
-            to: resources.appendingPathComponent("mole-project-root"),
+            to: resources.appendingPathComponent("roomy-project-root"),
             atomically: true,
             encoding: .utf8
         )
 
-        let resolved = MoleCLIPathResolver.resolve(
+        let resolved = RoomyCLIPathResolver.resolve(
             environment: [:],
             currentDirectory: URL(fileURLWithPath: "/tmp"),
             bundleResourceURL: resources,
@@ -104,7 +104,7 @@ final class MoleUITests: XCTestCase {
           i=$((i + 1))
         done
         """)
-        let client = MoleAPIClient(executableURL: script, environment: [:], processTimeout: 5)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
 
         let data = try await client.runProcess(.status)
 
@@ -113,7 +113,7 @@ final class MoleUITests: XCTestCase {
 
     func testAdministratorProcessUsesPrivilegedHelperRunner() async throws {
         let planURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mole-admin-plan-\(UUID().uuidString).json")
+            .appendingPathComponent("roomy-admin-plan-\(UUID().uuidString).json")
         try #"{"confirmed":true}"#.write(to: planURL, atomically: true, encoding: .utf8)
 
         let runner = RecordingPrivilegedRunner(result: PrivilegedCommandResult(
@@ -122,7 +122,7 @@ final class MoleUITests: XCTestCase {
             standardError: Data()
         ))
         let script = try makeExecutableScript("#!/bin/sh\n")
-        let client = MoleAPIClient(executableURL: script, environment: [:], processTimeout: 12, privilegedRunner: runner)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 12, privilegedRunner: runner)
 
         let data = try await client.runAdministratorProcess(.execute(domain: .clean, planURL: planURL))
 
@@ -138,17 +138,104 @@ final class MoleUITests: XCTestCase {
         sleep 2
         printf '{}\\n'
         """)
-        let client = MoleAPIClient(executableURL: script, environment: [:], processTimeout: 0.1)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 0.1)
 
         do {
             _ = try await client.runProcess(.status)
             XCTFail("Expected timeout")
-        } catch MoleAPIError.timedOut(let command, let seconds) {
+        } catch RoomyAPIError.timedOut(let command, let seconds) {
             XCTAssertTrue(command.contains("api status"))
             XCTAssertEqual(seconds, 0.1, accuracy: 0.01)
         } catch {
-            XCTFail("Expected MoleAPIError.timedOut, got \(error)")
+            XCTFail("Expected RoomyAPIError.timedOut, got \(error)")
         }
+    }
+
+    @MainActor
+    func testHomeLoadAvoidsProtectedPreviewScansOnStartup() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("roomy-startup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let callsLog = root.appendingPathComponent("calls.log")
+        let script = try makeExecutableScript("""
+        #!/bin/sh
+        printf '%s\\n' "$*" >> "\(callsLog.path)"
+        if [ "$1 $2" = "api status" ]; then
+          printf '%s\\n' '{"health_score":91,"gpu":[],"disks":[],"batteries":[],"network":[],"top_processes":[],"process_alerts":[]}'
+          exit 0
+        fi
+        if [ "$1 $2 $3" = "api optimize preview" ]; then
+          printf '%s\\n' '{"schema_version":1,"memory_used_gb":1,"memory_total_gb":2,"disk_used_percent":40,"optimizations":[]}'
+          exit 0
+        fi
+        exit 64
+        """)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
+        let model = RoomyViewModel(apiClient: client)
+
+        await model.loadHome()
+
+        let calls = try String(contentsOf: callsLog, encoding: .utf8)
+            .split(separator: "\n")
+            .map(String.init)
+        XCTAssertEqual(calls, ["api status"])
+        XCTAssertEqual(model.status?.healthScore, 91)
+        XCTAssertNil(model.optimizePreview)
+    }
+
+    func testFullDiskAccessDetectorSummarizesProbeResults() {
+        let enabled = RoomyFullDiskAccessDetector.status(for: [
+            FullDiskAccessProbe(path: "/Users/example/Library/Mail", exists: true, readable: true)
+        ])
+        XCTAssertEqual(enabled.state, .enabled)
+        XCTAssertEqual(enabled.displayValue, "Enabled")
+
+        let limited = RoomyFullDiskAccessDetector.status(for: [
+            FullDiskAccessProbe(path: "/Users/example/Library/Mail", exists: true, readable: false, errorDescription: "Operation not permitted")
+        ])
+        XCTAssertEqual(limited.state, .limited)
+        XCTAssertTrue(limited.detail.contains("Full Disk Access"))
+
+        let unknown = RoomyFullDiskAccessDetector.status(for: [
+            FullDiskAccessProbe(path: "/Users/example/Library/Mail", exists: false, readable: false)
+        ])
+        XCTAssertEqual(unknown.state, .unknown)
+    }
+
+    func testPermissionDeniedErrorsBecomeActionableMessages() {
+        let message = RoomyViewModel.userFacingMessage("find: /Users/example/Library/Mail: Operation not permitted")
+
+        XCTAssertEqual(
+            message,
+            "macOS denied access to part of the scan. Enable Full Disk Access once in System Settings, or choose a narrower folder and try again."
+        )
+
+        let event = ExecutionEvent(event: "failed", domain: "storage", message: "Permission denied", exitCode: 1)
+        XCTAssertEqual(RoomyViewModel.transition(from: .running, event: event), .failed(message))
+    }
+
+    func testOperationJournalReadsNewestEntries() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("roomy-journal-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let journal = root.appendingPathComponent("operation_journal.jsonl")
+        let lines = [
+            #"{"schema_version":1,"timestamp":"2026-05-12 01:00:00","record_type":"operation","command":"clean","action":"TRASHED","path":"/tmp/a","detail":"1 KB"}"#,
+            #"{"schema_version":1,"timestamp":"2026-05-12 01:01:00","record_type":"event","source":"api","payload":{"event":"completed","domain":"storage","message":"Scan complete","exit_code":0,"item_count":3}}"#
+        ]
+        try lines.joined(separator: "\n").write(to: journal, atomically: true, encoding: .utf8)
+
+        let entries = RoomyAPIClient.readOperationJournal(url: journal, limit: 2)
+
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertEqual(entries[0].title, "Storage completed")
+        XCTAssertEqual(entries[0].summary, "Scan complete")
+        XCTAssertEqual(entries[1].title, "Clean TRASHED")
+        XCTAssertEqual(entries[1].summary, "/tmp/a")
     }
 
     func testStreamEventsYieldsBeforeProcessExit() async throws {
@@ -158,7 +245,7 @@ final class MoleUITests: XCTestCase {
         sleep 1
         printf '%s\\n' '{"event":"completed","domain":"test","exit_code":0}'
         """)
-        let client = MoleAPIClient(executableURL: script, environment: [:], processTimeout: 5)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
         let start = Date()
         var firstOffset: TimeInterval?
         var events: [ExecutionEvent] = []
@@ -182,15 +269,15 @@ final class MoleUITests: XCTestCase {
         printf '%s\\n' '{"event":"started","domain":"test"}'
         exit 7
         """)
-        let client = MoleAPIClient(executableURL: script, environment: [:], processTimeout: 5)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
 
         do {
             for try await _ in client.streamEvents(.status) {}
             XCTFail("Expected process failure")
-        } catch MoleAPIError.processFailed(let status, _) {
+        } catch RoomyAPIError.processFailed(let status, _) {
             XCTAssertEqual(status, 7)
         } catch {
-            XCTFail("Expected MoleAPIError.processFailed, got \(error)")
+            XCTFail("Expected RoomyAPIError.processFailed, got \(error)")
         }
     }
 
@@ -209,7 +296,7 @@ final class MoleUITests: XCTestCase {
           "whitelist_count": 0,
           "admin_required": false,
           "delete_mode": "trash",
-          "details_path": "/Users/example/.config/mole/clean-list.txt",
+          "details_path": "/Users/example/.config/roomy/clean-list.txt",
           "categories": [
             {
               "section": "User essentials",
@@ -261,7 +348,7 @@ final class MoleUITests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let script = root.appendingPathComponent("mo")
+        let script = root.appendingPathComponent("roomy")
         try contents.write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
         return script
@@ -272,9 +359,9 @@ final class MoleUITests: XCTestCase {
         let completed = ExecutionEvent(event: "completed", domain: "clean", message: nil, exitCode: 0)
         let failed = ExecutionEvent(event: "failed", domain: "clean", message: "Plan refused", exitCode: 1)
 
-        XCTAssertEqual(MoleViewModel.transition(from: .previewReady, event: started), .running)
-        XCTAssertEqual(MoleViewModel.transition(from: .running, event: completed), .completed)
-        XCTAssertEqual(MoleViewModel.transition(from: .running, event: failed), .failed("Plan refused"))
+        XCTAssertEqual(RoomyViewModel.transition(from: .previewReady, event: started), .running)
+        XCTAssertEqual(RoomyViewModel.transition(from: .running, event: completed), .completed)
+        XCTAssertEqual(RoomyViewModel.transition(from: .running, event: failed), .failed("Plan refused"))
     }
 
     func testStorageCleanupPreviewsDecodeContracts() throws {
@@ -343,7 +430,7 @@ final class MoleUITests: XCTestCase {
         let purgePathsJSON = """
         {
           "schema_version": 1,
-          "config_path": "/Users/example/.config/mole/purge_paths",
+          "config_path": "/Users/example/.config/roomy/purge_paths",
           "paths": ["/Users/example/Projects"],
           "default_paths": ["/Users/example/Projects", "/Users/example/Code"]
         }
@@ -365,7 +452,7 @@ final class MoleUITests: XCTestCase {
           "shell": "zsh",
           "config_file": "/Users/example/.zshrc",
           "installed": false,
-          "command_name": "mo"
+          "command_name": "roomy"
         }
         """
 
@@ -383,7 +470,7 @@ final class MoleUITests: XCTestCase {
           "commands": [
             {
               "command": "clean",
-              "title": "Mole Clean",
+              "title": "Roomy Clean",
               "raycast_installed": true,
               "alfred_installed": false
             }
@@ -398,8 +485,8 @@ final class MoleUITests: XCTestCase {
           "channel": "stable",
           "commit": "",
           "install_method": "local",
-          "cli_path": "/Users/example/Mole/mo",
-          "config_path": "/Users/example/.config/mole"
+          "cli_path": "/Users/example/Roomy/roomy",
+          "config_path": "/Users/example/.config/roomy"
         }
         """
 
@@ -408,7 +495,7 @@ final class MoleUITests: XCTestCase {
         let touchID = try JSONDecoder().decode(TouchIDStatus.self, from: Data(touchIDJSON.utf8))
         let completion = try JSONDecoder().decode(CompletionStatus.self, from: Data(completionJSON.utf8))
         let launchers = try JSONDecoder().decode(LauncherStatus.self, from: Data(launcherJSON.utf8))
-        let maintenance = try JSONDecoder().decode(MoleMaintenanceStatus.self, from: Data(maintenanceJSON.utf8))
+        let maintenance = try JSONDecoder().decode(RoomyMaintenanceStatus.self, from: Data(maintenanceJSON.utf8))
 
         XCTAssertTrue(whitelist.items[0].selected)
         XCTAssertEqual(purgePaths.paths, ["/Users/example/Projects"])
@@ -417,7 +504,7 @@ final class MoleUITests: XCTestCase {
         XCTAssertEqual(completion.shell, "zsh")
         XCTAssertFalse(completion.installed)
         XCTAssertTrue(launchers.raycastInstalled)
-        XCTAssertEqual(launchers.commands.first?.title, "Mole Clean")
+        XCTAssertEqual(launchers.commands.first?.title, "Roomy Clean")
         XCTAssertEqual(maintenance.version, "1.38.0")
         XCTAssertEqual(maintenance.installMethod, "local")
     }
@@ -515,18 +602,18 @@ final class MoleUITests: XCTestCase {
         XCTAssertEqual(Formatters.cleanupBytes(488), "488B")
     }
 
-    func testPrivilegedCommandPolicyOnlyAllowsMoleExecutePlans() throws {
+    func testPrivilegedCommandPolicyOnlyAllowsRoomyExecutePlans() throws {
         let planURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mole-policy-plan-\(UUID().uuidString).json")
+            .appendingPathComponent("roomy-policy-plan-\(UUID().uuidString).json")
         try #"{"confirmed":true}"#.write(to: planURL, atomically: true, encoding: .utf8)
 
         let command = try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "clean", "execute", "--plan", planURL.path],
             environment: [
                 "HOME": "/Users/example",
                 "PATH": "/tmp/unsafe",
-                "MOLE_CLI_PATH": "/tmp/unsafe-mo",
+                "ROOMY_CLI_PATH": "/tmp/unsafe-roomy",
                 "UNSAFE": "1",
                 "TERM": "xterm-256color"
             ],
@@ -537,7 +624,7 @@ final class MoleUITests: XCTestCase {
         XCTAssertEqual(command.environment["HOME"], "/Users/example")
         XCTAssertEqual(command.environment["PATH"], PrivilegedCommandPolicy.safePath)
         XCTAssertEqual(command.environment["TERM"], "xterm-256color")
-        XCTAssertNil(command.environment["MOLE_CLI_PATH"])
+        XCTAssertNil(command.environment["ROOMY_CLI_PATH"])
         XCTAssertNil(command.environment["UNSAFE"])
 
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
@@ -548,14 +635,14 @@ final class MoleUITests: XCTestCase {
         ))
 
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "status"],
             environment: [:],
             timeoutSeconds: 5
         ))
 
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "clean", "execute", "--plan", planURL.path],
             environment: [:],
             timeoutSeconds: PrivilegedCommandPolicy.maxTimeoutSeconds + 1
@@ -564,7 +651,7 @@ final class MoleUITests: XCTestCase {
 
     func testPrivilegedCommandPolicyValidatesPlanFiles() throws {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mole-policy-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("roomy-policy-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -572,7 +659,7 @@ final class MoleUITests: XCTestCase {
         try #"{"confirmed":true"#.write(to: invalidJSON, atomically: true, encoding: .utf8)
 
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "clean", "execute", "--plan", invalidJSON.path],
             environment: [:],
             timeoutSeconds: 5
@@ -583,7 +670,7 @@ final class MoleUITests: XCTestCase {
         let unconfirmed = root.appendingPathComponent("unconfirmed.json")
         try #"{"confirmed":false}"#.write(to: unconfirmed, atomically: true, encoding: .utf8)
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "clean", "execute", "--plan", unconfirmed.path],
             environment: [:],
             timeoutSeconds: 5
@@ -592,7 +679,7 @@ final class MoleUITests: XCTestCase {
         let oversized = root.appendingPathComponent("oversized.json")
         try Data(repeating: 0x20, count: PrivilegedCommandPolicy.maxPlanBytes + 1).write(to: oversized)
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "clean", "execute", "--plan", oversized.path],
             environment: [:],
             timeoutSeconds: 5
@@ -603,7 +690,7 @@ final class MoleUITests: XCTestCase {
         try #"{"confirmed":true}"#.write(to: realPlan, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: symlinkPlan, withDestinationURL: realPlan)
         XCTAssertThrowsError(try PrivilegedCommandPolicy.command(
-            executablePath: "/usr/local/bin/mo",
+            executablePath: "/usr/local/bin/roomy",
             arguments: ["api", "clean", "execute", "--plan", symlinkPlan.path],
             environment: [:],
             timeoutSeconds: 5
@@ -611,7 +698,7 @@ final class MoleUITests: XCTestCase {
     }
 }
 
-private final class RecordingPrivilegedRunner: MolePrivilegedCommandRunning {
+private final class RecordingPrivilegedRunner: RoomyPrivilegedCommandRunning {
     var commands: [PrivilegedCommand] = []
     var result: PrivilegedCommandResult
 

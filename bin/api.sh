@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mole - JSON API surface for native UI clients.
+# Roomy - JSON API surface for native UI clients.
 # Keeps the CLI/TUI as the execution engine while exposing stable contracts.
 
 set -euo pipefail
@@ -99,8 +99,8 @@ api_event() {
 }
 
 api_find_status_bin() {
-    if [[ -x "${MOLE_TEST_STATUS_BIN:-}" ]]; then
-        printf '%s\n' "$MOLE_TEST_STATUS_BIN"
+    if [[ -x "${ROOMY_TEST_STATUS_BIN:-}" ]]; then
+        printf '%s\n' "$ROOMY_TEST_STATUS_BIN"
     elif [[ -x "$SCRIPT_DIR/status-go" ]]; then
         printf '%s\n' "$SCRIPT_DIR/status-go"
     else
@@ -109,8 +109,8 @@ api_find_status_bin() {
 }
 
 api_find_analyze_bin() {
-    if [[ -x "${MOLE_TEST_ANALYZE_BIN:-}" ]]; then
-        printf '%s\n' "$MOLE_TEST_ANALYZE_BIN"
+    if [[ -x "${ROOMY_TEST_ANALYZE_BIN:-}" ]]; then
+        printf '%s\n' "$ROOMY_TEST_ANALYZE_BIN"
     elif [[ -x "$SCRIPT_DIR/analyze-go" ]]; then
         printf '%s\n' "$SCRIPT_DIR/analyze-go"
     else
@@ -138,9 +138,9 @@ api_resolve_existing_path() {
 }
 
 api_status() {
-    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api status"
+    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api status"
     local bin
-    bin=$(api_find_status_bin) || api_error "missing_status_binary" "Bundled status binary not found. Run make build or reinstall Mole."
+    bin=$(api_find_status_bin) || api_error "missing_status_binary" "Bundled status binary not found. Run make build or reinstall Roomy."
     exec "$bin" --json
 }
 
@@ -153,7 +153,7 @@ api_storage() {
         return
     fi
 
-    [[ "$command" == "scan" ]] || api_error "usage" "Usage: mo api storage scan --path <path>"
+    [[ "$command" == "scan" ]] || api_error "usage" "Usage: roomy api storage scan --path <path>"
 
     local path=""
     while [[ $# -gt 0 ]]; do
@@ -169,13 +169,13 @@ api_storage() {
         esac
         shift || true
     done
-    [[ -n "$path" ]] || api_error "usage" "Usage: mo api storage scan --path <path>"
+    [[ -n "$path" ]] || api_error "usage" "Usage: roomy api storage scan --path <path>"
 
     local target
     target=$(api_resolve_existing_path "$path") || api_error "invalid_path" "Storage scan path does not exist: $path"
 
     local bin
-    bin=$(api_find_analyze_bin) || api_error "missing_analyze_binary" "Bundled analyzer binary not found. Run make build or reinstall Mole."
+    bin=$(api_find_analyze_bin) || api_error "missing_analyze_binary" "Bundled analyzer binary not found. Run make build or reinstall Roomy."
     exec "$bin" --json "$target"
 }
 
@@ -313,7 +313,7 @@ api_storage_execute() {
                     api_event "progress" "storage" "Would move item to Trash" "$(api_json_extra "$(api_json_field path "$resolved")" "$(api_json_number_field bytes "$bytes")")"
                     completed=$((completed + 1))
                     total_bytes=$((total_bytes + bytes))
-                elif MOLE_DELETE_MODE=trash mole_delete "$resolved" false; then
+                elif ROOMY_DELETE_MODE=trash roomy_delete "$resolved" false; then
                     api_event "progress" "storage" "Moved item to Trash" "$(api_json_extra "$(api_json_field path "$resolved")" "$(api_json_number_field bytes "$bytes")")"
                     completed=$((completed + 1))
                     total_bytes=$((total_bytes + bytes))
@@ -336,7 +336,7 @@ api_storage_execute() {
 api_apps() {
     local command="${1:-}"
     shift || true
-    [[ "$command" == "list" ]] || api_error "usage" "Usage: mo api apps list --json"
+    [[ "$command" == "list" ]] || api_error "usage" "Usage: roomy api apps list --json"
 
     local json=false
     while [[ $# -gt 0 ]]; do
@@ -346,9 +346,9 @@ api_apps() {
         esac
         shift || true
     done
-    $json || api_error "usage" "Usage: mo api apps list --json"
+    $json || api_error "usage" "Usage: roomy api apps list --json"
 
-    if [[ "${MOLE_API_FULL_APP_INVENTORY:-0}" != "1" ]]; then
+    if [[ "${ROOMY_API_FULL_APP_INVENTORY:-0}" != "1" ]]; then
         api_apps_list_fast
         return 0
     fi
@@ -371,7 +371,7 @@ api_apps() {
 
 api_apps_list_fast() {
     local records_file
-    records_file=$(mktemp_file "mole-api-apps")
+    records_file=$(mktemp_file "roomy-api-apps")
     : > "$records_file"
 
     local -a app_dirs=(
@@ -410,7 +410,7 @@ api_apps_list_fast() {
 
             local size_display="N/A"
             local size_kb=""
-            size_kb=$(run_with_timeout "${MOLE_API_APP_SIZE_TIMEOUT:-0.6}" du -sk "$app_path" 2> /dev/null | awk 'NR==1 {print $1}' || true)
+            size_kb=$(run_with_timeout "${ROOMY_API_APP_SIZE_TIMEOUT:-0.6}" du -sk "$app_path" 2> /dev/null | awk 'NR==1 {print $1}' || true)
             if [[ "$size_kb" =~ ^[0-9]+$ && "$size_kb" -gt 0 ]]; then
                 size_display=$(bytes_to_human "$((size_kb * 1024))")
             fi
@@ -448,7 +448,7 @@ api_apps_list_fast() {
 api_optimize() {
     local command="${1:-}"
     shift || true
-    [[ "$command" == "preview" ]] || api_error "usage" "Usage: mo api optimize preview"
+    [[ "$command" == "preview" ]] || api_error "usage" "Usage: roomy api optimize preview"
     [[ $# -eq 0 ]] || api_error "usage" "Unknown optimize preview option: $1"
 
     # shellcheck source=lib/check/health_json.sh
@@ -506,7 +506,7 @@ api_clean_preview_emit_json() {
     printf '  "protected_count": %s,\n' "$protected_total"
     printf '  "whitelist_count": %s,\n' "$whitelist_total"
     printf '  "admin_required": %s,\n' "$admin_required"
-    printf '  "delete_mode": "%s",\n' "$(api_json_escape "${MOLE_DELETE_MODE:-trash}")"
+    printf '  "delete_mode": "%s",\n' "$(api_json_escape "${ROOMY_DELETE_MODE:-trash}")"
     printf '  "details_path": "%s",\n' "$(api_json_escape "$details_path")"
     printf '  "categories": [\n'
 
@@ -537,7 +537,7 @@ api_clean_preview_emit_json() {
 api_clean() {
     local command="${1:-}"
     shift || true
-    [[ "$command" == "preview" ]] || api_error "usage" "Usage: mo api clean preview --json"
+    [[ "$command" == "preview" ]] || api_error "usage" "Usage: roomy api clean preview --json"
 
     local json=false
     local external_path=""
@@ -553,35 +553,35 @@ api_clean() {
         esac
         shift || true
     done
-    $json || api_error "usage" "Usage: mo api clean preview --json [--external <path>]"
+    $json || api_error "usage" "Usage: roomy api clean preview --json [--external <path>]"
 
     local capture_file output_file status_label="success"
-    capture_file=$(mktemp_file "mole-api-clean")
-    output_file=$(mktemp_file "mole-api-clean-output")
+    capture_file=$(mktemp_file "roomy-api-clean")
+    output_file=$(mktemp_file "roomy-api-clean-output")
 
     if [[ -n "$external_path" ]]; then
-        if ! MOLE_API_CLEAN_CAPTURE_FILE="$capture_file" MO_NO_OPLOG=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run --external "$external_path" > "$output_file" 2>&1; then
+        if ! ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_NO_OPLOG=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run --external "$external_path" > "$output_file" 2>&1; then
             status_label="failed"
         fi
     else
-        if ! MOLE_API_CLEAN_CAPTURE_FILE="$capture_file" MO_NO_OPLOG=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run > "$output_file" 2>&1; then
+        if ! ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_NO_OPLOG=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run > "$output_file" 2>&1; then
             status_label="failed"
         fi
     fi
 
-    api_clean_preview_emit_json "$capture_file" "$status_label" "${MOLE_CONFIG_DIR:-$HOME/.config/mole}/clean-list.txt"
+    api_clean_preview_emit_json "$capture_file" "$status_label" "${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}/clean-list.txt"
 
     [[ "$status_label" == "success" ]] || return 1
 }
 
 api_installer_preview() {
-    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api installer preview --json"
+    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api installer preview --json"
 
     local output_file
-    output_file=$(mktemp_file "mole-api-installer-output")
+    output_file=$(mktemp_file "roomy-api-installer-output")
 
     # shellcheck disable=SC1090
-    MOLE_TEST_MODE=1 source "$SCRIPT_DIR/installer.sh"
+    ROOMY_TEST_MODE=1 source "$SCRIPT_DIR/installer.sh"
 
     if ! collect_installers > "$output_file" 2>&1; then
         INSTALLER_PATHS=()
@@ -628,34 +628,34 @@ api_installer_preview() {
 }
 
 api_purge_preview() {
-    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api purge preview --json"
+    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api purge preview --json"
 
-    if [[ -n "${MOLE_CACHE_DIR:-}" && -z "${XDG_CACHE_HOME:-}" ]]; then
-        export XDG_CACHE_HOME="$MOLE_CACHE_DIR"
+    if [[ -n "${ROOMY_CACHE_DIR:-}" && -z "${XDG_CACHE_HOME:-}" ]]; then
+        export XDG_CACHE_HOME="$ROOMY_CACHE_DIR"
     fi
 
-    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
+    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/roomy"
     ensure_user_dir "$stats_dir"
     ensure_user_file "$stats_dir/purge_scanning"
 
     # shellcheck disable=SC1090
-    MOLE_SKIP_MAIN=1 _PURGE_DISCOVERY_SILENT=1 source "$SCRIPT_DIR/purge.sh"
+    ROOMY_SKIP_MAIN=1 _PURGE_DISCOVERY_SILENT=1 source "$SCRIPT_DIR/purge.sh"
 
     local scan_output
-    scan_output=$(mktemp_file "mole-api-purge-scan")
+    scan_output=$(mktemp_file "roomy-api-purge-scan")
     : > "$scan_output"
 
     local search_path temp_output
     for search_path in "${PURGE_SEARCH_PATHS[@]+"${PURGE_SEARCH_PATHS[@]}"}"; do
         [[ -d "$search_path" ]] || continue
-        temp_output=$(mktemp_file "mole-api-purge-path")
+        temp_output=$(mktemp_file "roomy-api-purge-path")
         scan_purge_targets "$search_path" "$temp_output"
         [[ -f "$temp_output" ]] && cat "$temp_output" >> "$scan_output"
     done
     rm -f "$stats_dir/purge_scanning" 2> /dev/null || true
 
     local deduped
-    deduped=$(mktemp_file "mole-api-purge-deduped")
+    deduped=$(mktemp_file "roomy-api-purge-deduped")
     if [[ -s "$scan_output" ]]; then
         LC_COLLATE=C sort -u "$scan_output" > "$deduped"
     else
@@ -667,7 +667,7 @@ api_purge_preview() {
     local now_epoch
     now_epoch=$(get_epoch_seconds)
     local records_file
-    records_file=$(mktemp_file "mole-api-purge-records")
+    records_file=$(mktemp_file "roomy-api-purge-records")
     : > "$records_file"
 
     local path
@@ -928,21 +928,21 @@ api_purge_paths_update() {
 
     # shellcheck source=lib/clean/project.sh
     source "$PROJECT_ROOT/lib/clean/project.sh"
-    write_purge_config "# Mole Purge Paths - Directories to scan for project artifacts
-# Managed by MoleUI. Add one path per line (supports ~ for home directory).
+    write_purge_config "# Roomy Purge Paths - Directories to scan for project artifacts
+# Managed by RoomyUI. Add one path per line (supports ~ for home directory).
 " "${paths[@]+"${paths[@]}"}"
 
     api_event "completed" "purge_paths" "Project scan paths updated" "$(api_json_extra "$(api_json_number_field path_count "${#paths[@]}")" "$(api_json_field config_path "$PURGE_CONFIG_FILE")")"
 }
 
 api_update_status() {
-    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api update status"
+    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api update status"
 
     local version="unknown"
-    version=$(sed -n 's/^VERSION="\([^"]*\)".*/\1/p' "$PROJECT_ROOT/mole" | head -1)
+    version=$(sed -n 's/^VERSION="\([^"]*\)".*/\1/p' "$PROJECT_ROOT/roomy" | head -1)
     [[ -n "$version" ]] || version="unknown"
 
-    local channel_file="${MOLE_CONFIG_DIR:-$HOME/.config/mole}/install_channel"
+    local channel_file="${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}/install_channel"
     [[ -f "$channel_file" ]] || channel_file="$PROJECT_ROOT/install_channel"
 
     local channel="stable"
@@ -957,7 +957,7 @@ api_update_status() {
     esac
 
     local install_method="local"
-    if command -v brew > /dev/null 2>&1 && brew list mole > /dev/null 2>&1; then
+    if command -v brew > /dev/null 2>&1 && brew list roomy > /dev/null 2>&1; then
         install_method="homebrew"
     fi
 
@@ -967,8 +967,8 @@ api_update_status() {
     printf '  "channel": "%s",\n' "$(api_json_escape "$channel")"
     printf '  "commit": "%s",\n' "$(api_json_escape "$commit")"
     printf '  "install_method": "%s",\n' "$(api_json_escape "$install_method")"
-    printf '  "cli_path": "%s",\n' "$(api_json_escape "$PROJECT_ROOT/mo")"
-    printf '  "config_path": "%s"\n' "$(api_json_escape "${MOLE_CONFIG_DIR:-$HOME/.config/mole}")"
+    printf '  "cli_path": "%s",\n' "$(api_json_escape "$PROJECT_ROOT/roomy")"
+    printf '  "config_path": "%s"\n' "$(api_json_escape "${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}")"
     printf '}\n'
 }
 
@@ -986,12 +986,12 @@ api_execute_update() {
 
     if [[ "$dry_run" == "true" ]]; then
         api_event "started" "update"
-        api_event "progress" "update" "Would run Mole update" "$(api_json_extra "$(api_json_field command "mo ${args[*]}")" "$(api_json_bool_field force "$force")" "$(api_json_bool_field nightly "$nightly")")"
+        api_event "progress" "update" "Would run Roomy update" "$(api_json_extra "$(api_json_field command "roomy ${args[*]}")" "$(api_json_bool_field force "$force")" "$(api_json_bool_field nightly "$nightly")")"
         api_event "completed" "update" "" "$(api_json_extra "$(api_json_number_field exit_code 0)")"
         return 0
     fi
 
-    TERM=dumb api_run_command_stream "update" "$PROJECT_ROOT/mole" "${args[@]}"
+    TERM=dumb api_run_command_stream "update" "$PROJECT_ROOT/roomy" "${args[@]}"
 }
 
 api_execute_remove() {
@@ -1001,15 +1001,15 @@ api_execute_remove() {
     [[ "$dry_run" == "true" ]] && args+=("--dry-run")
 
     if [[ "$dry_run" == "true" ]]; then
-        TERM=dumb api_run_command_stream "remove" "$PROJECT_ROOT/mole" "${args[@]}"
+        TERM=dumb api_run_command_stream "remove" "$PROJECT_ROOT/roomy" "${args[@]}"
     else
-        MOLE_API_AUTO_CONFIRM=1 TERM=dumb api_run_command_stream "remove" "$PROJECT_ROOT/mole" "${args[@]}"
+        ROOMY_API_AUTO_CONFIRM=1 TERM=dumb api_run_command_stream "remove" "$PROJECT_ROOT/roomy" "${args[@]}"
     fi
 }
 
 api_touchid_status() {
     # shellcheck source=bin/touchid.sh
-    MOLE_SKIP_MAIN=1 source "$SCRIPT_DIR/touchid.sh"
+    ROOMY_SKIP_MAIN=1 source "$SCRIPT_DIR/touchid.sh"
 
     local configured=false
     local supported=false
@@ -1040,27 +1040,27 @@ api_completion_status() {
             config_file="$HOME/.zshrc"
             ;;
         fish)
-            config_file="$HOME/.config/fish/completions/mole.fish"
+            config_file="$HOME/.config/fish/completions/roomy.fish"
             ;;
     esac
 
     if [[ -n "$config_file" && -f "$config_file" ]]; then
         if [[ "$current_shell" == "fish" ]]; then
             installed=true
-        elif grep -Eq "(mole|mo)[[:space:]]+completion" "$config_file" 2> /dev/null; then
+        elif grep -Eq "(roomy|mo)[[:space:]]+completion" "$config_file" 2> /dev/null; then
             installed=true
         fi
     fi
 
     local command_name=""
-    if command -v mole > /dev/null 2>&1; then
-        command_name="mole"
+    if command -v roomy > /dev/null 2>&1; then
+        command_name="roomy"
     elif command -v mo > /dev/null 2>&1; then
         command_name="mo"
+    elif [[ -x "$PROJECT_ROOT/roomy" ]]; then
+        command_name="$PROJECT_ROOT/roomy"
     elif [[ -x "$PROJECT_ROOT/mo" ]]; then
         command_name="$PROJECT_ROOT/mo"
-    elif [[ -x "$PROJECT_ROOT/mole" ]]; then
-        command_name="$PROJECT_ROOT/mole"
     fi
 
     printf '{\n'
@@ -1075,7 +1075,7 @@ api_completion_status() {
 api_completion_execute() {
     local command="${1:-}"
     shift || true
-    [[ "$command" == "execute" ]] || api_error "usage" "Usage: mo api completion execute --plan <json-file>"
+    [[ "$command" == "execute" ]] || api_error "usage" "Usage: roomy api completion execute --plan <json-file>"
 
     local plan_file=""
     while [[ $# -gt 0 ]]; do
@@ -1097,21 +1097,21 @@ api_completion_execute() {
     if api_plan_bool "$plan_file" "dry_run"; then
         args+=("--dry-run")
     fi
-    MOLE_API_AUTO_CONFIRM=1 api_run_command_stream "completion" "$SCRIPT_DIR/completion.sh" "${args[@]+"${args[@]}"}"
+    ROOMY_API_AUTO_CONFIRM=1 api_run_command_stream "completion" "$SCRIPT_DIR/completion.sh" "${args[@]+"${args[@]}"}"
 }
 
 api_launcher_specs() {
     cat << 'EOF'
-clean|Mole Clean
-uninstall|Mole Uninstall
-optimize|Mole Optimize
-analyze|Mole Analyze
-status|Mole Status
+clean|Roomy Clean
+uninstall|Roomy Uninstall
+optimize|Roomy Optimize
+analyze|Roomy Analyze
+status|Roomy Status
 EOF
 }
 
 api_launchers_status() {
-    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api launchers status"
+    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api launchers status"
 
     local raycast_dir="$HOME/Library/Application Support/Raycast/script-commands"
     local alfred_dir="${ALFRED_PREFS_DIR:-$HOME/Library/Application Support/Alfred/Alfred.alfredpreferences}/workflows"
@@ -1119,7 +1119,7 @@ api_launchers_status() {
     local alfred_count=0
     local command_count=0
     local records_file
-    records_file=$(mktemp_file "mole-api-launchers")
+    records_file=$(mktemp_file "roomy-api-launchers")
     : > "$records_file"
 
     local subcommand title raycast_installed alfred_installed
@@ -1129,12 +1129,12 @@ api_launchers_status() {
         raycast_installed=false
         alfred_installed=false
 
-        if [[ -x "$raycast_dir/mole-${subcommand}.sh" ]]; then
+        if [[ -x "$raycast_dir/roomy-${subcommand}.sh" ]]; then
             raycast_installed=true
             raycast_count=$((raycast_count + 1))
         fi
 
-        if [[ -d "$alfred_dir" ]] && grep -Rsl "fun.tw93.mole.${subcommand}" "$alfred_dir"/*/info.plist > /dev/null 2>&1; then
+        if [[ -d "$alfred_dir" ]] && grep -Rsl "fun.tw93.roomy.${subcommand}" "$alfred_dir"/*/info.plist > /dev/null 2>&1; then
             alfred_installed=true
             alfred_count=$((alfred_count + 1))
         fi
@@ -1181,7 +1181,7 @@ api_launchers_status() {
 api_launchers_execute() {
     local command="${1:-}"
     shift || true
-    [[ "$command" == "execute" ]] || api_error "usage" "Usage: mo api launchers execute --plan <json-file>"
+    [[ "$command" == "execute" ]] || api_error "usage" "Usage: roomy api launchers execute --plan <json-file>"
 
     local plan_file=""
     while [[ $# -gt 0 ]]; do
@@ -1207,13 +1207,13 @@ api_launchers_execute() {
         return 0
     fi
 
-    PATH="$PROJECT_ROOT:$PATH" MOLE_CLI_PATH="$PROJECT_ROOT/mo" api_run_command_stream "launchers" "$PROJECT_ROOT/scripts/setup-quick-launchers.sh"
+    PATH="$PROJECT_ROOT:$PATH" ROOMY_CLI_PATH="$PROJECT_ROOT/roomy" api_run_command_stream "launchers" "$PROJECT_ROOT/scripts/setup-quick-launchers.sh"
 }
 
 api_touchid_execute() {
     local command="${1:-}"
     shift || true
-    [[ "$command" == "execute" ]] || api_error "usage" "Usage: mo api touchid execute --action <enable|disable> --plan <json-file>"
+    [[ "$command" == "execute" ]] || api_error "usage" "Usage: roomy api touchid execute --action <enable|disable> --plan <json-file>"
 
     local action=""
     local plan_file=""
@@ -1442,8 +1442,8 @@ api_run_command_stream() {
 
     if [[ $rc -eq 0 ]]; then
         local completion_extra=""
-        if [[ -n "${MOLE_API_COMPLETION_METRICS_FILE:-}" ]]; then
-            completion_extra=$(api_completion_metrics_extra "$MOLE_API_COMPLETION_METRICS_FILE")
+        if [[ -n "${ROOMY_API_COMPLETION_METRICS_FILE:-}" ]]; then
+            completion_extra=$(api_completion_metrics_extra "$ROOMY_API_COMPLETION_METRICS_FILE")
         fi
         api_event "completed" "$domain" "" "$(api_json_extra "$(api_json_number_field exit_code 0)" "$completion_extra")"
     else
@@ -1645,7 +1645,7 @@ api_execute_uninstall() {
     fi
     args+=("${targets[@]}")
 
-    MOLE_API_AUTO_CONFIRM=1 api_run_command_stream "uninstall" "$SCRIPT_DIR/uninstall.sh" "${args[@]}"
+    ROOMY_API_AUTO_CONFIRM=1 api_run_command_stream "uninstall" "$SCRIPT_DIR/uninstall.sh" "${args[@]}"
 }
 
 api_execute() {
@@ -1653,7 +1653,7 @@ api_execute() {
     shift
     local command="${1:-}"
     shift || true
-    [[ "$command" == "execute" ]] || api_error "usage" "Usage: mo api <domain> execute --plan <json-file>"
+    [[ "$command" == "execute" ]] || api_error "usage" "Usage: roomy api <domain> execute --plan <json-file>"
 
     local plan_file=""
     while [[ $# -gt 0 ]]; do
@@ -1668,7 +1668,7 @@ api_execute() {
         shift || true
     done
 
-    [[ -n "$plan_file" ]] || api_error "usage" "Usage: mo api <domain> execute --plan <json-file>"
+    [[ -n "$plan_file" ]] || api_error "usage" "Usage: roomy api <domain> execute --plan <json-file>"
     [[ -f "$plan_file" ]] || api_error "invalid_plan" "Plan file does not exist: $plan_file"
 
     api_validate_plan_or_emit "$domain" "$plan_file" || return 1
@@ -1688,9 +1688,9 @@ api_execute() {
                 args+=("--external" "$external_path")
             fi
             local clean_metrics_file
-            clean_metrics_file=$(mktemp_file "mole-api-clean-metrics")
-            MOLE_API_COMPLETION_METRICS_FILE="$clean_metrics_file" \
-                MOLE_API_CLEAN_METRICS_FILE="$clean_metrics_file" \
+            clean_metrics_file=$(mktemp_file "roomy-api-clean-metrics")
+            ROOMY_API_COMPLETION_METRICS_FILE="$clean_metrics_file" \
+                ROOMY_API_CLEAN_METRICS_FILE="$clean_metrics_file" \
                 api_run_command_stream "clean" "$SCRIPT_DIR/clean.sh" "${args[@]+"${args[@]}"}"
             ;;
         optimize)
@@ -1721,29 +1721,29 @@ api_execute() {
 
 show_api_help() {
     cat << 'EOF'
-Mole JSON API
+Roomy JSON API
 
 Usage:
-  mo api status
-  mo api storage scan --path <path>
-  mo api storage execute --plan <json-file>
-  mo api apps list --json
-  mo api optimize preview
-  mo api clean preview --json [--external <path>]
-  mo api purge preview --json
-  mo api installer preview --json
-  mo api whitelist list --mode <clean|optimize>
-  mo api whitelist update --mode <clean|optimize> --plan <json-file>
-  mo api purge paths --json
-  mo api purge paths update --plan <json-file>
-  mo api update status
-  mo api completion status
-  mo api completion execute --plan <json-file>
-  mo api launchers status
-  mo api launchers execute --plan <json-file>
-  mo api touchid status
-  mo api touchid execute --action <enable|disable> --plan <json-file>
-  mo api <clean|uninstall|purge|installer|optimize|update|remove> execute --plan <json-file>
+  roomy api status
+  roomy api storage scan --path <path>
+  roomy api storage execute --plan <json-file>
+  roomy api apps list --json
+  roomy api optimize preview
+  roomy api clean preview --json [--external <path>]
+  roomy api purge preview --json
+  roomy api installer preview --json
+  roomy api whitelist list --mode <clean|optimize>
+  roomy api whitelist update --mode <clean|optimize> --plan <json-file>
+  roomy api purge paths --json
+  roomy api purge paths update --plan <json-file>
+  roomy api update status
+  roomy api completion status
+  roomy api completion execute --plan <json-file>
+  roomy api launchers status
+  roomy api launchers execute --plan <json-file>
+  roomy api touchid status
+  roomy api touchid execute --action <enable|disable> --plan <json-file>
+  roomy api <clean|uninstall|purge|installer|optimize|update|remove> execute --plan <json-file>
 
 Execute plan files must contain "confirmed": true. Destructive actions stream
 newline-delimited JSON events.
@@ -1784,7 +1784,7 @@ main() {
         purge)
             if [[ "${1:-}" == "preview" ]]; then
                 shift || true
-                [[ "${1:-}" == "--json" ]] || api_error "usage" "Usage: mo api purge preview --json"
+                [[ "${1:-}" == "--json" ]] || api_error "usage" "Usage: roomy api purge preview --json"
                 shift || true
                 api_purge_preview "$@"
             elif [[ "${1:-}" == "paths" ]]; then
@@ -1796,7 +1796,7 @@ main() {
                     shift || true
                     api_purge_paths_update "$@"
                 else
-                    api_error "usage" "Usage: mo api purge paths --json OR mo api purge paths update --plan <json-file>"
+                    api_error "usage" "Usage: roomy api purge paths --json OR roomy api purge paths update --plan <json-file>"
                 fi
             else
                 api_execute "$domain" "$@"
@@ -1805,7 +1805,7 @@ main() {
         installer)
             if [[ "${1:-}" == "preview" ]]; then
                 shift || true
-                [[ "${1:-}" == "--json" ]] || api_error "usage" "Usage: mo api installer preview --json"
+                [[ "${1:-}" == "--json" ]] || api_error "usage" "Usage: roomy api installer preview --json"
                 shift || true
                 api_installer_preview "$@"
             else
@@ -1837,7 +1837,7 @@ main() {
                     api_whitelist_update "$@"
                     ;;
                 *)
-                    api_error "usage" "Usage: mo api whitelist <list|update>"
+                    api_error "usage" "Usage: roomy api whitelist <list|update>"
                     ;;
             esac
             ;;
@@ -1845,14 +1845,14 @@ main() {
             case "${1:-}" in
                 status)
                     shift || true
-                    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api completion status"
+                    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api completion status"
                     api_completion_status
                     ;;
                 execute)
                     api_completion_execute "$@"
                     ;;
                 *)
-                    api_error "usage" "Usage: mo api completion <status|execute>"
+                    api_error "usage" "Usage: roomy api completion <status|execute>"
                     ;;
             esac
             ;;
@@ -1866,7 +1866,7 @@ main() {
                     api_launchers_execute "$@"
                     ;;
                 *)
-                    api_error "usage" "Usage: mo api launchers <status|execute>"
+                    api_error "usage" "Usage: roomy api launchers <status|execute>"
                     ;;
             esac
             ;;
@@ -1874,14 +1874,14 @@ main() {
             case "${1:-}" in
                 status)
                     shift || true
-                    [[ $# -eq 0 ]] || api_error "usage" "Usage: mo api touchid status"
+                    [[ $# -eq 0 ]] || api_error "usage" "Usage: roomy api touchid status"
                     api_touchid_status
                     ;;
                 execute)
                     api_touchid_execute "$@"
                     ;;
                 *)
-                    api_error "usage" "Usage: mo api touchid <status|execute>"
+                    api_error "usage" "Usage: roomy api touchid <status|execute>"
                     ;;
             esac
             ;;

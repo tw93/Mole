@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mole - Optimize command.
+# Roomy - Optimize command.
 # Runs system maintenance tasks.
 # Supports dry-run where applicable.
 
@@ -90,7 +90,7 @@ show_optimization_summary() {
     local -a summary_details=()
     local total_applied=$safe_count
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         summary_title="Dry Run Complete, No Changes Made"
         summary_details+=("Would apply ${YELLOW}${total_applied:-0}${NC} optimizations")
         summary_details+=("Run without ${YELLOW}--dry-run${NC} to apply these changes")
@@ -188,7 +188,7 @@ handle_interrupt() {
 
 main() {
     # Set current command for operation logging
-    export MOLE_CURRENT_COMMAND="optimize"
+    export ROOMY_CURRENT_COMMAND="optimize"
 
     local health_json
     for arg in "$@"; do
@@ -198,10 +198,10 @@ main() {
                 exit 0
                 ;;
             "--debug")
-                export MO_DEBUG=1
+                export ROOMY_DEBUG=1
                 ;;
             "--dry-run")
-                export MOLE_DRY_RUN=1
+                export ROOMY_DRY_RUN=1
                 ;;
             "--whitelist")
                 manage_whitelist "optimize"
@@ -209,7 +209,7 @@ main() {
                 ;;
             *)
                 echo "Unknown optimize option: $arg"
-                echo "Use 'mo optimize --help' for supported options."
+                echo "Use 'roomy optimize --help' for supported options."
                 exit 1
                 ;;
         esac
@@ -226,7 +226,7 @@ main() {
     print_header
 
     # Dry-run indicator.
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
     fi
 
@@ -294,11 +294,11 @@ main() {
     # access was denied. Without this, every sudo task re-prompts for the
     # password and half-runs after a refusal. Default true in dry-run so the
     # task list still expands fully for inspection.
-    export MOLE_OPTIMIZE_SUDO_AVAILABLE="false"
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
+    export ROOMY_OPTIMIZE_SUDO_AVAILABLE="false"
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
+        ROOMY_OPTIMIZE_SUDO_AVAILABLE="true"
     elif ensure_sudo_session "System optimization requires admin access"; then
-        MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
+        ROOMY_OPTIMIZE_SUDO_AVAILABLE="true"
     else
         opt_msg "Skipping sudo-required optimizations: admin access not granted"
     fi

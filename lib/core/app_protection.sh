@@ -1,16 +1,16 @@
 #!/bin/bash
-# Mole - Application Protection
+# Roomy - Application Protection
 # System critical and data-protected application lists
 
 set -euo pipefail
 
-if [[ -n "${MOLE_APP_PROTECTION_LOADED:-}" ]]; then
+if [[ -n "${ROOMY_APP_PROTECTION_LOADED:-}" ]]; then
     return 0
 fi
-readonly MOLE_APP_PROTECTION_LOADED=1
+readonly ROOMY_APP_PROTECTION_LOADED=1
 
-_MOLE_CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[[ -z "${MOLE_BASE_LOADED:-}" ]] && source "$_MOLE_CORE_DIR/base.sh"
+_ROOMY_CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -z "${ROOMY_BASE_LOADED:-}" ]] && source "$_ROOMY_CORE_DIR/base.sh"
 
 # Declare WHITELIST_PATTERNS if not already set (used by is_path_whitelisted)
 if ! declare -p WHITELIST_PATTERNS &> /dev/null; then
@@ -774,7 +774,7 @@ should_protect_data() {
 # Check if a path is protected from deletion
 # Centralized logic to protect system settings, control center, and critical apps
 #
-# In uninstall mode (MOLE_UNINSTALL_MODE=1), only system-critical components are protected.
+# In uninstall mode (ROOMY_UNINSTALL_MODE=1), only system-critical components are protected.
 # Data-protected apps (VPNs, dev tools, etc.) can be uninstalled when user explicitly chooses to.
 #
 # Args: $1 - path to check
@@ -832,7 +832,7 @@ should_protect_path() {
         # blocking on the blanket com.apple.* match in should_protect_data.
         if [[ "$path" == */Data/Library/Caches/* || "$path" == */Data/tmp/* ]]; then
             _container_cache_path=true
-        elif [[ "${MOLE_UNINSTALL_MODE:-0}" != "1" ]] && should_protect_data "$bundle_id"; then
+        elif [[ "${ROOMY_UNINSTALL_MODE:-0}" != "1" ]] && should_protect_data "$bundle_id"; then
             return 0
         fi
     fi
@@ -849,8 +849,8 @@ should_protect_path() {
         */Library/Preferences/com.apple.dock.plist | */Library/Preferences/com.apple.finder.plist)
             return 0
             ;;
-        # Protect Mole's own runtime logs so cleanup cannot delete its active log targets.
-        */Library/Logs/mole | */Library/Logs/mole/ | */Library/Logs/mole/*)
+        # Protect Roomy's own runtime logs so cleanup cannot delete its active log targets.
+        */Library/Logs/roomy | */Library/Logs/roomy/ | */Library/Logs/roomy/*)
             return 0
             ;;
         # Bluetooth and WiFi configurations
@@ -924,7 +924,7 @@ should_protect_path() {
     # Skip for container cache/tmp paths: bundle ID was already checked in step 3,
     # and critical containers are caught by steps 1/4/5.
     if [[ "$_container_cache_path" != "true" ]]; then
-        if [[ "${MOLE_UNINSTALL_MODE:-0}" == "1" ]]; then
+        if [[ "${ROOMY_UNINSTALL_MODE:-0}" == "1" ]]; then
             # Uninstall mode: first check if it's an uninstallable Apple app
             for pattern in "${APPLE_UNINSTALLABLE_APPS[@]}"; do
                 if bundle_matches_pattern "$path" "$pattern"; then
@@ -948,7 +948,7 @@ should_protect_path() {
 
         # 7. Check if the filename itself matches any protected patterns
         # Skip in uninstall mode - user explicitly chose to remove this app
-        if [[ "${MOLE_UNINSTALL_MODE:-0}" != "1" ]]; then
+        if [[ "${ROOMY_UNINSTALL_MODE:-0}" != "1" ]]; then
             local filename="${path##*/}"
             if should_protect_data "$filename"; then
                 return 0
@@ -1020,13 +1020,13 @@ is_path_whitelisted() {
     return 1
 }
 
-_mole_uninstall_lower() {
+_roomy_uninstall_lower() {
     printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]'
 }
 
-_mole_uninstall_is_common_app_name() {
+_roomy_uninstall_is_common_app_name() {
     local lower_name
-    lower_name=$(_mole_uninstall_lower "${1:-}")
+    lower_name=$(_roomy_uninstall_lower "${1:-}")
     case "$lower_name" in
         music | notes | photos | finder | safari | preview | calendar | contacts | messages | \
             reminders | clock | weather | stocks | books | news | podcasts | voice | files | \
@@ -1039,7 +1039,7 @@ _mole_uninstall_is_common_app_name() {
     return 1
 }
 
-_mole_uninstall_vendor_product_tokens() {
+_roomy_uninstall_vendor_product_tokens() {
     local bundle_id="${1:-}"
     [[ "$bundle_id" =~ ^[a-zA-Z0-9][-a-zA-Z0-9]*(\.[a-zA-Z0-9][-a-zA-Z0-9]*)+$ ]] || return 1
 
@@ -1053,7 +1053,7 @@ _mole_uninstall_vendor_product_tokens() {
     printf '%s|%s\n' "$vendor_token" "$product_token"
 }
 
-_mole_uninstall_name_variant_matches() {
+_roomy_uninstall_name_variant_matches() {
     local candidate_lower="$1"
     shift
 
@@ -1078,20 +1078,20 @@ find_vendor_nested_app_paths() {
     shift 2
 
     [[ -n "$app_name" && ${#app_name} -ge 4 ]] || return 0
-    _mole_uninstall_is_common_app_name "$app_name" && return 0
+    _roomy_uninstall_is_common_app_name "$app_name" && return 0
 
     local token_pair
-    token_pair=$(_mole_uninstall_vendor_product_tokens "$bundle_id" 2> /dev/null) || return 0
+    token_pair=$(_roomy_uninstall_vendor_product_tokens "$bundle_id" 2> /dev/null) || return 0
     local vendor_token product_token
     IFS='|' read -r vendor_token product_token <<< "$token_pair"
 
     local vendor_lower product_lower app_lower nospace_lower hyphen_lower underscore_lower
-    vendor_lower=$(_mole_uninstall_lower "$vendor_token")
-    product_lower=$(_mole_uninstall_lower "$product_token")
-    app_lower=$(_mole_uninstall_lower "$app_name")
-    nospace_lower=$(_mole_uninstall_lower "${app_name// /}")
-    hyphen_lower=$(_mole_uninstall_lower "${app_name// /-}")
-    underscore_lower=$(_mole_uninstall_lower "${app_name// /_}")
+    vendor_lower=$(_roomy_uninstall_lower "$vendor_token")
+    product_lower=$(_roomy_uninstall_lower "$product_token")
+    app_lower=$(_roomy_uninstall_lower "$app_name")
+    nospace_lower=$(_roomy_uninstall_lower "${app_name// /}")
+    hyphen_lower=$(_roomy_uninstall_lower "${app_name// /-}")
+    underscore_lower=$(_roomy_uninstall_lower "${app_name// /_}")
 
     local root candidate parent_dir parent_base parent_lower child_base child_lower
     for root in "$@"; do
@@ -1099,12 +1099,12 @@ find_vendor_nested_app_paths() {
         while IFS= read -r -d '' candidate; do
             parent_dir="${candidate%/*}"
             parent_base="${parent_dir##*/}"
-            parent_lower=$(_mole_uninstall_lower "$parent_base")
+            parent_lower=$(_roomy_uninstall_lower "$parent_base")
             [[ "$parent_lower" == "$vendor_lower" ]] || continue
 
             child_base="${candidate##*/}"
-            child_lower=$(_mole_uninstall_lower "$child_base")
-            if _mole_uninstall_name_variant_matches "$child_lower" \
+            child_lower=$(_roomy_uninstall_lower "$child_base")
+            if _roomy_uninstall_name_variant_matches "$child_lower" \
                 "$app_lower" "$nospace_lower" "$hyphen_lower" "$underscore_lower" "$product_lower"; then
                 printf '%s\n' "$candidate"
             fi
@@ -1118,28 +1118,28 @@ find_shared_app_paths() {
     shift 2
 
     [[ -n "$app_name" && ${#app_name} -ge 5 ]] || return 0
-    _mole_uninstall_is_common_app_name "$app_name" && return 0
+    _roomy_uninstall_is_common_app_name "$app_name" && return 0
 
     local product_token=""
     local token_pair
-    if token_pair=$(_mole_uninstall_vendor_product_tokens "$bundle_id" 2> /dev/null); then
+    if token_pair=$(_roomy_uninstall_vendor_product_tokens "$bundle_id" 2> /dev/null); then
         IFS='|' read -r _ product_token <<< "$token_pair"
     fi
 
     local app_lower nospace_lower hyphen_lower underscore_lower product_lower
-    app_lower=$(_mole_uninstall_lower "$app_name")
-    nospace_lower=$(_mole_uninstall_lower "${app_name// /}")
-    hyphen_lower=$(_mole_uninstall_lower "${app_name// /-}")
-    underscore_lower=$(_mole_uninstall_lower "${app_name// /_}")
-    product_lower=$(_mole_uninstall_lower "$product_token")
+    app_lower=$(_roomy_uninstall_lower "$app_name")
+    nospace_lower=$(_roomy_uninstall_lower "${app_name// /}")
+    hyphen_lower=$(_roomy_uninstall_lower "${app_name// /-}")
+    underscore_lower=$(_roomy_uninstall_lower "${app_name// /_}")
+    product_lower=$(_roomy_uninstall_lower "$product_token")
 
     local root candidate base lower_base
     for root in "$@"; do
         [[ -d "$root" ]] || continue
         while IFS= read -r -d '' candidate; do
             base="${candidate##*/}"
-            lower_base=$(_mole_uninstall_lower "$base")
-            if _mole_uninstall_name_variant_matches "$lower_base" \
+            lower_base=$(_roomy_uninstall_lower "$base")
+            if _roomy_uninstall_name_variant_matches "$lower_base" \
                 "$app_lower" "$nospace_lower" "$hyphen_lower" "$underscore_lower" "$product_lower"; then
                 printf '%s\n' "$candidate"
             fi
@@ -1835,7 +1835,7 @@ force_kill_app() {
     local app_name="$1"
     local app_path="${2:-""}"
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         debug_log "[DRY RUN] Would terminate running app: $app_name"
         return 0
     fi
@@ -1869,7 +1869,7 @@ force_kill_app() {
     # flow (including unsaved-state prompts). osascript is best-effort: we
     # cap the wait so a hung app, an automation-permission dialog, or a
     # missing osascript binary can never stall the uninstall.
-    if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] &&
+    if [[ "${ROOMY_TEST_MODE:-0}" != "1" && "${ROOMY_TEST_NO_AUTH:-0}" != "1" ]] &&
         command -v osascript > /dev/null 2>&1; then
         local quit_target=""
         if [[ "$bundle_id" =~ ^[A-Za-z0-9][-A-Za-z0-9]*(\.[A-Za-z0-9][-A-Za-z0-9]*)+$ ]]; then
@@ -1911,7 +1911,7 @@ force_kill_app() {
 
     # If still running and sudo is available, try with sudo
     if pgrep -x "$match_pattern" > /dev/null 2>&1; then
-        if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] && sudo -n true 2> /dev/null; then
+        if [[ "${ROOMY_TEST_MODE:-0}" != "1" && "${ROOMY_TEST_NO_AUTH:-0}" != "1" ]] && sudo -n true 2> /dev/null; then
             sudo pkill -9 -x "$match_pattern" 2> /dev/null || true
             sleep 2
         fi

@@ -50,7 +50,7 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 
 small_kb=1
-large_kb=$(((MOLE_ONE_GB_BYTES * 2) / 1024))
+large_kb=$(((ROOMY_ONE_GB_BYTES * 2) / 1024))
 
 if [[ "$(cleanup_result_color_kb "$small_kb")" == "$GREEN" ]] &&
     [[ "$(cleanup_result_color_kb "$large_kb")" == "$GREEN" ]]; then
@@ -68,7 +68,7 @@ EOF
     stdout_output="$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; log_info '$message'")"
     [[ "$stdout_output" == *"$message"* ]]
 
-    local log_file="$HOME/Library/Logs/mole/mole.log"
+    local log_file="$HOME/Library/Logs/roomy/roomy.log"
     [[ -f "$log_file" ]]
     grep -q "INFO: $message" "$log_file"
 }
@@ -82,7 +82,7 @@ EOF
     [[ -s "$stderr_file" ]]
     grep -q "$message" "$stderr_file"
 
-    local log_file="$HOME/Library/Logs/mole/mole.log"
+    local log_file="$HOME/Library/Logs/roomy/roomy.log"
     [[ -f "$log_file" ]]
     grep -q "ERROR: $message" "$log_file"
 }
@@ -91,12 +91,12 @@ EOF
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
-rm -rf "$HOME/Library/Logs/mole"
+rm -rf "$HOME/Library/Logs/roomy"
 log_operation "clean" "REMOVED" "/tmp/example" "1KB"
 EOF
     [ "$status" -eq 0 ]
 
-    local oplog="$HOME/Library/Logs/mole/operations.log"
+    local oplog="$HOME/Library/Logs/roomy/operations.log"
     [[ -f "$oplog" ]]
     grep -Fq "[clean] REMOVED /tmp/example (1KB)" "$oplog"
 }
@@ -111,7 +111,7 @@ log_operation_session_end "clean" 1 1
 EOF
     [ "$status" -eq 0 ]
 
-    local journal="$HOME/Library/Logs/mole/operation_journal.jsonl"
+    local journal="$HOME/Library/Logs/roomy/operation_journal.jsonl"
     [[ -f "$journal" ]]
     python3 - "$journal" <<'PY'
 import json
@@ -128,16 +128,16 @@ assert records[-1]["action"] == "ENDED"
 PY
 }
 
-@test "should_protect_path protects Mole runtime logs" {
+@test "should_protect_path protects Roomy runtime logs" {
     result="$(
         HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc -c \
-            'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$HOME/Library/Logs/mole/operations.log" && echo protected || echo not-protected'
+            'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$HOME/Library/Logs/roomy/operations.log" && echo protected || echo not-protected'
     )"
     [ "$result" = "protected" ]
 }
 
 @test "rotate_log_once only checks log size once per session" {
-    local log_file="$HOME/Library/Logs/mole/mole.log"
+    local log_file="$HOME/Library/Logs/roomy/roomy.log"
     mkdir -p "$(dirname "$log_file")"
     if command -v mkfile > /dev/null 2>&1; then
         mkfile -n 1100k "$log_file"
@@ -148,7 +148,7 @@ PY
     HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'"
     [[ -f "${log_file}.old" ]]
 
-    result=$(HOME="$HOME" MOLE_LOG_ROTATED=1 bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; echo \$MOLE_LOG_ROTATED")
+    result=$(HOME="$HOME" ROOMY_LOG_ROTATED=1 bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; echo \$ROOMY_LOG_ROTATED")
     [[ "$result" == "1" ]]
 }
 
@@ -311,7 +311,7 @@ EOF
 @test "start_inline_spinner and stop_inline_spinner work in non-TTY" {
     result=$(HOME="$HOME" bash --noprofile --norc << 'EOF'
 source "$PROJECT_ROOT/lib/core/common.sh"
-MOLE_SPINNER_PREFIX="  " start_inline_spinner "Testing..."
+ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Testing..."
 sleep 0.1
 stop_inline_spinner
 echo "done"
@@ -345,40 +345,40 @@ EOF
 }
 
 @test "read_key maps j/k/h/l to navigation" {
-    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
+    run bash -c "export ROOMY_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "DOWN" ]
 
-    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'k' | read_key"
+    run bash -c "export ROOMY_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'k' | read_key"
     [ "$output" = "UP" ]
 
-    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'h' | read_key"
+    run bash -c "export ROOMY_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'h' | read_key"
     [ "$output" = "LEFT" ]
 
-    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'l' | read_key"
+    run bash -c "export ROOMY_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'l' | read_key"
     [ "$output" = "RIGHT" ]
 }
 
 @test "read_key maps uppercase J/K/H/L to navigation" {
-    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'J' | read_key"
+    run bash -c "export ROOMY_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'J' | read_key"
     [ "$output" = "DOWN" ]
 
-    run bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'K' | read_key"
+    run bash -c "export ROOMY_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'K' | read_key"
     [ "$output" = "UP" ]
 }
 
-@test "read_key respects MOLE_READ_KEY_FORCE_CHAR" {
-    run bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
+@test "read_key respects ROOMY_READ_KEY_FORCE_CHAR" {
+    run bash -c "export ROOMY_BASE_LOADED=1; export ROOMY_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "CHAR:j" ]
 }
 
-@test "ensure_sudo_session returns 1 and sets MOLE_SUDO_ESTABLISHED=false in test mode" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 bash --noprofile --norc <<'SCRIPT'
+@test "ensure_sudo_session returns 1 and sets ROOMY_SUDO_ESTABLISHED=false in test mode" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 bash --noprofile --norc <<'SCRIPT'
 source "$PROJECT_ROOT/lib/core/base.sh"
 source "$PROJECT_ROOT/lib/core/sudo.sh"
-MOLE_SUDO_ESTABLISHED=""
+ROOMY_SUDO_ESTABLISHED=""
 ensure_sudo_session "Test prompt" && rc=0 || rc=$?
 echo "EXIT=$rc"
-echo "FLAG=$MOLE_SUDO_ESTABLISHED"
+echo "FLAG=$ROOMY_SUDO_ESTABLISHED"
 SCRIPT
 
     [ "$status" -eq 0 ]
@@ -387,7 +387,7 @@ SCRIPT
 }
 
 @test "sudo helpers do not invoke sudo in no-auth test mode" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 bash --noprofile --norc <<'SCRIPT'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 bash --noprofile --norc <<'SCRIPT'
 source "$PROJECT_ROOT/lib/core/base.sh"
 source "$PROJECT_ROOT/lib/core/sudo.sh"
 sudo() {
@@ -419,7 +419,7 @@ source "$PROJECT_ROOT/lib/core/base.sh"
 source "$PROJECT_ROOT/lib/core/sudo.sh"
 has_sudo_session() { return 0; }
 export -f has_sudo_session
-MOLE_SUDO_ESTABLISHED="true"
+ROOMY_SUDO_ESTABLISHED="true"
 ensure_sudo_session "Test prompt"
 echo "EXIT=$?"
 SCRIPT

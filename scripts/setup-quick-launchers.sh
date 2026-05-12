@@ -1,5 +1,5 @@
 #!/bin/bash
-# Create Raycast script commands and Alfred keywords for Mole (clean + uninstall).
+# Create Raycast script commands and Alfred keywords for Roomy (clean + uninstall).
 
 set -euo pipefail
 
@@ -15,11 +15,11 @@ ICON_WARN="!"
 ICON_ERR="✗"
 
 LAUNCHER_COMMAND_SPECS=(
-    "clean|Mole Clean|Deep system cleanup with Mole|Run Mole clean"
-    "uninstall|Mole Uninstall|Uninstall applications with Mole|Uninstall apps via Mole"
-    "optimize|Mole Optimize|System health checks and optimization|System health and optimization"
-    "analyze|Mole Analyze|Disk space analysis with Mole|Disk space analysis"
-    "status|Mole Status|Live system status dashboard|Live system dashboard"
+    "clean|Roomy Clean|Deep system cleanup with Roomy|Run Roomy clean"
+    "uninstall|Roomy Uninstall|Uninstall applications with Roomy|Uninstall apps via Roomy"
+    "optimize|Roomy Optimize|System health checks and optimization|System health and optimization"
+    "analyze|Roomy Analyze|Disk space analysis with Roomy|Disk space analysis"
+    "status|Roomy Status|Live system status dashboard|Live system dashboard"
 )
 
 log_step() { echo -e "${BLUE}${ICON_STEP}${NC} $1"; }
@@ -36,15 +36,15 @@ prompt_enter() {
         echo "$prompt"
     fi
 }
-detect_mo() {
-    if [[ -n "${MOLE_CLI_PATH:-}" && -x "${MOLE_CLI_PATH:-}" ]]; then
-        printf '%s\n' "$MOLE_CLI_PATH"
+detect_roomy() {
+    if [[ -n "${ROOMY_CLI_PATH:-}" && -x "${ROOMY_CLI_PATH:-}" ]]; then
+        printf '%s\n' "$ROOMY_CLI_PATH"
+    elif command -v roomy > /dev/null 2>&1; then
+        command -v roomy
     elif command -v mo > /dev/null 2>&1; then
         command -v mo
-    elif command -v mole > /dev/null 2>&1; then
-        command -v mole
     else
-        log_error "Mole not found. Install it first via Homebrew or ./install.sh."
+        log_error "Roomy not found. Install it first via Homebrew or ./install.sh."
         exit 1
     fi
 }
@@ -53,10 +53,10 @@ write_raycast_script() {
     local target="$1"
     local title="$2"
     local description="$3"
-    local mo_bin="$4"
+    local roomy_bin="$4"
     local subcommand="$5"
 
-    local cmd_for_applescript="${mo_bin//\\/\\\\}"
+    local cmd_for_applescript="${roomy_bin//\\/\\\\}"
     cmd_for_applescript="${cmd_for_applescript//\"/\\\"}"
 
     cat > "$target" << EOF
@@ -66,7 +66,7 @@ write_raycast_script() {
 # @raycast.schemaVersion 1
 # @raycast.title ${title}
 # @raycast.mode fullOutput
-# @raycast.packageName Mole
+# @raycast.packageName Roomy
 # @raycast.description ${description}
 
 # Optional parameters:
@@ -81,9 +81,9 @@ set -euo pipefail
 echo "🐹 Running ${title}..."
 echo ""
 
-MO_BIN="${mo_bin}"
-MO_SUBCOMMAND="${subcommand}"
-MO_BIN_ESCAPED="${cmd_for_applescript}"
+ROOMY_BIN="${roomy_bin}"
+ROOMY_SUBCOMMAND="${subcommand}"
+ROOMY_BIN_ESCAPED="${cmd_for_applescript}"
 
 has_app() {
     local name="\$1"
@@ -112,8 +112,8 @@ launcher_available() {
 }
 
 detect_launcher_app() {
-    if [[ -n "\${MO_LAUNCHER_APP:-}" ]]; then
-        echo "\${MO_LAUNCHER_APP}"
+    if [[ -n "\${ROOMY_LAUNCHER_APP:-}" ]]; then
+        echo "\${ROOMY_LAUNCHER_APP}"
         return
     fi
     local candidates=(Warp Ghostty Alacritty Kitty WezTerm WindTerm Hyper iTerm2 iTerm Terminal)
@@ -133,7 +133,7 @@ launch_with_app() {
         Terminal)
             if command -v osascript >/dev/null 2>&1; then
                 osascript <<APPLESCRIPT
-set targetCommand to "\${MO_BIN_ESCAPED} \${MO_SUBCOMMAND}"
+set targetCommand to "\${ROOMY_BIN_ESCAPED} \${ROOMY_SUBCOMMAND}"
 tell application "Terminal"
     activate
     do script targetCommand
@@ -145,7 +145,7 @@ APPLESCRIPT
         iTerm|iTerm2)
             if command -v osascript >/dev/null 2>&1; then
                 osascript <<APPLESCRIPT
-set targetCommand to "\${MO_BIN_ESCAPED} \${MO_SUBCOMMAND}"
+set targetCommand to "\${ROOMY_BIN_ESCAPED} \${ROOMY_SUBCOMMAND}"
 tell application "iTerm2"
     activate
     try
@@ -169,49 +169,49 @@ APPLESCRIPT
             ;;
         Alacritty)
             if launcher_available "Alacritty" && command -v open >/dev/null 2>&1; then
-                open -na "Alacritty" --args -e /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                open -na "Alacritty" --args -e /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             fi
             ;;
         Kitty)
             if has_bin "kitty"; then
-                kitty --hold /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                kitty --hold /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             elif [[ -x "/Applications/kitty.app/Contents/MacOS/kitty" ]]; then
-                "/Applications/kitty.app/Contents/MacOS/kitty" --hold /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                "/Applications/kitty.app/Contents/MacOS/kitty" --hold /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             fi
             ;;
         WezTerm)
             if has_bin "wezterm"; then
-                wezterm start -- /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                wezterm start -- /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             elif [[ -x "/Applications/WezTerm.app/Contents/MacOS/wezterm" ]]; then
-                "/Applications/WezTerm.app/Contents/MacOS/wezterm" start -- /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                "/Applications/WezTerm.app/Contents/MacOS/wezterm" start -- /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             fi
             ;;
         Ghostty)
             if launcher_available "Ghostty" && command -v open >/dev/null 2>&1; then
-                open -na "Ghostty" --args -e /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}; exec /bin/zsh -l"
+                open -na "Ghostty" --args -e /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}; exec /bin/zsh -l"
                 return \$?
             fi
             ;;
         Hyper)
             if launcher_available "Hyper" && command -v open >/dev/null 2>&1; then
-                open -na "Hyper" --args /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                open -na "Hyper" --args /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             fi
             ;;
         WindTerm)
             if launcher_available "WindTerm" && command -v open >/dev/null 2>&1; then
-                open -na "WindTerm" --args /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                open -na "WindTerm" --args /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             fi
             ;;
         Warp)
             if launcher_available "Warp" && command -v open >/dev/null 2>&1; then
-                open -na "Warp" --args /bin/zsh -lc "\"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+                open -na "Warp" --args /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
                 return \$?
             fi
             ;;
@@ -220,7 +220,7 @@ APPLESCRIPT
 }
 
 if [[ -n "\${TERM:-}" && "\${TERM}" != "dumb" ]]; then
-    "\${MO_BIN}" \${MO_SUBCOMMAND}
+    "\${ROOMY_BIN}" \${ROOMY_SUBCOMMAND}
     exit \$?
 fi
 
@@ -239,14 +239,14 @@ fi
 
 echo "TERM environment variable not set and no launcher succeeded."
 echo "Run this manually:"
-echo "    \"\${MO_BIN}\" \${MO_SUBCOMMAND}"
+echo "    \"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
 exit 1
 EOF
     chmod +x "$target"
 }
 
 create_raycast_commands() {
-    local mo_bin="$1"
+    local roomy_bin="$1"
     local default_dir="$HOME/Library/Application Support/Raycast/script-commands"
     local dir="$default_dir"
     local entry
@@ -259,7 +259,7 @@ create_raycast_commands() {
     mkdir -p "$dir"
     for entry in "${LAUNCHER_COMMAND_SPECS[@]}"; do
         IFS="|" read -r subcommand title description alfred_subtitle <<< "$entry"
-        write_raycast_script "$dir/mole-${subcommand}.sh" "$title" "$description" "$mo_bin" "$subcommand"
+        write_raycast_script "$dir/roomy-${subcommand}.sh" "$title" "$description" "$roomy_bin" "$subcommand"
     done
     log_success "Scripts ready in: $dir"
 
@@ -290,7 +290,7 @@ uuid() {
 }
 
 create_alfred_workflow() {
-    local mo_bin="$1"
+    local roomy_bin="$1"
     local prefs_dir="${ALFRED_PREFS_DIR:-$HOME/Library/Application Support/Alfred/Alfred.alfredpreferences}"
     local workflows_dir="$prefs_dir/workflows"
     local entry
@@ -308,9 +308,9 @@ create_alfred_workflow() {
     log_step "Installing Alfred workflows..."
     for entry in "${LAUNCHER_COMMAND_SPECS[@]}"; do
         IFS="|" read -r subcommand title _ subtitle <<< "$entry"
-        bundle="fun.tw93.mole.${subcommand}"
+        bundle="fun.tw93.roomy.${subcommand}"
         keyword="${subcommand}"
-        command="\"${mo_bin}\" ${subcommand}"
+        command="\"${roomy_bin}\" ${subcommand}"
         local workflow_uid="user.workflow.$(uuid | LC_ALL=C tr '[:upper:]' '[:lower:]')"
         local input_uid
         local action_uid
@@ -327,7 +327,7 @@ create_alfred_workflow() {
     <key>bundleid</key>
     <string>${bundle}</string>
     <key>createdby</key>
-    <string>Mole</string>
+    <string>Roomy</string>
     <key>name</key>
     <string>${title}</string>
     <key>objects</key>
@@ -410,15 +410,15 @@ EOF
 main() {
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Mole Quick Launchers"
+    echo "  Roomy Quick Launchers"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    local mo_bin
-    mo_bin="$(detect_mo)"
-    log_step "Detected Mole binary at: ${mo_bin}"
+    local roomy_bin
+    roomy_bin="$(detect_roomy)"
+    log_step "Detected Roomy binary at: ${roomy_bin}"
 
-    create_raycast_commands "$mo_bin"
-    create_alfred_workflow "$mo_bin"
+    create_raycast_commands "$roomy_bin"
+    create_alfred_workflow "$roomy_bin"
 
     echo ""
     log_success "Done! Raycast and Alfred are ready with 5 commands:"

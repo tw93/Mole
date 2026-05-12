@@ -73,7 +73,7 @@ paginated_multi_select() {
     shift
     local -a items=("$@")
     local external_alt_screen=false
-    if [[ "${MOLE_MANAGED_ALT_SCREEN:-}" == "1" || "${MOLE_MANAGED_ALT_SCREEN:-}" == "true" ]]; then
+    if [[ "${ROOMY_MANAGED_ALT_SCREEN:-}" == "1" || "${ROOMY_MANAGED_ALT_SCREEN:-}" == "true" ]]; then
         external_alt_screen=true
     fi
 
@@ -87,8 +87,8 @@ paginated_multi_select() {
     local items_per_page=$(_pm_calculate_items_per_page)
     local cursor_pos=0
     local top_index=0
-    local sort_mode="${MOLE_MENU_SORT_MODE:-${MOLE_MENU_SORT_DEFAULT:-date}}" # date|name|size
-    local sort_reverse="${MOLE_MENU_SORT_REVERSE:-false}"
+    local sort_mode="${ROOMY_MENU_SORT_MODE:-${ROOMY_MENU_SORT_DEFAULT:-date}}" # date|name|size
+    local sort_reverse="${ROOMY_MENU_SORT_REVERSE:-false}"
     local filter_text="" # Filter keyword
     local filter_text_lower=""
 
@@ -101,16 +101,16 @@ paginated_multi_select() {
     local -a filter_names=()
     local has_metadata="false"
     local has_filter_names="false"
-    if [[ -n "${MOLE_MENU_META_EPOCHS:-}" ]]; then
-        while IFS= read -r v; do epochs+=("${v:-0}"); done < <(_pm_parse_csv_to_array "$MOLE_MENU_META_EPOCHS")
+    if [[ -n "${ROOMY_MENU_META_EPOCHS:-}" ]]; then
+        while IFS= read -r v; do epochs+=("${v:-0}"); done < <(_pm_parse_csv_to_array "$ROOMY_MENU_META_EPOCHS")
         has_metadata="true"
     fi
-    if [[ -n "${MOLE_MENU_META_SIZEKB:-}" ]]; then
-        while IFS= read -r v; do sizekb+=("${v:-0}"); done < <(_pm_parse_csv_to_array "$MOLE_MENU_META_SIZEKB")
+    if [[ -n "${ROOMY_MENU_META_SIZEKB:-}" ]]; then
+        while IFS= read -r v; do sizekb+=("${v:-0}"); done < <(_pm_parse_csv_to_array "$ROOMY_MENU_META_SIZEKB")
         has_metadata="true"
     fi
-    if [[ -n "${MOLE_MENU_FILTER_NAMES:-}" ]]; then
-        while IFS= read -r v; do filter_names+=("$v"); done <<< "$MOLE_MENU_FILTER_NAMES"
+    if [[ -n "${ROOMY_MENU_FILTER_NAMES:-}" ]]; then
+        while IFS= read -r v; do filter_names+=("$v"); done <<< "$ROOMY_MENU_FILTER_NAMES"
         has_filter_names="true"
     fi
 
@@ -146,8 +146,8 @@ paginated_multi_select() {
         selected[i]=false
     done
 
-    if [[ -n "${MOLE_PRESELECTED_INDICES:-}" ]]; then
-        local cleaned_preselect="${MOLE_PRESELECTED_INDICES//[[:space:]]/}"
+    if [[ -n "${ROOMY_PRESELECTED_INDICES:-}" ]]; then
+        local cleaned_preselect="${ROOMY_PRESELECTED_INDICES//[[:space:]]/}"
         local -a initial_indices=()
         IFS=',' read -ra initial_indices <<< "$cleaned_preselect"
         for idx in "${initial_indices[@]}"; do
@@ -182,9 +182,9 @@ paginated_multi_select() {
     # Cleanup function
     cleanup() {
         trap - EXIT INT TERM
-        unset MOLE_READ_KEY_FORCE_CHAR
-        export MOLE_MENU_SORT_MODE="${sort_mode:-name}"
-        export MOLE_MENU_SORT_REVERSE="${sort_reverse:-false}"
+        unset ROOMY_READ_KEY_FORCE_CHAR
+        export ROOMY_MENU_SORT_MODE="${sort_mode:-name}"
+        export ROOMY_MENU_SORT_REVERSE="${sort_reverse:-false}"
         restore_terminal
     }
 
@@ -401,7 +401,7 @@ paginated_multi_select() {
         printf "\033[1;1H" >&2
         if [[ -n "$filter_text" ]]; then
             printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${YELLOW}/ Search: ${filter_text}_${NC}  ${GRAY}(%d/%d)${NC}\n" "${title}" "${#view_indices[@]}" "$total_items" >&2
-        elif [[ -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+        elif [[ -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
             printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${YELLOW}/ Search: _ ${NC}${GRAY}(type to search)${NC}\n" "${title}" >&2
         else
             printf "\r\033[2K${PURPLE_BOLD}%s${NC}  ${GRAY}%d/%d selected${NC}\n" "${title}" "$selected_count" "$total_items" >&2
@@ -412,7 +412,7 @@ paginated_multi_select() {
     # Returns 0 if character was handled, 1 if not in filter mode
     handle_filter_char() {
         local char="$1"
-        if [[ -z "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+        if [[ -z "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
             return 1
         fi
         if [[ "$char" =~ ^[[:print:]]$ ]]; then
@@ -579,10 +579,10 @@ paginated_multi_select() {
 
         case "$key" in
             "QUIT")
-                if [[ -n "$filter_text" || -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+                if [[ -n "$filter_text" || -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
                     filter_text=""
                     filter_text_lower=""
-                    unset MOLE_READ_KEY_FORCE_CHAR
+                    unset ROOMY_READ_KEY_FORCE_CHAR
                     rebuild_view
                     cursor_pos=0
                     top_index=0
@@ -600,7 +600,7 @@ paginated_multi_select() {
                     ((cursor_pos--))
                     local new_cursor=$cursor_pos
 
-                    if [[ -n "$filter_text" || -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+                    if [[ -n "$filter_text" || -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
                         draw_header
                     fi
 
@@ -619,7 +619,7 @@ paginated_multi_select() {
                 elif [[ $top_index -gt 0 ]]; then
                     ((top_index--))
 
-                    if [[ -n "$filter_text" || -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+                    if [[ -n "$filter_text" || -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
                         draw_header
                     fi
 
@@ -658,7 +658,7 @@ paginated_multi_select() {
                             cursor_pos=$((cursor_pos + 1))
                             local new_cursor=$cursor_pos
 
-                            if [[ -n "$filter_text" || -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+                            if [[ -n "$filter_text" || -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
                                 draw_header
                             fi
 
@@ -682,7 +682,7 @@ paginated_multi_select() {
                                 cursor_pos=$((visible_count - 1))
                             fi
 
-                            if [[ -n "$filter_text" || -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
+                            if [[ -n "$filter_text" || -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
                                 draw_header
                             fi
 
@@ -838,10 +838,10 @@ paginated_multi_select() {
                 fi
                 ;;
             "CHAR:/" | "CHAR:?")
-                if [[ -n "${MOLE_READ_KEY_FORCE_CHAR:-}" ]]; then
-                    unset MOLE_READ_KEY_FORCE_CHAR
+                if [[ -n "${ROOMY_READ_KEY_FORCE_CHAR:-}" ]]; then
+                    unset ROOMY_READ_KEY_FORCE_CHAR
                 else
-                    export MOLE_READ_KEY_FORCE_CHAR=1
+                    export ROOMY_READ_KEY_FORCE_CHAR=1
                 fi
                 need_full_redraw=true
                 ;;
@@ -851,7 +851,7 @@ paginated_multi_select() {
                     filter_text_lower="${filter_text_lower%?}"
                     if [[ -z "$filter_text" ]]; then
                         filter_text_lower=""
-                        unset MOLE_READ_KEY_FORCE_CHAR
+                        unset ROOMY_READ_KEY_FORCE_CHAR
                     fi
                     rebuild_view
                     cursor_pos=0
@@ -908,10 +908,10 @@ paginated_multi_select() {
                 fi
 
                 trap - EXIT INT TERM
-                MOLE_SELECTION_RESULT="$final_result"
-                unset MOLE_READ_KEY_FORCE_CHAR
-                export MOLE_MENU_SORT_MODE="${sort_mode:-name}"
-                export MOLE_MENU_SORT_REVERSE="${sort_reverse:-false}"
+                ROOMY_SELECTION_RESULT="$final_result"
+                unset ROOMY_READ_KEY_FORCE_CHAR
+                export ROOMY_MENU_SORT_MODE="${sort_mode:-name}"
+                export ROOMY_MENU_SORT_REVERSE="${sort_reverse:-false}"
                 restore_terminal
                 return 0
                 ;;

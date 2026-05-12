@@ -1,13 +1,13 @@
 #!/bin/bash
-# Mole - Installer command
+# Roomy - Installer command
 # Find and remove installer files - .dmg, .pkg, .mpkg, .iso, .xip, .zip
 
 set -euo pipefail
 
 # shellcheck disable=SC2154
 # External variables set by menu_paginated.sh and environment
-declare MOLE_SELECTION_RESULT
-declare MOLE_INSTALLER_SCAN_MAX_DEPTH
+declare ROOMY_SELECTION_RESULT
+declare ROOMY_INSTALLER_SCAN_MAX_DEPTH
 
 export LC_ALL=C
 export LANG=C
@@ -93,7 +93,7 @@ handle_candidate_file() {
 
 scan_installers_in_path() {
     local path="$1"
-    local max_depth="${MOLE_INSTALLER_SCAN_MAX_DEPTH:-$INSTALLER_SCAN_MAX_DEPTH_DEFAULT}"
+    local max_depth="${ROOMY_INSTALLER_SCAN_MAX_DEPTH:-$INSTALLER_SCAN_MAX_DEPTH_DEFAULT}"
 
     [[ -d "$path" ]] || return 0
 
@@ -498,11 +498,11 @@ select_installers() {
                 return 1
                 ;;
             "" | $'\n' | $'\r') # Enter - confirm
-                MOLE_SELECTION_RESULT=""
+                ROOMY_SELECTION_RESULT=""
                 for ((i = 0; i < total_items; i++)); do
                     if [[ ${selected[i]} == true ]]; then
-                        [[ -n "$MOLE_SELECTION_RESULT" ]] && MOLE_SELECTION_RESULT+=","
-                        MOLE_SELECTION_RESULT+="$i"
+                        [[ -n "$ROOMY_SELECTION_RESULT" ]] && ROOMY_SELECTION_RESULT+=","
+                        ROOMY_SELECTION_RESULT+="$i"
                     fi
                 done
                 restore_terminal
@@ -520,7 +520,7 @@ show_installer_menu() {
 
     echo ""
 
-    MOLE_SELECTION_RESULT=""
+    ROOMY_SELECTION_RESULT=""
     if ! select_installers "${DISPLAY_NAMES[@]}"; then
         return 1
     fi
@@ -532,7 +532,7 @@ show_installer_menu() {
 delete_selected_installers() {
     # Parse selection indices
     local -a selected_indices=()
-    [[ -n "$MOLE_SELECTION_RESULT" ]] && IFS=',' read -ra selected_indices <<< "$MOLE_SELECTION_RESULT"
+    [[ -n "$ROOMY_SELECTION_RESULT" ]] && IFS=',' read -ra selected_indices <<< "$ROOMY_SELECTION_RESULT"
 
     if [[ ${#selected_indices[@]} -eq 0 ]]; then
         return 1
@@ -660,7 +660,7 @@ perform_installers() {
 show_summary() {
     local summary_heading="Installers cleaned"
     local -a summary_details=()
-    local dry_run_mode="${MOLE_DRY_RUN:-0}"
+    local dry_run_mode="${ROOMY_DRY_RUN:-0}"
 
     if [[ "$dry_run_mode" == "1" ]]; then
         summary_heading="Dry run complete - no changes made"
@@ -692,10 +692,10 @@ main() {
                 exit 0
                 ;;
             "--debug")
-                export MO_DEBUG=1
+                export ROOMY_DEBUG=1
                 ;;
             "--dry-run" | "-n")
-                export MOLE_DRY_RUN=1
+                export ROOMY_DRY_RUN=1
                 ;;
             *)
                 echo "Unknown option: $arg"
@@ -704,7 +704,7 @@ main() {
         esac
     done
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No installer files will be removed"
         printf '\n'
     fi
@@ -730,6 +730,6 @@ main() {
 }
 
 # Only run main if not in test mode
-if [[ "${MOLE_TEST_MODE:-0}" != "1" ]]; then
+if [[ "${ROOMY_TEST_MODE:-0}" != "1" ]]; then
     main "$@"
 fi

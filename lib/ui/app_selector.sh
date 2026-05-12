@@ -77,7 +77,7 @@ format_app_display() {
 }
 
 # Global variable to store selection result (bash 3.2 compatible)
-MOLE_SELECTION_RESULT=""
+ROOMY_SELECTION_RESULT=""
 
 # Main app selection function
 # shellcheck disable=SC2154  # apps_data is set by caller
@@ -156,36 +156,36 @@ select_apps_for_uninstall() {
     fi
 
     # Expose metadata for the paginated menu (optional inputs)
-    # - MOLE_MENU_META_EPOCHS: numeric last_used_epoch per item
-    # - MOLE_MENU_META_SIZEKB: numeric size in KB per item
+    # - ROOMY_MENU_META_EPOCHS: numeric last_used_epoch per item
+    # - ROOMY_MENU_META_SIZEKB: numeric size in KB per item
     # The menu will gracefully fallback if these are unset or malformed.
     if [[ $has_epoch_metadata == true ]]; then
-        export MOLE_MENU_META_EPOCHS="$epochs_csv"
+        export ROOMY_MENU_META_EPOCHS="$epochs_csv"
     else
-        unset MOLE_MENU_META_EPOCHS
+        unset ROOMY_MENU_META_EPOCHS
     fi
     if [[ $has_size_metadata == true ]]; then
-        export MOLE_MENU_META_SIZEKB="$sizekb_csv"
+        export ROOMY_MENU_META_SIZEKB="$sizekb_csv"
     else
-        unset MOLE_MENU_META_SIZEKB
+        unset ROOMY_MENU_META_SIZEKB
     fi
-    export MOLE_MENU_FILTER_NAMES="$names_newline"
+    export ROOMY_MENU_FILTER_NAMES="$names_newline"
 
-    # Use paginated menu - result will be stored in MOLE_SELECTION_RESULT
+    # Use paginated menu - result will be stored in ROOMY_SELECTION_RESULT
     # Note: paginated_multi_select enters alternate screen and handles clearing
-    MOLE_SELECTION_RESULT=""
+    ROOMY_SELECTION_RESULT=""
     paginated_multi_select "Select Apps to Remove" "${menu_options[@]}"
     local exit_code=$?
 
     # Clean env leakage for safety
-    unset MOLE_MENU_META_EPOCHS MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES
-    # leave MOLE_MENU_SORT_DEFAULT untouched if user set it globally
+    unset ROOMY_MENU_META_EPOCHS ROOMY_MENU_META_SIZEKB ROOMY_MENU_FILTER_NAMES
+    # leave ROOMY_MENU_SORT_DEFAULT untouched if user set it globally
 
     if [[ $exit_code -ne 0 ]]; then
         return 1
     fi
 
-    if [[ -z "$MOLE_SELECTION_RESULT" ]]; then
+    if [[ -z "$ROOMY_SELECTION_RESULT" ]]; then
         echo "No apps selected"
         return 1
     fi
@@ -194,7 +194,7 @@ select_apps_for_uninstall() {
     selected_apps=()
 
     # Parse indices and build selected apps array
-    IFS=',' read -r -a indices_array <<< "$MOLE_SELECTION_RESULT"
+    IFS=',' read -r -a indices_array <<< "$ROOMY_SELECTION_RESULT"
 
     for idx in "${indices_array[@]}"; do
         if [[ "$idx" =~ ^[0-9]+$ ]] && [[ $idx -ge 0 ]] && [[ $idx -lt ${#apps_data[@]} ]]; then

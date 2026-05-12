@@ -16,7 +16,7 @@ setup() {
     mkdir -p "$FAKE_HOME/Applications"
 
     # Stage a fake /Applications tree inside the tmp area. bundle_has_installed_app
-    # hardcodes the real /Applications roots, so we patch _MOLE_BUNDLE_RESOLVER_APP_ROOTS
+    # hardcodes the real /Applications roots, so we patch _ROOMY_BUNDLE_RESOLVER_APP_ROOTS
     # from the test harness itself.
     FAKE_APPS="$FAKE_HOME/FakeApplications"
     export FAKE_APPS
@@ -40,7 +40,7 @@ mdfind() { return 0; }
 export -f mdfind
 
 # Override the hardcoded app roots for the test.
-_MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
+_ROOMY_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
 EOF
 }
 
@@ -90,7 +90,7 @@ export -f mdfind
 run_with_timeout() { return 124; }
 export -f run_with_timeout
 
-_MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
+_ROOMY_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
 
 bundle_has_installed_app "org.keepassxc.KeePassXC"
 EOF

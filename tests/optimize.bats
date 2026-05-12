@@ -88,7 +88,7 @@ EOF
 }
 
 @test "opt_system_maintenance reports DNS and Spotlight" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -103,7 +103,7 @@ EOF
 }
 
 @test "opt_network_optimization refreshes DNS" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -155,7 +155,7 @@ EOF
 }
 
 @test "opt_cache_refresh reuses measured cache sizes for deletion" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -189,7 +189,7 @@ EOF
 }
 
 @test "opt_quarantine_cleanup reports clean when no database" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -201,7 +201,7 @@ EOF
 }
 
 @test "opt_quarantine_cleanup reports entries in dry-run" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -261,7 +261,7 @@ EOF
 }
 
 @test "opt_font_cache_rebuild succeeds in dry-run" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -327,7 +327,7 @@ EOF
 }
 
 @test "opt_dock_refresh clears cache files" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -343,7 +343,7 @@ EOF
 }
 
 @test "opt_prevent_network_dsstore dry-run reports enabled" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -442,7 +442,7 @@ EOF
 }
 
 @test "opt_launch_agents_cleanup reports healthy when no directory" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -454,7 +454,7 @@ EOF
 }
 
 @test "opt_launch_agents_cleanup detects broken agents" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -483,7 +483,7 @@ EOF
 }
 
 @test "opt_launch_agents_cleanup skips healthy agents" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -526,15 +526,15 @@ EOF
 }
 
 @test "opt_periodic_maintenance reports current when log is fresh" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
 periodic() { true; }
 export -f periodic
-tmplog="$(mktemp /tmp/mole-test-daily.XXXXXX)"
+tmplog="$(mktemp /tmp/roomy-test-daily.XXXXXX)"
 touch "$tmplog"
-MOLE_PERIODIC_LOG="$tmplog" opt_periodic_maintenance
+ROOMY_PERIODIC_LOG="$tmplog" opt_periodic_maintenance
 rm -f "$tmplog"
 EOF
 
@@ -543,15 +543,15 @@ EOF
 }
 
 @test "opt_periodic_maintenance triggers in dry-run when log is stale" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
 periodic() { true; }
 export -f periodic
-tmplog="$(mktemp /tmp/mole-test-daily.XXXXXX)"
+tmplog="$(mktemp /tmp/roomy-test-daily.XXXXXX)"
 touch -t "$(date -v-10d +%Y%m%d%H%M.%S)" "$tmplog"
-MOLE_PERIODIC_LOG="$tmplog" opt_periodic_maintenance
+ROOMY_PERIODIC_LOG="$tmplog" opt_periodic_maintenance
 rm -f "$tmplog"
 EOF
 
@@ -560,13 +560,13 @@ EOF
 }
 
 @test "opt_periodic_maintenance triggers in dry-run when log is missing" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
 periodic() { true; }
 export -f periodic
-MOLE_PERIODIC_LOG="/tmp/mole-test-nonexistent-daily.out" opt_periodic_maintenance
+ROOMY_PERIODIC_LOG="/tmp/roomy-test-nonexistent-daily.out" opt_periodic_maintenance
 EOF
 
 	[ "$status" -eq 0 ]
@@ -575,8 +575,8 @@ EOF
 
 @test "run_optimize_diagnostics flags sustained CloudShell as primary bottleneck" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
-		MOLE_OPTIMIZE_PS_SAMPLE_1=$'120 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture\n35 /usr/libexec/syspolicyd\n20 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer' \
-		MOLE_OPTIMIZE_PS_SAMPLE_2=$'140 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-processor\n30 /usr/libexec/syspolicyd\n18 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_1=$'120 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture\n35 /usr/libexec/syspolicyd\n20 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_2=$'140 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-processor\n30 /usr/libexec/syspolicyd\n18 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer' \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -587,15 +587,15 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Likely bottleneck: CloudShell / AliEntSafe"* ]]
-	[[ "$output" == *"Mole will not terminate enterprise security processes"* ]]
+	[[ "$output" == *"Roomy will not terminate enterprise security processes"* ]]
 }
 
 @test "run_optimize_diagnostics treats CoreSimulator images as informational for syspolicyd" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
-		MOLE_OPTIMIZE_PS_SAMPLE_1=$'55 /usr/libexec/syspolicyd\n12 /usr/libexec/diskimagesiod' \
-		MOLE_OPTIMIZE_PS_SAMPLE_2=$'60 /usr/libexec/syspolicyd\n10 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Resources/bin/simdiskimaged' \
-		MOLE_OPTIMIZE_SPCTL_STATUS="assessments enabled" \
-		MOLE_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime/example.asset/AssetData/Restore/000.dmg\n/dev/disk8s1\t/Library/Developer/CoreSimulator/Volumes/iOS_23E244\n' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_1=$'55 /usr/libexec/syspolicyd\n12 /usr/libexec/diskimagesiod' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_2=$'60 /usr/libexec/syspolicyd\n10 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Resources/bin/simdiskimaged' \
+		ROOMY_OPTIMIZE_SPCTL_STATUS="assessments enabled" \
+		ROOMY_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime/example.asset/AssetData/Restore/000.dmg\n/dev/disk8s1\t/Library/Developer/CoreSimulator/Volumes/iOS_23E244\n' \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -613,8 +613,8 @@ EOF
 
 @test "run_optimize_diagnostics suppresses one-off CPU spikes" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
-		MOLE_OPTIMIZE_PS_SAMPLE_1=$'180 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture' \
-		MOLE_OPTIMIZE_PS_SAMPLE_2=$'5 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_1=$'180 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_2=$'5 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture' \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -628,10 +628,10 @@ EOF
 }
 
 @test "run_optimize_diagnostics lists user-mounted image detach candidates in dry-run" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
-		MOLE_OPTIMIZE_PS_SAMPLE_1=$'1 /usr/sbin/distnoted' \
-		MOLE_OPTIMIZE_PS_SAMPLE_2=$'1 /usr/sbin/distnoted' \
-		MOLE_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /Users/test/Downloads/TestInstaller.dmg\n/dev/disk14s1\t/Volumes/Test Installer\n' \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 \
+		ROOMY_OPTIMIZE_PS_SAMPLE_1=$'1 /usr/sbin/distnoted' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_2=$'1 /usr/sbin/distnoted' \
+		ROOMY_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /Users/test/Downloads/TestInstaller.dmg\n/dev/disk14s1\t/Volumes/Test Installer\n' \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -647,8 +647,8 @@ EOF
 }
 
 @test "run_optimize_diagnostics skips protected mounted images" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
-		MOLE_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /Users/test/Downloads/KeepMe.dmg\n/dev/disk15s1\t/Volumes/KeepMe\n' \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 \
+		ROOMY_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /Users/test/Downloads/KeepMe.dmg\n/dev/disk15s1\t/Volumes/KeepMe\n' \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -665,8 +665,8 @@ EOF
 
 @test "run_optimize_diagnostics stays quiet when nothing matches" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
-		MOLE_OPTIMIZE_PS_SAMPLE_1=$'4 /usr/sbin/distnoted\n3 /usr/libexec/coreaudiod' \
-		MOLE_OPTIMIZE_PS_SAMPLE_2=$'5 /usr/sbin/distnoted\n2 /usr/libexec/coreaudiod' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_1=$'4 /usr/sbin/distnoted\n3 /usr/libexec/coreaudiod' \
+		ROOMY_OPTIMIZE_PS_SAMPLE_2=$'5 /usr/sbin/distnoted\n2 /usr/libexec/coreaudiod' \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -809,7 +809,7 @@ EOF
 	local helper="$HOME/Applications/Adobe Acrobat DC.app/Contents/Helpers/AdobeResourceSynchronizer.app"
 	mkdir -p "$helper"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 HELPER_PATH="$helper" bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DEBUG=1 HELPER_PATH="$helper" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -827,7 +827,7 @@ EOF
 }
 
 @test "optimize_sudo_available returns false when sudo session was denied" {
-	run env PROJECT_ROOT="$PROJECT_ROOT" MOLE_OPTIMIZE_SUDO_AVAILABLE="false" bash --noprofile --norc <<'EOF'
+	run env PROJECT_ROOT="$PROJECT_ROOT" ROOMY_OPTIMIZE_SUDO_AVAILABLE="false" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
 if optimize_sudo_available; then
@@ -842,12 +842,12 @@ EOF
 }
 
 @test "optimize_sudo_available returns false in test mode regardless of optimize entrypoint" {
-	# Ad-hoc task invocation under MOLE_TEST_NO_AUTH must hard-deny sudo
-	# even when MOLE_OPTIMIZE_SUDO_AVAILABLE was never set by bin/optimize.sh.
-	run env PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 bash --noprofile --norc <<'EOF'
+	# Ad-hoc task invocation under ROOMY_TEST_NO_AUTH must hard-deny sudo
+	# even when ROOMY_OPTIMIZE_SUDO_AVAILABLE was never set by bin/optimize.sh.
+	run env PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-unset MOLE_OPTIMIZE_SUDO_AVAILABLE
+unset ROOMY_OPTIMIZE_SUDO_AVAILABLE
 if optimize_sudo_available; then
 	echo "WRONG: leaked sudo to test-mode caller"
 	exit 1
@@ -859,14 +859,14 @@ EOF
 	[[ "$output" == *"ok"* ]]
 }
 
-@test "flush_dns_cache does not invoke sudo under MOLE_TEST_NO_AUTH" {
+@test "flush_dns_cache does not invoke sudo under ROOMY_TEST_NO_AUTH" {
 	# Reproduces the reported regression: ad-hoc flush_dns_cache under test
 	# mode used to fall through optimize_sudo_available and reach `sudo dscacheutil`.
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-unset MOLE_OPTIMIZE_SUDO_AVAILABLE
+unset ROOMY_OPTIMIZE_SUDO_AVAILABLE
 trace="$HOME/sudo_calls.log"
 : > "$trace"
 sudo() {
@@ -891,8 +891,8 @@ EOF
 
 @test "sudo-required optimize tasks short-circuit without invoking sudo when access denied" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
-		MOLE_OPTIMIZE_SUDO_AVAILABLE="false" \
-		MOLE_DRY_RUN="0" \
+		ROOMY_OPTIMIZE_SUDO_AVAILABLE="false" \
+		ROOMY_DRY_RUN="0" \
 		bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"

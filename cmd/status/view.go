@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/tw93/mole/internal/units"
+	"github.com/tw93/roomy/internal/units"
 )
 
 var (
@@ -38,8 +38,8 @@ const (
 	iconProcs   = "❊"
 )
 
-// Mole body frames (facing right).
-var moleBody = [][]string{
+// Roomy body frames (facing right).
+var roomyBody = [][]string{
 	{
 		`     /\_/\`,
 		` ___/ o o \`,
@@ -66,8 +66,8 @@ var moleBody = [][]string{
 	},
 }
 
-// Mirror mole body frames (facing left).
-var moleBodyMirror = [][]string{
+// Mirror roomy body frames (facing left).
+var roomyBodyMirror = [][]string{
 	{
 		`    /\_/\`,
 		`   / o o \___`,
@@ -94,10 +94,10 @@ var moleBodyMirror = [][]string{
 	},
 }
 
-// getMoleFrame renders the animated mole.
-func getMoleFrame(animFrame int, termWidth int) string {
-	moleWidth := 15
-	maxPos := max(termWidth-moleWidth, 0)
+// getRoomyFrame renders the animated roomy.
+func getRoomyFrame(animFrame int, termWidth int) string {
+	roomyWidth := 15
+	maxPos := max(termWidth-roomyWidth, 0)
 
 	cycleLength := maxPos * 2
 	if cycleLength == 0 {
@@ -112,9 +112,9 @@ func getMoleFrame(animFrame int, termWidth int) string {
 	// Use mirror frames when moving left
 	var frames [][]string
 	if movingLeft {
-		frames = moleBodyMirror
+		frames = roomyBodyMirror
 	} else {
-		frames = moleBody
+		frames = roomyBody
 	}
 
 	bodyIdx := animFrame % len(frames)
@@ -216,22 +216,22 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 		}
 	}
 
-	// Show cat unless hidden - render mole centered below header
-	var mole string
+	// Show cat unless hidden - render roomy centered below header
+	var roomy string
 	if !catHidden {
-		mole = getMoleFrame(animFrame, termWidth)
+		roomy = getRoomyFrame(animFrame, termWidth)
 	}
 
 	if errMsg != "" {
-		if mole == "" {
+		if roomy == "" {
 			return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", dangerStyle.Render("ERROR: "+errMsg)), ""
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", mole, dangerStyle.Render("ERROR: "+errMsg)), ""
+		return lipgloss.JoinVertical(lipgloss.Left, headerLine, "", roomy, dangerStyle.Render("ERROR: "+errMsg)), ""
 	}
-	if mole == "" {
+	if roomy == "" {
 		return headerLine, ""
 	}
-	return headerLine, mole
+	return headerLine, roomy
 }
 
 func getScoreStyle(score int) lipgloss.Style {

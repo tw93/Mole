@@ -21,9 +21,9 @@ teardown_file() {
 setup() {
 	rm -rf "${HOME:?}"/*
 	mkdir -p "$HOME/source" "$HOME/config/bin" "$HOME/install"
-	cat > "$HOME/source/mole" <<'MOLE'
+	cat > "$HOME/source/roomy" <<'ROOMY'
 VERSION="1.2.3"
-MOLE
+ROOMY
 }
 
 load_installer_binary_helpers() {

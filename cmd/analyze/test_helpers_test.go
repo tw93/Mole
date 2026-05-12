@@ -17,8 +17,8 @@ func skipIfFinderUnavailable(t *testing.T) {
 	if os.Getenv("CI") != "" {
 		t.Skip("Skipping Finder-dependent test in CI")
 	}
-	if os.Getenv("MOLE_SKIP_FINDER_TESTS") == "1" {
-		t.Skip("Skipping Finder-dependent test via MOLE_SKIP_FINDER_TESTS")
+	if os.Getenv("ROOMY_SKIP_FINDER_TESTS") == "1" {
+		t.Skip("Skipping Finder-dependent test via ROOMY_SKIP_FINDER_TESTS")
 	}
 	if _, err := exec.LookPath("osascript"); err != nil {
 		t.Skipf("Skipping Finder-dependent test, osascript unavailable: %v", err)

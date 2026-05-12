@@ -60,20 +60,20 @@ setup() {
 
 
 @test "stop_sudo_session cleans up keepalive process" {
-    export MOLE_SUDO_KEEPALIVE_PID="99999"
+    export ROOMY_SUDO_KEEPALIVE_PID="99999"
 
-    run bash -c "export MOLE_SUDO_KEEPALIVE_PID=99999; source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/core/sudo.sh'; stop_sudo_session"
+    run bash -c "export ROOMY_SUDO_KEEPALIVE_PID=99999; source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/core/sudo.sh'; stop_sudo_session"
     [ "$status" -eq 0 ]
 }
 
 @test "sudo manager initializes global state correctly" {
-    result=$(bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/core/sudo.sh'; echo \$MOLE_SUDO_ESTABLISHED")
+    result=$(bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/core/sudo.sh'; echo \$ROOMY_SUDO_ESTABLISHED")
     [[ "$result" == "false" ]] || [[ -z "$result" ]]
 }
 
 @test "request_sudo_access clears four lines in clamshell mode when Touch ID hint is shown" {
     run bash -c '
-        unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+        unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
         source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
 
@@ -102,7 +102,7 @@ setup() {
 
 @test "request_sudo_access keeps three-line cleanup in clamshell mode without Touch ID" {
     run bash -c '
-        unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+        unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
         source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
 

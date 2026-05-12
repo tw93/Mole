@@ -786,14 +786,14 @@ func TestIsHandledByMoClean(t *testing.T) {
 		path string
 		want bool
 	}{
-		// Paths mo clean handles.
+		// Paths roomy clean handles.
 		{"user caches", "/Users/test/Library/Caches/com.example", true},
 		{"user logs", "/Users/test/Library/Logs/DiagnosticReports", true},
 		{"saved app state", "/Users/test/Library/Saved Application State/com.example", true},
 		{"user trash", "/Users/test/.Trash/deleted-file", true},
 		{"diagnostic reports", "/Users/test/Library/DiagnosticReports/crash.log", true},
 
-		// Paths mo clean does NOT handle.
+		// Paths roomy clean does NOT handle.
 		{"project node_modules", "/Users/test/project/node_modules", false},
 		{"project build", "/Users/test/project/build", false},
 		{"home directory", "/Users/test", false},
@@ -840,7 +840,7 @@ func TestIsCleanableDir(t *testing.T) {
 		{"coverage", "/Users/test/project/coverage", true},
 		{"terraform", "/Users/test/infra/.terraform", true},
 
-		// Paths handled by mo clean (should NOT be cleanable).
+		// Paths handled by roomy clean (should NOT be cleanable).
 		{"user caches", "/Users/test/Library/Caches/com.example", false},
 		{"user logs", "/Users/test/Library/Logs/app.log", false},
 		{"trash", "/Users/test/.Trash/deleted", false},

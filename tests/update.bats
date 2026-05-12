@@ -4,7 +4,7 @@ setup_file() {
     PROJECT_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
     export PROJECT_ROOT
 
-    CURRENT_VERSION="$(grep '^VERSION=' "$PROJECT_ROOT/mole" | head -1 | sed 's/VERSION="\(.*\)"/\1/')"
+    CURRENT_VERSION="$(grep '^VERSION=' "$PROJECT_ROOT/roomy" | head -1 | sed 's/VERSION="\(.*\)"/\1/')"
     export CURRENT_VERSION
 
     ORIGINAL_HOME="${HOME:-}"
@@ -13,7 +13,7 @@ setup_file() {
     HOME="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-update-manager.XXXXXX")"
     export HOME
 
-    mkdir -p "${HOME}/.cache/mole"
+    mkdir -p "${HOME}/.cache/roomy"
 }
 
 teardown_file() {
@@ -29,9 +29,9 @@ setup() {
     BREW_CASK_OUTDATED_COUNT=0
     APPSTORE_UPDATE_COUNT=0
     MACOS_UPDATE_AVAILABLE=false
-    MOLE_UPDATE_AVAILABLE=false
+    ROOMY_UPDATE_AVAILABLE=false
 
-    export MOCK_BIN_DIR="$BATS_TMPDIR/mole-mocks-$$"
+    export MOCK_BIN_DIR="$BATS_TMPDIR/roomy-mocks-$$"
     mkdir -p "$MOCK_BIN_DIR"
     cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -58,7 +58,7 @@ source "$PROJECT_ROOT/lib/manage/update.sh"
 BREW_OUTDATED_COUNT=0
 APPSTORE_UPDATE_COUNT=0
 MACOS_UPDATE_AVAILABLE=false
-MOLE_UPDATE_AVAILABLE=false
+ROOMY_UPDATE_AVAILABLE=false
 ask_for_updates
 EOF
 
@@ -75,7 +75,7 @@ BREW_FORMULA_OUTDATED_COUNT=3
 BREW_CASK_OUTDATED_COUNT=2
 APPSTORE_UPDATE_COUNT=1
 MACOS_UPDATE_AVAILABLE=true
-MOLE_UPDATE_AVAILABLE=true
+ROOMY_UPDATE_AVAILABLE=true
 
 read_key() { echo "ESC"; return 0; }
 
@@ -83,7 +83,7 @@ ask_for_updates
 EOF
 
     [ "$status" -eq 1 ]  # ESC cancels
-    [[ "$output" == *"Update Mole now?"* ]]
+    [[ "$output" == *"Update Roomy now?"* ]]
     [[ "$output" == *"Run "* ]]
     [[ "$output" == *"brew upgrade"* ]]
     [[ "$output" == *"Software Update"* ]]
@@ -101,7 +101,7 @@ BREW_FORMULA_OUTDATED_COUNT=0
 BREW_CASK_OUTDATED_COUNT=0
 APPSTORE_UPDATE_COUNT=0
 MACOS_UPDATE_AVAILABLE=true
-MOLE_UPDATE_AVAILABLE=false
+ROOMY_UPDATE_AVAILABLE=false
 ask_for_updates
 EOF
 
@@ -118,13 +118,13 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/manage/update.sh"
 BREW_OUTDATED_COUNT=2
 BREW_FORMULA_OUTDATED_COUNT=2
-MOLE_UPDATE_AVAILABLE=true
+ROOMY_UPDATE_AVAILABLE=true
 read_key() { echo "ENTER"; return 0; }
 ask_for_updates
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Update Mole now?"* ]]
+    [[ "$output" == *"Update Roomy now?"* ]]
     [[ "$output" == *"yes"* ]]
 }
 
@@ -151,7 +151,7 @@ source "$PROJECT_ROOT/lib/manage/update.sh"
 unset BREW_OUTDATED_COUNT BREW_FORMULA_OUTDATED_COUNT BREW_CASK_OUTDATED_COUNT
 APPSTORE_UPDATE_COUNT=0
 MACOS_UPDATE_AVAILABLE=false
-MOLE_UPDATE_AVAILABLE=false
+ROOMY_UPDATE_AVAILABLE=false
 
 set +e
 ask_for_updates
@@ -184,7 +184,7 @@ EOF
     [[ "$output" == *"2 cask"* ]]
 }
 
-@test "perform_updates handles Homebrew success and Mole update" {
+@test "perform_updates handles Homebrew success and Roomy update" {
     run bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -192,22 +192,22 @@ source "$PROJECT_ROOT/lib/manage/update.sh"
 
 BREW_FORMULA_OUTDATED_COUNT=1
 BREW_CASK_OUTDATED_COUNT=0
-MOLE_UPDATE_AVAILABLE=true
+ROOMY_UPDATE_AVAILABLE=true
 
 FAKE_DIR="$HOME/fake-script-dir"
 mkdir -p "$FAKE_DIR/lib/manage"
-cat > "$FAKE_DIR/mole" <<'SCRIPT'
+cat > "$FAKE_DIR/roomy" <<'SCRIPT'
 #!/usr/bin/env bash
 echo "Already on latest version"
 SCRIPT
-chmod +x "$FAKE_DIR/mole"
+chmod +x "$FAKE_DIR/roomy"
 SCRIPT_DIR="$FAKE_DIR/lib/manage"
 
 brew_has_outdated() { return 0; }
 start_inline_spinner() { :; }
 stop_inline_spinner() { :; }
 reset_brew_cache() { echo "BREW_CACHE_RESET"; }
-reset_mole_cache() { echo "MOLE_CACHE_RESET"; }
+reset_roomy_cache() { echo "ROOMY_CACHE_RESET"; }
 has_sudo_session() { return 1; }
 ensure_sudo_session() { echo "ensure_sudo_session_called"; return 1; }
 
@@ -226,27 +226,27 @@ perform_updates
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Updating Mole"* ]]
-    [[ "$output" == *"Mole updated"* ]]
-    [[ "$output" == *"MOLE_CACHE_RESET"* ]]
+    [[ "$output" == *"Updating Roomy"* ]]
+    [[ "$output" == *"Roomy updated"* ]]
+    [[ "$output" == *"ROOMY_CACHE_RESET"* ]]
     [[ "$output" == *"All updates completed"* ]]
 }
 
 @test "update_via_homebrew reports already on latest version" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
 set -euo pipefail
-MOLE_TEST_BREW_UPDATE_OUTPUT="Updated 0 formulae"
-MOLE_TEST_BREW_UPGRADE_OUTPUT="Warning: mole 1.7.9 already installed"
-MOLE_TEST_BREW_LIST_OUTPUT="mole 1.7.9"
-export MOLE_TEST_BREW_UPDATE_OUTPUT MOLE_TEST_BREW_UPGRADE_OUTPUT MOLE_TEST_BREW_LIST_OUTPUT
+ROOMY_TEST_BREW_UPDATE_OUTPUT="Updated 0 formulae"
+ROOMY_TEST_BREW_UPGRADE_OUTPUT="Warning: roomy 1.7.9 already installed"
+ROOMY_TEST_BREW_LIST_OUTPUT="roomy 1.7.9"
+export ROOMY_TEST_BREW_UPDATE_OUTPUT ROOMY_TEST_BREW_UPGRADE_OUTPUT ROOMY_TEST_BREW_LIST_OUTPUT
 start_inline_spinner() { :; }
 stop_inline_spinner() { :; }
 cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
 #!/usr/bin/env bash
   case "$1" in
-    update) echo "${MOLE_TEST_BREW_UPDATE_OUTPUT:-}";;
-    upgrade) echo "${MOLE_TEST_BREW_UPGRADE_OUTPUT:-}";;
-    list) if [[ "$2" == "--versions" ]]; then echo "${MOLE_TEST_BREW_LIST_OUTPUT:-}"; fi ;;
+    update) echo "${ROOMY_TEST_BREW_UPDATE_OUTPUT:-}";;
+    upgrade) echo "${ROOMY_TEST_BREW_UPGRADE_OUTPUT:-}";;
+    list) if [[ "$2" == "--versions" ]]; then echo "${ROOMY_TEST_BREW_LIST_OUTPUT:-}"; fi ;;
   esac
 SCRIPT
 chmod +x "$MOCK_BIN_DIR/brew"
@@ -259,7 +259,7 @@ EOF
     [[ "$output" == *"Already on latest version"* ]]
 }
 
-@test "update_mole skips download when already latest" {
+@test "update_roomy skips download when already latest" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CURRENT_VERSION="$CURRENT_VERSION" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
 set -euo pipefail
 curl() {
@@ -297,7 +297,7 @@ export -f curl
 brew() { exit 1; }
 export -f brew
 
-"$PROJECT_ROOT/mole" update
+"$PROJECT_ROOT/roomy" update
 EOF
 
     [ "$status" -eq 0 ]
@@ -328,7 +328,7 @@ process_install_output() {
             new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
         fi
         if [[ -z "$new_version" ]]; then
-            new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
+            new_version=$(command -v roomy > /dev/null 2>&1 && roomy --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
@@ -337,8 +337,8 @@ process_install_output() {
     fi
 }
 
-output="Installing Mole...
-◎ Mole installed successfully, version 1.23.1"
+output="Installing Roomy...
+◎ Roomy installed successfully, version 1.23.1"
 process_install_output "$output" "1.23.0"
 EOF
 
@@ -371,7 +371,7 @@ process_install_output() {
             new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
         fi
         if [[ -z "$new_version" ]]; then
-            new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
+            new_version=$(command -v roomy > /dev/null 2>&1 && roomy --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
@@ -380,7 +380,7 @@ process_install_output() {
     fi
 }
 
-output="Installing Mole...
+output="Installing Roomy...
 Installation completed"
 process_install_output "$output" "1.23.1"
 EOF
@@ -414,7 +414,7 @@ process_install_output() {
             new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
         fi
         if [[ -z "$new_version" ]]; then
-            new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
+            new_version=$(command -v roomy > /dev/null 2>&1 && roomy --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
@@ -455,7 +455,7 @@ process_install_output() {
             new_version=$(printf '%s\n' "$output" | sed -n 's/.*version[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' | head -1)
         fi
         if [[ -z "$new_version" ]]; then
-            new_version=$(command -v mo > /dev/null 2>&1 && mo --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
+            new_version=$(command -v roomy > /dev/null 2>&1 && roomy --version 2> /dev/null | awk 'NR==1 && NF {print $NF}' || echo "")
         fi
         if [[ -z "$new_version" ]]; then
             new_version="$fallback_version"
@@ -475,7 +475,7 @@ EOF
     [[ "$output" != *"progress: 100%"* ]] || [[ "$output" == *"Downloading (progress: 100%)"* ]]
 }
 
-@test "update_mole with --force reinstalls even when on latest version" {
+@test "update_roomy with --force reinstalls even when on latest version" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CURRENT_VERSION="$CURRENT_VERSION" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
 set -euo pipefail
 url_log="$HOME/update-url.log"
@@ -505,7 +505,7 @@ done
 if [[ -n "$out" ]]; then
   cat > "$out" << 'INSTALLER'
 #!/usr/bin/env bash
-echo "Mole installed successfully, version $CURRENT_VERSION"
+echo "Roomy installed successfully, version $CURRENT_VERSION"
 INSTALLER
   exit 0
 fi
@@ -524,10 +524,10 @@ exit 1
 SCRIPT
 chmod +x "$HOME/fake-bin/brew"
 
-URL_LOG="$url_log" "$PROJECT_ROOT/mole" update --force
+URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --force
 
-grep -q "raw.githubusercontent.com/tw93/mole/V${CURRENT_VERSION}/install.sh" "$url_log"
-! grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$url_log"
+grep -q "raw.githubusercontent.com/tw93/roomy/V${CURRENT_VERSION}/install.sh" "$url_log"
+! grep -q "raw.githubusercontent.com/tw93/roomy/main/install.sh" "$url_log"
 EOF
 
     [ "$status" -eq 0 ]
@@ -535,7 +535,7 @@ EOF
     [[ "$output" == *"Downloading"* ]] || [[ "$output" == *"Installing"* ]] || [[ "$output" == *"Updated"* ]]
 }
 
-@test "update_mole rejects invalid stable version responses" {
+@test "update_roomy rejects invalid stable version responses" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
 set -euo pipefail
 mkdir -p "$HOME/fake-bin"
@@ -551,14 +551,14 @@ exit 1
 SCRIPT
 chmod +x "$HOME/fake-bin/brew"
 
-"$PROJECT_ROOT/mole" update --force
+"$PROJECT_ROOT/roomy" update --force
 EOF
 
     [ "$status" -eq 1 ]
     [[ "$output" == *"Invalid version response: release-candidate"* ]]
 }
 
-@test "update_mole with --nightly uses installer path and passes MOLE_VERSION=main" {
+@test "update_roomy with --nightly uses installer path and passes ROOMY_VERSION=main" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CURRENT_VERSION="$CURRENT_VERSION" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
 set -euo pipefail
 url_log="$HOME/nightly-update-url.log"
@@ -588,8 +588,8 @@ done
 if [[ -n "$out" ]]; then
   cat > "$out" << 'INSTALLER'
 #!/usr/bin/env bash
-echo "INSTALLER_MOLE_VERSION=${MOLE_VERSION:-}"
-echo "Mole installed successfully, version ${MOLE_VERSION:-unknown}"
+echo "INSTALLER_ROOMY_VERSION=${ROOMY_VERSION:-}"
+echo "Roomy installed successfully, version ${ROOMY_VERSION:-unknown}"
 INSTALLER
   exit 0
 fi
@@ -605,30 +605,30 @@ exit 1
 SCRIPT
 chmod +x "$HOME/fake-bin/brew"
 
-URL_LOG="$url_log" "$PROJECT_ROOT/mole" update --nightly
+URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --nightly
 
-grep -q "raw.githubusercontent.com/tw93/mole/main/install.sh" "$url_log"
+grep -q "raw.githubusercontent.com/tw93/roomy/main/install.sh" "$url_log"
 EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Downloading nightly installer"* ]]
     [[ "$output" == *"Installing nightly update"* ]]
-    [[ "$output" == *"INSTALLER_MOLE_VERSION=main"* ]]
+    [[ "$output" == *"INSTALLER_ROOMY_VERSION=main"* ]]
     [[ "$output" == *"Updated to nightly build (main), main"* ]]
 }
 
-@test "update_mole with --nightly is rejected for Homebrew installs" {
+@test "update_roomy with --nightly is rejected for Homebrew installs" {
     local fake_brew_root="$HOME/fake-homebrew"
-    local fake_cellar_bin="$fake_brew_root/Cellar/mole/9.9.9/bin"
+    local fake_cellar_bin="$fake_brew_root/Cellar/roomy/9.9.9/bin"
     local fake_path_bin="$HOME/fake-brew-bin"
     mkdir -p "$fake_cellar_bin" "$fake_path_bin"
-    touch "$fake_cellar_bin/mole"
-    chmod +x "$fake_cellar_bin/mole"
-    ln -sf "$fake_cellar_bin/mole" "$fake_path_bin/mole"
+    touch "$fake_cellar_bin/roomy"
+    chmod +x "$fake_cellar_bin/roomy"
+    ln -sf "$fake_cellar_bin/roomy" "$fake_path_bin/roomy"
     cat > "$fake_path_bin/brew" <<'SCRIPT'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "list" ]]; then
-  echo "mole"
+  echo "roomy"
   exit 0
 fi
 if [[ "${1:-}" == "--prefix" ]]; then
@@ -641,7 +641,7 @@ SCRIPT
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$fake_path_bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
 set -euo pipefail
-"$PROJECT_ROOT/mole" update --nightly
+"$PROJECT_ROOT/roomy" update --nightly
 EOF
 
     [ "$status" -eq 1 ]
@@ -652,16 +652,16 @@ EOF
 @test "get_homebrew_latest_version prefers brew outdated verbose target version" {
     run bash --noprofile --norc <<'EOF'
 set -euo pipefail
-MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1 source "$PROJECT_ROOT/mole"
+ROOMY_TEST_MODE=1 ROOMY_SKIP_MAIN=1 source "$PROJECT_ROOT/roomy"
 
 cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
 #!/usr/bin/env bash
   if [[ "${1:-}" == "outdated" ]]; then
-    echo "tw93/tap/mole (1.29.0) < 1.31.0"
+    echo "tw93/tap/roomy (1.29.0) < 1.31.0"
     exit 0
   fi
   if [[ "${1:-}" == "info" ]]; then
-    echo "==> tw93/tap/mole: stable 9.9.9 (bottled)"
+    echo "==> tw93/tap/roomy: stable 9.9.9 (bottled)"
     exit 0
   fi
   exit 0
@@ -678,7 +678,7 @@ EOF
 @test "get_homebrew_latest_version parses brew info fallback with heading prefix" {
     run bash --noprofile --norc <<'EOF'
 set -euo pipefail
-MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1 source "$PROJECT_ROOT/mole"
+ROOMY_TEST_MODE=1 ROOMY_SKIP_MAIN=1 source "$PROJECT_ROOT/roomy"
 
 cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -686,7 +686,7 @@ cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
     exit 0
   fi
   if [[ "${1:-}" == "info" ]]; then
-    echo "==> tw93/tap/mole: stable 1.31.1 (bottled), HEAD"
+    echo "==> tw93/tap/roomy: stable 1.31.1 (bottled), HEAD"
     exit 0
   fi
   exit 0

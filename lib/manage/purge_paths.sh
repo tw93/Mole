@@ -5,20 +5,20 @@
 set -euo pipefail
 
 # Get script directory and source dependencies
-_MOLE_MANAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$_MOLE_MANAGE_DIR/../core/common.sh"
+_ROOMY_MANAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_ROOMY_MANAGE_DIR/../core/common.sh"
 # Only source project.sh if not already loaded (has readonly vars)
 if [[ -z "${PURGE_TARGETS:-}" ]]; then
-    source "$_MOLE_MANAGE_DIR/../clean/project.sh"
+    source "$_ROOMY_MANAGE_DIR/../clean/project.sh"
 fi
 
 # Config file path (prefer the shared project constant when available)
-PURGE_PATHS_CONFIG="${PURGE_PATHS_CONFIG:-${PURGE_CONFIG_FILE:-$HOME/.config/mole/purge_paths}}"
+PURGE_PATHS_CONFIG="${PURGE_PATHS_CONFIG:-${PURGE_CONFIG_FILE:-$HOME/.config/roomy/purge_paths}}"
 
 # Ensure config file exists with helpful template
 ensure_config_template() {
     if [[ ! -f "$PURGE_PATHS_CONFIG" ]]; then
-        if ! write_purge_config "# Mole Purge Paths - Directories to scan for project artifacts
+        if ! write_purge_config "# Roomy Purge Paths - Directories to scan for project artifacts
 # Add one path per line (supports ~ for home directory)
 # Delete all paths or this file to use defaults
 #
@@ -108,7 +108,7 @@ manage_purge_paths() {
 
     echo ""
     echo -e "${GREEN}${ICON_SUCCESS}${NC} Configuration updated"
-    echo -e "${GRAY}Run 'mo purge' to clean with new paths${NC}"
+    echo -e "${GRAY}Run 'roomy purge' to clean with new paths${NC}"
     echo ""
 }
 

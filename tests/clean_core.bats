@@ -11,8 +11,8 @@ setup_file() {
     export HOME
 
     # Prevent AppleScript permission dialogs during tests
-    MOLE_TEST_MODE=1
-    export MOLE_TEST_MODE
+    ROOMY_TEST_MODE=1
+    export ROOMY_TEST_MODE
 
     mkdir -p "$HOME"
 }
@@ -28,7 +28,7 @@ setup() {
     export TERM="xterm-256color"
     rm -rf "${HOME:?}"/*
     rm -rf "$HOME/Library" "$HOME/.config"
-    mkdir -p "$HOME/Library/Caches" "$HOME/.config/mole"
+    mkdir -p "$HOME/Library/Caches" "$HOME/.config/roomy"
     unset TEST_MOCK_BIN
 }
 
@@ -63,20 +63,20 @@ run_clean_dry_run() {
         test_path="$TEST_MOCK_BIN:$PATH"
     fi
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 PATH="$test_path" \
-        "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 PATH="$test_path" \
+        "$PROJECT_ROOT/roomy" clean --dry-run
 }
 
-@test "mo clean --dry-run skips system cleanup in non-interactive mode" {
+@test "roomy clean --dry-run skips system cleanup in non-interactive mode" {
     set_mock_sudo_uncached
     run_clean_dry_run
     [ "$status" -eq 0 ]
     [[ "$output" == *"Dry Run Mode"* ]]
-    [[ "$output" == *"sudo -v && mo clean --dry-run"* ]]
+    [[ "$output" == *"sudo -v && roomy clean --dry-run"* ]]
     [[ "$output" != *"system preview included"* ]]
 }
 
-@test "mo clean --dry-run does not probe sudo in test mode" {
+@test "roomy clean --dry-run does not probe sudo in test mode" {
     set_mock_sudo_cached
     cat > "$TEST_MOCK_BIN/sudo" << 'MOCK'
 #!/bin/bash
@@ -87,21 +87,21 @@ MOCK
 
     run_clean_dry_run
     [ "$status" -eq 0 ]
-    [[ "$output" == *"sudo -v && mo clean --dry-run"* ]]
+    [[ "$output" == *"sudo -v && roomy clean --dry-run"* ]]
     [[ "$output" != *"sudo should not be called"* ]]
 }
 
-@test "mo clean rejects removed cleanup selection flags" {
+@test "roomy clean rejects removed cleanup selection flags" {
     local removed_flag
     for removed_flag in "--select" "--categories" "--exclude"; do
-        run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean "$removed_flag"
+        run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean "$removed_flag"
         [ "$status" -eq 1 ]
         [[ "$output" == *"was removed in this release"* ]]
-        [[ "$output" == *"mo clean --dry-run"* ]]
+        [[ "$output" == *"roomy clean --dry-run"* ]]
     done
 }
 
-@test "mo clean --dry-run shows hint when sudo is not cached" {
+@test "roomy clean --dry-run shows hint when sudo is not cached" {
     set_mock_sudo_uncached
     run_clean_dry_run
     [ "$status" -eq 0 ]
@@ -117,7 +117,7 @@ MOCK
     [ "$status" -eq 0 ]
 }
 
-@test "mo clean --dry-run survives an unwritable TMPDIR" {
+@test "roomy clean --dry-run survives an unwritable TMPDIR" {
     local blocked_tmp="$HOME/blocked-tmp"
     mkdir -p "$blocked_tmp"
     chmod 500 "$blocked_tmp"
@@ -128,27 +128,27 @@ MOCK
         test_path="$TEST_MOCK_BIN:$PATH"
     fi
 
-    run env HOME="$HOME" TMPDIR="$blocked_tmp" MOLE_TEST_MODE=1 PATH="$test_path" \
-        "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" TMPDIR="$blocked_tmp" ROOMY_TEST_MODE=1 PATH="$test_path" \
+        "$PROJECT_ROOT/roomy" clean --dry-run
 
     [ "$status" -eq 0 ]
     [[ "$output" != *"mktemp:"* ]]
     [[ "$output" != *"Failed to create temporary file"* ]]
-    [ -d "$HOME/.cache/mole/tmp" ]
+    [ -d "$HOME/.cache/roomy/tmp" ]
 }
 
-@test "mo clean --dry-run reports user cache without deleting it" {
+@test "roomy clean --dry-run reports user cache without deleting it" {
     mkdir -p "$HOME/Library/Caches/TestApp"
     echo "cache data" > "$HOME/Library/Caches/TestApp/cache.tmp"
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --dry-run
     [ "$status" -eq 0 ]
     [[ "$output" == *"User app cache"* ]]
     [[ "$output" == *"Potential space"* ]]
     [ -f "$HOME/Library/Caches/TestApp/cache.tmp" ]
 }
 
-@test "mo clean --dry-run reports stale login item without deleting it" {
+@test "roomy clean --dry-run reports stale login item without deleting it" {
     mkdir -p "$HOME/Library/LaunchAgents"
     cat > "$HOME/Library/LaunchAgents/com.example.stale.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -165,57 +165,57 @@ MOCK
 </plist>
 PLIST
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --dry-run
     [ "$status" -eq 0 ]
     [[ "$output" == *"Potential stale login item: com.example.stale.plist"* ]]
     [ -f "$HOME/Library/LaunchAgents/com.example.stale.plist" ]
 }
 
-@test "mo clean --dry-run does not export duplicate targets across sections" {
+@test "roomy clean --dry-run does not export duplicate targets across sections" {
     mkdir -p "$HOME/Library/Application Support/Code/CachedData"
     echo "cache" > "$HOME/Library/Application Support/Code/CachedData/data.bin"
 
-    run env HOME="$HOME" MOLE_TEST_MODE=0 "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=0 "$PROJECT_ROOT/roomy" clean --dry-run
     [ "$status" -eq 0 ]
 
-    run grep -c "Application Support/Code/CachedData" "$HOME/.config/mole/clean-list.txt"
+    run grep -c "Application Support/Code/CachedData" "$HOME/.config/roomy/clean-list.txt"
     [ "$status" -eq 0 ]
     [ "$output" -eq 1 ]
 }
 
-@test "mo clean honors whitelist entries" {
+@test "roomy clean honors whitelist entries" {
     mkdir -p "$HOME/Library/Caches/WhitelistedApp"
     echo "keep me" > "$HOME/Library/Caches/WhitelistedApp/data.tmp"
 
-    cat > "$HOME/.config/mole/whitelist" << EOF
+    cat > "$HOME/.config/roomy/whitelist" << EOF
 $HOME/Library/Caches/WhitelistedApp*
 EOF
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --dry-run
     [ "$status" -eq 0 ]
     [[ "$output" == *"Protected"* ]]
     [ -f "$HOME/Library/Caches/WhitelistedApp/data.tmp" ]
 }
 
-@test "mo clean honors whitelist entries with $HOME literal" {
+@test "roomy clean honors whitelist entries with $HOME literal" {
     mkdir -p "$HOME/Library/Caches/WhitelistedApp"
     echo "keep me" > "$HOME/Library/Caches/WhitelistedApp/data.tmp"
 
-    cat > "$HOME/.config/mole/whitelist" << 'EOF'
+    cat > "$HOME/.config/roomy/whitelist" << 'EOF'
 $HOME/Library/Caches/WhitelistedApp*
 EOF
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --dry-run
     [ "$status" -eq 0 ]
     [[ "$output" == *"Protected"* ]]
     [ -f "$HOME/Library/Caches/WhitelistedApp/data.tmp" ]
 }
 
-@test "mo clean protects Maven repository by default" {
+@test "roomy clean protects Maven repository by default" {
     mkdir -p "$HOME/.m2/repository/org/example"
     echo "dependency" > "$HOME/.m2/repository/org/example/lib.jar"
 
-    run env HOME="$HOME" MOLE_TEST_MODE=1 "$PROJECT_ROOT/mole" clean --dry-run
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --dry-run
     [ "$status" -eq 0 ]
     [ -f "$HOME/.m2/repository/org/example/lib.jar" ]
     [[ "$output" != *"Maven repository cache"* ]]
@@ -225,7 +225,7 @@ EOF
     mkdir -p "$HOME/Documents"
     touch "$HOME/Documents/.DS_Store"
 
-    cat > "$HOME/.config/mole/whitelist" << EOF
+    cat > "$HOME/.config/roomy/whitelist" << EOF
 FINDER_METADATA_SENTINEL
 EOF
 

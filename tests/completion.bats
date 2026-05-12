@@ -48,15 +48,15 @@ setup() {
 @test "completion --help shows usage" {
 	run "$PROJECT_ROOT/bin/completion.sh" --help
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"Usage: mole completion"* ]]
+	[[ "$output" == *"Usage: roomy completion"* ]]
 	[[ "$output" == *"Auto-install"* ]]
 }
 
 @test "completion bash generates valid bash script" {
 	run "$PROJECT_ROOT/bin/completion.sh" bash
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"_mole_completions"* ]]
-	[[ "$output" == *"complete -F _mole_completions mole mo"* ]]
+	[[ "$output" == *"_roomy_completions"* ]]
+	[[ "$output" == *"complete -F _roomy_completions roomy mo"* ]]
 }
 
 @test "completion bash script includes all commands" {
@@ -72,10 +72,10 @@ setup() {
 	[[ "$output" == *"completion"* ]]
 }
 
-@test "completion bash script supports mo command" {
+@test "completion bash script supports roomy and mo commands" {
 	run "$PROJECT_ROOT/bin/completion.sh" bash
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"complete -F _mole_completions mole mo"* ]]
+	[[ "$output" == *"complete -F _roomy_completions roomy mo"* ]]
 }
 
 @test "completion bash includes current clean and analyze options only" {
@@ -89,16 +89,16 @@ setup() {
 }
 
 @test "completion bash can be loaded in bash" {
-	run bash -c "eval \"\$(\"$PROJECT_ROOT/bin/completion.sh\" bash)\" && complete -p mole"
+	run bash -c "eval \"\$(\"$PROJECT_ROOT/bin/completion.sh\" bash)\" && complete -p roomy"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"_mole_completions"* ]]
+	[[ "$output" == *"_roomy_completions"* ]]
 }
 
 @test "completion zsh generates valid zsh script" {
 	run "$PROJECT_ROOT/bin/completion.sh" zsh
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"#compdef mole mo"* ]]
-	[[ "$output" == *"_mole()"* ]]
+	[[ "$output" == *"#compdef roomy mo"* ]]
+	[[ "$output" == *"_roomy()"* ]]
 }
 
 @test "completion zsh includes command descriptions" {
@@ -123,16 +123,16 @@ setup() {
 @test "completion fish generates valid fish script" {
 	run "$PROJECT_ROOT/bin/completion.sh" fish
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"complete -f -c mole"* ]]
+	[[ "$output" == *"complete -f -c roomy"* ]]
 	[[ "$output" == *"complete -f -c mo"* ]]
 }
 
-@test "completion fish includes both mole and mo commands" {
+@test "completion fish includes both roomy and mo commands" {
 	output="$("$PROJECT_ROOT/bin/completion.sh" fish)"
-	mole_count=$(echo "$output" | grep -c "complete -f -c mole")
+	roomy_count=$(echo "$output" | grep -c "complete -f -c roomy")
 	mo_count=$(echo "$output" | grep -c "complete -f -c mo")
 
-	[ "$mole_count" -gt 0 ]
+	[ "$roomy_count" -gt 0 ]
 	[ "$mo_count" -gt 0 ]
 }
 
@@ -161,14 +161,14 @@ setup() {
 
 	[ -f "$HOME/.zshrc" ] || skip "Auto-install didn't create .zshrc"
 
-	run grep -E "mole[[:space:]]+completion" "$HOME/.zshrc"
+	run grep -E "roomy[[:space:]]+completion" "$HOME/.zshrc"
 	[ "$status" -eq 0 ]
 }
 
 @test "completion auto-install detects already installed" {
 	mkdir -p "$HOME"
 	# shellcheck disable=SC2016
-	echo 'eval "$(mole completion zsh)"' >"$HOME/.zshrc"
+	echo 'eval "$(roomy completion zsh)"' >"$HOME/.zshrc"
 
 	run env SHELL=/bin/zsh "$PROJECT_ROOT/bin/completion.sh"
 	[ "$status" -eq 0 ]

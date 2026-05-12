@@ -18,7 +18,7 @@ setup() {
 
 @test "bytes_to_human handles large values efficiently" {
     local start end elapsed
-    local limit_ms="${MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS:-4000}"
+    local limit_ms="${ROOMY_PERF_BYTES_TO_HUMAN_LIMIT_MS:-4000}"
 
     bytes_to_human 1073741824 > /dev/null
 
@@ -75,7 +75,7 @@ setup() {
     dd if=/dev/zero of="$test_file" bs=1024 count=100 2> /dev/null
 
     local start end elapsed
-    local limit_ms="${MOLE_PERF_GET_FILE_SIZE_LIMIT_MS:-2000}"
+    local limit_ms="${ROOMY_PERF_GET_FILE_SIZE_LIMIT_MS:-2000}"
     start=$(date +%s%N)
     for i in {1..50}; do
         get_file_size "$test_file" > /dev/null
@@ -108,7 +108,7 @@ setup() {
 
 @test "get_invoking_user executes quickly" {
     local start end elapsed
-    local limit_ms="${MOLE_PERF_GET_INVOKING_USER_LIMIT_MS:-2000}"
+    local limit_ms="${ROOMY_PERF_GET_INVOKING_USER_LIMIT_MS:-2000}"
 
     start=$(date +%s%N)
     for i in {1..100}; do
@@ -132,9 +132,9 @@ setup() {
 
 @test "create_temp_file and cleanup_temp_files work efficiently" {
     local start end elapsed
-    local limit_ms="${MOLE_PERF_CREATE_TEMP_FILE_LIMIT_MS:-3000}"
+    local limit_ms="${ROOMY_PERF_CREATE_TEMP_FILE_LIMIT_MS:-3000}"
 
-    declare -a MOLE_TEMP_DIRS=()
+    declare -a ROOMY_TEMP_DIRS=()
 
     start=$(date +%s%N)
     for i in {1..50}; do
@@ -146,7 +146,7 @@ setup() {
 
     [ "$elapsed" -lt "$limit_ms" ]
 
-    [ "${#MOLE_TEMP_FILES[@]}" -eq 50 ]
+    [ "${#ROOMY_TEMP_FILES[@]}" -eq 50 ]
 
     start=$(date +%s%N)
     cleanup_temp_files
@@ -155,7 +155,7 @@ setup() {
     elapsed=$(( (end - start) / 1000000 ))
     [ "$elapsed" -lt "$limit_ms" ]
 
-    [ "${#MOLE_TEMP_FILES[@]}" -eq 0 ]
+    [ "${#ROOMY_TEMP_FILES[@]}" -eq 0 ]
 }
 
 @test "mktemp_file creates files with correct prefix" {
@@ -234,6 +234,6 @@ setup() {
 
     elapsed=$(( (end - start) / 1000000 ))
 
-    local limit_ms="${MOLE_PERF_SECTION_LIMIT_MS:-2000}"
+    local limit_ms="${ROOMY_PERF_SECTION_LIMIT_MS:-2000}"
     [ "$elapsed" -lt "$limit_ms" ]
 }

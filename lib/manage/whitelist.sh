@@ -5,15 +5,15 @@
 set -euo pipefail
 
 # Get script directory and source dependencies
-_MOLE_MANAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$_MOLE_MANAGE_DIR/../core/common.sh"
-source "$_MOLE_MANAGE_DIR/../ui/menu_simple.sh"
+_ROOMY_MANAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_ROOMY_MANAGE_DIR/../core/common.sh"
+source "$_ROOMY_MANAGE_DIR/../ui/menu_simple.sh"
 
 # Config file paths
-MOLE_CONFIG_DIR="${MOLE_CONFIG_DIR:-$HOME/.config/mole}"
-readonly WHITELIST_CONFIG_CLEAN="$MOLE_CONFIG_DIR/whitelist"
-readonly WHITELIST_CONFIG_OPTIMIZE="$MOLE_CONFIG_DIR/whitelist_optimize"
-readonly WHITELIST_CONFIG_OPTIMIZE_LEGACY="$MOLE_CONFIG_DIR/whitelist_checks"
+ROOMY_CONFIG_DIR="${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}"
+readonly WHITELIST_CONFIG_CLEAN="$ROOMY_CONFIG_DIR/whitelist"
+readonly WHITELIST_CONFIG_OPTIMIZE="$ROOMY_CONFIG_DIR/whitelist_optimize"
+readonly WHITELIST_CONFIG_OPTIMIZE_LEGACY="$ROOMY_CONFIG_DIR/whitelist_checks"
 
 # Default whitelist patterns defined in lib/core/common.sh:
 # - DEFAULT_WHITELIST_PATTERNS
@@ -39,10 +39,10 @@ save_whitelist_patterns() {
 
     if [[ "$mode" == "optimize" ]]; then
         config_file="$WHITELIST_CONFIG_OPTIMIZE"
-        header_text="# Mole Optimization Whitelist - These checks will be skipped during optimization"
+        header_text="# Roomy Optimization Whitelist - These checks will be skipped during optimization"
     else
         config_file="$WHITELIST_CONFIG_CLEAN"
-        header_text="# Mole Whitelist - Protected paths won't be deleted\n# Default protections: Playwright browsers, HuggingFace models, Maven repo, Ollama models, Surge Mac, R renv, Finder metadata\n# Add one pattern per line to keep items safe."
+        header_text="# Roomy Whitelist - Protected paths won't be deleted\n# Default protections: Playwright browsers, HuggingFace models, Maven repo, Ollama models, Surge Mac, R renv, Finder metadata\n# Add one pattern per line to keep items safe."
     fi
 
     ensure_user_file "$config_file"
@@ -387,15 +387,15 @@ ${GRAY}Edit: ${display_config}${NC}"
             preselected_indices+=("$i")
         done
         local IFS=','
-        export MOLE_PRESELECTED_INDICES="${preselected_indices[*]}"
+        export ROOMY_PRESELECTED_INDICES="${preselected_indices[*]}"
     else
-        unset MOLE_PRESELECTED_INDICES
+        unset ROOMY_PRESELECTED_INDICES
     fi
 
-    MOLE_SELECTION_RESULT=""
+    ROOMY_SELECTION_RESULT=""
     local exit_code=0
     paginated_multi_select "$menu_title" "${menu_options[@]}" || exit_code=$?
-    unset MOLE_PRESELECTED_INDICES
+    unset ROOMY_PRESELECTED_INDICES
 
     if [[ $exit_code -ne 0 ]]; then
         echo -e "${GRAY}Cancelled, no changes saved${NC}"
@@ -404,9 +404,9 @@ ${GRAY}Edit: ${display_config}${NC}"
 
     # Convert selected indices to patterns
     local -a selected_patterns=()
-    if [[ -n "$MOLE_SELECTION_RESULT" ]]; then
+    if [[ -n "$ROOMY_SELECTION_RESULT" ]]; then
         local -a selected_indices
-        IFS=',' read -ra selected_indices <<< "$MOLE_SELECTION_RESULT"
+        IFS=',' read -ra selected_indices <<< "$ROOMY_SELECTION_RESULT"
         for idx in "${selected_indices[@]}"; do
             if [[ $idx -ge 0 && $idx -lt ${#cache_patterns[@]} ]]; then
                 local pattern="${cache_patterns[$idx]}"

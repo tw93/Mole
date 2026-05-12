@@ -21,9 +21,9 @@ setup_file() {
 	CLI_OWNS_GO_HELPERS=0
 	export CLI_OWNS_GO_HELPERS
 
-	if [[ -x "${MOLE_TEST_ANALYZE_BIN:-}" && -x "${MOLE_TEST_STATUS_BIN:-}" ]]; then
-		ANALYZE_BIN="$MOLE_TEST_ANALYZE_BIN"
-		STATUS_BIN="$MOLE_TEST_STATUS_BIN"
+	if [[ -x "${ROOMY_TEST_ANALYZE_BIN:-}" && -x "${ROOMY_TEST_STATUS_BIN:-}" ]]; then
+		ANALYZE_BIN="$ROOMY_TEST_ANALYZE_BIN"
+		STATUS_BIN="$ROOMY_TEST_STATUS_BIN"
 		export ANALYZE_BIN STATUS_BIN
 	elif command -v go > /dev/null 2>&1; then
 		# Build Go binaries from current source for JSON tests.
@@ -43,7 +43,7 @@ setup_file() {
 }
 
 teardown_file() {
-	rm -rf "$HOME/.config/mole"
+	rm -rf "$HOME/.config/roomy"
 	rm -rf "$HOME"
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
@@ -78,30 +78,30 @@ SCRIPT
 }
 
 setup() {
-	rm -rf "$HOME/.config/mole"
-	mkdir -p "$HOME/.config/mole"
+	rm -rf "$HOME/.config/roomy"
+	mkdir -p "$HOME/.config/roomy"
 }
 
-@test "mole --help prints command overview" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
+@test "roomy --help prints command overview" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"mo clean"* ]]
-	[[ "$output" == *"mo optimize"* ]]
-	[[ "$output" == *"mo analyze"* ]]
-	[[ "$output" != *"mo optimise"* ]]
+	[[ "$output" == *"roomy clean"* ]]
+	[[ "$output" == *"roomy optimize"* ]]
+	[[ "$output" == *"roomy analyze"* ]]
+	[[ "$output" != *"roomy optimise"* ]]
 }
 
-@test "mole --version reports script version" {
-	expected_version="$(grep '^VERSION=' "$PROJECT_ROOT/mole" | head -1 | sed 's/VERSION=\"\(.*\)\"/\1/')"
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" --version
+@test "roomy --version reports script version" {
+	expected_version="$(grep '^VERSION=' "$PROJECT_ROOT/roomy" | head -1 | sed 's/VERSION=\"\(.*\)\"/\1/')"
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" --version
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"$expected_version"* ]]
 }
 
-@test "mole --version does not hang on slow Homebrew detection" {
+@test "roomy --version does not hang on slow Homebrew detection" {
 	local fake_bin
 	fake_bin="$(mktemp -d "${BATS_TEST_TMPDIR}/fake-bin.XXXXXX")"
-	ln -s "$PROJECT_ROOT/mole" "$fake_bin/mole"
+	ln -s "$PROJECT_ROOT/roomy" "$fake_bin/roomy"
 	cat > "$fake_bin/brew" <<'SCRIPT'
 #!/usr/bin/env bash
 sleep 3
@@ -109,56 +109,56 @@ exit 1
 SCRIPT
 	chmod +x "$fake_bin/brew"
 
-	run env HOME="$HOME" PATH="$fake_bin:$PATH" MOLE_HOMEBREW_DETECT_TIMEOUT=1 "$PROJECT_ROOT/mole" --version
+	run env HOME="$HOME" PATH="$fake_bin:$PATH" ROOMY_HOMEBREW_DETECT_TIMEOUT=1 "$PROJECT_ROOT/roomy" --version
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Install: Manual"* ]]
 }
 
-@test "mole --version shows nightly channel metadata" {
-	expected_version="$(grep '^VERSION=' "$PROJECT_ROOT/mole" | head -1 | sed 's/VERSION=\"\(.*\)\"/\1/')"
-	mkdir -p "$HOME/.config/mole"
-	cat > "$HOME/.config/mole/install_channel" <<'EOF'
+@test "roomy --version shows nightly channel metadata" {
+	expected_version="$(grep '^VERSION=' "$PROJECT_ROOT/roomy" | head -1 | sed 's/VERSION=\"\(.*\)\"/\1/')"
+	mkdir -p "$HOME/.config/roomy"
+	cat > "$HOME/.config/roomy/install_channel" <<'EOF'
 CHANNEL=nightly
 EOF
 
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" --version
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" --version
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Mole version $expected_version"* ]]
+	[[ "$output" == *"Roomy version $expected_version"* ]]
 	[[ "$output" == *"Channel: Nightly"* ]]
 }
 
-@test "mole unknown command returns error" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" unknown-command
+@test "roomy unknown command returns error" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" unknown-command
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"Unknown command: unknown-command"* ]]
 }
 
-@test "mole --help does not list check command" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
+@test "roomy --help does not list check command" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" --help
 	[ "$status" -eq 0 ]
-	[[ "$output" != *"mo check"* ]]
+	[[ "$output" != *"roomy check"* ]]
 }
 
-@test "mole check is not a public command" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" check --help
+@test "roomy check is not a public command" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" check --help
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"Unknown command: check"* ]]
 }
 
-@test "mole doctor is not a public command" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" doctor --help
+@test "roomy doctor is not a public command" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" doctor --help
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"Unknown command: doctor"* ]]
 }
 
-@test "mole optimize --check is not a public option" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" optimize --check
+@test "roomy optimize --check is not a public option" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" optimize --check
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"Unknown optimize option: --check"* ]]
 }
 
-@test "mole uninstall --whitelist returns unsupported option error" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --whitelist
+@test "roomy uninstall --whitelist returns unsupported option error" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" uninstall --whitelist
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"Unknown uninstall option: --whitelist"* ]]
 }
@@ -167,8 +167,8 @@ EOF
 	run bash --noprofile --norc <<'EOF'
 set -euo pipefail
 HOME="$(mktemp -d)"
-export HOME MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
-source "$PROJECT_ROOT/mole"
+export HOME ROOMY_TEST_MODE=1 ROOMY_SKIP_MAIN=1
+source "$PROJECT_ROOT/roomy"
 show_brand_banner() { printf 'banner\n'; }
 show_menu_option() { printf '%s' "$2"; }
 MAIN_MENU_BANNER=""
@@ -185,14 +185,14 @@ EOF
 	run bash --noprofile --norc <<'EOF'
 set -euo pipefail
 HOME="$(mktemp -d)"
-export HOME MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
-source "$PROJECT_ROOT/mole"
+export HOME ROOMY_TEST_MODE=1 ROOMY_SKIP_MAIN=1
+source "$PROJECT_ROOT/roomy"
 show_brand_banner() { :; }
 show_main_menu() { :; }
 hide_cursor() { :; }
 show_cursor() { :; }
 clear() { :; }
-update_mole() { echo "UPDATE_CALLED"; }
+update_roomy() { echo "UPDATE_CALLED"; }
 state_file="$HOME/read_key_state"
 read_key() {
     if [[ ! -f "$state_file" ]]; then
@@ -213,16 +213,16 @@ EOF
 	run bash --noprofile --norc <<'EOF'
 set -euo pipefail
 HOME="$(mktemp -d)"
-export HOME MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
-mkdir -p "$HOME/.cache/mole"
-printf 'update available\n' > "$HOME/.cache/mole/update_message"
-source "$PROJECT_ROOT/mole"
+export HOME ROOMY_TEST_MODE=1 ROOMY_SKIP_MAIN=1
+mkdir -p "$HOME/.cache/roomy"
+printf 'update available\n' > "$HOME/.cache/roomy/update_message"
+source "$PROJECT_ROOT/roomy"
 show_brand_banner() { :; }
 show_main_menu() { :; }
 hide_cursor() { :; }
 show_cursor() { :; }
 clear() { :; }
-update_mole() { echo "UPDATE_CALLED"; }
+update_roomy() { echo "UPDATE_CALLED"; }
 read_key() { echo "UPDATE"; }
 interactive_main_menu
 EOF
@@ -232,17 +232,17 @@ EOF
 }
 
 @test "touchid status reports current configuration" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" touchid status
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" touchid status
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Touch ID"* ]]
 }
 
-@test "mo optimize command is recognized" {
-	run bash -c "grep -Eq '\"optimi[sz]e\"[[:space:]]*\\|[[:space:]]*\"optimi[sz]e\"' '$PROJECT_ROOT/mole'"
+@test "roomy optimize command is recognized" {
+	run bash -c "grep -Eq '\"optimi[sz]e\"[[:space:]]*\\|[[:space:]]*\"optimi[sz]e\"' '$PROJECT_ROOT/roomy'"
 	[ "$status" -eq 0 ]
 }
 
-@test "mo analyze binary is valid" {
+@test "roomy analyze binary is valid" {
 	if [[ -f "$PROJECT_ROOT/bin/analyze-go" ]]; then
 		[ -x "$PROJECT_ROOT/bin/analyze-go" ]
 		run file "$PROJECT_ROOT/bin/analyze-go"
@@ -252,35 +252,35 @@ EOF
 	fi
 }
 
-@test "mo clean --debug creates debug log file" {
-	mkdir -p "$HOME/.config/mole"
-	run env HOME="$HOME" TERM="xterm-256color" MOLE_TEST_MODE=1 MO_DEBUG=1 "$PROJECT_ROOT/mole" clean --dry-run
+@test "roomy clean --debug creates debug log file" {
+	mkdir -p "$HOME/.config/roomy"
+	run env HOME="$HOME" TERM="xterm-256color" ROOMY_TEST_MODE=1 ROOMY_DEBUG=1 "$PROJECT_ROOT/roomy" clean --dry-run
 	[ "$status" -eq 0 ]
-	MOLE_OUTPUT="$output"
+	ROOMY_OUTPUT="$output"
 
-	DEBUG_LOG="$HOME/Library/Logs/mole/mole_debug_session.log"
+	DEBUG_LOG="$HOME/Library/Logs/roomy/roomy_debug_session.log"
 	[ -f "$DEBUG_LOG" ]
 
-	run grep "Mole Debug Session" "$DEBUG_LOG"
+	run grep "Roomy Debug Session" "$DEBUG_LOG"
 	[ "$status" -eq 0 ]
 
-	[[ "$MOLE_OUTPUT" =~ "Debug session log saved to" ]]
+	[[ "$ROOMY_OUTPUT" =~ "Debug session log saved to" ]]
 }
 
-@test "mo clean without debug does not show debug log path" {
-	mkdir -p "$HOME/.config/mole"
-	run env HOME="$HOME" TERM="xterm-256color" MOLE_TEST_MODE=1 MO_DEBUG=0 "$PROJECT_ROOT/mole" clean --dry-run
+@test "roomy clean without debug does not show debug log path" {
+	mkdir -p "$HOME/.config/roomy"
+	run env HOME="$HOME" TERM="xterm-256color" ROOMY_TEST_MODE=1 ROOMY_DEBUG=0 "$PROJECT_ROOT/roomy" clean --dry-run
 	[ "$status" -eq 0 ]
 
 	[[ "$output" != *"Debug session log saved to"* ]]
 }
 
-@test "mo clean --debug logs system info" {
-	mkdir -p "$HOME/.config/mole"
-	run env HOME="$HOME" TERM="xterm-256color" MOLE_TEST_MODE=1 MO_DEBUG=1 "$PROJECT_ROOT/mole" clean --dry-run
+@test "roomy clean --debug logs system info" {
+	mkdir -p "$HOME/.config/roomy"
+	run env HOME="$HOME" TERM="xterm-256color" ROOMY_TEST_MODE=1 ROOMY_DEBUG=1 "$PROJECT_ROOT/roomy" clean --dry-run
 	[ "$status" -eq 0 ]
 
-	DEBUG_LOG="$HOME/Library/Logs/mole/mole_debug_session.log"
+	DEBUG_LOG="$HOME/Library/Logs/roomy/roomy_debug_session.log"
 
 	run grep "User:" "$DEBUG_LOG"
 	[ "$status" -eq 0 ]
@@ -289,20 +289,20 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
-@test "mo clean --help includes external volume option" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" clean --help
+@test "roomy clean --help includes external volume option" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" clean --help
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"--external PATH"* ]]
 	[[ "$output" == *"already-uninstalled apps"* ]]
 }
 
-@test "mo uninstall --help directs leftover-only cleanup to clean" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --help
+@test "roomy uninstall --help directs leftover-only cleanup to clean" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" uninstall --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"already gone, use mo clean"* ]]
+	[[ "$output" == *"already gone, use roomy clean"* ]]
 }
 
-@test "mo clean --external accepts canonicalized custom root" {
+@test "roomy clean --external accepts canonicalized custom root" {
 	real_root="$(mktemp -d "$HOME/ext-real.XXXXXX")"
 	link_root="$HOME/ext-link"
 	ln -s "$real_root" "$link_root"
@@ -317,8 +317,8 @@ exit 0
 EOF
 	chmod +x "$mock_bin/diskutil"
 
-	run env HOME="$HOME" PATH="$mock_bin:$PATH" MOLE_EXTERNAL_VOLUMES_ROOT="$link_root" \
-		MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" clean --external "$link_root/USB" --dry-run
+	run env HOME="$HOME" PATH="$mock_bin:$PATH" ROOMY_EXTERNAL_VOLUMES_ROOT="$link_root" \
+		ROOMY_TEST_NO_AUTH=1 "$PROJECT_ROOT/roomy" clean --external "$link_root/USB" --dry-run
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Clean External Volume"* ]]
 	[[ "$output" == *"External volume cleanup"* ]]
@@ -330,7 +330,7 @@ EOF
 auth       sufficient     pam_opendirectory.so
 EOF
 
-	run env MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" status
+	run env ROOMY_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" status
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"not configured"* ]]
 
@@ -338,7 +338,7 @@ EOF
 auth       sufficient     pam_tid.so
 EOF
 
-	run env MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" status
+	run env ROOMY_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" status
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"enabled"* ]]
 }
@@ -352,10 +352,10 @@ EOF
 	fake_bin="$HOME/fake-bin"
 	create_fake_utils "$fake_bin"
 
-	run env PATH="$fake_bin:$PATH" MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" enable
+	run env PATH="$fake_bin:$PATH" ROOMY_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" enable
 	[ "$status" -eq 0 ]
 	grep -q "pam_tid.so" "$pam_file"
-	[[ -f "${pam_file}.mole-backup" ]]
+	[[ -f "${pam_file}.roomy-backup" ]]
 }
 
 @test "disable_touchid removes pam_tid line" {
@@ -368,7 +368,7 @@ EOF
 	fake_bin="$HOME/fake-bin-disable"
 	create_fake_utils "$fake_bin"
 
-	run env PATH="$fake_bin:$PATH" MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" disable
+	run env PATH="$fake_bin:$PATH" ROOMY_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" disable
 	[ "$status" -eq 0 ]
 	run grep "pam_tid.so" "$pam_file"
 	[ "$status" -ne 0 ]
@@ -380,7 +380,7 @@ EOF
 auth       sufficient     pam_opendirectory.so
 EOF
 
-	run env MOLE_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" enable --dry-run
+	run env ROOMY_PAM_SUDO_FILE="$pam_file" "$PROJECT_ROOT/bin/touchid.sh" enable --dry-run
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN MODE"* ]]
 
@@ -390,7 +390,7 @@ EOF
 
 # --- JSON output mode tests ---
 
-@test "mo analyze --json outputs valid JSON with expected fields" {
+@test "roomy analyze --json outputs valid JSON with expected fields" {
 	if [[ ! -x "${ANALYZE_BIN:-}" ]]; then
 		skip "analyze binary not available (go not installed?)"
 	fi
@@ -414,7 +414,7 @@ assert isinstance(data['entries'], list), 'entries is not a list'
 "
 }
 
-@test "mo analyze --json entries contain required fields" {
+@test "roomy analyze --json entries contain required fields" {
 	if [[ ! -x "${ANALYZE_BIN:-}" ]]; then
 		skip "analyze binary not available (go not installed?)"
 	fi
@@ -434,7 +434,7 @@ for entry in data['entries']:
 "
 }
 
-@test "mo analyze --json path reflects target directory" {
+@test "roomy analyze --json path reflects target directory" {
 	if [[ ! -x "${ANALYZE_BIN:-}" ]]; then
 		skip "analyze binary not available (go not installed?)"
 	fi
@@ -450,7 +450,7 @@ assert data['path'] == '/tmp' or data['path'] == '/private/tmp', \
 "
 }
 
-@test "mo analyze --json overview mode returns expected schema" {
+@test "roomy analyze --json overview mode returns expected schema" {
 	if [[ ! -x "${ANALYZE_BIN:-}" ]]; then
 		skip "analyze binary not available (go not installed?)"
 	fi
@@ -470,7 +470,7 @@ assert isinstance(data['entries'], list), 'entries is not a list'
 "
 }
 
-@test "mo status --json outputs valid JSON with expected fields" {
+@test "roomy status --json outputs valid JSON with expected fields" {
 	if [[ ! -x "${STATUS_BIN:-}" ]]; then
 		skip "status binary not available (go not installed?)"
 	fi
@@ -490,7 +490,7 @@ for key in ['cpu', 'memory', 'disks', 'health_score', 'host', 'uptime']:
 "
 }
 
-@test "mo status --json cpu section has expected structure" {
+@test "roomy status --json cpu section has expected structure" {
 	if [[ ! -x "${STATUS_BIN:-}" ]]; then
 		skip "status binary not available (go not installed?)"
 	fi
@@ -508,7 +508,7 @@ assert isinstance(cpu['usage'], (int, float)), 'cpu usage is not a number'
 "
 }
 
-@test "mo status --json memory section has expected structure" {
+@test "roomy status --json memory section has expected structure" {
 	if [[ ! -x "${STATUS_BIN:-}" ]]; then
 		skip "status binary not available (go not installed?)"
 	fi
@@ -527,7 +527,7 @@ assert mem['total'] > 0, 'memory total should be positive'
 "
 }
 
-@test "mo status --json piped to stdout auto-detects JSON mode" {
+@test "roomy status --json piped to stdout auto-detects JSON mode" {
 	if [[ ! -x "${STATUS_BIN:-}" ]]; then
 		skip "status binary not available (go not installed?)"
 	fi

@@ -7,7 +7,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/purge_shared.sh"
 # Preflight TCC prompts once to avoid mid-run interruptions.
 check_tcc_permissions() {
     [[ -t 1 ]] || return 0
-    local permission_flag="$HOME/.cache/mole/permissions_granted"
+    local permission_flag="$HOME/.cache/roomy/permissions_granted"
     [[ -f "$permission_flag" ]] && return 0
     local -a tcc_dirs=(
         "$HOME/Library/Caches"
@@ -29,7 +29,7 @@ check_tcc_permissions() {
         echo ""
         echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to continue: "
         read -r
-        MOLE_SPINNER_PREFIX="" start_inline_spinner "Requesting permissions..."
+        ROOMY_SPINNER_PREFIX="" start_inline_spinner "Requesting permissions..."
         # Touch each directory to trigger prompts without deep scanning.
         for dir in "${tcc_dirs[@]}"; do
             [[ -d "$dir" ]] && command find "$dir" -maxdepth 1 -type d > /dev/null 2>&1
@@ -102,7 +102,7 @@ clean_service_worker_cache() {
         fi
         note_activity
         if [[ "$spinner_was_running" == "true" ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning browser Service Worker caches..."
+            ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Scanning browser Service Worker caches..."
         fi
     fi
 }
@@ -110,13 +110,13 @@ clean_service_worker_cache() {
 project_cache_has_indicators() {
     local dir="$1"
     local max_depth="${2:-5}"
-    local indicator_timeout="${MOLE_PROJECT_CACHE_DISCOVERY_TIMEOUT:-2}"
+    local indicator_timeout="${ROOMY_PROJECT_CACHE_DISCOVERY_TIMEOUT:-2}"
     [[ -d "$dir" ]] || return 1
 
     local -a find_args=("$dir" "-maxdepth" "$max_depth" "(")
     local first=true
     local indicator
-    for indicator in "${MOLE_PURGE_PROJECT_INDICATORS[@]}"; do
+    for indicator in "${ROOMY_PURGE_PROJECT_INDICATORS[@]}"; do
         if [[ "$first" == "true" ]]; then
             first=false
         else
@@ -136,13 +136,13 @@ discover_project_cache_roots() {
     local -a seen_identities=()
     local root
 
-    for root in "${MOLE_PURGE_DEFAULT_SEARCH_PATHS[@]}"; do
+    for root in "${ROOMY_PURGE_DEFAULT_SEARCH_PATHS[@]}"; do
         [[ -d "$root" ]] && roots+=("$root")
     done
 
     while IFS= read -r root; do
         [[ -d "$root" ]] && roots+=("$root")
-    done < <(mole_purge_read_paths_config "$HOME/.config/mole/purge_paths")
+    done < <(roomy_purge_read_paths_config "$HOME/.config/roomy/purge_paths")
 
     local _indicator_tmp
     _indicator_tmp=$(create_temp_file)
@@ -190,8 +190,8 @@ discover_project_cache_roots() {
 
     for root in "${roots[@]}"; do
         local identity
-        identity=$(mole_path_identity "$root")
-        if [[ ${#seen_identities[@]} -gt 0 ]] && mole_identity_in_list "$identity" "${seen_identities[@]}"; then
+        identity=$(roomy_path_identity "$root")
+        if [[ ${#seen_identities[@]} -gt 0 ]] && roomy_identity_in_list "$identity" "${seen_identities[@]}"; then
             continue
         fi
 
@@ -218,7 +218,7 @@ pycache_has_bytecode() {
 scan_project_cache_root() {
     local root="$1"
     local output_file="$2"
-    local scan_timeout="${MOLE_PROJECT_CACHE_SCAN_TIMEOUT:-6}"
+    local scan_timeout="${ROOMY_PROJECT_CACHE_SCAN_TIMEOUT:-6}"
     [[ -d "$root" ]] || return 0
 
     local -a find_args=(
@@ -266,7 +266,7 @@ project_cache_group_root() {
 
     candidate=$(dirname "$cache_path")
     while [[ -n "$candidate" && "$candidate" != "/" ]]; do
-        if mole_purge_is_project_root "$candidate"; then
+        if roomy_purge_is_project_root "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
         fi
@@ -465,7 +465,7 @@ clean_project_caches() {
     [[ ${#scan_roots[@]} -eq 0 ]] && return 0
 
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  "
+        ROOMY_SPINNER_PREFIX="  "
         start_inline_spinner "Searching project caches..."
     fi
 
@@ -482,7 +482,7 @@ clean_project_caches() {
         rm -f "$root_matches_file"
 
         if [[ -t 1 ]]; then
-            MOLE_SPINNER_PREFIX="  "
+            ROOMY_SPINNER_PREFIX="  "
             start_inline_spinner "Searching project caches..."
         fi
     done

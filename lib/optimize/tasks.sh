@@ -4,14 +4,14 @@
 set -euo pipefail
 
 # Config constants (override via env).
-readonly MOLE_TM_THIN_TIMEOUT=180
-readonly MOLE_TM_THIN_VALUE=9999999999
-readonly MOLE_SQLITE_MAX_SIZE=104857600 # 100MB
+readonly ROOMY_TM_THIN_TIMEOUT=180
+readonly ROOMY_TM_THIN_VALUE=9999999999
+readonly ROOMY_SQLITE_MAX_SIZE=104857600 # 100MB
 
 # Dry-run aware output.
 opt_msg() {
     local message="$1"
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $message"
     else
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $message"
@@ -25,14 +25,14 @@ opt_numeric_kb() {
 
 # Whether the current optimize run can use sudo without re-prompting.
 # Set by bin/optimize.sh after the upfront ensure_sudo_session call.
-# Test-mode env vars hard-deny so ad-hoc task calls under MOLE_TEST_NO_AUTH=1
+# Test-mode env vars hard-deny so ad-hoc task calls under ROOMY_TEST_NO_AUTH=1
 # (e.g. ./scripts/test.sh, manual repro) cannot reach a real sudo invocation
 # even when this helper is invoked outside the optimize entrypoint.
 optimize_sudo_available() {
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
     fi
-    [[ "${MOLE_OPTIMIZE_SUDO_AVAILABLE:-true}" == "true" ]]
+    [[ "${ROOMY_OPTIMIZE_SUDO_AVAILABLE:-true}" == "true" ]]
 }
 
 opt_existing_path_size_kb() {
@@ -49,12 +49,12 @@ run_launchctl_unload() {
     local plist_file="$1"
     local need_sudo="${2:-false}"
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         return 0
     fi
 
     if [[ "$need_sudo" == "true" ]]; then
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
             return 0
         fi
         if ! optimize_sudo_available; then
@@ -121,7 +121,7 @@ is_memory_pressure_high() {
 }
 
 has_active_vpn_interface() {
-    case "${MOLE_ASSUME_VPN_ACTIVE:-}" in
+    case "${ROOMY_ASSUME_VPN_ACTIVE:-}" in
         1 | true | TRUE | yes | YES)
             return 0
             ;;
@@ -146,8 +146,8 @@ has_active_vpn_interface() {
 }
 
 flush_dns_cache() {
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        MOLE_DNS_FLUSHED=1
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
+        ROOMY_DNS_FLUSHED=1
         return 0
     fi
 
@@ -156,7 +156,7 @@ flush_dns_cache() {
     fi
 
     if sudo dscacheutil -flushcache 2> /dev/null && sudo killall -HUP mDNSResponder 2> /dev/null; then
-        MOLE_DNS_FLUSHED=1
+        ROOMY_DNS_FLUSHED=1
         return 0
     fi
     return 1
@@ -186,14 +186,14 @@ opt_cache_refresh() {
         "$HOME/Library/Caches/com.apple.iconservices.store"
         "$HOME/Library/Caches/com.apple.iconservices"
     )
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Finder Cache Refresh" "Refresh QuickLook thumbnails and icon services"
         debug_operation_detail "Method" "Remove cache files and rebuild via qlmanage"
         debug_operation_detail "Expected outcome" "Faster Finder preview generation, fixed icon display issues"
         debug_risk_level "LOW" "Caches are automatically rebuilt"
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         qlmanage -r cache > /dev/null 2>&1 || true
         qlmanage -r > /dev/null 2>&1 || true
     fi
@@ -213,7 +213,7 @@ opt_cache_refresh() {
         total_cache_size=$((total_cache_size + size_kb))
     done
 
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         if [[ ${#removable_targets[@]} -eq 0 ]]; then
             debug_operation_detail "Files to be removed" "none"
         else
@@ -245,9 +245,9 @@ opt_cache_refresh() {
 
 # Old saved states cleanup.
 opt_saved_state_cleanup() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "App Saved State Cleanup" "Remove old application saved states"
-        debug_operation_detail "Method" "Find and remove .savedState folders older than $MOLE_SAVED_STATE_AGE_DAYS days"
+        debug_operation_detail "Method" "Find and remove .savedState folders older than $ROOMY_SAVED_STATE_AGE_DAYS days"
         debug_operation_detail "Location" "$HOME/Library/Saved Application State"
         debug_operation_detail "Expected outcome" "Reduced disk usage, apps start with clean state"
         debug_risk_level "LOW" "Old saved states, apps will create new ones"
@@ -261,7 +261,7 @@ opt_saved_state_cleanup() {
                 continue
             fi
             safe_remove "$state_path" true > /dev/null 2>&1 || true
-        done < <(command find "$state_dir" -type d -name "*.savedState" -mtime "+$MOLE_SAVED_STATE_AGE_DAYS" -print0 2> /dev/null)
+        done < <(command find "$state_dir" -type d -name "*.savedState" -mtime "+$ROOMY_SAVED_STATE_AGE_DAYS" -print0 2> /dev/null)
     fi
 
     opt_msg "App saved states optimized"
@@ -276,7 +276,7 @@ opt_saved_state_cleanup() {
 opt_fix_broken_configs() {
     local spinner_started="false"
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking preferences..."
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Checking preferences..."
         spinner_started="true"
     fi
 
@@ -296,14 +296,14 @@ opt_fix_broken_configs() {
 
 # DNS cache refresh.
 opt_network_optimization() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Network Optimization" "Refresh DNS cache and restart mDNSResponder"
         debug_operation_detail "Method" "Flush DNS cache via dscacheutil and killall mDNSResponder"
         debug_operation_detail "Expected outcome" "Faster DNS resolution, fixed network connectivity issues"
         debug_risk_level "LOW" "DNS cache is automatically rebuilt"
     fi
 
-    if [[ "${MOLE_DNS_FLUSHED:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DNS_FLUSHED:-0}" == "1" ]]; then
         opt_msg "DNS cache already refreshed"
         opt_msg "mDNSResponder already restarted"
         return 0
@@ -319,7 +319,7 @@ opt_network_optimization() {
 
 # Quarantine database cleanup (Gatekeeper download history).
 opt_quarantine_cleanup() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Quarantine Database Cleanup" "Clear Gatekeeper download tracking history"
         debug_operation_detail "Method" "DELETE + VACUUM on QuarantineEventsV2 SQLite database"
         debug_operation_detail "Safety" "Only clears download tracking metadata, does not affect file quarantine flags"
@@ -353,7 +353,7 @@ opt_quarantine_cleanup() {
         return 0
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         local exit_code=0
         set +e
         run_with_timeout 10 sqlite3 "$quarantine_db" "DELETE FROM LSQuarantineEvent; VACUUM;" 2> /dev/null
@@ -372,7 +372,7 @@ opt_quarantine_cleanup() {
 
 # SQLite vacuum for Mail/Messages/Safari (safety checks applied).
 opt_sqlite_vacuum() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Database Optimization" "Vacuum SQLite databases for Mail, Safari, and Messages"
         debug_operation_detail "Method" "Run VACUUM command on databases after integrity check"
         debug_operation_detail "Safety checks" "Skip if apps are running, verify integrity first, 20s timeout"
@@ -400,8 +400,8 @@ opt_sqlite_vacuum() {
     fi
 
     local spinner_started="false"
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" && -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Optimizing databases..."
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" && -t 1 ]]; then
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Optimizing databases..."
         spinner_started="true"
     fi
 
@@ -432,7 +432,7 @@ opt_sqlite_vacuum() {
             # Skip large DBs (>100MB).
             local file_size
             file_size=$(get_file_size "$db_file")
-            if [[ "$file_size" -gt "$MOLE_SQLITE_MAX_SIZE" ]]; then
+            if [[ "$file_size" -gt "$ROOMY_SQLITE_MAX_SIZE" ]]; then
                 skipped=$((skipped + 1))
                 continue
             fi
@@ -455,7 +455,7 @@ opt_sqlite_vacuum() {
             fi
 
             # Verify integrity before VACUUM.
-            if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+            if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
                 local integrity_check=""
                 set +e
                 integrity_check=$(run_with_timeout 10 sqlite3 "$db_file" "PRAGMA integrity_check;" 2> /dev/null)
@@ -469,7 +469,7 @@ opt_sqlite_vacuum() {
             fi
 
             local exit_code=0
-            if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+            if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
                 set +e
                 run_with_timeout 20 sqlite3 "$db_file" "VACUUM;" 2> /dev/null
                 exit_code=$?
@@ -516,7 +516,7 @@ opt_sqlite_vacuum() {
 
 # LaunchServices rebuild ("Open with" issues).
 opt_launch_services_rebuild() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "LaunchServices Rebuild" "Rebuild LaunchServices database"
         debug_operation_detail "Method" "Run lsregister -gc then force rescan with -r -f on local, user, and system domains"
         debug_operation_detail "Purpose" "Fix \"Open with\" menu issues, file associations, and stale app metadata"
@@ -525,7 +525,7 @@ opt_launch_services_rebuild() {
     fi
 
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Repairing LaunchServices..."
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Repairing LaunchServices..."
     fi
 
     local lsregister
@@ -534,7 +534,7 @@ opt_launch_services_rebuild() {
     if [[ -n "$lsregister" ]]; then
         local success=0
 
-        if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+        if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
             set +e
             "$lsregister" -gc > /dev/null 2>&1 || true
             "$lsregister" -r -f -domain local -domain user -domain system > /dev/null 2>&1
@@ -584,7 +584,7 @@ browser_family_is_running() {
 }
 
 opt_font_cache_rebuild() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Font Cache Rebuild" "Clear and rebuild font cache"
         debug_operation_detail "Method" "Run atsutil databases -remove"
         debug_operation_detail "Safety checks" "Skip when browsers or browser helpers are running to avoid cache rebuild conflicts"
@@ -594,7 +594,7 @@ opt_font_cache_rebuild() {
 
     local success=false
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         # Some browsers can keep stale GPU/text caches in /var/folders if system font
         # databases are reset while browser/helper processes are still running.
         local -a running_browsers=()
@@ -654,7 +654,7 @@ opt_font_cache_rebuild() {
 
 # Memory pressure relief.
 opt_memory_pressure_relief() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Memory Pressure Relief" "Release inactive memory if pressure is high"
         debug_operation_detail "Method" "Run purge command to clear inactive memory"
         debug_operation_detail "Condition" "Only runs if memory pressure is warning/critical"
@@ -662,7 +662,7 @@ opt_memory_pressure_relief() {
         debug_risk_level "LOW" "Safe system command, does not affect active processes"
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         if ! is_memory_pressure_high; then
             opt_msg "Memory pressure already optimal"
             return 0
@@ -695,7 +695,7 @@ opt_network_stack_optimize() {
         return 0
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         local route_ok=true
         local dns_ok=true
 
@@ -743,7 +743,7 @@ opt_network_stack_optimize() {
 
 # User directory permissions repair.
 opt_disk_permissions_repair() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Disk Permissions Repair" "Reset user directory permissions"
         debug_operation_detail "Method" "Run diskutil resetUserPermissions on user home directory"
         debug_operation_detail "Condition" "Only runs if permissions issues are detected"
@@ -754,7 +754,7 @@ opt_disk_permissions_repair() {
     local user_id
     user_id=$(id -u)
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         if ! needs_permissions_repair; then
             opt_msg "User directory permissions already optimal"
             return 0
@@ -792,7 +792,7 @@ opt_disk_permissions_repair() {
 
 # Bluetooth reset (skip if HID/audio active).
 opt_bluetooth_reset() {
-    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
         debug_operation_start "Bluetooth Reset" "Restart Bluetooth daemon"
         debug_operation_detail "Method" "Kill bluetoothd daemon (auto-restarts)"
         debug_operation_detail "Safety" "Skips if active Bluetooth keyboard/mouse/audio detected"
@@ -803,11 +803,11 @@ opt_bluetooth_reset() {
     local spinner_started="false"
     local disconnect_notice="Bluetooth devices may disconnect briefly during refresh"
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking Bluetooth..."
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Checking Bluetooth..."
         spinner_started="true"
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         if has_bluetooth_hid_connected; then
             if [[ "$spinner_started" == "true" ]]; then
                 stop_inline_spinner
@@ -848,7 +848,7 @@ opt_bluetooth_reset() {
             return 0
         fi
 
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
             if [[ "$spinner_started" == "true" ]]; then
                 stop_inline_spinner
             fi
@@ -915,7 +915,7 @@ opt_spotlight_index_optimize() {
                 return 0
             fi
 
-            if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+            if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
                 if ! optimize_sudo_available; then
                     echo -e "  ${YELLOW}${ICON_WARNING}${NC} Spotlight index rebuild skipped · admin access required"
                     return 0
@@ -956,7 +956,7 @@ opt_dock_refresh() {
         touch "$dock_plist" 2> /dev/null || true
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         killall Dock 2> /dev/null || true
     fi
 
@@ -984,7 +984,7 @@ opt_prevent_network_dsstore() {
             continue
         fi
 
-        if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
             changed=$((changed + 1))
             continue
         fi
@@ -1045,7 +1045,7 @@ opt_launch_agents_cleanup() {
 }
 
 # macOS periodic maintenance scripts (daily/weekly/monthly).
-# Log path is configurable via MOLE_PERIODIC_LOG for testing; defaults to /var/log/daily.out.
+# Log path is configurable via ROOMY_PERIODIC_LOG for testing; defaults to /var/log/daily.out.
 # A missing log file is treated as stale and triggers maintenance.
 opt_periodic_maintenance() {
     # Check if periodic command exists (removed in macOS 26+)
@@ -1054,7 +1054,7 @@ opt_periodic_maintenance() {
         return 0
     fi
 
-    local daily_log="${MOLE_PERIODIC_LOG:-/var/log/daily.out}"
+    local daily_log="${ROOMY_PERIODIC_LOG:-/var/log/daily.out}"
     local stale_days=7
 
     if [[ -f "$daily_log" ]]; then
@@ -1069,8 +1069,8 @@ opt_periodic_maintenance() {
         fi
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]] || ! optimize_sudo_available; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]] || ! optimize_sudo_available; then
             opt_msg "Periodic maintenance skipped (requires sudo)"
             return 0
         fi
@@ -1105,7 +1105,7 @@ opt_shared_file_list_repair() {
         # Skip recent-documents list (user data, not a cache)
         [[ "$sfl_file" == *"ApplicationRecentDocuments"* ]] && continue
         if ! plutil -lint "$sfl_file" > /dev/null 2>&1; then
-            if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+            if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
                 safe_remove "$sfl_file" true > /dev/null 2>&1 || true
             fi
             repaired=$((repaired + 1))
@@ -1139,7 +1139,7 @@ opt_notification_cleanup() {
         return 0
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         if command -v sqlite3 > /dev/null 2>&1; then
             local sql_ok=0
             sqlite3 "$nc_db" \
@@ -1162,20 +1162,20 @@ opt_notification_cleanup() {
 # Verify filesystem integrity via diskutil.
 # Disabled by default: diskutil verifyVolume triggers kernel-level I/O that
 # cannot be interrupted by SIGKILL when the volume has APFS inconsistencies,
-# causing the system to freeze. Set MOLE_ENABLE_DISK_VERIFY=1 to opt in.
+# causing the system to freeze. Set ROOMY_ENABLE_DISK_VERIFY=1 to opt in.
 opt_disk_verify() {
-    if [[ "${MOLE_ENABLE_DISK_VERIFY:-0}" != "1" ]]; then
-        opt_msg "Disk verify skipped (set MOLE_ENABLE_DISK_VERIFY=1 to enable)"
+    if [[ "${ROOMY_ENABLE_DISK_VERIFY:-0}" != "1" ]]; then
+        opt_msg "Disk verify skipped (set ROOMY_ENABLE_DISK_VERIFY=1 to enable)"
         return 0
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         opt_msg "Disk verify · skipped in dry-run"
         return 0
     fi
 
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Verifying disk filesystem..."
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Verifying disk filesystem..."
     fi
     local output
     output=$(run_with_timeout 30 diskutil verifyVolume / 2>&1 || true)
@@ -1223,7 +1223,7 @@ opt_coreduet_cleanup() {
         return 0
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" != "1" ]]; then
         # Remove WAL and SHM files safely (auto-regenerated by SQLite)
         for f in "$wal_file" "$shm_file"; do
             [[ -f "$f" ]] && safe_remove "$f" true > /dev/null 2>&1 || true
@@ -1287,7 +1287,7 @@ APPLESCRIPT
 }
 
 _login_item_debug() {
-    if [[ "${MO_DEBUG:-}" == "1" ]] && declare -f debug_log > /dev/null 2>&1; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" ]] && declare -f debug_log > /dev/null 2>&1; then
         debug_log "Login item audit: $*"
     fi
 }
@@ -1412,7 +1412,7 @@ _login_item_app_exists() {
 }
 
 opt_login_items_audit() {
-    if [[ "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         opt_msg "Login items audit · skipped in test mode"
         return 0
     fi

@@ -1,14 +1,14 @@
 {
-  "name": "mole-native-ui-ux",
+  "name": "roomy-native-ui-ux",
   "private": true,
   "scripts": {
     "macos:build": "scripts/build-app.sh",
     "macos:dmg": "scripts/build-dmg.sh",
-    "macos:run": "scripts/build-app.sh && open .build/MoleUI.app",
-    "macos:test": "swift test --package-path macos/MoleUI",
+    "macos:run": "scripts/build-app.sh && open .build/RoomyUI.app",
+    "macos:test": "swift test --package-path macos/RoomyUI",
     "release:preflight": "scripts/release-preflight.sh",
     "test:api": "node --test tests/api_contract.test.mjs",
-    "test:ux": "playwright test tests/ux/mole-ui.spec.js"
+    "test:ux": "playwright test tests/ux/roomy-ui.spec.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0"

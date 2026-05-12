@@ -1,6 +1,6 @@
 import Foundation
 
-public enum MoleSection: String, CaseIterable, Identifiable {
+public enum RoomySection: String, CaseIterable, Identifiable {
     case home = "Home"
     case cleanup = "Cleanup"
     case applications = "Applications"
@@ -565,7 +565,7 @@ public struct CompletionStatus: Decodable, Equatable {
     }
 }
 
-public struct MoleMaintenanceStatus: Decodable, Equatable {
+public struct RoomyMaintenanceStatus: Decodable, Equatable {
     public var schemaVersion: Int
     public var version: String
     public var channel: String
@@ -582,6 +582,209 @@ public struct MoleMaintenanceStatus: Decodable, Equatable {
         case installMethod = "install_method"
         case cliPath = "cli_path"
         case configPath = "config_path"
+    }
+}
+
+public enum FullDiskAccessState: String, Equatable {
+    case enabled
+    case limited
+    case unknown
+}
+
+public struct FullDiskAccessStatus: Equatable {
+    public var state: FullDiskAccessState
+    public var checkedPath: String?
+    public var detail: String
+
+    public init(state: FullDiskAccessState, checkedPath: String? = nil, detail: String) {
+        self.state = state
+        self.checkedPath = checkedPath
+        self.detail = detail
+    }
+
+    public var displayValue: String {
+        switch state {
+        case .enabled:
+            "Enabled"
+        case .limited:
+            "Limited access"
+        case .unknown:
+            "Unknown"
+        }
+    }
+}
+
+public struct FullDiskAccessProbe: Equatable {
+    public var path: String
+    public var exists: Bool
+    public var readable: Bool
+    public var errorDescription: String?
+
+    public init(path: String, exists: Bool, readable: Bool, errorDescription: String? = nil) {
+        self.path = path
+        self.exists = exists
+        self.readable = readable
+        self.errorDescription = errorDescription
+    }
+}
+
+public enum RoomyFullDiskAccessDetector {
+    public static func detect(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) -> FullDiskAccessStatus {
+        let probeURLs = [
+            homeDirectory.appendingPathComponent("Library/Mail", isDirectory: true),
+            homeDirectory.appendingPathComponent("Library/Messages", isDirectory: true),
+            homeDirectory.appendingPathComponent("Library/Safari", isDirectory: true)
+        ]
+
+        let probes = probeURLs.map { url in
+            var isDirectory: ObjCBool = false
+            let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            guard exists, isDirectory.boolValue else {
+                return FullDiskAccessProbe(path: url.path, exists: false, readable: false)
+            }
+
+            do {
+                _ = try fileManager.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )
+                return FullDiskAccessProbe(path: url.path, exists: true, readable: true)
+            } catch {
+                return FullDiskAccessProbe(
+                    path: url.path,
+                    exists: true,
+                    readable: false,
+                    errorDescription: error.localizedDescription
+                )
+            }
+        }
+
+        return status(for: probes)
+    }
+
+    public static func status(for probes: [FullDiskAccessProbe]) -> FullDiskAccessStatus {
+        if let readable = probes.first(where: { $0.exists && $0.readable }) {
+            return FullDiskAccessStatus(
+                state: .enabled,
+                checkedPath: readable.path,
+                detail: "Roomy can inspect protected system-maintenance locations."
+            )
+        }
+
+        if let denied = probes.first(where: { $0.exists && !$0.readable }) {
+            return FullDiskAccessStatus(
+                state: .limited,
+                checkedPath: denied.path,
+                detail: "macOS denied a protected location. Full scans may skip some folders until Full Disk Access is enabled."
+            )
+        }
+
+        return FullDiskAccessStatus(
+            state: .unknown,
+            checkedPath: nil,
+            detail: "Roomy could not find a protected probe folder on this Mac. File scans remain explicit and user-initiated."
+        )
+    }
+}
+
+public struct OperationJournalEntry: Decodable, Equatable, Identifiable {
+    public var sequence: Int
+    public var schemaVersion: Int?
+    public var timestamp: String
+    public var recordType: String
+    public var source: String?
+    public var command: String?
+    public var action: String?
+    public var path: String?
+    public var detail: String?
+    public var event: String?
+    public var domain: String?
+    public var message: String?
+    public var exitCode: Int?
+    public var bytes: Int64?
+    public var itemCount: Int?
+
+    public var id: String {
+        "\(sequence)|\(timestamp)|\(recordType)|\(command ?? "")|\(action ?? "")|\(event ?? "")|\(path ?? "")"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case timestamp
+        case recordType = "record_type"
+        case source
+        case command
+        case action
+        case path
+        case detail
+        case payload
+    }
+
+    enum PayloadKeys: String, CodingKey {
+        case event
+        case domain
+        case message
+        case exitCode = "exit_code"
+        case bytes
+        case itemCount = "item_count"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sequence = 0
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+        timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp) ?? "unknown time"
+        recordType = try container.decodeIfPresent(String.self, forKey: .recordType) ?? "operation"
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        command = try container.decodeIfPresent(String.self, forKey: .command)
+        action = try container.decodeIfPresent(String.self, forKey: .action)
+        path = try container.decodeIfPresent(String.self, forKey: .path)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+
+        if let payload = try? container.nestedContainer(keyedBy: PayloadKeys.self, forKey: .payload) {
+            event = try payload.decodeIfPresent(String.self, forKey: .event)
+            domain = try payload.decodeIfPresent(String.self, forKey: .domain)
+            message = try payload.decodeIfPresent(String.self, forKey: .message)
+            exitCode = try payload.decodeIfPresent(Int.self, forKey: .exitCode)
+            bytes = try payload.decodeIfPresent(Int64.self, forKey: .bytes)
+            itemCount = try payload.decodeIfPresent(Int.self, forKey: .itemCount)
+        }
+    }
+
+    public func sequenced(_ sequence: Int) -> OperationJournalEntry {
+        var copy = self
+        copy.sequence = sequence
+        return copy
+    }
+
+    public var title: String {
+        if let event, let domain {
+            return "\(domain.capitalized) \(event)"
+        }
+        if let command, let action {
+            return "\(command.capitalized) \(action)"
+        }
+        return recordType.capitalized
+    }
+
+    public var summary: String {
+        if let message, !message.isEmpty {
+            return message
+        }
+        if let path, !path.isEmpty {
+            return path
+        }
+        if let detail, !detail.isEmpty {
+            return detail
+        }
+        if let exitCode {
+            return "Exit code \(exitCode)"
+        }
+        return timestamp
     }
 }
 

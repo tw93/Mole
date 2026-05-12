@@ -28,7 +28,7 @@ teardown_file() {
 
 setup() {
     export TERM="xterm-256color"
-    export MO_DEBUG=0
+    export ROOMY_DEBUG=0
 
     # Create standard scan directories
     mkdir -p "$HOME/Downloads"
@@ -55,7 +55,7 @@ require_fd() {
     touch "$HOME/Downloads/Chrome.dmg"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -75,7 +75,7 @@ require_fd() {
     touch "$HOME/Downloads/App.mpkg"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -99,7 +99,7 @@ require_fd() {
     touch "$HOME/Downloads/level1/level2/level3/too-deep.dmg"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -112,7 +112,7 @@ require_fd() {
     [[ "$output" != *"too-deep.dmg"* ]]
 }
 
-@test "scan_installers_in_path (fd): honors MOLE_INSTALLER_SCAN_MAX_DEPTH" {
+@test "scan_installers_in_path (fd): honors ROOMY_INSTALLER_SCAN_MAX_DEPTH" {
     if ! require_fd; then
         return 0
     fi
@@ -121,8 +121,8 @@ require_fd() {
     touch "$HOME/Downloads/top.dmg"
     touch "$HOME/Downloads/level1/nested.dmg"
 
-    run env MOLE_INSTALLER_SCAN_MAX_DEPTH=1 bash -euo pipefail -c "
-        export MOLE_TEST_MODE=1
+    run env ROOMY_INSTALLER_SCAN_MAX_DEPTH=1 bash -euo pipefail -c "
+        export ROOMY_TEST_MODE=1
         source \"\$1\"
         scan_installers_in_path \"\$2\"
     " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -138,7 +138,7 @@ require_fd() {
     fi
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/NonExistent"
@@ -158,7 +158,7 @@ require_fd() {
     touch "$HOME/Downloads/Installer.dmg"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -178,7 +178,7 @@ require_fd() {
     touch "$HOME/Downloads/My App Installer.dmg"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -195,7 +195,7 @@ require_fd() {
     touch "$HOME/Downloads/App-v1.2.3_beta.pkg"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -214,7 +214,7 @@ require_fd() {
     touch "$HOME/Downloads/image.png"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -233,7 +233,7 @@ require_fd() {
     ln -s /nonexistent "$HOME/Downloads/dangling.lnk"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"

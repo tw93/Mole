@@ -1,7 +1,7 @@
 import Foundation
-import MoleUIPrivileged
+import RoomyUIPrivileged
 
-public enum MoleEndpoint: Equatable {
+public enum RoomyEndpoint: Equatable {
     case status
     case cleanupPreview
     case externalCleanupPreview(path: String)
@@ -25,14 +25,14 @@ public enum MoleEndpoint: Equatable {
     case execute(domain: ExecutionDomain, planURL: URL)
 }
 
-public struct MoleCommandBuilder: Equatable {
+public struct RoomyCommandBuilder: Equatable {
     public var executableURL: URL
 
     public init(executableURL: URL) {
         self.executableURL = executableURL
     }
 
-    public func arguments(for endpoint: MoleEndpoint) -> [String] {
+    public func arguments(for endpoint: RoomyEndpoint) -> [String] {
         switch endpoint {
         case .status:
             ["api", "status"]
@@ -80,23 +80,23 @@ public struct MoleCommandBuilder: Equatable {
     }
 }
 
-public enum MoleCLIPathResolver {
+public enum RoomyCLIPathResolver {
     public static func resolve(
         environment: [String: String] = Foundation.ProcessInfo.processInfo.environment,
         currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         bundleExecutableURL: URL? = Bundle.main.executableURL
     ) -> URL {
-        if let override = environment["MOLE_CLI_PATH"], !override.isEmpty {
+        if let override = environment["ROOMY_CLI_PATH"], !override.isEmpty {
             return URL(fileURLWithPath: override)
         }
 
         var roots: [URL] = [currentDirectory]
-        if let projectRoot = environment["MOLE_PROJECT_ROOT"], !projectRoot.isEmpty {
+        if let projectRoot = environment["ROOMY_PROJECT_ROOT"], !projectRoot.isEmpty {
             roots.append(URL(fileURLWithPath: projectRoot))
         }
         if
-            let markerURL = bundleResourceURL?.appendingPathComponent("mole-project-root"),
+            let markerURL = bundleResourceURL?.appendingPathComponent("roomy-project-root"),
             let marker = try? String(contentsOf: markerURL, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines),
             !marker.isEmpty
@@ -120,8 +120,8 @@ public enum MoleCLIPathResolver {
             for _ in 0..<10 {
                 let key = cursor.path
                 if seenRoots.insert(key).inserted {
+                    candidates.append(cursor.appendingPathComponent("roomy"))
                     candidates.append(cursor.appendingPathComponent("mo"))
-                    candidates.append(cursor.appendingPathComponent("mole"))
                 }
                 cursor.deleteLastPathComponent()
             }
@@ -131,23 +131,23 @@ public enum MoleCLIPathResolver {
             return match
         }
 
-        return URL(fileURLWithPath: "/usr/local/bin/mo")
+        return URL(fileURLWithPath: "/usr/local/bin/roomy")
     }
 }
 
-public struct MoleAPIClient {
-    public var commandBuilder: MoleCommandBuilder
+public struct RoomyAPIClient {
+    public var commandBuilder: RoomyCommandBuilder
     public var environment: [String: String]
     public var processTimeout: TimeInterval
-    public var privilegedRunner: MolePrivilegedCommandRunning
+    public var privilegedRunner: RoomyPrivilegedCommandRunning
 
     public init(
-        executableURL: URL = MoleCLIPathResolver.resolve(),
+        executableURL: URL = RoomyCLIPathResolver.resolve(),
         environment: [String: String] = Foundation.ProcessInfo.processInfo.environment,
         processTimeout: TimeInterval? = nil,
-        privilegedRunner: MolePrivilegedCommandRunning = MolePrivilegedHelperClient()
+        privilegedRunner: RoomyPrivilegedCommandRunning = RoomyPrivilegedHelperClient()
     ) {
-        self.commandBuilder = MoleCommandBuilder(executableURL: executableURL)
+        self.commandBuilder = RoomyCommandBuilder(executableURL: executableURL)
         self.environment = Self.preparedEnvironment(environment, executableURL: executableURL)
         self.processTimeout = processTimeout ?? Self.processTimeout(from: environment)
         self.privilegedRunner = privilegedRunner
@@ -220,7 +220,7 @@ public struct MoleAPIClient {
         streamEvents(.purgePathsUpdate(planURL: planURL))
     }
 
-    public func maintenanceStatus() async throws -> MoleMaintenanceStatus {
+    public func maintenanceStatus() async throws -> RoomyMaintenanceStatus {
         try await runJSON(.maintenanceStatus)
     }
 
@@ -236,8 +236,32 @@ public struct MoleAPIClient {
         try await runJSON(.launcherStatus)
     }
 
+    public func operationJournalEntries(limit: Int = 24) -> [OperationJournalEntry] {
+        Self.readOperationJournal(url: operationJournalURL, limit: limit)
+    }
+
+    public static func readOperationJournal(url: URL, limit: Int = 24) -> [OperationJournalEntry] {
+        guard limit > 0, let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return []
+        }
+
+        let lines = text
+            .split(separator: "\n")
+            .suffix(limit)
+
+        return Array(lines
+            .enumerated()
+            .compactMap { offset, line in
+                guard let entry = try? decoder.decode(OperationJournalEntry.self, from: Data(line.utf8)) else {
+                    return nil
+                }
+                return entry.sequenced(offset)
+            }
+            .reversed())
+    }
+
     public func executeTouchID(action: String, planURL: URL, administrator: Bool) async throws -> [ExecutionEvent] {
-        let endpoint = MoleEndpoint.touchIDExecute(action: action, planURL: planURL)
+        let endpoint = RoomyEndpoint.touchIDExecute(action: action, planURL: planURL)
         let data = try await (administrator ? runAdministratorProcess(endpoint) : runProcess(endpoint))
         return Self.decodeEvents(from: data)
     }
@@ -266,15 +290,15 @@ public struct MoleAPIClient {
 
     public func execute(domain: ExecutionDomain, planURL: URL, administrator: Bool = false) async throws -> [ExecutionEvent] {
         do {
-            let endpoint = MoleEndpoint.execute(domain: domain, planURL: planURL)
+            let endpoint = RoomyEndpoint.execute(domain: domain, planURL: planURL)
             let data = try await (administrator ? runAdministratorProcess(endpoint) : runProcess(endpoint))
             return Self.decodeEvents(from: data)
-        } catch let MoleAPIError.processFailed(_, message) {
+        } catch let RoomyAPIError.processFailed(_, message) {
             let events = Self.decodeEvents(from: Data(message.utf8))
             if !events.isEmpty {
                 return events
             }
-            throw MoleAPIError.processFailed(status: 1, message: message)
+            throw RoomyAPIError.processFailed(status: 1, message: message)
         }
     }
 
@@ -290,12 +314,12 @@ public struct MoleAPIClient {
             }
     }
 
-    public func runJSON<T: Decodable>(_ endpoint: MoleEndpoint) async throws -> T {
+    public func runJSON<T: Decodable>(_ endpoint: RoomyEndpoint) async throws -> T {
         let data = try await runProcess(endpoint)
         return try Self.decoder.decode(T.self, from: data)
     }
 
-    public func runProcess(_ endpoint: MoleEndpoint) async throws -> Data {
+    public func runProcess(_ endpoint: RoomyEndpoint) async throws -> Data {
         let executableURL = commandBuilder.executableURL
         let arguments = commandBuilder.arguments(for: endpoint)
         let process = Process()
@@ -306,14 +330,14 @@ public struct MoleAPIClient {
         return try await runConfiguredProcess(process, commandDescription: commandDescription(for: executableURL, arguments: arguments)) { status, data, errorData in
             let message = Self.errorMessage(from: errorData.isEmpty ? data : errorData)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return MoleAPIError.processFailed(
+            return RoomyAPIError.processFailed(
                 status: status,
-                message: message ?? "mo exited with status \(status)"
+                message: message ?? "roomy exited with status \(status)"
             )
         }
     }
 
-    public func runAdministratorProcess(_ endpoint: MoleEndpoint) async throws -> Data {
+    public func runAdministratorProcess(_ endpoint: RoomyEndpoint) async throws -> Data {
         let command = try privilegedCommand(for: endpoint)
         let result = try await privilegedRunner.run(command: command)
         if result.exitCode == 0 {
@@ -322,13 +346,13 @@ public struct MoleAPIClient {
 
         let message = Self.errorMessage(from: result.standardError.isEmpty ? result.standardOutput : result.standardError)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        throw MoleAPIError.processFailed(
+        throw RoomyAPIError.processFailed(
             status: result.exitCode,
-            message: message ?? "Privileged Mole command exited with status \(result.exitCode)"
+            message: message ?? "Privileged Roomy command exited with status \(result.exitCode)"
         )
     }
 
-    public func runAppleScriptAdministratorProcess(_ endpoint: MoleEndpoint) async throws -> Data {
+    public func runAppleScriptAdministratorProcess(_ endpoint: RoomyEndpoint) async throws -> Data {
         let command = shellCommand(for: endpoint, includeEnvironment: true) + " 2>&1"
         let script = "do shell script \(Self.appleScriptString(command)) with administrator privileges"
         let process = Process()
@@ -338,14 +362,14 @@ public struct MoleAPIClient {
         return try await runConfiguredProcess(process, commandDescription: "osascript administrator command") { status, data, errorData in
             let message = String(data: errorData.isEmpty ? data : errorData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return MoleAPIError.processFailed(
+            return RoomyAPIError.processFailed(
                 status: status,
                 message: message ?? "Administrator command failed"
             )
         }
     }
 
-    public func streamEvents(_ endpoint: MoleEndpoint, administrator: Bool = false) -> AsyncThrowingStream<ExecutionEvent, Error> {
+    public func streamEvents(_ endpoint: RoomyEndpoint, administrator: Bool = false) -> AsyncThrowingStream<ExecutionEvent, Error> {
         if administrator {
             return streamAdministratorEvents(endpoint)
         }
@@ -405,7 +429,7 @@ public struct MoleAPIClient {
                 if process.isRunning {
                     process.terminate()
                 }
-                state.finish(continuation, error: MoleAPIError.timedOut(command: commandDescription, seconds: timeout))
+                state.finish(continuation, error: RoomyAPIError.timedOut(command: commandDescription, seconds: timeout))
             }
 
             process.terminationHandler = { terminatedProcess in
@@ -430,9 +454,9 @@ public struct MoleAPIClient {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 state.finish(
                     continuation,
-                    error: MoleAPIError.processFailed(
+                    error: RoomyAPIError.processFailed(
                         status: terminatedProcess.terminationStatus,
-                        message: message ?? "mo exited with status \(terminatedProcess.terminationStatus)"
+                        message: message ?? "roomy exited with status \(terminatedProcess.terminationStatus)"
                     )
                 )
             }
@@ -458,7 +482,7 @@ public struct MoleAPIClient {
         }
     }
 
-    private func streamAdministratorEvents(_ endpoint: MoleEndpoint) -> AsyncThrowingStream<ExecutionEvent, Error> {
+    private func streamAdministratorEvents(_ endpoint: RoomyEndpoint) -> AsyncThrowingStream<ExecutionEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -478,9 +502,9 @@ public struct MoleAPIClient {
 
                     let message = Self.errorMessage(from: result.standardError.isEmpty ? result.standardOutput : result.standardError)?
                         .trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.finish(throwing: MoleAPIError.processFailed(
+                    continuation.finish(throwing: RoomyAPIError.processFailed(
                         status: result.exitCode,
-                        message: message ?? "Privileged Mole command exited with status \(result.exitCode)"
+                        message: message ?? "Privileged Roomy command exited with status \(result.exitCode)"
                     ))
                 } catch {
                     continuation.finish(throwing: error)
@@ -496,7 +520,7 @@ public struct MoleAPIClient {
     private func runConfiguredProcess(
         _ process: Process,
         commandDescription: String,
-        failure: @escaping (Int32, Data, Data) -> MoleAPIError
+        failure: @escaping (Int32, Data, Data) -> RoomyAPIError
     ) async throws -> Data {
         let output = Pipe()
         let error = Pipe()
@@ -532,7 +556,7 @@ public struct MoleAPIClient {
                     if process.isRunning {
                         process.terminate()
                     }
-                    state.finish(.failure(MoleAPIError.timedOut(command: commandDescription, seconds: timeout)), continuation: continuation)
+                    state.finish(.failure(RoomyAPIError.timedOut(command: commandDescription, seconds: timeout)), continuation: continuation)
                 }
 
                 process.terminationHandler = { terminatedProcess in
@@ -607,20 +631,20 @@ public struct MoleAPIClient {
 
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let stateRoot = homeURL
-            .appendingPathComponent("Library/Application Support/Mole/UI", isDirectory: true)
+            .appendingPathComponent("Library/Application Support/Roomy/UI", isDirectory: true)
         let logRoot = homeURL
-            .appendingPathComponent("Library/Logs/Mole/UI", isDirectory: true)
+            .appendingPathComponent("Library/Logs/Roomy/UI", isDirectory: true)
         let cacheRoot = homeURL
-            .appendingPathComponent("Library/Caches/Mole/UI", isDirectory: true)
+            .appendingPathComponent("Library/Caches/Roomy/UI", isDirectory: true)
         let configDir = stateRoot.appendingPathComponent("config", isDirectory: true)
         let logDir = logRoot
         let cacheDir = cacheRoot
 
         prepared["HOME"] = homeURL.path
-        prepared["MOLE_CONFIG_DIR"] = configDir.path
-        prepared["MOLE_LOG_DIR"] = logDir.path
-        prepared["MOLE_CACHE_DIR"] = cacheDir.path
-        prepared["MOLE_DELETE_LOG"] = logDir.appendingPathComponent("deletions.log").path
+        prepared["ROOMY_CONFIG_DIR"] = configDir.path
+        prepared["ROOMY_LOG_DIR"] = logDir.path
+        prepared["ROOMY_CACHE_DIR"] = cacheDir.path
+        prepared["ROOMY_DELETE_LOG"] = logDir.appendingPathComponent("deletions.log").path
         prepared["TERM"] = prepared["TERM"] ?? "dumb"
 
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
@@ -632,7 +656,7 @@ public struct MoleAPIClient {
 
     private static func processTimeout(from environment: [String: String]) -> TimeInterval {
         guard
-            let rawValue = environment["MOLE_UI_PROCESS_TIMEOUT"],
+            let rawValue = environment["ROOMY_UI_PROCESS_TIMEOUT"],
             let value = TimeInterval(rawValue),
             value >= 0
         else {
@@ -642,16 +666,16 @@ public struct MoleAPIClient {
     }
 
     private static func errorMessage(from data: Data) -> String? {
-        if let envelope = try? decoder.decode(MoleAPIErrorEnvelope.self, from: data) {
+        if let envelope = try? decoder.decode(RoomyAPIErrorEnvelope.self, from: data) {
             return envelope.error.message
         }
         return String(data: data, encoding: .utf8)
     }
 
-    private func shellCommand(for endpoint: MoleEndpoint, includeEnvironment: Bool) -> String {
+    private func shellCommand(for endpoint: RoomyEndpoint, includeEnvironment: Bool) -> String {
         var parts: [String] = []
         if includeEnvironment {
-            for key in ["HOME", "PATH", "SHELL", "MOLE_CONFIG_DIR", "MOLE_LOG_DIR", "MOLE_CACHE_DIR", "MOLE_DELETE_LOG", "TERM"] {
+            for key in ["HOME", "PATH", "SHELL", "ROOMY_CONFIG_DIR", "ROOMY_LOG_DIR", "ROOMY_CACHE_DIR", "ROOMY_DELETE_LOG", "TERM"] {
                 if let value = environment[key] {
                     parts.append("\(key)=\(Self.shellQuoted(value))")
                 }
@@ -666,6 +690,19 @@ public struct MoleAPIClient {
         ([executableURL.lastPathComponent] + arguments).joined(separator: " ")
     }
 
+    private var operationJournalURL: URL {
+        if let override = environment["ROOMY_OPERATION_JOURNAL_FILE"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+        if let logDir = environment["ROOMY_LOG_DIR"], !logDir.isEmpty {
+            return URL(fileURLWithPath: logDir, isDirectory: true)
+                .appendingPathComponent("operation_journal.jsonl")
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Roomy/UI", isDirectory: true)
+            .appendingPathComponent("operation_journal.jsonl")
+    }
+
     private static func shellQuoted(_ value: String) -> String {
         "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
@@ -674,7 +711,7 @@ public struct MoleAPIClient {
         "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
-    private func privilegedCommand(for endpoint: MoleEndpoint) throws -> PrivilegedCommand {
+    private func privilegedCommand(for endpoint: RoomyEndpoint) throws -> PrivilegedCommand {
         try PrivilegedCommandPolicy.command(
             executablePath: commandBuilder.executableURL.path,
             arguments: commandBuilder.arguments(for: endpoint),
@@ -684,14 +721,14 @@ public struct MoleAPIClient {
     }
 }
 
-public enum MoleAPIError: LocalizedError, Equatable {
+public enum RoomyAPIError: LocalizedError, Equatable {
     case processFailed(status: Int32, message: String)
     case timedOut(command: String, seconds: TimeInterval)
 
     public var errorDescription: String? {
         switch self {
         case let .processFailed(status, message):
-            "mo failed with status \(status): \(message)"
+            "roomy failed with status \(status): \(message)"
         case let .timedOut(command, seconds):
             "\(command) timed out after \(Int(seconds.rounded())) seconds"
         }
@@ -824,11 +861,11 @@ private final class ProcessEventStreamState {
     }
 }
 
-private struct MoleAPIErrorEnvelope: Decodable {
-    var error: MoleAPIErrorBody
+private struct RoomyAPIErrorEnvelope: Decodable {
+    var error: RoomyAPIErrorBody
 }
 
-private struct MoleAPIErrorBody: Decodable {
+private struct RoomyAPIErrorBody: Decodable {
     var message: String
 }
 

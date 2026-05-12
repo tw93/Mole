@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(testDir, '..');
-const mo = path.join(projectRoot, 'mo');
+const roomy = path.join(projectRoot, 'roomy');
 const contracts = JSON.parse(readFileSync(path.join(testDir, 'fixtures', 'api', 'contracts.json'), 'utf8'));
 
 function assertContract(value, contractName, group = 'responses') {
@@ -39,9 +39,9 @@ function assertContract(value, contractName, group = 'responses') {
 }
 
 function withHome(fn) {
-  const rawHome = mkdtempSync(path.join(os.tmpdir(), 'mole-api-home-'));
+  const rawHome = mkdtempSync(path.join(os.tmpdir(), 'roomy-api-home-'));
   const home = realpathSync(rawHome);
-  mkdirSync(path.join(home, '.config', 'mole'), { recursive: true });
+  mkdirSync(path.join(home, '.config', 'roomy'), { recursive: true });
   mkdirSync(path.join(home, 'Downloads'), { recursive: true });
   mkdirSync(path.join(home, 'Desktop'), { recursive: true });
   try {
@@ -52,12 +52,12 @@ function withHome(fn) {
 }
 
 function runMo(args, { home, env = {}, allowFailure = false, timeout = 120_000 } = {}) {
-  const result = spawnSync(mo, args, {
+  const result = spawnSync(roomy, args, {
     cwd: projectRoot,
     env: {
       ...process.env,
       HOME: home,
-      MOLE_TEST_NO_AUTH: '1',
+      ROOMY_TEST_NO_AUTH: '1',
       TERM: 'dumb',
       ...env,
     },
@@ -71,7 +71,7 @@ function runMo(args, { home, env = {}, allowFailure = false, timeout = 120_000 }
 
   if (!allowFailure && result.status !== 0) {
     assert.fail(
-      `mo ${args.join(' ')} exited ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+      `roomy ${args.join(' ')} exited ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
     );
   }
 
@@ -124,7 +124,7 @@ printf '%s\\n' '{"host":"api-test","health_score":91,"cpu":{"usage":4,"logical_c
 
   const data = parseJSON(runMo(['api', 'status'], {
     home,
-    env: { MOLE_TEST_STATUS_BIN: statusBin },
+    env: { ROOMY_TEST_STATUS_BIN: statusBin },
   }));
 
   assertContract(data, 'status');
@@ -143,7 +143,7 @@ printf '{"path":"%s","overview":false,"entries":[],"large_files":[],"total_size"
 
   const data = parseJSON(runMo(['api', 'storage', 'scan', '--path', home], {
     home,
-    env: { MOLE_TEST_ANALYZE_BIN: analyzeBin },
+    env: { ROOMY_TEST_ANALYZE_BIN: analyzeBin },
   }));
 
   assertContract(data, 'storage_scan');
@@ -192,7 +192,7 @@ test('storage execute dry-runs Trash actions and refuses escaped targets', () =>
   assert.equal(okEvents.at(-1).operation, 'trash');
   assert.equal(okEvents.at(-1).item_count, 2);
   assert.equal(okEvents.at(-1).bytes, 10 + expectedDirectoryBytes);
-  const journal = readFileSync(path.join(home, 'Library', 'Logs', 'mole', 'operation_journal.jsonl'), 'utf8')
+  const journal = readFileSync(path.join(home, 'Library', 'Logs', 'roomy', 'operation_journal.jsonl'), 'utf8')
     .trim()
     .split('\n')
     .filter(Boolean)
@@ -286,7 +286,7 @@ test('clean preview returns structured cleanup JSON including external volumes',
 
   const clean = parseJSON(runMo(['api', 'clean', 'preview', '--json'], {
     home,
-    env: { MOLE_TEST_MODE: '1' },
+    env: { ROOMY_TEST_MODE: '1' },
   }));
   assertContract(clean, 'cleanup_preview');
   assert.equal(clean.command, 'clean.preview');
@@ -303,7 +303,7 @@ test('clean preview returns structured cleanup JSON including external volumes',
 
   const external = parseJSON(runMo(['api', 'clean', 'preview', '--json', '--external', volume], {
     home,
-    env: { MOLE_EXTERNAL_VOLUMES_ROOT: volumesRoot },
+    env: { ROOMY_EXTERNAL_VOLUMES_ROOT: volumesRoot },
   }));
   assertContract(external, 'cleanup_preview');
   assert.equal(external.command, 'clean.preview');
@@ -384,7 +384,7 @@ test('settings and maintenance endpoints return JSON contracts', () => withHome(
   assertContract(update, 'maintenance_status');
   assert.equal(update.schema_version, 1);
   assert.ok(update.version);
-  assert.ok(update.cli_path.endsWith('/mo'));
+  assert.ok(update.cli_path.endsWith('/roomy'));
 }));
 
 test('purge preview handles large project containers within smoke-test budget', () => withHome((home) => {
@@ -442,12 +442,12 @@ test('execute endpoints stream NDJSON safety events', () => withHome((home) => {
   );
 
   mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
-  writeExecutable(path.join(home, '.local', 'bin', 'mole'), '#!/usr/bin/env bash\n');
+  writeExecutable(path.join(home, '.local', 'bin', 'roomy'), '#!/usr/bin/env bash\n');
   const removePlan = writePlan(home, 'remove.json', { confirmed: true, dry_run: true });
   assert.equal(
     parseEvents(runMo(['api', 'remove', 'execute', '--plan', removePlan], {
       home,
-      env: { MOLE_TEST_MODE: '1' },
+      env: { ROOMY_TEST_MODE: '1' },
     })).at(-1).event,
     'completed',
   );
@@ -475,7 +475,7 @@ test('execute endpoints stream NDJSON safety events', () => withHome((home) => {
   });
   const externalCleanEvents = parseEvents(runMo(['api', 'clean', 'execute', '--plan', externalCleanPlan], {
     home,
-    env: { MOLE_EXTERNAL_VOLUMES_ROOT: volumesRoot },
+    env: { ROOMY_EXTERNAL_VOLUMES_ROOT: volumesRoot },
   }));
   const externalCleanCompleted = externalCleanEvents.at(-1);
   assert.equal(externalCleanCompleted.event, 'completed');
@@ -488,7 +488,7 @@ test('execute endpoints stream NDJSON safety events', () => withHome((home) => {
   const uninstallPlan = writePlan(home, 'uninstall.json', {
     confirmed: true,
     dry_run: true,
-    uninstall_names: ['DefinitelyMissingMoleUITestApp'],
+    uninstall_names: ['DefinitelyMissingRoomyUITestApp'],
   });
   const uninstall = runMo(['api', 'uninstall', 'execute', '--plan', uninstallPlan], {
     home,

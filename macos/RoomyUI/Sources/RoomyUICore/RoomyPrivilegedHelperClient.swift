@@ -1,5 +1,5 @@
 import Foundation
-import MoleUIPrivileged
+import RoomyUIPrivileged
 import ServiceManagement
 
 public enum PrivilegedHelperState: String, Equatable {
@@ -25,25 +25,25 @@ public struct PrivilegedHelperStatusSnapshot: Equatable {
     }
 }
 
-public protocol MolePrivilegedCommandRunning {
+public protocol RoomyPrivilegedCommandRunning {
     func run(command: PrivilegedCommand) async throws -> PrivilegedCommandResult
 }
 
-public final class MolePrivilegedHelperClient: MolePrivilegedCommandRunning {
+public final class RoomyPrivilegedHelperClient: RoomyPrivilegedCommandRunning {
     public init() {}
 
     public func run(command: PrivilegedCommand) async throws -> PrivilegedCommandResult {
         try await withCheckedThrowingContinuation { continuation in
             let connection = NSXPCConnection(
-                machServiceName: MolePrivilegedHelperConstants.machServiceName,
+                machServiceName: RoomyPrivilegedHelperConstants.machServiceName,
                 options: .privileged
             )
-            connection.remoteObjectInterface = NSXPCInterface(with: MolePrivilegedHelperProtocol.self)
+            connection.remoteObjectInterface = NSXPCInterface(with: RoomyPrivilegedHelperProtocol.self)
 
             let box = PrivilegedContinuationBox(continuation: continuation, connection: connection)
             let proxy = connection.remoteObjectProxyWithErrorHandler { error in
                 box.resume(.failure(PrivilegedHelperClientError.connectionFailed(error.localizedDescription)))
-            } as? MolePrivilegedHelperProtocol
+            } as? RoomyPrivilegedHelperProtocol
 
             guard let proxy else {
                 box.resume(.failure(PrivilegedHelperClientError.connectionFailed("Unable to create privileged helper proxy")))
@@ -103,25 +103,25 @@ public enum PrivilegedHelperClientError: LocalizedError, Equatable {
     }
 }
 
-public final class MolePrivilegedHelperInstaller {
+public final class RoomyPrivilegedHelperInstaller {
     public init() {}
 
     public func status() -> PrivilegedHelperStatusSnapshot {
-        let service = SMAppService.daemon(plistName: MolePrivilegedHelperConstants.daemonPlistName)
+        let service = SMAppService.daemon(plistName: RoomyPrivilegedHelperConstants.daemonPlistName)
         return PrivilegedHelperStatusSnapshot(
-            label: MolePrivilegedHelperConstants.machServiceName,
-            plistName: MolePrivilegedHelperConstants.daemonPlistName,
+            label: RoomyPrivilegedHelperConstants.machServiceName,
+            plistName: RoomyPrivilegedHelperConstants.daemonPlistName,
             state: Self.mapStatus(service.status),
             detail: Self.detail(for: service.status)
         )
     }
 
     public func register() throws {
-        try SMAppService.daemon(plistName: MolePrivilegedHelperConstants.daemonPlistName).register()
+        try SMAppService.daemon(plistName: RoomyPrivilegedHelperConstants.daemonPlistName).register()
     }
 
     public func unregister() throws {
-        try SMAppService.daemon(plistName: MolePrivilegedHelperConstants.daemonPlistName).unregister()
+        try SMAppService.daemon(plistName: RoomyPrivilegedHelperConstants.daemonPlistName).unregister()
     }
 
     private static func mapStatus(_ status: SMAppService.Status) -> PrivilegedHelperState {

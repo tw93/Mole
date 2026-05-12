@@ -1,18 +1,18 @@
 #!/bin/bash
-# Mole - Bundle ID resolution.
+# Roomy - Bundle ID resolution.
 # Resolves whether a bundle ID belongs to an installed application on this system.
 # Spotlight (mdfind) is unreliable: indexing can be off for /Applications, Homebrew
 # installs sometimes skip metadata importers, and Spotlight rarely indexes helpers
 # embedded inside .app bundles. This resolver falls back to a direct filesystem
 # scan that reads each app's Info.plist and checks SMJobBless-registered helpers.
 
-if [[ -n "${_MOLE_BUNDLE_RESOLVER_LOADED:-}" ]]; then
+if [[ -n "${_ROOMY_BUNDLE_RESOLVER_LOADED:-}" ]]; then
     return 0
 fi
-readonly _MOLE_BUNDLE_RESOLVER_LOADED=1
+readonly _ROOMY_BUNDLE_RESOLVER_LOADED=1
 
 # Standard locations for installed apps on macOS. Overridable from tests.
-_MOLE_BUNDLE_RESOLVER_APP_ROOTS=(
+_ROOMY_BUNDLE_RESOLVER_APP_ROOTS=(
     "/Applications"
     "/Applications/Setapp"
     "/Applications/Utilities"
@@ -78,7 +78,7 @@ bundle_has_installed_app() {
     esac
 
     local app_root app info app_bundle
-    for app_root in "${_MOLE_BUNDLE_RESOLVER_APP_ROOTS[@]}"; do
+    for app_root in "${_ROOMY_BUNDLE_RESOLVER_APP_ROOTS[@]}"; do
         [[ -d "$app_root" ]] || continue
         while IFS= read -r -d '' app; do
             if [[ -e "$app/Contents/Library/LaunchServices/$bundle_id" ]]; then

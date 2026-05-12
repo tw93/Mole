@@ -76,47 +76,47 @@ setup() {
     [ -d "$result" ]
 }
 
-@test "get_mole_temp_root uses writable TMPDIR when available" {
+@test "get_roomy_temp_root uses writable TMPDIR when available" {
     local writable_tmp="$HOME/custom-tmp"
     mkdir -p "$writable_tmp"
 
-    result=$(env HOME="$HOME" TMPDIR="$writable_tmp" bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; get_mole_temp_root")
+    result=$(env HOME="$HOME" TMPDIR="$writable_tmp" bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; get_roomy_temp_root")
     [ "$result" = "$writable_tmp" ]
 }
 
-@test "get_mole_temp_root falls back to user cache when TMPDIR is not writable" {
+@test "get_roomy_temp_root falls back to user cache when TMPDIR is not writable" {
     local blocked_tmp="$HOME/blocked-tmp"
     mkdir -p "$blocked_tmp"
     chmod 500 "$blocked_tmp"
 
-    result=$(env HOME="$HOME" TMPDIR="$blocked_tmp" bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; get_mole_temp_root")
-    [ "$result" = "$HOME/.cache/mole/tmp" ]
-    [ -d "$HOME/.cache/mole/tmp" ]
+    result=$(env HOME="$HOME" TMPDIR="$blocked_tmp" bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; get_roomy_temp_root")
+    [ "$result" = "$HOME/.cache/roomy/tmp" ]
+    [ -d "$HOME/.cache/roomy/tmp" ]
 }
 
-@test "get_mole_temp_root caches the first resolved directory" {
+@test "get_roomy_temp_root caches the first resolved directory" {
     local first_tmp="$HOME/first-tmp"
     local second_tmp="$HOME/second-tmp"
     mkdir -p "$first_tmp" "$second_tmp"
 
     result=$(env HOME="$HOME" TMPDIR="$first_tmp" bash -c "
         source '$PROJECT_ROOT/lib/core/base.sh'
-        ensure_mole_temp_root
-        first=\$MOLE_RESOLVED_TMPDIR
+        ensure_roomy_temp_root
+        first=\$ROOMY_RESOLVED_TMPDIR
         export TMPDIR='$second_tmp'
-        ensure_mole_temp_root
-        second=\$MOLE_RESOLVED_TMPDIR
+        ensure_roomy_temp_root
+        second=\$ROOMY_RESOLVED_TMPDIR
         printf '%s|%s\n' \"\$first\" \"\$second\"
     ")
 
     [ "$result" = "$first_tmp|$first_tmp" ]
 }
 
-@test "get_mole_temp_root falls back to /tmp when TMPDIR and invoking home are unavailable" {
+@test "get_roomy_temp_root falls back to /tmp when TMPDIR and invoking home are unavailable" {
     result=$(env HOME="$HOME" TMPDIR="/var/empty" bash -c "
         source '$PROJECT_ROOT/lib/core/base.sh'
         get_invoking_home() { echo '/var/empty'; }
-        get_mole_temp_root
+        get_roomy_temp_root
     ")
 
     [ "$result" = "/tmp" ]
@@ -128,7 +128,7 @@ setup() {
     chmod 500 "$blocked_tmp"
 
     result=$(env HOME="$HOME" TMPDIR="$blocked_tmp" bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; printf '%s\n' \"\$TMPDIR\"")
-    [ "$result" = "$HOME/.cache/mole/tmp" ]
+    [ "$result" = "$HOME/.cache/roomy/tmp" ]
 }
 
 @test "get_user_home returns home for valid user" {
@@ -150,7 +150,7 @@ setup() {
 }
 
 @test "ensure_user_dir creates nested directory" {
-    test_dir="$HOME/.config/mole/deep/nested/path"
+    test_dir="$HOME/.config/roomy/deep/nested/path"
     bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_dir '$test_dir'"
     [ -d "$test_dir" ]
 }
@@ -183,7 +183,7 @@ setup() {
 
 
 @test "ensure_user_file creates file and parent directories" {
-    test_file="$HOME/.config/mole/test.log"
+    test_file="$HOME/.config/roomy/test.log"
     bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_file '$test_file'"
     [ -f "$test_file" ]
     [ -d "$(dirname "$test_file")" ]
@@ -236,7 +236,7 @@ setup() {
 }
 
 @test "ensure_user_dir and ensure_user_file work together" {
-    cache_dir="$HOME/.cache/mole"
+    cache_dir="$HOME/.cache/roomy"
     cache_file="$cache_dir/integration_test.log"
 
     bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_dir '$cache_dir'"
@@ -248,14 +248,14 @@ setup() {
 
 @test "multiple ensure_user_file calls in same directory" {
     bash -c "source '$PROJECT_ROOT/lib/core/base.sh'
-        ensure_user_file '$HOME/.config/mole/file1.txt'
-        ensure_user_file '$HOME/.config/mole/file2.txt'
-        ensure_user_file '$HOME/.config/mole/file3.txt'
+        ensure_user_file '$HOME/.config/roomy/file1.txt'
+        ensure_user_file '$HOME/.config/roomy/file2.txt'
+        ensure_user_file '$HOME/.config/roomy/file3.txt'
     "
 
-    [ -f "$HOME/.config/mole/file1.txt" ]
-    [ -f "$HOME/.config/mole/file2.txt" ]
-    [ -f "$HOME/.config/mole/file3.txt" ]
+    [ -f "$HOME/.config/roomy/file1.txt" ]
+    [ -f "$HOME/.config/roomy/file2.txt" ]
+    [ -f "$HOME/.config/roomy/file3.txt" ]
 }
 
 @test "ensure functions handle concurrent calls safely" {

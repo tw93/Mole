@@ -4,7 +4,7 @@ setup() {
     PROJECT_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
     export PROJECT_ROOT
     export HOME="$BATS_TEST_TMPDIR/home"
-    mkdir -p "$HOME/.config/mole"
+    mkdir -p "$HOME/.config/roomy"
 }
 
 
@@ -113,8 +113,8 @@ EOF
     run /usr/bin/perl -e 'alarm 5; exec @ARGV' env FAKE_CMD="$fake_cmd" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/timeout.sh"
-MO_TIMEOUT_BIN=""
-MO_TIMEOUT_PERL_BIN="${MO_TIMEOUT_PERL_BIN:-$(command -v perl)}"
+ROOMY_TIMEOUT_BIN=""
+ROOMY_TIMEOUT_PERL_BIN="${ROOMY_TIMEOUT_PERL_BIN:-$(command -v perl)}"
 SECONDS=0
 set +e
 run_with_timeout 1 "$FAKE_CMD"
@@ -189,7 +189,7 @@ EOF
 }
 
 @test "normalize_paths_for_cleanup handles large nested batches without hanging" {
-    local limit_ms="${MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS:-4000}"
+    local limit_ms="${ROOMY_PERF_NORMALIZE_PATHS_LIMIT_MS:-4000}"
 
     run env PROJECT_ROOT="$PROJECT_ROOT" LIMIT_MS="$limit_ms" bash --noprofile --norc <<'EOF'
 set -euo pipefail

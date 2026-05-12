@@ -33,10 +33,10 @@ jobs:
 
       - name: Run test script
         env:
-          MOLE_SKIP_API_TESTS: "1"
-          MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
-          MOLE_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
-          MOLE_TEST_JOBS: "6"
+          ROOMY_SKIP_API_TESTS: "1"
+          ROOMY_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
+          ROOMY_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
+          ROOMY_TEST_JOBS: "6"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
       - name: Run native Swift tests
-        run: swift test --package-path macos/MoleUI
+        run: swift test --package-path macos/RoomyUI
 
   ui-ux:
     name: Native UI UX Tests
@@ -124,7 +124,7 @@ jobs:
         run: scripts/build-app.sh
 
       - name: Verify ad-hoc signature
-        run: codesign --verify --deep --strict .build/MoleUI.app
+        run: codesign --verify --deep --strict .build/RoomyUI.app
 
   native-dmg-build:
     name: Native DMG Build Smoke
@@ -147,10 +147,10 @@ jobs:
       - name: Upload unsigned DMG artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Mole-unsigned-dmg
+          name: Roomy-unsigned-dmg
           path: |
-            .build/Mole.dmg
-            .build/Mole.dmg.sha256
+            .build/Roomy.dmg
+            .build/Roomy.dmg.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -174,13 +174,13 @@ jobs:
       - name: Smoke load on ${{ matrix.os }}
         run: |
           echo "Testing on ${{ matrix.os }}..."
-          bash -n mole
+          bash -n roomy
           source lib/core/common.sh
           echo "✓ Successfully loaded on ${{ matrix.os }}"
 
       - name: Run core bats subset
         env:
-          MOLE_TEST_NO_AUTH: "1"
+          ROOMY_TEST_NO_AUTH: "1"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
@@ -242,7 +242,7 @@ jobs:
 
       - name: Run high-risk path regression tests
         env:
-          MOLE_TEST_NO_AUTH: "1"
+          ROOMY_TEST_NO_AUTH: "1"
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8

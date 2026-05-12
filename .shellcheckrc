@@ -1,4 +1,4 @@
-# Mole project shellcheck configuration
+# Roomy project shellcheck configuration
 
 disable=SC2155  # Declare and assign separately
 disable=SC2034  # Unused variables

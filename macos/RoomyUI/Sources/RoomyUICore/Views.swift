@@ -2,20 +2,20 @@ import SwiftUI
 import AppKit
 
 @MainActor
-public struct MoleRootView: View {
-    @StateObject private var model: MoleViewModel
+public struct RoomyRootView: View {
+    @StateObject private var model: RoomyViewModel
 
     public init() {
-        _model = StateObject(wrappedValue: MoleViewModel())
+        _model = StateObject(wrappedValue: RoomyViewModel())
     }
 
-    public init(model: MoleViewModel) {
+    public init(model: RoomyViewModel) {
         _model = StateObject(wrappedValue: model)
     }
 
     public var body: some View {
         NavigationSplitView {
-            List(MoleSection.allCases, selection: $model.selectedSection) { section in
+            List(RoomySection.allCases, selection: $model.selectedSection) { section in
                 Label(section.rawValue, systemImage: section.symbolName)
                     .tag(section)
             }
@@ -87,7 +87,7 @@ public struct MoleRootView: View {
 
     private var subtitle: String {
         switch model.selectedSection {
-        case .home: "System care dashboard for cleanup, storage, and health"
+        case .home: "Free up disk space with previews, storage scans, and recoverable cleanup"
         case .cleanup: "Preview first, then choose what to remove"
         case .applications: "Installed apps and uninstall metadata"
         case .storage: "Disk overview, large files, and cleanable folders"
@@ -121,31 +121,44 @@ public struct MoleRootView: View {
 
 private struct AppBackground: View {
     var body: some View {
-        LinearGradient(
-            colors: [
-                Color(nsColor: .windowBackgroundColor),
-                Color(red: 0.94, green: 0.97, blue: 0.98)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.58),
+                    Color(red: 0.91, green: 0.97, blue: 0.99).opacity(0.30),
+                    Color(nsColor: .windowBackgroundColor).opacity(0.88)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.20)
+        }
         .ignoresSafeArea()
     }
 }
 
 private struct HomeView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 14) {
-                HealthScoreCard(score: model.healthScore, message: model.status?.healthScoreMessage)
                 MetricCard(
-                    title: "Disk Pressure",
-                    value: Formatters.percent(model.diskPressure),
-                    detail: model.status?.disks.first?.mount ?? "Root volume",
-                    tint: model.diskPressure > 85 ? .orange : .blue,
+                    title: "Free Space",
+                    value: Formatters.bytes(freeDiskBytes),
+                    detail: primaryDisk?.mount ?? "Root volume",
+                    tint: model.diskPressure > 85 ? .orange : .green,
                     symbol: "internaldrive"
+                )
+                MetricCard(
+                    title: "Disk Used",
+                    value: Formatters.percent(model.diskPressure),
+                    detail: diskUsageDetail,
+                    tint: model.diskPressure > 85 ? .orange : .blue,
+                    symbol: "chart.pie"
                 )
                 MetricCard(
                     title: "Potential Cleanup",
@@ -156,46 +169,103 @@ private struct HomeView: View {
                 )
             }
 
-            SectionBand(title: "Recommended Actions", symbol: "checklist") {
+            SectionBand(title: "Free Up Space", symbol: "externaldrive.badge.minus") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
-                    ForEach(model.recommendedActions, id: \.self) { action in
-                        Button {
-                            Task { await model.performRecommendedAction(action) }
-                        } label: {
-                            ActionRow(title: action, detail: actionDetail(action))
+                    Button {
+                        Task {
+                            model.selectedSection = .cleanup
+                            await model.loadCleanupPreview()
                         }
-                        .buttonStyle(.plain)
-                        .disabled(model.isLoading)
+                    } label: {
+                        ActionRow(title: "Preview cleanup", detail: "Find cache, log, and rebuildable files before deleting anything.")
                     }
+                    .buttonStyle(.plain)
+                    .disabled(model.isLoading)
+
+                    Button {
+                        Task {
+                            model.selectedSection = .storage
+                            await model.loadStorage()
+                        }
+                    } label: {
+                        ActionRow(title: "Scan home storage", detail: "Show largest folders and files in your home folder.")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isLoading)
+
+                    Button {
+                        Task {
+                            model.selectedSection = .storage
+                            await model.loadInstallerPreview()
+                        }
+                    } label: {
+                        ActionRow(title: "Find installers", detail: "Locate redundant DMG, PKG, ZIP, ISO, and XIP installer files.")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isLoading)
+
+                    Button {
+                        Task {
+                            model.selectedSection = .storage
+                            await model.loadPurgePreview()
+                        }
+                    } label: {
+                        ActionRow(title: "Scan project artifacts", detail: "Find old node_modules, build, dist, Pods, and .build folders.")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isLoading)
                 }
             }
 
-            SectionBand(title: "Permission Status", symbol: "lock.shield") {
-                HStack(spacing: 12) {
-                    PermissionPill(title: "Admin Session", active: model.cleanupPreview?.adminRequired == false)
-                    PermissionPill(title: "Protected Paths", active: (model.cleanupPreview?.protectedCount ?? 0) == 0)
-                    PermissionPill(title: "Delete Mode", active: true, value: model.cleanupPreview?.deleteMode ?? "trash")
+            SectionBand(title: "Recent Activity", symbol: "clock.arrow.circlepath") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Operation journal")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            model.loadOperationJournal()
+                        } label: {
+                            Label("Load Activity", systemImage: "list.bullet.rectangle")
+                        }
+                        .disabled(model.isLoading)
+                    }
+
+                    if model.operationJournalEntries.isEmpty {
+                        EmptyStateView(
+                            title: "No activity loaded",
+                            detail: "Load Activity shows recent scans, skipped paths, failures, and Trash operations from Roomy's structured journal.",
+                            symbol: "clock.arrow.circlepath"
+                        )
+                    } else {
+                        DataTable {
+                            ForEach(model.operationJournalEntries.prefix(8)) { entry in
+                                OperationJournalRow(entry: entry)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    private func actionDetail(_ action: String) -> String {
-        if action.contains("cleanup") {
-            return "Preview has \(model.cleanupPreview?.categoryCount ?? 0) cleanup groups."
-        }
-        if action.contains("storage") {
-            return "Disk use is \(Formatters.percent(model.diskPressure))."
-        }
-        if action.contains("process") {
-            return "\(model.status?.processAlerts.count ?? 0) alerts from monitor."
-        }
-        return "\(model.optimizePreview?.optimizations.count ?? 0) maintenance tasks available."
+    private var primaryDisk: DiskStatus? {
+        model.status?.disks.first(where: { $0.mount == "/" }) ?? model.status?.disks.first
+    }
+
+    private var freeDiskBytes: UInt64 {
+        guard let primaryDisk, primaryDisk.total >= primaryDisk.used else { return 0 }
+        return primaryDisk.total - primaryDisk.used
+    }
+
+    private var diskUsageDetail: String {
+        guard let primaryDisk else { return "Load storage status" }
+        return "\(Formatters.bytes(primaryDisk.used)) of \(Formatters.bytes(primaryDisk.total)) used"
     }
 }
 
 private struct CleanupView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
     @State private var showConfirm = false
     @State private var externalPath = "/Volumes/"
     @State private var showExternalConfirm = false
@@ -236,7 +306,7 @@ private struct CleanupView: View {
                 } else {
                     EmptyStateView(
                         title: "No cleanup preview loaded",
-                        detail: "Run Preview to ask Mole for a fresh dry run.",
+                        detail: "Run Preview to ask Roomy for a fresh dry run.",
                         symbol: "doc.text.magnifyingglass"
                     )
                 }
@@ -326,7 +396,7 @@ private struct CleanupView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will revalidate that this is a mounted external volume before removing Mac metadata files.")
+            Text("Roomy will revalidate that this is a mounted external volume before removing Mac metadata files.")
         }
     }
 
@@ -345,7 +415,7 @@ private struct CleanupView: View {
 }
 
 private struct ApplicationsView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
     @State private var query = ""
     @State private var selectedPath: String?
     @State private var showUninstallConfirm = false
@@ -381,7 +451,7 @@ private struct ApplicationsView: View {
                 if filtered.isEmpty {
                     EmptyStateView(
                         title: model.applications.isEmpty ? "No application inventory loaded" : "No matching applications",
-                        detail: "Load Apps uses Mole's uninstall inventory and keeps deletion behind confirmation.",
+                        detail: "Load Apps uses Roomy's uninstall inventory and keeps deletion behind confirmation.",
                         symbol: "app.badge"
                     )
                 } else {
@@ -467,16 +537,11 @@ private struct ApplicationsView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .task {
-            if model.applications.isEmpty {
-                await model.loadApplications()
-            }
-        }
     }
 }
 
 private struct StorageView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
     @State private var path = NSHomeDirectory()
     @State private var selectedLargeFilePaths: Set<String> = []
     @State private var selectedPurgePaths: Set<String> = []
@@ -505,10 +570,41 @@ private struct StorageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Button {
+                    scanPreset(NSHomeDirectory())
+                } label: {
+                    Label("Scan Home", systemImage: "house")
+                }
+                .disabled(model.isLoading)
+
+                Button {
+                    scanPreset(downloadsPath)
+                } label: {
+                    Label("Scan Downloads", systemImage: "arrow.down.circle")
+                }
+                .disabled(model.isLoading || !FileManager.default.fileExists(atPath: downloadsPath))
+
+                Button {
+                    scanPreset(projectPresetPath)
+                } label: {
+                    Label("Scan Projects", systemImage: "hammer")
+                }
+                .disabled(model.isLoading)
+
+                Spacer()
+            }
+
             HStack {
                 TextField("Path", text: $path)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 520)
+                Button {
+                    chooseStorageFolder()
+                } label: {
+                    Label("Choose", systemImage: "folder")
+                }
+                .disabled(model.isLoading)
                 Button {
                     Task {
                         await model.loadStorage(path: path)
@@ -638,7 +734,7 @@ private struct StorageView: View {
                 } else {
                     EmptyStateView(
                         title: "No large files loaded",
-                        detail: "Run Scan to list large individual files. Mole revalidates selected paths before moving anything to Trash.",
+                        detail: "Run Scan to list large individual files. Roomy revalidates selected paths before moving anything to Trash.",
                         symbol: "doc.badge.ellipsis"
                     )
                 }
@@ -792,7 +888,7 @@ private struct StorageView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will revalidate that every selected file is inside the scanned folder, then move it to Trash. Selected size: \(Formatters.bytes(selectedLargeFileBytes)).")
+            Text("Roomy will revalidate that every selected file is inside the scanned folder, then move it to Trash. Selected size: \(Formatters.bytes(selectedLargeFileBytes)).")
         }
         .confirmationDialog("Clean selected project artifacts?", isPresented: $showPurgeConfirm) {
             Button("Clean \(selectedPurgePaths.count) Artifacts", role: .destructive) {
@@ -807,7 +903,7 @@ private struct StorageView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will revalidate each path and move removable artifacts to Trash where supported. Selected size: \(Formatters.bytes(selectedPurgeBytes)).")
+            Text("Roomy will revalidate each path and move removable artifacts to Trash where supported. Selected size: \(Formatters.bytes(selectedPurgeBytes)).")
         }
         .confirmationDialog("Remove selected installer files?", isPresented: $showInstallerConfirm) {
             Button("Remove \(selectedInstallerPaths.count) Installers", role: .destructive) {
@@ -822,18 +918,48 @@ private struct StorageView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will revalidate installer file types before removal. Selected size: \(Formatters.bytes(selectedInstallerBytes)).")
+            Text("Roomy will revalidate installer file types before removal. Selected size: \(Formatters.bytes(selectedInstallerBytes)).")
         }
-        .task {
-            if model.storageScan == nil {
-                await model.loadStorage(path: path)
-            }
+    }
+
+    private func chooseStorageFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Folder to Scan"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: path, isDirectory: true)
+        if panel.runModal() == .OK, let url = panel.url {
+            path = url.path
         }
+    }
+
+    private func scanPreset(_ newPath: String) {
+        path = newPath
+        selectedLargeFilePaths = []
+        Task {
+            await model.loadStorage(path: newPath)
+        }
+    }
+
+    private var downloadsPath: String {
+        "\(NSHomeDirectory())/Downloads"
+    }
+
+    private var projectPresetPath: String {
+        let candidates = [
+            "\(NSHomeDirectory())/Projects",
+            "\(NSHomeDirectory())/Code",
+            "\(NSHomeDirectory())/Developer",
+            "\(NSHomeDirectory())/Documents"
+        ]
+        return candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) ?? candidates[0]
     }
 }
 
 private struct PerformanceView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
     @State private var showOptimizeConfirm = false
 
     var body: some View {
@@ -878,7 +1004,7 @@ private struct PerformanceView: View {
                 } else {
                     EmptyStateView(
                         title: "No optimization preview loaded",
-                        detail: "Preview asks Mole for maintenance tasks before anything runs.",
+                        detail: "Preview asks Roomy for maintenance tasks before anything runs.",
                         symbol: "speedometer"
                     )
                 }
@@ -910,16 +1036,11 @@ private struct PerformanceView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .task {
-            if model.optimizePreview == nil {
-                await model.loadOptimizePreview()
-            }
-        }
     }
 }
 
 private struct MonitorView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
     @State private var liveRefresh = true
 
     private let refreshInterval: UInt64 = 5_000_000_000
@@ -981,7 +1102,7 @@ private struct MonitorView: View {
                 } else {
                     EmptyStateView(
                         title: "No monitor snapshot loaded",
-                        detail: "Refresh asks Mole for current CPU, memory, disk, battery, network, and process data.",
+                        detail: "Refresh asks Roomy for current CPU, memory, disk, battery, network, and process data.",
                         symbol: "waveform.path.ecg"
                     )
                 }
@@ -1087,7 +1208,7 @@ private struct MonitorView: View {
 }
 
 private struct SettingsView: View {
-    @ObservedObject var model: MoleViewModel
+    @ObservedObject var model: RoomyViewModel
     @State private var whitelistMode = "clean"
     @State private var selectedCleanPatterns: Set<String> = []
     @State private var selectedOptimizePatterns: Set<String> = []
@@ -1268,10 +1389,10 @@ private struct SettingsView: View {
                 }
             }
 
-            SectionBand(title: "Mole Maintenance", symbol: "arrow.triangle.2.circlepath") {
+            SectionBand(title: "Roomy Maintenance", symbol: "arrow.triangle.2.circlepath") {
                 HStack(spacing: 12) {
                     IntegrationStatusCard(
-                        title: "Installed Mole",
+                        title: "Installed Roomy",
                         value: maintenanceValue,
                         detail: model.maintenanceStatus?.cliPath ?? model.cliPath,
                         symbol: "app.badge.checkmark",
@@ -1330,7 +1451,7 @@ private struct SettingsView: View {
                     Button(role: .destructive) {
                         showRemoveConfirm = true
                     } label: {
-                        Label("Remove Mole", systemImage: "trash")
+                        Label("Remove Roomy", systemImage: "trash")
                     }
                     .disabled(model.isLoading)
                 }
@@ -1393,7 +1514,7 @@ private struct SettingsView: View {
                 } else {
                     EmptyStateView(
                         title: "No purge paths loaded",
-                        detail: "Load Settings to show the folders Mole scans for project artifacts.",
+                        detail: "Load Settings to show the folders Roomy scans for project artifacts.",
                         symbol: "folder.badge.gearshape"
                     )
                 }
@@ -1424,7 +1545,7 @@ private struct SettingsView: View {
                 if whitelistItems.isEmpty {
                     EmptyStateView(
                         title: "No protection list loaded",
-                        detail: "Load Settings to review caches and optimization tasks Mole should protect.",
+                        detail: "Load Settings to review caches and optimization tasks Roomy should protect.",
                         symbol: "checklist.checked"
                     )
                 } else {
@@ -1456,20 +1577,36 @@ private struct SettingsView: View {
             }
 
             SectionBand(title: "Permissions", symbol: "lock.shield") {
-                HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        IntegrationStatusCard(
+                            title: "Full Disk Access",
+                            value: model.fullDiskAccessStatus.displayValue,
+                            detail: model.fullDiskAccessStatus.detail,
+                            symbol: "lock.shield",
+                            tint: fullDiskAccessTint
+                        )
+
+                        Spacer()
+
+                        Button {
+                            openFullDiskAccessSettings()
+                        } label: {
+                            Label("Open Full Disk Access", systemImage: "gearshape")
+                        }
+
+                        Button {
+                            model.refreshFullDiskAccessStatus()
+                        } label: {
+                            Label("Check Again", systemImage: "arrow.clockwise")
+                        }
+                    }
+
                     NoticeView(
-                        text: "Full Disk Access is managed in System Settings. Mole revalidates paths in the CLI before deletion, so the app never acts as deletion authority.",
+                        text: "Full Disk Access is managed in System Settings. Roomy revalidates paths in the CLI before deletion, so the app never acts as deletion authority.",
                         symbol: "lock.shield",
                         tint: .blue
                     )
-
-                    Spacer()
-
-                    Button {
-                        openFullDiskAccessSettings()
-                    } label: {
-                        Label("Open Full Disk Access", systemImage: "gearshape")
-                    }
                 }
             }
 
@@ -1488,13 +1625,6 @@ private struct SettingsView: View {
 
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
-        .task {
-            if model.cleanWhitelist == nil {
-                await model.loadSettings()
-                syncSelectionsFromModel()
-                syncPurgePathsFromModel()
-            }
-        }
         .onChange(of: model.cleanWhitelist) { _ in
             syncSelectionsFromModel()
         }
@@ -1510,7 +1640,7 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("macOS will register Mole's bundled launch daemon so cleanup can run admin work through the helper instead of password dialogs in the app.")
+            Text("macOS will register Roomy's bundled launch daemon so cleanup can run admin work through the helper instead of password dialogs in the app.")
         }
         .confirmationDialog("Remove privileged helper?", isPresented: $showPrivilegedHelperUninstallConfirm) {
             Button("Remove Helper", role: .destructive) {
@@ -1518,7 +1648,7 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will unregister the launch daemon. Admin cleanup will be unavailable until the helper is installed again.")
+            Text("Roomy will unregister the launch daemon. Admin cleanup will be unavailable until the helper is installed again.")
         }
         .confirmationDialog("Change Touch ID sudo setting?", isPresented: $showTouchIDConfirm) {
             Button(model.touchIDStatus?.configured == true ? "Disable Touch ID" : "Enable Touch ID") {
@@ -1528,7 +1658,7 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("macOS will ask for administrator authorization. Mole modifies sudo configuration through its existing Touch ID helper.")
+            Text("macOS will ask for administrator authorization. Roomy modifies sudo configuration through its existing Touch ID helper.")
         }
         .confirmationDialog("Install shell completion?", isPresented: $showCompletionConfirm) {
             Button("Install Completion") {
@@ -1536,7 +1666,7 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will update the shell config file shown in Settings so mo commands autocomplete in new terminal sessions.")
+            Text("Roomy will update the shell config file shown in Settings so roomy commands autocomplete in new terminal sessions.")
         }
         .confirmationDialog("Install Raycast and Alfred launchers?", isPresented: $showLaunchersConfirm) {
             Button("Install Launchers") {
@@ -1544,9 +1674,9 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will create Raycast script commands and Alfred workflows for Clean, Uninstall, Optimize, Analyze, and Status.")
+            Text("Roomy will create Raycast script commands and Alfred workflows for Clean, Uninstall, Optimize, Analyze, and Status.")
         }
-        .confirmationDialog("Force Mole stable update?", isPresented: $showForceUpdateConfirm) {
+        .confirmationDialog("Force Roomy stable update?", isPresented: $showForceUpdateConfirm) {
             Button("Force Stable Update") {
                 Task {
                     await model.execute(
@@ -1558,9 +1688,9 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will run its existing update workflow. macOS may ask for administrator authorization if the install location needs it.")
+            Text("Roomy will run its existing update workflow. macOS may ask for administrator authorization if the install location needs it.")
         }
-        .confirmationDialog("Install nightly Mole build?", isPresented: $showNightlyUpdateConfirm) {
+        .confirmationDialog("Install nightly Roomy build?", isPresented: $showNightlyUpdateConfirm) {
             Button("Install Nightly") {
                 Task {
                     await model.execute(
@@ -1572,10 +1702,10 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Nightly uses Mole's main-branch installer and is intended for testing unreleased fixes.")
+            Text("Nightly uses Roomy's main-branch installer and is intended for testing unreleased fixes.")
         }
-        .confirmationDialog("Remove Mole from this Mac?", isPresented: $showRemoveConfirm) {
-            Button("Remove Mole", role: .destructive) {
+        .confirmationDialog("Remove Roomy from this Mac?", isPresented: $showRemoveConfirm) {
+            Button("Remove Roomy", role: .destructive) {
                 Task {
                     await model.execute(
                         domain: .remove,
@@ -1586,7 +1716,7 @@ private struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Mole will run its existing removal flow and re-check detected install paths before deleting.")
+            Text("Roomy will run its existing removal flow and re-check detected install paths before deleting.")
         }
     }
 
@@ -1621,11 +1751,15 @@ private struct SettingsView: View {
         return "v\(status.version)"
     }
 
-    private func openFullDiskAccessSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") else {
-            return
+    private var fullDiskAccessTint: Color {
+        switch model.fullDiskAccessStatus.state {
+        case .enabled:
+            .green
+        case .limited:
+            .orange
+        case .unknown:
+            .blue
         }
-        NSWorkspace.shared.open(url)
     }
 
     private func syncSelectionsFromModel() {
@@ -1786,14 +1920,7 @@ private struct DataTable<Content: View>: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07))
-        )
+        .background(LiquidGlassSurface(cornerRadius: 8))
     }
 }
 
@@ -1847,10 +1974,137 @@ private struct ActionRow: View {
             Spacer()
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.68))
-        )
+        .background(LiquidGlassSurface(cornerRadius: 8))
+    }
+}
+
+private struct PermissionOnboardingCard: View {
+    @ObservedObject var model: RoomyViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: permissionSymbol)
+                    .font(.title2)
+                    .foregroundStyle(permissionTint)
+                    .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Set scan access")
+                        .font(.title3.weight(.semibold))
+                    Text(model.fullDiskAccessStatus.detail)
+                        .foregroundStyle(.secondary)
+                    Text("Without Full Disk Access, Roomy can still scan folders you choose and run previews. With it, Roomy can produce complete results without repeated macOS folder prompts.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(model.fullDiskAccessStatus.displayValue)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule(style: .continuous).fill(permissionTint.opacity(0.12)))
+                    .foregroundStyle(permissionTint)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    openFullDiskAccessSettings()
+                } label: {
+                    Label("Open Full Disk Access", systemImage: "gearshape")
+                }
+
+                Button {
+                    model.refreshFullDiskAccessStatus()
+                } label: {
+                    Label("Check Again", systemImage: "arrow.clockwise")
+                }
+
+                Spacer()
+
+                Button {
+                    model.continueWithLimitedAccess()
+                } label: {
+                    Label("Continue Limited", systemImage: "arrow.right")
+                }
+            }
+        }
+        .padding(16)
+        .background(LiquidGlassSurface(cornerRadius: 8, tint: permissionTint.opacity(0.06)))
+    }
+
+    private var permissionTint: Color {
+        switch model.fullDiskAccessStatus.state {
+        case .enabled:
+            .green
+        case .limited:
+            .orange
+        case .unknown:
+            .blue
+        }
+    }
+
+    private var permissionSymbol: String {
+        switch model.fullDiskAccessStatus.state {
+        case .enabled:
+            "checkmark.shield"
+        case .limited:
+            "lock.shield"
+        case .unknown:
+            "questionmark.shield"
+        }
+    }
+}
+
+private struct OperationJournalRow: View {
+    var entry: OperationJournalEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.title)
+                    .font(.headline)
+                Text(entry.summary)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Text(entry.timestamp)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.vertical, 7)
+    }
+
+    private var symbol: String {
+        if entry.event == "failed" || entry.action == "FAILED" {
+            return "exclamationmark.triangle"
+        }
+        if entry.event == "completed" || entry.action == "REMOVED" || entry.action == "TRASHED" {
+            return "checkmark.circle"
+        }
+        if entry.recordType == "session" {
+            return "terminal"
+        }
+        return "doc.text"
+    }
+
+    private var tint: Color {
+        if entry.event == "failed" || entry.action == "FAILED" {
+            return .orange
+        }
+        if entry.event == "completed" || entry.action == "REMOVED" || entry.action == "TRASHED" {
+            return .green
+        }
+        return .blue
     }
 }
 
@@ -1869,7 +2123,14 @@ private struct PermissionPill: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Capsule().fill(Color(nsColor: .controlBackgroundColor).opacity(0.72)))
+        .background(
+            Capsule(style: .continuous)
+                .fill(.thinMaterial)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.34))
+                )
+        )
     }
 }
 
@@ -1928,14 +2189,7 @@ private struct EmptyStateView: View {
             Spacer()
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.58))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06))
-        )
+        .background(LiquidGlassSurface(cornerRadius: 8))
     }
 }
 
@@ -1986,7 +2240,7 @@ private struct ExecutionEventsView: View {
         case .confirming:
             "Waiting for confirmation"
         case .running:
-            "Running Mole command"
+            "Running Roomy command"
         case .completed:
             "Completed"
         case let .failed(message):
@@ -2170,11 +2424,59 @@ private struct NoticeView: View {
             Spacer()
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tint.opacity(0.08))
-        )
+        .background(LiquidGlassSurface(cornerRadius: 8, tint: tint.opacity(0.06)))
     }
+}
+
+private struct LiquidGlassSurface: View {
+    var cornerRadius: CGFloat
+    var tint: Color = .clear
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.thinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(tint)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.36),
+                                Color.white.opacity(0.10),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blendMode(.softLight)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.48),
+                                Color.primary.opacity(0.08)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.045), radius: 18, x: 0, y: 10)
+    }
+}
+
+private func openFullDiskAccessSettings() {
+    guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") else {
+        return
+    }
+    NSWorkspace.shared.open(url)
 }
 
 private extension View {
@@ -2182,13 +2484,6 @@ private extension View {
         self
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.78))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.07))
-            )
+            .background(LiquidGlassSurface(cornerRadius: 8))
     }
 }

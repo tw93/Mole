@@ -38,7 +38,7 @@ teardown_file() {
 
 setup() {
     export TERM="xterm-256color"
-    export MO_DEBUG=0
+    export ROOMY_DEBUG=0
 
     # Create standard scan directories
     mkdir -p "$HOME/Downloads"
@@ -86,7 +86,7 @@ require_unzip_support() {
     (cd "$HOME/Downloads" && zip -q -r large-installer.zip large-app)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         if is_installer_zip "'"$HOME/Downloads/large-installer.zip"'"; then
             echo "INSTALLER"
@@ -109,7 +109,7 @@ require_unzip_support() {
     (cd "$HOME/Downloads" && zip -q -r app.zip app-content)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         if is_installer_zip "'"$HOME/Downloads/app.zip"'"; then
             echo "INSTALLER"
@@ -138,7 +138,7 @@ require_unzip_support() {
     (cd "$HOME/Downloads" && zip -q -r deep.zip deep-content)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         if is_installer_zip "'"$HOME/Downloads/deep.zip"'"; then
             echo "INSTALLER"
@@ -174,7 +174,7 @@ EOF
     (cd "$HOME/Downloads" && zip -q -r realapp.zip RealApp.app)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         if is_installer_zip "'"$HOME/Downloads/realapp.zip"'"; then
             echo "INSTALLER"
@@ -198,7 +198,7 @@ EOF
     (cd "$HOME/Downloads" && zip -q -r data.zip data)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         if is_installer_zip "'"$HOME/Downloads/data.zip"'"; then
             echo "INSTALLER"
@@ -215,7 +215,7 @@ EOF
     touch "$HOME/Downloads/empty.zip"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         ZIP_LIST_CMD=()
         if is_installer_zip "$2"; then
@@ -239,7 +239,7 @@ EOF
     (cd "$HOME/Downloads" && zip -q -r app.zip app-content)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         ZIP_LIST_CMD=(unzip -Z -1)
         if is_installer_zip "$2"; then
@@ -266,7 +266,7 @@ EOF
     (cd "$HOME/Downloads" && zip -q -r installer.zip app-content)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_all_installers
     ' bash "$PROJECT_ROOT/bin/installer.sh"
@@ -287,7 +287,7 @@ EOF
     (cd "$HOME/Downloads" && zip -q -r data.zip data)
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_all_installers
     ' bash "$PROJECT_ROOT/bin/installer.sh"
@@ -307,7 +307,7 @@ EOF
     echo "This is not a valid ZIP file" > "$HOME/Downloads/corrupt.zip"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -337,7 +337,7 @@ EOF
     chmod 000 "$HOME/Downloads/restricted.zip"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
@@ -365,7 +365,7 @@ EOF
     echo "garbage data" > "$HOME/Downloads/corrupt.zip"
 
     run bash -euo pipefail -c '
-        export MOLE_TEST_MODE=1
+        export ROOMY_TEST_MODE=1
         source "$1"
         scan_installers_in_path "$2"
     ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"

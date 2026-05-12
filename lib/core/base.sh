@@ -1,14 +1,14 @@
 #!/bin/bash
-# Mole - Base Definitions and Utilities
+# Roomy - Base Definitions and Utilities
 # Core definitions, constants, and basic utility functions used by all modules
 
 set -euo pipefail
 
 # Prevent multiple sourcing
-if [[ -n "${MOLE_BASE_LOADED:-}" ]]; then
+if [[ -n "${ROOMY_BASE_LOADED:-}" ]]; then
     return 0
 fi
-readonly MOLE_BASE_LOADED=1
+readonly ROOMY_BASE_LOADED=1
 
 # ============================================================================
 # Color Definitions
@@ -67,21 +67,21 @@ get_lsregister_path() {
 # ============================================================================
 # Global Configuration Constants
 # ============================================================================
-readonly MOLE_TEMP_FILE_AGE_DAYS=7       # Temp file retention (days)
-readonly MOLE_ORPHAN_AGE_DAYS=30         # Orphaned data retention (days)
-readonly MOLE_DOTDIR_ORPHAN_AGE_DAYS=60  # Orphan dotfile hint threshold (days)
-readonly MOLE_MAX_PARALLEL_JOBS=15       # Parallel job limit
-readonly MOLE_MAIL_DOWNLOADS_MIN_KB=5120 # Mail attachment size threshold
-readonly MOLE_MAIL_AGE_DAYS=30           # Mail attachment retention (days)
-readonly MOLE_LOG_AGE_DAYS=7             # Log retention (days)
-readonly MOLE_CRASH_REPORT_AGE_DAYS=7    # Crash report retention (days)
-readonly MOLE_SAVED_STATE_AGE_DAYS=30    # Saved state retention (days) - increased for safety
-readonly MOLE_GPU_CACHE_AGE_DAYS=1       # Rebuildable GPU cache retention (days)
-readonly MOLE_TM_BACKUP_SAFE_HOURS=48    # TM backup safety window (hours)
-readonly MOLE_MAX_DS_STORE_FILES=500     # Max .DS_Store files to clean per scan
-readonly MOLE_MAX_ORPHAN_ITERATIONS=100  # Max iterations for orphaned app data scan
-readonly MOLE_ONE_GIB_KB=$((1024 * 1024))
-readonly MOLE_ONE_GB_BYTES=1000000000
+readonly ROOMY_TEMP_FILE_AGE_DAYS=7       # Temp file retention (days)
+readonly ROOMY_ORPHAN_AGE_DAYS=30         # Orphaned data retention (days)
+readonly ROOMY_DOTDIR_ORPHAN_AGE_DAYS=60  # Orphan dotfile hint threshold (days)
+readonly ROOMY_MAX_PARALLEL_JOBS=15       # Parallel job limit
+readonly ROOMY_MAIL_DOWNLOADS_MIN_KB=5120 # Mail attachment size threshold
+readonly ROOMY_MAIL_AGE_DAYS=30           # Mail attachment retention (days)
+readonly ROOMY_LOG_AGE_DAYS=7             # Log retention (days)
+readonly ROOMY_CRASH_REPORT_AGE_DAYS=7    # Crash report retention (days)
+readonly ROOMY_SAVED_STATE_AGE_DAYS=30    # Saved state retention (days) - increased for safety
+readonly ROOMY_GPU_CACHE_AGE_DAYS=1       # Rebuildable GPU cache retention (days)
+readonly ROOMY_TM_BACKUP_SAFE_HOURS=48    # TM backup safety window (hours)
+readonly ROOMY_MAX_DS_STORE_FILES=500     # Max .DS_Store files to clean per scan
+readonly ROOMY_MAX_ORPHAN_ITERATIONS=100  # Max iterations for orphaned app data scan
+readonly ROOMY_ONE_GIB_KB=$((1024 * 1024))
+readonly ROOMY_ONE_GB_BYTES=1000000000
 
 # ============================================================================
 # Whitelist Configuration
@@ -193,17 +193,17 @@ is_sip_enabled() {
 # Detect CPU architecture
 # Returns: "Apple Silicon" or "Intel"
 detect_architecture() {
-    if [[ -n "${MOLE_ARCH_CACHE:-}" ]]; then
-        echo "$MOLE_ARCH_CACHE"
+    if [[ -n "${ROOMY_ARCH_CACHE:-}" ]]; then
+        echo "$ROOMY_ARCH_CACHE"
         return 0
     fi
 
     if [[ "$(uname -m)" == "arm64" ]]; then
-        export MOLE_ARCH_CACHE="Apple Silicon"
+        export ROOMY_ARCH_CACHE="Apple Silicon"
     else
-        export MOLE_ARCH_CACHE="Intel"
+        export ROOMY_ARCH_CACHE="Intel"
     fi
-    echo "$MOLE_ARCH_CACHE"
+    echo "$ROOMY_ARCH_CACHE"
 }
 
 # Get free disk space on root volume
@@ -220,8 +220,8 @@ get_free_space() {
 # Get Darwin kernel major version (e.g., 24 for 24.2.0)
 # Returns 999 on failure to adopt conservative behavior (assume modern system)
 get_darwin_major() {
-    if [[ -n "${MOLE_DARWIN_MAJOR_CACHE:-}" ]]; then
-        echo "$MOLE_DARWIN_MAJOR_CACHE"
+    if [[ -n "${ROOMY_DARWIN_MAJOR_CACHE:-}" ]]; then
+        echo "$ROOMY_DARWIN_MAJOR_CACHE"
         return 0
     fi
 
@@ -232,7 +232,7 @@ get_darwin_major() {
         # Return high number to skip potentially dangerous operations on unknown systems
         major=999
     fi
-    export MOLE_DARWIN_MAJOR_CACHE="$major"
+    export ROOMY_DARWIN_MAJOR_CACHE="$major"
     echo "$major"
 }
 
@@ -247,10 +247,10 @@ is_darwin_ge() {
 # Get optimal parallel jobs for operation type (scan|io|compute|default)
 get_optimal_parallel_jobs() {
     local operation_type="${1:-default}"
-    if [[ -z "${MOLE_CPU_CORES_CACHE:-}" ]]; then
-        export MOLE_CPU_CORES_CACHE=$(sysctl -n hw.ncpu 2> /dev/null || echo 4)
+    if [[ -z "${ROOMY_CPU_CORES_CACHE:-}" ]]; then
+        export ROOMY_CPU_CORES_CACHE=$(sysctl -n hw.ncpu 2> /dev/null || echo 4)
     fi
-    local cpu_cores="$MOLE_CPU_CORES_CACHE"
+    local cpu_cores="$ROOMY_CPU_CORES_CACHE"
     case "$operation_type" in
         scan | io)
             echo $((cpu_cores * 2))
@@ -273,8 +273,8 @@ is_root_user() {
 }
 
 get_invoking_user() {
-    if [[ -n "${_MOLE_INVOKING_USER_CACHE:-}" ]]; then
-        echo "$_MOLE_INVOKING_USER_CACHE"
+    if [[ -n "${_ROOMY_INVOKING_USER_CACHE:-}" ]]; then
+        echo "$_ROOMY_INVOKING_USER_CACHE"
         return 0
     fi
 
@@ -285,7 +285,7 @@ get_invoking_user() {
         user="${USER:-}"
     fi
 
-    export _MOLE_INVOKING_USER_CACHE="$user"
+    export _ROOMY_INVOKING_USER_CACHE="$user"
     echo "$user"
 }
 
@@ -466,17 +466,17 @@ get_brand_name() {
     local name="$1"
 
     # Detect if system primary language is Chinese (Cached)
-    if [[ -z "${MOLE_IS_CHINESE_SYSTEM:-}" ]]; then
+    if [[ -z "${ROOMY_IS_CHINESE_SYSTEM:-}" ]]; then
         local sys_lang
         sys_lang=$(defaults read -g AppleLanguages 2> /dev/null | grep -o 'zh-Hans\|zh-Hant\|zh' | head -1 || echo "")
         if [[ -n "$sys_lang" ]]; then
-            export MOLE_IS_CHINESE_SYSTEM="true"
+            export ROOMY_IS_CHINESE_SYSTEM="true"
         else
-            export MOLE_IS_CHINESE_SYSTEM="false"
+            export ROOMY_IS_CHINESE_SYSTEM="false"
         fi
     fi
 
-    local is_chinese="${MOLE_IS_CHINESE_SYSTEM}"
+    local is_chinese="${ROOMY_IS_CHINESE_SYSTEM}"
 
     # Return localized names based on system language
     if [[ "$is_chinese" == true ]]; then
@@ -559,8 +559,8 @@ cleanup_result_color_kb() {
 # ============================================================================
 
 # Tracked temporary files and directories
-declare -a MOLE_TEMP_FILES=()
-declare -a MOLE_TEMP_DIRS=()
+declare -a ROOMY_TEMP_FILES=()
+declare -a ROOMY_TEMP_DIRS=()
 
 normalize_temp_root() {
     local path="${1:-}"
@@ -592,14 +592,14 @@ probe_temp_root() {
 
     [[ -d "$path" ]] || return 1
 
-    probe=$(mktemp "$path/mole.probe.XXXXXX" 2> /dev/null) || return 1
+    probe=$(mktemp "$path/roomy.probe.XXXXXX" 2> /dev/null) || return 1
     rm -f "$probe" 2> /dev/null || true
 
     printf '%s\n' "$path"
 }
 
-ensure_mole_temp_root() {
-    if [[ -n "${MOLE_RESOLVED_TMPDIR:-}" ]]; then
+ensure_roomy_temp_root() {
+    if [[ -n "${ROOMY_RESOLVED_TMPDIR:-}" ]]; then
         return 0
     fi
 
@@ -614,7 +614,7 @@ ensure_mole_temp_root() {
     if [[ -z "$resolved" ]]; then
         invoking_home=$(get_invoking_home)
         if [[ -n "$invoking_home" ]]; then
-            resolved=$(probe_temp_root "$invoking_home/.cache/mole/tmp" true || true)
+            resolved=$(probe_temp_root "$invoking_home/.cache/roomy/tmp" true || true)
         fi
     fi
 
@@ -623,32 +623,32 @@ ensure_mole_temp_root() {
     fi
 
     [[ -n "$resolved" ]] || resolved="/tmp"
-    MOLE_RESOLVED_TMPDIR="$resolved"
-    export MOLE_RESOLVED_TMPDIR
+    ROOMY_RESOLVED_TMPDIR="$resolved"
+    export ROOMY_RESOLVED_TMPDIR
 }
 
-get_mole_temp_root() {
-    ensure_mole_temp_root
-    printf '%s\n' "$MOLE_RESOLVED_TMPDIR"
+get_roomy_temp_root() {
+    ensure_roomy_temp_root
+    printf '%s\n' "$ROOMY_RESOLVED_TMPDIR"
 }
 
-prepare_mole_tmpdir() {
-    ensure_mole_temp_root
-    export TMPDIR="$MOLE_RESOLVED_TMPDIR"
-    printf '%s\n' "$MOLE_RESOLVED_TMPDIR"
+prepare_roomy_tmpdir() {
+    ensure_roomy_temp_root
+    export TMPDIR="$ROOMY_RESOLVED_TMPDIR"
+    printf '%s\n' "$ROOMY_RESOLVED_TMPDIR"
 }
 
-mole_temp_path_template() {
-    local prefix="${1:-mole}"
-    ensure_mole_temp_root
-    printf '%s/%s.XXXXXX\n' "$MOLE_RESOLVED_TMPDIR" "$prefix"
+roomy_temp_path_template() {
+    local prefix="${1:-roomy}"
+    ensure_roomy_temp_root
+    printf '%s/%s.XXXXXX\n' "$ROOMY_RESOLVED_TMPDIR" "$prefix"
 }
 
 # Create tracked temporary file
 create_temp_file() {
     local temp
-    ensure_mole_temp_root
-    temp=$(mktemp "$MOLE_RESOLVED_TMPDIR/mole.XXXXXX") || return 1
+    ensure_roomy_temp_root
+    temp=$(mktemp "$ROOMY_RESOLVED_TMPDIR/roomy.XXXXXX") || return 1
     register_temp_file "$temp"
     echo "$temp"
 }
@@ -656,30 +656,30 @@ create_temp_file() {
 # Create tracked temporary directory
 create_temp_dir() {
     local temp
-    ensure_mole_temp_root
-    temp=$(mktemp -d "$MOLE_RESOLVED_TMPDIR/mole.XXXXXX") || return 1
+    ensure_roomy_temp_root
+    temp=$(mktemp -d "$ROOMY_RESOLVED_TMPDIR/roomy.XXXXXX") || return 1
     register_temp_dir "$temp"
     echo "$temp"
 }
 
 # Register existing file for cleanup
 register_temp_file() {
-    MOLE_TEMP_FILES+=("$1")
+    ROOMY_TEMP_FILES+=("$1")
 }
 
 # Register existing directory for cleanup
 register_temp_dir() {
-    MOLE_TEMP_DIRS+=("$1")
+    ROOMY_TEMP_DIRS+=("$1")
 }
 
 # Create temp file with prefix (for analyze.sh compatibility)
 # Compatible with both BSD mktemp (macOS default) and GNU mktemp (coreutils)
 mktemp_file() {
-    local prefix="${1:-mole}"
+    local prefix="${1:-roomy}"
     local temp
     local error_msg
     # Add .XXXXXX suffix to work with both BSD and GNU mktemp
-    if ! error_msg=$(mktemp "$(mole_temp_path_template "$prefix")" 2>&1); then
+    if ! error_msg=$(mktemp "$(roomy_temp_path_template "$prefix")" 2>&1); then
         echo "Error: Failed to create temporary file: $error_msg" >&2
         return 1
     fi
@@ -694,20 +694,20 @@ cleanup_temp_files() {
         stop_inline_spinner || true
     fi
     local file
-    if [[ ${#MOLE_TEMP_FILES[@]} -gt 0 ]]; then
-        for file in "${MOLE_TEMP_FILES[@]}"; do
+    if [[ ${#ROOMY_TEMP_FILES[@]} -gt 0 ]]; then
+        for file in "${ROOMY_TEMP_FILES[@]}"; do
             [[ -f "$file" ]] && rm -f "$file" 2> /dev/null || true
         done
     fi
 
-    if [[ ${#MOLE_TEMP_DIRS[@]} -gt 0 ]]; then
-        for file in "${MOLE_TEMP_DIRS[@]}"; do
+    if [[ ${#ROOMY_TEMP_DIRS[@]} -gt 0 ]]; then
+        for file in "${ROOMY_TEMP_DIRS[@]}"; do
             [[ -d "$file" ]] && rm -rf "$file" 2> /dev/null || true # SAFE: cleanup_temp_files
         done
     fi
 
-    MOLE_TEMP_FILES=()
-    MOLE_TEMP_DIRS=()
+    ROOMY_TEMP_FILES=()
+    ROOMY_TEMP_DIRS=()
 }
 
 # ============================================================================
@@ -767,7 +767,7 @@ start_section_spinner() {
     local message="${1:-Scanning...}"
     stop_inline_spinner || true
     if [[ -t 1 ]]; then
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "$message"
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "$message"
     fi
 }
 
@@ -856,30 +856,30 @@ update_progress_if_needed() {
 # Usage: is_ansi_supported
 # Returns: 0 if supported, 1 if not
 is_ansi_supported() {
-    if [[ -n "${MOLE_ANSI_SUPPORTED_CACHE:-}" ]]; then
-        return "$MOLE_ANSI_SUPPORTED_CACHE"
+    if [[ -n "${ROOMY_ANSI_SUPPORTED_CACHE:-}" ]]; then
+        return "$ROOMY_ANSI_SUPPORTED_CACHE"
     fi
 
     # Check if running in interactive terminal
     if ! [[ -t 1 ]]; then
-        export MOLE_ANSI_SUPPORTED_CACHE=1
+        export ROOMY_ANSI_SUPPORTED_CACHE=1
         return 1
     fi
 
     # Check TERM variable
     if [[ -z "${TERM:-}" ]]; then
-        export MOLE_ANSI_SUPPORTED_CACHE=1
+        export ROOMY_ANSI_SUPPORTED_CACHE=1
         return 1
     fi
 
     # Check for known ANSI-compatible terminals
     case "$TERM" in
         xterm* | vt100 | vt220 | screen* | tmux* | ansi | linux | rxvt* | konsole*)
-            export MOLE_ANSI_SUPPORTED_CACHE=0
+            export ROOMY_ANSI_SUPPORTED_CACHE=0
             return 0
             ;;
         dumb | unknown)
-            export MOLE_ANSI_SUPPORTED_CACHE=1
+            export ROOMY_ANSI_SUPPORTED_CACHE=1
             return 1
             ;;
         *)
@@ -888,11 +888,11 @@ is_ansi_supported() {
                 # Test if terminal supports colors (good proxy for ANSI support)
                 local colors=$(tput colors 2> /dev/null || echo "0")
                 if [[ "$colors" -ge 8 ]]; then
-                    export MOLE_ANSI_SUPPORTED_CACHE=0
+                    export ROOMY_ANSI_SUPPORTED_CACHE=0
                     return 0
                 fi
             fi
-            export MOLE_ANSI_SUPPORTED_CACHE=1
+            export ROOMY_ANSI_SUPPORTED_CACHE=1
             return 1
             ;;
     esac

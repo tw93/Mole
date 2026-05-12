@@ -1,33 +1,33 @@
 #!/bin/bash
-# Mole - File Operations
+# Roomy - File Operations
 # Safe file and directory manipulation with validation
 
 set -euo pipefail
 
 # Prevent multiple sourcing
-if [[ -n "${MOLE_FILE_OPS_LOADED:-}" ]]; then
+if [[ -n "${ROOMY_FILE_OPS_LOADED:-}" ]]; then
     return 0
 fi
-readonly MOLE_FILE_OPS_LOADED=1
+readonly ROOMY_FILE_OPS_LOADED=1
 
 # Error codes for removal operations
-readonly MOLE_ERR_SIP_PROTECTED=10
-readonly MOLE_ERR_AUTH_FAILED=11
-readonly MOLE_ERR_READONLY_FS=12
+readonly ROOMY_ERR_SIP_PROTECTED=10
+readonly ROOMY_ERR_AUTH_FAILED=11
+readonly ROOMY_ERR_READONLY_FS=12
 
 # Ensure dependencies are loaded
-_MOLE_CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -z "${MOLE_BASE_LOADED:-}" ]]; then
+_ROOMY_CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${ROOMY_BASE_LOADED:-}" ]]; then
     # shellcheck source=lib/core/base.sh
-    source "$_MOLE_CORE_DIR/base.sh"
+    source "$_ROOMY_CORE_DIR/base.sh"
 fi
-if [[ -z "${MOLE_LOG_LOADED:-}" ]]; then
+if [[ -z "${ROOMY_LOG_LOADED:-}" ]]; then
     # shellcheck source=lib/core/log.sh
-    source "$_MOLE_CORE_DIR/log.sh"
+    source "$_ROOMY_CORE_DIR/log.sh"
 fi
-if [[ -z "${MOLE_TIMEOUT_LOADED:-}" ]]; then
+if [[ -z "${ROOMY_TIMEOUT_LOADED:-}" ]]; then
     # shellcheck source=lib/core/timeout.sh
-    source "$_MOLE_CORE_DIR/timeout.sh"
+    source "$_ROOMY_CORE_DIR/timeout.sh"
 fi
 
 # ============================================================================
@@ -168,7 +168,7 @@ validate_path_for_deletion() {
     # Check if path is protected (keychains, system settings, etc)
     if declare -f should_protect_path > /dev/null 2>&1; then
         if should_protect_path "$path"; then
-            if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+            if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
                 log_warning "Path validation: protected path skipped: $path"
             fi
             return 1
@@ -199,8 +199,8 @@ safe_remove() {
     fi
 
     # Dry-run mode: log but don't delete
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
+        if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
             local file_type="file"
             [[ -d "$path" ]] && file_type="directory"
             [[ -L "$path" ]] && file_type="symlink"
@@ -263,19 +263,19 @@ safe_remove() {
 
     if [[ $rm_exit -eq 0 ]]; then
         # Log successful removal
-        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
+        log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
         return 0
     else
         # Check if it's a permission error
         if [[ "$error_msg" == *"Permission denied"* ]] || [[ "$error_msg" == *"Operation not permitted"* ]]; then
-            MOLE_PERMISSION_DENIED_COUNT=${MOLE_PERMISSION_DENIED_COUNT:-0}
-            MOLE_PERMISSION_DENIED_COUNT=$((MOLE_PERMISSION_DENIED_COUNT + 1))
-            export MOLE_PERMISSION_DENIED_COUNT
+            ROOMY_PERMISSION_DENIED_COUNT=${ROOMY_PERMISSION_DENIED_COUNT:-0}
+            ROOMY_PERMISSION_DENIED_COUNT=$((ROOMY_PERMISSION_DENIED_COUNT + 1))
+            export ROOMY_PERMISSION_DENIED_COUNT
             debug_log "Permission denied: $path, may need Full Disk Access"
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "permission denied"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "permission denied"
         else
             [[ "$silent" != "true" ]] && log_error "Failed to remove: $path"
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "error"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "error"
         fi
         return 1
     fi
@@ -290,15 +290,15 @@ safe_remove_symlink() {
         return 1
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         debug_log "[DRY RUN] Would remove symlink: $path"
         return 0
     fi
 
     local rm_exit=0
     if [[ "$use_sudo" == "true" ]]; then
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
             return 1
         fi
         sudo rm "$path" 2> /dev/null || rm_exit=$?
@@ -307,10 +307,10 @@ safe_remove_symlink() {
     fi
 
     if [[ $rm_exit -eq 0 ]]; then
-        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "symlink"
+        log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "symlink"
         return 0
     else
-        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "symlink removal failed"
+        log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "symlink removal failed"
         return 1
     fi
 }
@@ -337,17 +337,17 @@ safe_sudo_remove() {
         return 1
     fi
 
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-        if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
+        if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
             log_info "[DRY-RUN] Would sudo remove: $path"
             return 0
         fi
-        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
+        log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
         return 1
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-        if [[ "${MO_DEBUG:-}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
+        if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
             local file_type="file"
             [[ -d "$path" ]] && file_type="directory"
 
@@ -398,26 +398,26 @@ safe_sudo_remove() {
     output=$(sudo rm -rf "$path" 2>&1) || ret=$? # safe_remove
 
     if [[ $ret -eq 0 ]]; then
-        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
+        log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
         return 0
     fi
 
     case "$output" in
         *"Operation not permitted"*)
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sip/mdm protected"
-            return "$MOLE_ERR_SIP_PROTECTED"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sip/mdm protected"
+            return "$ROOMY_ERR_SIP_PROTECTED"
             ;;
         *"Read-only file system"*)
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "readonly filesystem"
-            return "$MOLE_ERR_READONLY_FS"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "readonly filesystem"
+            return "$ROOMY_ERR_READONLY_FS"
             ;;
         *"Sorry, try again"* | *"incorrect passphrase"* | *"incorrect credentials"*)
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "auth failed"
-            return "$MOLE_ERR_AUTH_FAILED"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "auth failed"
+            return "$ROOMY_ERR_AUTH_FAILED"
             ;;
         *)
             log_error "Failed to remove, sudo: $path"
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo error"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo error"
             return 1
             ;;
     esac
@@ -431,25 +431,25 @@ safe_sudo_remove() {
 # every call for forensic review. Designed for destructive paths where undo
 # matters (e.g. uninstall). Not used by cache-clean paths.
 #
-# Usage: mole_delete <path> [needs_sudo=false]
+# Usage: roomy_delete <path> [needs_sudo=false]
 #
 # Environment:
-#   MOLE_DELETE_MODE      "permanent" (default) or "trash"
-#   MOLE_DRY_RUN=1        Log intent, do not delete
-#   MOLE_TEST_TRASH_DIR   Test-only override; Trash moves go here via `mv`
+#   ROOMY_DELETE_MODE      "permanent" (default) or "trash"
+#   ROOMY_DRY_RUN=1        Log intent, do not delete
+#   ROOMY_TEST_TRASH_DIR   Test-only override; Trash moves go here via `mv`
 #                         instead of Finder/trash CLI. Required for bats.
-#   MOLE_DELETE_LOG       Override the log file path (default:
-#                         ~/Library/Logs/mole/deletions.log)
+#   ROOMY_DELETE_LOG       Override the log file path (default:
+#                         ~/Library/Logs/roomy/deletions.log)
 #
 # Returns 0 on success, 1 on failure. Always appends a tab-separated line to
 # the deletions log: <iso_ts>\t<mode>\t<size_kb>\t<status>\t<path>.
 # size_kb is "unknown" when du could not measure the path (permission denied,
 # disappeared mid-call); never silently coerced to 0KB so post-hoc forensics
 # can tell measured-zero from measurement-failure.
-mole_delete() {
+roomy_delete() {
     local path="$1"
     local needs_sudo="${2:-false}"
-    local mode="${MOLE_DELETE_MODE:-permanent}"
+    local mode="${ROOMY_DELETE_MODE:-permanent}"
 
     [[ -z "$path" ]] && return 1
 
@@ -465,7 +465,7 @@ mole_delete() {
     # The rejection itself is recorded in the forensic log so audit trails
     # can distinguish refused-by-policy from never-attempted.
     if [[ ! -L "$path" ]] && ! validate_path_for_deletion "$path"; then
-        _mole_delete_log "$mode" "0" "rejected" "$path"
+        _roomy_delete_log "$mode" "0" "rejected" "$path"
         return 1
     fi
 
@@ -477,7 +477,7 @@ mole_delete() {
         local raw_size=""
         local du_rc=0
         if [[ "$needs_sudo" == "true" ]]; then
-            if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
                 du_rc=1
             else
                 raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
@@ -491,15 +491,15 @@ mole_delete() {
         fi
     fi
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         debug_log "[DRY RUN] Would delete ($mode): $path"
-        _mole_delete_log "$mode" "$size_kb" "dry-run" "$path"
+        _roomy_delete_log "$mode" "$size_kb" "dry-run" "$path"
         return 0
     fi
 
     if [[ "$needs_sudo" == "true" ]]; then
-        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-            _mole_delete_log "$mode" "$size_kb" "sudo-blocked-test-mode" "$path"
+        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
+            _roomy_delete_log "$mode" "$size_kb" "sudo-blocked-test-mode" "$path"
             return 1
         fi
     fi
@@ -507,16 +507,16 @@ mole_delete() {
     # Trash mode: attempt Trash move first, fall through to permanent removal
     # on failure so destructive operations never get silently skipped.
     if [[ "$mode" == "trash" ]]; then
-        if _mole_move_to_trash "$path" "$needs_sudo"; then
-            _mole_delete_log "trash" "$size_kb" "ok" "$path"
-            log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "TRASHED" "$path" "${size_kb}KB"
+        if _roomy_move_to_trash "$path" "$needs_sudo"; then
+            _roomy_delete_log "trash" "$size_kb" "ok" "$path"
+            log_operation "${ROOMY_CURRENT_COMMAND:-uninstall}" "TRASHED" "$path" "${size_kb}KB"
             return 0
         fi
         # User explicitly chose Trash for recoverability. Surface the fallback
         # to permanent rm once per session so they know an "undo" isn't there.
-        if [[ -z "${_MOLE_TRASH_FALLBACK_WARNED:-}" ]]; then
-            _MOLE_TRASH_FALLBACK_WARNED=1
-            export _MOLE_TRASH_FALLBACK_WARNED
+        if [[ -z "${_ROOMY_TRASH_FALLBACK_WARNED:-}" ]]; then
+            _ROOMY_TRASH_FALLBACK_WARNED=1
+            export _ROOMY_TRASH_FALLBACK_WARNED
             printf 'Warning: Trash unavailable, removing permanently. Subsequent files this session also bypass Trash.\n' >&2
         fi
         debug_log "Trash move failed, falling back to permanent delete: $path"
@@ -540,30 +540,30 @@ mole_delete() {
     if [[ "$mode" == "trash" && "$status_label" == "ok" ]]; then
         status_label="trash-fallback-rm"
     fi
-    _mole_delete_log "$mode" "$size_kb" "$status_label" "$path"
+    _roomy_delete_log "$mode" "$size_kb" "$status_label" "$path"
     return "$rc"
 }
 
-# Move a path to the macOS Trash. Test harnesses set MOLE_TEST_TRASH_DIR to
+# Move a path to the macOS Trash. Test harnesses set ROOMY_TEST_TRASH_DIR to
 # redirect the move to a tmpdir, avoiding any Finder/osascript interaction.
-_mole_move_to_trash() {
+_roomy_move_to_trash() {
     local path="$1"
     local needs_sudo="${2:-false}"
 
-    if [[ -n "${MOLE_TEST_TRASH_DIR:-}" ]]; then
-        mkdir -p "$MOLE_TEST_TRASH_DIR" 2> /dev/null || return 1
-        local dest="$MOLE_TEST_TRASH_DIR/$(basename "$path").$$.$(date +%s 2> /dev/null || echo 0)"
+    if [[ -n "${ROOMY_TEST_TRASH_DIR:-}" ]]; then
+        mkdir -p "$ROOMY_TEST_TRASH_DIR" 2> /dev/null || return 1
+        local dest="$ROOMY_TEST_TRASH_DIR/$(basename "$path").$$.$(date +%s 2> /dev/null || echo 0)"
         mv "$path" "$dest" 2> /dev/null
         return $?
     fi
 
     # Blocked in test mode so uninstall tests never hit Finder/AppleScript.
-    if [[ "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
     fi
 
     if [[ "$needs_sudo" == "true" ]]; then
-        _mole_move_sudo_path_to_user_trash "$path"
+        _roomy_move_sudo_path_to_user_trash "$path"
         return $?
     fi
 
@@ -584,11 +584,11 @@ end run
 APPLESCRIPT
 }
 
-_mole_move_sudo_path_to_user_trash() {
+_roomy_move_sudo_path_to_user_trash() {
     local path="$1"
     local user_home=""
 
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
     fi
 
@@ -646,7 +646,7 @@ _mole_move_sudo_path_to_user_trash() {
     base=$(basename "$path")
     base="${base//:/__}"
     base="${base//\//__}"
-    [[ -n "$base" && "$base" != "." && "$base" != ".." ]] || base="mole-trash-item"
+    [[ -n "$base" && "$base" != "." && "$base" != ".." ]] || base="roomy-trash-item"
 
     local dest="$trash_dir/$base"
     local ts suffix
@@ -685,23 +685,23 @@ _mole_move_sudo_path_to_user_trash() {
 # (100 files * ~1s each). Returns 0 only when the entire batch landed in the
 # Trash; callers must fall back to the per-file path on non-zero so nothing
 # is silently skipped.
-_mole_move_to_trash_batch() {
+_roomy_move_to_trash_batch() {
     local -a paths=("$@")
     [[ ${#paths[@]} -eq 0 ]] && return 0
 
-    if [[ -n "${MOLE_TEST_TRASH_DIR:-}" ]]; then
-        mkdir -p "$MOLE_TEST_TRASH_DIR" 2> /dev/null || return 1
+    if [[ -n "${ROOMY_TEST_TRASH_DIR:-}" ]]; then
+        mkdir -p "$ROOMY_TEST_TRASH_DIR" 2> /dev/null || return 1
         local ts
         ts=$(date +%s 2> /dev/null || echo 0)
         local p dest
         for p in "${paths[@]}"; do
-            dest="$MOLE_TEST_TRASH_DIR/$(basename "$p").$$.${ts}.$RANDOM"
+            dest="$ROOMY_TEST_TRASH_DIR/$(basename "$p").$$.${ts}.$RANDOM"
             mv "$p" "$dest" 2> /dev/null || return 1
         done
         return 0
     fi
 
-    if [[ "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
     fi
 
@@ -721,13 +721,13 @@ end run
 APPLESCRIPT
 }
 
-_mole_delete_log() {
+_roomy_delete_log() {
     local mode="$1"
     local size_kb="$2"
     local status="$3"
     local target="$4"
 
-    local log_file="${MOLE_DELETE_LOG:-$HOME/Library/Logs/mole/deletions.log}"
+    local log_file="${ROOMY_DELETE_LOG:-$HOME/Library/Logs/roomy/deletions.log}"
     local log_dir
     log_dir=$(dirname "$log_file")
 
@@ -736,7 +736,7 @@ _mole_delete_log() {
     # log dir is unwritable (root-owned from prior sudo, ENOSPC, read-only
     # volume) defeats the design.
     if ! mkdir -p "$log_dir" 2> /dev/null; then
-        _mole_warn_log_broken "create directory: $log_dir"
+        _roomy_warn_log_broken "create directory: $log_dir"
         return 0
     fi
 
@@ -746,14 +746,14 @@ _mole_delete_log() {
     if ! printf '%s\t%s\t%s\t%s\t%s\n' \
         "$ts" "$mode" "$size_kb" "$status" "$target" \
         >> "$log_file" 2> /dev/null; then
-        _mole_warn_log_broken "write to: $log_file"
+        _roomy_warn_log_broken "write to: $log_file"
     fi
 }
 
-_mole_warn_log_broken() {
-    [[ -n "${_MOLE_DELETE_LOG_WARNED:-}" ]] && return 0
-    _MOLE_DELETE_LOG_WARNED=1
-    export _MOLE_DELETE_LOG_WARNED
+_roomy_warn_log_broken() {
+    [[ -n "${_ROOMY_DELETE_LOG_WARNED:-}" ]] && return 0
+    _ROOMY_DELETE_LOG_WARNED=1
+    export _ROOMY_DELETE_LOG_WARNED
     printf 'Warning: deletions audit log unavailable (%s). Forensic trail incomplete this session.\n' "$1" >&2
 }
 
@@ -816,7 +816,7 @@ safe_sudo_find_delete() {
     local age_days="${3:-7}"
     local type_filter="${4:-f}"
 
-    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
         debug_log "Skipping sudo find/delete in test mode: $base_dir"
         return 0
     fi
@@ -916,7 +916,7 @@ get_path_size_kb() {
     if [[ "$size" =~ ^[0-9]+$ ]]; then
         echo "$size"
     else
-        [[ "${MO_DEBUG:-}" == "1" ]] && debug_log "get_path_size_kb: Failed to get size for $path (returned: $size)"
+        [[ "${ROOMY_DEBUG:-}" == "1" ]] && debug_log "get_path_size_kb: Failed to get size for $path (returned: $size)"
         echo "0"
     fi
 }
@@ -946,18 +946,18 @@ diagnose_removal_failure() {
     local touchid_file="/etc/pam.d/sudo"
 
     case "$exit_code" in
-        "$MOLE_ERR_SIP_PROTECTED")
+        "$ROOMY_ERR_SIP_PROTECTED")
             reason="protected by macOS (SIP/MDM)"
             ;;
-        "$MOLE_ERR_AUTH_FAILED")
+        "$ROOMY_ERR_AUTH_FAILED")
             reason="authentication failed"
             if [[ -f "$touchid_file" ]] && grep -q "pam_tid.so" "$touchid_file" 2> /dev/null; then
                 suggestion="Check your credentials or restart Terminal"
             else
-                suggestion="Try 'mole touchid' to enable fingerprint auth"
+                suggestion="Try 'roomy touchid' to enable fingerprint auth"
             fi
             ;;
-        "$MOLE_ERR_READONLY_FS")
+        "$ROOMY_ERR_READONLY_FS")
             reason="filesystem is read-only"
             suggestion="Check if disk needs repair"
             ;;
@@ -966,7 +966,7 @@ diagnose_removal_failure() {
             if [[ -f "$touchid_file" ]] && grep -q "pam_tid.so" "$touchid_file" 2> /dev/null; then
                 suggestion="Try running again or check file ownership"
             else
-                suggestion="Try 'mole touchid' or check with 'ls -l'"
+                suggestion="Try 'roomy touchid' or check with 'ls -l'"
             fi
             ;;
     esac

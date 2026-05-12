@@ -23,7 +23,7 @@ teardown_file() {
 setup() {
 	mkdir -p "$HOME/www"
 	mkdir -p "$HOME/dev"
-	mkdir -p "$HOME/.cache/mole"
+	mkdir -p "$HOME/.cache/roomy"
 
 	rm -rf "${HOME:?}/www"/* "${HOME:?}/dev"/*
 }
@@ -110,7 +110,7 @@ setup() {
 }
 
 @test "compact_purge_scan_path keeps the tail of long purge paths visible" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SKIP_MAIN=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_SKIP_MAIN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/bin/purge.sh"
 compact_purge_scan_path "$HOME/projects/team/service/very/deep/component/node_modules" 32
@@ -323,7 +323,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
 save_discovered_paths "$HOME/Projects"
-grep -q "^~/" "$HOME/.config/mole/purge_paths"
+grep -q "^~/" "$HOME/.config/roomy/purge_paths"
 EOF
 
 	[ "$status" -eq 0 ]
@@ -583,7 +583,7 @@ EOF
 
 	result=$(bash -c "
         source '$PROJECT_ROOT/lib/clean/project.sh'
-        MO_USE_FIND=1 scan_purge_targets '$HOME/single-project' '$scan_output'
+        ROOMY_USE_FIND=1 scan_purge_targets '$HOME/single-project' '$scan_output'
         if grep -q '$HOME/single-project/node_modules' '$scan_output'; then
             echo 'FOUND'
         else
@@ -605,7 +605,7 @@ EOF
 
 	result=$(bash -c "
         source '$PROJECT_ROOT/lib/clean/project.sh'
-        MO_USE_FIND=1 scan_purge_targets '$HOME/single-project/' '$scan_output'
+        ROOMY_USE_FIND=1 scan_purge_targets '$HOME/single-project/' '$scan_output'
         if grep -q '$HOME/single-project/node_modules' '$scan_output'; then
             echo 'FOUND'
         else
@@ -626,7 +626,7 @@ EOF
 	scan_output=$(mktemp)
 	result=$(bash -c "
         source '$PROJECT_ROOT/lib/clean/project.sh'
-        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        ROOMY_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
         if grep -q '$HOME/www/python-app/.custom-cache' '$scan_output'; then
             echo 'FOUND'
         else
@@ -646,7 +646,7 @@ EOF
 	scan_output=$(mktemp)
 	result=$(bash -c "
         source '$PROJECT_ROOT/lib/clean/project.sh'
-        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        ROOMY_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
         if grep -q '$HOME/www/python-app/.custom-cache' '$scan_output'; then
             echo 'FOUND'
         else
@@ -666,7 +666,7 @@ EOF
 	scan_output=$(mktemp)
 	result=$(bash -c "
         source '$PROJECT_ROOT/lib/clean/project.sh'
-        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        ROOMY_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
         if grep -q '$HOME/www/python-app/Library/fontconfig-cache' '$scan_output'; then
             echo 'FOUND'
         else
@@ -679,8 +679,8 @@ EOF
 }
 
 @test "scan_purge_targets: trusts empty fd result without falling back to find" {
-	mkdir -p "$HOME/.config/mole" "$HOME/www/empty-project"
-	printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
+	mkdir -p "$HOME/.config/roomy" "$HOME/www/empty-project"
+	printf '%s\n' "$HOME/www" > "$HOME/.config/roomy/purge_paths"
 
 	local mock_bin="$HOME/mock-bin"
 	mkdir -p "$mock_bin"
@@ -849,8 +849,8 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/project.sh"
 
-mkdir -p "$HOME/.cache/mole"
-echo "0" > "$HOME/.cache/mole/purge_stats"
+mkdir -p "$HOME/.cache/roomy"
+echo "0" > "$HOME/.cache/roomy/purge_stats"
 
 mkdir -p "$HOME/www/test-project/node_modules"
 echo "test data" > "$HOME/www/test-project/node_modules/file.js"
@@ -860,10 +860,10 @@ touch -t 202001010101 "$HOME/www/test-project/node_modules" "$HOME/www/test-proj
 PURGE_SEARCH_PATHS=("$HOME/www")
 safe_remove() { return 1; }
 
-export MOLE_DRY_RUN=1
+export ROOMY_DRY_RUN=1
 clean_project_artifacts
 
-stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
+stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/roomy"
 echo "COUNT=$(cat "$stats_dir/purge_count" 2> /dev/null || echo missing)"
 echo "SIZE=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo missing)"
 [[ -d "$HOME/www/test-project/node_modules" ]]
@@ -898,18 +898,18 @@ EOF
 		[[ "$output" =~ "Great" ]]
 }
 
-@test "mo purge: command exists and is executable" {
-	[ -x "$PROJECT_ROOT/mole" ]
+@test "roomy purge: command exists and is executable" {
+	[ -x "$PROJECT_ROOT/roomy" ]
 	[ -f "$PROJECT_ROOT/bin/purge.sh" ]
 }
 
-@test "mo purge: shows in help text" {
-	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
+@test "roomy purge: shows in help text" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"mo purge"* ]]
+	[[ "$output" == *"roomy purge"* ]]
 }
 
-@test "mo purge: accepts --debug flag" {
+@test "roomy purge: accepts --debug flag" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"
 	fi
@@ -919,12 +919,12 @@ EOF
 
 	run bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge --debug < /dev/null 2>&1 || true
+        $timeout_cmd 2 '$PROJECT_ROOT/roomy' purge --debug < /dev/null 2>&1 || true
     "
 	true
 }
 
-@test "mo purge: accepts --dry-run flag" {
+@test "roomy purge: accepts --dry-run flag" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"
 	fi
@@ -934,13 +934,13 @@ EOF
 
 	run bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge --dry-run < /dev/null 2>&1 || true
+        $timeout_cmd 2 '$PROJECT_ROOT/roomy' purge --dry-run < /dev/null 2>&1 || true
     "
 
 	[[ "$output" == *"DRY RUN MODE"* ]] || [[ "$output" == *"Dry run complete"* ]]
 }
 
-@test "mo purge: creates cache directory for stats" {
+@test "roomy purge: creates cache directory for stats" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"
 	fi
@@ -950,10 +950,10 @@ EOF
 
 	bash -c "
         export HOME='$HOME'
-        $timeout_cmd 2 '$PROJECT_ROOT/mole' purge < /dev/null 2>&1 || true
+        $timeout_cmd 2 '$PROJECT_ROOT/roomy' purge < /dev/null 2>&1 || true
     "
 
-	[ -d "$HOME/.cache/mole" ] || [ -d "${XDG_CACHE_HOME:-$HOME/.cache}/mole" ]
+	[ -d "$HOME/.cache/roomy" ] || [ -d "${XDG_CACHE_HOME:-$HOME/.cache}/roomy" ]
 }
 
 # .NET bin directory detection tests
@@ -1058,7 +1058,7 @@ EOF
 # array (menu_options, item_paths, item_sizes, …) was in size order.
 # Effect: the "Full path" footer showed the wrong project for the highlighted
 # item, and the confirmation dialog listed paths that did not match the
-# selection. See https://github.com/tw93/Mole/issues/647
+# selection. See https://github.com/tw93/Roomy/issues/647
 #
 # These tests run clean_project_artifacts under a pseudo-terminal (so the
 # interactive code path is taken and select_purge_categories is called).
@@ -1093,7 +1093,7 @@ _run_in_pty() {
 	cat > "$script_file" << SCRIPT
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
-mkdir -p "$HOME/.cache/mole"
+mkdir -p "$HOME/.cache/roomy"
 export XDG_CACHE_HOME="$HOME/.cache"
 export TERM="dumb"
 PURGE_SEARCH_PATHS=("$HOME/www")
@@ -1142,7 +1142,7 @@ SCRIPT
 	cat > "$script_file" << SCRIPT
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
-mkdir -p "$HOME/.cache/mole"
+mkdir -p "$HOME/.cache/roomy"
 export XDG_CACHE_HOME="$HOME/.cache"
 export TERM="dumb"
 PURGE_SEARCH_PATHS=("$HOME/www")

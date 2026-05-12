@@ -1,4 +1,4 @@
-# Makefile for Mole
+# Makefile for Roomy
 
 .PHONY: all build clean release
 

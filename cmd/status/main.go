@@ -1,4 +1,4 @@
-// Package main provides the mo status command for real-time system monitoring.
+// Package main provides the roomy status command for real-time system monitoring.
 package main
 
 import (
@@ -83,7 +83,7 @@ func getConfigPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "mole", "status_prefs")
+	return filepath.Join(home, ".config", "roomy", "status_prefs")
 }
 
 // loadCatHidden loads the cat hidden preference from config file.
@@ -199,7 +199,7 @@ func (m model) View() string {
 		termWidth = 80
 	}
 
-	header, mole := renderHeader(m.metrics, m.errMessage, m.animFrame, termWidth, m.catHidden)
+	header, roomy := renderHeader(m.metrics, m.errMessage, m.animFrame, termWidth, m.catHidden)
 	alertBar := renderProcessAlertBar(m.metrics.ProcessAlerts, termWidth)
 
 	var cardContent string
@@ -224,13 +224,13 @@ func (m model) View() string {
 		cardContent = renderTwoColumns(cards, termWidth)
 	}
 
-	// Combine header, mole, and cards with consistent spacing
+	// Combine header, roomy, and cards with consistent spacing
 	parts := []string{header}
 	if alertBar != "" {
 		parts = append(parts, alertBar)
 	}
-	if mole != "" {
-		parts = append(parts, mole)
+	if roomy != "" {
+		parts = append(parts, roomy)
 	}
 	parts = append(parts, cardContent)
 	output := lipgloss.JoinVertical(lipgloss.Left, parts...)

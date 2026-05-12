@@ -57,7 +57,7 @@ for ((run = 1; run <= RUNS; run++)); do
     err_file="$tmp_dir/err.$run"
     start_ms="$(now_ms)"
     set +e
-    MOLE_TEST_NO_AUTH=1 bash -c '
+    ROOMY_TEST_NO_AUTH=1 bash -c '
         set -euo pipefail
         # shellcheck source=/dev/null
         source "$1"

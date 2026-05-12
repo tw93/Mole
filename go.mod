@@ -1,4 +1,4 @@
-module github.com/tw93/mole
+module github.com/tw93/roomy
 
 go 1.25.0
 

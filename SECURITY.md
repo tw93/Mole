@@ -1,13 +1,13 @@
 # Security Policy
 
-Mole is a local system maintenance tool. It includes high-risk operations such as cleanup, uninstall, optimization, and artifact removal. We treat safety boundaries, deletion logic, and release integrity as security-sensitive areas.
+Roomy is a local system maintenance tool. It includes high-risk operations such as cleanup, uninstall, optimization, and artifact removal. We treat safety boundaries, deletion logic, and release integrity as security-sensitive areas.
 
 ## Reporting a Vulnerability
 
 Please report suspected security issues privately.
 
 - Email: `hitw93@gmail.com`
-- Subject line: `Mole security report`
+- Subject line: `Roomy security report`
 
 Do not open a public GitHub issue for an unpatched vulnerability.
 
@@ -15,7 +15,7 @@ If GitHub Security Advisories private reporting is enabled for the repository, y
 
 Include as much of the following as possible:
 
-- Mole version and install method
+- Roomy version and install method
 - macOS version
 - Exact command or workflow involved
 - Reproduction steps or proof of concept
@@ -55,14 +55,14 @@ Examples of security-relevant issues include:
 The following are usually normal bugs, feature requests, or documentation issues rather than security issues:
 
 - Cleanup misses that leave recoverable junk behind
-- False negatives where Mole refuses to clean something
+- False negatives where Roomy refuses to clean something
 - Cosmetic UI problems
 - Requests for broader or more aggressive cleanup behavior
 - Compatibility issues without a plausible security impact
 
 If you are unsure whether something is security-relevant, report it privately first.
 
-## Security-Focused Areas in Mole
+## Security-Focused Areas in Roomy
 
 The project pays particular attention to:
 

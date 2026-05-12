@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Ensure dependencies are loaded (only if running standalone)
-if [[ -z "${MOLE_FILE_OPS_LOADED:-}" ]]; then
+if [[ -z "${ROOMY_FILE_OPS_LOADED:-}" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     source "$SCRIPT_DIR/lib/core/file_ops.sh"
 fi

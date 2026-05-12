@@ -3,21 +3,21 @@
 
 set -euo pipefail
 
-readonly MOLE_OPTIMIZE_DIAG_CPU_THRESHOLD_DEFAULT=25
-readonly MOLE_OPTIMIZE_DIAG_SAMPLE_DELAY_DEFAULT=1
+readonly ROOMY_OPTIMIZE_DIAG_CPU_THRESHOLD_DEFAULT=25
+readonly ROOMY_OPTIMIZE_DIAG_SAMPLE_DELAY_DEFAULT=1
 
 opt_diag_cpu_threshold() {
-    local threshold="${MOLE_OPTIMIZE_DIAG_CPU_THRESHOLD:-$MOLE_OPTIMIZE_DIAG_CPU_THRESHOLD_DEFAULT}"
+    local threshold="${ROOMY_OPTIMIZE_DIAG_CPU_THRESHOLD:-$ROOMY_OPTIMIZE_DIAG_CPU_THRESHOLD_DEFAULT}"
     if ! [[ "$threshold" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-        threshold="$MOLE_OPTIMIZE_DIAG_CPU_THRESHOLD_DEFAULT"
+        threshold="$ROOMY_OPTIMIZE_DIAG_CPU_THRESHOLD_DEFAULT"
     fi
     printf '%s\n' "$threshold"
 }
 
 opt_diag_sample_delay() {
-    local delay="${MOLE_OPTIMIZE_DIAG_SAMPLE_DELAY:-$MOLE_OPTIMIZE_DIAG_SAMPLE_DELAY_DEFAULT}"
+    local delay="${ROOMY_OPTIMIZE_DIAG_SAMPLE_DELAY:-$ROOMY_OPTIMIZE_DIAG_SAMPLE_DELAY_DEFAULT}"
     if ! [[ "$delay" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-        delay="$MOLE_OPTIMIZE_DIAG_SAMPLE_DELAY_DEFAULT"
+        delay="$ROOMY_OPTIMIZE_DIAG_SAMPLE_DELAY_DEFAULT"
     fi
     printf '%s\n' "$delay"
 }
@@ -45,8 +45,8 @@ opt_diag_get_ps_sample() {
     local override=""
 
     case "$index" in
-        1) override="${MOLE_OPTIMIZE_PS_SAMPLE_1:-}" ;;
-        2) override="${MOLE_OPTIMIZE_PS_SAMPLE_2:-}" ;;
+        1) override="${ROOMY_OPTIMIZE_PS_SAMPLE_1:-}" ;;
+        2) override="${ROOMY_OPTIMIZE_PS_SAMPLE_2:-}" ;;
     esac
 
     if [[ -n "$override" ]]; then
@@ -58,8 +58,8 @@ opt_diag_get_ps_sample() {
 }
 
 opt_diag_get_spctl_status() {
-    if [[ -n "${MOLE_OPTIMIZE_SPCTL_STATUS:-}" ]]; then
-        printf '%s\n' "$MOLE_OPTIMIZE_SPCTL_STATUS"
+    if [[ -n "${ROOMY_OPTIMIZE_SPCTL_STATUS:-}" ]]; then
+        printf '%s\n' "$ROOMY_OPTIMIZE_SPCTL_STATUS"
         return 0
     fi
 
@@ -67,8 +67,8 @@ opt_diag_get_spctl_status() {
 }
 
 opt_diag_get_hdiutil_info() {
-    if [[ -n "${MOLE_OPTIMIZE_HDIUTIL_INFO:-}" ]]; then
-        printf '%s\n' "$MOLE_OPTIMIZE_HDIUTIL_INFO"
+    if [[ -n "${ROOMY_OPTIMIZE_HDIUTIL_INFO:-}" ]]; then
+        printf '%s\n' "$ROOMY_OPTIMIZE_HDIUTIL_INFO"
         return 0
     fi
 
@@ -124,7 +124,7 @@ opt_diag_family_label() {
 opt_diag_family_note() {
     case "$1" in
         cloudshell)
-            printf '%s\n' "External enterprise agent pressure detected. Mole will not terminate enterprise security processes; restart or policy checks must happen outside Mole."
+            printf '%s\n' "External enterprise agent pressure detected. Roomy will not terminate enterprise security processes; restart or policy checks must happen outside Roomy."
             ;;
         syspolicyd)
             printf '%s\n' "Gatekeeper and code-signature assessment activity is elevated."
@@ -315,7 +315,7 @@ opt_diag_offer_detach_candidates() {
         echo -e "    ${GRAY}${mount_path}${NC} ← ${image_path}"
     done <<< "$candidates"
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would offer detach for ${count} mounted image(s)"
         return 0
     fi
@@ -344,7 +344,7 @@ run_optimize_diagnostics() {
     local sample1 sample2 totals1 totals2 threshold delay
     sample1=$(opt_diag_get_ps_sample 1)
     delay=$(opt_diag_sample_delay)
-    if [[ -z "${MOLE_OPTIMIZE_PS_SAMPLE_1:-}" || -z "${MOLE_OPTIMIZE_PS_SAMPLE_2:-}" ]]; then
+    if [[ -z "${ROOMY_OPTIMIZE_PS_SAMPLE_1:-}" || -z "${ROOMY_OPTIMIZE_PS_SAMPLE_2:-}" ]]; then
         sleep "$delay"
     fi
     sample2=$(opt_diag_get_ps_sample 2)

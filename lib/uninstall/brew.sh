@@ -1,14 +1,14 @@
 #!/bin/bash
-# Mole - Homebrew Cask Uninstallation Support
+# Roomy - Homebrew Cask Uninstallation Support
 # Detects Homebrew-managed casks via Caskroom linkage and uninstalls them via brew
 
 set -euo pipefail
 
 # Prevent multiple sourcing
-if [[ -n "${MOLE_BREW_UNINSTALL_LOADED:-}" ]]; then
+if [[ -n "${ROOMY_BREW_UNINSTALL_LOADED:-}" ]]; then
     return 0
 fi
-readonly MOLE_BREW_UNINSTALL_LOADED=1
+readonly ROOMY_BREW_UNINSTALL_LOADED=1
 
 # Resolve a path to its absolute real path (follows symlinks)
 # Args: $1 - path to resolve
@@ -184,7 +184,7 @@ brew_uninstall_cask() {
     local cask_name="$1"
     local app_path="${2:-}"
 
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         debug_log "[DRY RUN] Would brew uninstall --cask --zap $cask_name"
         return 0
     fi

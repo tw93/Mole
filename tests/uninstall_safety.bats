@@ -200,7 +200,7 @@ EOF
 		|| { echo "missed legitimate LaunchAgent match"; exit 1; }
 }
 
-@test "ByHost cleanup routes through user-mode mole_delete (no sudo prompt)" {
+@test "ByHost cleanup routes through user-mode roomy_delete (no sudo prompt)" {
 	mkdir -p "$HOME/Library/Preferences/ByHost"
 	touch "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
 	mkdir -p "$HOME/Applications/TestApp.app"
@@ -210,8 +210,8 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/uninstall/batch.sh"
 
-trace="$HOME/mole_delete.log"
-mole_delete() {
+trace="$HOME/roomy_delete.log"
+roomy_delete() {
 	printf '%s|%s\n' "$1" "${2:-false}" >> "$trace"
 	return 0
 }
@@ -241,7 +241,7 @@ total_size_cleaned=0
 batch_uninstall_applications
 
 if grep -q "ByHost.*com.example.TestApp.*plist|true" "$trace"; then
-	echo "ByHost plist routed through sudo mole_delete"
+	echo "ByHost plist routed through sudo roomy_delete"
 	cat "$trace" >&2
 	exit 1
 fi

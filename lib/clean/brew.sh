@@ -19,7 +19,7 @@ clean_homebrew() {
         return 0
     fi
     # Skip if cleaned recently to avoid repeated heavy operations.
-    local brew_cache_file="${HOME}/.cache/mole/brew_last_cleanup"
+    local brew_cache_file="${HOME}/.cache/roomy/brew_last_cleanup"
     local cache_valid_days=7
     local should_skip=false
     if [[ -f "$brew_cache_file" ]]; then
@@ -48,9 +48,9 @@ clean_homebrew() {
     # Spinner reflects whether cleanup is skipped.
     if [[ -t 1 ]]; then
         if [[ "$skip_cleanup" == "true" ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Homebrew autoremove (cleanup skipped)..."
+            ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Homebrew autoremove (cleanup skipped)..."
         else
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Homebrew cleanup and autoremove..."
+            ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Homebrew cleanup and autoremove..."
         fi
     fi
     # Run cleanup/autoremove in parallel with timeout guard per command.

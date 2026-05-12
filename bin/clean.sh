@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mole - Clean command.
+# Roomy - Clean command.
 # Runs cleanup modules with optional sudo.
 # Supports dry-run and whitelist.
 
@@ -27,8 +27,8 @@ PROTECT_FINDER_METADATA=false
 EXTERNAL_VOLUME_TARGET=""
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
-MOLE_CONFIG_DIR="${MOLE_CONFIG_DIR:-$HOME/.config/mole}"
-EXPORT_LIST_FILE="$MOLE_CONFIG_DIR/clean-list.txt"
+ROOMY_CONFIG_DIR="${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}"
+EXPORT_LIST_FILE="$ROOMY_CONFIG_DIR/clean-list.txt"
 CURRENT_SECTION=""
 readonly PROTECTED_SW_DOMAINS=(
     # Web editors
@@ -57,7 +57,7 @@ readonly PROTECTED_SW_DOMAINS=(
 
 declare -a WHITELIST_PATTERNS=()
 WHITELIST_WARNINGS=()
-if [[ -f "$MOLE_CONFIG_DIR/whitelist" ]]; then
+if [[ -f "$ROOMY_CONFIG_DIR/whitelist" ]]; then
     while IFS= read -r line; do
         # shellcheck disable=SC2295
         line="${line#"${line%%[![:space:]]*}"}"
@@ -108,7 +108,7 @@ if [[ -f "$MOLE_CONFIG_DIR/whitelist" ]]; then
         fi
         [[ "$duplicate" == "true" ]] && continue
         WHITELIST_PATTERNS+=("$line")
-    done < "$MOLE_CONFIG_DIR/whitelist"
+    done < "$ROOMY_CONFIG_DIR/whitelist"
 else
     WHITELIST_PATTERNS=("${DEFAULT_WHITELIST_PATTERNS[@]}")
 fi
@@ -163,9 +163,9 @@ note_activity() {
 register_dry_run_cleanup_target() {
     local path="$1"
     local identity
-    identity=$(mole_path_identity "$path")
+    identity=$(roomy_path_identity "$path")
 
-    if [[ ${#DRY_RUN_SEEN_IDENTITIES[@]} -gt 0 ]] && mole_identity_in_list "$identity" "${DRY_RUN_SEEN_IDENTITIES[@]}"; then
+    if [[ ${#DRY_RUN_SEEN_IDENTITIES[@]} -gt 0 ]] && roomy_identity_in_list "$identity" "${DRY_RUN_SEEN_IDENTITIES[@]}"; then
         return 1
     fi
 
@@ -175,7 +175,7 @@ register_dry_run_cleanup_target() {
 
 # shellcheck disable=SC2329
 api_capture_clean_record() {
-    [[ -n "${MOLE_API_CLEAN_CAPTURE_FILE:-}" ]] || return 0
+    [[ -n "${ROOMY_API_CLEAN_CAPTURE_FILE:-}" ]] || return 0
 
     local kind="$1"
     local section="${2:-}"
@@ -208,7 +208,7 @@ api_capture_clean_record() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$kind" "$section" "$description" "$size_kb" "$item_count" \
         "$skipped_count" "$risk_level" "$risk_reason" "$admin_required" "$skip_reason" \
-        >> "$MOLE_API_CLEAN_CAPTURE_FILE" 2> /dev/null || true
+        >> "$ROOMY_API_CLEAN_CAPTURE_FILE" 2> /dev/null || true
 }
 
 CLEANUP_DONE=false
@@ -478,13 +478,13 @@ safe_clean() {
     local total_count=0
     local skipped_count=0
     local removal_failed_count=0
-    local permission_start=${MOLE_PERMISSION_DENIED_COUNT:-0}
+    local permission_start=${ROOMY_PERMISSION_DENIED_COUNT:-0}
 
     local show_scan_feedback=false
     if [[ ${#targets[@]} -gt 20 && -t 1 ]]; then
         show_scan_feedback=true
         stop_section_spinner
-        MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning ${#targets[@]} items..."
+        ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Scanning ${#targets[@]} items..."
     fi
 
     local _perf_scan_start
@@ -527,7 +527,7 @@ safe_clean() {
     debug_log "Cleaning: $description, ${#existing_paths[@]} items"
 
     # Enhanced debug output with risk level and details
-    if [[ "${MO_DEBUG:-}" == "1" && ${#existing_paths[@]} -gt 0 ]]; then
+    if [[ "${ROOMY_DEBUG:-}" == "1" && ${#existing_paths[@]} -gt 0 ]]; then
         # Determine risk level for this cleanup operation
         local risk_info
         risk_info=$(classify_cleanup_risk "$description" "${existing_paths[0]}")
@@ -571,7 +571,7 @@ safe_clean() {
     if [[ ${#existing_paths[@]} -gt 10 ]]; then
         show_spinner=true
         local total_paths=${#existing_paths[@]}
-        if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."; fi
+        if [[ -t 1 ]]; then ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."; fi
     fi
 
     local cleaning_spinner_started=false
@@ -596,7 +596,7 @@ safe_clean() {
         # Heuristic: mostly files -> bulk stat is faster than per-file subshells.
         if [[ $dir_count -lt 5 && ${#existing_paths[@]} -gt 20 ]]; then
             if [[ -t 1 && "$show_spinner" == "false" ]]; then
-                MOLE_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."
+                ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Scanning items..."
                 show_spinner=true
             fi
 
@@ -653,7 +653,7 @@ safe_clean() {
                     pids+=($!)
                     idx=$((idx + 1))
 
-                    if ((${#pids[@]} >= MOLE_MAX_PARALLEL_JOBS)); then
+                    if ((${#pids[@]} >= ROOMY_MAX_PARALLEL_JOBS)); then
                         wait "${pids[0]}" 2> /dev/null || true
                         pids=("${pids[@]:1}")
                         completed=$((completed + 1))
@@ -685,7 +685,7 @@ safe_clean() {
         # Read results back in original order.
         # Start spinner for cleaning phase
         if [[ "$DRY_RUN" != "true" && ${#existing_paths[@]} -gt 0 && -t 1 ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Cleaning..."
+            ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Cleaning..."
             cleaning_spinner_started=true
         fi
         idx=0
@@ -729,7 +729,7 @@ safe_clean() {
 
         # Start spinner for cleaning phase (small batch)
         if [[ "$DRY_RUN" != "true" && ${#existing_paths[@]} -gt 0 && -t 1 ]]; then
-            MOLE_SPINNER_PREFIX="  " start_inline_spinner "Cleaning..."
+            ROOMY_SPINNER_PREFIX="  " start_inline_spinner "Cleaning..."
             cleaning_spinner_started=true
         fi
         local idx=0
@@ -770,7 +770,7 @@ safe_clean() {
         stop_inline_spinner
     fi
 
-    local permission_end=${MOLE_PERMISSION_DENIED_COUNT:-0}
+    local permission_end=${ROOMY_PERMISSION_DENIED_COUNT:-0}
     # Track permission failures in debug output (avoid noisy user warnings).
     if [[ $permission_end -gt $permission_start && $removed_any -eq 0 ]]; then
         debug_log "Permission denied while cleaning: $description"
@@ -869,7 +869,7 @@ safe_clean() {
 
 start_cleanup() {
     # Set current command for operation logging
-    export MOLE_CURRENT_COMMAND="clean"
+    export ROOMY_CURRENT_COMMAND="clean"
     log_operation_session_start "clean"
     DRY_RUN_SEEN_IDENTITIES=()
 
@@ -903,11 +903,11 @@ start_cleanup() {
 
         ensure_user_file "$EXPORT_LIST_FILE"
         cat > "$EXPORT_LIST_FILE" << EOF
-# Mole Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
+# Roomy Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
 #
 # How to protect files:
-# 1. Copy any path below to ${MOLE_CONFIG_DIR/#$HOME/~}/whitelist
-# 2. Run: mo clean --whitelist
+# 1. Copy any path below to ${ROOMY_CONFIG_DIR/#$HOME/~}/whitelist
+# 2. Run: roomy clean --whitelist
 #
 # Example:
 #   /Users/*/Library/Caches/com.example.app
@@ -922,7 +922,7 @@ EOF
             echo ""
         else
             SYSTEM_CLEAN=false
-            echo -e "${GRAY}${ICON_WARNING} System caches need sudo, run ${NC}sudo -v && mo clean --dry-run${GRAY} for full preview${NC}"
+            echo -e "${GRAY}${ICON_WARNING} System caches need sudo, run ${NC}sudo -v && roomy clean --dry-run${GRAY} for full preview${NC}"
             echo ""
         fi
         return
@@ -990,7 +990,7 @@ perform_cleanup() {
 
     # Test mode skips expensive scans and returns minimal output.
     local test_mode_enabled=false
-    if [[ -z "$EXTERNAL_VOLUME_TARGET" && "${MOLE_TEST_MODE:-0}" == "1" ]]; then
+    if [[ -z "$EXTERNAL_VOLUME_TARGET" && "${ROOMY_TEST_MODE:-0}" == "1" ]]; then
         test_mode_enabled=true
         if [[ "$DRY_RUN" == "true" ]]; then
             echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
@@ -1250,7 +1250,7 @@ perform_cleanup() {
             } >> "$EXPORT_LIST_FILE"
 
             summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
-            summary_details+=("Use ${GRAY}mo clean --whitelist${NC} to add protection rules")
+            summary_details+=("Use ${GRAY}roomy clean --whitelist${NC} to add protection rules")
         else
             local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
 
@@ -1265,8 +1265,8 @@ perform_cleanup() {
             summary_details+=("$summary_line")
 
             # Movie comparison only if >= 1GB
-            if ((total_size_cleaned >= MOLE_ONE_GIB_KB)); then
-                local freed_gb=$((total_size_cleaned / MOLE_ONE_GIB_KB))
+            if ((total_size_cleaned >= ROOMY_ONE_GIB_KB)); then
+                local freed_gb=$((total_size_cleaned / ROOMY_ONE_GIB_KB))
                 local movies=$((freed_gb * 10 / 45))
 
                 if [[ $movies -gt 0 ]]; then
@@ -1299,11 +1299,11 @@ perform_cleanup() {
     # Log session end with summary
     log_operation_session_end "clean" "$files_cleaned" "$total_size_cleaned"
 
-    if [[ -n "${MOLE_API_CLEAN_METRICS_FILE:-}" ]]; then
+    if [[ -n "${ROOMY_API_CLEAN_METRICS_FILE:-}" ]]; then
         local metrics_free_space metrics_movies=0 metrics_equivalent=""
         metrics_free_space=$(get_free_space)
-        if ((total_size_cleaned >= MOLE_ONE_GIB_KB)); then
-            local metrics_freed_gb=$((total_size_cleaned / MOLE_ONE_GIB_KB))
+        if ((total_size_cleaned >= ROOMY_ONE_GIB_KB)); then
+            local metrics_freed_gb=$((total_size_cleaned / ROOMY_ONE_GIB_KB))
             metrics_movies=$((metrics_freed_gb * 10 / 45))
             if [[ $metrics_movies -eq 1 ]]; then
                 metrics_equivalent="Equivalent to ~1 4K movie of storage."
@@ -1318,7 +1318,7 @@ perform_cleanup() {
             printf 'category_count\t%s\n' "$total_items"
             printf 'free_space\t%s\n' "$metrics_free_space"
             printf 'equivalent\t%s\n' "$metrics_equivalent"
-        } > "$MOLE_API_CLEAN_METRICS_FILE" 2> /dev/null || true
+        } > "$ROOMY_API_CLEAN_METRICS_FILE" 2> /dev/null || true
     fi
 
     print_summary_block "$summary_heading" "${summary_details[@]}"
@@ -1330,7 +1330,7 @@ run_with_shell_timeout() {
     shift || true
     # Functions (for example safe_clean) are available only in the current shell.
     # Force the shell fallback path so timeout can execute shell functions directly.
-    MO_TIMEOUT_BIN="" MO_TIMEOUT_PERL_BIN="" run_with_timeout "$duration" "$@"
+    ROOMY_TIMEOUT_BIN="" ROOMY_TIMEOUT_PERL_BIN="" run_with_timeout "$duration" "$@"
 }
 
 # shellcheck disable=SC2329  # Invoked indirectly via run_with_timeout fallback.
@@ -1347,11 +1347,11 @@ main() {
                 exit 0
                 ;;
             "--debug")
-                export MO_DEBUG=1
+                export ROOMY_DEBUG=1
                 ;;
             "--dry-run" | "-n")
                 DRY_RUN=true
-                export MOLE_DRY_RUN=1
+                export ROOMY_DRY_RUN=1
                 ;;
             "--external")
                 shift
@@ -1367,18 +1367,18 @@ main() {
                 exit 0
                 ;;
             "--select" | "--categories" | "--exclude")
-                echo "mo clean $1 was removed in this release." >&2
-                echo "Use 'mo clean --dry-run' to preview cleanup and 'mo clean --whitelist' to protect paths." >&2
+                echo "roomy clean $1 was removed in this release." >&2
+                echo "Use 'roomy clean --dry-run' to preview cleanup and 'roomy clean --whitelist' to protect paths." >&2
                 exit 1
                 ;;
             -*)
-                echo "Unknown option for mo clean: $1" >&2
-                echo "Run 'mo clean --help' for usage." >&2
+                echo "Unknown option for roomy clean: $1" >&2
+                echo "Run 'roomy clean --help' for usage." >&2
                 exit 1
                 ;;
             *)
-                echo "Unexpected argument for mo clean: $1" >&2
-                echo "Run 'mo clean --help' for usage." >&2
+                echo "Unexpected argument for roomy clean: $1" >&2
+                echo "Run 'roomy clean --help' for usage." >&2
                 exit 1
                 ;;
         esac

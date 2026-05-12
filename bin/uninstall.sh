@@ -1,13 +1,13 @@
 #!/bin/bash
-# Mole - Uninstall command.
+# Roomy - Uninstall command.
 # Interactive app uninstaller.
 # Removes app files and leftovers.
 
 set -euo pipefail
 
 # Preserve user's locale for app display name lookup.
-readonly MOLE_UNINSTALL_USER_LC_ALL="${LC_ALL:-}"
-readonly MOLE_UNINSTALL_USER_LANG="${LANG:-}"
+readonly ROOMY_UNINSTALL_USER_LC_ALL="${LC_ALL:-}"
+readonly ROOMY_UNINSTALL_USER_LANG="${LANG:-}"
 
 # Fix locale issues on non-English systems.
 export LC_ALL=C
@@ -31,15 +31,15 @@ total_items=0
 files_cleaned=0
 total_size_cleaned=0
 
-MOLE_CACHE_DIR="${MOLE_CACHE_DIR:-$HOME/.cache/mole}"
-readonly MOLE_UNINSTALL_META_CACHE_DIR="$MOLE_CACHE_DIR"
-readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v1"
-readonly MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
-readonly MOLE_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
-readonly MOLE_UNINSTALL_SCAN_SPINNER_DELAY_SEC="0.25"
-readonly MOLE_UNINSTALL_INLINE_METADATA_LIMIT="${MOLE_UNINSTALL_INLINE_METADATA_LIMIT:-0}"
-readonly MOLE_UNINSTALL_EPOCH_FLOOR=978307200
-readonly MOLE_UNINSTALL_INLINE_MDLS_TIMEOUT_SEC="0.08"
+ROOMY_CACHE_DIR="${ROOMY_CACHE_DIR:-$HOME/.cache/roomy}"
+readonly ROOMY_UNINSTALL_META_CACHE_DIR="$ROOMY_CACHE_DIR"
+readonly ROOMY_UNINSTALL_META_CACHE_FILE="$ROOMY_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v1"
+readonly ROOMY_UNINSTALL_META_CACHE_LOCK="${ROOMY_UNINSTALL_META_CACHE_FILE}.lock"
+readonly ROOMY_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
+readonly ROOMY_UNINSTALL_SCAN_SPINNER_DELAY_SEC="0.25"
+readonly ROOMY_UNINSTALL_INLINE_METADATA_LIMIT="${ROOMY_UNINSTALL_INLINE_METADATA_LIMIT:-0}"
+readonly ROOMY_UNINSTALL_EPOCH_FLOOR=978307200
+readonly ROOMY_UNINSTALL_INLINE_MDLS_TIMEOUT_SEC="0.08"
 
 uninstall_relative_time_from_epoch() {
     local value_epoch="${1:-0}"
@@ -50,7 +50,7 @@ uninstall_relative_time_from_epoch() {
         return 0
     fi
 
-    if [[ $value_epoch -lt $MOLE_UNINSTALL_EPOCH_FLOOR ]]; then
+    if [[ $value_epoch -lt $ROOMY_UNINSTALL_EPOCH_FLOOR ]]; then
         echo "Unknown"
         return 0
     fi
@@ -105,10 +105,10 @@ uninstall_resolve_display_name() {
 
     if [[ -f "$app_path/Contents/Info.plist" ]]; then
         local md_display_name
-        if [[ -n "$MOLE_UNINSTALL_USER_LC_ALL" ]]; then
-            md_display_name=$(run_with_timeout 0.04 env LC_ALL="$MOLE_UNINSTALL_USER_LC_ALL" LANG="$MOLE_UNINSTALL_USER_LANG" mdls -name kMDItemDisplayName -raw "$app_path" 2> /dev/null || echo "")
-        elif [[ -n "$MOLE_UNINSTALL_USER_LANG" ]]; then
-            md_display_name=$(run_with_timeout 0.04 env LANG="$MOLE_UNINSTALL_USER_LANG" mdls -name kMDItemDisplayName -raw "$app_path" 2> /dev/null || echo "")
+        if [[ -n "$ROOMY_UNINSTALL_USER_LC_ALL" ]]; then
+            md_display_name=$(run_with_timeout 0.04 env LC_ALL="$ROOMY_UNINSTALL_USER_LC_ALL" LANG="$ROOMY_UNINSTALL_USER_LANG" mdls -name kMDItemDisplayName -raw "$app_path" 2> /dev/null || echo "")
+        elif [[ -n "$ROOMY_UNINSTALL_USER_LANG" ]]; then
+            md_display_name=$(run_with_timeout 0.04 env LANG="$ROOMY_UNINSTALL_USER_LANG" mdls -name kMDItemDisplayName -raw "$app_path" 2> /dev/null || echo "")
         else
             md_display_name=$(run_with_timeout 0.04 mdls -name kMDItemDisplayName -raw "$app_path" 2> /dev/null || echo "")
         fi
@@ -229,18 +229,18 @@ uninstall_collect_inline_metadata() {
 
     local last_used_epoch=0
     local metadata_date
-    metadata_date=$(run_with_timeout "$MOLE_UNINSTALL_INLINE_MDLS_TIMEOUT_SEC" mdls -name kMDItemLastUsedDate -raw "$app_path" 2> /dev/null || echo "")
+    metadata_date=$(run_with_timeout "$ROOMY_UNINSTALL_INLINE_MDLS_TIMEOUT_SEC" mdls -name kMDItemLastUsedDate -raw "$app_path" 2> /dev/null || echo "")
     if [[ "$metadata_date" != "(null)" && -n "$metadata_date" ]]; then
         last_used_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S %z" "$metadata_date" "+%s" 2> /dev/null || echo "0")
     fi
 
-    if [[ "$last_used_epoch" =~ ^[0-9]+$ && $last_used_epoch -lt $MOLE_UNINSTALL_EPOCH_FLOOR ]]; then
+    if [[ "$last_used_epoch" =~ ^[0-9]+$ && $last_used_epoch -lt $ROOMY_UNINSTALL_EPOCH_FLOOR ]]; then
         last_used_epoch=0
     fi
 
     # Fallback to app mtime so first scan does not show "...".
     if [[ ! "$last_used_epoch" =~ ^[0-9]+$ || $last_used_epoch -le 0 ]]; then
-        if [[ "$app_mtime" =~ ^[0-9]+$ && $app_mtime -gt $MOLE_UNINSTALL_EPOCH_FLOOR ]]; then
+        if [[ "$app_mtime" =~ ^[0-9]+$ && $app_mtime -gt $ROOMY_UNINSTALL_EPOCH_FLOOR ]]; then
             last_used_epoch="$app_mtime"
         else
             last_used_epoch=0
@@ -259,22 +259,22 @@ start_uninstall_metadata_refresh() {
 
     (
         _refresh_debug() {
-            if [[ "${MO_DEBUG:-}" == "1" ]]; then
+            if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
                 local ts
                 ts=$(date "+%Y-%m-%d %H:%M:%S" 2> /dev/null || echo "?")
-                echo "[$ts] DEBUG: [metadata-refresh] $*" >> "${HOME}/.config/mole/mole_debug_session.log" 2> /dev/null || true
+                echo "[$ts] DEBUG: [metadata-refresh] $*" >> "${HOME}/.config/roomy/roomy_debug_session.log" 2> /dev/null || true
             fi
         }
 
-        ensure_user_dir "$MOLE_UNINSTALL_META_CACHE_DIR"
-        ensure_user_file "$MOLE_UNINSTALL_META_CACHE_FILE"
-        if [[ ! -r "$MOLE_UNINSTALL_META_CACHE_FILE" ]]; then
-            if ! : > "$MOLE_UNINSTALL_META_CACHE_FILE" 2> /dev/null; then
+        ensure_user_dir "$ROOMY_UNINSTALL_META_CACHE_DIR"
+        ensure_user_file "$ROOMY_UNINSTALL_META_CACHE_FILE"
+        if [[ ! -r "$ROOMY_UNINSTALL_META_CACHE_FILE" ]]; then
+            if ! : > "$ROOMY_UNINSTALL_META_CACHE_FILE" 2> /dev/null; then
                 _refresh_debug "Cannot create cache file, aborting"
                 exit 0
             fi
         fi
-        if [[ ! -w "$MOLE_UNINSTALL_META_CACHE_FILE" ]]; then
+        if [[ ! -w "$ROOMY_UNINSTALL_META_CACHE_FILE" ]]; then
             _refresh_debug "Cache file not writable, aborting"
             exit 0
         fi
@@ -309,7 +309,7 @@ start_uninstall_metadata_refresh() {
                     last_used_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S %z" "$metadata_date" "+%s" 2> /dev/null || echo "0")
                 fi
 
-                if [[ ! "$last_used_epoch" =~ ^[0-9]+$ || $last_used_epoch -le 0 || $last_used_epoch -lt $MOLE_UNINSTALL_EPOCH_FLOOR ]]; then
+                if [[ ! "$last_used_epoch" =~ ^[0-9]+$ || $last_used_epoch -le 0 || $last_used_epoch -lt $ROOMY_UNINSTALL_EPOCH_FLOOR ]]; then
                     last_used_epoch=0
                 fi
 
@@ -344,7 +344,7 @@ start_uninstall_metadata_refresh() {
             exit 0
         fi
 
-        if ! uninstall_acquire_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"; then
+        if ! uninstall_acquire_metadata_lock "$ROOMY_UNINSTALL_META_CACHE_LOCK"; then
             _refresh_debug "Failed to acquire lock, aborting merge"
             rm -f "$updates_file"
             exit 0
@@ -353,7 +353,7 @@ start_uninstall_metadata_refresh() {
         local merged_file
         merged_file=$(mktemp 2> /dev/null) || {
             _refresh_debug "mktemp for merge failed, aborting"
-            uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
+            uninstall_release_metadata_lock "$ROOMY_UNINSTALL_META_CACHE_LOCK"
             rm -f "$updates_file"
             exit 0
         }
@@ -366,11 +366,11 @@ start_uninstall_metadata_refresh() {
                     print updates[path]
                 }
             }
-        ' "$updates_file" "$MOLE_UNINSTALL_META_CACHE_FILE" > "$merged_file"
+        ' "$updates_file" "$ROOMY_UNINSTALL_META_CACHE_FILE" > "$merged_file"
 
-        uninstall_persist_cache_file "$merged_file" "$MOLE_UNINSTALL_META_CACHE_FILE"
+        uninstall_persist_cache_file "$merged_file" "$ROOMY_UNINSTALL_META_CACHE_FILE"
 
-        uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
+        uninstall_release_metadata_lock "$ROOMY_UNINSTALL_META_CACHE_LOCK"
         rm -f "$updates_file"
         rm -f "$refresh_file" 2> /dev/null || true
     ) > /dev/null 2>&1 &
@@ -552,9 +552,9 @@ scan_applications() {
     : > "$uncached_rows_file"
     : > "$scan_status_file"
 
-    ensure_user_dir "$MOLE_UNINSTALL_META_CACHE_DIR"
-    ensure_user_file "$MOLE_UNINSTALL_META_CACHE_FILE"
-    local cache_source="$MOLE_UNINSTALL_META_CACHE_FILE"
+    ensure_user_dir "$ROOMY_UNINSTALL_META_CACHE_DIR"
+    ensure_user_file "$ROOMY_UNINSTALL_META_CACHE_FILE"
+    local cache_source="$ROOMY_UNINSTALL_META_CACHE_FILE"
     local cache_source_is_temp=false
     if [[ ! -r "$cache_source" ]]; then
         cache_source=$(create_temp_file)
@@ -748,7 +748,7 @@ scan_applications() {
         # shellcheck disable=SC2329  # Function invoked indirectly via trap
         cleanup_spinner() { exit 0; }
         trap cleanup_spinner TERM INT EXIT
-        sleep "$MOLE_UNINSTALL_SCAN_SPINNER_DELAY_SEC" 2> /dev/null || sleep 1
+        sleep "$ROOMY_UNINSTALL_SCAN_SPINNER_DELAY_SEC" 2> /dev/null || sleep 1
         [[ -f "$scan_status_file" ]] || exit 0
         local spinner_chars="|/-\\"
         local i=0
@@ -819,7 +819,7 @@ scan_applications() {
     local current_epoch
     current_epoch=$(get_epoch_seconds)
     local inline_metadata_count=0
-    local inline_metadata_effective_limit=$MOLE_UNINSTALL_INLINE_METADATA_LIMIT
+    local inline_metadata_effective_limit=$ROOMY_UNINSTALL_INLINE_METADATA_LIMIT
     [[ $cache_source_is_temp == true && $inline_metadata_effective_limit -gt 0 ]] && inline_metadata_effective_limit=99999
     local metadata_total=0
     metadata_total=$(wc -l < "$merged_file" 2> /dev/null || echo "0")
@@ -830,8 +830,8 @@ scan_applications() {
     if [[ "$inline_metadata_effective_limit" -eq 0 ]]; then
         awk -F'|' \
             -v now="$current_epoch" \
-            -v floor="$MOLE_UNINSTALL_EPOCH_FLOOR" \
-            -v ttl="$MOLE_UNINSTALL_META_REFRESH_TTL" \
+            -v floor="$ROOMY_UNINSTALL_EPOCH_FLOOR" \
+            -v ttl="$ROOMY_UNINSTALL_META_REFRESH_TTL" \
             -v refresh_out="$refresh_file" \
             -v snapshot_out="$cache_snapshot_file" \
             -v apps_out="$temp_file" '
@@ -960,12 +960,12 @@ scan_applications() {
                 final_size=$(bytes_to_human "$((cached_size_kb * 1024))")
             fi
 
-            if [[ "$final_epoch" =~ ^[0-9]+$ && $final_epoch -lt $MOLE_UNINSTALL_EPOCH_FLOOR ]]; then
+            if [[ "$final_epoch" =~ ^[0-9]+$ && $final_epoch -lt $ROOMY_UNINSTALL_EPOCH_FLOOR ]]; then
                 final_epoch=0
             fi
             # Fallback to app mtime to avoid unknown "last used" on first scan.
             if [[ ! "$final_epoch" =~ ^[0-9]+$ || $final_epoch -le 0 ]]; then
-                if [[ "$app_mtime" =~ ^[0-9]+$ && $app_mtime -gt $MOLE_UNINSTALL_EPOCH_FLOOR ]]; then
+                if [[ "$app_mtime" =~ ^[0-9]+$ && $app_mtime -gt $ROOMY_UNINSTALL_EPOCH_FLOOR ]]; then
                     final_epoch="$app_mtime"
                 fi
             fi
@@ -986,7 +986,7 @@ scan_applications() {
                 needs_refresh=true
             else
                 local cache_age=$((current_epoch - cached_updated_epoch))
-                if [[ $cache_age -gt $MOLE_UNINSTALL_META_REFRESH_TTL ]]; then
+                if [[ $cache_age -gt $ROOMY_UNINSTALL_META_REFRESH_TTL ]]; then
                     needs_refresh=true
                 fi
             fi
@@ -1025,9 +1025,9 @@ scan_applications() {
 
     update_scan_status "Updating cache..." "0" "0"
     if [[ -s "$cache_snapshot_file" ]]; then
-        if uninstall_acquire_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"; then
-            uninstall_persist_cache_file "$cache_snapshot_file" "$MOLE_UNINSTALL_META_CACHE_FILE"
-            uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
+        if uninstall_acquire_metadata_lock "$ROOMY_UNINSTALL_META_CACHE_LOCK"; then
+            uninstall_persist_cache_file "$cache_snapshot_file" "$ROOMY_UNINSTALL_META_CACHE_FILE"
+            uninstall_release_metadata_lock "$ROOMY_UNINSTALL_META_CACHE_LOCK"
         fi
     fi
 
@@ -1086,9 +1086,9 @@ load_applications() {
 # Cleanup: restore cursor and kill keepalive.
 cleanup() {
     local exit_code="${1:-$?}"
-    if [[ "${MOLE_ALT_SCREEN_ACTIVE:-}" == "1" ]]; then
+    if [[ "${ROOMY_ALT_SCREEN_ACTIVE:-}" == "1" ]]; then
         leave_alt_screen
-        unset MOLE_ALT_SCREEN_ACTIVE
+        unset ROOMY_ALT_SCREEN_ACTIVE
     fi
     if [[ -n "${sudo_keepalive_pid:-}" ]]; then
         kill "$sudo_keepalive_pid" 2> /dev/null || true
@@ -1236,7 +1236,7 @@ uninstall_list_detect_cask() {
 }
 
 # Read-only listing: surface each installed app's display name, bundle id,
-# the exact name `mo uninstall` accepts, and human-readable size. Reuses the
+# the exact name `roomy uninstall` accepts, and human-readable size. Reuses the
 # existing scanner so the output stays in lockstep with what the destructive
 # path sees.
 uninstall_list_apps() {
@@ -1253,7 +1253,7 @@ uninstall_list_apps() {
     fi
     rm -f "$apps_file"
 
-    # Auto-switch to JSON when stdout is piped, matching `mo status`.
+    # Auto-switch to JSON when stdout is piped, matching `roomy status`.
     local format="text"
     if [[ ! -t 1 ]]; then
         format="json"
@@ -1345,18 +1345,18 @@ uninstall_list_apps() {
             "$size_display"
     done
 
-    printf '\n%d application(s)  |  Remove with: mo uninstall <UNINSTALL NAME>\n\n' "$total"
+    printf '\n%d application(s)  |  Remove with: roomy uninstall <UNINSTALL NAME>\n\n' "$total"
     return 0
 }
 
 main() {
     # Set current command for operation logging
-    export MOLE_CURRENT_COMMAND="uninstall"
+    export ROOMY_CURRENT_COMMAND="uninstall"
     log_operation_session_start "uninstall"
 
     # Default to Trash routing so an accidental uninstall is recoverable.
     # The caller can opt back into rm -rf with --permanent. See #723.
-    export MOLE_DELETE_MODE="${MOLE_DELETE_MODE:-trash}"
+    export ROOMY_DELETE_MODE="${ROOMY_DELETE_MODE:-trash}"
 
     # Parse flags and collect app name arguments
     local -a app_name_args=()
@@ -1368,26 +1368,26 @@ main() {
                 exit 0
                 ;;
             "--debug")
-                export MO_DEBUG=1
+                export ROOMY_DEBUG=1
                 ;;
             "--dry-run" | "-n")
-                export MOLE_DRY_RUN=1
+                export ROOMY_DRY_RUN=1
                 ;;
             "--permanent")
-                export MOLE_DELETE_MODE="permanent"
+                export ROOMY_DELETE_MODE="permanent"
                 ;;
             "--list")
                 list_mode=1
                 ;;
             "--whitelist")
                 echo "Unknown uninstall option: $arg"
-                echo "Whitelist management is currently supported by: mo clean --whitelist / mo optimize --whitelist"
-                echo "Use 'mo uninstall --help' for supported options."
+                echo "Whitelist management is currently supported by: roomy clean --whitelist / roomy optimize --whitelist"
+                echo "Use 'roomy uninstall --help' for supported options."
                 exit 1
                 ;;
             -*)
                 echo "Unknown uninstall option: $arg"
-                echo "Use 'mo uninstall --help' for supported options."
+                echo "Use 'roomy uninstall --help' for supported options."
                 exit 1
                 ;;
             *)
@@ -1404,7 +1404,7 @@ main() {
     fi
 
     hide_cursor
-    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+    if [[ "${ROOMY_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No app files or settings will be modified"
         printf '\n'
     fi
@@ -1451,7 +1451,7 @@ main() {
         done
 
         printf '\n'
-        if [[ "${MOLE_API_AUTO_CONFIRM:-0}" == "1" ]]; then
+        if [[ "${ROOMY_API_AUTO_CONFIRM:-0}" == "1" ]]; then
             echo "Proceed with uninstallation? [auto-confirmed]"
         else
             printf "Proceed with uninstallation? [y/N] "
@@ -1471,7 +1471,7 @@ main() {
     local cached_apps_file=""
     local cached_inventory_fingerprint=""
     while true; do
-        unset MOLE_INLINE_LOADING MOLE_MANAGED_ALT_SCREEN
+        unset ROOMY_INLINE_LOADING ROOMY_MANAGED_ALT_SCREEN
 
         if [[ $first_scan == false ]]; then
             echo -e "${GRAY}Checking application list...${NC}" >&2

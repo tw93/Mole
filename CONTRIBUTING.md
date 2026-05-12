@@ -1,4 +1,4 @@
-# Contributing to Mole
+# Contributing to Roomy
 
 ## Setup
 
@@ -123,14 +123,14 @@ stop_inline_spinner "Complete"
 Enable debug output with `--debug`:
 
 ```bash
-mo --debug clean
+roomy --debug clean
 ./bin/clean.sh --debug
 ```
 
-Modules check the internal `MO_DEBUG` variable:
+Modules check the internal `ROOMY_DEBUG` variable:
 
 ```bash
-if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+if [[ "${ROOMY_DEBUG:-0}" == "1" ]]; then
     echo "[MODULE] Debug message" >&2
 fi
 ```
@@ -142,11 +142,11 @@ Format: `[MODULE_NAME] message` output to stderr.
 - macOS 10.14 or newer, works on Intel and Apple Silicon
 - Default macOS Bash 3.2+ plus administrator privileges for cleanup tasks
 - Install Command Line Tools with `xcode-select --install` for curl, tar, and related utilities
-- Go 1.24+ is required to build the `mo status` or `mo analyze` TUI binaries locally.
+- Go 1.24+ is required to build the `roomy status` or `roomy analyze` TUI binaries locally.
 
 ## Go Components
 
-`mo status` and `mo analyze` use Go with Bubble Tea for interactive dashboards.
+`roomy status` and `roomy analyze` use Go with Bubble Tea for interactive dashboards.
 
 **Code organization:**
 

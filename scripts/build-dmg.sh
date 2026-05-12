@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_BUNDLE="${APP_BUNDLE:-$ROOT_DIR/.build/MoleUI.app}"
-DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Mole}"
+APP_BUNDLE="${APP_BUNDLE:-$ROOT_DIR/.build/Roomy.app}"
+DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Roomy}"
 DMGMAKER_REPO="${DMGMAKER_REPO:-https://github.com/saihgupr/DMGMaker.git}"
 DMGMAKER_REF="${DMGMAKER_REF:-v1.0.3}"
 DMGMAKER_DIR="${DMGMAKER_DIR:-$ROOT_DIR/.build/DMGMaker}"
@@ -33,7 +33,7 @@ prepare_dmgmaker() {
 require_tool swift
 
 if [[ "$BUILD_APP" == "1" ]]; then
-    printf 'Building unsigned MoleUI app bundle for DMG packaging...\n'
+    printf 'Building unsigned RoomyUI app bundle for DMG packaging...\n'
     SKIP_SIGN="$SKIP_SIGN" NOTARIZE_APP=0 APP_BUNDLE="$APP_BUNDLE" "$ROOT_DIR/scripts/build-app.sh"
 fi
 

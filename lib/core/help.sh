@@ -1,7 +1,7 @@
 #!/bin/bash
 
 show_clean_help() {
-    echo "Usage: mo clean [OPTIONS]"
+    echo "Usage: roomy clean [OPTIONS]"
     echo ""
     echo "Clean up disk space by removing caches, logs, temporary files, and app leftovers from already-uninstalled apps."
     echo ""
@@ -14,7 +14,7 @@ show_clean_help() {
 }
 
 show_installer_help() {
-    echo "Usage: mo installer [OPTIONS]"
+    echo "Usage: roomy installer [OPTIONS]"
     echo ""
     echo "Find and remove installer files (.dmg, .pkg, .iso, .xip, .zip)."
     echo ""
@@ -25,7 +25,7 @@ show_installer_help() {
 }
 
 show_optimize_help() {
-    echo "Usage: mo optimize [OPTIONS]"
+    echo "Usage: roomy optimize [OPTIONS]"
     echo ""
     echo "Refresh system caches and services, repair safe maintenance issues."
     echo ""
@@ -37,7 +37,7 @@ show_optimize_help() {
 }
 
 show_touchid_help() {
-    echo "Usage: mo touchid [COMMAND]"
+    echo "Usage: roomy touchid [COMMAND]"
     echo ""
     echo "Configure Touch ID for sudo authentication."
     echo ""
@@ -54,21 +54,21 @@ show_touchid_help() {
 }
 
 show_uninstall_help() {
-    echo "Usage: mo uninstall [OPTIONS] [APP_NAME ...]"
+    echo "Usage: roomy uninstall [OPTIONS] [APP_NAME ...]"
     echo ""
     echo "Interactively remove applications and their leftover files."
     echo "Optionally specify one or more app names to uninstall directly."
-    echo "For leftovers from apps that are already gone, use mo clean."
+    echo "For leftovers from apps that are already gone, use roomy clean."
     echo ""
     echo "Examples:"
-    echo "  mo uninstall                   Open interactive app selector"
-    echo "  mo uninstall slack             Uninstall Slack"
-    echo "  mo uninstall slack zoom        Uninstall Slack and Zoom"
-    echo "  mo uninstall --dry-run slack   Preview Slack uninstallation"
-    echo "  mo uninstall --list            Show installed apps and the names mo uninstall accepts"
+    echo "  roomy uninstall                   Open interactive app selector"
+    echo "  roomy uninstall slack             Uninstall Slack"
+    echo "  roomy uninstall slack zoom        Uninstall Slack and Zoom"
+    echo "  roomy uninstall --dry-run slack   Preview Slack uninstallation"
+    echo "  roomy uninstall --list            Show installed apps and the names roomy uninstall accepts"
     echo ""
     echo "Options:"
-    echo "  --list            List installed apps with the exact name mo uninstall accepts"
+    echo "  --list            List installed apps with the exact name roomy uninstall accepts"
     echo "  --dry-run         Preview app uninstallation without making changes"
     echo "  --permanent       Bypass macOS Trash and rm -rf immediately"
     echo "  --whitelist       Not supported for uninstall (use clean/optimize)"

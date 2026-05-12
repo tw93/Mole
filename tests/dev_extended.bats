@@ -163,7 +163,7 @@ EOF
 	touch -t 202402010000 "$doc_root/DeveloperDocumentation.index"
 	touch -t 202401010000 "$doc_root/DeveloperDocumentation-16.0.index"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_XCODE_DOCUMENTATION_CACHE_DIR="$doc_root" bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_XCODE_DOCUMENTATION_CACHE_DIR="$doc_root" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -189,7 +189,7 @@ EOF
 	touch "$doc_root/DeveloperDocumentation.index"
 	touch "$doc_root/DeveloperDocumentation-16.0.index"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_XCODE_DOCUMENTATION_CACHE_DIR="$doc_root" bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_XCODE_DOCUMENTATION_CACHE_DIR="$doc_root" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -243,7 +243,7 @@ safe_clean() {
     done
     echo "$target"
 }
-MOLE_JETBRAINS_TOOLBOX_KEEP=1
+ROOMY_JETBRAINS_TOOLBOX_KEEP=1
 clean_dev_jetbrains_toolbox
 EOF
 
@@ -264,7 +264,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 note_activity() { :; }
 safe_clean() { echo "$1"; }
-MOLE_JETBRAINS_TOOLBOX_KEEP=1
+ROOMY_JETBRAINS_TOOLBOX_KEEP=1
 clean_dev_jetbrains_toolbox
 EOF
 
@@ -375,7 +375,7 @@ EOF
 	rm -f "$bin_dir/claude"
 }
 
-@test "clean_dev_ai_agents respects MOLE_AI_AGENTS_KEEP and skips missing roots" {
+@test "clean_dev_ai_agents respects ROOMY_AI_AGENTS_KEEP and skips missing roots" {
 	local claude_root="$HOME/.local/share/claude/versions"
 	mkdir -p "$claude_root"
 	touch -t 202604170000 "$claude_root/2.1.100"
@@ -388,7 +388,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 note_activity() { :; }
 safe_clean() { echo "$1"; }
-MOLE_AI_AGENTS_KEEP=2 clean_dev_ai_agents
+ROOMY_AI_AGENTS_KEEP=2 clean_dev_ai_agents
 EOF
 
 	[ "$status" -eq 0 ]
@@ -491,7 +491,7 @@ EOF
 	mkdir -p "$volumes_root/in-use-runtime" "$volumes_root/unused-runtime"
 	mkdir -p "$cryptex_root"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_XCODE_SIM_RUNTIME_VOLUMES_ROOT="$volumes_root" MOLE_XCODE_SIM_RUNTIME_CRYPTEX_ROOT="$cryptex_root" bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_XCODE_SIM_RUNTIME_VOLUMES_ROOT="$volumes_root" ROOMY_XCODE_SIM_RUNTIME_CRYPTEX_ROOT="$cryptex_root" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -505,7 +505,7 @@ has_sudo_session() { return 0; }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 _sim_runtime_mount_points() {
-    printf '%s\n' "$MOLE_XCODE_SIM_RUNTIME_VOLUMES_ROOT/in-use-runtime"
+    printf '%s\n' "$ROOMY_XCODE_SIM_RUNTIME_VOLUMES_ROOT/in-use-runtime"
 }
 _sim_runtime_size_kb() {
     local target_path="$1"

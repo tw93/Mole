@@ -275,7 +275,7 @@ sleep() { :; }
 export -f sleep
 
 # Allow the osascript branch to run (the upfront guard skips it under test mode).
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
 
 force_kill_app "TestApp" "$app_path"
 EOF
@@ -313,7 +313,7 @@ cat > "$app_path/Contents/Info.plist" << 'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>TestApp</string>
-  <key>CFBundleIdentifier</key><string>com.example.TestApp&quot; to display dialog &quot;mole</string>
+  <key>CFBundleIdentifier</key><string>com.example.TestApp&quot; to display dialog &quot;roomy</string>
 </dict></plist>
 PLIST
 
@@ -337,7 +337,7 @@ export -f pkill
 sleep() { :; }
 export -f sleep
 
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
 
 force_kill_app "TestApp" "$app_path"
 EOF
@@ -351,7 +351,7 @@ EOF
 }
 
 @test "batch_uninstall_applications proceeds with deletion when force_kill_app fails" {
-	# Reproduces the issue where uninstalling a still-running app (e.g. Mole.app
+	# Reproduces the issue where uninstalling a still-running app (e.g. Roomy.app
 	# with a watchdog or XPC helper that ignores SIGKILL) used to abort with
 	# "still running" and leave the bundle on disk. macOS allows deleting a
 	# running app's bundle; we should warn the user but proceed.
@@ -830,8 +830,8 @@ function plutil() {
     return 1
 }
 
-MOLE_UNINSTALL_USER_LC_ALL=""
-MOLE_UNINSTALL_USER_LANG=""
+ROOMY_UNINSTALL_USER_LC_ALL=""
+ROOMY_UNINSTALL_USER_LANG=""
 
 eval "$(sed -n '/^uninstall_resolve_display_name()/,/^}/p' "$PROJECT_ROOT/bin/uninstall.sh")"
 
@@ -942,13 +942,13 @@ EOF
 	[[ "$output" == *"DEBUG:LaunchServices rebuild timed out, trying lighter version"* ]]
 }
 
-@test "remove_mole deletes manual binaries and caches" {
+@test "remove_roomy deletes manual binaries and caches" {
 	mkdir -p "$HOME/.local/bin"
-	touch "$HOME/.local/bin/mole"
+	touch "$HOME/.local/bin/roomy"
 	touch "$HOME/.local/bin/mo"
-	mkdir -p "$HOME/.config/mole" "$HOME/.cache/mole" "$HOME/Library/Logs/mole"
+	mkdir -p "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" MOLE_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 start_inline_spinner() { :; }
 stop_inline_spinner() { :; }
@@ -980,47 +980,47 @@ sudo() {
     return 0
 }
 export -f start_inline_spinner stop_inline_spinner rm sudo
-printf '\n' | "$PROJECT_ROOT/mole" remove
+printf '\n' | "$PROJECT_ROOT/roomy" remove
 EOF
 
 	[ "$status" -eq 0 ]
-	[ ! -f "$HOME/.local/bin/mole" ]
+	[ ! -f "$HOME/.local/bin/roomy" ]
 	[ ! -f "$HOME/.local/bin/mo" ]
-	[ ! -d "$HOME/.config/mole" ]
-	[ ! -d "$HOME/.cache/mole" ]
-	[ ! -d "$HOME/Library/Logs/mole" ]
+	[ ! -d "$HOME/.config/roomy" ]
+	[ ! -d "$HOME/.cache/roomy" ]
+	[ ! -d "$HOME/Library/Logs/roomy" ]
 }
 
-@test "remove_mole dry-run keeps manual binaries and caches" {
+@test "remove_roomy dry-run keeps manual binaries and caches" {
 	mkdir -p "$HOME/.local/bin"
-	touch "$HOME/.local/bin/mole"
+	touch "$HOME/.local/bin/roomy"
 	touch "$HOME/.local/bin/mo"
-	mkdir -p "$HOME/.config/mole" "$HOME/.cache/mole" "$HOME/Library/Logs/mole"
+	mkdir -p "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" MOLE_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 start_inline_spinner() { :; }
 stop_inline_spinner() { :; }
 export -f start_inline_spinner stop_inline_spinner
-printf '\n' | "$PROJECT_ROOT/mole" remove --dry-run
+printf '\n' | "$PROJECT_ROOT/roomy" remove --dry-run
 EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN MODE"* ]]
-	[ -f "$HOME/.local/bin/mole" ]
+	[ -f "$HOME/.local/bin/roomy" ]
 	[ -f "$HOME/.local/bin/mo" ]
-	[ -d "$HOME/.config/mole" ]
-	[ -d "$HOME/.cache/mole" ]
-	[ -d "$HOME/Library/Logs/mole" ]
+	[ -d "$HOME/.config/roomy" ]
+	[ -d "$HOME/.cache/roomy" ]
+	[ -d "$HOME/Library/Logs/roomy" ]
 }
 
-@test "remove_mole test mode ignores PATH installs outside test HOME" {
-	mkdir -p "$HOME/.local/bin" "$HOME/.config/mole" "$HOME/.cache/mole" "$HOME/Library/Logs/mole"
-	touch "$HOME/.local/bin/mole"
+@test "remove_roomy test mode ignores PATH installs outside test HOME" {
+	mkdir -p "$HOME/.local/bin" "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
+	touch "$HOME/.local/bin/roomy"
 	touch "$HOME/.local/bin/mo"
 
 	fake_global_bin="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-remove-path.XXXXXX")"
-	touch "$fake_global_bin/mole"
+	touch "$fake_global_bin/roomy"
 	touch "$fake_global_bin/mo"
 	cat > "$fake_global_bin/brew" <<'EOF'
 #!/bin/bash
@@ -1028,22 +1028,22 @@ exit 0
 EOF
 	chmod +x "$fake_global_bin/brew"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$fake_global_bin:/usr/bin:/bin" MOLE_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$fake_global_bin:/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 start_inline_spinner() { :; }
 stop_inline_spinner() { :; }
 export -f start_inline_spinner stop_inline_spinner
-printf '\n' | "$PROJECT_ROOT/mole" remove --dry-run
+printf '\n' | "$PROJECT_ROOT/roomy" remove --dry-run
 EOF
 
 	rm -rf "$fake_global_bin"
 
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"$HOME/.local/bin/mole"* ]]
+	[[ "$output" == *"$HOME/.local/bin/roomy"* ]]
 	[[ "$output" == *"$HOME/.local/bin/mo"* ]]
-	[[ "$output" != *"$fake_global_bin/mole"* ]]
+	[[ "$output" != *"$fake_global_bin/roomy"* ]]
 	[[ "$output" != *"$fake_global_bin/mo"* ]]
-	[[ "$output" != *"brew uninstall --force mole"* ]]
+	[[ "$output" != *"brew uninstall --force roomy"* ]]
 }
 @test "match_apps_by_name finds exact match case-insensitively" {
 	run bash --noprofile --norc <<'EOF'
@@ -1208,11 +1208,11 @@ INNER
 # #723: Trash routing default and --permanent flag
 # ---------------------------------------------------------------------------
 
-@test "uninstall main sets MOLE_DELETE_MODE=trash by default" {
+@test "uninstall main sets ROOMY_DELETE_MODE=trash by default" {
 	local apps_cache
 	apps_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-723-trash.XXXXXX")"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
 		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -1226,7 +1226,7 @@ scan_applications() { printf '%s\n' "$APPS_CACHE_FILE"; }
 load_applications() { return 0; }
 drain_pending_input() { :; }
 select_apps_for_uninstall() {
-    printf 'delete_mode=%s\n' "${MOLE_DELETE_MODE:-unset}"
+    printf 'delete_mode=%s\n' "${ROOMY_DELETE_MODE:-unset}"
     return 1
 }
 
@@ -1239,11 +1239,11 @@ INNER
 	[[ "$output" == *"delete_mode=trash"* ]]
 }
 
-@test "uninstall main sets MOLE_DELETE_MODE=permanent with --permanent flag" {
+@test "uninstall main sets ROOMY_DELETE_MODE=permanent with --permanent flag" {
 	local apps_cache
 	apps_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-723-perm.XXXXXX")"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
 		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -1257,7 +1257,7 @@ scan_applications() { printf '%s\n' "$APPS_CACHE_FILE"; }
 load_applications() { return 0; }
 drain_pending_input() { :; }
 select_apps_for_uninstall() {
-    printf 'delete_mode=%s\n' "${MOLE_DELETE_MODE:-unset}"
+    printf 'delete_mode=%s\n' "${ROOMY_DELETE_MODE:-unset}"
     return 1
 }
 
@@ -1283,7 +1283,7 @@ INNER
 1700000000|/Applications/Zoom.app|Zoom|us.zoom.xos|140MB|Yesterday|143360
 CACHE
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
 		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -1332,7 +1332,7 @@ INNER
 1700000000|/Applications/Slack.app|Slack|com.tinyspeck.slackmacgap|180MB|Today|184320
 CACHE
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
 		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -1376,7 +1376,7 @@ INNER
 	# Non-empty file so load_applications doesn't bail early on size check.
 	echo "" > "$apps_cache"
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
 		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -1413,7 +1413,7 @@ INNER
 1700000000|/Applications/Visual Studio Code.app|Visual Studio Code|com.microsoft.VSCode|420MB|Today|430080
 CACHE
 
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
 		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"

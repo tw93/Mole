@@ -1,11 +1,11 @@
-import MoleUICore
+import RoomyUICore
 import SwiftUI
 
 @main
-struct MoleUIApp: App {
+struct RoomyUIApp: App {
     var body: some Scene {
         WindowGroup {
-            MoleRootView()
+            RoomyRootView()
         }
         .windowStyle(.titleBar)
         .commands {

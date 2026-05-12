@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install local development dependencies for Mole.
+# Install local development dependencies for Roomy.
 
 set -euo pipefail
 

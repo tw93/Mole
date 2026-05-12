@@ -11,8 +11,8 @@ setup_file() {
     export HOME
 
     # Prevent AppleScript permission dialogs during tests
-    MOLE_TEST_MODE=1
-    export MOLE_TEST_MODE
+    ROOMY_TEST_MODE=1
+    export ROOMY_TEST_MODE
 
     mkdir -p "$HOME"
 }
@@ -353,8 +353,8 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/brew.sh"
 
-mkdir -p "$HOME/.cache/mole"
-date +%s > "$HOME/.cache/mole/brew_last_cleanup"
+mkdir -p "$HOME/.cache/roomy"
+date +%s > "$HOME/.cache/roomy/brew_last_cleanup"
 
 brew() { return 0; }
 
@@ -371,8 +371,8 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/brew.sh"
 
-mkdir -p "$HOME/.cache/mole"
-rm -f "$HOME/.cache/mole/brew_last_cleanup"
+mkdir -p "$HOME/.cache/roomy"
+rm -f "$HOME/.cache/roomy/brew_last_cleanup"
 
     start_inline_spinner(){ :; }
     stop_inline_spinner(){ :; }
@@ -414,7 +414,7 @@ EOF
     run bash --noprofile --norc -c '
         set -euo pipefail
         PATH="/usr/bin:/bin"
-        unset MO_TIMEOUT_INITIALIZED MO_TIMEOUT_BIN
+        unset ROOMY_TIMEOUT_INITIALIZED ROOMY_TIMEOUT_BIN
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
         run_with_timeout 1 sleep 0.1
     '
@@ -425,7 +425,7 @@ EOF
     run bash --noprofile --norc -c '
         set -euo pipefail
         PATH="/usr/bin:/bin"
-        unset MO_TIMEOUT_INITIALIZED MO_TIMEOUT_BIN
+        unset ROOMY_TIMEOUT_INITIALIZED ROOMY_TIMEOUT_BIN
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
         run_with_timeout 1 sleep 3
     '
@@ -521,7 +521,7 @@ EOF
 }
 
 @test "get_path_size_kb returns zero for missing directory" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=0 bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DEBUG=0 bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 size=$(get_path_size_kb "/nonexistent/path")
@@ -536,7 +536,7 @@ EOF
     mkdir -p "$HOME/test_size"
     dd if=/dev/zero of="$HOME/test_size/file.dat" bs=1024 count=10 2> /dev/null
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=0 bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DEBUG=0 bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 size=$(get_path_size_kb "$HOME/test_size")
@@ -1014,7 +1014,7 @@ export -f sudo
 
 # Sudo is mocked above; explicitly opt out of the test-mode short-circuit
 # in optimize_sudo_available so this success-path test reaches the mock.
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
 opt_memory_pressure_relief
 EOF
 
@@ -1024,7 +1024,7 @@ EOF
 }
 
 @test "opt_network_stack_optimize skips when network is healthy" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ASSUME_VPN_ACTIVE=0 bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_ASSUME_VPN_ACTIVE=0 bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -1048,7 +1048,7 @@ EOF
 }
 
 @test "opt_network_stack_optimize skips when VPN is active" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ASSUME_VPN_ACTIVE=1 bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_ASSUME_VPN_ACTIVE=1 bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -1075,7 +1075,7 @@ EOF
 }
 
 @test "opt_network_stack_optimize flushes when network has issues" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ASSUME_VPN_ACTIVE=0 bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_ASSUME_VPN_ACTIVE=0 bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
@@ -1115,7 +1115,7 @@ export -f dscacheutil
 
 # Sudo is mocked above; explicitly opt out of the test-mode short-circuit
 # in optimize_sudo_available so this success-path test reaches the mock.
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
 opt_network_stack_optimize
 EOF
 
@@ -1189,7 +1189,7 @@ export -f start_inline_spinner stop_inline_spinner
 
 # Sudo is mocked above; explicitly opt out of the test-mode short-circuit
 # in optimize_sudo_available so this success-path test reaches the mock.
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
 opt_disk_permissions_repair
 EOF
 
@@ -1340,7 +1340,7 @@ export -f sudo
 sleep() { :; }
 export -f sleep
 
-unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+unset ROOMY_TEST_MODE ROOMY_TEST_NO_AUTH
 opt_bluetooth_reset
 EOF
 
