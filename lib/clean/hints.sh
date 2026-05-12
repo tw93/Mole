@@ -659,7 +659,7 @@ _dotdir_owner_collect_tokens() {
             [[ -e "$entry" ]] || continue
             name=$(basename "$entry")
             name="${name%.app}"
-            printf '%s\n' "$name" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -cs 'a-z0-9' '\n'
+            printf '%s\n' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '\n'
         done
     done
 
@@ -667,7 +667,7 @@ _dotdir_owner_collect_tokens() {
         local cask_list=""
         cask_list=$(HOMEBREW_NO_ENV_HINTS=1 run_with_timeout 5 brew list --cask 2> /dev/null) || true
         if [[ -n "$cask_list" ]]; then
-            printf '%s\n' "$cask_list" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -cs 'a-z0-9' '\n'
+            printf '%s\n' "$cask_list" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '\n'
         fi
     fi
 }
@@ -705,7 +705,7 @@ dotdir_has_owning_gui_app() {
     [[ -s "$cache_file" ]] || return 1
 
     local name_lower
-    name_lower=$(printf '%s' "$name" | LC_ALL=C tr 'A-Z' 'a-z')
+    name_lower=$(printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]')
     local tok
     while IFS= read -r tok; do
         [[ -z "$tok" ]] && continue
