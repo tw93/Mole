@@ -108,7 +108,7 @@ scan_installed_apps() {
             local -a app_paths=()
             while IFS= read -r app_path; do
                 [[ -n "$app_path" ]] && app_paths+=("$app_path")
-            done < <(find "$app_dir" -name '*.app' -maxdepth 3 -type d 2> /dev/null)
+            done < <(command find "$app_dir" -maxdepth 3 -type d -name '*.app' 2> /dev/null)
             local count=0
             for app_path in "${app_paths[@]:-}"; do
                 local plist_path="$app_path/Contents/Info.plist"

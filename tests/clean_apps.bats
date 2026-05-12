@@ -129,6 +129,54 @@ EOF
     [[ "$output" != *"missing value"* ]]
 }
 
+@test "scan_installed_apps keeps find traversal options before predicates" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+stub_dir="$HOME/stub-bin"
+mkdir -p "$stub_dir" "$HOME/Applications/Ordered.app/Contents"
+cat > "$stub_dir/find" <<'SH'
+#!/bin/sh
+root="$1"
+shift
+if [ "${1:-}" != "-maxdepth" ] ||
+    [ "${2:-}" != "3" ] ||
+    [ "${3:-}" != "-type" ] ||
+    [ "${4:-}" != "d" ] ||
+    [ "${5:-}" != "-name" ] ||
+    [ "${6:-}" != "*.app" ]; then
+    exit 64
+fi
+
+if [ "$root" = "$HOME/Applications" ]; then
+    printf '%s\n' "$HOME/Applications/Ordered.app"
+fi
+SH
+chmod +x "$stub_dir/find"
+
+cat > "$HOME/Applications/Ordered.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.Ordered</string>
+</dict>
+</plist>
+PLIST
+
+debug_log() { :; }
+export PATH="$stub_dir:$PATH"
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"com.example.Ordered"* ]]
+}
+
 @test "is_bundle_orphaned returns true for old uninstalled bundle" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ORPHAN_AGE_THRESHOLD=30 bash --noprofile --norc <<'EOF'
 set -euo pipefail
