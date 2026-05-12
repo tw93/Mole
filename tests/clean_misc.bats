@@ -45,6 +45,29 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
 stop_section_spinner() { :; }
+pgrep() { return 1; }
+safe_clean() { echo "$2|$1"; }
+clean_virtualization_tools
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"VMware Fusion cache"* ]]
+    [[ "$output" == *"Parallels cache"* ]]
+    [[ "$output" == *"UTM app cache|$HOME/Library/Caches/com.utmapp.UTM/"* ]]
+    [[ "$output" == *"UTM sandbox cache|$HOME/Library/Containers/com.utmapp.UTM/Data/Library/Caches/"* ]]
+    [[ "$output" == *"UTM temporary files|$HOME/Library/Containers/com.utmapp.UTM/Data/tmp/"* ]]
+}
+
+@test "clean_virtualization_tools skips UTM caches while UTM is running" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+stop_section_spinner() { :; }
+debug_log() { :; }
+pgrep() {
+    [[ "${1:-}" == "-x" && "${2:-}" == "UTM" ]]
+}
 safe_clean() { echo "$2"; }
 clean_virtualization_tools
 EOF
@@ -52,6 +75,8 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"VMware Fusion cache"* ]]
     [[ "$output" == *"Parallels cache"* ]]
+    [[ "$output" != *"UTM app cache"* ]]
+    [[ "$output" != *"UTM sandbox cache"* ]]
 }
 
 @test "clean_email_clients calls expected caches" {

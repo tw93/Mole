@@ -1516,10 +1516,22 @@ clean_office_applications() {
 }
 
 # Virtualization caches.
+clean_utm_caches() {
+    if pgrep -x "UTM" > /dev/null 2>&1; then
+        debug_log "Skipping UTM caches while UTM is running"
+        return 0
+    fi
+
+    safe_clean ~/Library/Caches/com.utmapp.UTM/* "UTM app cache"
+    safe_clean ~/Library/Containers/com.utmapp.UTM/Data/Library/Caches/* "UTM sandbox cache"
+    safe_clean ~/Library/Containers/com.utmapp.UTM/Data/tmp/* "UTM temporary files"
+}
+
 clean_virtualization_tools() {
     stop_section_spinner
     safe_clean ~/Library/Caches/com.vmware.fusion "VMware Fusion cache"
     safe_clean ~/Library/Caches/com.parallels.* "Parallels cache"
+    clean_utm_caches
     safe_clean ~/VirtualBox\ VMs/.cache "VirtualBox cache"
     safe_clean ~/.vagrant.d/tmp/* "Vagrant temporary files"
 }
