@@ -67,6 +67,20 @@ EOF
     [[ "$output" == *"Airmail cache"* ]]
 }
 
+@test "clean_virtualization_tools includes Lima download cache" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+stop_section_spinner() { :; }
+safe_clean() { echo "$2|$1"; }
+clean_virtualization_tools
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Lima download cache|$HOME/Library/Caches/lima/download/by-url-sha256/"* ]]
+}
+
 @test "clean_note_apps calls expected caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
