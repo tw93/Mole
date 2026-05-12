@@ -412,7 +412,7 @@ batch_uninstall_applications() {
         fi
 
         local app_size_kb=$(get_path_size_kb "$app_path" || echo "0")
-        local related_files=$(find_app_files "$bundle_id" "$app_name" || true)
+        local related_files=$(find_app_files "$bundle_id" "$app_name" "$app_path" || true)
         local diag_user
         diag_user=$(get_diagnostic_report_paths_for_app "$app_path" "$app_name" "$HOME/Library/Logs/DiagnosticReports" || true)
         [[ -n "$diag_user" ]] && related_files=$(
