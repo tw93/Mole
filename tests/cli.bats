@@ -299,7 +299,7 @@ EOF
 @test "mo uninstall --help directs leftover-only cleanup to clean" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --help
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"already gone, use mo clean"* ]]
+	[[ "$output" == *"For leftovers from apps that are already gone, use mo clean."* ]]
 }
 
 @test "mo clean --external accepts canonicalized custom root" {

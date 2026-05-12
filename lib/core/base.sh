@@ -549,6 +549,25 @@ bytes_to_human_kb() {
     bytes_to_human "$((${1:-0} * 1024))"
 }
 
+# Colorize an already-formatted human size string by unit.
+colorize_human_size() {
+    local size_human="$1"
+
+    local size_color=""
+    case "$size_human" in
+        *GB) size_color="$RED" ;;
+        *MB) size_color="$YELLOW" ;;
+        *KB) size_color="$GREEN" ;;
+        *B) size_color="$GRAY" ;;
+        *)
+            printf '%s' "$size_human"
+            return 0
+            ;;
+    esac
+
+    printf '%s%s%s' "$size_color" "$size_human" "$NC"
+}
+
 # Pick a cleanup result color using the displayed decimal 1 GB threshold.
 cleanup_result_color_kb() {
     printf '%s' "$GREEN"

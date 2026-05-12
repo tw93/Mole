@@ -751,7 +751,9 @@ safe_clean() {
         fi
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$size_human dry${NC}"
+            local size_display
+            size_display=$(colorize_human_size "$size_human")
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${size_display} ${YELLOW}dry${NC}"
 
             local paths_temp
             paths_temp=$(create_temp_file)
@@ -974,7 +976,7 @@ perform_cleanup() {
         fi
         if [[ "$DRY_RUN" == "true" ]]; then
             echo ""
-            echo "Potential space: 0.00GB"
+            echo -e "Potential space: $(colorize_human_size "0.00GB")"
         fi
         total_items=1
         files_cleaned=0
@@ -1191,7 +1193,7 @@ perform_cleanup() {
         freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            local stats="Potential space: ${GREEN}${freed_size_human}${NC}"
+            local stats="Potential space: $(colorize_human_size "$freed_size_human")"
             [[ $files_cleaned -gt 0 ]] && stats+=" | Items: $files_cleaned"
             [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
             summary_details+=("$stats")

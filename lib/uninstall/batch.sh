@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Load Homebrew cask support (provides get_brew_cask_name, brew_uninstall_cask)
 [[ -f "$SCRIPT_DIR/lib/uninstall/brew.sh" ]] && source "$SCRIPT_DIR/lib/uninstall/brew.sh"
 
+# Load interactive file selection for uninstall
+[[ -f "$SCRIPT_DIR/lib/uninstall/file_selector.sh" ]] && source "$SCRIPT_DIR/lib/uninstall/file_selector.sh"
+
 # Batch uninstall with a single confirmation.
 
 is_uninstall_dry_run() {
@@ -462,6 +465,107 @@ batch_uninstall_applications() {
     done
     if [[ -t 1 ]]; then stop_inline_spinner; fi
 
+    # Interactive file selection before confirmation.
+    local -a _new_app_details=()
+    local -a _new_selected_apps=()
+    local _new_total_estimated_size=0
+    local _fs_i _fs_detail _fs_an _fs_ap _fs_bi _fs_tk _fs_ef _fs_esf _fs_hs _fs_ns _fs_ib _fs_cn _fs_eds _fs_hln
+    local _fs_rel _fs_sys _fs_diag _fs_rel_kb _fs_sys_kb _fs_app_kb _fs_new_tk _fs_new_ef _fs_new_esf
+
+    sudo_apps=()
+    brew_cask_apps=()
+
+    for ((_fs_i = 0; _fs_i < ${#app_details[@]}; _fs_i++)); do
+        _fs_detail="${app_details[_fs_i]}"
+        IFS='|' read -r _fs_an _fs_ap _fs_bi _fs_tk _fs_ef _fs_esf _fs_hs _fs_ns _fs_ib _fs_cn _fs_eds _fs_hln <<< "$_fs_detail"
+
+        _fs_rel=$(decode_file_list "$_fs_ef" "$_fs_an")
+        _fs_sys=$(decode_file_list "$_fs_esf" "$_fs_an")
+        _fs_diag=$(decode_file_list "$_fs_eds" "$_fs_an")
+        if [[ -n "$_fs_diag" ]]; then
+            if [[ -n "$_fs_sys" ]]; then
+                _fs_sys+=$'\n'
+            fi
+            _fs_sys+="$_fs_diag"
+        fi
+
+        # Include app bundle itself in the selection list
+        local _fs_all_user="$_fs_ap"
+        if [[ -n "$_fs_rel" ]]; then
+            _fs_all_user+=$'\n'
+            _fs_all_user+="$_fs_rel"
+        fi
+
+        MOLE_SFR_USER_FILES="$_fs_all_user"
+        MOLE_SFR_SYSTEM_FILES="$_fs_sys"
+        if ! select_files_for_removal "$_fs_an"; then
+            echo -e "${GRAY}Skipped ${_fs_an}${NC}"
+            continue
+        fi
+        _fs_rel="${MOLE_SFR_USER_FILES}"
+        _fs_sys="${MOLE_SFR_SYSTEM_FILES}"
+
+        if [[ -z "$_fs_rel" && -z "$_fs_sys" ]]; then
+            echo -e "${GRAY}Skipped ${_fs_an} (no files selected)${NC}"
+            continue
+        fi
+
+        # Check whether the app bundle itself was selected
+        local _fs_has_app=false
+        if printf '%s\n' "$_fs_rel" | grep -qxF "$_fs_ap"; then
+            _fs_has_app=true
+            # Remove app path from related files
+            _fs_rel=$(printf '%s\n' "$_fs_rel" | grep -vxF "$_fs_ap" || true)
+        fi
+
+        _fs_rel_kb=$(calculate_total_size "$_fs_rel" || echo "0")
+        _fs_sys_kb=$(calculate_total_size "$_fs_sys" || echo "0")
+        _fs_app_kb=0
+        if [[ "$_fs_has_app" == true ]]; then
+            _fs_app_kb=$(get_path_size_kb "$_fs_ap" || echo "0")
+        fi
+        _fs_new_tk=$((_fs_app_kb + _fs_rel_kb + _fs_sys_kb))
+        _new_total_estimated_size=$((_new_total_estimated_size + _fs_new_tk))
+
+        # If app was deselected, clear app_path so execution skips bundle removal
+        local _fs_ap_final="$_fs_ap"
+        [[ "$_fs_has_app" != true ]] && _fs_ap_final=""
+
+        local _fs_new_ns="false"
+        if [[ "$_fs_has_app" == true ]]; then
+            local _fs_app_owner
+            _fs_app_owner=$(get_file_owner "$_fs_ap")
+            if [[ ! -w "$(dirname "$_fs_ap")" ]] ||
+                [[ "$_fs_app_owner" == "root" ]] ||
+                [[ -n "$_fs_app_owner" && "$_fs_app_owner" != "$current_user" ]]; then
+                _fs_new_ns="true"
+            fi
+        fi
+        [[ -n "$_fs_sys" ]] && _fs_new_ns="true"
+        [[ "$_fs_new_ns" == "true" ]] && sudo_apps+=("$_fs_an")
+        [[ "$_fs_has_app" == true && "$_fs_ib" == "true" ]] && brew_cask_apps+=("$_fs_an")
+
+        local _fs_hln_final="$_fs_hln"
+        [[ "$_fs_has_app" != true ]] && _fs_hln_final="false"
+
+        _fs_new_ef=$(printf '%s' "$_fs_rel" | base64 | tr -d '\n' || echo "")
+        _fs_new_esf=$(printf '%s' "$_fs_sys" | base64 | tr -d '\n' || echo "")
+
+        _new_app_details+=("$_fs_an|$_fs_ap_final|$_fs_bi|$_fs_new_tk|$_fs_new_ef|$_fs_new_esf|$_fs_hs|$_fs_new_ns|$_fs_ib|$_fs_cn||$_fs_hln_final")
+        _new_selected_apps+=("${selected_apps[_fs_i]}")
+    done
+
+    app_details=("${_new_app_details[@]}")
+    selected_apps=("${_new_selected_apps[@]}")
+    total_estimated_size=$_new_total_estimated_size
+
+    if [[ ${#app_details[@]} -eq 0 ]]; then
+        echo ""
+        echo "No files selected for removal."
+        _restore_uninstall_traps
+        return 0
+    fi
+
     local size_display=$(bytes_to_human "$((total_estimated_size * 1024))")
 
     echo -e "\n${PURPLE_BOLD}Files to be removed:${NC}"
@@ -494,7 +598,9 @@ batch_uninstall_applications() {
             echo "$diag_system_display"
         )
 
-        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${app_path/$HOME/~}"
+        if [[ -n "$app_path" ]]; then
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${app_path/$HOME/~}"
+        fi
 
         # Show all related files so users can fully review before deletion.
         while IFS= read -r file; do
@@ -606,18 +712,20 @@ batch_uninstall_applications() {
         local has_system_files="false"
         [[ -n "$system_files" ]] && has_system_files="true"
 
-        stop_launch_services "$bundle_id" "$has_system_files" "$app_path"
-        unregister_app_bundle "$app_path"
+        if [[ -n "$app_path" ]]; then
+            stop_launch_services "$bundle_id" "$has_system_files" "$app_path"
+            unregister_app_bundle "$app_path"
 
-        # Remove from Login Items
-        remove_login_item "$app_name" "$bundle_id"
+            # Remove from Login Items
+            remove_login_item "$app_name" "$bundle_id"
 
-        # Best-effort termination. macOS allows removing a running app bundle
-        # (the running process keeps using its mmap'd code), so a stuck app
-        # process must NOT block the uninstall. Track it so we can surface a
-        # warning at the end without scaring the user with a "failed" status.
-        if ! force_kill_app "$app_name" "$app_path"; then
-            running_at_uninstall_apps+=("$app_name")
+            # Best-effort termination. macOS allows removing a running app bundle
+            # (the running process keeps using its mmap'd code), so a stuck app
+            # process must NOT block the uninstall. Track it so we can surface a
+            # warning at the end without scaring the user with a "failed" status.
+            if ! force_kill_app "$app_name" "$app_path"; then
+                running_at_uninstall_apps+=("$app_name")
+            fi
         fi
 
         # Keep the spinner alive through the heavy work. For large apps the
@@ -636,88 +744,90 @@ batch_uninstall_applications() {
         fi
 
         local used_brew_successfully=false
-        if [[ -z "$reason" ]]; then
-            if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
-                # Use brew_uninstall_cask helper (handles env vars, timeout, verification)
-                if brew_uninstall_cask "$cask_name" "$app_path"; then
-                    used_brew_successfully=true
-                else
-                    # Only fall back to manual app removal when Homebrew no longer
-                    # tracks the cask. Otherwise we would recreate the mismatch
-                    # where brew still reports the app as installed after Mole
-                    # removes the bundle manually.
-                    local cask_state=2
-                    if command -v is_brew_cask_installed > /dev/null 2>&1; then
-                        if is_brew_cask_installed "$cask_name"; then
-                            cask_state=0
-                        else
-                            cask_state=$?
+        if [[ -n "$app_path" ]]; then
+            if [[ -z "$reason" ]]; then
+                if [[ "$is_brew_cask" == "true" && -n "$cask_name" ]]; then
+                    # Use brew_uninstall_cask helper (handles env vars, timeout, verification)
+                    if brew_uninstall_cask "$cask_name" "$app_path"; then
+                        used_brew_successfully=true
+                    else
+                        # Only fall back to manual app removal when Homebrew no longer
+                        # tracks the cask. Otherwise we would recreate the mismatch
+                        # where brew still reports the app as installed after Mole
+                        # removes the bundle manually.
+                        local cask_state=2
+                        if command -v is_brew_cask_installed > /dev/null 2>&1; then
+                            if is_brew_cask_installed "$cask_name"; then
+                                cask_state=0
+                            else
+                                cask_state=$?
+                            fi
                         fi
-                    fi
 
-                    if [[ $cask_state -eq 1 ]]; then
-                        if ! mole_delete "$app_path" "$needs_sudo"; then
-                            reason="brew cleanup incomplete, manual removal failed"
+                        if [[ $cask_state -eq 1 ]]; then
+                            if ! mole_delete "$app_path" "$needs_sudo"; then
+                                reason="brew cleanup incomplete, manual removal failed"
+                            fi
+                        elif [[ $cask_state -eq 0 ]]; then
+                            reason="brew uninstall failed, package still installed"
+                            suggestion="Run brew uninstall --cask --zap $cask_name"
+                        else
+                            reason="brew uninstall failed, package state unknown"
+                            suggestion="Run brew uninstall --cask --zap $cask_name"
                         fi
-                    elif [[ $cask_state -eq 0 ]]; then
-                        reason="brew uninstall failed, package still installed"
-                        suggestion="Run brew uninstall --cask --zap $cask_name"
-                    else
-                        reason="brew uninstall failed, package state unknown"
-                        suggestion="Run brew uninstall --cask --zap $cask_name"
                     fi
-                fi
-            elif [[ "$needs_sudo" == true ]]; then
-                if [[ -L "$app_path" ]]; then
-                    local link_target
-                    link_target=$(readlink "$app_path" 2> /dev/null)
-                    if [[ -n "$link_target" ]]; then
-                        local resolved_target="$link_target"
-                        if [[ "$link_target" != /* ]]; then
-                            local link_dir
-                            link_dir=$(dirname "$app_path")
-                            resolved_target=$(cd "$link_dir" 2> /dev/null && cd "$(dirname "$link_target")" 2> /dev/null && pwd)/$(basename "$link_target") 2> /dev/null || echo ""
+                elif [[ "$needs_sudo" == true ]]; then
+                    if [[ -L "$app_path" ]]; then
+                        local link_target
+                        link_target=$(readlink "$app_path" 2> /dev/null)
+                        if [[ -n "$link_target" ]]; then
+                            local resolved_target="$link_target"
+                            if [[ "$link_target" != /* ]]; then
+                                local link_dir
+                                link_dir=$(dirname "$app_path")
+                                resolved_target=$(cd "$link_dir" 2> /dev/null && cd "$(dirname "$link_target")" 2> /dev/null && pwd)/$(basename "$link_target") 2> /dev/null || echo ""
+                            fi
+                            case "$resolved_target" in
+                                /System/* | /usr/bin/* | /usr/lib/* | /bin/* | /sbin/* | /private/etc/*)
+                                    reason="protected system symlink, cannot remove"
+                                    ;;
+                                *)
+                                    if ! mole_delete "$app_path" "true"; then
+                                        reason="failed to remove symlink"
+                                    fi
+                                    ;;
+                            esac
+                        else
+                            if ! mole_delete "$app_path" "true"; then
+                                reason="failed to remove symlink"
+                            fi
                         fi
-                        case "$resolved_target" in
-                            /System/* | /usr/bin/* | /usr/lib/* | /bin/* | /sbin/* | /private/etc/*)
-                                reason="protected system symlink, cannot remove"
-                                ;;
-                            *)
-                                if ! mole_delete "$app_path" "true"; then
-                                    reason="failed to remove symlink"
-                                fi
-                                ;;
-                        esac
                     else
-                        if ! mole_delete "$app_path" "true"; then
-                            reason="failed to remove symlink"
+                        if is_uninstall_dry_run; then
+                            if ! mole_delete "$app_path" "false"; then
+                                reason="dry-run path validation failed"
+                            fi
+                        else
+                            local ret=0
+                            mole_delete "$app_path" "true" || ret=$?
+                            if [[ $ret -ne 0 ]]; then
+                                local diagnosis
+                                diagnosis=$(diagnose_removal_failure "$ret" "$app_name")
+                                IFS='|' read -r reason suggestion <<< "$diagnosis"
+                            fi
                         fi
                     fi
                 else
-                    if is_uninstall_dry_run; then
-                        if ! mole_delete "$app_path" "false"; then
-                            reason="dry-run path validation failed"
+                    if ! mole_delete "$app_path" "false"; then
+                        if [[ ! -w "$(dirname "$app_path")" ]]; then
+                            reason="parent directory not writable"
+                        else
+                            reason="remove failed, check permissions"
                         fi
-                    else
-                        local ret=0
-                        mole_delete "$app_path" "true" || ret=$?
-                        if [[ $ret -ne 0 ]]; then
-                            local diagnosis
-                            diagnosis=$(diagnose_removal_failure "$ret" "$app_name")
-                            IFS='|' read -r reason suggestion <<< "$diagnosis"
-                        fi
-                    fi
-                fi
-            else
-                if ! mole_delete "$app_path" "false"; then
-                    if [[ ! -w "$(dirname "$app_path")" ]]; then
-                        reason="parent directory not writable"
-                    else
-                        reason="remove failed, check permissions"
                     fi
                 fi
             fi
-        fi
+        fi # [[ -n "$app_path" ]]
 
         # Remove related files if app removal succeeded.
         if [[ -z "$reason" ]]; then
@@ -772,20 +882,33 @@ batch_uninstall_applications() {
                 remove_file_list "$system_all" "true" > /dev/null
             fi
 
-            # Defaults writes are side effects that should never run in dry-run mode.
+            # defaults delete and ByHost cleanup must respect the file selector:
+            # only run when the user actually selected the corresponding plists.
+            # $related_files is the user-filtered list after file selection.
+            local _prefs_selected=false
+            local _byhost_selected=false
+            if printf '%s\n' "$related_files" | grep -qxF "$HOME/Library/Preferences/$bundle_id.plist"; then
+                _prefs_selected=true
+            fi
+            if printf '%s\n' "$related_files" | grep -qF "$HOME/Library/Preferences/ByHost/$bundle_id"; then
+                _byhost_selected=true
+            fi
+
             if [[ -n "$bundle_id" && "$bundle_id" != "unknown" ]]; then
-                if is_uninstall_dry_run; then
-                    debug_log "[DRY RUN] Would clear defaults domain: $bundle_id"
-                else
-                    if defaults read "$bundle_id" &> /dev/null; then
-                        defaults delete "$bundle_id" 2> /dev/null || true
+                if [[ "$_prefs_selected" == "true" ]]; then
+                    if is_uninstall_dry_run; then
+                        debug_log "[DRY RUN] Would clear defaults domain: $bundle_id"
+                    else
+                        if defaults read "$bundle_id" &> /dev/null; then
+                            defaults delete "$bundle_id" 2> /dev/null || true
+                        fi
                     fi
                 fi
 
                 # ByHost preferences (machine-specific).
                 # User-owned plists, so route through user-mode mole_delete to
                 # avoid prompting for sudo when uninstalling a normal app.
-                if [[ -d "$HOME/Library/Preferences/ByHost" ]]; then
+                if [[ "$_byhost_selected" == "true" && -d "$HOME/Library/Preferences/ByHost" ]]; then
                     if [[ "$bundle_id" =~ ^[A-Za-z0-9._-]+$ ]]; then
                         while IFS= read -r -d '' plist_file; do
                             mole_delete "$plist_file" "false" || true
@@ -823,13 +946,13 @@ batch_uninstall_applications() {
             [[ "$used_brew_successfully" == "true" ]] && brew_apps_removed=$((brew_apps_removed + 1))
             files_cleaned=$((files_cleaned + 1))
             total_items=$((total_items + 1))
-            success_items+=("$app_path")
-            if [[ "$has_local_network_usage" == "true" ]]; then
+            [[ -n "$app_path" ]] && success_items+=("$app_path")
+            if [[ -n "$app_path" && "$has_local_network_usage" == "true" ]]; then
                 local_network_warning_apps+=("$app_name")
             fi
 
             # Check for orphaned system extensions (camera, network, endpoint security, etc.)
-            if [[ -n "$bundle_id" && "$bundle_id" != "unknown" && "$bundle_id" =~ ^[A-Za-z0-9._-]+$ && -d /Library/SystemExtensions ]]; then
+            if [[ -n "$app_path" && -n "$bundle_id" && "$bundle_id" != "unknown" && "$bundle_id" =~ ^[A-Za-z0-9._-]+$ && -d /Library/SystemExtensions ]]; then
                 if command find /Library/SystemExtensions -maxdepth 3 -name "*.systemextension" -path "*${bundle_id}*" -print -quit 2> /dev/null | grep -q .; then
                     system_extension_warning_apps+=("$app_name")
                 fi
