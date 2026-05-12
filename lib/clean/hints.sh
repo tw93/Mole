@@ -641,6 +641,83 @@ readonly ORPHAN_DOTDIR_KNOWN_SAFE=(
     ".fly" ".gemini"
 )
 
+# Standard locations for installed GUI apps. Overridable from tests.
+_MOLE_DOTDIR_OWNER_APP_ROOTS=(
+    "/Applications"
+    "/Applications/Setapp"
+    "$HOME/Applications"
+)
+
+# Emit every alnum token found in installed .app filenames + brew casks,
+# lowercased, one per line. Caller filters/dedups.
+# shellcheck disable=SC2329
+_dotdir_owner_collect_tokens() {
+    local root entry name
+    for root in "${_MOLE_DOTDIR_OWNER_APP_ROOTS[@]}"; do
+        [[ -d "$root" ]] || continue
+        for entry in "$root"/*.app; do
+            [[ -e "$entry" ]] || continue
+            name=$(basename "$entry")
+            name="${name%.app}"
+            printf '%s\n' "$name" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -cs 'a-z0-9' '\n'
+        done
+    done
+
+    if command -v brew > /dev/null 2>&1; then
+        local cask_list=""
+        cask_list=$(HOMEBREW_NO_ENV_HINTS=1 run_with_timeout 5 brew list --cask 2> /dev/null) || true
+        if [[ -n "$cask_list" ]]; then
+            printf '%s\n' "$cask_list" | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C tr -cs 'a-z0-9' '\n'
+        fi
+    fi
+}
+
+# Return 0 if any ≥4-char token from `name` matches a token harvested from
+# installed `.app` bundles or Homebrew casks. Cached for 5 minutes. Short
+# tokens (<4 chars) on either side are ignored to avoid false matches like
+# `.ai-old` vs `AI.app`. See issue #872.
+# shellcheck disable=SC2329
+dotdir_has_owning_gui_app() {
+    local name="$1"
+    [[ -z "$name" ]] && return 1
+    [[ ${#name} -lt 4 ]] && return 1
+
+    local cache_dir="$HOME/.cache/mole"
+    local cache_file="$cache_dir/installed_app_tokens_cache"
+    local cache_ttl=300
+    local now
+    now=$(date +%s)
+
+    local rebuild=1
+    if [[ -f "$cache_file" ]]; then
+        local mtime
+        mtime=$(get_file_mtime "$cache_file" 2> /dev/null || echo 0)
+        if [[ -n "$mtime" ]] && [[ $((now - mtime)) -lt $cache_ttl ]]; then
+            rebuild=0
+        fi
+    fi
+    if [[ $rebuild -eq 1 ]]; then
+        ensure_user_dir "$cache_dir" 2> /dev/null || true
+        _dotdir_owner_collect_tokens 2> /dev/null |
+            LC_ALL=C awk 'length($0) >= 4' |
+            LC_ALL=C sort -u > "$cache_file" 2> /dev/null || return 1
+    fi
+    [[ -s "$cache_file" ]] || return 1
+
+    local name_lower
+    name_lower=$(printf '%s' "$name" | LC_ALL=C tr 'A-Z' 'a-z')
+    local tok
+    while IFS= read -r tok; do
+        [[ -z "$tok" ]] && continue
+        [[ ${#tok} -ge 4 ]] || continue
+        if LC_ALL=C grep -Fxq "$tok" "$cache_file" 2> /dev/null; then
+            return 0
+        fi
+    done < <(printf '%s\n' "$name_lower" | LC_ALL=C tr -cs 'a-z0-9' '\n')
+
+    return 1
+}
+
 # Detect ~/.<dir> directories that may belong to uninstalled CLI tools.
 # shellcheck disable=SC2329
 show_orphan_dotdir_hint_notice() {
@@ -713,6 +790,10 @@ show_orphan_dotdir_hint_notice() {
             if run_with_timeout 2 grep -rlq "$basename" "$HOME/Library/LaunchAgents/" 2> /dev/null; then
                 continue
             fi
+        fi
+
+        if dotdir_has_owning_gui_app "$name"; then
+            continue
         fi
 
         local size_human=""

@@ -20,6 +20,7 @@ teardown_file() {
 
 setup() {
     rm -rf "${HOME:?}"/*
+    rm -rf "${HOME:?}"/.[!.]* "${HOME:?}"/..?* 2> /dev/null || true
     mkdir -p "$HOME/.config/mole"
 }
 
@@ -347,6 +348,123 @@ EOTD
 
     [ "$status" -eq 0 ]
     [[ "$output" != *".youngcli-test"* ]]
+}
+
+@test "show_orphan_dotdir_hint_notice skips dotdir whose name matches an installed .app token (#872)" {
+    mkdir -p "$HOME/.bridge"
+    touch -t 202401010000 "$HOME/.bridge"
+
+    local fake_apps_root="$HOME/fake-Applications"
+    mkdir -p "$fake_apps_root/Proton Mail Bridge.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FAKE_APPS_ROOT="$fake_apps_root" \
+        bash --noprofile --norc <<'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+hint_get_path_size_kb_with_timeout() { echo "100"; }
+brew() { return 0; }
+export -f brew
+_MOLE_DOTDIR_OWNER_APP_ROOTS=("$FAKE_APPS_ROOT")
+show_orphan_dotdir_hint_notice
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".bridge"* ]]
+    [[ "$output" != *"Potential orphan dotfile"* ]]
+}
+
+@test "show_orphan_dotdir_hint_notice skips dotdir whose name matches a brew cask token (#872)" {
+    mkdir -p "$HOME/.bridge"
+    touch -t 202401010000 "$HOME/.bridge"
+
+    local empty_apps_root="$HOME/empty-Applications"
+    mkdir -p "$empty_apps_root"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" EMPTY_APPS_ROOT="$empty_apps_root" \
+        bash --noprofile --norc <<'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+hint_get_path_size_kb_with_timeout() { echo "100"; }
+brew() {
+    if [[ "${1:-}" == "list" && "${2:-}" == "--cask" ]]; then
+        printf '%s\n' "proton-mail-bridge" "1password"
+        return 0
+    fi
+    return 0
+}
+export -f brew
+_MOLE_DOTDIR_OWNER_APP_ROOTS=("$EMPTY_APPS_ROOT")
+show_orphan_dotdir_hint_notice
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".bridge"* ]]
+    [[ "$output" != *"Potential orphan dotfile"* ]]
+}
+
+@test "show_orphan_dotdir_hint_notice still flags dotdir whose name has no matching app or cask (#872)" {
+    mkdir -p "$HOME/.fakeorphan42xyz"
+    touch -t 202401010000 "$HOME/.fakeorphan42xyz"
+
+    local empty_apps_root="$HOME/empty-Applications2"
+    mkdir -p "$empty_apps_root"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" EMPTY_APPS_ROOT="$empty_apps_root" \
+        bash --noprofile --norc <<'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+hint_get_path_size_kb_with_timeout() { echo "100"; }
+brew() {
+    if [[ "${1:-}" == "list" && "${2:-}" == "--cask" ]]; then
+        printf '%s\n' "1password" "rectangle"
+        return 0
+    fi
+    return 0
+}
+export -f brew
+_MOLE_DOTDIR_OWNER_APP_ROOTS=("$EMPTY_APPS_ROOT")
+show_orphan_dotdir_hint_notice
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Potential orphan dotfile"* ]]
+    [[ "$output" == *".fakeorphan42xyz"* ]]
+}
+
+@test "show_orphan_dotdir_hint_notice ignores short app-name tokens (<4 chars) to avoid false matches (#872)" {
+    # `.ai-old` — token `ai` is 2 chars; an `AI.app` should NOT exempt it.
+    mkdir -p "$HOME/.ai-old"
+    touch -t 202401010000 "$HOME/.ai-old"
+
+    local fake_apps_root="$HOME/fake-Applications-short"
+    mkdir -p "$fake_apps_root/AI.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FAKE_APPS_ROOT="$fake_apps_root" \
+        bash --noprofile --norc <<'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+hint_get_path_size_kb_with_timeout() { echo "100"; }
+brew() { return 0; }
+export -f brew
+_MOLE_DOTDIR_OWNER_APP_ROOTS=("$FAKE_APPS_ROOT")
+show_orphan_dotdir_hint_notice
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Potential orphan dotfile"* ]]
+    [[ "$output" == *".ai-old"* ]]
 }
 
 @test "show_orphan_dotdir_hint_notice limits output to max 5 candidates" {
