@@ -1532,3 +1532,186 @@ INNER
 	[[ "$output" == *'"uninstall_name": "visual-studio-code"'* ]]
 	[[ "$output" == *'"source": "Homebrew"'* ]]
 }
+
+# ---------------------------------------------------------------------------
+# File selector regression: defaults delete / ByHost cleanup respect selection
+# ---------------------------------------------------------------------------
+
+@test "defaults delete is skipped when preferences plist is deselected in file selector" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+has_sensitive_data() { return 1; }
+find_app_system_files() { return 0; }
+
+trace="$HOME/defaults_trace.log"
+defaults() {
+	printf 'defaults %s\n' "$*" >> "$trace"
+	return 0
+}
+
+app_bundle="$HOME/Applications/TestApp.app"
+mkdir -p "$app_bundle"
+mkdir -p "$HOME/Library/Preferences"
+touch "$HOME/Library/Preferences/com.example.TestApp.plist"
+
+# find_app_files returns the plist — but we'll simulate deselection
+# by matching what the selector would do (the file won't be in related_files)
+find_app_files() {
+	printf '%s\n' "$HOME/Library/Application Support/TestApp"
+	printf '%s\n' "$HOME/Library/Caches/TestApp"
+	# Preferences plist is NOT included — simulating deselection
+}
+
+selected_apps=()
+selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications
+
+# defaults delete must NOT have been called
+if grep -q 'defaults delete com.example.TestApp' "$trace"; then
+	echo "FAIL: defaults delete ran despite deselection"
+	exit 1
+fi
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "ByHost cleanup is skipped when ByHost plists are deselected in file selector" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+has_sensitive_data() { return 1; }
+find_app_system_files() { return 0; }
+
+trace="$HOME/byhost_trace.log"
+mole_delete() {
+	printf 'mole_delete %s %s\n' "$1" "$2" >> "$trace"
+	return 0
+}
+defaults() { return 0; }
+
+app_bundle="$HOME/Applications/TestApp.app"
+mkdir -p "$app_bundle"
+mkdir -p "$HOME/Library/Preferences/ByHost"
+touch "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
+
+# find_app_files returns files but NOT ByHost — simulating deselection
+find_app_files() {
+	printf '%s\n' "$HOME/Library/Application Support/TestApp"
+	printf '%s\n' "$HOME/Library/Caches/TestApp"
+	# ByHost plist deliberately omitted
+}
+
+selected_apps=()
+selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications
+
+# ByHost mole_delete must NOT have been called
+if grep -q 'ByHost.*com.example.TestApp' "$trace"; then
+	echo "FAIL: ByHost cleanup ran despite deselection"
+	cat "$trace"
+	exit 1
+fi
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "defaults delete and ByHost cleanup run when preferences are selected" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+has_sensitive_data() { return 1; }
+find_app_system_files() { return 0; }
+
+trace="$HOME/selected_trace.log"
+mole_delete() {
+	printf 'mole_delete %s %s\n' "$1" "$2" >> "$trace"
+	return 0
+}
+defaults() {
+	printf 'defaults %s\n' "$*" >> "$trace"
+	return 0
+}
+
+app_bundle="$HOME/Applications/TestApp.app"
+mkdir -p "$app_bundle"
+mkdir -p "$HOME/Library/Preferences"
+touch "$HOME/Library/Preferences/com.example.TestApp.plist"
+mkdir -p "$HOME/Library/Preferences/ByHost"
+touch "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
+
+# find_app_files includes the plist and ByHost — simulating user selected them
+find_app_files() {
+	printf '%s\n' "$HOME/Library/Application Support/TestApp"
+	printf '%s\n' "$HOME/Library/Caches/TestApp"
+	printf '%s\n' "$HOME/Library/Preferences/com.example.TestApp.plist"
+	printf '%s\n' "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
+}
+
+selected_apps=()
+selected_apps+=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications
+
+# defaults delete must have been called
+grep -q 'defaults delete com.example.TestApp' "$trace" \
+	|| { echo "FAIL: defaults delete not called"; cat "$trace"; exit 1; }
+# ByHost mole_delete must have been called
+grep -q 'ByHost.*com.example.TestApp.*plist' "$trace" \
+	|| { echo "FAIL: ByHost cleanup not called"; cat "$trace"; exit 1; }
+EOF
+
+	[ "$status" -eq 0 ]
+}
