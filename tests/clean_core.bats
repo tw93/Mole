@@ -91,14 +91,17 @@ MOCK
     [[ "$output" != *"sudo should not be called"* ]]
 }
 
-@test "roomy clean rejects removed cleanup selection flags" {
-    local removed_flag
-    for removed_flag in "--select" "--categories" "--exclude"; do
-        run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean "$removed_flag"
+@test "roomy clean requires values for cleanup selection flags" {
+    local include_flag
+    for include_flag in "--select" "--categories"; do
+        run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean "$include_flag"
         [ "$status" -eq 1 ]
-        [[ "$output" == *"was removed in this release"* ]]
-        [[ "$output" == *"roomy clean --dry-run"* ]]
+        [[ "$output" == *"Missing value for --categories"* ]]
     done
+
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean "--exclude"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Missing value for --exclude"* ]]
 }
 
 @test "roomy clean --dry-run shows hint when sudo is not cached" {
