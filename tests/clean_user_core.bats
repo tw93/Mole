@@ -80,6 +80,29 @@ EOF
     [[ "$output" == *"Trash · emptied, 2 items"* ]]
 }
 
+@test "clean_user_essentials skips emptying Trash while cleanup uses Trash mode" {
+    mkdir -p "$HOME/.Trash"
+    touch "$HOME/.Trash/keep.tmp"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DELETE_MODE=trash bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+DRY_RUN=false
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+safe_clean() { :; }
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+debug_log() { :; }
+clean_user_essentials
+[[ -e "$HOME/.Trash/keep.tmp" ]]
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Trash · emptied"* ]]
+}
+
 @test "clean_user_essentials keeps Roomy runtime logs while cleaning other user logs" {
     mkdir -p "$HOME/Library/Logs/roomy"
     mkdir -p "$HOME/Library/Logs/OtherApp"

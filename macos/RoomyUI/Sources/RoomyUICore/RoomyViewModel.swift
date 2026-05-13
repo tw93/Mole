@@ -94,6 +94,7 @@ public final class RoomyViewModel: ObservableObject {
         } else {
             sectionErrors[.home] = failures.joined(separator: "\n")
         }
+        loadOperationJournal(limit: 8)
         isLoading = false
     }
 
@@ -119,6 +120,30 @@ public final class RoomyViewModel: ObservableObject {
     public func loadCleanupPreview() async {
         await runLoadingTask(section: .cleanup) {
             cleanupPreview = try await apiClient.cleanupPreview()
+        }
+    }
+
+    public func prepareCleanMyMac(section: RoomySection = .home) async {
+        await runLoadingTask(section: section) {
+            executionEvents = []
+            cleanupPreview = try await apiClient.cleanupPreview()
+            executionState = .previewReady
+        }
+    }
+
+    public func executeCleanMyMac(section: RoomySection = .home) async {
+        await runLoadingTask(section: section) {
+            let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true))
+            let useAdministrator = cleanupPreview?.adminRequired == true
+                && privilegedHelperStatus?.state == .enabled
+            executionState = .running
+            executionEvents = []
+            try await consumeExecutionEvents(apiClient.streamExecute(
+                domain: .clean,
+                planURL: planURL,
+                administrator: useAdministrator
+            ))
+            loadOperationJournal()
         }
     }
 

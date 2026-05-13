@@ -53,6 +53,46 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 	}
 }
 
+func TestPerformScanForJSONIncludesDuplicateGroupsWhenRequested(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("duplicate payload")
+	first := filepath.Join(root, "first.bin")
+	second := filepath.Join(root, "second.bin")
+	unique := filepath.Join(root, "unique.bin")
+
+	if err := os.WriteFile(first, content, 0o644); err != nil {
+		t.Fatalf("write first duplicate: %v", err)
+	}
+	if err := os.WriteFile(second, content, 0o644); err != nil {
+		t.Fatalf("write second duplicate: %v", err)
+	}
+	if err := os.WriteFile(unique, []byte("different payload"), 0o644); err != nil {
+		t.Fatalf("write unique: %v", err)
+	}
+
+	oldDuplicatesMode := *duplicatesMode
+	oldMinSize := *duplicateMinSizeFlag
+	*duplicatesMode = true
+	*duplicateMinSizeFlag = 1
+	t.Cleanup(func() {
+		*duplicatesMode = oldDuplicatesMode
+		*duplicateMinSizeFlag = oldMinSize
+	})
+
+	result := performScanForJSON(root, false)
+
+	if len(result.DuplicateGroups) != 1 {
+		t.Fatalf("expected one duplicate group, got %#v", result.DuplicateGroups)
+	}
+	group := result.DuplicateGroups[0]
+	if group.WastedBytes != int64(len(content)) {
+		t.Fatalf("expected wasted bytes %d, got %d", len(content), group.WastedBytes)
+	}
+	if len(group.Files) != 2 {
+		t.Fatalf("expected two duplicate files, got %#v", group.Files)
+	}
+}
+
 func TestJSONEntriesFromDirEntriesIncludesMetadata(t *testing.T) {
 	oldAccess := time.Now().AddDate(0, 0, -120)
 

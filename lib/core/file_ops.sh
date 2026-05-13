@@ -245,9 +245,29 @@ safe_remove() {
         elif [[ -e "$path" ]]; then
             size_kb=$(get_path_size_kb "$path" 2> /dev/null || echo "0")
         fi
-        if [[ "$size_kb" =~ ^[0-9]+$ ]] && [[ "$size_kb" -gt 0 ]]; then
-            size_human=$(bytes_to_human "$((size_kb * 1024))" 2> /dev/null || echo "${size_kb}KB")
+    fi
+    if [[ "$size_kb" =~ ^[0-9]+$ ]] && [[ "$size_kb" -gt 0 ]]; then
+        size_human=$(bytes_to_human "$((size_kb * 1024))" 2> /dev/null || echo "${size_kb}KB")
+    fi
+
+    if [[ "${ROOMY_DELETE_MODE:-permanent}" == "trash" && -z "${_ROOMY_DELETE_FALLBACK_ACTIVE:-}" ]]; then
+        if _roomy_move_to_trash "$path" false; then
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "TRASHED" "$path" "$size_human"
+            _roomy_delete_log "trash" "$size_kb" "ok" "$path"
+            return 0
         fi
+        if [[ "${ROOMY_TRASH_STRICT:-0}" == "1" ]]; then
+            debug_log "Trash move failed, strict mode skipped permanent delete: $path"
+            log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "trash unavailable"
+            _roomy_delete_log "trash" "$size_kb" "trash-unavailable" "$path"
+            return 1
+        fi
+        if [[ -z "${_ROOMY_TRASH_FALLBACK_WARNED:-}" ]]; then
+            _ROOMY_TRASH_FALLBACK_WARNED=1
+            export _ROOMY_TRASH_FALLBACK_WARNED
+            printf 'Warning: Trash unavailable, removing permanently. Subsequent files this session also bypass Trash.\n' >&2
+        fi
+        debug_log "Trash move failed, falling back to permanent delete: $path"
     fi
 
     # Perform the deletion
@@ -264,6 +284,9 @@ safe_remove() {
     if [[ $rm_exit -eq 0 ]]; then
         # Log successful removal
         log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
+        if [[ "${ROOMY_DELETE_MODE:-permanent}" == "trash" && -z "${_ROOMY_DELETE_FALLBACK_ACTIVE:-}" ]]; then
+            _roomy_delete_log "trash" "$size_kb" "trash-fallback-rm" "$path"
+        fi
         return 0
     else
         # Check if it's a permission error
@@ -276,6 +299,9 @@ safe_remove() {
         else
             [[ "$silent" != "true" ]] && log_error "Failed to remove: $path"
             log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "FAILED" "$path" "error"
+        fi
+        if [[ "${ROOMY_DELETE_MODE:-permanent}" == "trash" && -z "${_ROOMY_DELETE_FALLBACK_ACTIVE:-}" ]]; then
+            _roomy_delete_log "trash" "$size_kb" "error" "$path"
         fi
         return 1
     fi
@@ -512,6 +538,12 @@ roomy_delete() {
             log_operation "${ROOMY_CURRENT_COMMAND:-uninstall}" "TRASHED" "$path" "${size_kb}KB"
             return 0
         fi
+        if [[ "${ROOMY_TRASH_STRICT:-0}" == "1" ]]; then
+            debug_log "Trash move failed, strict mode skipped permanent delete: $path"
+            _roomy_delete_log "trash" "$size_kb" "trash-unavailable" "$path"
+            log_operation "${ROOMY_CURRENT_COMMAND:-uninstall}" "FAILED" "$path" "trash unavailable"
+            return 1
+        fi
         # User explicitly chose Trash for recoverability. Surface the fallback
         # to permanent rm once per session so they know an "undo" isn't there.
         if [[ -z "${_ROOMY_TRASH_FALLBACK_WARNED:-}" ]]; then
@@ -531,7 +563,7 @@ roomy_delete() {
     elif [[ "$needs_sudo" == "true" ]]; then
         safe_sudo_remove "$path" || rc=$?
     else
-        safe_remove "$path" "true" || rc=$?
+        _ROOMY_DELETE_FALLBACK_ACTIVE=1 safe_remove "$path" "true" || rc=$?
     fi
 
     local status_label="ok"
@@ -572,6 +604,10 @@ _roomy_move_to_trash() {
         trash "$path" > /dev/null 2>&1 && return 0
     fi
 
+    _roomy_move_user_path_to_user_trash "$path" && return 0
+
+    [[ "${ROOMY_TRASH_NO_APPLESCRIPT:-0}" == "1" ]] && return 1
+
     # AppleScript fallback. Pass the path via argv so special chars (quotes,
     # backslashes) cannot break out of the quoted string.
     osascript - "$path" > /dev/null 2>&1 << 'APPLESCRIPT'
@@ -582,6 +618,49 @@ on run argv
     end tell
 end run
 APPLESCRIPT
+}
+
+_roomy_move_user_path_to_user_trash() {
+    local path="$1"
+    local user_home="${HOME:-}"
+
+    if [[ -z "$user_home" || "$user_home" != /* || "$user_home" == "/" || "$user_home" == "/var/root" ]]; then
+        debug_log "Refusing Trash move: invalid user home: ${user_home:-<empty>}"
+        return 1
+    fi
+    if [[ -z "$path" ]] || [[ ! -e "$path" && ! -L "$path" ]]; then
+        debug_log "Refusing Trash move: path does not exist: ${path:-<empty>}"
+        return 1
+    fi
+
+    local trash_dir="${user_home%/}/.Trash"
+    if [[ -L "$trash_dir" ]]; then
+        debug_log "Refusing Trash move: user Trash is a symlink: $trash_dir"
+        return 1
+    fi
+    mkdir -p "$trash_dir" 2> /dev/null || return 1
+    [[ -d "$trash_dir" && ! -L "$trash_dir" ]] || return 1
+    chmod 700 "$trash_dir" 2> /dev/null || true
+
+    local base
+    base=$(basename "$path")
+    base="${base//:/__}"
+    base="${base//\//__}"
+    [[ -n "$base" && "$base" != "." && "$base" != ".." ]] || base="roomy-trash-item"
+
+    local dest="$trash_dir/$base"
+    local ts suffix
+    ts=$(date +%s 2> /dev/null || echo 0)
+    suffix=0
+
+    while [[ -e "$dest" || -L "$dest" ]]; do
+        suffix=$((suffix + 1))
+        [[ $suffix -le 100 ]] || return 1
+        dest="$trash_dir/$base.$ts.$$.$suffix"
+    done
+
+    mv -n "$path" "$dest" > /dev/null 2>&1 || return 1
+    [[ ! -e "$path" && ! -L "$path" && ( -e "$dest" || -L "$dest" ) ]]
 }
 
 _roomy_move_sudo_path_to_user_trash() {

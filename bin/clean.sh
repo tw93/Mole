@@ -29,6 +29,9 @@ IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
 ROOMY_CONFIG_DIR="${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}"
 EXPORT_LIST_FILE="$ROOMY_CONFIG_DIR/clean-list.txt"
+export ROOMY_DELETE_MODE="${ROOMY_DELETE_MODE:-trash}"
+export ROOMY_TRASH_STRICT="${ROOMY_TRASH_STRICT:-1}"
+export ROOMY_TRASH_NO_APPLESCRIPT="${ROOMY_TRASH_NO_APPLESCRIPT:-1}"
 CURRENT_SECTION=""
 readonly PROTECTED_SW_DOMAINS=(
     # Web editors
@@ -57,6 +60,32 @@ readonly PROTECTED_SW_DOMAINS=(
 
 declare -a WHITELIST_PATTERNS=()
 WHITELIST_WARNINGS=()
+CLEAN_INCLUDE_CATEGORIES=()
+CLEAN_EXCLUDE_CATEGORIES=()
+AUTO_YES=false
+MAX_DELETE_BYTES=0
+MAX_RISK_LEVEL=""
+REQUIRE_DRY_RUN_HOURS=""
+
+readonly CLEAN_CATEGORY_SPECS=(
+    "system|System caches and rebuildable system data"
+    "user-essentials|User logs, temp files, Trash, recent items"
+    "app-caches|Application caches and sandbox caches"
+    "browsers|Browser caches and old browser versions"
+    "cloud-office|Cloud storage and Office caches"
+    "developer|Developer tool caches"
+    "applications|Known GUI application caches"
+    "virtualization|Virtualization tool caches"
+    "app-support|Application Support logs and temporary data"
+    "leftovers|Already-uninstalled app leftovers"
+    "apple-silicon|Apple Silicon and Rosetta caches"
+    "device-backups|Cached device firmware and backup hints"
+    "time-machine|Failed Time Machine backup cleanup"
+    "large-files|Review-only large file hints"
+    "system-data|Review-only System Data clues"
+    "project-artifacts|Review-only project artifact hints"
+    "external|External volume metadata cleanup"
+)
 if [[ -f "$ROOMY_CONFIG_DIR/whitelist" ]]; then
     while IFS= read -r line; do
         # shellcheck disable=SC2295
@@ -135,6 +164,203 @@ if [[ ${#WHITELIST_PATTERNS[@]} -gt 0 ]]; then
         fi
     done
 fi
+
+clean_category_key() {
+    local raw="$1"
+    raw=$(printf '%s' "$raw" | tr '[:upper:] _' '[:lower:]--')
+    raw="${raw//--/-}"
+    case "$raw" in
+        user | essentials) raw="user-essentials" ;;
+        apps | application | app) raw="applications" ;;
+        browser) raw="browsers" ;;
+        cloud | office | cloud-and-office | cloud-office) raw="cloud-office" ;;
+        dev | developer-tools) raw="developer" ;;
+        support | application-support) raw="app-support" ;;
+        leftovers | app-leftovers) raw="leftovers" ;;
+        apple | silicon | rosetta | apple-silicon-updates) raw="apple-silicon" ;;
+        devices | firmware | backups | device-backups-and-firmware) raw="device-backups" ;;
+        timemachine | time-machine-failed-backups) raw="time-machine" ;;
+        large | large-file) raw="large-files" ;;
+        systemdata | system-data-clues) raw="system-data" ;;
+        projects | project | artifacts | project-artifact) raw="project-artifacts" ;;
+    esac
+    printf '%s\n' "$raw"
+}
+
+clean_category_exists() {
+    local key="$1"
+    local spec
+    for spec in "${CLEAN_CATEGORY_SPECS[@]}"; do
+        [[ "${spec%%|*}" == "$key" ]] && return 0
+    done
+    return 1
+}
+
+clean_parse_category_list() {
+    local target="$1"
+    local list="$2"
+    local item key
+    list="${list//,/ }"
+    for item in $list; do
+        key=$(clean_category_key "$item")
+        if ! clean_category_exists "$key"; then
+            echo "Unknown cleanup category: $item" >&2
+            echo "Run 'roomy clean --list-categories' for valid category keys." >&2
+            return 1
+        fi
+        if [[ "$target" == "include" ]]; then
+            CLEAN_INCLUDE_CATEGORIES+=("$key")
+        else
+            CLEAN_EXCLUDE_CATEGORIES+=("$key")
+        fi
+    done
+}
+
+clean_array_contains() {
+    local needle="$1"
+    shift || true
+    local item
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+should_run_clean_category() {
+    local key="$1"
+    if [[ ${#CLEAN_INCLUDE_CATEGORIES[@]} -gt 0 ]] && ! clean_array_contains "$key" "${CLEAN_INCLUDE_CATEGORIES[@]}"; then
+        return 1
+    fi
+    if [[ ${#CLEAN_EXCLUDE_CATEGORIES[@]} -gt 0 ]] && clean_array_contains "$key" "${CLEAN_EXCLUDE_CATEGORIES[@]}"; then
+        return 1
+    fi
+    return 0
+}
+
+show_clean_categories() {
+    local spec
+    for spec in "${CLEAN_CATEGORY_SPECS[@]}"; do
+        printf '%-18s %s\n' "${spec%%|*}" "${spec#*|}"
+    done
+}
+
+clean_join_csv() {
+    local first=true
+    local item
+    for item in "$@"; do
+        if $first; then
+            first=false
+        else
+            printf ','
+        fi
+        printf '%s' "$item"
+    done
+}
+
+parse_clean_size_gb() {
+    local value="$1"
+    awk -v n="$value" 'BEGIN {
+        if (n !~ /^[0-9]+([.][0-9]+)?$/) exit 1
+        printf "%.0f\n", n * 1073741824
+    }'
+}
+
+clean_risk_rank() {
+    case "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" in
+        LOW) printf '1\n' ;;
+        MEDIUM) printf '2\n' ;;
+        HIGH) printf '3\n' ;;
+        *) printf '2\n' ;;
+    esac
+}
+
+validate_clean_risk_level() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        low | medium | high) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+check_required_dry_run_age() {
+    [[ -n "$REQUIRE_DRY_RUN_HOURS" ]] || return 0
+    [[ "$REQUIRE_DRY_RUN_HOURS" =~ ^[0-9]+$ ]] || {
+        echo "Invalid --require-dry-run-age value: $REQUIRE_DRY_RUN_HOURS" >&2
+        return 1
+    }
+    [[ -f "$EXPORT_LIST_FILE" ]] || {
+        echo "No cleanup dry-run preview found at ${EXPORT_LIST_FILE/#$HOME/~}" >&2
+        return 1
+    }
+
+    local modified now age_seconds max_seconds
+    modified=$(stat -f %m "$EXPORT_LIST_FILE" 2> /dev/null || echo 0)
+    now=$(date +%s)
+    [[ "$modified" =~ ^[0-9]+$ && "$modified" -gt 0 ]] || return 1
+    age_seconds=$((now - modified))
+    max_seconds=$((REQUIRE_DRY_RUN_HOURS * 3600))
+    if ((age_seconds > max_seconds)); then
+        echo "Cleanup dry-run preview is older than ${REQUIRE_DRY_RUN_HOURS}h: ${EXPORT_LIST_FILE/#$HOME/~}" >&2
+        return 1
+    fi
+}
+
+clean_automation_preflight() {
+    [[ "$DRY_RUN" == "true" ]] && return 0
+    [[ "${ROOMY_AUTOMATION_PREFLIGHT:-0}" == "1" ]] && return 0
+
+    check_required_dry_run_age || return 1
+
+    if [[ "$MAX_DELETE_BYTES" -le 0 && -z "$MAX_RISK_LEVEL" ]]; then
+        return 0
+    fi
+
+    local capture_file metrics_file output_file
+    capture_file=$(create_temp_file)
+    metrics_file=$(create_temp_file)
+    output_file=$(create_temp_file)
+
+    local -a preflight_args=(--dry-run)
+    if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
+        preflight_args+=(--external "$EXTERNAL_VOLUME_TARGET")
+    fi
+    if [[ ${#CLEAN_INCLUDE_CATEGORIES[@]} -gt 0 ]]; then
+        preflight_args+=(--categories "$(clean_join_csv "${CLEAN_INCLUDE_CATEGORIES[@]}")")
+    fi
+    if [[ ${#CLEAN_EXCLUDE_CATEGORIES[@]} -gt 0 ]]; then
+        preflight_args+=(--exclude "$(clean_join_csv "${CLEAN_EXCLUDE_CATEGORIES[@]}")")
+    fi
+
+    if ! ROOMY_AUTOMATION_PREFLIGHT=1 ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_API_CLEAN_METRICS_FILE="$metrics_file" "$0" "${preflight_args[@]}" > "$output_file" 2>&1; then
+        echo "Automation preflight dry-run failed. Re-run with --dry-run --debug for details." >&2
+        return 1
+    fi
+
+    local estimated_bytes=0
+    if [[ -f "$metrics_file" ]]; then
+        estimated_bytes=$(awk -F'\t' '$1 == "bytes" { print $2; found=1 } END { if (!found) print 0 }' "$metrics_file")
+    fi
+    [[ "$estimated_bytes" =~ ^[0-9]+$ ]] || estimated_bytes=0
+
+    if [[ "$MAX_DELETE_BYTES" -gt 0 && "$estimated_bytes" -gt "$MAX_DELETE_BYTES" ]]; then
+        echo "Cleanup estimate $(bytes_to_human "$estimated_bytes") exceeds --max-delete-gb limit $(bytes_to_human "$MAX_DELETE_BYTES")." >&2
+        return 1
+    fi
+
+    if [[ -n "$MAX_RISK_LEVEL" && -f "$capture_file" ]]; then
+        local allowed_rank found_risk found_rank
+        allowed_rank=$(clean_risk_rank "$MAX_RISK_LEVEL")
+        while IFS=$'\t' read -r _kind _section _description _size _count _skipped found_risk _reason _admin _skip; do
+            [[ -n "$found_risk" ]] || continue
+            found_rank=$(clean_risk_rank "$found_risk")
+            if [[ "$found_rank" -gt "$allowed_rank" ]]; then
+                echo "Cleanup preflight found $found_risk risk item above --max-risk $MAX_RISK_LEVEL: $_description" >&2
+                return 1
+            fi
+        done < "$capture_file"
+    fi
+
+    echo "Automation preflight passed: estimated $(bytes_to_human "$estimated_bytes")"
+}
 
 # Section tracking and summary counters.
 total_items=0
@@ -928,7 +1154,24 @@ EOF
         return
     fi
 
-    if [[ -t 0 ]]; then
+    if ! should_run_clean_category "system"; then
+        SYSTEM_CLEAN=false
+        if [[ -t 1 ]]; then
+            echo -e "${GRAY}${ICON_LIST} System cleanup skipped by category filter${NC}"
+            echo ""
+        fi
+    elif [[ "$AUTO_YES" == "true" ]]; then
+        echo "Running with --yes"
+        if has_sudo_session; then
+            SYSTEM_CLEAN=true
+            echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
+        else
+            SYSTEM_CLEAN=false
+            echo "  ${ICON_LIST} System-level cleanup skipped, requires sudo"
+        fi
+        echo "  ${ICON_LIST} User-level cleanup will proceed automatically"
+        echo ""
+    elif [[ -t 0 ]]; then
         if has_sudo_session; then
             SYSTEM_CLEAN=true
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
@@ -1103,12 +1346,14 @@ perform_cleanup() {
     set +e
 
     if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
-        start_section "External volume"
-        clean_external_volume_target "$EXTERNAL_VOLUME_TARGET"
-        end_section
+        if should_run_clean_category "external"; then
+            start_section "External volume"
+            clean_external_volume_target "$EXTERNAL_VOLUME_TARGET"
+            end_section
+        fi
     else
         # ===== 1. System =====
-        if [[ "$SYSTEM_CLEAN" == "true" ]]; then
+        if [[ "$SYSTEM_CLEAN" == "true" ]] && should_run_clean_category "system"; then
             start_section "System"
             clean_deep_system
             clean_local_snapshots
@@ -1123,97 +1368,127 @@ perform_cleanup() {
         fi
 
         # ===== 2. User essentials =====
-        start_section "User essentials"
-        clean_user_essentials
-        clean_finder_metadata
-        end_section
+        if should_run_clean_category "user-essentials"; then
+            start_section "User essentials"
+            clean_user_essentials
+            clean_finder_metadata
+            end_section
+        fi
 
         # ===== 3. App caches (merged sandboxed and standard app caches) =====
-        start_section "App caches"
-        clean_app_caches
-        end_section
+        if should_run_clean_category "app-caches"; then
+            start_section "App caches"
+            clean_app_caches
+            end_section
+        fi
 
         # ===== 4. Browsers =====
-        start_section "Browsers"
-        clean_browsers
-        end_section
+        if should_run_clean_category "browsers"; then
+            start_section "Browsers"
+            clean_browsers
+            end_section
+        fi
 
         # ===== 5. Cloud & Office =====
-        start_section "Cloud & Office"
-        # Force shell fallback so timeout runs in this shell context.
-        # The Cloud/Office cleaners rely on helpers (safe_clean, whitelist checks)
-        # defined in this script and sourced modules.
-        if run_with_shell_timeout 300 run_cloud_and_office_cleanup; then
-            : # completed successfully
-        else
-            local ret=$?
-            if [[ $ret -eq 124 ]]; then
-                log_warning "Cloud & Office cleanup timed out after 5 minutes, skipping remaining items"
-            elif [[ $ret -eq 130 ]]; then
-                return 130
+        if should_run_clean_category "cloud-office"; then
+            start_section "Cloud & Office"
+            # Force shell fallback so timeout runs in this shell context.
+            # The Cloud/Office cleaners rely on helpers (safe_clean, whitelist checks)
+            # defined in this script and sourced modules.
+            if run_with_shell_timeout 300 run_cloud_and_office_cleanup; then
+                : # completed successfully
             else
-                log_warning "Cloud & Office cleanup failed with exit code $ret"
+                local ret=$?
+                if [[ $ret -eq 124 ]]; then
+                    log_warning "Cloud & Office cleanup timed out after 5 minutes, skipping remaining items"
+                elif [[ $ret -eq 130 ]]; then
+                    return 130
+                else
+                    log_warning "Cloud & Office cleanup failed with exit code $ret"
+                fi
             fi
+            end_section
         fi
-        end_section
 
         # ===== 6. Developer tools (merged CLI and GUI tooling) =====
-        start_section "Developer tools"
-        clean_developer_tools
-        end_section
+        if should_run_clean_category "developer"; then
+            start_section "Developer tools"
+            clean_developer_tools
+            end_section
+        fi
 
         # ===== 7. Applications =====
-        start_section "Applications"
-        clean_user_gui_applications
-        end_section
+        if should_run_clean_category "applications"; then
+            start_section "Applications"
+            clean_user_gui_applications
+            end_section
+        fi
 
         # ===== 8. Virtualization =====
-        start_section "Virtualization"
-        clean_virtualization_tools
-        end_section
+        if should_run_clean_category "virtualization"; then
+            start_section "Virtualization"
+            clean_virtualization_tools
+            end_section
+        fi
 
         # ===== 9. Application Support =====
-        start_section "Application Support"
-        clean_application_support_logs
-        end_section
+        if should_run_clean_category "app-support"; then
+            start_section "Application Support"
+            clean_application_support_logs
+            end_section
+        fi
 
         # ===== 10. App leftovers =====
-        start_section "App leftovers"
-        clean_orphaned_app_data
-        clean_orphaned_system_services
-        clean_orphaned_container_stubs
-        show_user_launch_agent_hint_notice
-        show_orphan_dotdir_hint_notice
-        end_section
+        if should_run_clean_category "leftovers"; then
+            start_section "App leftovers"
+            clean_orphaned_app_data
+            clean_orphaned_system_services
+            clean_orphaned_container_stubs
+            show_user_launch_agent_hint_notice
+            show_orphan_dotdir_hint_notice
+            end_section
+        fi
 
         # ===== 11. Apple Silicon =====
-        clean_apple_silicon_caches
+        if should_run_clean_category "apple-silicon"; then
+            clean_apple_silicon_caches
+        fi
 
         # ===== 12. Device backups & firmware =====
-        start_section "Device backups & firmware"
-        clean_cached_device_firmware
-        check_ios_device_backups
-        end_section
+        if should_run_clean_category "device-backups"; then
+            start_section "Device backups & firmware"
+            clean_cached_device_firmware
+            check_ios_device_backups
+            end_section
+        fi
 
         # ===== 13. Time Machine =====
-        start_section "Time Machine"
-        clean_time_machine_failed_backups
-        end_section
+        if should_run_clean_category "time-machine"; then
+            start_section "Time Machine"
+            clean_time_machine_failed_backups
+            end_section
+        fi
 
         # ===== 14. Large files =====
-        start_section "Large files"
-        check_large_file_candidates
-        end_section
+        if should_run_clean_category "large-files"; then
+            start_section "Large files"
+            check_large_file_candidates
+            end_section
+        fi
 
         # ===== 15. System Data clues =====
-        start_section "System Data clues"
-        show_system_data_hint_notice
-        end_section
+        if should_run_clean_category "system-data"; then
+            start_section "System Data clues"
+            show_system_data_hint_notice
+            end_section
+        fi
 
         # ===== 16. Project artifacts =====
-        start_section "Project artifacts"
-        show_project_artifact_hint_notice
-        end_section
+        if should_run_clean_category "project-artifacts"; then
+            start_section "Project artifacts"
+            show_project_artifact_hint_notice
+            end_section
+        fi
     fi
 
     # ===== Final summary =====
@@ -1353,6 +1628,9 @@ main() {
                 DRY_RUN=true
                 export ROOMY_DRY_RUN=1
                 ;;
+            "--yes" | "-y")
+                AUTO_YES=true
+                ;;
             "--external")
                 shift
                 if [[ $# -eq 0 ]]; then
@@ -1361,15 +1639,61 @@ main() {
                 fi
                 EXTERNAL_VOLUME_TARGET=$(validate_external_volume_target "$1") || exit 1
                 ;;
+            "--categories" | "--select")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing value for --categories" >&2
+                    exit 1
+                fi
+                clean_parse_category_list "include" "$1" || exit 1
+                ;;
+            "--exclude")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing value for --exclude" >&2
+                    exit 1
+                fi
+                clean_parse_category_list "exclude" "$1" || exit 1
+                ;;
+            "--list-categories")
+                show_clean_categories
+                exit 0
+                ;;
+            "--max-delete-gb")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing value for --max-delete-gb" >&2
+                    exit 1
+                fi
+                MAX_DELETE_BYTES=$(parse_clean_size_gb "$1") || {
+                    echo "Invalid --max-delete-gb value: $1" >&2
+                    exit 1
+                }
+                ;;
+            "--max-risk")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing value for --max-risk" >&2
+                    exit 1
+                fi
+                validate_clean_risk_level "$1" || {
+                    echo "Invalid --max-risk value: $1 (use low, medium, or high)" >&2
+                    exit 1
+                }
+                MAX_RISK_LEVEL="$1"
+                ;;
+            "--require-dry-run-age")
+                shift
+                if [[ $# -eq 0 || ! "$1" =~ ^[0-9]+$ ]]; then
+                    echo "Invalid --require-dry-run-age value" >&2
+                    exit 1
+                fi
+                REQUIRE_DRY_RUN_HOURS="$1"
+                ;;
             "--whitelist")
                 source "$SCRIPT_DIR/../lib/manage/whitelist.sh"
                 manage_whitelist "clean"
                 exit 0
-                ;;
-            "--select" | "--categories" | "--exclude")
-                echo "roomy clean $1 was removed in this release." >&2
-                echo "Use 'roomy clean --dry-run' to preview cleanup and 'roomy clean --whitelist' to protect paths." >&2
-                exit 1
                 ;;
             -*)
                 echo "Unknown option for roomy clean: $1" >&2
@@ -1385,6 +1709,7 @@ main() {
         shift
     done
 
+    clean_automation_preflight || exit 1
     start_cleanup
     hide_cursor
     perform_cleanup

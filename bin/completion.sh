@@ -11,8 +11,8 @@ for entry in "${ROOMY_COMMANDS[@]}"; do
     command_names+=("${entry%%:*}")
 done
 command_words="${command_names[*]}"
-clean_option_words="--dry-run -n --external --whitelist --debug --help -h"
-analyze_option_words="--json --help -h"
+clean_option_words="--dry-run -n --external --categories --exclude --list-categories --yes --max-delete-gb --max-risk --require-dry-run-age --whitelist --debug --help -h"
+analyze_option_words="--json --duplicates --duplicates-min-size --help -h"
 
 emit_zsh_subcommands() {
     for entry in "${ROOMY_COMMANDS[@]}"; do
@@ -31,10 +31,19 @@ emit_fish_completions() {
     printf '\n'
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l dry-run -s n -d "Preview cleanup without making changes"\n' "$cmd"
     printf 'complete -c %s -n "__fish_seen_subcommand_from clean" -l external -r -a "(__fish_complete_directories)" -d "Clean OS metadata from an external volume"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l categories -r -d "Run only selected categories"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l exclude -r -d "Skip selected categories"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l list-categories -d "Show cleanup category keys"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l yes -d "Confirm non-interactive cleanup"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l max-delete-gb -r -d "Stop above estimated GiB limit"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l max-risk -r -a "low medium high" -d "Stop above allowed risk"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l require-dry-run-age -r -d "Require recent dry-run preview"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l whitelist -d "Manage protected paths"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l debug -d "Show detailed logs"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l json -d "Output analysis as JSON"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l duplicates -d "Include duplicate file groups in JSON output"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l duplicates-min-size -r -d "Minimum duplicate candidate size in bytes"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -c %s -n "__fish_seen_subcommand_from analyze analyse; and not __fish_seen_argument -l json -l help -s h" -a "(__fish_complete_directories)" -d "Path to analyze"\n' "$cmd"
     printf '\n'
@@ -327,6 +336,9 @@ _roomy_completions()
                     --external)
                         COMPREPLY=( \$(compgen -d -- "\$cur_word") )
                         ;;
+                    --max-risk)
+                        COMPREPLY=( \$(compgen -W "low medium high" -- "\$cur_word") )
+                        ;;
                     *)
                         COMPREPLY=( \$(compgen -W "$clean_option_words" -- "\$cur_word") )
                         ;;
@@ -369,6 +381,13 @@ EOF
         printf "                '--dry-run[Preview cleanup without making changes]' \\\\\n"
         printf "                '-n[Preview cleanup without making changes]' \\\\\n"
         printf "                '--external[Clean OS metadata from an external volume]:path:_files -/' \\\\\n"
+        printf "                '--categories[Run only selected categories]:categories:' \\\\\n"
+        printf "                '--exclude[Skip selected categories]:categories:' \\\\\n"
+        printf "                '--list-categories[Show cleanup category keys]' \\\\\n"
+        printf "                '--yes[Confirm non-interactive cleanup]' \\\\\n"
+        printf "                '--max-delete-gb[Stop above estimated GiB limit]:gib:' \\\\\n"
+        printf "                '--max-risk[Stop above allowed risk]:risk:(low medium high)' \\\\\n"
+        printf "                '--require-dry-run-age[Require recent dry-run preview]:hours:' \\\\\n"
         printf "                '--whitelist[Manage protected paths]' \\\\\n"
         printf "                '--debug[Show detailed logs]' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]'\n"
@@ -376,6 +395,8 @@ EOF
         printf '        analyze|analyse)\n'
         printf '            _arguments \\\n'
         printf "                '--json[Output analysis as JSON]' \\\\\n"
+        printf "                '--duplicates[Include duplicate file groups in JSON output]' \\\\\n"
+        printf "                '--duplicates-min-size[Minimum duplicate candidate size in bytes]:bytes:' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]' \\\\\n"
         printf "                '*:path:_files'\n"
         printf '            ;;\n'

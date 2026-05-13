@@ -121,31 +121,18 @@ public struct RoomyRootView: View {
 
 private struct AppBackground: View {
     var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.58),
-                    Color(red: 0.91, green: 0.97, blue: 0.99).opacity(0.30),
-                    Color(nsColor: .windowBackgroundColor).opacity(0.88)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.20)
-        }
+        Color(nsColor: .windowBackgroundColor)
         .ignoresSafeArea()
     }
 }
 
 private struct HomeView: View {
     @ObservedObject var model: RoomyViewModel
+    @State private var showCleanMyMacConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 14) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
                 MetricCard(
                     title: "Free Space",
                     value: Formatters.bytes(freeDiskBytes),
@@ -169,6 +156,20 @@ private struct HomeView: View {
                 )
             }
 
+            CleanMyMacPanel(
+                preview: model.cleanupPreview,
+                executionState: model.executionState,
+                isLoading: model.isLoading,
+                recentActivityCount: model.operationJournalEntries.count,
+                onClean: startCleanMyMac,
+                onReview: {
+                    model.selectedSection = .cleanup
+                    Task { await model.loadCleanupPreview() }
+                }
+            )
+
+            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+
             SectionBand(title: "Free Up Space", symbol: "externaldrive.badge.minus") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
                     Button {
@@ -177,7 +178,12 @@ private struct HomeView: View {
                             await model.loadCleanupPreview()
                         }
                     } label: {
-                        ActionRow(title: "Preview cleanup", detail: "Find cache, log, and rebuildable files before deleting anything.")
+                        ActionRow(
+                            title: "Review cleanup",
+                            detail: "Category preview, risk, whitelist, and admin needs.",
+                            symbol: "doc.text.magnifyingglass",
+                            tint: .green
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isLoading)
@@ -188,7 +194,12 @@ private struct HomeView: View {
                             await model.loadStorage()
                         }
                     } label: {
-                        ActionRow(title: "Scan home storage", detail: "Show largest folders and files in your home folder.")
+                        ActionRow(
+                            title: "Scan storage",
+                            detail: "Largest folders, files, and duplicate candidates.",
+                            symbol: "internaldrive",
+                            tint: .blue
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isLoading)
@@ -199,7 +210,12 @@ private struct HomeView: View {
                             await model.loadInstallerPreview()
                         }
                     } label: {
-                        ActionRow(title: "Find installers", detail: "Locate redundant DMG, PKG, ZIP, ISO, and XIP installer files.")
+                        ActionRow(
+                            title: "Find installers",
+                            detail: "Redundant DMG, PKG, ZIP, ISO, and XIP files.",
+                            symbol: "shippingbox",
+                            tint: .orange
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isLoading)
@@ -210,7 +226,12 @@ private struct HomeView: View {
                             await model.loadPurgePreview()
                         }
                     } label: {
-                        ActionRow(title: "Scan project artifacts", detail: "Find old node_modules, build, dist, Pods, and .build folders.")
+                        ActionRow(
+                            title: "Project artifacts",
+                            detail: "Old node_modules, build, dist, Pods, and .build folders.",
+                            symbol: "hammer",
+                            tint: .purple
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isLoading)
@@ -226,7 +247,7 @@ private struct HomeView: View {
                         Button {
                             model.loadOperationJournal()
                         } label: {
-                            Label("Load Activity", systemImage: "list.bullet.rectangle")
+                            Label("Refresh Activity", systemImage: "arrow.clockwise")
                         }
                         .disabled(model.isLoading)
                     }
@@ -234,7 +255,7 @@ private struct HomeView: View {
                     if model.operationJournalEntries.isEmpty {
                         EmptyStateView(
                             title: "No activity loaded",
-                            detail: "Load Activity shows recent scans, skipped paths, failures, and Trash operations from Roomy's structured journal.",
+                            detail: "Recent previews, cleanup runs, skipped paths, and Trash operations appear here.",
                             symbol: "clock.arrow.circlepath"
                         )
                     } else {
@@ -246,6 +267,17 @@ private struct HomeView: View {
                     }
                 }
             }
+        }
+        .confirmationDialog("Clean recoverable files?", isPresented: $showCleanMyMacConfirm) {
+            Button("Move Recoverable Files to Trash", role: .destructive) {
+                Task { await model.executeCleanMyMac() }
+            }
+            Button("Review Details") {
+                model.selectedSection = .cleanup
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(cleanMyMacConfirmationMessage)
         }
     }
 
@@ -262,11 +294,30 @@ private struct HomeView: View {
         guard let primaryDisk else { return "Load storage status" }
         return "\(Formatters.bytes(primaryDisk.used)) of \(Formatters.bytes(primaryDisk.total)) used"
     }
+
+    private var cleanMyMacConfirmationMessage: String {
+        let previewText: String
+        if let preview = model.cleanupPreview {
+            previewText = "\(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) recoverable items"
+        } else {
+            previewText = "recoverable cache, log, and rebuildable files"
+        }
+        return "Roomy previewed \(previewText). Protected and whitelisted paths stay skipped, and cleanup uses Trash where supported."
+    }
+
+    private func startCleanMyMac() {
+        Task {
+            await model.prepareCleanMyMac()
+            if model.cleanupPreview != nil, model.error(for: .home) == nil {
+                showCleanMyMacConfirm = true
+            }
+        }
+    }
 }
 
 private struct CleanupView: View {
     @ObservedObject var model: RoomyViewModel
-    @State private var showConfirm = false
+    @State private var showCleanMyMacConfirm = false
     @State private var externalPath = "/Volumes/"
     @State private var showExternalConfirm = false
 
@@ -296,6 +347,17 @@ private struct CleanupView: View {
                 )
             }
 
+            CleanMyMacPanel(
+                preview: model.cleanupPreview,
+                executionState: model.executionState,
+                isLoading: model.isLoading,
+                recentActivityCount: model.operationJournalEntries.count,
+                onClean: startCleanMyMac,
+                onReview: {
+                    Task { await model.loadCleanupPreview() }
+                }
+            )
+
             SectionBand(title: "Cleanup Categories", symbol: "list.bullet.rectangle") {
                 if let preview = model.cleanupPreview, !preview.categories.isEmpty {
                     DataTable {
@@ -310,23 +372,6 @@ private struct CleanupView: View {
                         symbol: "doc.text.magnifyingglass"
                     )
                 }
-            }
-
-            HStack {
-                Button {
-                    Task { await model.loadCleanupPreview() }
-                } label: {
-                    Label(model.isLoading ? "Previewing" : "Preview", systemImage: "doc.text.magnifyingglass")
-                }
-                .keyboardShortcut("r", modifiers: [.command])
-                .disabled(model.isLoading)
-
-                Button(role: .destructive) {
-                    showConfirm = true
-                } label: {
-                    Label("Execute Plan", systemImage: "trash")
-                }
-                .disabled(model.cleanupPreview == nil || model.isLoading)
             }
 
             SectionBand(title: "External Volume Cleanup", symbol: "externaldrive") {
@@ -375,13 +420,16 @@ private struct CleanupView: View {
 
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
-        .confirmationDialog("Execute cleanup plan?", isPresented: $showConfirm) {
-            Button("Run Cleanup", role: .destructive) {
-                Task {
-                    await model.execute(domain: .clean, plan: ExecutionPlan(confirmed: true), administrator: true)
-                }
+        .confirmationDialog("Clean recoverable files?", isPresented: $showCleanMyMacConfirm) {
+            Button("Move Recoverable Files to Trash", role: .destructive) {
+                Task { await model.executeCleanMyMac(section: .cleanup) }
+            }
+            Button("Refresh Preview") {
+                Task { await model.loadCleanupPreview() }
             }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(cleanMyMacConfirmationMessage)
         }
         .confirmationDialog("Clean selected external volume?", isPresented: $showExternalConfirm) {
             Button("Clean Volume Metadata", role: .destructive) {
@@ -397,6 +445,25 @@ private struct CleanupView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Roomy will revalidate that this is a mounted external volume before removing Mac metadata files.")
+        }
+    }
+
+    private var cleanMyMacConfirmationMessage: String {
+        let previewText: String
+        if let preview = model.cleanupPreview {
+            previewText = "\(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) recoverable items"
+        } else {
+            previewText = "recoverable cache, log, and rebuildable files"
+        }
+        return "Roomy previewed \(previewText). Protected and whitelisted paths stay skipped, and cleanup uses Trash where supported."
+    }
+
+    private func startCleanMyMac() {
+        Task {
+            await model.prepareCleanMyMac(section: .cleanup)
+            if model.cleanupPreview != nil, model.error(for: .cleanup) == nil {
+                showCleanMyMacConfirm = true
+            }
         }
     }
 
@@ -1288,7 +1355,7 @@ private struct SettingsView: View {
             }
 
             SectionBand(title: "Privileged Helper", symbol: "lock.badge.checkmark") {
-                HStack(spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
                     IntegrationStatusCard(
                         title: "Admin Cleanup",
                         value: privilegedHelperValue,
@@ -1296,9 +1363,9 @@ private struct SettingsView: View {
                         symbol: "lock.badge.checkmark",
                         tint: privilegedHelperTint
                     )
+                }
 
-                    Spacer()
-
+                HStack(spacing: 10) {
                     Button {
                         showPrivilegedHelperInstallConfirm = true
                     } label: {
@@ -1316,7 +1383,7 @@ private struct SettingsView: View {
             }
 
             SectionBand(title: "System Integration", symbol: "touchid") {
-                HStack(spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 12)], spacing: 12) {
                     IntegrationStatusCard(
                         title: "Touch ID",
                         value: touchIDValue,
@@ -1340,7 +1407,7 @@ private struct SettingsView: View {
                     )
                 }
 
-                HStack {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
                     Button {
                         Task {
                             await model.executeTouchID(action: touchIDAction, dryRun: true)
@@ -1356,8 +1423,6 @@ private struct SettingsView: View {
                         Label(model.touchIDStatus?.configured == true ? "Disable Touch ID" : "Enable Touch ID", systemImage: "touchid")
                     }
                     .disabled(model.touchIDStatus?.supported == false || model.isLoading)
-
-                    Spacer()
 
                     Button {
                         Task { await model.executeCompletion(dryRun: true) }
@@ -1390,7 +1455,7 @@ private struct SettingsView: View {
             }
 
             SectionBand(title: "Roomy Maintenance", symbol: "arrow.triangle.2.circlepath") {
-                HStack(spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
                     IntegrationStatusCard(
                         title: "Installed Roomy",
                         value: maintenanceValue,
@@ -1407,7 +1472,7 @@ private struct SettingsView: View {
                     )
                 }
 
-                HStack {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
                     Button {
                         Task {
                             await model.execute(
@@ -1433,8 +1498,6 @@ private struct SettingsView: View {
                         Label("Install Nightly", systemImage: "moon.stars")
                     }
                     .disabled(model.isLoading)
-
-                    Spacer()
 
                     Button {
                         Task {
@@ -1837,6 +1900,193 @@ private struct HealthScoreCard: View {
     }
 }
 
+private struct CleanMyMacPanel: View {
+    var preview: CleanupPreview?
+    var executionState: PreviewExecutionState
+    var isLoading: Bool
+    var recentActivityCount: Int
+    var onClean: () -> Void
+    var onReview: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Clean My Mac", systemImage: "sparkles")
+                        .font(.title3.weight(.semibold))
+                    Text(summary)
+                        .font(.system(.body, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        SafetyPill(text: "Preview first", symbol: "doc.text.magnifyingglass")
+                        SafetyPill(text: "Trash where supported", symbol: "trash")
+                        SafetyPill(text: "Protected paths skipped", symbol: "checkmark.shield")
+                    }
+                }
+
+                Spacer(minLength: 16)
+
+                VStack(alignment: .trailing, spacing: 10) {
+                    Button(action: onClean) {
+                        Label(primaryButtonTitle, systemImage: primaryButtonSymbol)
+                            .frame(minWidth: 154)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(isLoading || executionState == .running)
+
+                    Button(action: onReview) {
+                        Label("Review Details", systemImage: "list.bullet.rectangle")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isLoading)
+                }
+            }
+
+            ProgressRail(steps: progressSteps)
+        }
+        .panelStyle(minHeight: 174)
+    }
+
+    private var summary: String {
+        switch executionState {
+        case .completed:
+            return "Cleanup finished. Recent activity shows what was moved, skipped, or left alone."
+        case .running:
+            return "Cleanup is running through the guarded plan."
+        case .failed(let message):
+            return message
+        default:
+            if let preview {
+                return "\(Formatters.bytes(preview.estimatedBytes)) ready to recover across \(preview.itemCount) items."
+            }
+            return "Run a guarded preview, then move recoverable cache, log, and rebuildable files to Trash."
+        }
+    }
+
+    private var primaryButtonTitle: String {
+        if isLoading { return "Checking" }
+        switch executionState {
+        case .running:
+            return "Running"
+        case .completed:
+            return "Clean Again"
+        default:
+            return "Clean My Mac"
+        }
+    }
+
+    private var primaryButtonSymbol: String {
+        switch executionState {
+        case .running:
+            return "hourglass"
+        case .completed:
+            return "arrow.clockwise"
+        default:
+            return "wand.and.stars"
+        }
+    }
+
+    private var progressSteps: [ProgressRail.Step] {
+        [
+            ProgressRail.Step(
+                title: "Preview",
+                value: preview == nil ? "Needed" : Formatters.bytes(preview?.estimatedBytes ?? 0),
+                symbol: "doc.text.magnifyingglass",
+                state: preview == nil ? .waiting : .complete
+            ),
+            ProgressRail.Step(
+                title: "Plan",
+                value: preview == nil ? "Not ready" : "\(preview?.itemCount ?? 0) items",
+                symbol: "checklist",
+                state: executionState == .previewReady || executionState == .running || executionState == .completed ? .complete : .waiting
+            ),
+            ProgressRail.Step(
+                title: "Activity",
+                value: recentActivityCount == 0 ? "No entries" : "\(recentActivityCount) recent",
+                symbol: "clock.arrow.circlepath",
+                state: executionState == .running ? .active : (recentActivityCount == 0 ? .waiting : .complete)
+            )
+        ]
+    }
+}
+
+private struct ProgressRail: View {
+    enum StepState {
+        case waiting
+        case active
+        case complete
+    }
+
+    struct Step: Identifiable {
+        var title: String
+        var value: String
+        var symbol: String
+        var state: StepState
+
+        var id: String { title }
+    }
+
+    var steps: [Step]
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(steps) { step in
+                HStack(spacing: 8) {
+                    Image(systemName: step.symbol)
+                        .foregroundStyle(color(for: step.state))
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(step.title)
+                            .font(.caption.weight(.semibold))
+                        Text(step.value)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(color(for: step.state).opacity(step.state == .waiting ? 0.06 : 0.12))
+                )
+            }
+        }
+    }
+
+    private func color(for state: StepState) -> Color {
+        switch state {
+        case .waiting:
+            .secondary
+        case .active:
+            .orange
+        case .complete:
+            .green
+        }
+    }
+}
+
+private struct SafetyPill: View {
+    var text: String
+    var symbol: String
+
+    var body: some View {
+        Label(text, systemImage: symbol)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(Color.primary.opacity(0.06))
+            )
+    }
+}
+
 private struct MetricCard: View {
     var title: String
     var value: String
@@ -1962,11 +2212,14 @@ private struct CleanupCategoryRow: View {
 private struct ActionRow: View {
     var title: String
     var detail: String
+    var symbol: String = "arrow.right.circle.fill"
+    var tint: Color = .blue
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "arrow.right.circle.fill")
-                .foregroundStyle(.blue)
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
                 Text(detail).foregroundStyle(.secondary)
@@ -2434,41 +2687,16 @@ private struct LiquidGlassSurface: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.thinMaterial)
+            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.78))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(tint)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.36),
-                                Color.white.opacity(0.10),
-                                Color.clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.softLight)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.48),
-                                Color.primary.opacity(0.08)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
-            .shadow(color: Color.black.opacity(0.045), radius: 18, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.025), radius: 8, x: 0, y: 3)
     }
 }
 

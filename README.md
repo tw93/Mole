@@ -62,6 +62,10 @@ roomy analyze                   # Visual disk explorer (or 'roomy analyse')
 roomy status                    # Live system health dashboard
 roomy purge                     # Clean project build artifacts
 roomy installer                 # Find and remove installer files
+roomy schedule                  # Automate recurring maintenance
+roomy restore                   # Restore items Roomy moved to Trash
+roomy report                    # Summarize cleanup history
+roomy profile                   # Save and apply Roomy config profiles
 
 roomy touchid                   # Configure Touch ID for sudo
 roomy completion                # Set up shell tab completion
@@ -76,15 +80,24 @@ roomy --version                 # Show installed version
 
 ```bash
 roomy clean --dry-run
+roomy clean --categories browsers,developer
+roomy clean --exclude large-files,system-data
+roomy clean --yes --max-delete-gb 20 --max-risk medium
 roomy uninstall --dry-run
 roomy purge --dry-run
 
 # Also works with: optimize, installer, remove, completion, touchid enable
 roomy clean --dry-run --debug   # Preview + detailed logs
+roomy clean --list-categories   # Show selectable cleanup category keys
 roomy optimize --whitelist      # Manage protected optimization rules
 roomy clean --whitelist         # Manage protected caches
 roomy purge --paths             # Configure project scan directories
 roomy analyze /Volumes          # Analyze external drives only
+roomy analyze --json --duplicates ~/Downloads
+roomy schedule enable --weekly --time 03:00 --command clean
+roomy report --last 30d
+roomy restore list
+roomy profile create work-laptop
 ```
 
 ## Security & Safety Design

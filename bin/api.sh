@@ -560,11 +560,11 @@ api_clean() {
     output_file=$(mktemp_file "roomy-api-clean-output")
 
     if [[ -n "$external_path" ]]; then
-        if ! ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_NO_OPLOG=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run --external "$external_path" > "$output_file" 2>&1; then
+        if ! ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_NO_OPLOG=1 ROOMY_SKIP_TRASH_CLEANUP=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run --external "$external_path" > "$output_file" 2>&1; then
             status_label="failed"
         fi
     else
-        if ! ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_NO_OPLOG=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run > "$output_file" 2>&1; then
+        if ! ROOMY_API_CLEAN_CAPTURE_FILE="$capture_file" ROOMY_NO_OPLOG=1 ROOMY_SKIP_TRASH_CLEANUP=1 TERM=dumb "$SCRIPT_DIR/clean.sh" --dry-run > "$output_file" 2>&1; then
             status_label="failed"
         fi
     fi
@@ -1691,6 +1691,10 @@ api_execute() {
             clean_metrics_file=$(mktemp_file "roomy-api-clean-metrics")
             ROOMY_API_COMPLETION_METRICS_FILE="$clean_metrics_file" \
                 ROOMY_API_CLEAN_METRICS_FILE="$clean_metrics_file" \
+                ROOMY_SKIP_TRASH_CLEANUP="${ROOMY_SKIP_TRASH_CLEANUP:-1}" \
+                ROOMY_DELETE_MODE="${ROOMY_DELETE_MODE:-trash}" \
+                ROOMY_TRASH_STRICT="${ROOMY_TRASH_STRICT:-1}" \
+                ROOMY_TRASH_NO_APPLESCRIPT="${ROOMY_TRASH_NO_APPLESCRIPT:-1}" \
                 api_run_command_stream "clean" "$SCRIPT_DIR/clean.sh" "${args[@]+"${args[@]}"}"
             ;;
         optimize)

@@ -13,6 +13,8 @@ printf 'Running Roomy release preflight...\n'
 
 git diff --check
 
+scripts/check-launch-readiness.sh
+
 if [[ -f package.json && ! -f package-lock.json ]]; then
     fail "package.json is present but package-lock.json is missing"
 fi

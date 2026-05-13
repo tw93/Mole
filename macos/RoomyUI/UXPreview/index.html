@@ -10,9 +10,11 @@
       --ink: #182026;
       --muted: #63707a;
       --line: rgba(24, 32, 38, 0.09);
-      --glass-line: rgba(255, 255, 255, 0.62);
-      --panel: rgba(255, 255, 255, 0.58);
-      --panel-strong: rgba(255, 255, 255, 0.70);
+      --page: #f5f7f8;
+      --surface: #ffffff;
+      --surface-strong: #ffffff;
+      --sidebar: #222930;
+      --shadow: 0 8px 18px rgba(24, 32, 38, 0.05);
       --blue: #0a84ff;
       --green: #28c76f;
       --amber: #f5a524;
@@ -26,9 +28,7 @@
       margin: 0;
       min-height: 100vh;
       color: var(--ink);
-      background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 247, 250, 0.68) 48%, rgba(248, 250, 251, 0.95)),
-        linear-gradient(180deg, #f8fbfc 0%, #eef4f6 100%);
+      background: var(--page);
     }
 
     .app {
@@ -39,10 +39,9 @@
 
     aside {
       padding: 22px 14px;
-      background: rgba(24, 31, 36, 0.82);
-      backdrop-filter: blur(24px) saturate(160%);
+      background: var(--sidebar);
       color: white;
-      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      border-right: 1px solid rgba(0, 0, 0, 0.16);
     }
 
     .traffic {
@@ -152,11 +151,8 @@
       padding: 16px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--panel);
-      backdrop-filter: blur(24px) saturate(165%);
-      box-shadow:
-        inset 0 1px 0 var(--glass-line),
-        0 16px 36px rgba(24, 32, 38, 0.06);
+      background: var(--surface);
+      box-shadow: var(--shadow);
     }
 
     .panel h2,
@@ -202,15 +198,91 @@
       margin-top: 20px;
     }
 
+    .quick-clean {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .quick-clean h2 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    .quick-clean p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      line-height: 1.42;
+    }
+
+    .safety {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .safety span {
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(24, 32, 38, 0.06);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+      white-space: nowrap;
+    }
+
+    .flow-rail {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .step {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      padding: 9px 10px;
+      border-radius: 8px;
+      background: rgba(40, 199, 111, 0.10);
+    }
+
+    .step.pending {
+      background: rgba(24, 32, 38, 0.06);
+    }
+
+    .step strong,
+    .step span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .step strong {
+      font-size: 12px;
+    }
+
+    .step span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 1px;
+    }
+
     .table {
       display: grid;
       gap: 0;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--panel-strong);
-      backdrop-filter: blur(24px) saturate(165%);
-      box-shadow: inset 0 1px 0 var(--glass-line);
+      background: var(--surface-strong);
+      box-shadow: var(--shadow);
     }
 
     .row {
@@ -299,6 +371,7 @@
       .nav-item { justify-content: center; padding-inline: 0; }
       main { padding: 24px 20px; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow-rail { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 680px) {
@@ -318,6 +391,7 @@
       .nav-item { padding-inline: 12px; }
       header { display: grid; }
       .metrics { grid-template-columns: 1fr; }
+      .quick-clean { grid-template-columns: 1fr; }
       .failure-grid { grid-template-columns: 1fr; }
       .row { grid-template-columns: minmax(160px, 1fr) auto; }
       .row .secondary { display: none; }
@@ -345,7 +419,7 @@
           <h1>Free Up Your Mac</h1>
           <div class="subtitle">Start with disk space, preview cleanup, and move recoverable items to Trash.</div>
         </div>
-        <button class="primary">Preview Cleanup</button>
+        <button class="primary">Clean My Mac</button>
       </header>
 
       <section class="grid metrics" aria-label="Care summary">
@@ -366,19 +440,40 @@
           <div class="metric-label">966 items across 51 groups</div>
         </article>
         <article class="panel" data-ux-surface="metric">
-          <div class="metric-label">Selected</div>
-          <div class="metric-value">0 KB</div>
-          <div class="metric-label">Choose files after preview</div>
+          <div class="metric-label">Recent Activity</div>
+          <div class="metric-value">8</div>
+          <div class="metric-label">Journal entries loaded</div>
         </article>
+      </section>
+
+      <section class="panel quick-clean" data-ux-surface="quick-clean">
+        <div>
+          <h2>Clean My Mac</h2>
+          <p>One guarded pass previews recoverable cache, log, and rebuildable files before cleanup runs.</p>
+          <div class="safety" aria-label="Cleanup safeguards">
+            <span>Preview first</span>
+            <span>Trash where supported</span>
+            <span>Protected paths skipped</span>
+          </div>
+          <div class="flow-rail" aria-label="Cleanup progress">
+            <div class="step"><span>✓</span><div><strong>Preview</strong><span>22.6 GB</span></div></div>
+            <div class="step"><span>✓</span><div><strong>Plan</strong><span>966 items</span></div></div>
+            <div class="step pending"><span>○</span><div><strong>Activity</strong><span>8 recent</span></div></div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary">Clean My Mac</button>
+          <button>Review Details</button>
+        </div>
       </section>
 
       <section class="band" data-ux-surface="scan-presets">
         <h2>Free Up Space</h2>
         <div class="actions">
-          <button>Preview Cleanup</button>
-          <button>Scan Home</button>
+          <button>Review Cleanup</button>
+          <button>Scan Storage</button>
           <button>Find Installers</button>
-          <button>Scan Project Artifacts</button>
+          <button>Project Artifacts</button>
         </div>
       </section>
 
@@ -408,7 +503,7 @@
         </div>
         <div class="actions">
           <button>Preview Details</button>
-          <button class="danger">Clean Selected</button>
+          <button class="danger">Clean My Mac</button>
           <button>Open Settings</button>
         </div>
       </section>

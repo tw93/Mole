@@ -185,6 +185,50 @@ final class RoomyUITests: XCTestCase {
         XCTAssertNil(model.optimizePreview)
     }
 
+    @MainActor
+    func testCleanMyMacFlowPreviewsThenExecutesGuardedCleanup() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("roomy-clean-my-mac-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let callsLog = root.appendingPathComponent("calls.log")
+        let script = try makeExecutableScript("""
+        #!/bin/sh
+        printf '%s\\n' "$*" >> "\(callsLog.path)"
+        if [ "$1 $2 $3 $4" = "api clean preview --json" ]; then
+          printf '%s\\n' '{"schema_version":1,"command":"clean.preview","dry_run":true,"status":"success","estimated_bytes":4096,"item_count":2,"category_count":1,"skipped_count":3,"protected_count":2,"whitelist_count":1,"admin_required":false,"delete_mode":"trash","details_path":"/tmp/clean-list.txt","categories":[{"section":"User essentials","name":"User app cache","estimated_bytes":4096,"item_count":2,"skipped_count":0,"risk":"LOW","risk_reason":"Cache/log files, automatically regenerated","admin_required":false}]}'
+          exit 0
+        fi
+        if [ "$1 $2 $3" = "api clean execute" ] && [ "$4" = "--plan" ]; then
+          grep -q '"confirmed" : true' "$5" || exit 65
+          printf '%s\\n' '{"event":"started","domain":"clean"}'
+          sleep 0.1
+          printf '%s\\n' '{"event":"completed","domain":"clean","exit_code":0,"bytes":4096,"item_count":2,"category_count":1}'
+          sleep 0.1
+          exit 0
+        fi
+        exit 64
+        """)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
+        let model = RoomyViewModel(apiClient: client)
+
+        await model.prepareCleanMyMac()
+        await model.executeCleanMyMac()
+
+        let calls = try String(contentsOf: callsLog, encoding: .utf8)
+            .split(separator: "\n")
+            .map(String.init)
+        XCTAssertEqual(calls.first, "api clean preview --json")
+        XCTAssertTrue(calls.dropFirst().first?.hasPrefix("api clean execute --plan ") == true)
+        XCTAssertEqual(model.cleanupPreview?.estimatedBytes, 4096)
+        XCTAssertEqual(model.cleanupPreview?.deleteMode, "trash")
+        XCTAssertEqual(model.cleanupPreview?.protectedCount, 2)
+        XCTAssertEqual(model.executionEvents.map(\.event), ["started", "completed"])
+        XCTAssertEqual(model.executionEvents.last?.bytes, 4096)
+        XCTAssertEqual(model.executionState, .completed)
+    }
+
     func testFullDiskAccessDetectorSummarizesProbeResults() {
         let enabled = RoomyFullDiskAccessDetector.status(for: [
             FullDiskAccessProbe(path: "/Users/example/Library/Mail", exists: true, readable: true)

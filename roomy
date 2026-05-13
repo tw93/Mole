@@ -331,6 +331,8 @@ show_help() {
     done
     echo
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --dry-run" "$NC" "Preview cleanup"
+    printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --categories" "$NC" "Run selected cleanup categories"
+    printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --max-delete-gb" "$NC" "Limit automated cleanup size"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --whitelist" "$NC" "Manage protected caches"
 
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy optimize --dry-run" "$NC" "Preview optimization"
@@ -342,6 +344,9 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy completion --dry-run" "$NC" "Preview shell completion edits"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy purge --paths" "$NC" "Configure scan directories"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy analyze /Volumes" "$NC" "Analyze external drives only"
+    printf "  %s%-28s%s %s\n" "$GREEN" "roomy analyze --duplicates" "$NC" "Find duplicate files in JSON mode"
+    printf "  %s%-28s%s %s\n" "$GREEN" "roomy schedule status" "$NC" "Show maintenance schedule"
+    printf "  %s%-28s%s %s\n" "$GREEN" "roomy report --last 30d" "$NC" "Summarize recent cleanup history"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --force" "$NC" "Force reinstall latest stable version"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --nightly" "$NC" "Install latest unreleased main branch build"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy remove --dry-run" "$NC" "Preview Roomy removal"
@@ -1000,6 +1005,18 @@ main() {
             ;;
         "installer")
             exec "$SCRIPT_DIR/bin/installer.sh" "${args[@]:1}"
+            ;;
+        "schedule")
+            exec "$SCRIPT_DIR/bin/schedule.sh" "${args[@]:1}"
+            ;;
+        "restore")
+            exec "$SCRIPT_DIR/bin/restore.sh" "${args[@]:1}"
+            ;;
+        "report")
+            exec "$SCRIPT_DIR/bin/report.sh" "${args[@]:1}"
+            ;;
+        "profile")
+            exec "$SCRIPT_DIR/bin/profile.sh" "${args[@]:1}"
             ;;
         "api")
             exec "$SCRIPT_DIR/bin/api.sh" "${args[@]:1}"

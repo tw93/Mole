@@ -20,7 +20,9 @@ import (
 )
 
 var (
-	jsonMode = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	jsonMode             = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	duplicatesMode       = flag.Bool("duplicates", false, "include duplicate file groups in JSON output")
+	duplicateMinSizeFlag = flag.Int64("duplicates-min-size", 1<<20, "minimum duplicate candidate size in bytes")
 )
 
 type dirEntry struct {
@@ -139,6 +141,9 @@ func (m model) inOverviewMode() bool {
 
 func main() {
 	flag.Parse()
+	if *duplicatesMode {
+		*jsonMode = true
+	}
 
 	target := os.Getenv("ROOMY_ANALYZE_PATH")
 	if target == "" && len(flag.Args()) > 0 {

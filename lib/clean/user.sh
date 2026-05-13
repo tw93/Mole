@@ -64,7 +64,11 @@ clean_user_essentials() {
 
     _clean_darwin_user_runtime_dirs
 
-    if [[ "${ROOMY_SKIP_TRASH_CLEANUP:-0}" != "1" ]]; then
+    local skip_trash_cleanup="${ROOMY_SKIP_TRASH_CLEANUP:-auto}"
+    if [[ "$skip_trash_cleanup" == "1" ]] ||
+        [[ "$skip_trash_cleanup" == "auto" && "${ROOMY_DELETE_MODE:-permanent}" == "trash" ]]; then
+        debug_log "Skipping Trash empty while cleanup is using Trash delete mode"
+    else
         clean_trash
     fi
 

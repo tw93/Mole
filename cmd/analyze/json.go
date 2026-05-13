@@ -13,12 +13,13 @@ import (
 )
 
 type jsonOutput struct {
-	Path       string          `json:"path"`
-	Overview   bool            `json:"overview"`
-	Entries    []jsonEntry     `json:"entries"`
-	LargeFiles []jsonFileEntry `json:"large_files,omitempty"`
-	TotalSize  int64           `json:"total_size"`
-	TotalFiles int64           `json:"total_files,omitempty"`
+	Path            string               `json:"path"`
+	Overview        bool                 `json:"overview"`
+	Entries         []jsonEntry          `json:"entries"`
+	LargeFiles      []jsonFileEntry      `json:"large_files,omitempty"`
+	DuplicateGroups []jsonDuplicateGroup `json:"duplicate_groups,omitempty"`
+	TotalSize       int64                `json:"total_size"`
+	TotalFiles      int64                `json:"total_files,omitempty"`
 }
 
 type jsonEntry struct {
@@ -35,6 +36,13 @@ type jsonFileEntry struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
+}
+
+type jsonDuplicateGroup struct {
+	Hash        string          `json:"hash"`
+	Size        int64           `json:"size"`
+	WastedBytes int64           `json:"wasted_bytes"`
+	Files       []jsonFileEntry `json:"files"`
 }
 
 func runJSONMode(path string, isOverview bool) {
@@ -66,7 +74,7 @@ func performDirectoryScanForJSON(path string) jsonOutput {
 		os.Exit(1)
 	}
 
-	return jsonOutput{
+	output := jsonOutput{
 		Path:       path,
 		Overview:   false,
 		Entries:    jsonEntriesFromDirEntries(result.Entries, false, nil),
@@ -74,6 +82,10 @@ func performDirectoryScanForJSON(path string) jsonOutput {
 		TotalSize:  result.TotalSize,
 		TotalFiles: result.TotalFiles,
 	}
+	if *duplicatesMode {
+		output.DuplicateGroups = findDuplicateGroupsForJSON(path, *duplicateMinSizeFlag)
+	}
+	return output
 }
 
 func performOverviewScanForJSON(path string) jsonOutput {

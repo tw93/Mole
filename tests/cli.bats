@@ -88,7 +88,70 @@ setup() {
 	[[ "$output" == *"roomy clean"* ]]
 	[[ "$output" == *"roomy optimize"* ]]
 	[[ "$output" == *"roomy analyze"* ]]
+	[[ "$output" == *"roomy schedule"* ]]
+	[[ "$output" == *"roomy restore"* ]]
+	[[ "$output" == *"roomy report"* ]]
+	[[ "$output" == *"roomy profile"* ]]
 	[[ "$output" != *"roomy optimise"* ]]
+}
+
+@test "roomy clean lists selectable categories" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" clean --list-categories
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"browsers"* ]]
+	[[ "$output" == *"developer"* ]]
+	[[ "$output" == *"project-artifacts"* ]]
+}
+
+@test "roomy schedule dry-run shows launchd plan" {
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" schedule enable --dry-run --weekly --time 03:15 --command clean
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Would enable Roomy schedule"* ]]
+	[[ "$output" == *"weekly"* ]]
+	[[ "$output" == *"03:15"* ]]
+}
+
+@test "roomy profile saves and lists current config" {
+	printf '/tmp/keep\n' > "$HOME/.config/roomy/whitelist"
+
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" profile create dev
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Profile saved: dev"* ]]
+
+	run env HOME="$HOME" "$PROJECT_ROOT/roomy" profile list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"dev"* ]]
+}
+
+@test "roomy report summarizes operation journal" {
+	local log_dir="$HOME/logs"
+	mkdir -p "$log_dir"
+	printf '%s\n' \
+		'{"schema_version":1,"timestamp":"2026-05-13 10:00:00","record_type":"session","command":"clean","action":"ENDED","path":"","detail":"2 items, 2 MB"}' \
+		'{"schema_version":1,"timestamp":"2026-05-13 10:00:01","record_type":"operation","command":"clean","action":"REMOVED","path":"/tmp/a","detail":"1 MB"}' \
+		> "$log_dir/operation_journal.jsonl"
+
+	run env HOME="$HOME" ROOMY_LOG_DIR="$log_dir" "$PROJECT_ROOT/roomy" report --last 1d
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Sessions: 1"* ]]
+	[[ "$output" == *"REMOVED: 1"* ]]
+	[[ "$output" == *"clean: 1 sessions"* ]]
+}
+
+@test "roomy restore previews a restorable Trash item" {
+	local log_dir="$HOME/logs"
+	local trash_dir="$HOME/.Trash"
+	local original="$BATS_TEST_TMPDIR/original.txt"
+	mkdir -p "$log_dir" "$trash_dir"
+	printf '%s\n' \
+		"{\"schema_version\":1,\"timestamp\":\"2026-05-13 10:00:00\",\"record_type\":\"operation\",\"command\":\"uninstall\",\"action\":\"TRASHED\",\"path\":\"$original\",\"detail\":\"5KB\"}" \
+		> "$log_dir/operation_journal.jsonl"
+	printf 'x' > "$trash_dir/original.txt"
+
+	run env HOME="$HOME" ROOMY_LOG_DIR="$log_dir" "$PROJECT_ROOT/roomy" restore restore --dry-run "$original"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Would restore"* ]]
+	[[ "$output" == *"$original"* ]]
 }
 
 @test "roomy --version reports script version" {

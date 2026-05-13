@@ -35,13 +35,19 @@ test.describe('RoomyUI UX preview', () => {
     await page.goto(previewURL);
 
     await expect(page.getByRole('heading', { name: 'Free Up Your Mac' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Preview Cleanup' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Clean My Mac' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Clean My Mac' })).toHaveCount(3);
     await expect(page.getByText('Free Space')).toBeVisible();
     await expect(page.getByText('Disk Used')).toBeVisible();
     await expect(page.getByText('Potential Cleanup')).toBeVisible();
+    await expect(page.getByLabel('Care summary').getByText('Recent Activity')).toBeVisible();
+    await expect(page.getByText('Preview first')).toBeVisible();
+    await expect(page.getByText('Trash where supported')).toBeVisible();
+    await expect(page.getByText('Protected paths skipped')).toBeVisible();
+    await expect(page.getByText('966 items', { exact: true })).toBeVisible();
     await expect(page.getByText('Recommended Cleanup')).toBeVisible();
     await expect(page.getByText('Free Up Space')).toBeVisible();
-    await expect(page.getByText('Recent Activity')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recent Activity' })).toBeVisible();
     await expect(page.getByText('Quick launchers')).toBeVisible();
     await expect(page.getByText('CPU and memory')).toHaveCount(0);
     await expect(page.getByText('Full Disk Access is a one-time option')).toHaveCount(0);
@@ -68,5 +74,12 @@ test.describe('RoomyUI UX preview', () => {
     );
 
     expect(overflowing).toEqual([]);
+  });
+
+  test('uses restrained flat surfaces instead of decorative gradients', async ({ page }) => {
+    await page.goto(previewURL);
+
+    const styleText = await page.locator('style').textContent();
+    expect(styleText).not.toMatch(/linear-gradient|radial-gradient|backdrop-filter/);
   });
 });

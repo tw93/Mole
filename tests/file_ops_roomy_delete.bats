@@ -66,6 +66,48 @@ EOF
     [[ -n "$(ls -A "$ROOMY_TEST_TRASH_DIR" 2> /dev/null || true)" ]]
 }
 
+@test "safe_remove honors trash mode for clean-safe deletion" {
+    local victim="$SANDBOX/safe_remove_trash"
+    mkdir -p "$victim"
+    printf 'payload' > "$victim/data.txt"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+export ROOMY_DELETE_MODE=trash
+safe_remove "$victim" true
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ ! -e "$victim" ]]
+    [[ -n "$(ls -A "$ROOMY_TEST_TRASH_DIR" 2> /dev/null || true)" ]]
+
+    local status_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$ROOMY_DELETE_LOG")
+    [ "$status_col" = "ok" ]
+}
+
+@test "safe_remove strict trash mode skips permanent fallback" {
+    local victim="$SANDBOX/safe_remove_strict_trash"
+    mkdir -p "$victim"
+    printf 'payload' > "$victim/data.txt"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+export ROOMY_DELETE_MODE=trash
+export ROOMY_TRASH_STRICT=1
+export ROOMY_TRASH_NO_APPLESCRIPT=1
+export ROOMY_TEST_TRASH_DIR="/dev/null/not-a-trash-dir"
+safe_remove "$victim" true
+EOF
+
+    [ "$status" -ne 0 ]
+    [[ -e "$victim/data.txt" ]]
+
+    local status_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$ROOMY_DELETE_LOG")
+    [ "$status_col" = "trash-unavailable" ]
+}
+
 @test "roomy_delete moves sudo-required paths to invoking user Trash" {
     local victim="$SANDBOX/victim_sudo_trash"
     local fake_bin="$SANDBOX/bin"
