@@ -870,6 +870,8 @@ clean_dev_mobile() {
                 if run_with_timeout 8 xcrun simctl list devices > /dev/null 2>&1; then
                     simctl_probe_ok=true
                     debug_log "simctl probe succeeded on retry (CoreSimulatorService warmup)"
+                else
+                    debug_log "simctl probe failed after retry (5s + 8s timeouts)"
                 fi
             fi
         fi
