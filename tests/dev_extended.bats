@@ -554,3 +554,58 @@ EOF
 	[[ "$output" == *"DEVICE_SUPPORT:iOS DeviceSupport"* ]]
 	[[ "$output" == *"SAFE_CLEAN:Android SDK cache"* ]]
 }
+
+@test "clean_dev_mobile retries simctl probe on cold-boot timeout (#890)" {
+	# Exercises the timeout-retry branch (the only path the #890 fix touches).
+	# Strategy:
+	#   - put a real `xcrun` shim on PATH so `command -v xcrun` succeeds AND
+	#     `declare -F xcrun` returns false → function falls into the else branch.
+	#   - stub `run_with_timeout` so the first probe returns 124 (timeout) and
+	#     the second returns 0, mirroring a cold-boot CoreSimulatorService
+	#     warmup.
+	#   - the shim itself returns empty for the post-probe
+	#     `xcrun simctl list devices unavailable` call so we take the
+	#     "already clean" branch and don't try to delete anything.
+	local tmp_bin
+	tmp_bin="$(mktemp -d)"
+	cat > "$tmp_bin/xcrun" <<'XEOF'
+#!/bin/bash
+exit 0
+XEOF
+	chmod +x "$tmp_bin/xcrun"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TMP_XCRUN_BIN="$tmp_bin" DRY_RUN=false bash --noprofile --norc <<'EOF'
+set -euo pipefail
+PATH="$TMP_XCRUN_BIN:$PATH"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+
+check_android_ndk() { :; }
+clean_xcode_documentation_cache() { :; }
+clean_xcode_simulator_runtime_volumes() { :; }
+clean_xcode_device_support() { :; }
+safe_clean() { :; }
+note_activity() { :; }
+debug_log() { echo "debug: $*"; }
+sleep() { :; }  # skip the 1s pause between probes for fast tests
+
+# First call (5s timeout) simulates cold-boot warmup → return 124.
+# Second call (8s timeout) succeeds.
+__rwt_count=0
+run_with_timeout() {
+    __rwt_count=$((__rwt_count + 1))
+    if [[ $__rwt_count -eq 1 ]]; then
+        return 124
+    fi
+    return 0
+}
+
+clean_dev_mobile
+EOF
+
+	rm -rf "$tmp_bin"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"simctl probe succeeded on retry"* ]] || return 1
+	[[ "$output" != *"simctl not available"* ]] || return 1
+}
