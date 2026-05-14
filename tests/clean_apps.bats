@@ -702,6 +702,93 @@ EOF
     [[ "$output" != *"unexpected-launchctl"* ]]
 }
 
+@test "clean_orphaned_system_services dry-run skips protected paths (#886)" {
+    # MOLE_TEST_NO_AUTH=0 overrides the CI default (=1) so the function actually
+    # runs past the auth-skip guard in apps.sh; the sudo() mock satisfies the
+    # `sudo -n true` probe.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { echo "debug: $*"; }
+
+should_protect_path() { return 0; }
+
+tmp_dir="$(mktemp -d)"
+tmp_plist="$tmp_dir/com.microsoft.office.licensingV2.helper.plist"
+/usr/libexec/PlistBuddy -c "Add :Program string /Library/PrivilegedHelperTools/com.microsoft.office.licensingV2.helper" "$tmp_plist" 2>/dev/null || true
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    # `|| return 1` after each assertion ensures bats fails as soon as one fails
+    # (bare `[[ ]]` in the middle of a test body gets swallowed by the next
+    # passing command — see #886 review notes).
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Found 1 orphaned"* ]] || return 1
+    [[ "$output" == *"skipped 1 protected"* ]] || return 1
+    [[ "$output" != *"Would remove orphaned service"* ]] || return 1
+}
+
+@test "clean_orphaned_system_services dry-run reports unprotected orphans (#886)" {
+    # MOLE_TEST_NO_AUTH=0 overrides CI default so the function executes.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { echo "debug: $*"; }
+
+should_protect_path() { return 1; }
+
+tmp_dir="$(mktemp -d)"
+tmp_plist="$tmp_dir/com.example.unprotected.orphan.plist"
+/usr/libexec/PlistBuddy -c "Add :Program string $tmp_dir/missing-binary" "$tmp_plist" 2>/dev/null || true
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Found 1 orphaned"* ]] || return 1
+    [[ "$output" == *"Would remove orphaned service"* ]] || return 1
+    [[ "$output" != *"Skipping protected"* ]] || return 1
+}
+
 @test "clean_orphaned_launch_agents preserves user launch agents" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail

@@ -50,7 +50,7 @@ clean_ds_store_tree() {
         size_human=$(bytes_to_human "$total_bytes")
         local size_kb=$(((total_bytes + 1023) / 1024))
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $label${NC}, ${YELLOW}$file_count files, $size_human dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$size_kb")
@@ -700,15 +700,14 @@ clean_orphaned_system_services() {
         local removed_kb=0
 
         for orphan_file in "${orphaned_files[@]}"; do
+            if should_protect_path "$orphan_file"; then
+                debug_log "Skipping protected orphaned service: $orphan_file"
+                skipped_protected_count=$((skipped_protected_count + 1))
+                continue
+            fi
             if [[ "$DRY_RUN" == "true" ]]; then
                 debug_log "[DRY RUN] Would remove orphaned service: $orphan_file"
             else
-                if should_protect_path "$orphan_file"; then
-                    debug_log "Skipping protected orphaned service: $orphan_file"
-                    skipped_protected_count=$((skipped_protected_count + 1))
-                    continue
-                fi
-
                 local file_size_kb
                 file_size_kb=$(sudo du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
 
@@ -738,9 +737,14 @@ clean_orphaned_system_services() {
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $removed_count orphaned services, about $orphaned_kb_display"
                 note_activity
             fi
-            if [[ $skipped_protected_count -gt 0 || $failed_count -gt 0 ]]; then
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} Orphaned services skipped $skipped_protected_count protected, failed $failed_count"
-            fi
+        fi
+        # Surface protected/failed counts in BOTH dry-run and real-clean so the
+        # two modes agree on what gets touched. Before #886, dry-run silently
+        # reported protected files under "Would remove" and real-clean then
+        # skipped them, leaving the user confused about which files actually
+        # disappeared.
+        if [[ $skipped_protected_count -gt 0 || $failed_count -gt 0 ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Orphaned services skipped $skipped_protected_count protected, failed $failed_count"
         fi
     fi
 
