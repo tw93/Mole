@@ -854,6 +854,8 @@ clean_dev_mobile() {
         local unavailable_udid=""
 
         # Check if simctl is accessible and working; timeout prevents hang when CLT-only.
+        # CoreSimulatorService may need >2s to warm up on cold boot, so we retry once
+        # with a longer timeout. See #890.
         local simctl_available=true
         local simctl_probe_ok=false
         if declare -F xcrun > /dev/null 2>&1; then
@@ -861,8 +863,11 @@ clean_dev_mobile() {
                 simctl_probe_ok=true
             fi
         else
-            if run_with_timeout 2 xcrun simctl list devices > /dev/null 2>&1; then
+            if run_with_timeout 5 xcrun simctl list devices > /dev/null 2>&1; then
                 simctl_probe_ok=true
+            elif run_with_timeout 8 xcrun simctl list devices > /dev/null 2>&1; then
+                simctl_probe_ok=true
+                debug_log "simctl probe succeeded on retry (CoreSimulator warmup)"
             fi
         fi
         if [[ "$simctl_probe_ok" != "true" ]]; then
