@@ -865,9 +865,12 @@ clean_dev_mobile() {
         else
             if run_with_timeout 5 xcrun simctl list devices > /dev/null 2>&1; then
                 simctl_probe_ok=true
-            elif run_with_timeout 8 xcrun simctl list devices > /dev/null 2>&1; then
-                simctl_probe_ok=true
-                debug_log "simctl probe succeeded on retry (CoreSimulator warmup)"
+            else
+                sleep 1
+                if run_with_timeout 8 xcrun simctl list devices > /dev/null 2>&1; then
+                    simctl_probe_ok=true
+                    debug_log "simctl probe succeeded on retry (CoreSimulatorService warmup)"
+                fi
             fi
         fi
         if [[ "$simctl_probe_ok" != "true" ]]; then
