@@ -403,9 +403,7 @@ func prefetchOverviewCache(ctx context.Context) {
 		default:
 		}
 
-		wg.Add(1)
-		go func(path string) {
-			defer wg.Done()
+		wg.Go(func() {
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
@@ -417,7 +415,7 @@ func prefetchOverviewCache(ctx context.Context) {
 			if err == nil && size > 0 {
 				_ = storeOverviewSize(path, size)
 			}
-		}(path)
+		})
 	}
 	wg.Wait()
 }

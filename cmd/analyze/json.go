@@ -122,10 +122,8 @@ func measureOverviewEntriesForJSON(overviewEntries []dirEntry, insightPaths map[
 	results := make(chan measurement, len(overviewEntries))
 
 	var wg sync.WaitGroup
-	for i, entry := range overviewEntries {
-		wg.Add(1)
-		go func(index int, item dirEntry) {
-			defer wg.Done()
+	for index, item := range overviewEntries {
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
@@ -146,7 +144,7 @@ func measureOverviewEntriesForJSON(overviewEntries []dirEntry, insightPaths map[
 				item.Size = size
 			}
 			results <- measurement{index: index, entry: item}
-		}(i, entry)
+		})
 	}
 
 	wg.Wait()

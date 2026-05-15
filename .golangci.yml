@@ -18,6 +18,7 @@ linters:
     - unused
     # Additional linters
     - modernize
+    - revive
 
   settings:
     govet:
@@ -30,6 +31,9 @@ linters:
         - (io.Closer).Close
         - (*os/exec.Cmd).Run
         - (*os/exec.Cmd).Start
+    revive:
+      rules:
+        - name: use-waitgroup-go
     staticcheck:
       checks: ["all", "-QF1003", "-SA9003"]
 
