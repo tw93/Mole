@@ -11,6 +11,7 @@ const (
 	spotlightMinFileSize   = 100 << 20
 	largeFileWarmupMinSize = 1 << 20
 	defaultViewport        = 12
+	analyzerCacheTTL       = 7 * 24 * time.Hour
 	overviewCacheTTL       = 7 * 24 * time.Hour
 	overviewCacheFile      = "overview_sizes.json"
 	duTimeout              = 30 * time.Second

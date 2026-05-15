@@ -207,6 +207,45 @@ func getCachePath(path string) (string, error) {
 	return filepath.Join(cacheDir, filename), nil
 }
 
+func pruneAnalyzerCache() {
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return
+	}
+	// Pruning is best-effort; errors are intentionally ignored to avoid blocking startup.
+	_ = pruneAnalyzerCacheDir(cacheDir, time.Now(), analyzerCacheTTL)
+}
+
+func pruneAnalyzerCacheDir(cacheDir string, now time.Time, maxAge time.Duration) error {
+	if cacheDir == "" || maxAge <= 0 {
+		return nil
+	}
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	cutoff := now.Add(-maxAge)
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || filepath.Ext(entry.Name()) != ".cache" {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() || info.ModTime().After(cutoff) {
+			continue
+		}
+
+		_ = os.Remove(filepath.Join(cacheDir, entry.Name()))
+	}
+
+	return nil
+}
+
 func loadRawCacheFromDisk(path string) (*cacheEntry, error) {
 	cachePath, err := getCachePath(path)
 	if err != nil {
@@ -240,7 +279,7 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 	}
 
 	scanAge := time.Since(entry.ScanTime)
-	if scanAge > 7*24*time.Hour {
+	if scanAge > analyzerCacheTTL {
 		return nil, fmt.Errorf("cache expired: too old")
 	}
 

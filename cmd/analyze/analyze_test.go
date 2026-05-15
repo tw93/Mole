@@ -338,6 +338,91 @@ func TestCacheSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPruneAnalyzerCacheDirRemovesOnlyExpiredCacheFiles(t *testing.T) {
+	cacheDir := t.TempDir()
+	now := time.Now()
+	oldTime := now.Add(-analyzerCacheTTL - time.Hour)
+	freshTime := now.Add(-time.Hour)
+
+	oldCache := filepath.Join(cacheDir, "old.cache")
+	freshCache := filepath.Join(cacheDir, "fresh.cache")
+	namedState := filepath.Join(cacheDir, overviewCacheFile)
+	cacheDirEntry := filepath.Join(cacheDir, "directory.cache")
+	symlinkTarget := filepath.Join(cacheDir, "target")
+	symlinkCache := filepath.Join(cacheDir, "link.cache")
+
+	for _, path := range []string{oldCache, freshCache, namedState, symlinkTarget} {
+		if err := os.WriteFile(path, []byte("cache"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	if err := os.Mkdir(cacheDirEntry, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir entry: %v", err)
+	}
+	if err := os.Symlink(symlinkTarget, symlinkCache); err != nil {
+		t.Fatalf("symlink cache entry: %v", err)
+	}
+
+	for _, path := range []string{oldCache, namedState, cacheDirEntry, symlinkCache} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatalf("chtimes %s: %v", path, err)
+		}
+	}
+	if err := os.Chtimes(freshCache, freshTime, freshTime); err != nil {
+		t.Fatalf("chtimes fresh cache: %v", err)
+	}
+
+	if err := pruneAnalyzerCacheDir(cacheDir, now, analyzerCacheTTL); err != nil {
+		t.Fatalf("pruneAnalyzerCacheDir: %v", err)
+	}
+
+	if _, err := os.Stat(oldCache); !os.IsNotExist(err) {
+		t.Fatalf("expected expired cache file to be removed, stat err: %v", err)
+	}
+	for _, path := range []string{freshCache, namedState, cacheDirEntry, symlinkCache} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("expected %s to be preserved: %v", path, err)
+		}
+	}
+}
+
+func TestPruneAnalyzerCacheDirMissingDirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if err := pruneAnalyzerCacheDir(missing, time.Now(), analyzerCacheTTL); err != nil {
+		t.Fatalf("expected missing cache dir to be ignored, got: %v", err)
+	}
+}
+
+func TestPruneAnalyzerCacheDirIgnoresRemoveFailures(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can remove files from read-only directories")
+	}
+
+	cacheDir := t.TempDir()
+	oldCache := filepath.Join(cacheDir, "old.cache")
+	if err := os.WriteFile(oldCache, []byte("cache"), 0o644); err != nil {
+		t.Fatalf("write old cache: %v", err)
+	}
+	oldTime := time.Now().Add(-analyzerCacheTTL - time.Hour)
+	if err := os.Chtimes(oldCache, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes old cache: %v", err)
+	}
+
+	if err := os.Chmod(cacheDir, 0o555); err != nil {
+		t.Fatalf("chmod cache dir read-only: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(cacheDir, 0o755)
+	}()
+
+	if err := pruneAnalyzerCacheDir(cacheDir, time.Now(), analyzerCacheTTL); err != nil {
+		t.Fatalf("expected remove failure to be ignored, got: %v", err)
+	}
+	if _, err := os.Stat(oldCache); err != nil {
+		t.Fatalf("expected failed removal to leave cache file in place: %v", err)
+	}
+}
+
 func TestScanPathConcurrentWarmsChildDirectoryCache(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
