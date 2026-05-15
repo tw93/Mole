@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/tw93/mole/internal/locale"
 )
 
 // Health score weights and thresholds.
@@ -64,7 +66,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	}
 	score -= cpuPenalty
 	if cpu.Usage > cpuHighThreshold {
-		issues = append(issues, "High CPU")
+		issues = append(issues, locale.T("health.high_cpu"))
 	}
 
 	// Memory penalty.
@@ -78,17 +80,17 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	}
 	score -= memPenalty
 	if mem.UsedPercent > memHighThreshold {
-		issues = append(issues, "High Memory")
+		issues = append(issues, locale.T("health.high_mem"))
 	}
 
 	// Memory pressure penalty.
 	switch mem.Pressure {
 	case "warn":
 		score -= memPressureWarnPenalty
-		issues = append(issues, "Memory Pressure")
+		issues = append(issues, locale.T("health.mem_pressure"))
 	case "critical":
 		score -= memPressureCritPenalty
-		issues = append(issues, "Critical Memory")
+		issues = append(issues, locale.T("health.crit_mem"))
 	}
 
 	// Disk penalty.
@@ -104,7 +106,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		}
 		score -= diskPenalty
 		if diskUsage > diskCritThreshold {
-			issues = append(issues, "Disk Almost Full")
+			issues = append(issues, locale.T("health.disk_full"))
 		}
 	}
 
@@ -114,7 +116,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		if thermal.CPUTemp > thermalNormalThreshold {
 			if thermal.CPUTemp > thermalHighThreshold {
 				thermalPenalty = healthThermalWeight
-				issues = append(issues, "Overheating")
+				issues = append(issues, locale.T("health.overheat"))
 			} else {
 				thermalPenalty = healthThermalWeight * (thermal.CPUTemp - thermalNormalThreshold) / (thermalHighThreshold - thermalNormalThreshold)
 			}
@@ -128,7 +130,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	if totalIO > ioNormalThreshold {
 		if totalIO > ioHighThreshold {
 			ioPenalty = healthIOWeight
-			issues = append(issues, "Heavy Disk IO")
+			issues = append(issues, locale.T("health.heavy_io"))
 		} else {
 			ioPenalty = healthIOWeight * (totalIO - ioNormalThreshold) / (ioHighThreshold - ioNormalThreshold)
 		}
@@ -142,7 +144,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 		switch sev {
 		case "danger":
 			score -= 5
-			issues = append(issues, "Battery Service Soon")
+			issues = append(issues, locale.T("health.bat_service"))
 		case "warn":
 			score -= 2
 		}
@@ -151,7 +153,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	// Uptime penalty (long uptime without restart).
 	if uptimeSecs > uptimeDangerSecs {
 		score -= 3
-		issues = append(issues, "Restart Recommended")
+		issues = append(issues, locale.T("health.restart"))
 	} else if uptimeSecs > uptimeWarnSecs {
 		score -= 1
 	}
@@ -168,15 +170,15 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	var msg string
 	switch {
 	case score >= 90:
-		msg = "Excellent"
+		msg = locale.T("health.excellent")
 	case score >= 75:
-		msg = "Good"
+		msg = locale.T("health.good")
 	case score >= 60:
-		msg = "Fair"
+		msg = locale.T("health.fair")
 	case score >= 40:
-		msg = "Poor"
+		msg = locale.T("health.poor")
 	default:
-		msg = "Critical"
+		msg = locale.T("health.critical")
 	}
 
 	if len(issues) > 0 {
@@ -190,12 +192,12 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 // Severity is "ok", "warn", or "danger".
 func batteryHealthLabel(cycles int, capacity int) (string, string) {
 	if cycles > batteryCycleDanger || (capacity > 0 && capacity < batteryCapDanger) {
-		return "Service Soon", "danger"
+		return locale.T("bat.service_soon"), "danger"
 	}
 	if cycles > batteryCycleWarn || (capacity > 0 && capacity < batteryCapWarn) {
-		return "Fair", "warn"
+		return locale.T("bat.fair"), "warn"
 	}
-	return "Healthy", "ok"
+	return locale.T("bat.healthy"), "ok"
 }
 
 // uptimeSeverity returns "ok", "warn", or "danger" based on uptime seconds.

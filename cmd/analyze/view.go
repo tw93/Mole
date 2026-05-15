@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+
+	"github.com/tw93/mole/internal/locale"
 )
 
 // View renders the TUI.
@@ -16,14 +18,14 @@ func (m model) View() string {
 	if m.inOverviewMode() {
 		freeLabel := ""
 		if m.diskFree > 0 {
-			freeLabel = fmt.Sprintf("  %s(%s free)%s", colorGray, humanizeBytes(m.diskFree), colorReset)
+			freeLabel = fmt.Sprintf("  %s(%s %s)%s", colorGray, humanizeBytes(m.diskFree), locale.T("analyze.free"), colorReset)
 		}
-		fmt.Fprintf(&b, "%sAnalyze Disk%s%s\n", colorPurpleBold, colorReset, freeLabel)
+		fmt.Fprintf(&b, "%s%s%s%s\n", colorPurpleBold, locale.T("analyze.title"), colorReset, freeLabel)
 		if m.overviewScanning {
 			if allOverviewEntriesPending(m.entries) {
-				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
-				fmt.Fprintf(&b, "%s%s%s%s Analyzing disk usage...\n\n",
-					colorCyan, colorBold, spinnerFrames[m.spinner], colorReset)
+				fmt.Fprintf(&b, "%s%s%s  ", colorGray, locale.T("analyze.select"), colorReset)
+				fmt.Fprintf(&b, "%s%s%s%s %s\n\n",
+					colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, locale.T("analyze.analyzing"))
 			} else {
 				fmt.Fprintf(&b, "%sSelect a location to explore:%s  ", colorGray, colorReset)
 				fmt.Fprintf(&b, "%s%s%s%s %s\n\n", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset, m.status)
@@ -37,9 +39,9 @@ func (m model) View() string {
 			}
 		}
 	} else {
-		fmt.Fprintf(&b, "%sAnalyze Disk%s  %s%s%s", colorPurpleBold, colorReset, colorGray, displayPath(m.path), colorReset)
+		fmt.Fprintf(&b, "%s%s%s  %s%s%s", colorPurpleBold, locale.T("analyze.title"), colorReset, colorGray, displayPath(m.path), colorReset)
 		if !m.scanning {
-			fmt.Fprintf(&b, "  |  Total: %s", humanizeBytes(m.totalSize))
+			fmt.Fprintf(&b, "  |  %s %s", locale.T("analyze.total"), humanizeBytes(m.totalSize))
 		}
 		fmt.Fprintf(&b, "\n\n")
 	}
@@ -50,11 +52,14 @@ func (m model) View() string {
 			count = atomic.LoadInt64(m.deleteCount)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Deleting: %s%s items%s removed, please wait...\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s %s%s%s %s, %s...\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
-			colorYellow, formatNumber(count), colorReset)
+			locale.T("analyze.deleting"),
+			colorYellow, formatNumber(count), colorReset,
+			locale.T("analyze.items"),
+			locale.T("analyze.removed"))
 
 		return b.String()
 	}
@@ -76,13 +81,13 @@ func (m model) View() string {
 			progressPrefix = fmt.Sprintf(" %s%.0f%%%s", colorCyan, percent, colorReset)
 		}
 
-		fmt.Fprintf(&b, "%s%s%s%s Scanning%s: %s%s files%s, %s%s dirs%s, %s%s%s\n",
+		fmt.Fprintf(&b, "%s%s%s%s %s%s: %s%s %s, %s%s %s, %s%s%s\n",
 			colorCyan, colorBold,
 			spinnerFrames[m.spinner],
 			colorReset,
-			progressPrefix,
-			colorYellow, formatNumber(filesScanned), colorReset,
-			colorYellow, formatNumber(dirsScanned), colorReset,
+			locale.T("analyze.scanning"), progressPrefix,
+			colorYellow, formatNumber(filesScanned), locale.T("analyze.files"),
+			colorYellow, formatNumber(dirsScanned), locale.T("analyze.dirs"),
 			colorGreen, humanizeBytes(bytesScanned), colorReset)
 
 		if m.currentPath != nil {
@@ -99,7 +104,7 @@ func (m model) View() string {
 
 	if m.showLargeFiles {
 		if len(m.largeFiles) == 0 {
-			fmt.Fprintln(&b, "  No large files found")
+			fmt.Fprintln(&b, "  "+locale.T("analyze.no_large"))
 		} else {
 			viewport := calculateViewport(m.height, true)
 			start := max(m.largeOffset, 0)
@@ -139,7 +144,7 @@ func (m model) View() string {
 		}
 	} else {
 		if len(m.entries) == 0 {
-			fmt.Fprintln(&b, "  Empty directory")
+			fmt.Fprintln(&b, "  "+locale.T("analyze.empty_dir"))
 		} else {
 			if m.inOverviewMode() {
 				maxSize := maxDirEntrySize(m.entries)

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/tw93/mole/internal/locale"
 )
 
 var (
@@ -162,8 +164,10 @@ func main() {
 	}
 
 	if *jsonMode {
+		locale.Init()
 		runJSONMode(abs, isOverview)
 	} else {
+		locale.Init()
 		runTUIMode(abs, isOverview)
 	}
 }
@@ -200,7 +204,7 @@ func newModel(path string, isOverview bool) model {
 	m := model{
 		path:                 path,
 		selected:             0,
-		status:               "Preparing scan...",
+		status:               locale.T("analyze.preparing"),
 		diskFree:             diskFreeBytes,
 		scanning:             !isOverview,
 		filesScanned:         &filesScanned,
@@ -227,9 +231,9 @@ func newModel(path string, isOverview bool) model {
 		m.offset = 0
 		if nextPendingOverviewIndex(m.entries) >= 0 {
 			m.overviewScanning = true
-			m.status = "Checking system folders..."
+			m.status = locale.T("analyze.checking")
 		} else {
-			m.status = "Ready"
+			m.status = locale.T("analyze.ready")
 		}
 	}
 
@@ -319,7 +323,7 @@ func (m *model) scheduleOverviewScans() tea.Cmd {
 		m.overviewScanning = false
 		if !hasPendingOverviewEntries(m.entries) {
 			m.sortOverviewEntriesBySize()
-			m.status = "Ready"
+			m.status = locale.T("analyze.ready")
 		}
 		return nil
 	}
@@ -458,14 +462,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.multiSelected = make(map[string]bool)
 			m.largeMultiSelected = make(map[string]bool)
 			if msg.err != nil {
-				m.status = fmt.Sprintf("Failed to delete: %v", msg.err)
+				m.status = fmt.Sprintf(locale.T("analyze.del_failed"), msg.err)
 			} else {
 				if msg.path != "" {
 					m.removePathFromView(msg.path)
 					invalidateCache(msg.path)
 				}
 				invalidateCache(m.path)
-				m.status = fmt.Sprintf("Deleted %d items", msg.count)
+				m.status = fmt.Sprintf(locale.T("analyze.deleted"), msg.count)
 
 				// Selective invalidation: only mark current path and ancestors as needing refresh
 				currentPath := m.path
@@ -508,7 +512,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.scanning = false
 		if msg.err != nil {
-			m.status = fmt.Sprintf("Scan failed: %v", msg.err)
+			m.status = fmt.Sprintf(locale.T("analyze.scan_failed"), msg.err)
 			return m, nil
 		}
 		filteredEntries := filterNonEmptyEntries(msg.result.Entries)
@@ -533,7 +537,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.stale {
-			m.status = fmt.Sprintf("Loaded cached data for %s, refreshing...", displayPath(m.path))
+			m.status = fmt.Sprintf(locale.T("analyze.cached"), displayPath(m.path))
 			m.scanning = true
 			if m.totalFiles > 0 {
 				m.lastTotalFiles = m.totalFiles
@@ -547,7 +551,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.scanFreshCmd(m.path), tickCmd())
 		}
 
-		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		m.status = fmt.Sprintf(locale.T("analyze.scanned"), humanizeBytes(m.totalSize))
 		return m, nil
 	case overviewSizeMsg:
 		delete(m.overviewScanningSet, msg.Path)
@@ -595,7 +599,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.deleting && m.deleteCount != nil {
 				count := atomic.LoadInt64(m.deleteCount)
 				if count > 0 {
-					m.status = fmt.Sprintf("Moving to Trash... %s items", formatNumber(count))
+					m.status = fmt.Sprintf(locale.T("analyze.moving"), formatNumber(count))
 				}
 			}
 			return m, tickCmd()
@@ -639,7 +643,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deleteTarget = nil
 			if len(pathsToDelete) == 0 {
 				m.deleting = false
-				m.status = "Nothing to delete"
+				m.status = locale.T("analyze.nothing")
 				return m, nil
 			}
 
@@ -652,7 +656,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("Deleting %d items...", len(pathsToDelete))
 			return m, tea.Batch(deleteMultiplePathsCmd(pathsToDelete, m.deleteCount), tickCmd())
 		case "esc", "q":
-			m.status = "Cancelled"
+			m.status = locale.T("analyze.cancelled")
 			m.deleteConfirm = false
 			m.deleteTarget = nil
 			return m, nil
@@ -740,13 +744,13 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.totalSize = 0
 
-			m.status = "Refreshing..."
+			m.status = locale.T("analyze.refreshing")
 			m.overviewScanning = true
 			return m, tea.Batch(m.scheduleOverviewScans(), tickCmd())
 		}
 
 		invalidateCacheTree(m.path)
-		m.status = "Refreshing..."
+		m.status = locale.T("analyze.refreshing")
 		m.scanning = true
 		if m.totalFiles > 0 {
 			m.lastTotalFiles = m.totalFiles

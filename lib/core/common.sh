@@ -17,6 +17,8 @@ source "$_MOLE_CORE_DIR/base.sh"
 prepare_mole_tmpdir > /dev/null
 source "$_MOLE_CORE_DIR/log.sh"
 
+# i18n must load before help.sh, which calls msg() at parse time.
+source "$_MOLE_CORE_DIR/i18n.sh"
 source "$_MOLE_CORE_DIR/timeout.sh"
 source "$_MOLE_CORE_DIR/file_ops.sh"
 source "$_MOLE_CORE_DIR/help.sh"
@@ -81,9 +83,9 @@ update_via_homebrew() {
 
     # Update Homebrew
     if [[ -t 1 ]]; then
-        start_inline_spinner "Updating Homebrew..."
+        start_inline_spinner "$(msg BREW_UPDATING)"
     else
-        echo "Updating Homebrew..."
+        msg BREW_UPDATING; echo
     fi
 
     local brew_update_timeout="${MOLE_HOMEBREW_UPDATE_TIMEOUT:-120}"
@@ -96,9 +98,9 @@ update_via_homebrew() {
 
     # Upgrade Mole
     if [[ -t 1 ]]; then
-        start_inline_spinner "Upgrading Mole..."
+        start_inline_spinner "$(msg BREW_UPGRADING)"
     else
-        echo "Upgrading Mole..."
+        msg BREW_UPGRADING; echo
     fi
 
     local brew_upgrade_timeout="${MOLE_HOMEBREW_UPGRADE_TIMEOUT:-120}"
@@ -125,10 +127,10 @@ update_via_homebrew() {
             run_with_timeout 10 brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$installed_version" ]] && installed_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${installed_version:-$current_version}"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} $(msgf BREW_ALREADY_LATEST "${installed_version:-$current_version}")"
         echo ""
     elif echo "$upgrade_output" | grep -q "Error:"; then
-        log_error "Homebrew upgrade failed"
+        log_error "$(msg BREW_UPGRADE_FAILED)"
         echo "$upgrade_output" | grep "Error:" >&2
         return 1
     else
@@ -138,7 +140,7 @@ update_via_homebrew() {
             run_with_timeout 10 brew list --versions mole 2> /dev/null | awk '{print $2}')
         [[ -z "$new_version" ]] && new_version=$(mo --version 2> /dev/null | awk '/Mole version/ {print $3; exit}')
         echo ""
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-$current_version}"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} $(msgf BREW_UPDATED "${new_version:-$current_version}")"
         echo ""
     fi
 

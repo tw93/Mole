@@ -1,80 +1,80 @@
 #!/bin/bash
 
 show_clean_help() {
-    echo "Usage: mo clean [OPTIONS]"
-    echo ""
-    echo "Clean up disk space by removing caches, logs, temporary files, and app leftovers from already-uninstalled apps."
-    echo ""
-    echo "Options:"
-    echo "  --dry-run, -n     Preview cleanup without making changes"
-    echo "  --external PATH   Clean OS metadata from a mounted external volume"
-    echo "  --whitelist       Manage protected paths"
-    echo "  --debug           Show detailed operation logs"
-    echo "  -h, --help        Show this help message"
+    msg HELP_CLEAN_USAGE; echo
+    echo
+    msg HELP_CLEAN_DESC; echo
+    echo
+    printf '%s:\n' "$(msg HELP_OPTIONS)"
+    printf '  --dry-run, -n     %s\n' "$(msg HELP_CLEAN_DRY_RUN)"
+    printf '  --external PATH   %s\n' "$(msg HELP_CLEAN_EXTERNAL)"
+    printf '  --whitelist       %s\n' "$(msg HELP_CLEAN_WHITELIST)"
+    printf '  --debug           %s\n' "$(msg HELP_CLEAN_DEBUG)"
+    printf '  -h, --help        %s\n' "$(msg HELP_CLEAN_HELP)"
 }
 
 show_installer_help() {
-    echo "Usage: mo installer [OPTIONS]"
-    echo ""
-    echo "Find and remove installer files (.dmg, .pkg, .iso, .xip, .zip)."
-    echo ""
-    echo "Options:"
-    echo "  --dry-run         Preview installer cleanup without making changes"
-    echo "  --debug           Show detailed operation logs"
-    echo "  -h, --help        Show this help message"
+    msg HELP_INSTALLER_USAGE; echo
+    echo
+    msg HELP_INSTALLER_DESC; echo
+    echo
+    printf '%s:\n' "$(msg HELP_OPTIONS)"
+    printf '  --dry-run         %s\n' "$(msg HELP_INSTALLER_DRY_RUN)"
+    printf '  --debug           %s\n' "$(msg HELP_CLEAN_DEBUG)"
+    printf '  -h, --help        %s\n' "$(msg HELP_CLEAN_HELP)"
 }
 
 show_optimize_help() {
-    echo "Usage: mo optimize [OPTIONS]"
-    echo ""
-    echo "Refresh system caches and services, repair safe maintenance issues."
-    echo ""
-    echo "Options:"
-    echo "  --dry-run         Preview optimization without making changes"
-    echo "  --whitelist       Manage protected items"
-    echo "  --debug           Show detailed operation logs"
-    echo "  -h, --help        Show this help message"
+    msg HELP_OPTIMIZE_USAGE; echo
+    echo
+    msg HELP_OPTIMIZE_DESC; echo
+    echo
+    printf '%s:\n' "$(msg HELP_OPTIONS)"
+    printf '  --dry-run         %s\n' "$(msg HELP_OPTIMIZE_DRY_RUN)"
+    printf '  --whitelist       %s\n' "$(msg HELP_OPTIMIZE_WHITELIST)"
+    printf '  --debug           %s\n' "$(msg HELP_CLEAN_DEBUG)"
+    printf '  -h, --help        %s\n' "$(msg HELP_CLEAN_HELP)"
 }
 
 show_touchid_help() {
-    echo "Usage: mo touchid [COMMAND]"
-    echo ""
-    echo "Configure Touch ID for sudo authentication."
-    echo ""
-    echo "Commands:"
-    echo "  enable            Enable Touch ID for sudo"
-    echo "  disable           Disable Touch ID for sudo"
-    echo "  status            Show current Touch ID status"
-    echo ""
-    echo "Options:"
-    echo "  --dry-run         Preview Touch ID changes without modifying sudo config"
-    echo "  -h, --help        Show this help message"
-    echo ""
-    echo "If no command is provided, an interactive menu is shown."
+    msg HELP_TOUCHID_USAGE; echo
+    echo
+    msg HELP_TOUCHID_DESC; echo
+    echo
+    printf '%s:\n' "$(msg HELP_COMMANDS)"
+    printf '  enable            %s\n' "$(msg HELP_TOUCHID_ENABLE)"
+    printf '  disable           %s\n' "$(msg HELP_TOUCHID_DISABLE)"
+    printf '  status            %s\n' "$(msg HELP_TOUCHID_STATUS)"
+    echo
+    printf '%s:\n' "$(msg HELP_OPTIONS)"
+    printf '  --dry-run         %s\n' "$(msg HELP_TOUCHID_DRY_RUN)"
+    printf '  -h, --help        %s\n' "$(msg HELP_CLEAN_HELP)"
+    echo
+    msg HELP_TOUCHID_NO_CMD; echo
 }
 
 show_uninstall_help() {
-    echo "Usage: mo uninstall [OPTIONS] [APP_NAME ...]"
-    echo ""
-    echo "Interactively remove applications and their leftover files."
-    echo "Optionally specify one or more app names to uninstall directly."
-    echo "For leftovers from apps that are already gone, use mo clean."
-    echo ""
-    echo "Examples:"
-    echo "  mo uninstall                   Open interactive app selector"
-    echo "  mo uninstall slack             Uninstall Slack"
-    echo "  mo uninstall slack zoom        Uninstall Slack and Zoom"
-    echo "  mo uninstall --dry-run slack   Preview Slack uninstallation"
-    echo "  mo uninstall --list            Show installed apps and the names mo uninstall accepts"
-    echo ""
-    echo "Options:"
-    echo "  --list            List installed apps with the exact name mo uninstall accepts"
-    echo "  --dry-run         Preview app uninstallation without making changes"
-    echo "  --permanent       Bypass macOS Trash and rm -rf immediately"
-    echo "  --whitelist       Not supported for uninstall (use clean/optimize)"
-    echo "  --debug           Show detailed operation logs"
-    echo "  -h, --help        Show this help message"
-    echo ""
-    echo "By default, uninstalled files go to the macOS Trash so they can be"
-    echo "recovered. Use --permanent to skip the Trash step."
+    msg HELP_UNINSTALL_USAGE; echo
+    echo
+    msg HELP_UNINSTALL_DESC; echo
+    msg HELP_UNINSTALL_DESC2; echo
+    msg HELP_UNINSTALL_DESC3; echo
+    echo
+    printf '%s:\n' "$(msg HELP_UNINSTALL_EXAMPLES)"
+    printf '  mo uninstall                   %s\n' "$(msg HELP_UNINSTALL_EXAMPLE_INTERACTIVE)"
+    printf '  mo uninstall slack             %s\n' "$(msg HELP_UNINSTALL_EXAMPLE_SINGLE)"
+    printf '  mo uninstall slack zoom        %s\n' "$(msg HELP_UNINSTALL_EXAMPLE_MULTI)"
+    printf '  mo uninstall --dry-run slack   %s\n' "$(msg HELP_UNINSTALL_EXAMPLE_DRY)"
+    printf '  mo uninstall --list            %s\n' "$(msg HELP_UNINSTALL_EXAMPLE_LIST)"
+    echo
+    printf '%s:\n' "$(msg HELP_OPTIONS)"
+    printf '  --list            %s\n' "$(msg HELP_UNINSTALL_LIST)"
+    printf '  --dry-run         %s\n' "$(msg HELP_UNINSTALL_DRY_RUN)"
+    printf '  --permanent       %s\n' "$(msg HELP_UNINSTALL_PERMANENT)"
+    printf '  --whitelist       %s\n' "$(msg HELP_UNINSTALL_WHITELIST)"
+    printf '  --debug           %s\n' "$(msg HELP_CLEAN_DEBUG)"
+    printf '  -h, --help        %s\n' "$(msg HELP_CLEAN_HELP)"
+    echo
+    msg HELP_UNINSTALL_TRASH_NOTE; echo
+    msg HELP_UNINSTALL_TRASH_NOTE2; echo
 }

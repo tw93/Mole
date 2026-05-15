@@ -12,6 +12,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/tw93/mole/internal/locale"
 )
 
 const refreshInterval = time.Second
@@ -191,7 +193,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if !m.ready {
-		return "Loading..."
+		return locale.T("status.loading")
 	}
 
 	termWidth := m.width
@@ -291,6 +293,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(2)
 	}
+
+	locale.Init()
 
 	if shouldUseJSONOutput(*jsonOutput, os.Stdout) {
 		runJSONMode()

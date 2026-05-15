@@ -14,7 +14,7 @@ trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
 VERSION="1.38.1"
-MOLE_TAGLINE="Deep clean and optimize your Mac."
+MOLE_TAGLINE=""
 
 is_touchid_configured() {
     grep -q "pam_tid.so" /etc/pam.d/sudo /etc/pam.d/sudo_local 2> /dev/null
@@ -253,12 +253,14 @@ show_update_notification() {
 
 # UI helpers
 show_brand_banner() {
+    local tagline
+    tagline="$(msg TAGLINE)"
     cat << EOF
 ${GREEN} __  __       _      ${NC}
 ${GREEN}|  \/  | ___ | | ___ ${NC}
 ${GREEN}| |\/| |/ _ \| |/ _ \\${NC}
 ${GREEN}| |  | | (_) | |  __/${NC}  ${BLUE}https://github.com/tw93/mole${NC}
-${GREEN}|_|  |_|\___/|_|\___|${NC}  ${GREEN}${MOLE_TAGLINE}${NC}
+${GREEN}|_|  |_|\___/|_|\___|${NC}  ${GREEN}${tagline}${NC}
 
 EOF
 }
@@ -296,30 +298,33 @@ show_version() {
     local channel
     channel=$(get_install_channel)
 
-    printf '\nMole version %s\n' "$VERSION"
+    printf '\n'
+    msgf VERSION_LABEL "$VERSION"
+    printf '\n'
     if [[ "$channel" == "nightly" ]]; then
         local commit
         commit=$(get_install_commit)
         if [[ -n "$commit" ]]; then
-            printf 'Channel: Nightly (%s)\n' "$commit"
+            msgf VERSION_CHANNEL_NIGHTLY "$commit"
         else
-            printf 'Channel: Nightly\n'
+            msg VERSION_CHANNEL_NIGHTLY_PLAIN
         fi
+        printf '\n'
     fi
-    printf 'macOS: %s\n' "$os_ver"
-    printf 'Architecture: %s\n' "$arch"
-    printf 'Kernel: %s\n' "$kernel"
-    printf 'SIP: %s\n' "$sip_status"
-    printf 'Disk Free: %s\n' "$disk_free"
-    printf 'Install: %s\n' "$install_method"
-    printf 'Shell: %s\n\n' "${SHELL:-Unknown}"
+    msgf VERSION_MACOS "$os_ver"; printf '\n'
+    msgf VERSION_ARCH "$arch"; printf '\n'
+    msgf VERSION_KERNEL "$kernel"; printf '\n'
+    msgf VERSION_SIP "$sip_status"; printf '\n'
+    msgf VERSION_DISK_FREE "$disk_free"; printf '\n'
+    msgf VERSION_INSTALL "$install_method"; printf '\n'
+    msgf VERSION_SHELL "${SHELL:-Unknown}"; printf '\n\n'
 }
 
 show_help() {
     show_brand_banner
     echo
-    printf "%s%s%s\n" "$BLUE" "COMMANDS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "Main menu"
+    printf "%s%s%s\n" "$BLUE" "$(msg HELP_COMMANDS)" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "$(msg MENU_MAIN)"
     for entry in "${MOLE_COMMANDS[@]}"; do
         local name="${entry%%:*}"
         local desc="${entry#*:}"
@@ -329,24 +334,23 @@ show_help() {
         printf "  %s%-28s%s %s\n" "$GREEN" "$display" "$NC" "$desc"
     done
     echo
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "Manage protected caches"
-
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "Manage protected items"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "Preview project purge"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "Preview installer cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "Preview Touch ID setup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "Preview shell completion edits"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "Configure scan directories"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "Analyze external drives only"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest stable version"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "Install latest unreleased main branch build"
-    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "Preview Mole removal"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "$(msg HELP_PREVIEW_CLEANUP)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "$(msg HELP_MANAGE_CACHES)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "$(msg HELP_PREVIEW_OPTIMIZE)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "$(msg HELP_MANAGE_ITEMS)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "$(msg HELP_PREVIEW_UNINSTALL)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "$(msg HELP_PREVIEW_PURGE)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "$(msg HELP_PREVIEW_INSTALLER)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "$(msg HELP_PREVIEW_TOUCHID)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo completion --dry-run" "$NC" "$(msg HELP_PREVIEW_COMPLETION)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "$(msg HELP_CONFIGURE_SCAN)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /Volumes" "$NC" "$(msg HELP_ANALYZE_EXTERNAL)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "$(msg HELP_FORCE_REINSTALL)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "$(msg HELP_NIGHTLY)"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "$(msg HELP_PREVIEW_REMOVE)"
     echo
-    printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
+    printf "%s%s%s\n" "$BLUE" "$(msg HELP_OPTIONS)" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "$(msg HELP_DEBUG)"
     echo
 }
 
@@ -1010,8 +1014,8 @@ main() {
                     --force | -f) force_update=true ;;
                     --nightly) nightly_update=true ;;
                     *)
-                        echo "Unknown update option: $arg"
-                        echo "Use 'mole update [--force] [--nightly]' for supported options."
+                        msgf UNKNOWN_UPDATE_OPTION "$arg"; echo
+                        msg UNKNOWN_UPDATE_HELP; echo
                         exit 1
                         ;;
                 esac
@@ -1025,8 +1029,8 @@ main() {
                 case "$arg" in
                     "--dry-run" | "-n") dry_run_remove=true ;;
                     *)
-                        echo "Unknown remove option: $arg"
-                        echo "Use 'mole remove [--dry-run]' for supported options."
+                        msgf UNKNOWN_REMOVE_OPTION "$arg"; echo
+                        msg UNKNOWN_REMOVE_HELP; echo
                         exit 1
                         ;;
                 esac
@@ -1046,8 +1050,8 @@ main() {
             interactive_main_menu
             ;;
         *)
-            echo "Unknown command: ${args[0]}"
-            echo "Use 'mole --help' for usage information."
+            msgf UNKNOWN_COMMAND "${args[0]}"; echo
+            msg UNKNOWN_COMMAND_HELP; echo
             exit 1
             ;;
     esac
