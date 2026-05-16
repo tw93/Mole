@@ -672,6 +672,91 @@ _dotdir_owner_collect_tokens() {
     fi
 }
 
+# Emit every alnum token found in *enabled* agent-plugin names, lowercased,
+# one per line.  Currently covers Claude Code's plugin manifest at
+# ``~/.claude/settings.json`` — only entries whose value is ``true`` count,
+# so a stale dotdir for a disabled or uninstalled plugin is still surfaced
+# as an orphan (which is what the user usually wants).
+#
+# Parsing is bash/awk native to match Mole's existing "no jq dependency"
+# stance (see ``bin/optimize.sh``).
+# shellcheck disable=SC2329
+_dotdir_owner_collect_agent_plugin_tokens() {
+    local settings="$HOME/.claude/settings.json"
+    [[ -r "$settings" ]] || return 0
+
+    # The shape inside settings.json is:
+    #   "enabledPlugins": { "<name>@<marketplace>": true|false, ... }
+    # We only emit names whose value is ``true`` and strip the
+    # @marketplace suffix so the token list mirrors the GUI-app collector.
+    awk '
+        /"enabledPlugins"[[:space:]]*:[[:space:]]*\{/ { in_block=1; depth=1; next }
+        in_block {
+            n=gsub(/\{/, "&"); depth+=n
+            n=gsub(/\}/, "&"); depth-=n
+            if (depth <= 0) { exit }
+            if (match($0, /"[^"]+"[[:space:]]*:[[:space:]]*true/)) {
+                line = substr($0, RSTART)
+                if (match(line, /"[^"]+"/)) {
+                    key = substr(line, RSTART + 1, RLENGTH - 2)
+                    sub(/@.*$/, "", key)
+                    print key
+                }
+            }
+        }
+    ' "$settings" 2> /dev/null |
+        LC_ALL=C tr '[:upper:]' '[:lower:]' |
+        LC_ALL=C tr -cs 'a-z0-9' '\n'
+}
+
+# Return 0 if any ≥4-char token from `name` matches a token harvested from
+# enabled Claude Code agent plugins.  Cached for 5 minutes alongside the
+# GUI-app token cache.  Mirrors ``dotdir_has_owning_gui_app`` so an active
+# plugin's state directory (e.g. ``~/.cc-safety-net`` for the
+# ``safety-net@cc-marketplace`` plugin) is not flagged as an orphan
+# dotfile.  See issue #889.
+# shellcheck disable=SC2329
+dotdir_has_owning_agent_plugin() {
+    local name="$1"
+    [[ -z "$name" ]] && return 1
+    [[ ${#name} -lt 4 ]] && return 1
+
+    local cache_dir="$HOME/.cache/mole"
+    local cache_file="$cache_dir/installed_agent_plugin_tokens_cache"
+    local cache_ttl=300
+    local now
+    now=$(date +%s)
+
+    local rebuild=1
+    if [[ -f "$cache_file" ]]; then
+        local mtime
+        mtime=$(get_file_mtime "$cache_file" 2> /dev/null || echo 0)
+        if [[ -n "$mtime" ]] && [[ $((now - mtime)) -lt $cache_ttl ]]; then
+            rebuild=0
+        fi
+    fi
+    if [[ $rebuild -eq 1 ]]; then
+        ensure_user_dir "$cache_dir" 2> /dev/null || true
+        _dotdir_owner_collect_agent_plugin_tokens 2> /dev/null |
+            LC_ALL=C awk 'length($0) >= 4' |
+            LC_ALL=C sort -u > "$cache_file" 2> /dev/null || return 1
+    fi
+    [[ -s "$cache_file" ]] || return 1
+
+    local name_lower
+    name_lower=$(printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+    local tok
+    while IFS= read -r tok; do
+        [[ -z "$tok" ]] && continue
+        [[ ${#tok} -ge 4 ]] || continue
+        if LC_ALL=C grep -Fxq "$tok" "$cache_file" 2> /dev/null; then
+            return 0
+        fi
+    done < <(printf '%s\n' "$name_lower" | LC_ALL=C tr -cs 'a-z0-9' '\n')
+
+    return 1
+}
+
 # Return 0 if any ≥4-char token from `name` matches a token harvested from
 # installed `.app` bundles or Homebrew casks. Cached for 5 minutes. Short
 # tokens (<4 chars) on either side are ignored to avoid false matches like
@@ -793,6 +878,10 @@ show_orphan_dotdir_hint_notice() {
         fi
 
         if dotdir_has_owning_gui_app "$name"; then
+            continue
+        fi
+
+        if dotdir_has_owning_agent_plugin "$name"; then
             continue
         fi
 

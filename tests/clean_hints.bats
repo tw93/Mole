@@ -488,3 +488,127 @@ EOTD
     count=$(echo "$output" | grep -c "Potential orphan dotfile" || true)
     [ "$count" -le 5 ]
 }
+
+@test "show_orphan_dotdir_hint_notice skips dotdir owned by enabled Claude plugin (#889)" {
+    mkdir -p "$HOME/.cc-safety-net/logs"
+    touch -t 202401010000 "$HOME/.cc-safety-net"
+
+    mkdir -p "$HOME/.claude/plugins"
+    cat > "$HOME/.claude/settings.json" << 'JSON'
+{
+    "enabledPlugins": {
+        "safety-net@cc-marketplace": true,
+        "other-plugin@somewhere": false
+    }
+}
+JSON
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+hint_get_path_size_kb_with_timeout() { echo "100"; }
+show_orphan_dotdir_hint_notice
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *".cc-safety-net"* ]]
+}
+
+@test "show_orphan_dotdir_hint_notice still flags dotdir for DISABLED plugin (#889)" {
+    mkdir -p "$HOME/.cc-safety-net/logs"
+    touch -t 202401010000 "$HOME/.cc-safety-net"
+
+    mkdir -p "$HOME/.claude/plugins"
+    cat > "$HOME/.claude/settings.json" << 'JSON'
+{
+    "enabledPlugins": {
+        "safety-net@cc-marketplace": false
+    }
+}
+JSON
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+hint_get_path_size_kb_with_timeout() { echo "100"; }
+show_orphan_dotdir_hint_notice
+EOTD
+
+    [ "$status" -eq 0 ]
+    # Plugin disabled → stale state legitimately surfaces as an orphan candidate.
+    [[ "$output" == *".cc-safety-net"* ]]
+}
+
+@test "dotdir_has_owning_agent_plugin returns 0 for enabled plugin match (#889)" {
+    mkdir -p "$HOME/.claude/plugins"
+    cat > "$HOME/.claude/settings.json" << 'JSON'
+{
+    "enabledPlugins": {
+        "safety-net@cc-marketplace": true
+    }
+}
+JSON
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+if dotdir_has_owning_agent_plugin "cc-safety-net"; then
+    echo "MATCH"
+else
+    echo "NOMATCH"
+fi
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"MATCH"* ]]
+}
+
+@test "dotdir_has_owning_agent_plugin returns 1 when settings.json missing (#889)" {
+    # No ~/.claude/settings.json at all.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+if dotdir_has_owning_agent_plugin "something"; then
+    echo "MATCH"
+else
+    echo "NOMATCH"
+fi
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NOMATCH"* ]]
+}
+
+@test "dotdir_has_owning_agent_plugin rejects short names (#889)" {
+    # Even with a matching enabled plugin token, names <4 chars should not match.
+    mkdir -p "$HOME/.claude/plugins"
+    cat > "$HOME/.claude/settings.json" << 'JSON'
+{
+    "enabledPlugins": {
+        "ai@market": true
+    }
+}
+JSON
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOTD'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+if dotdir_has_owning_agent_plugin "ai"; then
+    echo "MATCH"
+else
+    echo "NOMATCH"
+fi
+EOTD
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NOMATCH"* ]]
+}
