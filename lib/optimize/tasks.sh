@@ -274,6 +274,14 @@ opt_saved_state_cleanup() {
 # Removed: opt_local_snapshots - Deletes user Time Machine recovery points, breaks backup continuity
 
 opt_fix_broken_configs() {
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        debug_operation_start "Broken Config Repair" "Remove corrupted user preference plists"
+        debug_operation_detail "Method" "plutil -lint each .plist under $HOME/Library/Preferences (top level) and ByHost (recursive); delete files that fail validation"
+        debug_operation_detail "Safety checks" "Skip com.apple.*, .GlobalPreferences*, and loginwindow.plist"
+        debug_operation_detail "Expected outcome" "Corrupted preference plists removed; affected apps fall back to defaults on next launch"
+        debug_risk_level "LOW" "Apps regenerate preference files automatically on next launch"
+    fi
+
     local spinner_started="false"
     if [[ -t 1 ]]; then
         MOLE_SPINNER_PREFIX="  " start_inline_spinner "Checking preferences..."

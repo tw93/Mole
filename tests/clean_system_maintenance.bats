@@ -565,6 +565,28 @@ EOF
     [[ "$output" == *"Repaired 2 corrupted preference files"* ]]
 }
 
+@test "opt_fix_broken_configs emits debug section under MO_DEBUG=1" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/maintenance.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+fix_broken_preferences() {
+    echo 3
+}
+
+opt_fix_broken_configs 2>&1
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"=== Broken Config Repair ==="* ]]
+    [[ "$output" == *"Method: plutil -lint"* ]]
+    [[ "$output" == *"Safety checks:"* ]]
+    [[ "$output" == *"Expected outcome:"* ]]
+    [[ "$output" == *"Risk Level:"* ]]
+}
+
 @test "clean_deep_system cleans memory exception reports" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
 set -euo pipefail

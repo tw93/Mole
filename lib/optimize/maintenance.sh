@@ -45,6 +45,9 @@ _repair_preference_plists_in_dir() {
 
         plutil -lint "$plist_file" > /dev/null 2>&1 && continue
 
+        if [[ "${MO_DEBUG:-}" == "1" ]]; then
+            debug_file_action "  Removing corrupted plist" "$plist_file"
+        fi
         safe_remove "$plist_file" true > /dev/null 2>&1 || true
         broken_count=$((broken_count + 1))
     done < <(command find "${find_args[@]}" 2> /dev/null || true)
