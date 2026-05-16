@@ -139,7 +139,6 @@ func (m model) inOverviewMode() bool {
 
 func main() {
 	flag.Parse()
-	go pruneAnalyzerCache()
 
 	target := os.Getenv("MO_ANALYZE_PATH")
 	if target == "" && len(flag.Args()) > 0 {
@@ -163,8 +162,10 @@ func main() {
 	}
 
 	if *jsonMode {
+		pruneAnalyzerCache()
 		runJSONMode(abs, isOverview)
 	} else {
+		go pruneAnalyzerCache()
 		runTUIMode(abs, isOverview)
 	}
 }

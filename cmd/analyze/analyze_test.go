@@ -338,6 +338,22 @@ func TestCacheSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func writeCacheEntryForPruneTest(t *testing.T, path string, scanTime time.Time) {
+	t.Helper()
+
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create %s: %v", path, err)
+	}
+	if err := gob.NewEncoder(file).Encode(cacheEntry{ScanTime: scanTime}); err != nil {
+		_ = file.Close()
+		t.Fatalf("encode %s: %v", path, err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close %s: %v", path, err)
+	}
+}
+
 func TestPruneAnalyzerCacheDirRemovesOnlyExpiredCacheFiles(t *testing.T) {
 	cacheDir := t.TempDir()
 	now := time.Now()
@@ -351,7 +367,9 @@ func TestPruneAnalyzerCacheDirRemovesOnlyExpiredCacheFiles(t *testing.T) {
 	symlinkTarget := filepath.Join(cacheDir, "target")
 	symlinkCache := filepath.Join(cacheDir, "link.cache")
 
-	for _, path := range []string{oldCache, freshCache, namedState, symlinkTarget} {
+	writeCacheEntryForPruneTest(t, oldCache, oldTime)
+	writeCacheEntryForPruneTest(t, freshCache, freshTime)
+	for _, path := range []string{namedState, symlinkTarget} {
 		if err := os.WriteFile(path, []byte("cache"), 0o644); err != nil {
 			t.Fatalf("write %s: %v", path, err)
 		}
@@ -363,12 +381,16 @@ func TestPruneAnalyzerCacheDirRemovesOnlyExpiredCacheFiles(t *testing.T) {
 		t.Fatalf("symlink cache entry: %v", err)
 	}
 
-	for _, path := range []string{oldCache, namedState, cacheDirEntry, symlinkCache} {
+	for _, path := range []string{namedState, cacheDirEntry, symlinkCache} {
 		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
 			t.Fatalf("chtimes %s: %v", path, err)
 		}
 	}
-	if err := os.Chtimes(freshCache, freshTime, freshTime); err != nil {
+	// Pruning must follow the decoded ScanTime, not the cache file mtime.
+	if err := os.Chtimes(oldCache, freshTime, freshTime); err != nil {
+		t.Fatalf("chtimes old cache: %v", err)
+	}
+	if err := os.Chtimes(freshCache, oldTime, oldTime); err != nil {
 		t.Fatalf("chtimes fresh cache: %v", err)
 	}
 
@@ -400,10 +422,8 @@ func TestPruneAnalyzerCacheDirIgnoresRemoveFailures(t *testing.T) {
 
 	cacheDir := t.TempDir()
 	oldCache := filepath.Join(cacheDir, "old.cache")
-	if err := os.WriteFile(oldCache, []byte("cache"), 0o644); err != nil {
-		t.Fatalf("write old cache: %v", err)
-	}
 	oldTime := time.Now().Add(-analyzerCacheTTL - time.Hour)
+	writeCacheEntryForPruneTest(t, oldCache, oldTime)
 	if err := os.Chtimes(oldCache, oldTime, oldTime); err != nil {
 		t.Fatalf("chtimes old cache: %v", err)
 	}
