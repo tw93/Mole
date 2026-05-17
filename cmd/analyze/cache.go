@@ -236,18 +236,7 @@ func pruneAnalyzerCacheDir(cacheDir string, now time.Time, maxAge time.Duration)
 		}
 
 		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-
-		file, err := os.Open(filepath.Join(cacheDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		var cache cacheEntry
-		decodeErr := gob.NewDecoder(file).Decode(&cache)
-		_ = file.Close()
-		if decodeErr != nil || cache.ScanTime.After(cutoff) {
+		if err != nil || !info.Mode().IsRegular() || info.ModTime().After(cutoff) {
 			continue
 		}
 

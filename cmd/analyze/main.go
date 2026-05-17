@@ -161,11 +161,10 @@ func main() {
 		isOverview = false
 	}
 
+	go pruneAnalyzerCache()
 	if *jsonMode {
-		pruneAnalyzerCache()
 		runJSONMode(abs, isOverview)
 	} else {
-		go pruneAnalyzerCache()
 		runTUIMode(abs, isOverview)
 	}
 }
