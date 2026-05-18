@@ -1036,6 +1036,24 @@ EOF
 	[[ "$output" != *"Unknown option"* ]]
 }
 
+@test "mo purge restores cursor when purge exits after hiding it" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SKIP_MAIN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/purge.sh"
+
+hide_cursor() { printf 'hide\n'; }
+show_cursor() { printf 'show\n'; }
+start_purge() { :; }
+perform_purge() { return 42; }
+
+main
+EOF
+
+	[ "$status" -eq 42 ]
+	[[ "$output" == *"hide"* ]]
+	[[ "$output" == *"show"* ]]
+}
+
 @test "mo purge: creates cache directory for stats" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"

@@ -13,13 +13,29 @@ export LANG=C
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
 
-# Set up cleanup trap for temporary files
-trap cleanup_temp_files EXIT INT TERM
 source "$SCRIPT_DIR/../lib/core/log.sh"
 source "$SCRIPT_DIR/../lib/clean/project.sh"
 
 # Configuration
 CURRENT_SECTION=""
+PURGE_CLEANUP_DONE=false
+
+cleanup_purge() {
+    local signal="${1:-EXIT}"
+    local exit_code="${2:-$?}"
+
+    if [[ "$PURGE_CLEANUP_DONE" == "true" ]]; then
+        return 0
+    fi
+    PURGE_CLEANUP_DONE=true
+
+    cleanup_temp_files
+    show_cursor 2> /dev/null || true
+}
+
+trap 'cleanup_purge EXIT $?' EXIT
+trap 'cleanup_purge INT 130; exit 130' INT
+trap 'cleanup_purge TERM 143; exit 143' TERM
 
 # IMPORTANT: This file overrides start_section / end_section / note_activity
 # from lib/core/base.sh by virtue of being sourced after it. The purge variant
@@ -300,7 +316,7 @@ show_help() {
 # Main entry point
 main() {
     # Set up signal handling
-    trap 'show_cursor; exit 130' INT TERM
+    trap 'cleanup_purge INT 130; exit 130' INT TERM
 
     # Parse arguments
     for arg in "$@"; do
