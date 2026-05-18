@@ -761,6 +761,135 @@ EOF
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Permission Repair|disk_permissions_repair|optimize_task"* ]]
 	[[ "$output" == *"Login Items Audit|login_items_audit|optimize_task"* ]]
+	[[ "$output" == *"Spotlight Deep Reset|spotlight_deep_reset|optimize_task"* ]]
+}
+
+@test "optimize help documents spotlight deep reset option" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" "$PROJECT_ROOT/mole" optimize --help
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"--spotlight-deep-reset"* ]]
+	[[ "$output" == *"Spotlight"* ]]
+}
+
+@test "spotlight deep reset dry-run lists exact targets without sudo or deletion" {
+	mkdir -p "$HOME/Library/Metadata/CoreSpotlight"
+	mkdir -p "$HOME/Library/Caches/com.apple.Spotlight"
+	mkdir -p "$HOME/Library/Caches/com.apple.spotlightLower"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+sudo() {
+	echo "UNEXPECTED_SUDO:$*"
+	return 1
+}
+export -f sudo
+
+opt_spotlight_deep_reset
+[[ -d "$HOME/Library/Metadata/CoreSpotlight" ]]
+[[ -d "$HOME/Library/Caches/com.apple.Spotlight" ]]
+[[ -d "$HOME/Library/Caches/com.apple.spotlightLower" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"DRY RUN"* ]]
+	[[ "$output" == *"$HOME/Library/Metadata/CoreSpotlight"* ]]
+	[[ "$output" == *"$HOME/Library/Caches/com.apple.Spotlight"* ]]
+	[[ "$output" == *"$HOME/Library/Caches/com.apple.spotlightLower"* ]]
+	[[ "$output" != *"UNEXPECTED_SUDO"* ]]
+}
+
+@test "spotlight deep reset dry-run refuses matching symlinks without aborting preview" {
+	mkdir -p "$HOME/Library/Caches"
+	ln -s "$HOME" "$HOME/Library/Caches/com.apple.SpotlightLink"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+opt_spotlight_deep_reset
+[[ -L "$HOME/Library/Caches/com.apple.SpotlightLink" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Refusing unexpected Spotlight target"* ]]
+	[[ "$output" == *"Spotlight deep reset preview complete"* ]]
+}
+
+@test "spotlight deep reset requires typed confirmation" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SPOTLIGHT_DEEP_RESET_CONFIRM="wrong" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+ensure_sudo_session() {
+	echo "UNEXPECTED_SUDO_SESSION"
+	return 1
+}
+
+opt_spotlight_deep_reset
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"cancelled"* ]]
+	[[ "$output" != *"UNEXPECTED_SUDO_SESSION"* ]]
+}
+
+@test "spotlight deep reset deletes only approved targets and rebuilds index" {
+	mkdir -p "$HOME/Library/Metadata/CoreSpotlight"
+	mkdir -p "$HOME/Library/Caches/com.apple.Spotlight"
+	mkdir -p "$HOME/Library/Caches/com.apple.spotlightLower"
+	mkdir -p "$HOME/Library/Caches/com.apple.SpotlightExtra"
+	mkdir -p "$HOME/Library/Caches/com.apple.Unrelated"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SPOTLIGHT_DEEP_RESET_CONFIRM="RESET SPOTLIGHT" \
+		MOLE_OPTIMIZE_SUDO_AVAILABLE="true" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+trace="$HOME/spotlight-reset.log"
+: > "$trace"
+
+ensure_sudo_session() { return 0; }
+sudo() {
+	printf 'sudo %s\n' "$*" >> "$trace"
+	case "$1 $2 $3" in
+		"mdutil -i off"|"mdutil -i on"|"mdutil -E /") return 0 ;;
+	esac
+	return 1
+}
+killall() {
+	printf 'killall %s\n' "$*" >> "$trace"
+	return 0
+}
+pgrep() {
+	[[ "$1" == "-x" && "$2" == "corespotlightd" ]]
+}
+_opt_spotlight_deep_reset_remove_target() {
+	printf 'delete %s\n' "$1" >> "$trace"
+	rm -rf "$1"
+}
+
+opt_spotlight_deep_reset
+cat "$trace"
+[[ ! -e "$HOME/Library/Metadata/CoreSpotlight" ]]
+[[ ! -e "$HOME/Library/Caches/com.apple.Spotlight" ]]
+[[ ! -e "$HOME/Library/Caches/com.apple.spotlightLower" ]]
+[[ ! -e "$HOME/Library/Caches/com.apple.SpotlightExtra" ]]
+[[ -d "$HOME/Library/Caches/com.apple.Unrelated" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"sudo mdutil -i off /"* ]]
+	[[ "$output" == *"killall corespotlightd"* ]]
+	[[ "$output" == *"delete $HOME/Library/Metadata/CoreSpotlight"* ]]
+	[[ "$output" == *"sudo mdutil -i on /"* ]]
+	[[ "$output" == *"sudo mdutil -E /"* ]]
 }
 
 @test "_login_item_app_exists finds nested helper app bundles" {

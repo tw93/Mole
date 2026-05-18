@@ -191,6 +191,7 @@ main() {
     export MOLE_CURRENT_COMMAND="optimize"
 
     local health_json
+    local spotlight_deep_reset="false"
     for arg in "$@"; do
         case "$arg" in
             "--help" | "-h")
@@ -202,6 +203,9 @@ main() {
                 ;;
             "--dry-run")
                 export MOLE_DRY_RUN=1
+                ;;
+            "--spotlight-deep-reset")
+                spotlight_deep_reset="true"
                 ;;
             "--whitelist")
                 manage_whitelist "optimize"
@@ -228,6 +232,19 @@ main() {
     # Dry-run indicator.
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No files will be modified\n"
+    fi
+
+    load_whitelist "optimize"
+    if [[ "$spotlight_deep_reset" == "true" ]]; then
+        if command -v is_whitelisted > /dev/null && is_whitelisted "spotlight_deep_reset"; then
+            opt_msg "Skipped (whitelisted): Spotlight Deep Reset"
+            printf '\n'
+            return 0
+        fi
+        announce_action "Spotlight Deep Reset" "Disable indexing, clear user search caches, and rebuild Spotlight" "confirm"
+        opt_spotlight_deep_reset
+        printf '\n'
+        return 0
     fi
 
     if ! command -v bc > /dev/null 2>&1; then
@@ -263,7 +280,6 @@ main() {
         stop_inline_spinner
     fi
 
-    load_whitelist "optimize"
     if [[ ${#CURRENT_WHITELIST_PATTERNS[@]} -gt 0 ]]; then
         local count=${#CURRENT_WHITELIST_PATTERNS[@]}
         if [[ $count -le 3 ]]; then

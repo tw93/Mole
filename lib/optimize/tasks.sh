@@ -840,6 +840,155 @@ opt_spotlight_index_optimize() {
     fi
 }
 
+_opt_spotlight_deep_reset_collect_targets() {
+    local -a patterns=(
+        "$HOME/Library/Metadata/CoreSpotlight"
+        "$HOME/Library/Caches/com.apple.Spotlight"*
+        "$HOME/Library/Caches/com.apple.spotlight"*
+    )
+
+    local target
+    for target in "${patterns[@]}"; do
+        [[ -e "$target" || -L "$target" ]] || continue
+        printf '%s\n' "$target"
+    done
+}
+
+_opt_spotlight_deep_reset_target_allowed() {
+    local target="$1"
+    [[ -n "$target" ]] || return 1
+    [[ "$target" == "$HOME/"* ]] || return 1
+    [[ ! -L "$target" ]] || return 1
+
+    case "$target" in
+        "$HOME/Library/Metadata/CoreSpotlight") return 0 ;;
+        "$HOME/Library/Caches/com.apple.Spotlight"*) return 0 ;;
+        "$HOME/Library/Caches/com.apple.spotlight"*) return 0 ;;
+    esac
+
+    return 1
+}
+
+_opt_spotlight_deep_reset_remove_target() {
+    local target="$1"
+
+    if ! _opt_spotlight_deep_reset_target_allowed "$target"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Refusing unexpected Spotlight target: $target"
+        return 1
+    fi
+
+    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would remove $target"
+        log_operation "${MOLE_CURRENT_COMMAND:-optimize}" "DRY_RUN" "$target" "spotlight deep reset"
+        return 0
+    fi
+
+    if rm -rf "$target"; then
+        log_operation "${MOLE_CURRENT_COMMAND:-optimize}" "REMOVED" "$target" "spotlight deep reset"
+        return 0
+    fi
+
+    log_operation "${MOLE_CURRENT_COMMAND:-optimize}" "FAILED" "$target" "spotlight deep reset"
+    return 1
+}
+
+_opt_spotlight_deep_reset_confirmed() {
+    local expected="RESET SPOTLIGHT"
+    local typed="${MOLE_SPOTLIGHT_DEEP_RESET_CONFIRM:-}"
+
+    if [[ -z "$typed" ]]; then
+        echo -ne "  ${PURPLE}${ICON_ARROW}${NC} Type ${YELLOW}${expected}${NC} to continue: "
+        IFS= read -r typed || typed=""
+    fi
+
+    [[ "$typed" == "$expected" ]]
+}
+
+opt_spotlight_deep_reset() {
+    local -a targets=()
+    local target
+    while IFS= read -r target; do
+        [[ -n "$target" ]] || continue
+        targets+=("$target")
+    done < <(_opt_spotlight_deep_reset_collect_targets)
+
+    echo -e "  ${YELLOW}${ICON_WARNING}${NC} Spotlight deep reset will rebuild user search caches"
+    echo -e "  ${GRAY}${ICON_LIST}${NC} Search results may be incomplete while macOS rebuilds the index"
+
+    if [[ ${#targets[@]} -eq 0 ]]; then
+        echo -e "  ${GRAY}${ICON_EMPTY}${NC} No user Spotlight cache targets found"
+    else
+        echo -e "  ${GRAY}${ICON_LIST}${NC} Targets:"
+        for target in "${targets[@]}"; do
+            echo -e "    ${GRAY}-${NC} $target"
+        done
+    fi
+
+    if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} DRY RUN: would run mdutil off/on and rebuild /"
+        for target in "${targets[@]}"; do
+            _opt_spotlight_deep_reset_remove_target "$target" || true
+        done
+        opt_msg "Spotlight deep reset preview complete"
+        return 0
+    fi
+
+    if ! _opt_spotlight_deep_reset_confirmed; then
+        echo -e "  ${GRAY}${ICON_EMPTY}${NC} Spotlight deep reset cancelled"
+        return 0
+    fi
+
+    if ! ensure_sudo_session "Spotlight deep reset requires admin access"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Spotlight deep reset skipped · admin access required"
+        return 0
+    fi
+
+    local indexing_disabled=false
+    if sudo mdutil -i off / > /dev/null 2>&1; then
+        indexing_disabled=true
+        opt_msg "Spotlight indexing paused"
+    else
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to pause Spotlight indexing"
+        return 1
+    fi
+
+    if pgrep -x corespotlightd > /dev/null 2>&1; then
+        if killall corespotlightd > /dev/null 2>&1; then
+            opt_msg "CoreSpotlight service restarted"
+        else
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to restart CoreSpotlight service"
+        fi
+    fi
+
+    local failed=0
+    for target in "${targets[@]}"; do
+        if _opt_spotlight_deep_reset_remove_target "$target"; then
+            opt_msg "Removed $target"
+        else
+            failed=$((failed + 1))
+        fi
+    done
+
+    if [[ "$indexing_disabled" == "true" ]]; then
+        if sudo mdutil -i on / > /dev/null 2>&1; then
+            opt_msg "Spotlight indexing resumed"
+        else
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to resume Spotlight indexing"
+            return 1
+        fi
+    fi
+
+    if sudo mdutil -E / > /dev/null 2>&1; then
+        opt_msg "Spotlight deep rebuild started"
+        echo -e "  ${GRAY}Indexing will continue in background${NC}"
+    else
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to start Spotlight rebuild"
+        return 1
+    fi
+
+    [[ "$failed" -eq 0 ]]
+}
+
 # Dock cache refresh.
 opt_dock_refresh() {
     local dock_support="$HOME/Library/Application Support/Dock"
@@ -1393,6 +1542,7 @@ execute_optimization() {
         network_stack_optimize) opt_network_stack_optimize ;;
         disk_permissions_repair) opt_disk_permissions_repair ;;
         spotlight_index_optimize) opt_spotlight_index_optimize ;;
+        spotlight_deep_reset) opt_spotlight_deep_reset ;;
         launch_agents_cleanup) opt_launch_agents_cleanup ;;
         periodic_maintenance) opt_periodic_maintenance ;;
         shared_file_list_repair) opt_shared_file_list_repair ;;

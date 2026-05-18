@@ -301,6 +301,8 @@ Key coverage areas include:
 - bundle ID boundary matching and malformed-ID rejection (`tests/uninstall_safety.bats`)
 - bash 3.2 empty-array nounset compatibility (`tests/uninstall_scan_bash32.bats`)
 
+Spotlight user search caches are protected from default `mo clean` removal. The explicit `mo optimize --spotlight-deep-reset` path is separate from normal cleanup and optimization, requires typed confirmation, and is limited to current-user Spotlight/CoreSpotlight cache targets before restarting indexing for `/`.
+
 ## Known Limitations and Future Work
 
 - Cleanup is destructive. Most cleanup flows do not provide undo.

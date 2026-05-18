@@ -12,6 +12,7 @@ for entry in "${MOLE_COMMANDS[@]}"; do
 done
 command_words="${command_names[*]}"
 clean_option_words="--dry-run -n --external --whitelist --debug --help -h"
+optimize_option_words="--dry-run --spotlight-deep-reset --whitelist --debug --help -h"
 analyze_option_words="--json --help -h"
 purge_option_words="--paths --dry-run -n --include-empty --debug --help -h"
 
@@ -35,6 +36,11 @@ emit_fish_completions() {
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l whitelist -d "Manage protected paths"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l debug -d "Show detailed logs"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l help -s h -d "Show help"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from optimize optimise" -l dry-run -d "Preview optimization without making changes"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from optimize optimise" -l spotlight-deep-reset -d "Rebuild Spotlight user search caches after confirmation"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from optimize optimise" -l whitelist -d "Manage protected items"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from optimize optimise" -l debug -d "Show detailed logs"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from optimize optimise" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l json -d "Output analysis as JSON"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -c %s -n "__fish_seen_subcommand_from analyze analyse; and not __fish_seen_argument -l json -l help -s h" -a "(__fish_complete_directories)" -d "Path to analyze"\n' "$cmd"
@@ -338,6 +344,9 @@ _mole_completions()
             purge)
                 COMPREPLY=( \$(compgen -W "$purge_option_words" -- "\$cur_word") )
                 ;;
+            optimize|optimise)
+                COMPREPLY=( \$(compgen -W "$optimize_option_words" -- "\$cur_word") )
+                ;;
             completion)
                 COMPREPLY=( \$(compgen -W "bash zsh fish" -- "\$cur_word") )
                 ;;
@@ -384,6 +393,14 @@ EOF
         printf "                '--dry-run[Preview purge actions without making changes]' \\\\\n"
         printf "                '-n[Preview purge actions without making changes]' \\\\\n"
         printf "                '--include-empty[Show zero-size project artifact directories]' \\\\\n"
+        printf "                '--debug[Show detailed logs]' \\\\\n"
+        printf "                '(-h --help)'{-h,--help}'[Show help]'\n"
+        printf '            ;;\n'
+        printf '        optimize|optimise)\n'
+        printf '            _arguments \\\n'
+        printf "                '--dry-run[Preview optimization without making changes]' \\\\\n"
+        printf "                '--spotlight-deep-reset[Rebuild Spotlight user search caches after confirmation]' \\\\\n"
+        printf "                '--whitelist[Manage protected items]' \\\\\n"
         printf "                '--debug[Show detailed logs]' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]'\n"
         printf '            ;;\n'
