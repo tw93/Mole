@@ -25,6 +25,7 @@ SYSTEM_CLEAN=false
 DRY_RUN=false
 PROTECT_FINDER_METADATA=false
 EXTERNAL_VOLUME_TARGET=""
+DIRS_CLEANER_CLEAN=false
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
 EXPORT_LIST_FILE="$HOME/.config/mole/clean-list.txt"
@@ -1323,6 +1324,36 @@ run_cloud_and_office_cleanup() {
     clean_office_applications
 }
 
+run_dirs_cleaner_cleanup_command() {
+    export MOLE_CURRENT_COMMAND="clean"
+    log_operation_session_start "clean"
+
+    printf '\n'
+    echo -e "${PURPLE_BOLD}Clean macOS Cleanup Staging${NC}"
+    echo -e "${GRAY}/private/var/dirs_cleaner${NC}"
+    echo ""
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
+        echo ""
+    fi
+
+    if ! ensure_sudo_session "macOS cleanup staging requires admin access"; then
+        echo -e "${YELLOW}Authentication failed${NC}, cleanup staging skipped"
+        log_operation_session_end "clean" 0 0
+        return 1
+    fi
+
+    hide_cursor
+    local rc=0
+    clean_dirs_cleaner_staging || rc=$?
+    show_cursor
+
+    log_operation_session_end "clean" 0 0
+    printf '\n'
+    return "$rc"
+}
+
 main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1344,6 +1375,9 @@ main() {
                     exit 1
                 fi
                 EXTERNAL_VOLUME_TARGET=$(validate_external_volume_target "$1") || exit 1
+                ;;
+            "--dirs-cleaner")
+                DIRS_CLEANER_CLEAN=true
                 ;;
             "--whitelist")
                 source "$SCRIPT_DIR/../lib/manage/whitelist.sh"
@@ -1368,6 +1402,16 @@ main() {
         esac
         shift
     done
+
+    if [[ "$DIRS_CLEANER_CLEAN" == "true" ]]; then
+        if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
+            echo "mo clean --dirs-cleaner cannot be combined with --external" >&2
+            exit 1
+        fi
+
+        run_dirs_cleaner_cleanup_command
+        exit $?
+    fi
 
     start_cleanup
     hide_cursor

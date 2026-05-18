@@ -100,6 +100,26 @@ teardown() {
     [[ "$output" == *"critical system directory"* ]]
 }
 
+@test "validate_path_for_deletion gates dirs_cleaner children to cleanup context" {
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/private/var/dirs_cleaner/stuck' 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"top-level or shallow staging children"* ]]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/private/var/dirs_cleaner/stuck' 'dirs_cleaner'"
+    [ "$status" -eq 0 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/private/var/dirs_cleaner/bucket/stuck' 'dirs_cleaner'"
+    [ "$status" -eq 0 ]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/private/var/dirs_cleaner' 'dirs_cleaner' 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"top-level or shallow staging children"* ]]
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/private/var/dirs_cleaner/bucket/stuck/deeper' 'dirs_cleaner' 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"top-level or shallow staging children"* ]]
+}
+
 @test "should_protect_path applies high-risk cleanup denylist" {
     run bash -c "
         source '$PROJECT_ROOT/lib/core/common.sh'
@@ -191,6 +211,34 @@ teardown() {
     "
     [ "$status" -eq 1 ]
     [[ "$output" == *"Refusing to sudo remove symlink"* ]]
+}
+
+@test "safe_sudo_remove honors sudo-visible dirs_cleaner child in dry-run" {
+    run bash -c "
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        sudo() {
+            if [[ \"\$1\" == 'test' && \"\$2\" == '-e' && \"\$3\" == '/private/var/dirs_cleaner/stuck' ]]; then
+                return 0
+            fi
+            if [[ \"\$1\" == 'test' && \"\$2\" == '-L' ]]; then
+                return 1
+            fi
+            if [[ \"\$1\" == 'du' ]]; then
+                echo '4 /private/var/dirs_cleaner/stuck'
+                return 0
+            fi
+            if [[ \"\$1\" == 'stat' ]]; then
+                echo '1000'
+                return 0
+            fi
+            return 0
+        }
+        export -f sudo
+        export MOLE_DRY_RUN=1
+        safe_sudo_remove '/private/var/dirs_cleaner/stuck' 'dirs_cleaner' 2>&1
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Would sudo remove"* ]]
 }
 
 @test "safe_find_delete rejects symlinked directory" {

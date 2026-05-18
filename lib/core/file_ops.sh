@@ -66,6 +66,7 @@ format_duration_human() {
 # Validate path for deletion (absolute, no traversal, not system dir)
 validate_path_for_deletion() {
     local path="$1"
+    local deletion_context="${2:-}"
 
     # Check path is not empty
     if [[ -z "$path" ]]; then
@@ -142,6 +143,23 @@ validate_path_for_deletion() {
             /private/var/db/reportmemoryexception | /private/var/db/reportmemoryexception/* | \
             /private/var/db/receipts/*.bom | /private/var/db/receipts/*.plist)
             return 0
+            ;;
+    esac
+
+    case "$path" in
+        /private/var/dirs_cleaner | /private/var/dirs_cleaner/*)
+            if [[ "$deletion_context" == "dirs_cleaner" ]]; then
+                local dirs_cleaner_child="${path#/private/var/dirs_cleaner/}"
+                case "$dirs_cleaner_child" in
+                    "" | */*/*)
+                        ;;
+                    *)
+                        return 0
+                        ;;
+                esac
+            fi
+            log_error "Path validation failed: dirs_cleaner cleanup only allows top-level or shallow staging children: $path"
+            return 1
             ;;
     esac
 
@@ -318,8 +336,9 @@ safe_remove_symlink() {
 # Safe sudo removal with symlink protection
 safe_sudo_remove() {
     local path="$1"
+    local deletion_context="${2:-}"
 
-    if ! validate_path_for_deletion "$path"; then
+    if ! validate_path_for_deletion "$path" "$deletion_context"; then
         if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$path"; then
             debug_log "Skipped sudo remove for protected path: $path"
         else
@@ -329,10 +348,15 @@ safe_sudo_remove() {
     fi
 
     if [[ ! -e "$path" ]]; then
-        return 0
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            return 0
+        fi
+        if ! sudo test -e "$path" 2> /dev/null; then
+            return 0
+        fi
     fi
 
-    if [[ -L "$path" ]]; then
+    if [[ -L "$path" ]] || { [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]] && sudo test -L "$path" 2> /dev/null; }; then
         log_error "Refusing to sudo remove symlink: $path"
         return 1
     fi

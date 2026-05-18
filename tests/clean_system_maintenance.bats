@@ -974,6 +974,813 @@ EOF
     [[ "$output" == *"SUCCESS:Accessible rebuildable GPU caches, 3 items"* ]]
 }
 
+@test "dirs_cleaner audit reports large staging entries without deletion" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DIRS_CLEANER_WARN_MB=1 MOLE_DIRS_CLEANER_AGE_DAYS=30 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 400000; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() { echo "UNEXPECTED_REMOVE:$1"; return 1; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/stuck"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/stuck" ]]; then
+                if [[ "$*" == *"-print -quit"* ]]; then
+                    return 0
+                fi
+                echo "1000"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "2048 $3"
+            return 0
+            ;;
+        stat)
+            if [[ "$3" == "%d" ]]; then
+                echo "100"
+                return 0
+            fi
+            echo "root|drwxr-xr-x|none|1000"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+report_stuck_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Stuck macOS cleanup staging detected"* ]]
+    [[ "$output" == *"/private/var/dirs_cleaner/stuck"* ]]
+    [[ "$output" == *"2.1MB"* ]]
+    [[ "$output" == *"owner root, drwxr-xr-x"* ]]
+    [[ "$output" == *"Review: sudo du -xhd 2 /private/var/dirs_cleaner"* ]]
+    [[ "$output" == *"Review open handles: sudo lsof +D /private/var/dirs_cleaner"* ]]
+    [[ "$output" == *"NOTE_ACTIVITY"* ]]
+    [[ "$output" == *"OP:WARNING:/private/var/dirs_cleaner/stuck"* ]]
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]]
+}
+
+@test "dirs_cleaner audit skips fresh small entries" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DIRS_CLEANER_WARN_MB=1 MOLE_DIRS_CLEANER_AGE_DAYS=30 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 200000; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "UNEXPECTED_OP"; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/fresh"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/fresh" ]]; then
+                if [[ "$*" == *"-print -quit"* ]]; then
+                    return 0
+                fi
+                echo "200000"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "512 $3"
+            return 0
+            ;;
+        stat)
+            if [[ "$3" == "%d" ]]; then
+                echo "100"
+                return 0
+            fi
+            echo "root|drwxr-xr-x|none|200000"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+report_stuck_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Stuck macOS cleanup staging detected"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "dirs_cleaner audit refuses symlinked children" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DIRS_CLEANER_WARN_MB=0 MOLE_DIRS_CLEANER_AGE_DAYS=0 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" && "$3" == "/private/var/dirs_cleaner/link" ]]; then
+                return 0
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/link"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "UNEXPECTED_DU"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+report_stuck_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Stuck macOS cleanup staging detected"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "dirs_cleaner audit refuses symlinked root" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            return 1
+            ;;
+        find)
+            echo "UNEXPECTED_FIND"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+report_stuck_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"macOS cleanup staging audit skipped: symlinked path"* ]]
+    [[ "$output" == *"NOTE_ACTIVITY"* ]]
+    [[ "$output" == *"OP:SKIPPED:/private/var/dirs_cleaner"* ]]
+    [[ "$output" != *"UNEXPECTED_FIND"* ]]
+}
+
+@test "dirs_cleaner audit skips top-level mountpoint children" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DIRS_CLEANER_WARN_MB=0 MOLE_DIRS_CLEANER_AGE_DAYS=0 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/mounted"
+                return 0
+            fi
+            echo "UNEXPECTED_CHILD_FIND"
+            return 0
+            ;;
+        stat)
+            if [[ "$4" == "/private/var/dirs_cleaner" ]]; then
+                echo "100"
+                return 0
+            fi
+            if [[ "$4" == "/private/var/dirs_cleaner/mounted" ]]; then
+                echo "200"
+                return 0
+            fi
+            return 1
+            ;;
+        du)
+            echo "UNEXPECTED_DU"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+report_stuck_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Stuck macOS cleanup staging detected"* ]]
+    [[ "$output" == *"OP:SKIPPED:/private/var/dirs_cleaner/mounted"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "dirs_cleaner audit reports traversal failures with manual review command" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            echo "permission denied" >&2
+            return 2
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+report_stuck_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Could not fully inspect macOS cleanup staging"* ]]
+    [[ "$output" == *"Review: sudo du -xhd 2 /private/var/dirs_cleaner"* ]]
+    [[ "$output" == *"NOTE_ACTIVITY"* ]]
+    [[ "$output" == *"OP:FAILED:/private/var/dirs_cleaner"* ]]
+}
+
+@test "dirs_cleaner cleanup dry-run removes only eligible stale top-level entries through safe_sudo_remove" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_DRY_RUN=1 MOLE_DIRS_CLEANER_AGE_DAYS=3 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 400000; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() {
+    if [[ "$1" == "/private/var/dirs_cleaner/J1" ]]; then
+        echo "UNEXPECTED_PARENT_REMOVE:$1"
+        return 1
+    fi
+    echo "safe_sudo_remove:$1"
+    return 0
+}
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/stuck"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/stuck" ]]; then
+                echo "1000"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "2048 $3"
+            return 0
+            ;;
+        stat)
+            if [[ "$3" == "%d" ]]; then
+                echo "100"
+                return 0
+            fi
+            echo "root|drwxr-xr-x|none|1000"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"safe_sudo_remove:/private/var/dirs_cleaner/stuck"* ]]
+    [[ "$output" == *"Stale macOS cleanup staging, 1 items"* ]]
+    [[ "$output" == *"dry"* ]]
+    [[ "$output" == *"OP:DRY_RUN:/private/var/dirs_cleaner/stuck"* ]]
+    [[ "$output" != *"OP:REMOVED"* ]]
+}
+
+@test "dirs_cleaner cleanup removes stale shallow children instead of non-empty top-level buckets" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_DRY_RUN=1 MOLE_DIRS_CLEANER_AGE_DAYS=3 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 400000; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() { echo "safe_sudo_remove:$1"; return 0; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner/J1" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0%s\0' "/private/var/dirs_cleaner/J1" "/private/var/dirs_cleaner/J1/stuck"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/J1" ]]; then
+                if [[ "$*" == *"-print -quit"* ]]; then
+                    echo "/private/var/dirs_cleaner/J1/stuck"
+                    return 0
+                fi
+                echo "300000"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/J1/stuck" ]]; then
+                if [[ "$*" == *"-print -quit"* ]]; then
+                    return 0
+                fi
+                echo "1000"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "2048 $3"
+            return 0
+            ;;
+        stat)
+            if [[ "$3" == "%d" ]]; then
+                echo "100"
+                return 0
+            fi
+            echo "root|drwxr-xr-x|none|1000"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UNEXPECTED_PARENT_REMOVE"* ]]
+    [[ "$output" == *"safe_sudo_remove:/private/var/dirs_cleaner/J1/stuck"* ]]
+    [[ "$output" == *"OP:DRY_RUN:/private/var/dirs_cleaner/J1/stuck"* ]]
+    [[ "$output" == *"Stale macOS cleanup staging, 1 items"* ]]
+}
+
+@test "dirs_cleaner cleanup skips stale shallow child when deeper descendant is fresh" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_DRY_RUN=1 MOLE_DIRS_CLEANER_AGE_DAYS=3 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 400000; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() { echo "UNEXPECTED_REMOVE:$1"; return 1; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/J1/stuck"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/J1/stuck" ]]; then
+                echo "1000"
+                echo "399999"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "2048 $3"
+            return 0
+            ;;
+        stat)
+            if [[ "$3" == "%d" ]]; then
+                echo "100"
+                return 0
+            fi
+            echo "root|drwxr-xr-x|none|1000"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No stale macOS cleanup staging found"* ]]
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]]
+}
+
+@test "dirs_cleaner cleanup skips top-level bucket when child scan fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_DRY_RUN=1 MOLE_DIRS_CLEANER_AGE_DAYS=0 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 400000; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() { echo "UNEXPECTED_REMOVE:$1"; return 1; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner/J1" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/J1"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/J1" ]]; then
+                return 124
+            fi
+            return 0
+            ;;
+        stat)
+            echo "100"
+            return 0
+            ;;
+        du)
+            echo "UNEXPECTED_DU"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No stale macOS cleanup staging found"* ]]
+    [[ "$output" == *"OP:SKIPPED:/private/var/dirs_cleaner/J1"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "dirs_cleaner cleanup skips fresh entries" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_DRY_RUN=0 MOLE_DIRS_CLEANER_AGE_DAYS=3 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 200000; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "UNEXPECTED_OP"; }
+safe_sudo_remove() { echo "UNEXPECTED_REMOVE:$1"; return 1; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/fresh"
+                return 0
+            fi
+            if [[ "$2" == "/private/var/dirs_cleaner/fresh" ]]; then
+                echo "200000"
+                return 0
+            fi
+            return 0
+            ;;
+        du)
+            echo "2048 $3"
+            return 0
+            ;;
+        stat)
+            if [[ "$3" == "%d" ]]; then
+                echo "100"
+                return 0
+            fi
+            echo "root|drwxr-xr-x|none|200000"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No stale macOS cleanup staging found"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "dirs_cleaner cleanup skips top-level mountpoint children" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_DRY_RUN=0 MOLE_DIRS_CLEANER_AGE_DAYS=0 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 200000; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() { echo "UNEXPECTED_REMOVE:$1"; return 1; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/mounted"
+                return 0
+            fi
+            echo "UNEXPECTED_CHILD_FIND"
+            return 0
+            ;;
+        stat)
+            if [[ "$4" == "/private/var/dirs_cleaner" ]]; then
+                echo "100"
+                return 0
+            fi
+            if [[ "$4" == "/private/var/dirs_cleaner/mounted" ]]; then
+                echo "200"
+                return 0
+            fi
+            return 1
+            ;;
+        du)
+            echo "UNEXPECTED_DU"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No stale macOS cleanup staging found"* ]]
+    [[ "$output" == *"OP:SKIPPED:/private/var/dirs_cleaner/mounted"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "dirs_cleaner cleanup skips children with nested mountpoints" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_DRY_RUN=0 MOLE_DIRS_CLEANER_AGE_DAYS=0 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+get_epoch_seconds() { echo 400000; }
+note_activity() { echo "UNEXPECTED_ACTIVITY"; }
+log_operation() { echo "OP:$2:$3:$4"; }
+safe_sudo_remove() { echo "UNEXPECTED_REMOVE:$1"; return 1; }
+mount() { echo "dev on /private/var/dirs_cleaner/stuck/nested (apfs, local)"; }
+
+sudo() {
+    case "$1" in
+        test)
+            if [[ "$2" == "-d" && "$3" == "/private/var/dirs_cleaner" ]]; then
+                return 0
+            fi
+            if [[ "$2" == "-L" ]]; then
+                return 1
+            fi
+            return 1
+            ;;
+        find)
+            if [[ "$2" == "/private/var/dirs_cleaner" ]]; then
+                printf '%s\0' "/private/var/dirs_cleaner/stuck"
+                return 0
+            fi
+            echo "UNEXPECTED_CHILD_FIND"
+            return 0
+            ;;
+        stat)
+            echo "100"
+            return 0
+            ;;
+        du)
+            echo "UNEXPECTED_DU"
+            return 0
+            ;;
+    esac
+    return 0
+}
+
+run_with_timeout() {
+    local _timeout="$1"
+    shift
+    "$@"
+}
+
+clean_dirs_cleaner_staging
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No stale macOS cleanup staging found"* ]]
+    [[ "$output" == *"OP:SKIPPED:/private/var/dirs_cleaner/stuck"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
 @test "opt_memory_pressure_relief skips when pressure is normal" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
 set -euo pipefail

@@ -8,6 +8,7 @@ show_clean_help() {
     echo "Options:"
     echo "  --dry-run, -n     Preview cleanup without making changes"
     echo "  --external PATH   Clean OS metadata from a mounted external volume"
+    echo "  --dirs-cleaner    Clean stale macOS cleanup staging"
     echo "  --whitelist       Manage protected paths"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"

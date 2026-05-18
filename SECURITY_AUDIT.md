@@ -79,6 +79,7 @@ Some subpaths under otherwise protected roots are explicitly allowlisted for bou
 - `/private/var/db/DiagnosticPipeline`
 - `/private/var/db/powerlog`
 - `/private/var/db/reportmemoryexception`
+- `/private/var/dirs_cleaner/<top-level-or-shallow-child>` (only via explicit stale staging cleanup; never the parent)
 
 This design keeps cleanup scoped to known-safe maintenance targets instead of broad root-level deletion patterns.
 
@@ -110,6 +111,7 @@ Some subpaths under protected roots are explicitly allowlisted:
 - `/private/var/db/DiagnosticPipeline`
 - `/private/var/db/powerlog`
 - `/private/var/db/reportmemoryexception`
+- `/private/var/dirs_cleaner/<top-level-or-shallow-child>` (explicit cleanup only)
 
 ### Protected Categories
 

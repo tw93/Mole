@@ -119,6 +119,8 @@ Space freed: 95.5GB | Free space now: 223.5GB
 
 Note: In `mo clean` -> Developer tools, Mole removes unused CoreSimulator `Volumes/Cryptex` entries and skips `IN_USE` items.
 
+During system cleanup, Mole also audits `/private/var/dirs_cleaner` for unusually large or stale macOS cleanup staging entries. The default check is report-only: it shows size, age, ownership metadata, and review commands. To explicitly clean stale top-level or shallow staging entries, preview with `mo clean --dirs-cleaner --dry-run`, then run `mo clean --dirs-cleaner`.
+
 ### Smart App Uninstaller
 
 ```bash
