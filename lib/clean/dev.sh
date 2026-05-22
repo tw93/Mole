@@ -1306,6 +1306,16 @@ codex_running() {
     codex_desktop_running
 }
 
+antigravity_or_gemini_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+
+    pgrep -x "Antigravity" > /dev/null 2>&1 && return 0
+    pgrep -f "/Antigravity.app/" > /dev/null 2>&1 && return 0
+    pgrep -x "gemini" > /dev/null 2>&1 && return 0
+    pgrep -f "antigravity-browser-profile" > /dev/null 2>&1 && return 0
+    return 1
+}
+
 is_codex_runtime_active() {
     local runtime_dir="$1"
     [[ -d "$runtime_dir" ]] || return 1
@@ -1421,6 +1431,13 @@ clean_codex_cli() {
 # caches, mirroring the Antigravity Electron cache cleanup in clean_dev_misc.
 clean_antigravity_caches() {
     local ag_profile="$HOME/.gemini/antigravity-browser-profile"
+
+    if antigravity_or_gemini_running; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Antigravity/Gemini caches · skipped (Antigravity or Gemini running)"
+        note_activity
+        return 0
+    fi
+
     if [[ -d "$ag_profile" ]]; then
         safe_clean "$ag_profile/Default/Cache"/* "Antigravity browser cache"
         safe_clean "$ag_profile/Default/Code Cache"/* "Antigravity code cache"

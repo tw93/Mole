@@ -188,6 +188,31 @@ EOF
     assert_output_contains "SAFE_CLEAN:Gemini CLI temp files|$HOME/.gemini/tmp/"
 }
 
+@test "clean_antigravity_caches skips browser profile and gemini tmp while running" {
+    ag="$HOME/.gemini/antigravity-browser-profile"
+    mkdir -p "$ag/Default/Cache" "$HOME/.gemini/tmp"
+    touch "$ag/Default/Cache/a.bin" "$HOME/.gemini/tmp/work.bin"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+clean_service_worker_cache() { echo "SWC:$1"; }
+note_activity() { echo "NOTE_ACTIVITY"; }
+pgrep() {
+    [[ "$1" == "-x" && "$2" == "gemini" ]]
+}
+clean_antigravity_caches
+EOF
+
+    assert_run_success
+    assert_output_contains "Antigravity/Gemini caches · skipped"
+    assert_output_contains "NOTE_ACTIVITY"
+    assert_output_not_contains "SAFE_CLEAN:"
+    assert_output_not_contains "SWC:"
+}
+
 @test "clean_dev_misc invokes clean_codex_cli and clean_antigravity_caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
