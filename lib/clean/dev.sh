@@ -1299,6 +1299,13 @@ codex_desktop_running() {
     return 1
 }
 
+# True when the Codex CLI or the Codex Desktop app is running.
+codex_running() {
+    command -v pgrep > /dev/null 2>&1 || return 1
+    pgrep -x "codex" > /dev/null 2>&1 && return 0
+    codex_desktop_running
+}
+
 is_codex_runtime_active() {
     local runtime_dir="$1"
     [[ -d "$runtime_dir" ]] || return 1
@@ -1391,6 +1398,43 @@ clean_codex_runtimes() {
     done < <(command find "$runtime_root" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
 }
 
+# Codex CLI working directory: rebuildable cache, temp, and log files.
+# Conversation state (sessions, *.sqlite, history.jsonl, credentials) is
+# intentionally left untouched - see issue #913.
+clean_codex_cli() {
+    local codex_root="$HOME/.codex"
+    [[ -d "$codex_root" ]] || return 0
+
+    if codex_running; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Codex CLI caches · skipped (Codex running)"
+        note_activity
+        return 0
+    fi
+
+    safe_clean "$codex_root/cache"/* "Codex CLI cache"
+    safe_clean "$codex_root/.tmp"/* "Codex CLI temp files"
+    safe_clean "$codex_root/log"/* "Codex CLI logs"
+}
+
+# Antigravity (Gemini) keeps a full Chromium profile under
+# ~/.gemini/antigravity-browser-profile. Clean its regenerable browser
+# caches, mirroring the Antigravity Electron cache cleanup in clean_dev_misc.
+clean_antigravity_caches() {
+    local ag_profile="$HOME/.gemini/antigravity-browser-profile"
+    if [[ -d "$ag_profile" ]]; then
+        safe_clean "$ag_profile/Default/Cache"/* "Antigravity browser cache"
+        safe_clean "$ag_profile/Default/Code Cache"/* "Antigravity code cache"
+        safe_clean "$ag_profile/Default/GPUCache"/* "Antigravity GPU cache"
+        safe_clean "$ag_profile/Default/DawnGraphiteCache"/* "Antigravity Dawn cache"
+        safe_clean "$ag_profile/Default/DawnWebGPUCache"/* "Antigravity WebGPU cache"
+        safe_clean "$ag_profile/GraphiteDawnCache"/* "Antigravity Graphite cache"
+        safe_clean "$ag_profile/component_crx_cache"/* "Antigravity component cache"
+        safe_clean "$ag_profile/extensions_crx_cache"/* "Antigravity extension cache"
+        clean_service_worker_cache "Antigravity" "$ag_profile/Default/Service Worker/CacheStorage"
+    fi
+    safe_clean "$HOME/.gemini/tmp"/* "Gemini CLI temp files"
+}
+
 # Misc dev tool caches.
 clean_dev_misc() {
     safe_clean ~/Library/Caches/com.unity3d.*/* "Unity cache"
@@ -1407,6 +1451,8 @@ clean_dev_misc() {
         safe_clean ~/Library/Application\ Support/Antigravity/DawnGraphiteCache/* "Antigravity Dawn cache"
         safe_clean ~/Library/Application\ Support/Antigravity/DawnWebGPUCache/* "Antigravity WebGPU cache"
     fi
+    # Antigravity browser profile caches (~/.gemini)
+    clean_antigravity_caches
     # Filo (Electron)
     if [[ -d ~/Library/Application\ Support/Filo ]]; then
         safe_clean ~/Library/Application\ Support/Filo/production/Cache/* "Filo cache"
@@ -1447,6 +1493,8 @@ clean_dev_misc() {
     fi
     # Codex Desktop runtimes contain active Node/Python dependencies.
     clean_codex_runtimes
+    # Codex CLI working-directory caches (~/.codex)
+    clean_codex_cli
     # Cursor Agent session logs (versions cleaned separately in clean_dev_ai_agents)
     [[ -d "$HOME/.local/share/cursor-agent" ]] && safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$MOLE_LOG_AGE_DAYS" "f"
     # Playwright cached browser binaries
