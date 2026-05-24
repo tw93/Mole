@@ -67,6 +67,17 @@ func createInsightEntries() []dirEntry {
 		{"Gradle Cache", filepath.Join(home, ".gradle", "caches")},
 		{"CocoaPods Cache", filepath.Join(home, "Library", "Caches", "CocoaPods")},
 	}
+	if matches, err := filepath.Glob(filepath.Join(home, "Library", "Group Containers", "*dev.orbstack", "data")); err == nil {
+		for _, match := range matches {
+			if info, statErr := os.Stat(match); statErr == nil && info.IsDir() {
+				cleanablePaths = append(cleanablePaths, struct {
+					name string
+					path string
+				}{"OrbStack Data", match})
+				break
+			}
+		}
+	}
 	for _, c := range cleanablePaths {
 		if info, err := os.Stat(c.path); err == nil && info.IsDir() {
 			entries = append(entries, dirEntry{

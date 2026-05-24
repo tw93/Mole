@@ -400,6 +400,16 @@ check_rust_toolchains() {
         "rustup toolchain list"
 }
 # Docker caches (guarded by daemon check).
+find_orbstack_data_dir() {
+    local candidate
+    for candidate in "$HOME"/Library/Group\ Containers/*dev.orbstack/data; do
+        [[ -d "$candidate" ]] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+    return 1
+}
+
 clean_dev_docker() {
     if command -v docker > /dev/null 2>&1; then
         note_activity
@@ -407,6 +417,21 @@ clean_dev_docker() {
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: docker system df${NC}"
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --filter until=720h${NC}"
         debug_log "Docker daemon-managed cleanup skipped by default"
+    fi
+
+    local orb_data=""
+    orb_data=$(find_orbstack_data_dir 2> /dev/null || true)
+    if command -v orb > /dev/null 2>&1 || command -v orbctl > /dev/null 2>&1 || [[ -d "$HOME/.orbstack" || -n "$orb_data" ]]; then
+        local orb_size=0
+        if [[ -n "$orb_data" ]]; then
+            orb_size=$(get_path_size_kb "$orb_data" 2> /dev/null || echo 0)
+            [[ "$orb_size" =~ ^[0-9]+$ ]] || orb_size=0
+        fi
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} OrbStack container data · skipped by default ($(bytes_to_human $((orb_size * 1024))))"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: docker system df${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --volumes${NC}"
+        debug_log "OrbStack daemon-managed data left for manual prune ($orb_size KB)"
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
 }
@@ -1166,6 +1191,141 @@ clean_dev_jetbrains_logs() {
 # plus the version pointed at by the active CLI symlink (mtime alone is
 # unreliable: Claude Code pre-downloads the next version before flipping
 # the symlink, so newest mtime is not always the active version).
+clean_versioned_agent_root() {
+    local versions_root="$1"
+    local label="$2"
+    local keep_previous="$3"
+    local active_path="${4:-}"
+
+    [[ -d "$versions_root" ]] || return 0
+
+    local -a entries=()
+    local entry
+    while IFS= read -r -d '' entry; do
+        local name
+        name=$(basename "$entry")
+        [[ "$name" == .* ]] && continue
+        [[ ! "$name" =~ ^[0-9] ]] && continue
+        entries+=("$entry")
+    done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
+
+    [[ ${#entries[@]} -le "$keep_previous" ]] && return 0
+
+    local -a sorted=()
+    local line
+    while IFS= read -r line; do
+        sorted+=("${line#* }")
+    done < <(
+        local version_entry
+        for version_entry in "${entries[@]}"; do
+            local mtime
+            mtime=$(stat -f%m "$version_entry" 2> /dev/null || echo "0")
+            printf '%s %s\n' "$mtime" "$version_entry"
+        done | sort -rn
+    )
+
+    local idx=0
+    local target
+    for target in "${sorted[@]}"; do
+        if [[ -n "$active_path" && "$target" == "$active_path" ]]; then
+            continue
+        fi
+        if [[ $idx -lt $keep_previous ]]; then
+            idx=$((idx + 1))
+            continue
+        fi
+        safe_clean "$target" "$label"
+        note_activity
+        idx=$((idx + 1))
+    done
+}
+
+newest_versioned_agent_entry() {
+    local versions_root="$1"
+    local best_entry=""
+    local best_mtime="-1"
+    local entry
+
+    [[ -d "$versions_root" ]] || return 1
+
+    while IFS= read -r -d '' entry; do
+        local name
+        name=$(basename "$entry")
+        [[ "$name" == .* ]] && continue
+        [[ ! "$name" =~ ^[0-9] ]] && continue
+
+        local mtime
+        mtime=$(stat -f%m "$entry" 2> /dev/null || echo "0")
+        [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
+        if [[ -z "$best_entry" || "$mtime" -gt "$best_mtime" ]]; then
+            best_entry="$entry"
+            best_mtime="$mtime"
+        fi
+    done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
+
+    [[ -n "$best_entry" ]] || return 1
+    printf '%s\n' "$best_entry"
+}
+
+count_versioned_agent_entries() {
+    local versions_root="$1"
+    local count=0
+    local entry
+
+    [[ -d "$versions_root" ]] || {
+        echo 0
+        return 0
+    }
+
+    while IFS= read -r -d '' entry; do
+        local name
+        name=$(basename "$entry")
+        [[ "$name" == .* ]] && continue
+        [[ ! "$name" =~ ^[0-9] ]] && continue
+        count=$((count + 1))
+    done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
+
+    echo "$count"
+}
+
+clean_claude_desktop_bundled_versions() {
+    local keep_previous="$1"
+    local claude_support="$HOME/Library/Application Support/Claude"
+    [[ -d "$claude_support" ]] || return 0
+
+    local sdk_version=""
+    local sdk_file="$claude_support/claude-code-vm/.sdk-version"
+    if [[ -f "$sdk_file" ]]; then
+        sdk_version=$(head -n 1 "$sdk_file" 2> /dev/null | LC_ALL=C tr -d '[:space:]' || true)
+    fi
+
+    local -a desktop_specs=(
+        "$claude_support/claude-code|Claude Desktop bundled Claude Code old version"
+        "$claude_support/claude-code-vm|Claude Desktop bundled Claude Code VM old version"
+    )
+
+    local spec
+    for spec in "${desktop_specs[@]}"; do
+        local versions_root="${spec%%|*}"
+        local label="${spec#*|}"
+        [[ -d "$versions_root" ]] || continue
+
+        local version_count
+        version_count=$(count_versioned_agent_entries "$versions_root")
+        [[ "$version_count" =~ ^[0-9]+$ ]] || version_count=0
+        [[ "$version_count" -le 1 ]] && continue
+
+        local active_path=""
+        if [[ -n "$sdk_version" && -e "$versions_root/$sdk_version" ]]; then
+            active_path="$versions_root/$sdk_version"
+        else
+            active_path=$(newest_versioned_agent_entry "$versions_root" 2> /dev/null || true)
+        fi
+
+        clean_versioned_agent_root "$versions_root" "$label" "$keep_previous" "$active_path"
+    done
+}
+
 clean_dev_ai_agents() {
     local keep_previous="${MOLE_AI_AGENTS_KEEP:-1}"
     [[ "$keep_previous" =~ ^[0-9]+$ ]] || keep_previous=1
@@ -1211,44 +1371,10 @@ clean_dev_ai_agents() {
             fi
         fi
 
-        local -a entries=()
-        while IFS= read -r -d '' entry; do
-            local name
-            name=$(basename "$entry")
-            [[ "$name" == .* ]] && continue
-            [[ ! "$name" =~ ^[0-9] ]] && continue
-            entries+=("$entry")
-        done < <(command find "$versions_root" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2> /dev/null)
-
-        [[ ${#entries[@]} -le "$keep_previous" ]] && continue
-
-        local -a sorted=()
-        while IFS= read -r line; do
-            sorted+=("${line#* }")
-        done < <(
-            local entry
-            for entry in "${entries[@]}"; do
-                local mtime
-                mtime=$(stat -f%m "$entry" 2> /dev/null || echo "0")
-                printf '%s %s\n' "$mtime" "$entry"
-            done | sort -rn
-        )
-
-        local idx=0
-        local target
-        for target in "${sorted[@]}"; do
-            if [[ -n "$active_path" && "$target" == "$active_path" ]]; then
-                continue
-            fi
-            if [[ $idx -lt $keep_previous ]]; then
-                idx=$((idx + 1))
-                continue
-            fi
-            safe_clean "$target" "$label"
-            note_activity
-            idx=$((idx + 1))
-        done
+        clean_versioned_agent_root "$versions_root" "$label" "$keep_previous" "$active_path"
     done
+
+    clean_claude_desktop_bundled_versions "$keep_previous"
 }
 
 # Other language tool caches.
@@ -1493,6 +1619,63 @@ clean_chrome_devtools_mcp_caches() {
     fi
 }
 
+clean_claude_session_history() {
+    local claude_root="$HOME/.claude"
+    [[ -d "$claude_root" ]] || return 0
+
+    local projects_dir="$claude_root/projects"
+    local file_history_dir="$claude_root/file-history"
+    local prune_days="${MOLE_CLAUDE_PRUNE_DAYS:-}"
+
+    if [[ -z "$prune_days" ]]; then
+        local total_kb=0
+        local size_kb
+        if [[ -d "$projects_dir" ]]; then
+            size_kb=$(get_path_size_kb "$projects_dir" 2> /dev/null || echo 0)
+            [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+            total_kb=$((total_kb + size_kb))
+        fi
+        if [[ -d "$file_history_dir" ]]; then
+            size_kb=$(get_path_size_kb "$file_history_dir" 2> /dev/null || echo 0)
+            [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+            total_kb=$((total_kb + size_kb))
+        fi
+
+        [[ "$total_kb" -gt 0 ]] || return 0
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Claude session history · skipped by default ($(bytes_to_human $((total_kb * 1024))))"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune old sessions: MOLE_CLAUDE_PRUNE_DAYS=30 mo clean${NC}"
+        debug_log "Claude session history left intact by default ($total_kb KB)"
+        return 0
+    fi
+
+    if [[ ! "$prune_days" =~ ^[0-9]+$ ]]; then
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Claude session history prune skipped · invalid MOLE_CLAUDE_PRUNE_DAYS=$prune_days"
+        return 0
+    fi
+    if [[ "$prune_days" -le 0 ]]; then
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Claude session history prune skipped · invalid MOLE_CLAUDE_PRUNE_DAYS=$prune_days"
+        return 0
+    fi
+
+    local target
+    if [[ -d "$projects_dir" ]]; then
+        while IFS= read -r -d '' target; do
+            safe_clean "$target" "Claude Code session history"
+            note_activity
+        done < <(command find "$projects_dir" -mindepth 2 -maxdepth 2 -type f -name "*.jsonl" -mtime "+$prune_days" -print0 2> /dev/null)
+    fi
+
+    if [[ -d "$file_history_dir" ]]; then
+        while IFS= read -r -d '' target; do
+            safe_clean "$target" "Claude Code file history"
+            note_activity
+        done < <(command find "$file_history_dir" -mindepth 1 -maxdepth 1 -type f -mtime "+$prune_days" -print0 2> /dev/null)
+    fi
+}
+
 # Misc dev tool caches.
 clean_dev_misc() {
     safe_clean ~/Library/Caches/com.unity3d.*/* "Unity cache"
@@ -1561,7 +1744,9 @@ clean_dev_misc() {
     clean_chrome_devtools_mcp_caches
     # Claude Code state under ~/.claude can include persistent memory,
     # plugin registry data, hooks, and session context. Do not clean it
-    # automatically; users can remove specific paths manually if needed.
+    # automatically; only the explicit age-gated branch below may prune
+    # session/file history when MOLE_CLAUDE_PRUNE_DAYS is set.
+    clean_claude_session_history
     # Wondershare orphan installer payload (bundle ID differs from live app)
     safe_clean ~/Library/Application\ Support/com.wondershare.Installer/* "Wondershare installer payload"
 }

@@ -2134,7 +2134,10 @@ check_large_file_candidates() {
     _report_large_review_dir "Xcode archives (review only)" "$HOME/Library/Developer/Xcode/Archives"
     _report_large_review_dir "iOS backups (review only)" "$HOME/Library/Application Support/MobileSync/Backup"
     _report_large_review_dir "LM Studio models (review only)" "$HOME/.lmstudio/models"
-    _report_large_review_dir "OrbStack data (review only)" "$HOME/OrbStack"
+    local orbstack_data
+    for orbstack_data in "$HOME"/Library/Group\ Containers/*dev.orbstack/data "$HOME/OrbStack"; do
+        _report_large_review_dir "OrbStack data (review only)" "$orbstack_data"
+    done
     _report_large_review_dir "Lima data (review only)" "$HOME/.lima"
     _report_large_review_dir "Maven local repository (review only)" "$HOME/.m2/repository"
     _report_large_review_dir "pnpm store (review only)" "$HOME/Library/pnpm/store"

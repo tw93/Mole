@@ -135,6 +135,21 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "should_protect_path protects OrbStack live container data" {
+    local orb_group_data="$HOME/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img.raw"
+    local orb_state="$HOME/.orbstack/state.db"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ORB_GROUP_DATA="$orb_group_data" ORB_STATE="$orb_state" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+should_protect_data "dev.orbstack.OrbStack"
+should_protect_data "dev.kdrag0n.MacVirt"
+should_protect_path "$ORB_GROUP_DATA"
+should_protect_path "$ORB_STATE"
+EOF
+    [ "$status" -eq 0 ]
+}
+
 @test "safe_remove validates path before deletion" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '/System/test' 2>&1"
     [ "$status" -eq 1 ]
@@ -191,7 +206,6 @@ teardown() {
     [ "$status" -eq 1 ]
 }
 
-
 @test "safe_find_delete validates base directory" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_find_delete '/nonexistent' '*.tmp' 7 'f' 2>&1"
     [ "$status" -eq 1 ]
@@ -239,7 +253,7 @@ teardown() {
     touch "$old_file"
     touch "$new_file"
 
-    touch -t "$(date -v-8d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2>/dev/null || true
+    touch -t "$(date -v-8d '+%Y%m%d%H%M.%S' 2> /dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2> /dev/null || true
 
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_find_delete '$TEST_DIR' '*.tmp' 7 'f'"
     [ "$status" -eq 0 ]
@@ -248,9 +262,9 @@ teardown() {
 @test "safe_find_delete works when app protection is not loaded" {
     local old_file="$TEST_DIR/file-ops-only.tmp"
     touch "$old_file"
-    touch -t "$(date -v-8d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2>/dev/null || true
+    touch -t "$(date -v-8d '+%Y%m%d%H%M.%S' 2> /dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2> /dev/null || true
 
-    run bash --noprofile --norc <<EOF
+    run bash --noprofile --norc << EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/file_ops.sh"
 safe_find_delete "$TEST_DIR" "*.tmp" 7 "f"

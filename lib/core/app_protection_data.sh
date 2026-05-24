@@ -382,6 +382,9 @@ readonly DATA_PROTECTED_BUNDLES=(
 
     # Docker & Virtualization
     "com.docker.docker"
+    "dev.orbstack.OrbStack"
+    "dev.orbstack.*"
+    "dev.kdrag0n.MacVirt"
     "com.getutm.UTM"
     "com.vmware.fusion"
     "com.parallels.desktop.*"

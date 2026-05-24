@@ -449,6 +449,14 @@ show_system_data_hint_notice() {
         "$HOME/Library/Mail"
     )
 
+    local orbstack_data
+    for orbstack_data in "$HOME"/Library/Group\ Containers/*dev.orbstack/data; do
+        [[ -d "$orbstack_data" ]] || continue
+        labels+=("OrbStack data")
+        paths+=("$orbstack_data")
+        break
+    done
+
     local i
     for i in "${!paths[@]}"; do
         local path="${paths[$i]}"
