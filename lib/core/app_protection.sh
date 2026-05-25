@@ -274,7 +274,7 @@ should_protect_path() {
         */Library/Group\ Containers/com.apple.systempreferences* | */Library/Group\ Containers/com.apple.Settings*)
             return 0
             ;;
-        # OrbStack's group container holds the live container filesystem image.
+        # OrbStack group containers hold live container filesystem images.
         */Library/Group\ Containers/*dev.orbstack | */Library/Group\ Containers/*dev.orbstack/* | */.orbstack | */.orbstack/*)
             return 0
             ;;

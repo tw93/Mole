@@ -446,6 +446,7 @@ _batch_scan_app_details() {
     local current_user=$(whoami)
 
     if [[ -t 1 ]]; then start_inline_spinner "Scanning files..."; fi
+    # shellcheck disable=SC2154 # selected_apps is provided by batch_uninstall_applications via dynamic scope.
     for selected_app in "${selected_apps[@]}"; do
         [[ -z "$selected_app" ]] && continue
         IFS='|' read -r _ app_path app_name bundle_id _ _ <<< "$selected_app"

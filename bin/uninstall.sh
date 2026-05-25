@@ -352,8 +352,8 @@ start_uninstall_metadata_refresh() {
             exit 0
         fi
 
-        local merged_file
-        merged_file=$(mktemp 2> /dev/null) || {
+        local refresh_merged_file
+        refresh_merged_file=$(mktemp 2> /dev/null) || {
             _refresh_debug "mktemp for merge failed, aborting"
             uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
             rm -f "$updates_file"
@@ -368,12 +368,12 @@ start_uninstall_metadata_refresh() {
                     print updates[path]
                 }
             }
-        ' "$updates_file" "$MOLE_UNINSTALL_META_CACHE_FILE" > "$merged_file"
+        ' "$updates_file" "$MOLE_UNINSTALL_META_CACHE_FILE" > "$refresh_merged_file"
 
-        uninstall_persist_cache_file "$merged_file" "$MOLE_UNINSTALL_META_CACHE_FILE"
+        uninstall_persist_cache_file "$refresh_merged_file" "$MOLE_UNINSTALL_META_CACHE_FILE"
 
         uninstall_release_metadata_lock "$MOLE_UNINSTALL_META_CACHE_LOCK"
-        rm -f "$updates_file"
+        rm -f "$updates_file" "$refresh_merged_file"
         rm -f "$refresh_file" 2> /dev/null || true
     ) > /dev/null 2>&1 &
     disown "$!" 2> /dev/null || true

@@ -62,7 +62,7 @@ assert_output_not_contains() {
     touch "$HOME/.codex/sessions/s.jsonl" "$HOME/.codex/auth.json" "$HOME/.codex/history.jsonl"
     touch "$HOME/.codex/state_5.sqlite" "$HOME/.codex/logs_2.sqlite"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -84,7 +84,7 @@ EOF
 }
 
 @test "clean_codex_cli is a no-op when ~/.codex is absent" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -102,7 +102,7 @@ EOF
     mkdir -p "$HOME/.codex/cache" "$HOME/.codex/.tmp" "$HOME/.codex/log"
     touch "$HOME/.codex/cache/c.bin"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -128,7 +128,7 @@ EOF
     touch "$ag/GraphiteDawnCache/f.bin" "$ag/component_crx_cache/g.bin" "$ag/extensions_crx_cache/h.bin"
     touch "$ag/Default/Extensions/x.js" "$ag/Default/Storage/y.bin"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -153,7 +153,7 @@ EOF
 }
 
 @test "clean_antigravity_caches is a no-op when the profile is absent" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -172,7 +172,7 @@ EOF
     mkdir -p "$HOME/.gemini/tmp"
     touch "$HOME/.gemini/tmp/work.bin"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -193,7 +193,7 @@ EOF
     mkdir -p "$ag/Default/Cache" "$HOME/.gemini/tmp"
     touch "$ag/Default/Cache/a.bin" "$HOME/.gemini/tmp/work.bin"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -214,7 +214,7 @@ EOF
 }
 
 @test "clean_dev_misc invokes clean_codex_cli and clean_antigravity_caches" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -233,7 +233,7 @@ EOF
     assert_output_contains "ANTIGRAVITY_CALLED"
 }
 
-@test "clean_dev_ai_agents reaps stale Claude Desktop bundled versions" {
+@test "clean_dev_ai_agents reaps stale Claude Desktop bundled versions when active version is known" {
     local claude_support="$HOME/Library/Application Support/Claude"
     mkdir -p "$claude_support/claude-code/2.1.140" "$claude_support/claude-code/2.1.142" "$claude_support/claude-code/2.1.150"
     mkdir -p "$claude_support/claude-code-vm/2.1.140" "$claude_support/claude-code-vm/2.1.142" "$claude_support/claude-code-vm/2.1.150"
@@ -242,12 +242,13 @@ EOF
     touch -t 202604150000 "$claude_support/claude-code/2.1.142" "$claude_support/claude-code-vm/2.1.142"
     touch -t 202604250000 "$claude_support/claude-code/2.1.150" "$claude_support/claude-code-vm/2.1.150"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 note_activity() { :; }
 safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
 clean_dev_ai_agents
 EOF
 
@@ -265,12 +266,13 @@ EOF
     mkdir -p "$claude_support/claude-code/2.1.150" "$claude_support/claude-code-vm/2.1.150"
     echo "2.1.150" > "$claude_support/claude-code-vm/.sdk-version"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 note_activity() { :; }
 safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
 clean_dev_ai_agents
 EOF
 
@@ -279,54 +281,45 @@ EOF
     assert_output_not_contains "SAFE_CLEAN:"
 }
 
-@test "clean_claude_session_history only hints by default" {
-    mkdir -p "$HOME/.claude/projects/project-a" "$HOME/.claude/file-history" "$HOME/.claude/plugins/cache/plugin-a"
-    echo "{}" > "$HOME/.claude/projects/project-a/session.jsonl"
-    echo "history" > "$HOME/.claude/file-history/item"
-    echo "plugin" > "$HOME/.claude/plugins/cache/plugin-a/state.json"
+@test "clean_dev_ai_agents skips Claude Desktop bundled versions when active version is unknown" {
+    local claude_support="$HOME/Library/Application Support/Claude"
+    mkdir -p "$claude_support/claude-code/2.1.140" "$claude_support/claude-code/2.1.150"
+    mkdir -p "$claude_support/claude-code-vm/2.1.140" "$claude_support/claude-code-vm/2.1.150"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
-safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 note_activity() { :; }
-clean_claude_session_history
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() { return 1; }
+clean_dev_ai_agents
 EOF
 
     assert_run_success
-    assert_output_contains "Claude session history · skipped by default"
-    assert_output_contains "MOLE_CLAUDE_PRUNE_DAYS=30 mo clean"
+    assert_output_contains "active version unknown · skipping cleanup"
     assert_output_not_contains "SAFE_CLEAN:"
 }
 
-@test "clean_claude_session_history prunes only aged session and file history" {
-    mkdir -p "$HOME/.claude/projects/project-a" "$HOME/.claude/file-history" "$HOME/.claude/plugins" "$HOME/.claude/skills"
-    echo "{}" > "$HOME/.claude/projects/project-a/old.jsonl"
-    echo "{}" > "$HOME/.claude/projects/project-a/new.jsonl"
-    echo "{}" > "$HOME/.claude/projects/project-a/settings.json"
-    echo "old" > "$HOME/.claude/file-history/old-entry"
-    echo "new" > "$HOME/.claude/file-history/new-entry"
-    echo "plugin" > "$HOME/.claude/plugins/plugin.jsonl"
-    echo "skill" > "$HOME/.claude/skills/skill.jsonl"
-    touch -t 202401010000 "$HOME/.claude/projects/project-a/old.jsonl" "$HOME/.claude/projects/project-a/settings.json"
-    touch -t 202401010000 "$HOME/.claude/file-history/old-entry" "$HOME/.claude/plugins/plugin.jsonl" "$HOME/.claude/skills/skill.jsonl"
+@test "clean_dev_ai_agents skips Claude Desktop bundled versions while Claude Desktop is running" {
+    local claude_support="$HOME/Library/Application Support/Claude"
+    mkdir -p "$claude_support/claude-code/2.1.140" "$claude_support/claude-code/2.1.150"
+    mkdir -p "$claude_support/claude-code-vm/2.1.140" "$claude_support/claude-code-vm/2.1.150"
+    echo "2.1.150" > "$claude_support/claude-code-vm/.sdk-version"
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_CLAUDE_PRUNE_DAYS=30 bash --noprofile --norc << 'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
-safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 note_activity() { :; }
-clean_claude_session_history
+safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
+pgrep() {
+    [[ "$1" == "-x" && "$2" == "Claude" ]]
+}
+clean_dev_ai_agents
 EOF
 
     assert_run_success
-    assert_output_contains "SAFE_CLEAN:Claude Code session history|$HOME/.claude/projects/project-a/old.jsonl"
-    assert_output_contains "SAFE_CLEAN:Claude Code file history|$HOME/.claude/file-history/old-entry"
-    assert_output_not_contains "$HOME/.claude/projects/project-a/new.jsonl"
-    assert_output_not_contains "$HOME/.claude/projects/project-a/settings.json"
-    assert_output_not_contains "$HOME/.claude/file-history/new-entry"
-    assert_output_not_contains "$HOME/.claude/plugins"
-    assert_output_not_contains "$HOME/.claude/skills"
+    assert_output_contains "Claude Desktop bundled Claude Code cleanup skipped · Claude Desktop is running"
+    assert_output_not_contains "SAFE_CLEAN:"
 }
