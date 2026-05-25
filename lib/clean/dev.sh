@@ -430,7 +430,7 @@ clean_dev_docker() {
         note_activity
         echo -e "  ${GRAY}${ICON_WARNING}${NC} OrbStack container data · skipped by default ($(bytes_to_human $((orb_size * 1024))))"
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Review: docker system df${NC}"
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --volumes${NC}"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Prune:  docker system prune --filter until=720h${NC}"
         debug_log "OrbStack daemon-managed data left for manual prune ($orb_size KB)"
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"

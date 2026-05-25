@@ -406,7 +406,7 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"OrbStack container data · skipped by default (4M)"* ]]
     [[ "$output" == *"Review: docker system df"* ]]
-    [[ "$output" == *"Prune:  docker system prune --volumes"* ]]
+    [[ "$output" == *"Prune:  docker system prune --filter until=720h"* ]]
     [[ "$output" == *"Docker BuildX cache|$HOME/.docker/buildx/cache/*"* ]]
     [[ "$output" != *"data.img.raw"* ]]
     [[ "$output" != *"swap.img"* ]]
