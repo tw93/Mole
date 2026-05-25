@@ -164,6 +164,12 @@ EOF
 	[[ "$output" != *"mo check"* ]]
 }
 
+@test "mole --help documents history command" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"mo history"* ]]
+}
+
 @test "mole check is not a public command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" check --help
 	[ "$status" -ne 0 ]
@@ -204,6 +210,26 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"U Update"* ]]
+}
+
+@test "show_main_menu keeps history out of the primary menu" {
+	run bash --noprofile --norc <<'EOF'
+set -euo pipefail
+HOME="$(mktemp -d)"
+export HOME MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
+source "$PROJECT_ROOT/mole"
+show_brand_banner() { printf 'banner\n'; }
+show_menu_option() { printf '%s\n' "$2"; }
+MAIN_MENU_BANNER=""
+MAIN_MENU_UPDATE_MESSAGE=""
+MAIN_MENU_SHOW_UPDATE=false
+show_main_menu 1 true
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Clean        Free up disk space"* ]]
+	[[ "$output" != *"History"* ]]
+	[[ "$output" != *"history"* ]]
 }
 
 @test "interactive_main_menu ignores U shortcut when update notice is hidden" {

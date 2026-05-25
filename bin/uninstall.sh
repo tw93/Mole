@@ -759,6 +759,67 @@ _scan_resolve_uncached() {
     fi
 }
 
+# Phase 6: collapse duplicate bundle IDs discovered from backup volumes or
+# mirrored Applications folders. Keep the live app locations first.
+_scan_dedupe_bundle_ids() {
+    [[ -s "$scan_raw_file" ]] || return 0
+
+    local deduped_file="${scan_raw_file}.deduped"
+    awk -F'|' -v home_apps="$HOME/Applications/" '
+        function starts_with(value, prefix) {
+            return prefix != "" && substr(value, 1, length(prefix)) == prefix
+        }
+        function direct_app_under(path, prefix, rest) {
+            if (!starts_with(path, prefix)) {
+                return 0
+            }
+            rest = substr(path, length(prefix) + 1)
+            return index(rest, "/") == 0 && rest ~ /[.]app$/
+        }
+        function path_rank(path) {
+            if (direct_app_under(path, "/Applications/")) {
+                return 1
+            }
+            if (direct_app_under(path, home_apps)) {
+                return 2
+            }
+            if (starts_with(path, "/Volumes/")) {
+                return 4
+            }
+            return 3
+        }
+        {
+            bundle_id = $3
+            if (bundle_id == "" || bundle_id == "unknown") {
+                key = "__path__" NR
+                rows[key] = $0
+                order[++count] = key
+                next
+            }
+
+            rank = path_rank($1)
+            if (!(bundle_id in rows)) {
+                rows[bundle_id] = $0
+                ranks[bundle_id] = rank
+                order[++count] = bundle_id
+                next
+            }
+            if (rank < ranks[bundle_id]) {
+                rows[bundle_id] = $0
+                ranks[bundle_id] = rank
+            }
+        }
+        END {
+            for (i = 1; i <= count; i++) {
+                key = order[i]
+                if (key in rows) {
+                    print rows[key]
+                }
+            }
+        }
+    ' "$scan_raw_file" > "$deduped_file" && mv "$deduped_file" "$scan_raw_file"
+}
+
 # Phase 7+8: merge scan_raw_file with the persistent metadata cache,
 # compute display size / last-used / refresh-needed flags (either via the
 # embedded awk pipeline or the bash fallback that performs inline
@@ -1143,6 +1204,8 @@ scan_applications() {
         restore_scan_int_trap
         return 1
     fi
+
+    _scan_dedupe_bundle_ids
 
     # Phase 7+8: merge cache, persist, sort, return path.
     _scan_finalize_index

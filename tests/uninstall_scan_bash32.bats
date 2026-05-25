@@ -51,6 +51,26 @@ sourceable_uninstall_sh() {
 	' "$PROJECT_ROOT/bin/uninstall.sh" > "$out"
 }
 
+create_test_app_bundle() {
+	local app_path="$1"
+	local bundle_id="$2"
+	local display_name="$3"
+
+	mkdir -p "$app_path/Contents"
+	cat > "$app_path/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>$bundle_id</string>
+    <key>CFBundleName</key>
+    <string>$display_name</string>
+</dict>
+</plist>
+PLIST
+}
+
 @test "scan_applications: Pass 2 tolerates empty app_data_tuples on /bin/bash 3.2 (#863)" {
 	src="$HOME/uninstall_source.sh"
 	sourceable_uninstall_sh "$src"
@@ -209,6 +229,62 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"|$app_path|OneDrive|com.microsoft.OneDrive-mac|"* ]]
+}
+
+@test "scan_applications dedupes backup Applications clones by bundle id (#975)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	apps_root="$HOME/Applications"
+	backup_root="$HOME/BackupClone/Applications"
+	local_app="$apps_root/Dupe.app"
+	backup_app="$backup_root/Dupe.app"
+	create_test_app_bundle "$local_app" "com.example.Dupe" "Dupe"
+	create_test_app_bundle "$backup_app" "com.example.Dupe" "Dupe"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 APPS_ROOT="$apps_root" BACKUP_ROOT="$backup_root" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+uninstall_print_app_search_dirs() { printf '%s\n' "$APPS_ROOT" "$BACKUP_ROOT"; }
+
+apps_file=$(scan_applications)
+cat "$apps_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"|$local_app|Dupe|com.example.Dupe|"* ]]
+	[[ "$output" != *"|$backup_app|Dupe|com.example.Dupe|"* ]]
+}
+
+@test "scan_applications keeps unique apps from backup Applications roots (#975)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	backup_root="$HOME/BackupClone/Applications"
+	backup_app="$backup_root/OnlyThere.app"
+	create_test_app_bundle "$backup_app" "com.example.OnlyThere" "OnlyThere"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 BACKUP_ROOT="$backup_root" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+uninstall_print_app_search_dirs() { printf '%s\n' "$BACKUP_ROOT"; }
+
+apps_file=$(scan_applications)
+cat "$apps_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"|$backup_app|OnlyThere|com.example.OnlyThere|"* ]]
 }
 
 @test "scan_applications ignores PATH stat shims (#865)" {

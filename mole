@@ -7,6 +7,41 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+declare -a MOLE_CLI_ARGS=()
+MOLE_CLI_DEBUG=false
+
+mole_collect_cli_args() {
+    local arg
+
+    MOLE_CLI_ARGS=()
+    MOLE_CLI_DEBUG=false
+    for arg in "$@"; do
+        case "$arg" in
+            --debug)
+                MOLE_CLI_DEBUG=true
+                ;;
+            *)
+                MOLE_CLI_ARGS+=("$arg")
+                ;;
+        esac
+    done
+}
+
+mole_dispatch_history_early() {
+    [[ "${MOLE_TEST_MODE:-0}" == "1" && "${MOLE_SKIP_MAIN:-0}" == "1" ]] && return 0
+
+    mole_collect_cli_args "$@"
+    [[ "${MOLE_CLI_ARGS[0]:-}" == "history" ]] || return 0
+
+    [[ "$MOLE_CLI_DEBUG" == "true" ]] && export MO_DEBUG=1
+    if [[ "${#MOLE_CLI_ARGS[@]}" -gt 1 ]]; then
+        exec "$SCRIPT_DIR/bin/history.sh" "${MOLE_CLI_ARGS[@]:1}"
+    fi
+    exec "$SCRIPT_DIR/bin/history.sh"
+}
+
+mole_dispatch_history_early "$@"
+
 source "$SCRIPT_DIR/lib/core/common.sh"
 source "$SCRIPT_DIR/lib/core/commands.sh"
 
@@ -335,6 +370,7 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --whitelist" "$NC" "Manage protected items"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo history --json" "$NC" "Export cleanup history"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "Preview project purge"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo installer --dry-run" "$NC" "Preview installer cleanup"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo touchid enable --dry-run" "$NC" "Preview Touch ID setup"
@@ -972,16 +1008,11 @@ interactive_main_menu() {
 # CLI dispatch
 main() {
     local -a args=()
-    for arg in "$@"; do
-        case "$arg" in
-            --debug)
-                export MO_DEBUG=1
-                ;;
-            *)
-                args+=("$arg")
-                ;;
-        esac
-    done
+    mole_collect_cli_args "$@"
+    [[ "$MOLE_CLI_DEBUG" == "true" ]] && export MO_DEBUG=1
+    if [[ "${#MOLE_CLI_ARGS[@]}" -gt 0 ]]; then
+        args=("${MOLE_CLI_ARGS[@]}")
+    fi
 
     case "${args[0]:-""}" in
         "optimize" | "optimise")
@@ -998,6 +1029,9 @@ main() {
             ;;
         "status")
             exec "$SCRIPT_DIR/bin/status.sh" "${args[@]:1}"
+            ;;
+        "history")
+            exec "$SCRIPT_DIR/bin/history.sh" "${args[@]:1}"
             ;;
         "purge")
             exec "$SCRIPT_DIR/bin/purge.sh" "${args[@]:1}"

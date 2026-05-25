@@ -13,6 +13,7 @@ done
 command_words="${command_names[*]}"
 clean_option_words="--dry-run -n --external --whitelist --debug --help -h"
 analyze_option_words="--json --help -h"
+history_option_words="--json --limit --help -h"
 purge_option_words="--paths --dry-run -n --include-empty --debug --help -h"
 
 emit_zsh_subcommands() {
@@ -38,6 +39,9 @@ emit_fish_completions() {
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l json -d "Output analysis as JSON"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -c %s -n "__fish_seen_subcommand_from analyze analyse; and not __fish_seen_argument -l json -l help -s h" -a "(__fish_complete_directories)" -d "Path to analyze"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from history" -l json -d "Output history as JSON"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from history" -l limit -r -d "Limit recent entries"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from history" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l paths -d "Edit custom scan directories"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l dry-run -s n -d "Preview purge actions without making changes"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l include-empty -d "Show zero-size project artifact directories"\n' "$cmd"
@@ -335,6 +339,9 @@ _mole_completions()
                     COMPREPLY=( \$(compgen -f -- "\$cur_word") )
                 fi
                 ;;
+            history)
+                COMPREPLY=( \$(compgen -W "$history_option_words" -- "\$cur_word") )
+                ;;
             purge)
                 COMPREPLY=( \$(compgen -W "$purge_option_words" -- "\$cur_word") )
                 ;;
@@ -377,6 +384,12 @@ EOF
         printf "                '--json[Output analysis as JSON]' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]' \\\\\n"
         printf "                '*:path:_files'\n"
+        printf '            ;;\n'
+        printf '        history)\n'
+        printf '            _arguments \\\n'
+        printf "                '--json[Output history as JSON]' \\\\\n"
+        printf "                '--limit[Limit recent entries]:limit:' \\\\\n"
+        printf "                '(-h --help)'{-h,--help}'[Show help]'\n"
         printf '            ;;\n'
         printf '        purge)\n'
         printf '            _arguments \\\n'
