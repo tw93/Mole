@@ -1326,9 +1326,10 @@ clean_browsers() {
     safe_clean ~/Library/Caches/com.apple.Safari/* "Safari cache"
     # Chrome/Chromium.
     safe_clean ~/Library/Caches/Google/Chrome/* "Chrome cache"
-    # Skip ScriptCache wipe while the browser is running: removing V8 bytecode
-    # under a live Chromium process breaks loaded MV3 extension service workers
-    # until the user toggles them in chrome://extensions. See #785.
+    # Do not clean Chromium Service Worker ScriptCache. Even when the browser is
+    # closed, removing MV3 extension bytecode can break extension service
+    # workers and trigger security warnings during dry-run scans. See #785,
+    # #964, and #968.
     local _chrome_running=false
     pgrep -x "Google Chrome" > /dev/null 2>&1 && _chrome_running=true
     if [[ "$_chrome_running" != "true" ]]; then
@@ -1349,9 +1350,6 @@ clean_browsers() {
     local _chrome_profile
     for _chrome_profile in "$HOME/Library/Application Support/Google/Chrome"/*/; do
         clean_service_worker_cache "Chrome" "$_chrome_profile/Service Worker/CacheStorage"
-        if [[ "$_chrome_running" != "true" ]]; then
-            safe_clean "$_chrome_profile"/Service\ Worker/ScriptCache/* "Chrome Service Worker ScriptCache"
-        fi
     done
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/crx_cache/* "GoogleUpdater CRX cache"
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/*.old "GoogleUpdater old files"
@@ -1388,16 +1386,10 @@ clean_browsers() {
         fi
         for _arc_profile in "$HOME/Library/Application Support/Arc"/*/; do
             clean_service_worker_cache "Arc" "$_arc_profile/Service Worker/CacheStorage"
-            if [[ "$_arc_running" != "true" ]]; then
-                safe_clean "$_arc_profile"/Service\ Worker/ScriptCache/* "Arc Service Worker ScriptCache"
-            fi
         done
         for _arc_profile in "$HOME/Library/Application Support/Arc/User Data"/*/; do
             [[ -d "$_arc_profile" ]] || continue
             clean_service_worker_cache "Arc" "$_arc_profile/Service Worker/CacheStorage"
-            if [[ "$_arc_running" != "true" ]]; then
-                safe_clean "$_arc_profile"/Service\ Worker/ScriptCache/* "Arc Service Worker ScriptCache"
-            fi
         done
     fi
     safe_clean ~/Library/Caches/company.thebrowser.dia/* "Dia cache"
@@ -1421,9 +1413,6 @@ clean_browsers() {
         fi
         for _brave_profile in "$HOME/Library/Application Support/BraveSoftware/Brave-Browser"/*/; do
             clean_service_worker_cache "Brave" "$_brave_profile/Service Worker/CacheStorage"
-            if [[ "$_brave_running" != "true" ]]; then
-                safe_clean "$_brave_profile"/Service\ Worker/ScriptCache/* "Brave Service Worker ScriptCache"
-            fi
         done
     fi
     # Helium Browser.
@@ -1474,9 +1463,6 @@ clean_browsers() {
         fi
         for _vivaldi_profile in "$HOME/Library/Application Support/Vivaldi"/*/; do
             clean_service_worker_cache "Vivaldi" "$_vivaldi_profile/Service Worker/CacheStorage"
-            if [[ "$_vivaldi_running" != "true" ]]; then
-                safe_clean "$_vivaldi_profile"/Service\ Worker/ScriptCache/* "Vivaldi Service Worker ScriptCache"
-            fi
         done
     fi
     safe_clean ~/Library/Caches/Comet/* "Comet cache"

@@ -772,7 +772,7 @@ EOF
     [[ "$output" == *"Puppeteer browser cache"* ]]
 }
 
-@test "clean_browsers cleans Brave Service Worker caches" {
+@test "clean_browsers preserves Brave Service Worker ScriptCache" {
     mkdir -p "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default/Service Worker/ScriptCache"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
@@ -790,7 +790,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Brave SW Brave"* ]]
-    [[ "$output" == *"Brave Service Worker ScriptCache"* ]]
+    [[ "$output" != *"Brave Service Worker ScriptCache"* ]]
 
     rm -rf "$HOME/Library"
 }
@@ -817,13 +817,16 @@ EOF
     [[ "$output" == *"Arc component CRX cache|$HOME/Library/Application Support/Arc/User Data/component_crx_cache/"* ]]
     [[ "$output" == *"Arc extensions CRX cache|$HOME/Library/Application Support/Arc/User Data/extensions_crx_cache/"* ]]
     [[ "$output" == *"Arc SW $HOME/Library/Application Support/Arc/User Data/Default/Service Worker/CacheStorage"* ]]
-    [[ "$output" == *"Arc Service Worker ScriptCache|$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache/"* ]]
+    [[ "$output" != *"Arc Service Worker ScriptCache|$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache/"* ]]
 
     rm -rf "$HOME/Library"
 }
 
-@test "clean_browsers skips Chrome ScriptCache when Chrome is running (#785)" {
+@test "clean_browsers always preserves Chromium Service Worker ScriptCache (#785 #964 #968)" {
     mkdir -p "$HOME/Library/Application Support/Google/Chrome/Default/Service Worker/ScriptCache"
+    mkdir -p "$HOME/Library/Application Support/Arc/User Data/Default/Service Worker/ScriptCache"
+    mkdir -p "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default/Service Worker/ScriptCache"
+    mkdir -p "$HOME/Library/Application Support/Vivaldi/Default/Service Worker/ScriptCache"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -832,8 +835,7 @@ source "$PROJECT_ROOT/lib/clean/user.sh"
 safe_clean() { echo "$2"; }
 clean_service_worker_cache() { echo "SW-CALL $1"; }
 note_activity() { :; }
-# Stub pgrep so every browser/editor appears to be running.
-pgrep() { return 0; }
+pgrep() { return 1; }
 files_cleaned=0
 total_size_cleaned=0
 total_items=0
@@ -843,8 +845,8 @@ EOF
     [ "$status" -eq 0 ]
     # CacheStorage cleanup still runs (it has its own protection logic).
     [[ "$output" == *"SW-CALL Chrome"* ]]
-    # ScriptCache cleanup must NOT run while Chrome is live: wiping V8
-    # bytecode under a running Chromium breaks MV3 extension service workers.
+    # ScriptCache cleanup must NOT run at all: wiping V8 bytecode can break
+    # Chromium MV3 extension service workers even after the browser exits.
     [[ "$output" != *"Chrome Service Worker ScriptCache"* ]]
     [[ "$output" != *"Arc Service Worker ScriptCache"* ]]
     [[ "$output" != *"Brave Service Worker ScriptCache"* ]]

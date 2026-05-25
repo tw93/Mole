@@ -171,6 +171,46 @@ EOF
 	[[ "$output" == *"|$app_path|Artpaper|andriiliakh.Artpaper|"* ]]
 }
 
+@test "scan_applications includes top-level OneDrive even when background-only (#970)" {
+	src="$HOME/uninstall_source.sh"
+	sourceable_uninstall_sh "$src"
+
+	apps_root="$HOME/Applications"
+	app_path="$apps_root/OneDrive.app"
+	mkdir -p "$app_path/Contents"
+	cat > "$app_path/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.microsoft.OneDrive-mac</string>
+    <key>CFBundleName</key>
+    <string>OneDrive</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 APPS_ROOT="$apps_root" SRC_PATH="$src" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source "$SRC_PATH"
+
+uninstall_print_app_search_dirs() { printf '%s\n' "$APPS_ROOT"; }
+
+apps_file=$(scan_applications)
+cat "$apps_file"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"|$app_path|OneDrive|com.microsoft.OneDrive-mac|"* ]]
+}
+
 @test "scan_applications ignores PATH stat shims (#865)" {
 	src="$HOME/uninstall_source.sh"
 	sourceable_uninstall_sh "$src"

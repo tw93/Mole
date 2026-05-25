@@ -921,7 +921,7 @@ EOF
 }
 
 @test "cached uninstall metadata is rejected when the app is background-only" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 eval "$(sed -n '/^uninstall_resolve_bundle_id()/,/^uninstall_app_inventory_fingerprint()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
@@ -945,6 +945,37 @@ if uninstall_resolve_eligible_bundle_id "$app_path" "com.example.Helper" > /dev/
     echo "background-only app should not be eligible" >&2
     exit 1
 fi
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "OneDrive Mac App Store bundle is eligible even when marked background-only" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+eval "$(sed -n '/^uninstall_resolve_bundle_id()/,/^uninstall_app_inventory_fingerprint()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+
+app_path="$HOME/Applications/OneDrive.app"
+mkdir -p "$app_path/Contents"
+cat > "$app_path/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.microsoft.OneDrive-mac</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+result=$(uninstall_resolve_eligible_bundle_id "$app_path" "")
+[[ "$result" == "com.microsoft.OneDrive-mac" ]] || {
+    echo "unexpected bundle id: $result" >&2
+    exit 1
+}
 EOF
 
 	[ "$status" -eq 0 ]
