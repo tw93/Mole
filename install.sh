@@ -292,6 +292,39 @@ download_release_checksums() {
     curl -fsSL --connect-timeout 10 --max-time 60 -o "$output_file" "$url"
 }
 
+# Verify the Sigstore/GitHub Actions build-provenance attestation for a release
+# asset. Returns:
+#   0 - attestation verified
+#   1 - verification failed (asset has no matching attestation, or signature invalid)
+#   2 - cannot verify (gh CLI missing or unauthenticated); caller decides policy
+#
+# The release workflow generates attestations via actions/attest-build-provenance
+# covering SHA256SUMS, the per-arch binaries, and the homebrew tarballs.
+# Verifying the SHA256SUMS file is sufficient: the binary's sha256 is then
+# anchored to that attested file by verify_release_asset_checksum().
+verify_release_attestation() {
+    local file="$1"
+
+    if ! command -v gh > /dev/null 2>&1; then
+        return 2
+    fi
+    if ! gh auth status > /dev/null 2>&1; then
+        return 2
+    fi
+
+    # --owner restricts the trusted signer identity to the upstream repo's
+    # GitHub Actions workflow. --deny-self-hosted-runners blocks attestations
+    # produced by self-hosted runners, which a repo compromise could otherwise
+    # introduce as a sidechannel.
+    if gh attestation verify "$file" \
+        --owner tw93 \
+        --deny-self-hosted-runners \
+        > /dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 extract_release_checksum() {
     local checksums_file="$1"
     local asset_name="$2"
@@ -324,12 +357,35 @@ verify_release_asset_checksum() {
     local expected=""
     local actual=""
     local result=1
+    local attestation_status=2
 
     if download_release_checksums "$tag" "$checksums_file" > /dev/null 2>&1; then
+        # Anchor the SHA256SUMS file to its GitHub Actions build-provenance
+        # attestation before reading checksums from it. If gh is available,
+        # an attestation mismatch is fatal; without gh, fall through to
+        # checksum-only verification (matches prior behavior).
+        verify_release_attestation "$checksums_file"
+        attestation_status=$?
+
+        if [[ "$attestation_status" -eq 1 ]]; then
+            log_error "Release attestation verification failed for ${asset_name}"
+            rm -f "$checksums_file"
+            return 1
+        fi
+
+        if [[ "$attestation_status" -eq 2 && "${MOLE_REQUIRE_ATTESTATION:-0}" == "1" ]]; then
+            log_error "MOLE_REQUIRE_ATTESTATION=1 set but gh CLI unavailable or unauthenticated"
+            rm -f "$checksums_file"
+            return 1
+        fi
+
         expected=$(extract_release_checksum "$checksums_file" "$asset_name" 2> /dev/null || true)
         actual=$(calculate_file_sha256 "$file" 2> /dev/null || true)
         if [[ -n "$expected" && -n "$actual" && "$expected" == "$actual" ]]; then
             result=0
+            if [[ "$attestation_status" -eq 0 ]]; then
+                log_success "Verified ${asset_name} (sha256 + attestation)"
+            fi
         fi
     fi
 
