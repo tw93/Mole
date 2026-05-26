@@ -1517,12 +1517,12 @@ agent_worktree_search_roots() {
 # which is the intended conservative behavior.
 agent_worktree_is_disposable() {
     local wt="$1"
-    git -C "$wt" rev-parse --is-inside-work-tree > /dev/null 2>&1 || return 1
-    if [[ -n "$(git -C "$wt" status --porcelain 2> /dev/null)" ]]; then
+    run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" rev-parse --is-inside-work-tree > /dev/null 2>&1 || return 1
+    if [[ -n "$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" status --porcelain 2> /dev/null)" ]]; then
         return 1
     fi
     local local_only
-    local_only=$(git -C "$wt" rev-list --count HEAD --not --remotes 2> /dev/null || echo 1)
+    local_only=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$wt" rev-list --count HEAD --not --remotes 2> /dev/null || echo 1)
     [[ "$local_only" =~ ^[0-9]+$ ]] || return 1
     [[ "$local_only" -eq 0 ]] || return 1
     return 0
@@ -1586,8 +1586,8 @@ clean_dev_agent_worktrees() {
                 # locked entry even when its directory is missing, so unlock it
                 # first and prune with --expire=now to drop the stale entry.
                 if [[ ! -d "$wt" && -e "$parent_repo/.git" ]]; then
-                    git -C "$parent_repo" worktree unlock "$wt" > /dev/null 2>&1 || true
-                    git -C "$parent_repo" worktree prune --expire=now > /dev/null 2>&1 || true
+                    run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$parent_repo" worktree unlock "$wt" > /dev/null 2>&1 || true
+                    run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" git -C "$parent_repo" worktree prune --expire=now > /dev/null 2>&1 || true
                 fi
             else
                 kept=$((kept + 1))
