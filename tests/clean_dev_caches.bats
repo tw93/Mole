@@ -748,3 +748,68 @@ EOF
     [[ "$output" != *"Local Storage"* ]]
     [[ "$output" != *"Local State"* ]]
 }
+
+@test "clean_dev_agent_worktrees skips agent worktrees by default and reports size" {
+    mkdir -p "$HOME/code/proj/.claude/worktrees/wt-one"
+    mkdir -p "$HOME/code/proj/.claude/worktrees/wt-two"
+    echo "data" > "$HOME/code/proj/.claude/worktrees/wt-one/file"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_AGENT_WORKTREE_PATHS="$HOME/code" \
+        bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+safe_clean() { echo "SHOULD_NOT_DELETE:$1"; }
+clean_dev_agent_worktrees
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AI agent worktrees · skipped by default (2 in .claude/worktrees"* ]]
+    [[ "$output" == *"MOLE_AGENT_WORKTREES=1 mo clean"* ]]
+    [[ "$output" != *"SHOULD_NOT_DELETE"* ]]
+}
+
+@test "clean_dev_agent_worktrees removes clean worktrees but keeps dirty ones when opted in" {
+    local origin="$HOME/origin.git"
+    local proj="$HOME/code/proj"
+    git init --bare -q "$origin"
+    git -c init.defaultBranch=main init -q "$proj"
+    (
+        cd "$proj"
+        git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+        git remote add origin "$origin"
+        git push -q origin HEAD:main
+        git worktree add -q .claude/worktrees/clean-one HEAD
+        git worktree add -q .claude/worktrees/dirty-one HEAD
+        # Agents lock their worktrees; a plain prune would skip the stale entry.
+        git worktree lock .claude/worktrees/clean-one
+    )
+    echo "uncommitted" > "$proj/.claude/worktrees/dirty-one/scratch.txt"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_AGENT_WORKTREES=1 MOLE_AGENT_WORKTREE_PATHS="$HOME/code" \
+        bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+safe_clean() { echo "REMOVED:$1"; rm -rf "$1"; }
+clean_dev_agent_worktrees
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"REMOVED:$proj/.claude/worktrees/clean-one"* ]]
+    [[ "$output" == *"Kept agent worktree (unsaved work)"* ]]
+    [[ "$output" == *"dirty-one"* ]]
+    [[ "$output" != *"REMOVED:$proj/.claude/worktrees/dirty-one"* ]]
+    [ ! -d "$proj/.claude/worktrees/clean-one" ]
+    [ -d "$proj/.claude/worktrees/dirty-one" ]
+    # The stale (locked) registry entry must be reaped, the dirty one kept.
+    run git -C "$proj" worktree list
+    [[ "$output" != *"clean-one"* ]]
+    [[ "$output" == *"dirty-one"* ]]
+}

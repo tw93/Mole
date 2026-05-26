@@ -1493,6 +1493,114 @@ clean_chrome_devtools_mcp_caches() {
     fi
 }
 
+# Project roots scanned for agent worktrees. Override with a colon-separated
+# MOLE_AGENT_WORKTREE_PATHS list (e.g. "$HOME/work:$HOME/oss").
+agent_worktree_search_roots() {
+    if [[ -n "${MOLE_AGENT_WORKTREE_PATHS:-}" ]]; then
+        local saved_ifs="$IFS"
+        IFS=':'
+        # shellcheck disable=SC2206
+        local -a custom=($MOLE_AGENT_WORKTREE_PATHS)
+        IFS="$saved_ifs"
+        [[ ${#custom[@]} -gt 0 ]] && printf '%s\n' "${custom[@]}"
+        return 0
+    fi
+    printf '%s\n' \
+        "$HOME/code" "$HOME/Code" "$HOME/dev" "$HOME/Projects" \
+        "$HOME/GitHub" "$HOME/Workspace" "$HOME/Repos" \
+        "$HOME/Development" "$HOME/www" "$HOME/src"
+}
+
+# Returns 0 only when a worktree is safe to remove: no uncommitted or untracked
+# changes, and no commits reachable from HEAD that are missing from every
+# remote-tracking ref. A repo with no remotes therefore keeps every worktree,
+# which is the intended conservative behavior.
+agent_worktree_is_disposable() {
+    local wt="$1"
+    git -C "$wt" rev-parse --is-inside-work-tree > /dev/null 2>&1 || return 1
+    if [[ -n "$(git -C "$wt" status --porcelain 2> /dev/null)" ]]; then
+        return 1
+    fi
+    local local_only
+    local_only=$(git -C "$wt" rev-list --count HEAD --not --remotes 2> /dev/null || echo 1)
+    [[ "$local_only" =~ ^[0-9]+$ ]] || return 1
+    [[ "$local_only" -eq 0 ]] || return 1
+    return 0
+}
+
+# AI coding agents (Claude Code and similar) create isolated git worktrees under
+# <project>/.claude/worktrees/ for background or parallel runs. Each is a full
+# checkout (node_modules, build output, and so on) that is never cleaned up
+# automatically, so they accumulate across projects. They may also hold
+# uncommitted or unpushed work, so this is skipped by default. Set
+# MOLE_AGENT_WORKTREES=1 to remove only the worktrees that are fully clean.
+clean_dev_agent_worktrees() {
+    local scan_timeout="${MOLE_AGENT_WORKTREE_SCAN_SEC:-20}"
+
+    local -a containers=()
+    local root container
+    while IFS= read -r root; do
+        [[ -d "$root" ]] || continue
+        while IFS= read -r -d '' container; do
+            containers+=("$container")
+        done < <(run_with_timeout "$scan_timeout" command find "$root" -maxdepth 6 -type d -path "*/.claude/worktrees" -prune -print0 2> /dev/null)
+    done < <(agent_worktree_search_roots)
+
+    [[ ${#containers[@]} -gt 0 ]] || return 0
+
+    local force="${MOLE_AGENT_WORKTREES:-}"
+
+    # Default: report reclaimable size only, never delete (may hold agent work).
+    if [[ -z "$force" || "$force" == "0" ]]; then
+        local total_kb=0 size_kb=0 count=0 wt
+        for container in "${containers[@]}"; do
+            while IFS= read -r -d '' wt; do
+                size_kb=$(get_path_size_kb "$wt" 2> /dev/null || echo 0)
+                [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+                total_kb=$((total_kb + size_kb))
+                count=$((count + 1))
+            done < <(command find "$container" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+        done
+        [[ "$count" -gt 0 ]] || return 0
+        note_activity
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} AI agent worktrees · skipped by default ($count in .claude/worktrees, $(bytes_to_human $((total_kb * 1024))))"
+        echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Remove clean worktrees: MOLE_AGENT_WORKTREES=1 mo clean${NC}"
+        debug_log "AI agent worktrees left intact by default ($count dirs, $total_kb KB)"
+        return 0
+    fi
+
+    # Opt-in: remove only fully clean worktrees; keep anything with unsaved work.
+    local parent_repo kept=0
+    local wt
+    for container in "${containers[@]}"; do
+        parent_repo="${container%/.claude/worktrees}"
+        while IFS= read -r -d '' wt; do
+            if should_protect_path "$wt"; then
+                continue
+            fi
+            if agent_worktree_is_disposable "$wt"; then
+                safe_clean "$wt" "AI agent worktree"
+                # Tidy the parent repo's worktree registry once the dir is gone.
+                # In dry-run the directory remains, so prune is skipped. Agent
+                # worktrees are usually git-locked, and a plain prune skips a
+                # locked entry even when its directory is missing, so unlock it
+                # first and prune with --expire=now to drop the stale entry.
+                if [[ ! -d "$wt" && -e "$parent_repo/.git" ]]; then
+                    git -C "$parent_repo" worktree unlock "$wt" > /dev/null 2>&1 || true
+                    git -C "$parent_repo" worktree prune --expire=now > /dev/null 2>&1 || true
+                fi
+            else
+                kept=$((kept + 1))
+                note_activity
+                echo -e "  ${GRAY}${ICON_REVIEW}${NC} ${GRAY}Kept agent worktree (unsaved work): ${wt/#$HOME/~}${NC}"
+            fi
+        done < <(command find "$container" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+    done
+    if [[ "$kept" -gt 0 ]]; then
+        debug_log "Kept $kept AI agent worktree(s) with unsaved work"
+    fi
+}
+
 # Misc dev tool caches.
 clean_dev_misc() {
     safe_clean ~/Library/Caches/com.unity3d.*/* "Unity cache"
@@ -1656,6 +1764,7 @@ clean_developer_tools() {
     clean_dev_jetbrains_toolbox
     clean_dev_jetbrains_logs
     clean_dev_ai_agents
+    clean_dev_agent_worktrees
     clean_dev_other_langs
     clean_dev_cicd
     clean_dev_database
