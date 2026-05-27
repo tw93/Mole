@@ -1030,6 +1030,9 @@ main() {
         "status")
             exec "$SCRIPT_DIR/bin/status.sh" "${args[@]:1}"
             ;;
+        "speedtest" | "speed")
+            exec "$SCRIPT_DIR/bin/speedtest.sh" "${args[@]:1}"
+            ;;
         "history")
             exec "$SCRIPT_DIR/bin/history.sh" "${args[@]:1}"
             ;;
