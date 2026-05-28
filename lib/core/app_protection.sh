@@ -600,6 +600,41 @@ find_shared_app_paths() {
     done | sort -u
 }
 
+# Return 0 when `path` looks like a dotdir / XDG state directory belonging to
+# a standalone CLI tool listed in INDEPENDENT_CLI_DOTDIR_NAMES. find_app_files
+# uses this to skip candidates that would otherwise nuke unrelated CLI state
+# when uninstalling a same-named GUI app.
+#
+# Lowercase comparison so case-insensitive APFS (~/.Claude vs ~/.claude) is
+# handled. Scope is restricted to four well-known parents so we never skip
+# legitimate non-dotdir locations.
+_path_belongs_to_independent_cli() {
+    local path="$1"
+    [[ -z "$path" ]] && return 1
+
+    local base parent lc_name
+    base="${path##*/}"
+    parent="${path%/*}"
+    lc_name=$(printf '%s' "${base#.}" | tr '[:upper:]' '[:lower:]')
+    [[ -z "$lc_name" ]] && return 1
+
+    local name matched=false
+    for name in "${INDEPENDENT_CLI_DOTDIR_NAMES[@]}"; do
+        if [[ "$lc_name" == "$name" ]]; then
+            matched=true
+            break
+        fi
+    done
+    [[ "$matched" == "false" ]] && return 1
+
+    case "$parent" in
+        "$HOME" | "$HOME/.config" | "$HOME/.local/share" | "$HOME/.cache")
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 # Locate files associated with an application
 find_app_files() {
     local bundle_id="$1"
@@ -753,6 +788,13 @@ find_app_files() {
                 continue
                 ;;
         esac
+
+        # Skip XDG dotdirs that belong to independent CLI tools sharing a name
+        # with the GUI app being uninstalled (issue #993).
+        if _path_belongs_to_independent_cli "$expanded_path"; then
+            debug_log "Skipping independent CLI dotdir: $expanded_path"
+            continue
+        fi
 
         files_to_clean+=("$expanded_path")
     done

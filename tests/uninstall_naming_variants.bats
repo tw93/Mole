@@ -175,3 +175,57 @@ setup() {
     [[ "$result" == *"/.vscode-insiders"* ]]
     [[ ! "$result" =~ Library/Application\ Support/Code$'\n' ]]
 }
+
+# Independent CLI dotdir protection — issue #993.
+# Uninstalling a GUI app named "Claude" / "OpenCode" / etc. must not delete
+# the same-named standalone CLI tool's state directory.
+
+@test "find_app_files preserves ~/.claude when uninstalling Claude.app (#993)" {
+    mkdir -p "$HOME/.claude/projects"
+    mkdir -p "$HOME/Library/Application Support/Claude"
+    echo "memory" > "$HOME/.claude/projects/sample"
+
+    result=$(find_app_files "com.anthropic.claudefordesktop" "Claude")
+
+    [[ "$result" == *"Library/Application Support/Claude"* ]]
+    [[ "$result" != *"$HOME/.claude"* ]]
+    [[ "$result" != *"$HOME/.Claude"* ]]
+}
+
+@test "find_app_files preserves ~/.local/share/opencode when uninstalling OpenCode.app (#993)" {
+    mkdir -p "$HOME/.local/share/opencode/snapshot"
+    mkdir -p "$HOME/.config/opencode"
+    mkdir -p "$HOME/.opencode"
+    mkdir -p "$HOME/Library/Application Support/opencode"
+
+    result=$(find_app_files "ai.opencode.desktop" "opencode")
+
+    [[ "$result" == *"Library/Application Support/opencode"* ]]
+    [[ "$result" != *".local/share/opencode"* ]]
+    [[ "$result" != *".config/opencode"* ]]
+    [[ "$result" != *"$HOME/.opencode"* ]]
+}
+
+@test "find_app_files preserves ~/.codex when uninstalling Codex.app (#993)" {
+    mkdir -p "$HOME/.codex"
+    mkdir -p "$HOME/.config/codex"
+    mkdir -p "$HOME/Library/Application Support/Codex"
+
+    result=$(find_app_files "com.openai.codex" "Codex")
+
+    [[ "$result" == *"Library/Application Support/Codex"* ]]
+    [[ "$result" != *"$HOME/.codex"* ]]
+    [[ "$result" != *".config/codex"* ]]
+}
+
+@test "find_app_files still removes Zed XDG state (independent-CLI list must not over-protect)" {
+    # Sanity check that the deny-list does not break legitimate GUI-app XDG
+    # cleanup added for #377. Zed is a GUI app that owns ~/.config/zed and
+    # ~/.local/share/zed and must still be picked up on uninstall.
+    mkdir -p "$HOME/.config/zed"
+    mkdir -p "$HOME/.local/share/zed"
+
+    result=$(find_app_files "dev.zed.Zed-Nightly" "Zed Nightly")
+
+    [[ "$result" == *".config/zed"* ]] || [[ "$result" == *".local/share/zed"* ]]
+}

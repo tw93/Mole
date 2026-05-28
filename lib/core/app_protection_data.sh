@@ -563,3 +563,23 @@ readonly DATA_PROTECTED_BUNDLES=(
     "com.devmate.*"
     "org.sparkle-project.Sparkle*"
 )
+
+# Dotdir / XDG state directory names that belong to standalone CLI tools
+# shipped independently of any same-named GUI app. find_app_files() must not
+# propose these for deletion even when uninstalling a GUI app whose display
+# name collides, because the CLI tool is a separate product.
+#
+# Issue #993: uninstalling Claude.app wiped ~/.claude (Claude Code CLI);
+# uninstalling OpenCode.app wiped ~/.local/share/opencode and the opencode
+# CLI binary. Case-insensitive APFS makes the collision worse: $HOME/.Claude
+# (built from app_name="Claude") aliases to $HOME/.claude.
+#
+# Match is lowercase + leading-dot-stripped, scoped to $HOME, $HOME/.config,
+# $HOME/.local/share, $HOME/.cache. Add new entries as the AI-tool ecosystem
+# produces more GUI/CLI namesakes.
+readonly INDEPENDENT_CLI_DOTDIR_NAMES=(
+    "claude"   # Claude Code CLI (Claude Desktop uses ~/Library/Application Support/Claude)
+    "opencode" # sst/opencode CLI
+    "codex"    # OpenAI codex CLI (Codex Desktop uses ~/Library/Application Support/Codex)
+    "gemini"   # Google gemini CLI
+)
