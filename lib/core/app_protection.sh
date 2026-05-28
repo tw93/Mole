@@ -601,13 +601,18 @@ find_shared_app_paths() {
 }
 
 # Return 0 when `path` looks like a dotdir / XDG state directory belonging to
-# a standalone CLI tool listed in INDEPENDENT_CLI_DOTDIR_NAMES. find_app_files
-# uses this to skip candidates that would otherwise nuke unrelated CLI state
-# when uninstalling a same-named GUI app.
+# a standalone CLI tool shipped independently of any same-named GUI app.
+# find_app_files uses this to skip candidates that would otherwise nuke
+# unrelated CLI state when uninstalling a same-named GUI app (#993).
 #
 # Lowercase comparison so case-insensitive APFS (~/.Claude vs ~/.claude) is
 # handled. Scope is restricted to four well-known parents so we never skip
 # legitimate non-dotdir locations.
+#
+# The deny-list is inlined rather than read from an array because bats 1.x
+# does not carry readonly arrays from setup() into the @test body, and a
+# regression in any of these names is destructive enough that we never want
+# the safeguard to silently no-op in a fresh subshell.
 _path_belongs_to_independent_cli() {
     local path="$1"
     [[ -z "$path" ]] && return 1
@@ -618,14 +623,13 @@ _path_belongs_to_independent_cli() {
     lc_name=$(printf '%s' "${base#.}" | tr '[:upper:]' '[:lower:]')
     [[ -z "$lc_name" ]] && return 1
 
-    local name matched=false
-    for name in "${INDEPENDENT_CLI_DOTDIR_NAMES[@]}"; do
-        if [[ "$lc_name" == "$name" ]]; then
-            matched=true
-            break
-        fi
-    done
-    [[ "$matched" == "false" ]] && return 1
+    case "$lc_name" in
+        # Keep this list in sync with INDEPENDENT_CLI_DOTDIR_NAMES in
+        # app_protection_data.sh (kept there for discoverability /
+        # documentation; this case is the live source of truth).
+        claude | opencode | codex | gemini) ;;
+        *) return 1 ;;
+    esac
 
     case "$parent" in
         "$HOME" | "$HOME/.config" | "$HOME/.local/share" | "$HOME/.cache")
