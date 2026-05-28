@@ -69,6 +69,81 @@ roomy_identity_in_list() {
     return 1
 }
 
+roomy_strip_version_prefix() {
+    local version="$1"
+    version="${version#v}"
+    version="${version#V}"
+    printf '%s\n' "$version"
+}
+
+roomy_version_component_to_decimal() {
+    local component="$1"
+
+    while [[ "${#component}" -gt 1 && "$component" == 0* ]]; do
+        component="${component#0}"
+    done
+
+    printf '%s\n' "${component:-0}"
+}
+
+roomy_version_compare() {
+    local left right
+    left=$(roomy_strip_version_prefix "$1")
+    right=$(roomy_strip_version_prefix "$2")
+
+    [[ "$left" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 2
+    [[ "$right" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 2
+
+    local IFS=.
+    local -a left_parts=()
+    local -a right_parts=()
+    read -r -a left_parts <<< "$left"
+    read -r -a right_parts <<< "$right"
+
+    local count="${#left_parts[@]}"
+    if (( ${#right_parts[@]} > count )); then
+        count="${#right_parts[@]}"
+    fi
+
+    local i left_part right_part
+    for ((i = 0; i < count; i++)); do
+        left_part=$(roomy_version_component_to_decimal "${left_parts[$i]:-0}")
+        right_part=$(roomy_version_component_to_decimal "${right_parts[$i]:-0}")
+
+        if (( left_part > right_part )); then
+            printf '1\n'
+            return 0
+        fi
+        if (( left_part < right_part )); then
+            printf -- '-1\n'
+            return 0
+        fi
+    done
+
+    printf '0\n'
+}
+
+roomy_version_gt() {
+    local result
+    result=$(roomy_version_compare "$1" "$2") || return 2
+    [[ "$result" == "1" ]]
+}
+
+roomy_latest_version() {
+    local latest=""
+    local candidate
+
+    for candidate in "$@"; do
+        [[ "$(roomy_strip_version_prefix "$candidate")" =~ ^[0-9]+(\.[0-9]+)*$ ]] || continue
+        if [[ -z "$latest" ]] || roomy_version_gt "$candidate" "$latest"; then
+            latest="$candidate"
+        fi
+    done
+
+    [[ -n "$latest" ]] && printf '%s\n' "$latest"
+    return 0
+}
+
 # Update via Homebrew
 update_via_homebrew() {
     local current_version="$1"

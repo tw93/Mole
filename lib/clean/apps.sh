@@ -71,7 +71,7 @@ scan_installed_apps() {
     # Cache installed app scan briefly to speed repeated runs.
     local cache_file="$HOME/.cache/roomy/installed_apps_cache"
     local cache_age_seconds=300 # 5 minutes
-    if [[ -f "$cache_file" ]]; then
+    if [[ -f "$cache_file" && ! -L "$cache_file" ]]; then
         local cache_mtime=$(get_file_mtime "$cache_file")
         local current_time
         current_time=$(get_epoch_seconds)
@@ -154,8 +154,18 @@ scan_installed_apps() {
     cat "$scan_tmp_dir"/*.txt >> "$installed_bundles" 2> /dev/null || true
     safe_remove "$scan_tmp_dir" true
     sort -u "$installed_bundles" -o "$installed_bundles"
-    ensure_user_dir "$(dirname "$cache_file")"
-    cp "$installed_bundles" "$cache_file" 2> /dev/null || true
+    local cache_dir
+    cache_dir="$(dirname "$cache_file")"
+    ensure_user_dir "$cache_dir"
+    local cache_tmp=""
+    cache_tmp=$(mktemp "$cache_dir/.installed_apps_cache.XXXXXX" 2> /dev/null || true)
+    if [[ -n "$cache_tmp" ]]; then
+        if cp "$installed_bundles" "$cache_tmp" 2> /dev/null; then
+            commit_staged_user_file "$cache_tmp" "$cache_file" || true
+        else
+            rm -f "$cache_tmp" 2> /dev/null || true
+        fi
+    fi
     local app_count=$(wc -l < "$installed_bundles" 2> /dev/null | tr -d ' ')
     debug_log "Scanned $app_count unique applications"
 }

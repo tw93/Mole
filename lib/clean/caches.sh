@@ -304,6 +304,7 @@ clean_project_cache_target() {
 flush_python_group_if_needed() {
     local group_root="$1"
     local array_name="$2"
+    [[ "$array_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
 
     local group_count=0
     eval 'group_count=${#'"$array_name"'[@]}'
@@ -418,14 +419,17 @@ clean_python_bytecode_cache_group() {
 
     if [[ "$DRY_RUN" == "true" ]]; then
         if [[ -n "${EXPORT_LIST_FILE:-}" ]]; then
-            ensure_user_file "$EXPORT_LIST_FILE"
             local i=0
             for ((i = 0; i < ${#dry_run_paths[@]}; i++)); do
                 local path="${dry_run_paths[i]}"
                 local path_size_kb="${dry_run_sizes[i]:-0}"
                 local path_size_human
                 path_size_human=$(bytes_to_human "$((path_size_kb * 1024))")
-                echo "${path}  # ${path_size_human}" >> "$EXPORT_LIST_FILE"
+                if declare -f clean_export_append_line > /dev/null 2>&1; then
+                    clean_export_append_line "${path}  # ${path_size_human}"
+                else
+                    append_log_line "$EXPORT_LIST_FILE" "${path}  # ${path_size_human}"
+                fi
             done
         fi
 

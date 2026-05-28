@@ -151,6 +151,57 @@ roomy_purge_resolve_path_case() {
     fi
 }
 
+roomy_purge_is_safe_search_path() {
+    local path="$1"
+    local home_path="${HOME%/}"
+
+    if [[ -n "$home_path" && -d "$home_path" ]]; then
+        home_path=$(cd "$home_path" 2> /dev/null && pwd -P || printf '%s\n' "$home_path")
+    fi
+
+    [[ -n "$path" ]] || return 1
+    [[ "$path" == /* ]] || return 1
+    [[ ! "$path" =~ [[:cntrl:]] ]] || return 1
+    [[ ! "$path" =~ (^|/)\.\.(\/|$) ]] || return 1
+
+    while [[ "$path" != "/" && "$path" == */ ]]; do
+        path="${path%/}"
+    done
+
+    if [[ -n "$home_path" && "$path" == "$home_path" ]]; then
+        return 1
+    fi
+
+    if [[ -n "$home_path" ]]; then
+        case "$path" in
+            "$home_path/Library/CloudStorage" | "$home_path/Library/CloudStorage/"*)
+                return 0
+                ;;
+            "$home_path/Library" | "$home_path/Library/"* | "$home_path/.Trash" | "$home_path/.Trash/"*)
+                return 1
+                ;;
+            "$home_path"/*)
+                return 0
+                ;;
+        esac
+    fi
+
+    case "$path" in
+        / | /Applications | /System | /System/* | /Library | /Library/* | /bin | /bin/* | /sbin | /sbin/* | /usr | /usr/* | /etc | /etc/* | /var | /var/* | /private | /private/* | /dev | /dev/* | /tmp | /tmp/*)
+            return 1
+            ;;
+    esac
+
+    case "$path" in
+        /Users | /Users/* | /Volumes | /Volumes/*)
+            local relative="${path#/}"
+            local stripped="${relative//\//}"
+            local depth=$((${#relative} - ${#stripped}))
+            [[ $depth -ge 2 ]] || return 1
+            ;;
+    esac
+}
+
 roomy_purge_read_paths_config() {
     local config_file="${1:-$HOME/.config/roomy/purge_paths}"
     [[ -f "$config_file" ]] || return 0
@@ -161,7 +212,9 @@ roomy_purge_read_paths_config() {
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" =~ ^# ]] && continue
         line="${line/#\~/$HOME}"
+        roomy_purge_is_safe_search_path "$line" || continue
         line=$(roomy_purge_resolve_path_case "$line")
+        roomy_purge_is_safe_search_path "$line" || continue
         printf '%s\n' "$line"
     done < "$config_file"
 }

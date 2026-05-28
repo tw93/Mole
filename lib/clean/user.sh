@@ -561,7 +561,7 @@ clean_edge_updater_old_versions() {
     fi
 
     local latest_version
-    latest_version=$(printf '%s\n' "${version_dirs[@]##*/}" | sort -V | tail -n 1)
+    latest_version=$(roomy_latest_version "${version_dirs[@]##*/}")
     [[ -n "$latest_version" ]] || return 0
 
     local cleaned_count=0
@@ -1161,18 +1161,85 @@ clean_group_container_caches() {
     fi
 }
 
-resolve_existing_path() {
-    local path="$1"
+resolve_existing_path_chomp_one_trailing_newline_file() {
+    local file="$1"
+    [[ -s "$file" ]] || return 0
+
+    local last_hex
+    last_hex=$(tail -c 1 "$file" 2> /dev/null | od -An -tx1 | tr -d '[:space:]' || true)
+    [[ "$last_hex" == "0a" ]] || return 0
+
+    local size
+    size=$(wc -c < "$file" 2> /dev/null | tr -d '[:space:]' || echo 0)
+    [[ "$size" =~ ^[0-9]+$ && "$size" -gt 0 ]] || return 0
+
+    truncate -s "$((size - 1))" "$file" 2> /dev/null ||
+        perl -0pi -e 's/\n\z//' "$file" 2> /dev/null ||
+        true
+}
+
+resolve_existing_path_file_to_var() {
+    local target_var="$1"
+    local file="$2"
+    local resolved_value=""
+    resolve_existing_path_chomp_one_trailing_newline_file "$file"
+    IFS= read -r -d '' resolved_value < <(cat "$file"; printf '\0')
+    printf -v "$target_var" '%s' "$resolved_value"
+}
+
+resolve_existing_path_to_var() {
+    local target_var="$1"
+    local path="$2"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
     [[ -e "$path" ]] || return 1
 
-    if command -v realpath > /dev/null 2>&1; then
-        realpath "$path" 2> /dev/null && return 0
+    local resolved_file
+    resolved_file=$(mktemp_file "roomy-resolve-existing")
+    if command -v realpath > /dev/null 2>&1 && realpath "$path" > "$resolved_file" 2> /dev/null; then
+        resolve_existing_path_file_to_var "$target_var" "$resolved_file"
+        return 0
     fi
 
-    local dir base
-    dir=$(cd -P "$(dirname "$path")" 2> /dev/null && pwd) || return 1
-    base=$(basename "$path")
-    printf '%s/%s\n' "$dir" "$base"
+    if [[ "$path" == "/" ]]; then
+        printf -v "$target_var" '%s' "/"
+        return 0
+    fi
+
+    if [[ -d "$path" ]]; then
+        if (cd "$path" 2> /dev/null && pwd -P) > "$resolved_file"; then
+            resolve_existing_path_file_to_var "$target_var" "$resolved_file"
+            return 0
+        fi
+    fi
+
+    local dir base parent
+    if [[ "$path" == */* ]]; then
+        dir="${path%/*}"
+        base="${path##*/}"
+        [[ -n "$dir" ]] || dir="/"
+    else
+        dir="."
+        base="$path"
+    fi
+
+    if (cd "$dir" 2> /dev/null && pwd -P) > "$resolved_file"; then
+        resolve_existing_path_file_to_var parent "$resolved_file"
+    else
+        return 1
+    fi
+
+    if [[ "$parent" == "/" ]]; then
+        printf -v "$target_var" '%s' "/$base"
+    else
+        printf -v "$target_var" '%s' "$parent/$base"
+    fi
+}
+
+resolve_existing_path() {
+    local path="$1"
+    local resolved
+    resolve_existing_path_to_var resolved "$path" || return 1
+    printf '%s\n' "$resolved"
 }
 
 external_volume_root() {
@@ -1185,7 +1252,7 @@ validate_external_volume_target() {
     root=$(external_volume_root)
     local resolved_root="$root"
     if [[ -e "$root" ]]; then
-        resolved_root=$(resolve_existing_path "$root" 2> /dev/null || printf '%s\n' "$root")
+        resolve_existing_path_to_var resolved_root "$root" 2> /dev/null || resolved_root="$root"
     fi
     resolved_root="${resolved_root%/}"
 
@@ -1207,10 +1274,10 @@ validate_external_volume_target() {
     fi
 
     local resolved
-    resolved=$(resolve_existing_path "$target") || {
+    if ! resolve_existing_path_to_var resolved "$target"; then
         echo "External volume path does not exist: $target" >&2
         return 1
-    }
+    fi
 
     if [[ "$resolved" != "$resolved_root/"* ]]; then
         echo "External volume path must be under $resolved_root: $resolved" >&2
@@ -1242,6 +1309,17 @@ validate_external_volume_target() {
     fi
 
     printf '%s\n' "$resolved"
+}
+
+validate_external_volume_target_to_var() {
+    local target_var="$1"
+    local target="$2"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+
+    local validated_file
+    validated_file=$(mktemp_file "roomy-external-volume-target")
+    validate_external_volume_target "$target" > "$validated_file" || return 1
+    resolve_existing_path_file_to_var "$target_var" "$validated_file"
 }
 
 clean_external_volume_target() {

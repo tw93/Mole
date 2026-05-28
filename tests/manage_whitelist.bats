@@ -60,6 +60,47 @@ setup() {
     [ "$occurrences" -eq 1 ]
 }
 
+@test "save_whitelist_patterns replaces symlinked config without following it" {
+    local protected_file="$HOME/protected-whitelist"
+    local protected_dir="$HOME/protected-whitelist-dir"
+    mkdir -p "$(dirname "$WHITELIST_PATH")"
+    printf 'keep-whitelist\n' > "$protected_file"
+    ln -s "$protected_file" "$WHITELIST_PATH"
+
+    HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; save_whitelist_patterns \"\$HOME/.cache/safe\""
+
+    [ ! -L "$WHITELIST_PATH" ]
+    [[ "$(cat "$protected_file")" == "keep-whitelist" ]]
+    grep -q "$HOME/.cache/safe" "$WHITELIST_PATH"
+
+    mkdir -p "$protected_dir"
+    rm -f "$WHITELIST_PATH"
+    ln -s "$protected_dir" "$WHITELIST_PATH"
+
+    HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; save_whitelist_patterns \"\$HOME/.cache/dir-safe\""
+
+    [ ! -L "$WHITELIST_PATH" ]
+    [[ -f "$WHITELIST_PATH" ]]
+    [[ -z "$(find "$protected_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]
+    grep -q "$HOME/.cache/dir-safe" "$WHITELIST_PATH"
+}
+
+@test "save_whitelist_patterns refuses symlinked config parents" {
+    local protected_config="$HOME/protected-whitelist-config-root"
+    rm -rf "$HOME/.config"
+    mkdir -p "$protected_config"
+    ln -s "$protected_config" "$HOME/.config"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+save_whitelist_patterns "$HOME/.cache/safe"
+EOF
+
+    [ "$status" -ne 0 ]
+    [[ ! -e "$protected_config/roomy/whitelist" ]]
+}
+
 @test "load_whitelist falls back to defaults when config missing" {
     rm -f "$WHITELIST_PATH"
     HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; rm -f \"\$HOME/.config/roomy/whitelist\"; load_whitelist; printf '%s\n' \"\${CURRENT_WHITELIST_PATTERNS[@]}\"" > "$HOME/current_whitelist.txt"

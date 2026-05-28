@@ -65,7 +65,13 @@ is_installer_zip() {
     if ! "${ZIP_LIST_CMD[@]}" "$zip" 2> /dev/null |
         head -n "$cap" |
         awk '
-            /\.(app|pkg|dmg|xip)(\/|$)/ { found=1; exit 0 }
+            {
+                entry=tolower($0)
+                if (entry ~ /\.(app|pkg|dmg|xip)(\/|$)/) {
+                    found=1
+                    exit 0
+                }
+            }
             END { exit found ? 0 : 1 }
         '; then
         return 1
@@ -76,9 +82,12 @@ is_installer_zip() {
 
 handle_candidate_file() {
     local file="$1"
+    local lower_file
 
     [[ -L "$file" ]] && return 0 # Skip symlinks explicitly
-    case "$file" in
+
+    lower_file="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
+    case "$lower_file" in
         *.dmg | *.pkg | *.mpkg | *.iso | *.xip)
             echo "$file"
             ;;
@@ -91,37 +100,71 @@ handle_candidate_file() {
     esac
 }
 
-scan_installers_in_path() {
+handle_candidate_file_nul() {
+    local file="$1"
+    local lower_file
+
+    [[ -L "$file" ]] && return 0 # Skip symlinks explicitly
+
+    lower_file="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
+    case "$lower_file" in
+        *.dmg | *.pkg | *.mpkg | *.iso | *.xip)
+            printf '%s\0' "$file"
+            ;;
+        *.zip)
+            [[ -r "$file" ]] || return 0
+            if is_installer_zip "$file" 2> /dev/null; then
+                printf '%s\0' "$file"
+            fi
+            ;;
+    esac
+}
+
+scan_installers_in_path_nul() {
     local path="$1"
     local max_depth="${ROOMY_INSTALLER_SCAN_MAX_DEPTH:-$INSTALLER_SCAN_MAX_DEPTH_DEFAULT}"
 
-    [[ -d "$path" ]] || return 0
+    [[ -d "$path" && ! -L "$path" ]] || return 0
 
     local file
 
     if command -v fd > /dev/null 2>&1; then
-        while IFS= read -r file; do
-            handle_candidate_file "$file"
+        while IFS= read -r -d '' file; do
+            handle_candidate_file_nul "$file"
         done < <(
-            fd --no-ignore --hidden --type f --max-depth "$max_depth" \
-                -e dmg -e pkg -e mpkg -e iso -e xip -e zip \
-                . "$path" 2> /dev/null || true
+            fd --no-ignore --hidden --type f --max-depth "$max_depth" --print0 \
+                '(?i)\.(dmg|pkg|mpkg|iso|xip|zip)$' "$path" 2> /dev/null || true
         )
     else
-        while IFS= read -r file; do
-            handle_candidate_file "$file"
+        while IFS= read -r -d '' file; do
+            handle_candidate_file_nul "$file"
         done < <(
             find "$path" -maxdepth "$max_depth" -type f \
-                \( -name '*.dmg' -o -name '*.pkg' -o -name '*.mpkg' \
-                -o -name '*.iso' -o -name '*.xip' -o -name '*.zip' \) \
-                2> /dev/null || true
+                \( -iname '*.dmg' -o -iname '*.pkg' -o -iname '*.mpkg' \
+                -o -iname '*.iso' -o -iname '*.xip' -o -iname '*.zip' \) \
+                -print0 2> /dev/null || true
         )
     fi
+}
+
+scan_installers_in_path() {
+    local path="$1"
+    local file
+
+    while IFS= read -r -d '' file; do
+        printf '%s\n' "$file"
+    done < <(scan_installers_in_path_nul "$path")
 }
 
 scan_all_installers() {
     for path in "${INSTALLER_SCAN_PATHS[@]}"; do
         scan_installers_in_path "$path"
+    done
+}
+
+scan_all_installers_nul() {
+    for path in "${INSTALLER_SCAN_PATHS[@]}"; do
+        scan_installers_in_path_nul "$path"
     done
 }
 
@@ -221,11 +264,20 @@ collect_installers() {
     # Scan all paths, deduplicate, and sort results
     local -a all_files=()
 
-    while IFS= read -r file; do
+    while IFS= read -r -d '' file; do
         [[ -z "$file" ]] && continue
+        local duplicate=false
+        local existing_file
+        for existing_file in "${all_files[@]+"${all_files[@]}"}"; do
+            if [[ "$existing_file" == "$file" ]]; then
+                duplicate=true
+                break
+            fi
+        done
+        $duplicate && continue
         all_files+=("$file")
         debug_file_action "Found installer" "$file"
-    done < <(scan_all_installers | sort -u)
+    done < <(scan_all_installers_nul)
 
     if [[ -t 1 ]]; then
         stop_inline_spinner
@@ -261,7 +313,7 @@ collect_installers() {
 
         # Get display filename - strip Homebrew hash prefix if present
         local display_name
-        display_name=$(basename "$file")
+        display_name="${file##*/}"
         if [[ "$source" == "Homebrew" ]]; then
             # Homebrew names often look like: sha256--name--version
             # Strip the leading hash if it matches [0-9a-f]{64}--

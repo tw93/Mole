@@ -1126,6 +1126,37 @@ EOF
     [[ "$output" != *"must be under"* ]]
 }
 
+@test "validate_external_volume_target preserves trailing-newline volume names" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+mock_bin="$HOME/bin"
+mkdir -p "$mock_bin"
+cat > "$mock_bin/diskutil" <<'MOCK'
+#!/bin/bash
+exit 0
+MOCK
+chmod +x "$mock_bin/diskutil"
+export PATH="$mock_bin:$PATH"
+
+root="$(mktemp -d "$HOME/ext-root.XXXXXX")"
+resolved_root="$(cd "$root" && pwd -P)"
+volume="$root/USB"$'\n'
+mkdir -p "$volume"
+export ROOMY_EXTERNAL_VOLUMES_ROOT="$root"
+
+result="$HOME/external-volume-result.bin"
+expected="$HOME/external-volume-expected.bin"
+validate_external_volume_target "$volume" > "$result"
+printf '%s\n' "$resolved_root/USB"$'\n' > "$expected"
+cmp "$expected" "$result"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "clean_app_caches caps precise sandbox size scans when many containers exist" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true ROOMY_CONTAINER_CACHE_PRECISE_SIZE_LIMIT=2 bash --noprofile --norc <<'EOF'
 set -euo pipefail

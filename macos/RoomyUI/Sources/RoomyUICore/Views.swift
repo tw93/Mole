@@ -269,8 +269,11 @@ private struct HomeView: View {
             }
         }
         .confirmationDialog("Clean recoverable files?", isPresented: $showCleanMyMacConfirm) {
-            Button("Move Recoverable Files to Trash", role: .destructive) {
-                Task { await model.executeCleanMyMac() }
+            if !model.isLoading, model.cleanupPreview != nil {
+                Button("Move Recoverable Files to Trash", role: .destructive) {
+                    guard !model.isLoading else { return }
+                    Task { await model.executeCleanMyMac() }
+                }
             }
             Button("Review Details") {
                 model.selectedSection = .cleanup
@@ -319,6 +322,7 @@ private struct CleanupView: View {
     @ObservedObject var model: RoomyViewModel
     @State private var showCleanMyMacConfirm = false
     @State private var externalPath = "/Volumes/"
+    @State private var previewedExternalPath = ""
     @State private var showExternalConfirm = false
 
     var body: some View {
@@ -384,8 +388,15 @@ private struct CleanupView: View {
                     } label: {
                         Label("Choose", systemImage: "folder")
                     }
+                    .disabled(model.isLoading)
                     Button {
-                        Task { await model.loadExternalCleanupPreview(path: externalPath) }
+                        Task {
+                            let requestedPath = externalPath
+                            await model.loadExternalCleanupPreview(path: requestedPath)
+                            if model.error(for: .cleanup) == nil, model.externalCleanupPreview != nil {
+                                previewedExternalPath = requestedPath
+                            }
+                        }
                     } label: {
                         Label(model.isLoading ? "Previewing" : "Preview Volume", systemImage: "doc.text.magnifyingglass")
                     }
@@ -407,7 +418,7 @@ private struct CleanupView: View {
                         } label: {
                             Label("Clean Volume Metadata", systemImage: "trash")
                         }
-                        .disabled(model.isLoading)
+                        .disabled(model.isLoading || previewedExternalPath.isEmpty)
                     }
                 } else {
                     EmptyStateView(
@@ -421,8 +432,11 @@ private struct CleanupView: View {
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
         .confirmationDialog("Clean recoverable files?", isPresented: $showCleanMyMacConfirm) {
-            Button("Move Recoverable Files to Trash", role: .destructive) {
-                Task { await model.executeCleanMyMac(section: .cleanup) }
+            if !model.isLoading, model.cleanupPreview != nil {
+                Button("Move Recoverable Files to Trash", role: .destructive) {
+                    guard !model.isLoading else { return }
+                    Task { await model.executeCleanMyMac(section: .cleanup) }
+                }
             }
             Button("Refresh Preview") {
                 Task { await model.loadCleanupPreview() }
@@ -432,14 +446,18 @@ private struct CleanupView: View {
             Text(cleanMyMacConfirmationMessage)
         }
         .confirmationDialog("Clean selected external volume?", isPresented: $showExternalConfirm) {
-            Button("Clean Volume Metadata", role: .destructive) {
-                Task {
-                    await model.execute(
-                        domain: .clean,
-                        plan: ExecutionPlan(confirmed: true, externalPath: externalPath),
-                        administrator: true
-                    )
-                    await model.loadExternalCleanupPreview(path: externalPath)
+            if !model.isLoading, !previewedExternalPath.isEmpty {
+                Button("Clean Volume Metadata", role: .destructive) {
+                    let pathToClean = previewedExternalPath
+                    guard !model.isLoading, !pathToClean.isEmpty else { return }
+                    Task {
+                        await model.execute(
+                            domain: .clean,
+                            plan: ExecutionPlan(confirmed: true, externalPath: pathToClean),
+                            administrator: true
+                        )
+                        await model.loadExternalCleanupPreview(path: pathToClean)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -542,6 +560,14 @@ private struct ApplicationsView: View {
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
                                         .background(Capsule().fill(Color.blue.opacity(0.10)))
+                                    if !app.canUninstall {
+                                        Text("Unavailable")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Capsule().fill(Color.gray.opacity(0.12)))
+                                    }
                                     Image(systemName: selectedPath == app.path ? "checkmark.circle.fill" : "chevron.right")
                                         .foregroundStyle(selectedPath == app.path ? .green : .secondary)
                                 }
@@ -559,9 +585,13 @@ private struct ApplicationsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(selectedApp.name).font(.headline)
                             Text(selectedApp.path).foregroundStyle(.secondary)
+                            if !selectedApp.canUninstall, let reason = selectedApp.uninstallReason, !reason.isEmpty {
+                                Text(reason).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         Button {
+                            guard selectedApp.canUninstall else { return }
                             Task {
                                 await model.execute(
                                     domain: .uninstall,
@@ -571,14 +601,15 @@ private struct ApplicationsView: View {
                         } label: {
                             Label("Preview Uninstall", systemImage: "doc.text.magnifyingglass")
                         }
-                        .disabled(model.isLoading)
+                        .disabled(model.isLoading || !selectedApp.canUninstall)
 
                         Button(role: .destructive) {
+                            guard selectedApp.canUninstall else { return }
                             showUninstallConfirm = true
                         } label: {
                             Label("Uninstall", systemImage: "trash")
                         }
-                        .disabled(model.isLoading)
+                        .disabled(model.isLoading || !selectedApp.canUninstall)
                     }
                     .padding(12)
                     .background(
@@ -591,8 +622,9 @@ private struct ApplicationsView: View {
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
         .confirmationDialog("Uninstall selected app?", isPresented: $showUninstallConfirm) {
-            if let selectedApp {
+            if !model.isLoading, let selectedApp, selectedApp.canUninstall {
                 Button("Uninstall \(selectedApp.name)", role: .destructive) {
+                    guard !model.isLoading else { return }
                     Task {
                         await model.execute(
                             domain: .uninstall,
@@ -616,6 +648,29 @@ private struct StorageView: View {
     @State private var showLargeFileConfirm = false
     @State private var showPurgeConfirm = false
     @State private var showInstallerConfirm = false
+
+    private var selectedLargeFileTargets: [String] {
+        let available = Set((model.storageScan?.largeFiles ?? []).map(\.path))
+        return selectedLargeFilePaths.filter { available.contains($0) }.sorted()
+    }
+
+    private var selectedPurgeTargets: [String] {
+        let available = Set((model.purgePreview?.items ?? []).map(\.path))
+        return selectedPurgePaths.filter { available.contains($0) }.sorted()
+    }
+
+    private var selectedInstallerTargets: [String] {
+        let available = Set((model.installerPreview?.items ?? []).map(\.path))
+        return selectedInstallerPaths.filter { available.contains($0) }.sorted()
+    }
+
+    private var selectedTargetCount: Int {
+        selectedLargeFileTargets.count + selectedPurgeTargets.count + selectedInstallerTargets.count
+    }
+
+    private var activeStorageScanPath: String {
+        model.storageScan?.path ?? path
+    }
 
     private var selectedLargeFileBytes: Int64 {
         (model.storageScan?.largeFiles ?? [])
@@ -701,7 +756,7 @@ private struct StorageView: View {
                 MetricCard(
                     title: "Removable",
                     value: Formatters.bytes(selectedLargeFileBytes + selectedPurgeBytes + selectedInstallerBytes),
-                    detail: "\(selectedLargeFilePaths.count + selectedPurgePaths.count + selectedInstallerPaths.count) selected",
+                    detail: "\(selectedTargetCount) selected",
                     tint: .orange,
                     symbol: "trash"
                 )
@@ -744,21 +799,24 @@ private struct StorageView: View {
                     .disabled(model.storageScan?.largeFiles.isEmpty ?? true || model.isLoading)
 
                     Button {
+                        let scanPath = activeStorageScanPath
+                        let targets = selectedLargeFileTargets
+                        guard !targets.isEmpty else { return }
                         Task {
                             await model.executeStorageAction(
                                 operation: "reveal",
-                                scanPath: path,
-                                targets: Array(selectedLargeFilePaths).sorted()
+                                scanPath: scanPath,
+                                targets: targets
                             )
                         }
                     } label: {
                         Label("Reveal", systemImage: "arrow.up.right.square")
                     }
-                    .disabled(selectedLargeFilePaths.isEmpty || model.isLoading)
+                    .disabled(selectedLargeFileTargets.isEmpty || model.isLoading)
 
                     Spacer()
 
-                    Text("\(selectedLargeFilePaths.count) selected")
+                    Text("\(selectedLargeFileTargets.count) selected")
                         .foregroundStyle(.secondary)
 
                     Button(role: .destructive) {
@@ -766,7 +824,7 @@ private struct StorageView: View {
                     } label: {
                         Label("Move to Trash", systemImage: "trash")
                     }
-                    .disabled(selectedLargeFilePaths.isEmpty || model.isLoading)
+                    .disabled(selectedLargeFileTargets.isEmpty || model.isLoading)
                 }
 
                 if let scan = model.storageScan, !scan.largeFiles.isEmpty {
@@ -821,7 +879,7 @@ private struct StorageView: View {
 
                     Spacer()
 
-                    Text("\(selectedPurgePaths.count) selected")
+                    Text("\(selectedPurgeTargets.count) selected")
                         .foregroundStyle(.secondary)
 
                     Button(role: .destructive) {
@@ -829,7 +887,7 @@ private struct StorageView: View {
                     } label: {
                         Label("Clean Artifacts", systemImage: "trash")
                     }
-                    .disabled(selectedPurgePaths.isEmpty || model.isLoading)
+                    .disabled(selectedPurgeTargets.isEmpty || model.isLoading)
                 }
 
                 if let preview = model.purgePreview, !preview.items.isEmpty {
@@ -887,7 +945,7 @@ private struct StorageView: View {
 
                     Spacer()
 
-                    Text("\(selectedInstallerPaths.count) selected")
+                    Text("\(selectedInstallerTargets.count) selected")
                         .foregroundStyle(.secondary)
 
                     Button(role: .destructive) {
@@ -895,7 +953,7 @@ private struct StorageView: View {
                     } label: {
                         Label("Remove Installers", systemImage: "trash")
                     }
-                    .disabled(selectedInstallerPaths.isEmpty || model.isLoading)
+                    .disabled(selectedInstallerTargets.isEmpty || model.isLoading)
                 }
 
                 if let preview = model.installerPreview, !preview.items.isEmpty {
@@ -942,15 +1000,20 @@ private struct StorageView: View {
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
         .confirmationDialog("Move selected large files to Trash?", isPresented: $showLargeFileConfirm) {
-            Button("Move \(selectedLargeFilePaths.count) Files to Trash", role: .destructive) {
-                Task {
-                    await model.executeStorageAction(
-                        operation: "trash",
-                        scanPath: path,
-                        targets: Array(selectedLargeFilePaths).sorted()
-                    )
-                    await model.loadStorage(path: path)
-                    selectedLargeFilePaths = []
+            if !model.isLoading, !selectedLargeFileTargets.isEmpty {
+                Button("Move \(selectedLargeFileTargets.count) Files to Trash", role: .destructive) {
+                    let scanPath = activeStorageScanPath
+                    let targets = selectedLargeFileTargets
+                    guard !model.isLoading, !targets.isEmpty else { return }
+                    Task {
+                        await model.executeStorageAction(
+                            operation: "trash",
+                            scanPath: scanPath,
+                            targets: targets
+                        )
+                        await model.loadStorage(path: scanPath)
+                        selectedLargeFilePaths = []
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -958,14 +1021,18 @@ private struct StorageView: View {
             Text("Roomy will revalidate that every selected file is inside the scanned folder, then move it to Trash. Selected size: \(Formatters.bytes(selectedLargeFileBytes)).")
         }
         .confirmationDialog("Clean selected project artifacts?", isPresented: $showPurgeConfirm) {
-            Button("Clean \(selectedPurgePaths.count) Artifacts", role: .destructive) {
-                Task {
-                    await model.execute(
-                        domain: .purge,
-                        plan: ExecutionPlan(confirmed: true, targets: Array(selectedPurgePaths).sorted())
-                    )
-                    await model.loadPurgePreview()
-                    selectedPurgePaths = Set((model.purgePreview?.items ?? []).filter { !$0.recent }.map(\.path))
+            if !model.isLoading, !selectedPurgeTargets.isEmpty {
+                Button("Clean \(selectedPurgeTargets.count) Artifacts", role: .destructive) {
+                    let targets = selectedPurgeTargets
+                    guard !model.isLoading, !targets.isEmpty else { return }
+                    Task {
+                        await model.execute(
+                            domain: .purge,
+                            plan: ExecutionPlan(confirmed: true, targets: targets)
+                        )
+                        await model.loadPurgePreview()
+                        selectedPurgePaths = Set((model.purgePreview?.items ?? []).filter { !$0.recent }.map(\.path))
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -973,14 +1040,18 @@ private struct StorageView: View {
             Text("Roomy will revalidate each path and move removable artifacts to Trash where supported. Selected size: \(Formatters.bytes(selectedPurgeBytes)).")
         }
         .confirmationDialog("Remove selected installer files?", isPresented: $showInstallerConfirm) {
-            Button("Remove \(selectedInstallerPaths.count) Installers", role: .destructive) {
-                Task {
-                    await model.execute(
-                        domain: .installer,
-                        plan: ExecutionPlan(confirmed: true, targets: Array(selectedInstallerPaths).sorted())
-                    )
-                    await model.loadInstallerPreview()
-                    selectedInstallerPaths = Set((model.installerPreview?.items ?? []).map(\.path))
+            if !model.isLoading, !selectedInstallerTargets.isEmpty {
+                Button("Remove \(selectedInstallerTargets.count) Installers", role: .destructive) {
+                    let targets = selectedInstallerTargets
+                    guard !model.isLoading, !targets.isEmpty else { return }
+                    Task {
+                        await model.execute(
+                            domain: .installer,
+                            plan: ExecutionPlan(confirmed: true, targets: targets)
+                        )
+                        await model.loadInstallerPreview()
+                        selectedInstallerPaths = Set((model.installerPreview?.items ?? []).map(\.path))
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -1086,6 +1157,7 @@ private struct PerformanceView: View {
                 .disabled(model.isLoading)
 
                 Button(role: .destructive) {
+                    guard model.optimizePreview?.optimizations.isEmpty == false else { return }
                     showOptimizeConfirm = true
                 } label: {
                     Label("Run Optimizations", systemImage: "wrench.adjustable")
@@ -1096,9 +1168,12 @@ private struct PerformanceView: View {
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
         .confirmationDialog("Run optimization tasks?", isPresented: $showOptimizeConfirm) {
-            Button("Run Optimizations", role: .destructive) {
-                Task {
-                    await model.execute(domain: .optimize, plan: ExecutionPlan(confirmed: true), administrator: true)
+            if !model.isLoading, model.optimizePreview?.optimizations.isEmpty == false {
+                Button("Run Optimizations", role: .destructive) {
+                    guard !model.isLoading else { return }
+                    Task {
+                        await model.execute(domain: .optimize, plan: ExecutionPlan(confirmed: true), administrator: true)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -1202,13 +1277,14 @@ private struct MonitorView: View {
             }
         }
         .task(id: liveRefresh) {
-            if model.status == nil {
+            if model.status == nil, !model.isLoading {
                 await model.loadStatus()
             }
             guard liveRefresh else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: refreshInterval)
                 guard !Task.isCancelled else { return }
+                guard !model.isLoading else { continue }
                 await model.loadStatus()
             }
         }
@@ -1287,6 +1363,7 @@ private struct SettingsView: View {
     @State private var showForceUpdateConfirm = false
     @State private var showNightlyUpdateConfirm = false
     @State private var showRemoveConfirm = false
+    @State private var pendingTouchIDAction: String?
     @State private var editablePurgePaths: [String] = []
     @State private var purgePathInput = ""
 
@@ -1418,6 +1495,7 @@ private struct SettingsView: View {
                     .disabled(model.touchIDStatus?.supported == false || model.isLoading)
 
                     Button {
+                        pendingTouchIDAction = touchIDAction
                         showTouchIDConfirm = true
                     } label: {
                         Label(model.touchIDStatus?.configured == true ? "Disable Touch ID" : "Enable Touch ID", systemImage: "touchid")
@@ -1698,55 +1776,76 @@ private struct SettingsView: View {
             syncPurgePathsFromModel()
         }
         .confirmationDialog("Install privileged helper?", isPresented: $showPrivilegedHelperInstallConfirm) {
-            Button("Install Helper") {
-                Task { await model.installPrivilegedHelper() }
+            if !model.isLoading, model.privilegedHelperStatus?.state != .enabled {
+                Button("Install Helper") {
+                    guard !model.isLoading else { return }
+                    Task { await model.installPrivilegedHelper() }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("macOS will register Roomy's bundled launch daemon so cleanup can run admin work through the helper instead of password dialogs in the app.")
         }
         .confirmationDialog("Remove privileged helper?", isPresented: $showPrivilegedHelperUninstallConfirm) {
-            Button("Remove Helper", role: .destructive) {
-                Task { await model.uninstallPrivilegedHelper() }
+            if !model.isLoading, model.privilegedHelperStatus?.state == .enabled {
+                Button("Remove Helper", role: .destructive) {
+                    guard !model.isLoading else { return }
+                    Task { await model.uninstallPrivilegedHelper() }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Roomy will unregister the launch daemon. Admin cleanup will be unavailable until the helper is installed again.")
         }
         .confirmationDialog("Change Touch ID sudo setting?", isPresented: $showTouchIDConfirm) {
-            Button(model.touchIDStatus?.configured == true ? "Disable Touch ID" : "Enable Touch ID") {
-                Task {
-                    await model.executeTouchID(action: touchIDAction, administrator: true)
+            if !model.isLoading, let action = pendingTouchIDAction, model.touchIDStatus?.supported != false {
+                Button(action == "disable" ? "Disable Touch ID" : "Enable Touch ID") {
+                    guard !model.isLoading else { return }
+                    Task {
+                        await model.executeTouchID(action: action, administrator: true)
+                        pendingTouchIDAction = nil
+                    }
                 }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                pendingTouchIDAction = nil
+            }
         } message: {
             Text("macOS will ask for administrator authorization. Roomy modifies sudo configuration through its existing Touch ID helper.")
         }
         .confirmationDialog("Install shell completion?", isPresented: $showCompletionConfirm) {
-            Button("Install Completion") {
-                Task { await model.executeCompletion() }
+            if !model.isLoading, model.completionStatus?.installed != true {
+                Button("Install Completion") {
+                    guard !model.isLoading else { return }
+                    Task { await model.executeCompletion() }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Roomy will update the shell config file shown in Settings so roomy commands autocomplete in new terminal sessions.")
         }
         .confirmationDialog("Install Raycast and Alfred launchers?", isPresented: $showLaunchersConfirm) {
-            Button("Install Launchers") {
-                Task { await model.executeLaunchers() }
+            if !model.isLoading, !(model.launcherStatus?.raycastInstalled == true && model.launcherStatus?.alfredInstalled == true) {
+                Button("Install Launchers") {
+                    guard !model.isLoading else { return }
+                    Task { await model.executeLaunchers() }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Roomy will create Raycast script commands and Alfred workflows for Clean, Uninstall, Optimize, Analyze, and Status.")
         }
         .confirmationDialog("Force Roomy stable update?", isPresented: $showForceUpdateConfirm) {
-            Button("Force Stable Update") {
-                Task {
-                    await model.execute(
-                        domain: .update,
-                        plan: ExecutionPlan(confirmed: true, force: true),
-                        administrator: true
-                    )
+            if !model.isLoading {
+                Button("Force Stable Update") {
+                    guard !model.isLoading else { return }
+                    Task {
+                        await model.execute(
+                            domain: .update,
+                            plan: ExecutionPlan(confirmed: true, force: true),
+                            administrator: true
+                        )
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -1754,13 +1853,16 @@ private struct SettingsView: View {
             Text("Roomy will run its existing update workflow. macOS may ask for administrator authorization if the install location needs it.")
         }
         .confirmationDialog("Install nightly Roomy build?", isPresented: $showNightlyUpdateConfirm) {
-            Button("Install Nightly") {
-                Task {
-                    await model.execute(
-                        domain: .update,
-                        plan: ExecutionPlan(confirmed: true, nightly: true),
-                        administrator: true
-                    )
+            if !model.isLoading {
+                Button("Install Nightly") {
+                    guard !model.isLoading else { return }
+                    Task {
+                        await model.execute(
+                            domain: .update,
+                            plan: ExecutionPlan(confirmed: true, nightly: true),
+                            administrator: true
+                        )
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -1768,13 +1870,16 @@ private struct SettingsView: View {
             Text("Nightly uses Roomy's main-branch installer and is intended for testing unreleased fixes.")
         }
         .confirmationDialog("Remove Roomy from this Mac?", isPresented: $showRemoveConfirm) {
-            Button("Remove Roomy", role: .destructive) {
-                Task {
-                    await model.execute(
-                        domain: .remove,
-                        plan: ExecutionPlan(confirmed: true),
-                        administrator: true
-                    )
+            if !model.isLoading {
+                Button("Remove Roomy", role: .destructive) {
+                    guard !model.isLoading else { return }
+                    Task {
+                        await model.execute(
+                            domain: .remove,
+                            plan: ExecutionPlan(confirmed: true),
+                            administrator: true
+                        )
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}

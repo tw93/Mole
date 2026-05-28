@@ -23,7 +23,7 @@ teardown_file() {
 
 setup() {
 	export TERM="dumb"
-	rm -rf "${HOME:?}"/*
+	find "${HOME:?}" -mindepth 1 -maxdepth 1 -exec rm -rf {} + # SAFE: test setup removes only entries inside the fixture HOME
 	mkdir -p "$HOME"
 }
 
@@ -545,6 +545,7 @@ EOF
 	touch "$HOME/Library/Logs/TestApp/log4.log"
 	touch "$HOME/Library/Logs/TestApp/log5.log"
 	touch "$HOME/Library/Logs/TestApp/log6.log"
+	ln -s "$HOME/Library/Logs/TestApp/missing.log" "$HOME/Library/Logs/TestApp/broken-link.log"
 
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -574,6 +575,7 @@ $HOME/Library/Logs/TestApp/log3.log
 $HOME/Library/Logs/TestApp/log4.log
 $HOME/Library/Logs/TestApp/log5.log
 $HOME/Library/Logs/TestApp/log6.log
+$HOME/Library/Logs/TestApp/broken-link.log
 LIST
 }
 
@@ -588,11 +590,12 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"~/Library/Logs/TestApp/log6.log"* ]]
+	[[ "$output" == *"~/Library/Logs/TestApp/broken-link.log"* ]]
 	[[ "$output" != *"more files"* ]]
 }
 
 @test "uninstall_persist_cache_file heals non-writable destination" {
-	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 
 # Source only the helper by evaluating its function definition.
@@ -610,6 +613,44 @@ uninstall_persist_cache_file "$src" "$dst"
 [[ ! -e "$src" ]] || { echo "src should be gone" >&2; exit 1; }
 [[ -f "$dst" ]] || { echo "dst missing" >&2; exit 1; }
 grep -q 'fresh-data' "$dst" || { echo "dst not updated"; exit 1; }
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "uninstall_persist_cache_file replaces symlinked destinations without following them" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+eval "$(sed -n '/^uninstall_persist_cache_file()/,/^}$/p' "$PROJECT_ROOT/bin/uninstall.sh")"
+
+src="$HOME/cache.src"
+dst="$HOME/cache.dst"
+protected_file="$HOME/protected-cache"
+protected_dir="$HOME/protected-cache-dir"
+printf 'fresh-file\n' > "$src"
+printf 'keep-file\n' > "$protected_file"
+ln -s "$protected_file" "$dst"
+
+uninstall_persist_cache_file "$src" "$dst"
+
+[[ ! -e "$src" ]] || { echo "src should be gone after symlink-to-file replacement"; exit 1; }
+[[ ! -L "$dst" ]] || { echo "dst should not remain a symlink to file"; exit 1; }
+grep -q 'fresh-file' "$dst" || { echo "dst not updated for symlink-to-file"; exit 1; }
+grep -q 'keep-file' "$protected_file" || { echo "protected file was modified"; exit 1; }
+
+mkdir -p "$protected_dir"
+printf 'fresh-dir\n' > "$src"
+rm -f "$dst"
+ln -s "$protected_dir" "$dst"
+
+uninstall_persist_cache_file "$src" "$dst"
+
+[[ ! -e "$src" ]] || { echo "src should be gone after symlink-to-dir replacement"; exit 1; }
+[[ ! -L "$dst" ]] || { echo "dst should not remain a symlink to dir"; exit 1; }
+grep -q 'fresh-dir' "$dst" || { echo "dst not updated for symlink-to-dir"; exit 1; }
+[[ -z "$(find "$protected_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]] || { echo "protected dir received cache data"; exit 1; }
 EOF
 
 	[ "$status" -eq 0 ]
@@ -671,6 +712,44 @@ uninstall_persist_cache_file "$src" "$dst"
 
 [[ ! -e "$src" ]] || exit 1
 grep -q 'untouched' "$dst" || exit 1
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "metadata refresh debug uses central symlink-safe debug log" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DEBUG=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+eval "$(sed -n '/^start_uninstall_metadata_refresh()/,/^uninstall_print_app_search_dirs()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+
+ROOMY_UNINSTALL_META_CACHE_DIR="$HOME/.cache/roomy"
+ROOMY_UNINSTALL_META_CACHE_FILE="$ROOMY_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v1"
+ROOMY_UNINSTALL_META_CACHE_LOCK="${ROOMY_UNINSTALL_META_CACHE_FILE}.lock"
+ROOMY_UNINSTALL_EPOCH_FLOOR=978307200
+
+config_debug_link="$HOME/.config/roomy/roomy_debug_session.log"
+protected_file="$HOME/protected-config-debug"
+mkdir -p "$(dirname "$config_debug_link")"
+echo "protected" > "$protected_file"
+ln -sf "$protected_file" "$config_debug_link"
+
+refresh_file="$HOME/refresh-metadata"
+printf '%s|%s|%s|%s\n' "$HOME/Missing.app" "0" "com.example.Missing" "Missing" > "$refresh_file"
+
+mktemp() { return 1; }
+
+start_uninstall_metadata_refresh "$refresh_file"
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+	if grep -q "metadata-refresh.*mktemp failed" "$DEBUG_LOG_FILE" 2> /dev/null; then
+		break
+	fi
+	sleep 0.1
+done
+
+grep -q "metadata-refresh.*mktemp failed" "$DEBUG_LOG_FILE"
+[ "$(cat "$protected_file")" = "protected" ]
 EOF
 
 	[ "$status" -eq 0 ]
@@ -758,6 +837,58 @@ result=$(uninstall_resolve_eligible_bundle_id "$app_path" "com.example.Stale")
     echo "unexpected bundle id: $result" >&2
     exit 1
 }
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "scan_applications skips app paths that cannot fit pipe-delimited records" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+ROOMY_CACHE_DIR="$HOME/.cache/roomy"
+ROOMY_UNINSTALL_META_CACHE_DIR="$ROOMY_CACHE_DIR"
+ROOMY_UNINSTALL_META_CACHE_FILE="$ROOMY_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v1"
+ROOMY_UNINSTALL_META_CACHE_LOCK="${ROOMY_UNINSTALL_META_CACHE_FILE}.lock"
+ROOMY_UNINSTALL_META_REFRESH_TTL=604800
+ROOMY_UNINSTALL_SCAN_SPINNER_DELAY_SEC=0
+ROOMY_UNINSTALL_INLINE_METADATA_LIMIT=0
+ROOMY_UNINSTALL_EPOCH_FLOOR=978307200
+ROOMY_UNINSTALL_INLINE_MDLS_TIMEOUT_SEC=0.08
+
+eval "$(sed -n '/^uninstall_resolve_bundle_id()/,/^load_applications()/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+
+pkg_receipt_nonstandard_app_paths() { printf '%s\n' "$HOME/External/Pipe|Receipt.app"; }
+uninstall_print_app_search_dirs() { printf '%s\n' "$HOME/Applications"; }
+uninstall_resolve_eligible_bundle_id() {
+    local app_base
+    app_base="$(basename "${1%.app}")"
+    printf 'com.example.%s\n' "${app_base//[^A-Za-z0-9.]/-}"
+}
+uninstall_resolve_display_name() { printf '%s\n' "${2:-}"; }
+uninstall_acquire_metadata_lock() { return 0; }
+uninstall_release_metadata_lock() { :; }
+uninstall_persist_cache_file() {
+    cp "$1" "$2"
+    rm -f "$1"
+}
+start_uninstall_metadata_refresh() {
+    rm -f "$1"
+}
+
+control_app_path="$HOME/Applications/Esc"$'\033'"App.app"
+mkdir -p "$HOME/Applications/SafeApp.app" "$HOME/Applications/Pipe|App.app" "$control_app_path" "$HOME/External/Pipe|Receipt.app"
+
+apps_file=$(scan_applications)
+
+grep -q 'SafeApp.app' "$apps_file"
+! grep -q 'Pipe|App' "$apps_file"
+! grep -q 'Pipe|Receipt' "$apps_file"
+! grep -q 'Esc' "$apps_file"
+! grep -q 'Pipe|App' "$ROOMY_UNINSTALL_META_CACHE_FILE"
+! grep -q 'Pipe|Receipt' "$ROOMY_UNINSTALL_META_CACHE_FILE"
+! grep -q 'Esc' "$ROOMY_UNINSTALL_META_CACHE_FILE"
 EOF
 
 	[ "$status" -eq 0 ]
@@ -944,8 +1075,8 @@ EOF
 
 @test "remove_roomy deletes manual binaries and caches" {
 	mkdir -p "$HOME/.local/bin"
-	touch "$HOME/.local/bin/roomy"
-	touch "$HOME/.local/bin/mo"
+	cp "$PROJECT_ROOT/roomy" "$HOME/.local/bin/roomy"
+	cp "$PROJECT_ROOT/mo" "$HOME/.local/bin/mo"
 	mkdir -p "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
 
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
@@ -993,8 +1124,8 @@ EOF
 
 @test "remove_roomy dry-run keeps manual binaries and caches" {
 	mkdir -p "$HOME/.local/bin"
-	touch "$HOME/.local/bin/roomy"
-	touch "$HOME/.local/bin/mo"
+	cp "$PROJECT_ROOT/roomy" "$HOME/.local/bin/roomy"
+	cp "$PROJECT_ROOT/mo" "$HOME/.local/bin/mo"
 	mkdir -p "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
 
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
@@ -1014,10 +1145,109 @@ EOF
 	[ -d "$HOME/Library/Logs/roomy" ]
 }
 
+@test "remove_roomy skips owned data cleanup through symlinked parents" {
+	rm -rf "$HOME/.local" "$HOME/.config" "$HOME/.cache" "$HOME/Library" \
+		"$HOME/redirect-cache" "$HOME/redirect-config" "$HOME/redirect-logs"
+	mkdir -p "$HOME/.local/bin" "$HOME/redirect-cache/roomy" "$HOME/redirect-config/roomy" \
+		"$HOME/redirect-logs/roomy" "$HOME/Library"
+	cp "$PROJECT_ROOT/roomy" "$HOME/.local/bin/roomy"
+	cp "$PROJECT_ROOT/mo" "$HOME/.local/bin/mo"
+	printf 'keep-cache\n' > "$HOME/redirect-cache/roomy/marker"
+	printf 'keep-config\n' > "$HOME/redirect-config/roomy/marker"
+	printf 'keep-log\n' > "$HOME/redirect-logs/roomy/marker"
+	ln -s "$HOME/redirect-cache" "$HOME/.cache"
+	ln -s "$HOME/redirect-config" "$HOME/.config"
+	ln -s "$HOME/redirect-logs" "$HOME/Library/Logs"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+export -f start_inline_spinner stop_inline_spinner
+printf '\n' | "$PROJECT_ROOT/roomy" remove --dry-run
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Would skip cache: redirected parent"* ]]
+	[[ "$output" == *"Would skip config: redirected parent"* ]]
+	[[ "$output" == *"Would skip log: redirected parent"* ]]
+	[ -f "$HOME/redirect-cache/roomy/marker" ]
+	[ -f "$HOME/redirect-config/roomy/marker" ]
+	[ -f "$HOME/redirect-logs/roomy/marker" ]
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+export -f start_inline_spinner stop_inline_spinner
+printf '\n' | "$PROJECT_ROOT/roomy" remove
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Skipping cache cleanup through redirected parent"* ]]
+	[[ "$output" == *"Skipping config cleanup through redirected parent"* ]]
+	[[ "$output" == *"Skipping log cleanup through redirected parent"* ]]
+	[ -f "$HOME/redirect-cache/roomy/marker" ]
+	[ -f "$HOME/redirect-config/roomy/marker" ]
+	[ -f "$HOME/redirect-logs/roomy/marker" ]
+	[ ! -f "$HOME/.local/bin/roomy" ]
+	[ ! -f "$HOME/.local/bin/mo" ]
+}
+
+@test "remove_roomy preserves unrelated mo command" {
+	mkdir -p "$HOME/.local/bin"
+	cp "$PROJECT_ROOT/roomy" "$HOME/.local/bin/roomy"
+	cat > "$HOME/.local/bin/mo" <<'EOF'
+#!/bin/bash
+echo unrelated mo
+EOF
+	chmod +x "$HOME/.local/bin/mo"
+	mkdir -p "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+rm() {
+    local -a flags=()
+    local -a paths=()
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == -* ]]; then
+            flags+=("$arg")
+        else
+            paths+=("$arg")
+        fi
+    done
+    local path
+    for path in "${paths[@]}"; do
+        if [[ "$path" == "$HOME" || "$path" == "$HOME/"* ]]; then
+            /bin/rm "${flags[@]}" "$path"
+        fi
+    done
+    return 0
+}
+sudo() {
+    if [[ "$1" == "rm" ]]; then
+        shift
+        rm "$@"
+        return 0
+    fi
+    return 0
+}
+export -f start_inline_spinner stop_inline_spinner rm sudo
+printf '\n' | "$PROJECT_ROOT/roomy" remove
+EOF
+
+	[ "$status" -eq 0 ]
+	[ ! -f "$HOME/.local/bin/roomy" ]
+	[ -f "$HOME/.local/bin/mo" ]
+}
+
 @test "remove_roomy test mode ignores PATH installs outside test HOME" {
 	mkdir -p "$HOME/.local/bin" "$HOME/.config/roomy" "$HOME/.cache/roomy" "$HOME/Library/Logs/roomy"
-	touch "$HOME/.local/bin/roomy"
-	touch "$HOME/.local/bin/mo"
+	cp "$PROJECT_ROOT/roomy" "$HOME/.local/bin/roomy"
+	cp "$PROJECT_ROOT/mo" "$HOME/.local/bin/mo"
 
 	fake_global_bin="$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-remove-path.XXXXXX")"
 	touch "$fake_global_bin/roomy"
@@ -1270,6 +1500,39 @@ INNER
 	[[ "$output" == *"delete_mode=permanent"* ]]
 }
 
+@test "uninstall main treats arguments after -- as app names" {
+	local apps_cache
+	apps_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-uninstall-dashdash.XXXXXX")"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_NO_AUTH=1 \
+		APPS_CACHE_FILE="$apps_cache" bash --noprofile --norc <<'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+selected_apps=()
+log_operation_session_start() { :; }
+show_uninstall_help() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+clear_screen() { :; }
+scan_applications() { printf '%s\n' "$APPS_CACHE_FILE"; }
+load_applications() { return 0; }
+match_apps_by_name() {
+    printf 'match_args=%s\n' "$*"
+    printf 'delete_mode=%s\n' "${ROOMY_DELETE_MODE:-unset}"
+}
+
+eval "$(sed -n '/^main()/,/^main "\$@"/p' "$PROJECT_ROOT/bin/uninstall.sh" | sed '$d')"
+main -- --permanent
+INNER
+
+	rm -f "$apps_cache"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"match_args=--permanent"* ]]
+	[[ "$output" == *"delete_mode=trash"* ]]
+	[[ "$output" == *"No matching applications found."* ]]
+}
+
 # ---------------------------------------------------------------------------
 # --list: read-only inventory of installable app names (PR #755 scope)
 # ---------------------------------------------------------------------------
@@ -1323,6 +1586,8 @@ INNER
 	[[ "$output" == *'"uninstall_name": "Slack"'* ]]
 	[[ "$output" == *'"bundle_id": "com.tinyspeck.slackmacgap"'* ]]
 	[[ "$output" == *'"source": "App"'* ]]
+	[[ "$output" == *'"uninstall_supported": true'* ]]
+	[[ "$output" == *'"uninstall_reason": ""'* ]]
 }
 
 @test "uninstall --list emits JSON array when stdout is piped" {
@@ -1366,7 +1631,7 @@ INNER
 	[[ "${output: -1}" == "]" ]]
 	# Round-trip via python to confirm it parses as JSON.
 	if command -v python3 > /dev/null; then
-		echo "$output" | python3 -c 'import sys, json; d=json.load(sys.stdin); assert isinstance(d, list) and len(d)==1 and d[0]["name"]=="Slack"'
+		echo "$output" | python3 -c 'import sys, json; d=json.load(sys.stdin); assert isinstance(d, list) and len(d)==1 and d[0]["name"]=="Slack" and d[0]["uninstall_supported"] is True and d[0]["uninstall_reason"] == ""'
 	fi
 }
 
@@ -1443,4 +1708,5 @@ INNER
 	[ "$status" -eq 0 ]
 	[[ "$output" == *'"uninstall_name": "visual-studio-code"'* ]]
 	[[ "$output" == *'"source": "Homebrew"'* ]]
+	[[ "$output" == *'"uninstall_supported": true'* ]]
 }

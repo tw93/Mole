@@ -365,6 +365,163 @@ EOF
     [[ "$output" == *"cleaned"* ]]
 }
 
+@test "clean_homebrew ignores corrupt timestamp cache" {
+    run bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+mkdir -p "$HOME/.cache/roomy"
+echo "not-a-timestamp" > "$HOME/.cache/roomy/brew_last_cleanup"
+
+start_inline_spinner(){ :; }
+stop_inline_spinner(){ :; }
+run_with_timeout() {
+    local duration="$1"
+    shift
+    "$@"
+}
+brew() {
+    case "$1" in
+        cleanup)
+            echo "Removing: package"
+            ;;
+        autoremove)
+            echo "Uninstalling pkg"
+            ;;
+    esac
+}
+
+clean_homebrew
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Homebrew cleanup"* ]]
+}
+
+@test "clean_homebrew replaces timestamp cache symlinks without following them" {
+    run bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+cache_file="$HOME/.cache/roomy/brew_last_cleanup"
+protected_file="$HOME/protected-brew-cache"
+mkdir -p "$(dirname "$cache_file")"
+echo "9999999999" > "$protected_file"
+ln -sf "$protected_file" "$cache_file"
+
+start_inline_spinner(){ :; }
+stop_inline_spinner(){ :; }
+run_with_timeout() {
+    local duration="$1"
+    shift
+    "$@"
+}
+brew() {
+    case "$1" in
+        cleanup)
+            echo "Removing: package"
+            ;;
+        autoremove)
+            echo "Uninstalling pkg"
+            ;;
+    esac
+}
+
+clean_homebrew
+
+[ ! -L "$cache_file" ]
+[ "$(cat "$protected_file")" = "9999999999" ]
+grep -Eq '^[0-9]+$' "$cache_file"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Homebrew cleanup"* ]]
+}
+
+@test "clean_homebrew replaces timestamp cache symlinks to directories without writing through them" {
+    run bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+cache_file="$HOME/.cache/roomy/brew_last_cleanup"
+protected_dir="$HOME/protected-brew-cache-dir"
+mkdir -p "$(dirname "$cache_file")" "$protected_dir"
+ln -sf "$protected_dir" "$cache_file"
+
+start_inline_spinner(){ :; }
+stop_inline_spinner(){ :; }
+run_with_timeout() {
+    local duration="$1"
+    shift
+    "$@"
+}
+brew() {
+    case "$1" in
+        cleanup)
+            echo "Removing: package"
+            ;;
+        autoremove)
+            echo "Uninstalling pkg"
+            ;;
+    esac
+}
+
+clean_homebrew
+
+[ ! -L "$cache_file" ]
+grep -Eq '^[0-9]+$' "$cache_file"
+[ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Homebrew cleanup"* ]]
+}
+
+@test "clean_homebrew ignores timestamp cache through symlinked parent" {
+    run bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+rm -rf "$HOME/.cache"
+trap 'rm -rf "$HOME/.cache"; mkdir -p "$HOME/.cache"' EXIT
+protected_cache="$HOME/protected-brew-cache-root"
+mkdir -p "$protected_cache/roomy"
+old_timestamp="$(($(date +%s) - 86400))"
+printf '%s\n' "$old_timestamp" > "$protected_cache/roomy/brew_last_cleanup"
+ln -sf "$protected_cache" "$HOME/.cache"
+
+start_inline_spinner(){ :; }
+stop_inline_spinner(){ :; }
+run_with_timeout() {
+    local duration="$1"
+    shift
+    "$@"
+}
+brew() {
+    case "$1" in
+        cleanup)
+            echo "Removing: package"
+            ;;
+        autoremove)
+            echo "Uninstalling pkg"
+            ;;
+    esac
+}
+
+clean_homebrew
+
+[ "$(cat "$protected_cache/roomy/brew_last_cleanup")" = "$old_timestamp" ]
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Homebrew cleanup"* ]]
+    [[ "$output" != *"cleaned 1d ago, skipped"* ]]
+}
+
 @test "clean_homebrew runs cleanup with timeout stubs" {
     run bash --noprofile --norc << 'EOF'
 set -euo pipefail

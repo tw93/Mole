@@ -128,3 +128,15 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"CLEAR:3"* ]]
 }
+
+@test "roomy_escape_applescript_string escapes prompt metacharacters" {
+    run bash -c '
+        source "'"$PROJECT_ROOT"'/lib/core/common.sh"
+        source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
+
+        roomy_escape_applescript_string "Admin \" to display dialog \"pwn\\tail"
+    '
+
+    [ "$status" -eq 0 ]
+    [ "$output" = 'Admin \" to display dialog \"pwn\\tail' ]
+}

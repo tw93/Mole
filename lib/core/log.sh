@@ -56,6 +56,26 @@ append_log_lines() {
     printf '%s\n' "$@" >> "$file_path" 2> /dev/null || true
 }
 
+rotate_user_log_file_if_needed() {
+    local file_path="$1"
+    local max_size="$2"
+
+    [[ -f "$file_path" && ! -L "$file_path" ]] || return 0
+    local size
+    size=$(get_file_size "$file_path")
+    [[ "$size" =~ ^[0-9]+$ && "$size" -gt "$max_size" ]] || return 0
+
+    local rotated_path="${file_path}.old"
+    if [[ -L "$rotated_path" ]]; then
+        rm -f "$rotated_path" 2> /dev/null || return 0
+    elif [[ -e "$rotated_path" && ! -f "$rotated_path" ]]; then
+        return 0
+    fi
+
+    mv -f "$file_path" "$rotated_path" 2> /dev/null || true
+    ensure_user_file "$file_path"
+}
+
 # Rotate log file if it exceeds maximum size
 rotate_log_once() {
     # Skip if already checked this session
@@ -63,34 +83,13 @@ rotate_log_once() {
     export ROOMY_LOG_ROTATED=1
 
     local max_size="$LOG_MAX_SIZE_DEFAULT"
-    if [[ -f "$LOG_FILE" ]]; then
-        local size
-        size=$(get_file_size "$LOG_FILE")
-        if [[ "$size" -gt "$max_size" ]]; then
-            mv "$LOG_FILE" "${LOG_FILE}.old" 2> /dev/null || true
-            ensure_user_file "$LOG_FILE"
-        fi
-    fi
+    rotate_user_log_file_if_needed "$LOG_FILE" "$max_size"
 
     # Rotate operations log (5MB limit)
     if [[ "${ROOMY_NO_OPLOG:-}" != "1" ]]; then
         local oplog_max_size="$OPLOG_MAX_SIZE_DEFAULT"
-        if [[ -f "$OPERATIONS_LOG_FILE" ]]; then
-            local size
-            size=$(get_file_size "$OPERATIONS_LOG_FILE")
-            if [[ "$size" -gt "$oplog_max_size" ]]; then
-                mv "$OPERATIONS_LOG_FILE" "${OPERATIONS_LOG_FILE}.old" 2> /dev/null || true
-                ensure_user_file "$OPERATIONS_LOG_FILE"
-            fi
-        fi
-        if [[ -f "$OPERATION_JOURNAL_FILE" ]]; then
-            local journal_size
-            journal_size=$(get_file_size "$OPERATION_JOURNAL_FILE")
-            if [[ "$journal_size" -gt "$oplog_max_size" ]]; then
-                mv "$OPERATION_JOURNAL_FILE" "${OPERATION_JOURNAL_FILE}.old" 2> /dev/null || true
-                ensure_user_file "$OPERATION_JOURNAL_FILE"
-            fi
-        fi
+        rotate_user_log_file_if_needed "$OPERATIONS_LOG_FILE" "$oplog_max_size"
+        rotate_user_log_file_if_needed "$OPERATION_JOURNAL_FILE" "$oplog_max_size"
     fi
 }
 
@@ -162,17 +161,19 @@ debug_log() {
 debug_timer_start() {
     [[ "${ROOMY_DEBUG:-}" != "1" ]] && return 0
     local varname="$1"
+    [[ "$varname" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
     local ts
     ts=$(perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()' 2> /dev/null || date +%s)
-    eval "$varname=$ts"
+    printf -v "$varname" '%s' "$ts"
 }
 
 debug_timer_end() {
     [[ "${ROOMY_DEBUG:-}" != "1" ]] && return 0
     local label="$1"
     local start_var="$2"
+    [[ "$start_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
     local start_ts
-    eval "start_ts=\$$start_var"
+    start_ts="${!start_var:-}"
     [[ -z "$start_ts" ]] && return 0
     local end_ts
     end_ts=$(perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()' 2> /dev/null || date +%s)
@@ -381,7 +382,7 @@ debug_risk_level() {
         echo -e "${GRAY}[DEBUG] Risk Level: ${color}${risk_level}${GRAY}, $reason${NC}" >&2
 
         # Also log to file
-        echo "Risk Level: $risk_level, $reason" >> "$DEBUG_LOG_FILE" 2> /dev/null || true
+        append_log_line "$DEBUG_LOG_FILE" "Risk Level: $risk_level, $reason"
     fi
 }
 
@@ -397,30 +398,30 @@ log_system_info() {
         echo -e "${YELLOW}${ICON_WARNING}${NC} Debug log not writable: $DEBUG_LOG_FILE" >&2
     fi
 
-    # Start block in debug log file
-    {
-        echo "----------------------------------------------------------------------"
-        echo "Roomy Debug Session, $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "----------------------------------------------------------------------"
-        echo "User: $USER"
-        echo "Hostname: $(hostname)"
-        echo "Architecture: $(uname -m)"
-        echo "Kernel: $(uname -r)"
-        if command -v sw_vers > /dev/null; then
-            echo "macOS: $(sw_vers -productVersion), $(sw_vers -buildVersion)"
-        fi
-        echo "Shell: ${SHELL:-unknown}, ${TERM:-unknown}"
+    local -a info_lines=()
+    info_lines+=("----------------------------------------------------------------------")
+    info_lines+=("Roomy Debug Session, $(date '+%Y-%m-%d %H:%M:%S')")
+    info_lines+=("----------------------------------------------------------------------")
+    info_lines+=("User: $USER")
+    info_lines+=("Hostname: $(hostname)")
+    info_lines+=("Architecture: $(uname -m)")
+    info_lines+=("Kernel: $(uname -r)")
+    if command -v sw_vers > /dev/null; then
+        info_lines+=("macOS: $(sw_vers -productVersion), $(sw_vers -buildVersion)")
+    fi
+    info_lines+=("Shell: ${SHELL:-unknown}, ${TERM:-unknown}")
 
-        # Check sudo status non-interactively (skip in test mode)
-        if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
-            echo "Sudo Access: Skipped (test mode)"
-        elif sudo -n true 2> /dev/null; then
-            echo "Sudo Access: Active"
-        else
-            echo "Sudo Access: Required"
-        fi
-        echo "----------------------------------------------------------------------"
-    } >> "$DEBUG_LOG_FILE" 2> /dev/null || true
+    # Check sudo status non-interactively (skip in test mode)
+    if [[ "${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1" ]]; then
+        info_lines+=("Sudo Access: Skipped (test mode)")
+    elif sudo -n true 2> /dev/null; then
+        info_lines+=("Sudo Access: Active")
+    else
+        info_lines+=("Sudo Access: Required")
+    fi
+    info_lines+=("----------------------------------------------------------------------")
+
+    append_log_lines "$DEBUG_LOG_FILE" "${info_lines[@]}"
 
     # Notification to stderr
     echo -e "${GRAY}[DEBUG] Debug logging enabled. Session log: $DEBUG_LOG_FILE${NC}" >&2
@@ -438,18 +439,30 @@ run_silent() {
 # Run command with error logging
 run_logged() {
     local cmd="$1"
-    # Log to main file, and also to debug file if enabled
-    if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
-        if ! "$@" 2>&1 | tee -a "$LOG_FILE" | tee -a "$DEBUG_LOG_FILE" > /dev/null; then
-            log_warning "Command failed: $cmd"
-            return 1
-        fi
+    local command_output
+    local status=0
+    local line
+
+    if command_output=$("$@" 2>&1); then
+        status=0
     else
-        if ! "$@" 2>&1 | tee -a "$LOG_FILE" > /dev/null; then
-            log_warning "Command failed: $cmd"
-            return 1
-        fi
+        status=$?
     fi
+
+    if [[ -n "$command_output" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            append_log_line "$LOG_FILE" "$line"
+            if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
+                append_log_line "$DEBUG_LOG_FILE" "$line"
+            fi
+        done <<< "$command_output"
+    fi
+
+    if [[ $status -ne 0 ]]; then
+        log_warning "Command failed: $cmd"
+        return 1
+    fi
+
     return 0
 }
 

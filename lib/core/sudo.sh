@@ -66,6 +66,13 @@ _request_password() {
     return 1
 }
 
+roomy_escape_applescript_string() {
+    local value="${1:-}"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '%s\n' "$value"
+}
+
 request_sudo_access() {
     local prompt_msg="${1:-Admin access required}"
 
@@ -96,8 +103,9 @@ request_sudo_access() {
         sudo -k 2> /dev/null
 
         # Display native macOS password dialog
-        local password
-        password=$(osascript -e "display dialog \"$prompt_msg\" default answer \"\" with title \"Roomy\" with icon caution with hidden answer" -e 'text returned of result' 2> /dev/null)
+        local password escaped_prompt
+        escaped_prompt=$(roomy_escape_applescript_string "$prompt_msg")
+        password=$(osascript -e "display dialog \"$escaped_prompt\" default answer \"\" with title \"Roomy\" with icon caution with hidden answer" -e 'text returned of result' 2> /dev/null)
 
         if [[ -z "$password" ]]; then
             # User cancelled the dialog

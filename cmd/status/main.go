@@ -264,8 +264,7 @@ func runJSONMode() {
 
 	data, err := collector.Collect()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error collecting metrics: %v\n", err)
-		os.Exit(1)
+		data.CollectionError = err.Error()
 	}
 
 	encoder := json.NewEncoder(os.Stdout)

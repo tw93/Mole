@@ -62,6 +62,16 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "flush_python_group_if_needed validates array variable name" {
+    run bash -c '
+        source "'"$PROJECT_ROOT"'/lib/core/common.sh"
+        source "'"$PROJECT_ROOT"'/lib/clean/caches.sh"
+        flush_python_group_if_needed "$HOME/project" '\''bad[$(touch "$HOME/group-pwn")]'\'' || true
+        [[ ! -e "$HOME/group-pwn" ]]
+    '
+    [ "$status" -eq 0 ]
+}
+
 @test "clean_service_worker_cache returns early when path doesn't exist" {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; clean_service_worker_cache 'TestBrowser' '/nonexistent/path'"
     [ "$status" -eq 0 ]

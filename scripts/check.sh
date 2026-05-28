@@ -199,53 +199,13 @@ find lib -name "*.sh" | while read -r script; do
 done
 echo -e "${GREEN}${ICON_SUCCESS} Syntax check passed${NC}\n"
 
-echo -e "${YELLOW}6. Checking optimizations...${NC}"
-OPTIMIZATION_SCORE=0
-TOTAL_CHECKS=0
-
-((TOTAL_CHECKS++))
-if grep -q "read -r -s -n 1 -t 1" lib/core/ui.sh; then
-    echo -e "${GREEN}  ${ICON_SUCCESS} Keyboard timeout configured${NC}"
-    ((OPTIMIZATION_SCORE++))
+echo -e "${YELLOW}6. Running safety hygiene checks...${NC}"
+if scripts/check-unsafe-rm.sh; then
+    echo -e "${GREEN}${ICON_SUCCESS} Safety hygiene checks passed${NC}\n"
 else
-    echo -e "${YELLOW}  ${ICON_WARNING} Keyboard timeout may be misconfigured${NC}"
+    echo -e "${RED}${ICON_ERROR} Safety hygiene checks failed${NC}\n"
+    exit 1
 fi
-
-((TOTAL_CHECKS++))
-DRAIN_PASSES=$(grep -c "while IFS= read -r -s -n 1" lib/core/ui.sh 2> /dev/null || true)
-DRAIN_PASSES=${DRAIN_PASSES:-0}
-if [[ $DRAIN_PASSES -eq 1 ]]; then
-    echo -e "${GREEN}  ${ICON_SUCCESS} drain_pending_input optimized${NC}"
-    ((OPTIMIZATION_SCORE++))
-else
-    echo -e "${YELLOW}  ${ICON_WARNING} drain_pending_input has multiple passes${NC}"
-fi
-
-((TOTAL_CHECKS++))
-if grep -q "rotate_log_once" lib/core/log.sh; then
-    echo -e "${GREEN}  ${ICON_SUCCESS} Log rotation optimized${NC}"
-    ((OPTIMIZATION_SCORE++))
-else
-    echo -e "${YELLOW}  ${ICON_WARNING} Log rotation not optimized${NC}"
-fi
-
-((TOTAL_CHECKS++))
-if ! grep -q "cache_meta\|cache_dir_mtime" bin/uninstall.sh; then
-    echo -e "${GREEN}  ${ICON_SUCCESS} Cache validation simplified${NC}"
-    ((OPTIMIZATION_SCORE++))
-else
-    echo -e "${YELLOW}  ${ICON_WARNING} Cache still uses redundant metadata${NC}"
-fi
-
-((TOTAL_CHECKS++))
-if grep -q "Consecutive slashes" bin/clean.sh; then
-    echo -e "${GREEN}  ${ICON_SUCCESS} Path validation enhanced${NC}"
-    ((OPTIMIZATION_SCORE++))
-else
-    echo -e "${YELLOW}  ${ICON_WARNING} Path validation not enhanced${NC}"
-fi
-
-echo -e "${BLUE}  Optimization score: $OPTIMIZATION_SCORE/$TOTAL_CHECKS${NC}\n"
 
 if [[ $STRICT -eq 1 ]]; then
     echo -e "${YELLOW}7. Running strict test and native UI/API checks...${NC}"
@@ -270,8 +230,3 @@ if [[ $STRICT -eq 1 ]]; then
 fi
 
 echo -e "${GREEN}=== Checks Completed ===${NC}"
-if [[ $OPTIMIZATION_SCORE -eq $TOTAL_CHECKS ]]; then
-    echo -e "${GREEN}${ICON_SUCCESS} All optimizations applied${NC}"
-else
-    echo -e "${YELLOW}${ICON_WARNING} Some optimizations missing${NC}"
-fi

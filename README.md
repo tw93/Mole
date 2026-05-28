@@ -26,11 +26,14 @@
 
 ## Quick Start
 
-**Install via Homebrew**
+**Install the current release via Homebrew**
 
 ```bash
-brew install roomy
+brew tap tw93/tap
+brew install tw93/tap/roomy
 ```
+
+After Homebrew core has merged the latest formula, `brew install roomy` is enough.
 
 **Or via script**
 
@@ -39,7 +42,7 @@ brew install roomy
 curl -fsSL https://raw.githubusercontent.com/tw93/roomy/main/install.sh | bash
 ```
 
-> Note: Roomy is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/tw93/Roomy/tree/windows) for early adopters.
+> Note: Roomy is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/tw93/roomy/tree/windows) for early adopters.
 
 ### Release Status
 
@@ -49,7 +52,7 @@ The supported Roomy product today is the `roomy` command-line tool distributed t
 
 For local packaging, `npm run macos:dmg` builds an unsigned `.build/Roomy.dmg` with [DMGMaker](https://github.com/saihgupr/DMGMaker), verifies it with `hdiutil` when available, and writes `.build/Roomy.dmg.sha256`.
 
-Before RoomyUI can be positioned as a downloadable macOS product, the release pipeline still needs release asset upload rules and update/install guidance that does not depend on a source checkout.
+Before RoomyUI can be positioned as a downloadable macOS product, the release pipeline still needs release asset upload rules and update/install guidance that does not depend on a source checkout. The current release gates are tracked in [LAUNCH_READINESS.md](LAUNCH_READINESS.md), with clean-machine and release-integrity runbooks under [docs/launch](docs/launch/clean-machine-cli-drill.md) and [docs/release](docs/release/release-integrity.md).
 
 **Run**
 
@@ -70,6 +73,7 @@ roomy profile                   # Save and apply Roomy config profiles
 roomy touchid                   # Configure Touch ID for sudo
 roomy completion                # Set up shell tab completion
 roomy update                    # Update Roomy
+roomy update --dry-run          # Preview update source and target
 roomy update --nightly          # Update to latest unreleased main build, script install only
 roomy remove                    # Remove Roomy from system
 roomy --help                    # Show help
@@ -93,7 +97,7 @@ roomy optimize --whitelist      # Manage protected optimization rules
 roomy clean --whitelist         # Manage protected caches
 roomy purge --paths             # Configure project scan directories
 roomy analyze /Volumes          # Analyze external drives only
-roomy analyze --json --duplicates ~/Downloads
+roomy analyze --json --duplicates --duplicates-timeout 15s ~/Downloads
 roomy schedule enable --weekly --time 03:00 --command clean
 roomy report --last 30d
 roomy restore list
@@ -244,6 +248,8 @@ Both `roomy analyze` and `roomy status` support a `--json` flag for scripting an
 
 `roomy status` also auto-detects when its output is piped (not a terminal) and switches to JSON automatically.
 
+When `roomy analyze --json --duplicates` is enabled, duplicate detection is bounded by `--duplicates-timeout` and `--duplicates-max-candidates`; JSON includes `duplicate_scan.partial` when results are incomplete.
+
 ```bash
 # Disk analysis as JSON
 $ roomy analyze --json ~/Documents
@@ -339,7 +345,7 @@ Select Installers to Remove - 3.8GB (5 selected)
 Launch Roomy commands from Raycast or Alfred:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/Roomy/main/scripts/setup-quick-launchers.sh | bash
+curl -fsSL https://raw.githubusercontent.com/tw93/roomy/main/scripts/setup-quick-launchers.sh | bash
 ```
 
 Adds 5 commands: `Roomy Clean`, `Roomy Uninstall`, `Roomy Optimize`, `Roomy Analyze`, `Roomy Status`.
@@ -365,7 +371,7 @@ Roomy auto-detects your terminal app. iTerm2 has known compatibility issues. We 
 
 Thanks to everyone who helped build Roomy. Go follow them. ❤️
 
-<a href="https://github.com/tw93/Roomy/graphs/contributors">
+<a href="https://github.com/tw93/roomy/graphs/contributors">
   <img src="./CONTRIBUTORS.svg?v=2" width="1000" />
 </a>
 
@@ -376,11 +382,10 @@ Real feedback from users who shared Roomy on X.
 
 ## Support
 
-- If Roomy helped you, [share it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Roomy&text=Roomy%20-%20Deep%20clean%20and%20optimize%20your%20Mac.) with friends or give it a star.
-- Got ideas or bugs? Open an issue or PR, feel free to contribute your best AI model.
-- I have two cats, TangYuan and Coke. If you think Roomy delights your life, you can feed them <a href="https://cats.tw93.fun?name=Roomy" target="_blank">canned food 🥩</a>.
-
-<a href="https://cats.tw93.fun?name=Roomy"><img src="https://cdn.jsdelivr.net/gh/tw93/sponsors@main/assets/sponsors.svg" width="1000" loading="lazy" /></a>
+- Product support: see [SUPPORT.md](SUPPORT.md) for issue context, supported versions, and commercial inquiries.
+- Privacy posture: see [PRIVACY.md](PRIVACY.md) for local data handling, network use, and log guidance.
+- Security reports: see [SECURITY.md](SECURITY.md). Do not open a public issue for an unpatched vulnerability.
+- Bugs and ideas: open a GitHub issue or pull request with the Roomy version, macOS version, install method, command, and redacted output.
 
 ## License
 

@@ -304,6 +304,175 @@ EOF
     [[ "$output" == *"Already on latest version"* ]]
 }
 
+@test "update_roomy dry-run previews stable update without downloading installer" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+url_log="$HOME/update-dry-run-url.log"
+mkdir -p "$HOME/fake-bin"
+cat > "$HOME/fake-bin/curl" <<'SCRIPT'
+#!/usr/bin/env bash
+out=""
+url=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    http*://*)
+      url="$1"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+[[ -n "$url" ]] && printf '%s\n' "$url" >> "$URL_LOG"
+
+if [[ -n "$out" ]]; then
+  echo "dry-run should not download installer" >&2
+  exit 1
+fi
+
+if [[ "$url" == *"api.github.com"* ]]; then
+  echo '{"tag_name":"V9.9.9"}'
+else
+  echo "VERSION=\"9.9.9\""
+fi
+SCRIPT
+chmod +x "$HOME/fake-bin/curl"
+
+cat > "$HOME/fake-bin/brew" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 1
+SCRIPT
+chmod +x "$HOME/fake-bin/brew"
+
+URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --dry-run
+
+! grep -q "raw.githubusercontent.com/tw93/roomy/V9.9.9/install.sh" "$url_log"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Roomy update preview"* ]]
+    [[ "$output" == *"Current version:"* ]]
+    [[ "$output" == *"Target version: 9.9.9"* ]]
+    [[ "$output" == *"Installer: https://raw.githubusercontent.com/tw93/roomy/V9.9.9/install.sh"* ]]
+    [[ "$output" == *"No files changed."* ]]
+}
+
+@test "update_roomy refuses to downgrade when installed version is newer than public stable" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+url_log="$HOME/update-newer-version-url.log"
+mkdir -p "$HOME/fake-bin"
+cat > "$HOME/fake-bin/curl" <<'SCRIPT'
+#!/usr/bin/env bash
+out=""
+url=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    http*://*)
+      url="$1"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+[[ -n "$url" ]] && printf '%s\n' "$url" >> "$URL_LOG"
+
+if [[ -n "$out" ]]; then
+  echo "newer installed version should not download installer" >&2
+  exit 1
+fi
+
+if [[ "$url" == *"api.github.com"* ]]; then
+  echo '{"tag_name":"V0.1.0"}'
+else
+  echo "VERSION=\"0.1.0\""
+fi
+SCRIPT
+chmod +x "$HOME/fake-bin/curl"
+
+cat > "$HOME/fake-bin/brew" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 1
+SCRIPT
+chmod +x "$HOME/fake-bin/brew"
+
+URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update
+
+! grep -q "raw.githubusercontent.com/tw93/roomy/V0.1.0/install.sh" "$url_log"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"is newer than latest public stable 0.1.0"* ]]
+    [[ "$output" == *"No files changed"* ]]
+}
+
+@test "update_roomy supports explicit release target for staged validation" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$HOME/fake-bin:/usr/bin:/bin" TERM="dumb" ROOMY_UPDATE_TARGET_TAG=V9.9.9 bash --noprofile --norc << 'EOF'
+set -euo pipefail
+url_log="$HOME/update-target-url.log"
+mkdir -p "$HOME/fake-bin"
+cat > "$HOME/fake-bin/curl" <<'SCRIPT'
+#!/usr/bin/env bash
+out=""
+url=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    http*://*)
+      url="$1"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+[[ -n "$url" ]] && printf '%s\n' "$url" >> "$URL_LOG"
+
+if [[ -n "$out" ]]; then
+  echo "dry-run should not download installer" >&2
+  exit 1
+fi
+
+echo "unexpected curl call: $url" >&2
+exit 1
+SCRIPT
+chmod +x "$HOME/fake-bin/curl"
+
+cat > "$HOME/fake-bin/brew" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 1
+SCRIPT
+chmod +x "$HOME/fake-bin/brew"
+
+URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --dry-run
+
+test ! -s "$url_log"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Target version: 9.9.9"* ]]
+    [[ "$output" == *"Installer: https://raw.githubusercontent.com/tw93/roomy/V9.9.9/install.sh"* ]]
+    [[ "$output" == *"No files changed."* ]]
+}
+
 @test "process_install_output shows install.sh success message with version" {
     run bash --noprofile --norc <<'EOF'
 set -euo pipefail

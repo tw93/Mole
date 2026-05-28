@@ -87,6 +87,106 @@ EOF
     grep -q "ERROR: $message" "$log_file"
 }
 
+@test "debug log helpers replace symlinked debug log without following it" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+debug_log="$HOME/Library/Logs/roomy/roomy_debug_session.log"
+protected="$HOME/protected-debug-log"
+printf 'protected\n' > "$protected"
+
+rm -f "$debug_log"
+ln -s "$protected" "$debug_log"
+export ROOMY_DEBUG=1
+debug_risk_level HIGH "symlink-check"
+
+grep -q "^protected$" "$protected"
+[[ ! -L "$debug_log" ]]
+grep -q "Risk Level: HIGH, symlink-check" "$debug_log"
+
+rm -f "$debug_log"
+ln -s "$protected" "$debug_log"
+unset ROOMY_SYS_INFO_LOGGED
+export ROOMY_TEST_NO_AUTH=1
+log_system_info > /dev/null 2>&1
+
+grep -q "^protected$" "$protected"
+[[ ! -L "$debug_log" ]]
+grep -q "Roomy Debug Session" "$debug_log"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "run_logged writes through symlink-safe log helpers and reports failures" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+log_file="$HOME/Library/Logs/roomy/roomy.log"
+debug_log="$HOME/Library/Logs/roomy/roomy_debug_session.log"
+protected_log="$HOME/protected-main-log"
+protected_debug="$HOME/protected-debug-log"
+printf 'protected-main\n' > "$protected_log"
+printf 'protected-debug\n' > "$protected_debug"
+
+rm -f "$log_file" "$debug_log"
+ln -s "$protected_log" "$log_file"
+ln -s "$protected_debug" "$debug_log"
+export ROOMY_DEBUG=1
+
+run_logged printf 'safe-output\n'
+
+grep -q "^protected-main$" "$protected_log"
+grep -q "^protected-debug$" "$protected_debug"
+[[ ! -L "$log_file" ]]
+[[ ! -L "$debug_log" ]]
+grep -q "safe-output" "$log_file"
+grep -q "safe-output" "$debug_log"
+
+if run_logged bash -c 'printf "%s\n" failed-output; exit 7'; then
+    echo "WRONG: run_logged swallowed command failure"
+    exit 1
+fi
+grep -q "failed-output" "$log_file"
+grep -q "Command failed: bash" "$log_file"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "dynamic helper variable names are validated before assignment" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+export ROOMY_DEBUG=1
+debug_timer_start 'bad[$(touch "$HOME/timer-start-pwn")]' || true
+debug_timer_end "Timer" 'bad[$(touch "$HOME/timer-end-pwn")]' || true
+update_progress_if_needed 1 1 'bad[$(touch "$HOME/progress-pwn")]' 0 || true
+build_regex_var 'bad[$(touch "$HOME/regex-pwn")]' 'com.example.*' || true
+
+[[ ! -e "$HOME/timer-start-pwn" ]]
+[[ ! -e "$HOME/timer-end-pwn" ]]
+[[ ! -e "$HOME/progress-pwn" ]]
+[[ ! -e "$HOME/regex-pwn" ]]
+
+debug_timer_start roomy_timer_ok
+[[ -n "${roomy_timer_ok:-}" ]]
+
+last_progress_update=0
+update_progress_if_needed 1 1 last_progress_update 0 > /dev/null 2>&1 || true
+[[ "$last_progress_update" =~ ^[0-9]+$ ]]
+
+ROOMY_TEST_REGEX=""
+build_regex_var ROOMY_TEST_REGEX 'com.example.*'
+[[ "$ROOMY_TEST_REGEX" == '^com\.example\..*$' ]]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "log_operation recreates operations log if the log directory disappears mid-session" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -152,6 +252,35 @@ PY
     [[ "$result" == "1" ]]
 }
 
+@test "rotate_log_once refuses symlinked rotation targets" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+log_file="$HOME/Library/Logs/roomy/roomy.log"
+protected_dir="$HOME/protected-log-rotation"
+mkdir -p "$protected_dir" "$(dirname "$log_file")"
+if command -v mkfile > /dev/null 2>&1; then
+    mkfile -n 1100k "$log_file"
+else
+    truncate -s 1100k "$log_file"
+fi
+printf 'large-log\n' >> "$log_file"
+ln -sf "$protected_dir" "${log_file}.old"
+
+unset ROOMY_LOG_ROTATED
+rotate_log_once
+
+[[ ! -L "${log_file}.old" ]]
+[[ -f "${log_file}.old" ]]
+[[ -f "$log_file" ]]
+grep -q 'large-log' "${log_file}.old"
+[[ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "drain_pending_input clears stdin buffer" {
     result=$(
         (echo -e "test\ninput" | HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; drain_pending_input; echo done") &
@@ -203,6 +332,28 @@ EOF
     [ ! -e "$file_path" ]
     [ ! -e "$dir_path" ]
     rm -f "$HOME/temp_file_path.txt" "$HOME/temp_dir_path.txt"
+}
+
+@test "command-substitution temp files are tracked and cleaned" {
+    HOME="$HOME" bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+temp_file=$(create_temp_file)
+prefixed_file=$(mktemp_file "roomy-substitution")
+temp_dir=$(create_temp_dir)
+printf '%s\n' "$temp_file" > "$HOME/temp_file_path.txt"
+printf '%s\n' "$prefixed_file" > "$HOME/prefixed_file_path.txt"
+printf '%s\n' "$temp_dir" > "$HOME/temp_dir_path.txt"
+[[ -f "$temp_file" && -f "$prefixed_file" && -d "$temp_dir" ]]
+cleanup_temp_files
+EOF
+
+    file_path="$(cat "$HOME/temp_file_path.txt")"
+    prefixed_path="$(cat "$HOME/prefixed_file_path.txt")"
+    dir_path="$(cat "$HOME/temp_dir_path.txt")"
+    [ ! -e "$file_path" ]
+    [ ! -e "$prefixed_path" ]
+    [ ! -e "$dir_path" ]
+    rm -f "$HOME/temp_file_path.txt" "$HOME/prefixed_file_path.txt" "$HOME/temp_dir_path.txt"
 }
 
 

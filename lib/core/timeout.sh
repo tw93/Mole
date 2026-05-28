@@ -200,8 +200,14 @@ run_with_timeout() {
     # do not inherit open file descriptors from the caller and block output pipes
     # (notably bats output capture pipes that wait for all writers to close).
     (
+        sleep_pid=""
+        trap 'if [[ -n "${sleep_pid:-}" ]]; then kill "$sleep_pid" 2>/dev/null || true; fi; exit 0' TERM INT
+
         # Wait for timeout duration
-        sleep "$duration"
+        sleep "$duration" &
+        sleep_pid=$!
+        wait "$sleep_pid" 2> /dev/null || exit 0
+        sleep_pid=""
 
         # Check if process still exists
         if kill -0 "$cmd_pid" 2> /dev/null; then

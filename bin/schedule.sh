@@ -87,26 +87,135 @@ schedule_validate_command() {
     esac
 }
 
+schedule_path_under_home() {
+    local path="$1"
+    local home_path="${HOME%/}"
+    local physical_home physical_path
+
+    [[ -n "$path" && "$path" == /* ]] || return 1
+    [[ -n "$home_path" ]] || return 1
+    case "$path" in
+        "$home_path"/*) ;;
+        *) return 1 ;;
+    esac
+
+    physical_home=$(cd -P "$home_path" 2> /dev/null && pwd) || return 1
+    physical_path=$(roomy_physical_path_for_validation "$path" 2> /dev/null) || return 1
+    case "$physical_path" in
+        "$physical_home"/*) return 0 ;;
+    esac
+    return 1
+}
+
+schedule_validate_paths() {
+    [[ -n "$ROOMY_SCHEDULE_LABEL" && "$ROOMY_SCHEDULE_LABEL" != */* && ! "$ROOMY_SCHEDULE_LABEL" =~ [[:cntrl:]] ]] || {
+        echo "Invalid schedule label: $ROOMY_SCHEDULE_LABEL" >&2
+        return 1
+    }
+    schedule_path_under_home "$ROOMY_LAUNCH_AGENTS_DIR" || {
+        echo "Schedule LaunchAgents directory must be under HOME: $ROOMY_LAUNCH_AGENTS_DIR" >&2
+        return 1
+    }
+    [[ ! -L "$ROOMY_LAUNCH_AGENTS_DIR" ]] || {
+        echo "Schedule LaunchAgents directory must not be a symlink: $ROOMY_LAUNCH_AGENTS_DIR" >&2
+        return 1
+    }
+    schedule_path_under_home "$ROOMY_CONFIG_DIR" || {
+        echo "Schedule config directory must be under HOME: $ROOMY_CONFIG_DIR" >&2
+        return 1
+    }
+    [[ ! -L "$ROOMY_CONFIG_DIR" ]] || {
+        echo "Schedule config directory must not be a symlink: $ROOMY_CONFIG_DIR" >&2
+        return 1
+    }
+    schedule_path_under_home "$ROOMY_SCHEDULE_PLIST" || {
+        echo "Schedule plist path must be under HOME: $ROOMY_SCHEDULE_PLIST" >&2
+        return 1
+    }
+    schedule_path_under_home "$ROOMY_SCHEDULE_CONFIG" || {
+        echo "Schedule config path must be under HOME: $ROOMY_SCHEDULE_CONFIG" >&2
+        return 1
+    }
+    [[ "$ROOMY_SCHEDULE_PLIST" == "$ROOMY_LAUNCH_AGENTS_DIR/$ROOMY_SCHEDULE_LABEL.plist" ]] || {
+        echo "Schedule plist path does not match label and LaunchAgents directory" >&2
+        return 1
+    }
+    [[ "$ROOMY_SCHEDULE_CONFIG" == "$ROOMY_CONFIG_DIR/schedule.conf" ]] || {
+        echo "Schedule config path must be schedule.conf under the Roomy config directory" >&2
+        return 1
+    }
+}
+
+schedule_write_file_atomically() {
+    local output="$1"
+    local parent tmp_file
+
+    parent=$(dirname "$output")
+    ensure_user_dir "$parent"
+    if [[ -e "$output" || -L "$output" ]]; then
+        safe_remove "$output" true || return 1
+    fi
+
+    tmp_file=$(mktemp "$parent/.roomy-schedule.XXXXXX") || return 1
+    if ! cat > "$tmp_file"; then
+        safe_remove "$tmp_file" true || true
+        return 1
+    fi
+    if ! mv -f "$tmp_file" "$output"; then
+        safe_remove "$tmp_file" true || true
+        return 1
+    fi
+}
+
 schedule_write_config() {
     local cadence="$1"
     local time_value="$2"
     local command_name="$3"
     local execute="$4"
 
-    ensure_user_dir "$ROOMY_CONFIG_DIR"
     {
-        printf 'CADENCE=%q\n' "$cadence"
-        printf 'TIME=%q\n' "$time_value"
-        printf 'COMMAND=%q\n' "$command_name"
-        printf 'EXECUTE=%q\n' "$execute"
-        printf 'PLIST=%q\n' "$ROOMY_SCHEDULE_PLIST"
-    } > "$ROOMY_SCHEDULE_CONFIG"
+        printf 'CADENCE=%s\n' "$cadence"
+        printf 'TIME=%s\n' "$time_value"
+        printf 'COMMAND=%s\n' "$command_name"
+        printf 'EXECUTE=%s\n' "$execute"
+        printf 'PLIST=%s\n' "$ROOMY_SCHEDULE_PLIST"
+    } | schedule_write_file_atomically "$ROOMY_SCHEDULE_CONFIG"
 }
 
 schedule_load_config() {
     [[ -f "$ROOMY_SCHEDULE_CONFIG" ]] || return 1
-    # shellcheck source=/dev/null
-    source "$ROOMY_SCHEDULE_CONFIG"
+
+    local loaded_cadence="" loaded_time="" loaded_command="" loaded_execute="" loaded_plist=""
+    local line key value
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -n "$line" && "$line" != \#* && "$line" == *=* ]] || continue
+        key="${line%%=*}"
+        value="${line#*=}"
+        case "$key" in
+            CADENCE) loaded_cadence="$value" ;;
+            TIME) loaded_time="$value" ;;
+            COMMAND) loaded_command="$value" ;;
+            EXECUTE) loaded_execute="$value" ;;
+            PLIST) loaded_plist="$value" ;;
+        esac
+    done < "$ROOMY_SCHEDULE_CONFIG"
+
+    case "$loaded_cadence" in
+        daily | weekly | monthly) ;;
+        *) return 1 ;;
+    esac
+    schedule_parse_time "$loaded_time" > /dev/null 2>&1 || return 1
+    schedule_validate_command "$loaded_command" > /dev/null 2>&1 || return 1
+    case "$loaded_execute" in
+        true | false) ;;
+        *) return 1 ;;
+    esac
+
+    CADENCE="$loaded_cadence"
+    TIME="$loaded_time"
+    COMMAND="$loaded_command"
+    EXECUTE="$loaded_execute"
+    PLIST="$loaded_plist"
 }
 
 schedule_write_plist() {
@@ -123,7 +232,6 @@ schedule_write_plist() {
     local dry_arg=""
     [[ "$execute" == "true" ]] || dry_arg="--dry-run"
 
-    ensure_user_dir "$ROOMY_LAUNCH_AGENTS_DIR"
     ensure_user_dir "$(dirname "$stdout_path")"
 
     {
@@ -160,7 +268,7 @@ schedule_write_plist() {
         printf '  <string>%s</string>\n' "$(schedule_escape_xml "$stderr_path")"
         printf '%s\n' '</dict>'
         printf '%s\n' '</plist>'
-    } > "$ROOMY_SCHEDULE_PLIST"
+    } | schedule_write_file_atomically "$ROOMY_SCHEDULE_PLIST"
 }
 
 schedule_launchctl_load() {
@@ -218,12 +326,18 @@ schedule_enable() {
             --monthly) cadence="monthly" ;;
             --time)
                 shift
-                [[ $# -gt 0 ]] || { echo "Missing value for --time" >&2; return 1; }
+                [[ $# -gt 0 ]] || {
+                    echo "Missing value for --time" >&2
+                    return 1
+                }
                 time_value="$1"
                 ;;
             --command)
                 shift
-                [[ $# -gt 0 ]] || { echo "Missing value for --command" >&2; return 1; }
+                [[ $# -gt 0 ]] || {
+                    echo "Missing value for --command" >&2
+                    return 1
+                }
                 command_name="$1"
                 ;;
             --execute) execute="true" ;;
@@ -287,7 +401,12 @@ schedule_disable() {
     fi
 
     schedule_launchctl_unload
-    rm -f "$ROOMY_SCHEDULE_PLIST" "$ROOMY_SCHEDULE_CONFIG" 2> /dev/null || true
+    if [[ -e "$ROOMY_SCHEDULE_PLIST" || -L "$ROOMY_SCHEDULE_PLIST" ]]; then
+        safe_remove "$ROOMY_SCHEDULE_PLIST" true || true
+    fi
+    if [[ -e "$ROOMY_SCHEDULE_CONFIG" || -L "$ROOMY_SCHEDULE_CONFIG" ]]; then
+        safe_remove "$ROOMY_SCHEDULE_CONFIG" true || true
+    fi
     echo "Roomy schedule disabled"
 }
 
@@ -309,9 +428,21 @@ schedule_run_now() {
 
 main() {
     case "${1:-status}" in
+        -h | --help | help)
+            show_schedule_help
+            return 0
+            ;;
+    esac
+
+    schedule_validate_paths || exit 1
+
+    case "${1:-status}" in
         status)
             shift || true
-            [[ $# -eq 0 ]] || { echo "Usage: roomy schedule status" >&2; exit 1; }
+            [[ $# -eq 0 ]] || {
+                echo "Usage: roomy schedule status" >&2
+                exit 1
+            }
             schedule_status
             ;;
         enable)
@@ -324,11 +455,11 @@ main() {
             ;;
         run)
             shift || true
-            [[ $# -eq 0 ]] || { echo "Usage: roomy schedule run" >&2; exit 1; }
+            [[ $# -eq 0 ]] || {
+                echo "Usage: roomy schedule run" >&2
+                exit 1
+            }
             schedule_run_now
-            ;;
-        -h | --help | help)
-            show_schedule_help
             ;;
         *)
             echo "Unknown schedule command: $1" >&2

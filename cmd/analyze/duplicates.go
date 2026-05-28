@@ -3,8 +3,10 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -12,9 +14,12 @@ import (
 	"sort"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 const maxDuplicateGroups = 50
+
+var errDuplicateScanStopped = errors.New("duplicate scan stopped")
 
 type duplicateCandidate struct {
 	Name string
@@ -23,15 +28,48 @@ type duplicateCandidate struct {
 	ID   string
 }
 
-func findDuplicateGroupsForJSON(root string, minSize int64) []jsonDuplicateGroup {
+type duplicateScanResult struct {
+	Groups []jsonDuplicateGroup
+	Scan   jsonDuplicateScan
+}
+
+func findDuplicateGroupsForJSON(root string, minSize int64, timeout time.Duration, maxCandidates int) duplicateScanResult {
+	started := time.Now()
 	if minSize < 1 {
 		minSize = 1
+	}
+
+	ctx := context.Background()
+	cancel := func() {}
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
+	scan := jsonDuplicateScan{
+		TimeoutMS:     int64(timeout / time.Millisecond),
+		MaxCandidates: maxCandidates,
+	}
+	markPartial := func(reason string) {
+		if !scan.Partial {
+			scan.Partial = true
+			scan.Reason = reason
+		}
+	}
+	finish := func(groups []jsonDuplicateGroup) duplicateScanResult {
+		scan.Groups = len(groups)
+		scan.DurationMS = time.Since(started).Milliseconds()
+		return duplicateScanResult{Groups: groups, Scan: scan}
 	}
 
 	candidatesBySize := make(map[int64][]duplicateCandidate)
 	seenIDs := make(map[string]bool)
 
-	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			markPartial("timeout")
+			return errDuplicateScanStopped
+		}
 		if err != nil {
 			return nil
 		}
@@ -66,20 +104,42 @@ func findDuplicateGroupsForJSON(root string, minSize int64) []jsonDuplicateGroup
 			Size: size,
 			ID:   id,
 		})
+		scan.Candidates++
+		if maxCandidates > 0 && scan.Candidates >= maxCandidates {
+			markPartial("candidate_limit")
+			return errDuplicateScanStopped
+		}
 		return nil
 	})
+	if walkErr != nil && !errors.Is(walkErr, errDuplicateScanStopped) {
+		markPartial("walk_error")
+		return finish(nil)
+	}
 
 	groups := make([]jsonDuplicateGroup, 0)
 	for size, candidates := range candidatesBySize {
+		if ctx.Err() != nil {
+			markPartial("timeout")
+			break
+		}
 		if len(candidates) < 2 {
 			continue
 		}
 		byHash := make(map[string][]duplicateCandidate)
 		for _, candidate := range candidates {
-			hash, err := hashFile(candidate.Path)
+			if ctx.Err() != nil {
+				markPartial("timeout")
+				break
+			}
+			hash, err := hashFileContext(ctx, candidate.Path)
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				markPartial("timeout")
+				break
+			}
 			if err != nil {
 				continue
 			}
+			scan.HashedFiles++
 			byHash[hash] = append(byHash[hash], candidate)
 		}
 		for hash, matches := range byHash {
@@ -109,9 +169,10 @@ func findDuplicateGroupsForJSON(root string, minSize int64) []jsonDuplicateGroup
 		return groups[i].WastedBytes > groups[j].WastedBytes
 	})
 	if len(groups) > maxDuplicateGroups {
+		scan.TruncatedGroups = true
 		groups = groups[:maxDuplicateGroups]
 	}
-	return groups
+	return finish(groups)
 }
 
 func fileIdentity(info os.FileInfo) string {
@@ -122,16 +183,35 @@ func fileIdentity(info os.FileInfo) string {
 	return strconv.FormatInt(int64(stat.Dev), 10) + ":" + strconv.FormatUint(stat.Ino, 10)
 }
 
-func hashFile(path string) (string, error) {
+func hashFileContext(ctx context.Context, path string) (hash string, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	sum := sha256.New()
-	if _, err := io.Copy(sum, file); err != nil {
-		return "", err
+	buf := make([]byte, 1024*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, readErr := file.Read(buf)
+		if n > 0 {
+			if _, err := sum.Write(buf[:n]); err != nil {
+				return "", err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return "", readErr
+		}
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }

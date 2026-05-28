@@ -67,11 +67,9 @@ manage_purge_paths() {
     local custom_count=0
     if [[ -f "$PURGE_PATHS_CONFIG" ]]; then
         while IFS= read -r line; do
-            line="${line#"${line%%[![:space:]]*}"}"
-            line="${line%"${line##*[![:space:]]}"}"
-            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            [[ -n "$line" ]] || continue
             custom_count=$((custom_count + 1))
-        done < "$PURGE_PATHS_CONFIG"
+        done < <(roomy_purge_read_paths_config "$PURGE_PATHS_CONFIG")
     fi
 
     echo ""

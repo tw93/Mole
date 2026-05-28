@@ -22,15 +22,41 @@ readonly PAM_SUDO_FILE
 readonly PAM_SUDO_LOCAL_FILE
 readonly PAM_TID_LINE="auth       sufficient     pam_tid.so"
 
+touchid_require_regular_pam_target() {
+    local path="$1"
+    local label="$2"
+    local require_exists="${3:-false}"
+
+    if [[ -L "$path" ]]; then
+        log_error "$label must not be a symlink: $path"
+        return 1
+    fi
+
+    if [[ "$require_exists" == "true" && ! -e "$path" ]]; then
+        log_error "$label not found: $path"
+        return 1
+    fi
+
+    if [[ -e "$path" && ! -f "$path" ]]; then
+        log_error "$label must be a regular file: $path"
+        return 1
+    fi
+}
+
+touchid_validate_pam_targets() {
+    touchid_require_regular_pam_target "$PAM_SUDO_FILE" "PAM sudo file" true || return 1
+    touchid_require_regular_pam_target "$PAM_SUDO_LOCAL_FILE" "PAM sudo_local file" false || return 1
+}
+
 # Check if Touch ID is already configured
 is_touchid_configured() {
     # Check sudo_local first
-    if [[ -f "$PAM_SUDO_LOCAL_FILE" ]]; then
+    if [[ -f "$PAM_SUDO_LOCAL_FILE" && ! -L "$PAM_SUDO_LOCAL_FILE" ]]; then
         grep -q "pam_tid.so" "$PAM_SUDO_LOCAL_FILE" 2> /dev/null && return 0
     fi
 
     # Fallback to standard sudo file
-    if [[ ! -f "$PAM_SUDO_FILE" ]]; then
+    if [[ ! -f "$PAM_SUDO_FILE" || -L "$PAM_SUDO_FILE" ]]; then
         return 1
     fi
     grep -q "pam_tid.so" "$PAM_SUDO_FILE" 2> /dev/null
@@ -87,6 +113,8 @@ enable_touchid() {
         fi
         return 0
     fi
+
+    touchid_validate_pam_targets || return 1
 
     # First check if system supports Touch ID
     if ! supports_touchid; then
@@ -224,6 +252,8 @@ disable_touchid() {
         fi
         return 0
     fi
+
+    touchid_validate_pam_targets || return 1
 
     if ! is_touchid_configured; then
         echo -e "${YELLOW}Touch ID is not currently enabled${NC}"

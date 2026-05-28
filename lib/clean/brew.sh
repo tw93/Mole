@@ -2,6 +2,30 @@
 # Clean Homebrew caches and remove orphaned dependencies
 # Env: DRY_RUN
 # Skips if run within 7 days, runs cleanup/autoremove in parallel with 120s timeout
+clean_homebrew_path_has_symlinked_component() {
+    local path="$1"
+    local home_path="${HOME%/}"
+    local current="${path%/}"
+
+    [[ -n "$current" ]] || return 1
+
+    while [[ "$current" != "/" && "$current" != "." ]]; do
+        if [[ -L "$current" ]]; then
+            return 0
+        fi
+        if [[ -n "$home_path" && "$current" == "$home_path" ]]; then
+            break
+        fi
+
+        local parent
+        parent="$(dirname "$current")"
+        [[ "$parent" == "$current" ]] && break
+        current="$parent"
+    done
+
+    return 1
+}
+
 clean_homebrew() {
     command -v brew > /dev/null 2>&1 || return 0
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -20,18 +44,28 @@ clean_homebrew() {
     fi
     # Skip if cleaned recently to avoid repeated heavy operations.
     local brew_cache_file="${HOME}/.cache/roomy/brew_last_cleanup"
+    local brew_cache_dir
+    brew_cache_dir="$(dirname "$brew_cache_file")"
     local cache_valid_days=7
     local should_skip=false
-    if [[ -f "$brew_cache_file" ]]; then
+    local brew_cache_redirected=false
+    if clean_homebrew_path_has_symlinked_component "$brew_cache_dir"; then
+        brew_cache_redirected=true
+    fi
+    if [[ "$brew_cache_redirected" == "false" && -f "$brew_cache_file" && ! -L "$brew_cache_file" ]]; then
         local last_cleanup
         last_cleanup=$(cat "$brew_cache_file" 2> /dev/null || echo "0")
-        local current_time
-        current_time=$(get_epoch_seconds)
-        local time_diff=$((current_time - last_cleanup))
-        local days_diff=$((time_diff / 86400))
-        if [[ $days_diff -lt $cache_valid_days ]]; then
-            should_skip=true
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew · cleaned ${days_diff}d ago, skipped"
+        if [[ "$last_cleanup" =~ ^[0-9]+$ ]]; then
+            local current_time
+            current_time=$(get_epoch_seconds)
+            if [[ "$current_time" =~ ^[0-9]+$ && $current_time -ge $last_cleanup ]]; then
+                local time_diff=$((current_time - last_cleanup))
+                local days_diff=$((time_diff / 86400))
+                if [[ $days_diff -lt $cache_valid_days ]]; then
+                    should_skip=true
+                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew · cleaned ${days_diff}d ago, skipped"
+                fi
+            fi
         fi
     fi
     [[ "$should_skip" == "true" ]] && return 0
@@ -121,7 +155,22 @@ clean_homebrew() {
     # This prevents repeated cache size checks within the 7-day window
     # Update cache timestamp when any work succeeded or was intentionally skipped.
     if [[ "$skip_cleanup" == "true" ]] || [[ "$brew_success" == "true" ]] || [[ "$autoremove_success" == "true" ]]; then
-        ensure_user_file "$brew_cache_file"
-        get_epoch_seconds > "$brew_cache_file"
+        local brew_cache_tmp
+        if [[ "$brew_cache_redirected" == "true" ]]; then
+            debug_log "Skipping Homebrew cleanup timestamp through redirected cache path: $brew_cache_file"
+        else
+            ensure_user_dir "$brew_cache_dir"
+            brew_cache_tmp=""
+            if [[ -d "$brew_cache_dir" ]]; then
+                brew_cache_tmp=$(mktemp "$brew_cache_dir/.brew_last_cleanup.XXXXXX" 2> /dev/null || true)
+            fi
+            if [[ -n "$brew_cache_tmp" ]]; then
+                if get_epoch_seconds > "$brew_cache_tmp"; then
+                    commit_staged_user_file "$brew_cache_tmp" "$brew_cache_file" || true
+                else
+                    rm -f "$brew_cache_tmp" 2> /dev/null || true
+                fi
+            fi
+        fi
     fi
 }

@@ -42,7 +42,7 @@ pkg_receipt_nonstandard_app_paths() {
         now_epoch=$(date +%s 2> /dev/null || echo 0)
     fi
 
-    if [[ "${ROOMY_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -r "$cache_file" ]]; then
+    if [[ "${ROOMY_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -r "$cache_file" && ! -L "$cache_file" ]]; then
         local cache_mtime=0
         if declare -f get_file_mtime > /dev/null 2>&1; then
             cache_mtime=$(get_file_mtime "$cache_file")
@@ -122,7 +122,8 @@ pkg_receipt_nonstandard_app_paths() {
     fi
 
     if [[ "${ROOMY_PKG_RECEIPT_CACHE_DISABLE:-0}" != "1" && -n "$cache_file" ]]; then
-        local cache_dir="${cache_file%/*}"
+        local cache_dir
+        cache_dir=$(dirname "$cache_file")
         if [[ -n "$cache_dir" && "$cache_dir" != "$cache_file" ]]; then
             if declare -f ensure_user_dir > /dev/null 2>&1; then
                 ensure_user_dir "$cache_dir"
@@ -131,14 +132,31 @@ pkg_receipt_nonstandard_app_paths() {
             fi
         fi
         local cache_tmp
-        cache_tmp=$(mktemp "${TMPDIR:-/tmp}/roomy.pkg_receipts.XXXXXX" 2> /dev/null || true)
+        if [[ -d "$cache_dir" ]]; then
+            cache_tmp=$(mktemp "$cache_dir/.pkg_receipt_apps_v1.XXXXXX" 2> /dev/null || true)
+        else
+            cache_tmp=$(mktemp "${TMPDIR:-/tmp}/roomy.pkg_receipts.XXXXXX" 2> /dev/null || true)
+        fi
         if [[ -n "$cache_tmp" ]]; then
             if [[ ${#seen_apps[@]} -gt 0 ]]; then
                 printf '%s\n' "${seen_apps[@]}" | sort -u > "$cache_tmp"
             else
                 : > "$cache_tmp"
             fi
-            mv -f "$cache_tmp" "$cache_file" 2> /dev/null || rm -f "$cache_tmp" 2> /dev/null || true
+            if declare -f commit_staged_user_file > /dev/null 2>&1; then
+                commit_staged_user_file "$cache_tmp" "$cache_file" || true
+            else
+                if [[ -L "$cache_file" ]]; then
+                    rm -f "$cache_file" 2> /dev/null || {
+                        rm -f "$cache_tmp" 2> /dev/null || true
+                        return 0
+                    }
+                elif [[ -e "$cache_file" && ! -f "$cache_file" ]]; then
+                    rm -f "$cache_tmp" 2> /dev/null || true
+                    return 0
+                fi
+                mv -f "$cache_tmp" "$cache_file" 2> /dev/null || rm -f "$cache_tmp" 2> /dev/null || true
+            fi
         fi
     fi
 }

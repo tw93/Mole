@@ -1,6 +1,6 @@
 # Roomy Security Audit
 
-This document describes the security-relevant behavior of the current `main` branch, updated for V1.38.0 on 2026-05-10. It is intended as a public description of Roomy's safety boundaries, destructive-operation controls, release integrity signals, and known limitations.
+This document describes the security-relevant behavior of the current `main` branch, updated for V1.39.0 on 2026-05-21. It is intended as a public description of Roomy's safety boundaries, destructive-operation controls, release integrity signals, and known limitations.
 
 ## Executive Summary
 
@@ -258,7 +258,7 @@ Repository-level signals include:
 
 - weekly Dependabot updates for Go modules and GitHub Actions
 - pre-commit hook that mirrors GitHub CI checks locally (shell syntax, shfmt, shellcheck, Go vet)
-- CI checks for unsafe `rm -rf` usage patterns and core protection behavior
+- CI checks for unsafe raw deletion patterns and core protection behavior
 - targeted tests for path validation, purge boundaries, symlink behavior, dry-run flows, and destructive helpers
 - macOS 14 and macOS 15 compatibility coverage for core Bats suites
 - CodeQL scanning for Go and GitHub Actions workflows, with workflow permission hardening

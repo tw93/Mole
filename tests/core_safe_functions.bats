@@ -122,6 +122,17 @@ teardown() {
     [[ "$output" == *"protected system path"* ]]
 }
 
+@test "validate_path_for_deletion rejects paths through protected symlinked parents" {
+    local protected_dir="$HOME/Library/Logs/roomy"
+    local link_parent="$TEST_DIR/log-link"
+    mkdir -p "$protected_dir"
+    ln -s "$protected_dir" "$link_parent"
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '$link_parent/operations.log' 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"physical path resolves to protected location"* ]]
+}
+
 @test "safe_remove successfully removes file" {
     local test_file="$TEST_DIR/test_file.txt"
     echo "test" > "$test_file"
@@ -129,6 +140,29 @@ teardown() {
     run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '$test_file' true"
     [ "$status" -eq 0 ]
     [ ! -f "$test_file" ]
+}
+
+@test "safe_remove removes broken symlink" {
+    local link_path="$TEST_DIR/broken-link"
+    ln -s "$TEST_DIR/missing-target" "$link_path"
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '$link_path' true"
+    [ "$status" -eq 0 ]
+    [ ! -L "$link_path" ]
+}
+
+@test "safe_remove refuses files reached through protected symlinked parents" {
+    local protected_dir="$HOME/Library/Logs/roomy"
+    local protected_file="$protected_dir/operations.log"
+    local link_parent="$TEST_DIR/log-link"
+    mkdir -p "$protected_dir"
+    printf 'keep\n' > "$protected_file"
+    ln -s "$protected_dir" "$link_parent"
+
+    run bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_remove '$link_parent/operations.log' true 2>&1"
+    [ "$status" -eq 1 ]
+    [ -f "$protected_file" ]
+    [[ "$(cat "$protected_file")" == "keep" ]]
 }
 
 @test "safe_remove successfully removes directory" {

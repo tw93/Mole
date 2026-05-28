@@ -53,6 +53,39 @@ setup() {
 	[[ "$output" == *"DRY RUN MODE"* ]]
 }
 
+@test "delete_selected_installers honors dry-run after selected confirmation" {
+	target="$HOME/Downloads/Selected.dmg"
+	printf 'installer-bytes' > "$target"
+
+	run env HOME="$HOME" TERM="xterm-256color" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+export ROOMY_TEST_MODE=1
+export ROOMY_DRY_RUN=1
+source "$PROJECT_ROOT/bin/installer.sh"
+
+INSTALLER_PATHS=("$HOME/Downloads/Selected.dmg")
+INSTALLER_SIZES=(15)
+ROOMY_SELECTION_RESULT="0"
+
+delete_selected_installers <<< $'\n'
+show_summary
+
+if [[ -f "$HOME/Downloads/Selected.dmg" ]]; then
+	printf 'TARGET:present\n'
+else
+	printf 'TARGET:missing\n'
+fi
+printf 'TOTAL_DELETED:%s\n' "$total_deleted"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Dry run complete - no changes made"* ]]
+	[[ "$output" == *"Would remove"* ]]
+	[[ "$output" == *"TARGET:present"* ]]
+	[[ "$output" == *"TOTAL_DELETED:1"* ]]
+	[ -f "$target" ]
+}
+
 # Test scan_installers_in_path function directly
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -89,6 +122,25 @@ setup() {
 	[[ "$output" == *"App2.pkg"* ]]
 	[[ "$output" == *"App3.iso"* ]]
 	[[ "$output" == *"App.mpkg"* ]]
+}
+
+@test "scan_installers_in_path (fallback find): detects uppercase installer extensions" {
+	touch "$HOME/Downloads/App1.DMG"
+	touch "$HOME/Downloads/App2.PKG"
+	touch "$HOME/Downloads/App3.ISO"
+	touch "$HOME/Downloads/App4.XIP"
+
+	run env PATH="/usr/bin:/bin" bash -euo pipefail -c "
+        export ROOMY_TEST_MODE=1
+        source \"\$1\"
+        scan_installers_in_path \"\$2\"
+    " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"App1.DMG"* ]]
+	[[ "$output" == *"App2.PKG"* ]]
+	[[ "$output" == *"App3.ISO"* ]]
+	[[ "$output" == *"App4.XIP"* ]]
 }
 
 @test "scan_installers_in_path (fallback find): respects max depth" {
@@ -243,4 +295,28 @@ setup() {
 	[[ "$output" == *"real.dmg"* ]]
 	[[ "$output" != *"symlink.dmg"* ]]
 	[[ "$output" != *"dangling.lnk"* ]]
+}
+
+@test "scan_installers_in_path skips symlinked scan roots before invoking fd" {
+	rm -rf "$HOME/Downloads"
+	mkdir -p "$HOME/outside-downloads" "$HOME/fake-bin"
+	touch "$HOME/outside-downloads/Outside.dmg"
+	ln -s "$HOME/outside-downloads" "$HOME/Downloads"
+
+	cat > "$HOME/fake-bin/fd" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'FD_INVOKED\n' >> "$FD_LOG"
+printf '%s\0' "$OUTSIDE_FILE"
+SCRIPT
+	chmod +x "$HOME/fake-bin/fd"
+
+	run env PATH="$HOME/fake-bin:/usr/bin:/bin" FD_LOG="$HOME/fd.log" OUTSIDE_FILE="$HOME/outside-downloads/Outside.dmg" bash -euo pipefail -c "
+        export ROOMY_TEST_MODE=1
+        source \"\$1\"
+        scan_installers_in_path \"\$2\"
+    " bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
+
+	[ "$status" -eq 0 ]
+	[[ -z "$output" ]]
+	[ ! -f "$HOME/fd.log" ]
 }

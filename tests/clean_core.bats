@@ -151,6 +151,32 @@ MOCK
     [ -f "$HOME/Library/Caches/TestApp/cache.tmp" ]
 }
 
+@test "safe_clean removes broken symlink cache targets" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+eval "$(sed -n '/^normalize_paths_for_cleanup()/,/^start_cleanup()/p' "$PROJECT_ROOT/bin/clean.sh" | sed '$d')"
+
+DRY_RUN=false
+CURRENT_SECTION="Test"
+whitelist_skipped_count=0
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+api_capture_clean_record() { :; }
+
+link="$HOME/Library/Caches/broken-cache-link"
+ln -s "$HOME/Library/Caches/missing-target" "$link"
+
+safe_clean "$link" "Broken symlink cache"
+
+[[ ! -e "$link" && ! -L "$link" ]]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "roomy clean --dry-run reports stale login item without deleting it" {
     mkdir -p "$HOME/Library/LaunchAgents"
     cat > "$HOME/Library/LaunchAgents/com.example.stale.plist" <<'PLIST'
@@ -184,6 +210,56 @@ PLIST
     run grep -c "Application Support/Code/CachedData" "$HOME/.config/roomy/clean-list.txt"
     [ "$status" -eq 0 ]
     [ "$output" -eq 1 ]
+}
+
+@test "roomy clean --dry-run replaces symlinked export list without following it" {
+    local export_list="$HOME/.config/roomy/clean-list.txt"
+    local protected_target="$HOME/protected-clean-preview"
+    printf 'protected\n' > "$protected_target"
+    ln -sf "$protected_target" "$export_list"
+
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --dry-run
+    [ "$status" -eq 0 ]
+
+    grep -q "^protected$" "$protected_target"
+    [[ ! -L "$export_list" ]]
+    grep -q "Roomy Cleanup Preview" "$export_list"
+}
+
+@test "clean export append replaces symlinked preview list without following it" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+ROOMY_CONFIG_DIR="$HOME/.config/roomy"
+EXPORT_LIST_FILE="$ROOMY_CONFIG_DIR/clean-list.txt"
+eval "$(sed -n '/^clean_export_write_lines()/,/^if \[\[ -f "\$ROOMY_CONFIG_DIR\/whitelist" \]\]; then/p' "$PROJECT_ROOT/bin/clean.sh" | sed '$d')"
+
+mkdir -p "$ROOMY_CONFIG_DIR"
+protected_file="$HOME/protected-clean-append"
+printf 'protected\n' > "$protected_file"
+ln -sf "$protected_file" "$EXPORT_LIST_FILE"
+
+clean_export_append_line "late preview entry"
+
+[[ "$(cat "$protected_file")" == "protected" ]]
+[[ ! -L "$EXPORT_LIST_FILE" ]]
+grep -q "late preview entry" "$EXPORT_LIST_FILE"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "roomy clean require-dry-run-age rejects symlinked preview evidence" {
+    local export_list="$HOME/.config/roomy/clean-list.txt"
+    local protected_target="$HOME/protected-clean-preview"
+    printf 'recent forged preview\n' > "$protected_target"
+    ln -sf "$protected_target" "$export_list"
+
+    run env HOME="$HOME" ROOMY_TEST_MODE=1 "$PROJECT_ROOT/roomy" clean --yes --require-dry-run-age 24
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"No cleanup dry-run preview found"* ]]
+    grep -q "^recent forged preview$" "$protected_target"
 }
 
 @test "roomy clean honors whitelist entries" {

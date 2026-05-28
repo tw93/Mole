@@ -31,6 +31,8 @@ The app bundle produced by this directory is intended for local development and 
 - Install/update guidance for users who do not have a source checkout.
 - Release-grade validation of Developer ID credentials and helper deployment in a clean CI keychain.
 
+The native app release decision is tracked in `../../docs/macos/roomyui-release-decision.md`. Until that decision changes, RoomyUI remains preview-only and the production release workflow must not publish app or DMG artifacts.
+
 ## Run Locally
 
 From the repository root:

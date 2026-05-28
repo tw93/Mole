@@ -129,6 +129,75 @@ EOF
     [[ "$output" != *"missing value"* ]]
 }
 
+@test "scan_installed_apps replaces cache symlinks without reading them" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+cache_file="$HOME/.cache/roomy/installed_apps_cache"
+protected_file="$HOME/protected-installed-app-cache"
+mkdir -p "$(dirname "$cache_file")" "$HOME/Applications/SymlinkSafe.app/Contents"
+echo "com.example.ProtectedCache" > "$protected_file"
+ln -sf "$protected_file" "$cache_file"
+
+cat > "$HOME/Applications/SymlinkSafe.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.SymlinkSafe</string>
+</dict>
+</plist>
+PLIST
+
+debug_log() { :; }
+scan_installed_apps "$HOME/installed-symlink-safe.txt"
+
+grep -Fxq "com.example.SymlinkSafe" "$HOME/installed-symlink-safe.txt"
+! grep -Fxq "com.example.ProtectedCache" "$HOME/installed-symlink-safe.txt"
+[ ! -L "$cache_file" ]
+! grep -Fxq "com.example.ProtectedCache" "$cache_file"
+[ "$(cat "$protected_file")" = "com.example.ProtectedCache" ]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "scan_installed_apps replaces cache symlinks to directories without writing through them" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_TEST_MODE=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+cache_file="$HOME/.cache/roomy/installed_apps_cache"
+protected_dir="$HOME/protected-installed-app-cache-dir"
+mkdir -p "$(dirname "$cache_file")" "$protected_dir" "$HOME/Applications/DirSymlinkSafe.app/Contents"
+ln -sf "$protected_dir" "$cache_file"
+
+cat > "$HOME/Applications/DirSymlinkSafe.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.DirSymlinkSafe</string>
+</dict>
+</plist>
+PLIST
+
+debug_log() { :; }
+scan_installed_apps "$HOME/installed-dir-symlink-safe.txt"
+
+[ ! -L "$cache_file" ]
+grep -Fxq "com.example.DirSymlinkSafe" "$cache_file"
+[ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "is_bundle_orphaned returns true for old uninstalled bundle" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ORPHAN_AGE_THRESHOLD=30 bash --noprofile --norc <<'EOF'
 set -euo pipefail

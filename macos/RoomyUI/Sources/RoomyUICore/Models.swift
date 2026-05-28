@@ -344,6 +344,12 @@ public struct InstalledApplication: Decodable, Equatable, Identifiable {
     public var uninstallName: String
     public var path: String
     public var size: String
+    public var uninstallSupported: Bool?
+    public var uninstallReason: String?
+
+    public var canUninstall: Bool {
+        uninstallSupported ?? true
+    }
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -352,6 +358,8 @@ public struct InstalledApplication: Decodable, Equatable, Identifiable {
         case uninstallName = "uninstall_name"
         case path
         case size
+        case uninstallSupported = "uninstall_supported"
+        case uninstallReason = "uninstall_reason"
     }
 }
 

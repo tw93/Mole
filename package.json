@@ -7,6 +7,8 @@
     "macos:run": "scripts/build-app.sh && open .build/RoomyUI.app",
     "macos:test": "swift test --package-path macos/RoomyUI",
     "release:preflight": "scripts/release-preflight.sh",
+    "site:check": "node site/scripts/check-site.mjs",
+    "site:render-demo": "node site/scripts/render-demo-video.mjs",
     "test:api": "node --test tests/api_contract.test.mjs",
     "test:ux": "playwright test tests/ux/roomy-ui.spec.js"
   },

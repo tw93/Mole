@@ -19,7 +19,25 @@ source "$SCRIPT_DIR/../lib/core/log.sh"
 source "$SCRIPT_DIR/../lib/clean/project.sh"
 
 # Configuration
+ROOMY_CONFIG_DIR="${ROOMY_CONFIG_DIR:-$HOME/.config/roomy}"
+EXPORT_LIST_FILE="${ROOMY_PURGE_EXPORT_LIST_FILE:-$ROOMY_CONFIG_DIR/purge-list.txt}"
 CURRENT_SECTION=""
+
+purge_export_reset() {
+    local parent tmp_file
+
+    parent=$(dirname "$EXPORT_LIST_FILE")
+    ensure_user_dir "$parent"
+
+    tmp_file=$(mktemp "$parent/.purge-list.XXXXXX") || return 1
+    : > "$tmp_file"
+    commit_staged_user_file "$tmp_file" "$EXPORT_LIST_FILE"
+}
+
+purge_export_append_line() {
+    local line="${1:-}"
+    append_log_line "$EXPORT_LIST_FILE" "$line"
+}
 
 # IMPORTANT: This file overrides start_section / end_section / note_activity
 # from lib/core/base.sh by virtue of being sourced after it. The purge variant
@@ -41,7 +59,7 @@ end_section() {
 
 note_activity() {
     if [[ -n "$CURRENT_SECTION" ]]; then
-        printf '%s\n' "$CURRENT_SECTION" >> "$EXPORT_LIST_FILE"
+        purge_export_append_line "$CURRENT_SECTION"
     fi
 }
 
@@ -106,12 +124,10 @@ start_purge() {
     # Initialize stats file in user cache directory
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/roomy"
     ensure_user_dir "$stats_dir"
-    ensure_user_file "$stats_dir/purge_stats"
-    ensure_user_file "$stats_dir/purge_count"
-    ensure_user_file "$stats_dir/purge_scanning"
-    echo "0" > "$stats_dir/purge_stats"
-    echo "0" > "$stats_dir/purge_count"
-    echo "" > "$stats_dir/purge_scanning"
+    purge_write_state_file "$stats_dir/purge_stats" "0"
+    purge_write_state_file "$stats_dir/purge_count" "0"
+    purge_write_state_file "$stats_dir/purge_scanning" ""
+    purge_export_reset
 }
 
 # Perform the purge

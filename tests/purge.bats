@@ -329,6 +329,104 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
+@test "purge state writes replace symlinked cache files without following them" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+stats_dir="$HOME/.cache/roomy"
+mkdir -p "$stats_dir"
+protected_file="$HOME/protected-purge-state"
+printf 'protected\n' > "$protected_file"
+ln -sf "$protected_file" "$stats_dir/purge_stats"
+protected_dir="$HOME/protected-purge-state-dir"
+mkdir -p "$protected_dir"
+ln -sf "$protected_dir" "$stats_dir/purge_count"
+
+purge_write_state_file "$stats_dir/purge_stats" "42"
+purge_write_state_file "$stats_dir/purge_count" "7"
+
+[[ "$(cat "$protected_file")" == "protected" ]]
+[[ ! -L "$stats_dir/purge_stats" ]]
+[[ "$(cat "$stats_dir/purge_stats")" == "42" ]]
+[[ ! -L "$stats_dir/purge_count" ]]
+[[ "$(cat "$stats_dir/purge_count")" == "7" ]]
+[[ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "purge state writes refuse symlinked cache parents" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+rm -rf "$HOME/.cache"
+trap 'rm -rf "$HOME/.cache"; mkdir -p "$HOME/.cache"' EXIT
+protected_cache="$HOME/protected-purge-cache-root"
+mkdir -p "$protected_cache"
+ln -sf "$protected_cache" "$HOME/.cache"
+
+if purge_write_state_file "$HOME/.cache/roomy/purge_stats" "42"; then
+    echo "unexpected write"
+    exit 1
+fi
+
+[[ ! -e "$protected_cache/roomy/purge_stats" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "purge config writes refuse symlinked config parents" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+rm -rf "$HOME/.config"
+trap 'rm -rf "$HOME/.config"; mkdir -p "$HOME/.config"' EXIT
+protected_config="$HOME/protected-purge-config-root"
+mkdir -p "$protected_config"
+ln -sf "$protected_config" "$HOME/.config"
+
+if save_discovered_paths "$HOME/Projects"; then
+    echo "unexpected config write"
+    exit 1
+fi
+
+[[ ! -e "$protected_config/roomy/purge_paths" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "purge activity export replaces symlinked list without following it" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+export ROOMY_SKIP_MAIN=1
+export ROOMY_NO_OPLOG=1
+export ROOMY_CONFIG_DIR="$HOME/.config/roomy"
+source "$PROJECT_ROOT/bin/purge.sh"
+
+protected_dir="$HOME/protected-purge-export"
+mkdir -p "$protected_dir" "$(dirname "$EXPORT_LIST_FILE")"
+ln -sf "$protected_dir" "$EXPORT_LIST_FILE"
+
+start_purge > /dev/null
+start_section "Build artifacts" > /dev/null
+note_activity
+end_section
+
+[[ ! -L "$EXPORT_LIST_FILE" ]]
+[[ -f "$EXPORT_LIST_FILE" ]]
+grep -q "Build artifacts" "$EXPORT_LIST_FILE"
+[[ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
 @test "select_purge_categories returns failure on empty input" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -618,6 +716,35 @@ EOF
 	[[ "$result" == "FOUND" ]]
 }
 
+@test "scan_purge_targets_nul: preserves project paths containing newlines" {
+	local project target scan_output
+	project="$HOME/www/Line"$'\n'"Project"
+	target="$project/node_modules"
+	mkdir -p "$target"
+	touch "$project/package.json"
+	touch "$target/package.txt"
+	scan_output="$(mktemp)"
+
+	# shellcheck disable=SC2016
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" SCAN_OUTPUT="$scan_output" TARGET="$target" bash --noprofile --norc -c '
+        source "$PROJECT_ROOT/lib/clean/project.sh"
+        ROOMY_USE_FIND=1 scan_purge_targets_nul "$HOME/www" "$SCAN_OUTPUT"
+        found=MISSING
+        while IFS= read -r -d "" item; do
+            if [[ "$item" == "$TARGET" ]]; then
+                found=FOUND
+                break
+            fi
+        done < "$SCAN_OUTPUT"
+        printf "%s\n" "$found"
+    '
+
+	rm -f "$scan_output"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == "FOUND" ]]
+}
+
 @test "scan_purge_targets: includes valid CACHEDIR.TAG directories in find mode" {
 	mkdir -p "$HOME/www/python-app/.custom-cache"
 	touch "$HOME/www/python-app/pyproject.toml"
@@ -896,6 +1023,31 @@ EOF
 		[[ "$output" =~ "Purge complete" ]] ||
 		[[ "$output" =~ "No old" ]] ||
 		[[ "$output" =~ "Great" ]]
+}
+
+@test "scan_purge_targets skips control-character paths for line-oriented CLI output" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_USE_FIND=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+safe_project="$HOME/www/safe-project"
+unsafe_project="$HOME/www/bad"$'\t'"project"
+mkdir -p "$safe_project/node_modules" "$unsafe_project/node_modules"
+touch "$safe_project/package.json" "$unsafe_project/package.json"
+
+scan_output="$HOME/scan-output"
+scan_purge_targets "$HOME/www" "$scan_output"
+
+grep -q "safe-project/node_modules" "$scan_output"
+if grep -q "bad" "$scan_output"; then
+	echo "control-character path leaked into line-oriented scan output"
+	cat "$scan_output"
+	exit 1
+fi
+EOF
+
+	[ "$status" -eq 0 ]
 }
 
 @test "roomy purge: command exists and is executable" {

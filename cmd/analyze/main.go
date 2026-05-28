@@ -20,9 +20,11 @@ import (
 )
 
 var (
-	jsonMode             = flag.Bool("json", false, "output analysis as JSON instead of TUI")
-	duplicatesMode       = flag.Bool("duplicates", false, "include duplicate file groups in JSON output")
-	duplicateMinSizeFlag = flag.Int64("duplicates-min-size", 1<<20, "minimum duplicate candidate size in bytes")
+	jsonMode                   = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	duplicatesMode             = flag.Bool("duplicates", false, "include duplicate file groups in JSON output")
+	duplicateMinSizeFlag       = flag.Int64("duplicates-min-size", 1<<20, "minimum duplicate candidate size in bytes")
+	duplicateTimeoutFlag       = flag.Duration("duplicates-timeout", 30*time.Second, "maximum time to spend finding duplicate files")
+	duplicateMaxCandidatesFlag = flag.Int("duplicates-max-candidates", 20000, "maximum duplicate candidate files to inspect")
 )
 
 type dirEntry struct {
@@ -141,6 +143,10 @@ func (m model) inOverviewMode() bool {
 
 func main() {
 	flag.Parse()
+	if err := validateFlags(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(2)
+	}
 	if *duplicatesMode {
 		*jsonMode = true
 	}
@@ -171,6 +177,19 @@ func main() {
 	} else {
 		runTUIMode(abs, isOverview)
 	}
+}
+
+func validateFlags() error {
+	if *duplicateMinSizeFlag < 1 {
+		return fmt.Errorf("--duplicates-min-size must be >= 1")
+	}
+	if *duplicateTimeoutFlag < 0 {
+		return fmt.Errorf("--duplicates-timeout must be >= 0")
+	}
+	if *duplicateMaxCandidatesFlag < 0 {
+		return fmt.Errorf("--duplicates-max-candidates must be >= 0")
+	}
+	return nil
 }
 
 func runTUIMode(path string, isOverview bool) {

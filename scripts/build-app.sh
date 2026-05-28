@@ -109,7 +109,7 @@ if [[ ! -x "$HELPER_EXECUTABLE" ]]; then
     exit 1
 fi
 
-rm -rf "$APP_BUNDLE"
+rm -rf "$APP_BUNDLE" # SAFE: generated app bundle under repo-local .build
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$CLI_PAYLOAD_DIR" "$LAUNCH_SERVICES_DIR" "$LAUNCH_DAEMONS_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/$APP_NAME"
 chmod 755 "$MACOS_DIR/$APP_NAME"
@@ -132,12 +132,12 @@ if command -v iconutil > /dev/null 2>&1; then
     ICON_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/roomy-icon.XXXXXX")"
     swift "$PACKAGE_DIR/Support/GenerateIcon.swift" "$ICON_WORK_DIR/Roomy.iconset"
     iconutil -c icns "$ICON_WORK_DIR/Roomy.iconset" -o "$ICON_FILE"
-    rm -rf "$ICON_WORK_DIR"
+    rm -rf "$ICON_WORK_DIR" # SAFE: removes mktemp icon workspace
 else
     echo "warning: iconutil not available; building app without a custom icon" >&2
 fi
 
-cat > "$CONTENTS_DIR/Info.plist" <<PLIST
+cat > "$CONTENTS_DIR/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -186,7 +186,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 </plist>
 PLIST
 
-cat > "$HELPER_PLIST" <<PLIST
+cat > "$HELPER_PLIST" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

@@ -175,7 +175,7 @@ public struct RoomyAPIClient {
 
     public func executeStorage(planURL: URL) async throws -> [ExecutionEvent] {
         let data = try await runProcess(.storageExecute(planURL: planURL))
-        return Self.decodeEvents(from: data)
+        return try Self.validatedEvents(from: data)
     }
 
     public func streamStorage(planURL: URL) -> AsyncThrowingStream<ExecutionEvent, Error> {
@@ -200,7 +200,7 @@ public struct RoomyAPIClient {
 
     public func updateWhitelist(mode: String, planURL: URL) async throws -> [ExecutionEvent] {
         let data = try await runProcess(.whitelistUpdate(mode: mode, planURL: planURL))
-        return Self.decodeEvents(from: data)
+        return try Self.validatedEvents(from: data)
     }
 
     public func streamWhitelistUpdate(mode: String, planURL: URL) -> AsyncThrowingStream<ExecutionEvent, Error> {
@@ -213,7 +213,7 @@ public struct RoomyAPIClient {
 
     public func updatePurgePaths(planURL: URL) async throws -> [ExecutionEvent] {
         let data = try await runProcess(.purgePathsUpdate(planURL: planURL))
-        return Self.decodeEvents(from: data)
+        return try Self.validatedEvents(from: data)
     }
 
     public func streamPurgePathsUpdate(planURL: URL) -> AsyncThrowingStream<ExecutionEvent, Error> {
@@ -263,7 +263,7 @@ public struct RoomyAPIClient {
     public func executeTouchID(action: String, planURL: URL, administrator: Bool) async throws -> [ExecutionEvent] {
         let endpoint = RoomyEndpoint.touchIDExecute(action: action, planURL: planURL)
         let data = try await (administrator ? runAdministratorProcess(endpoint) : runProcess(endpoint))
-        return Self.decodeEvents(from: data)
+        return try Self.validatedEvents(from: data, privileged: administrator)
     }
 
     public func streamTouchID(action: String, planURL: URL, administrator: Bool) -> AsyncThrowingStream<ExecutionEvent, Error> {
@@ -272,7 +272,7 @@ public struct RoomyAPIClient {
 
     public func executeCompletion(planURL: URL) async throws -> [ExecutionEvent] {
         let data = try await runProcess(.completionExecute(planURL: planURL))
-        return Self.decodeEvents(from: data)
+        return try Self.validatedEvents(from: data)
     }
 
     public func streamCompletion(planURL: URL) -> AsyncThrowingStream<ExecutionEvent, Error> {
@@ -281,7 +281,7 @@ public struct RoomyAPIClient {
 
     public func executeLaunchers(planURL: URL) async throws -> [ExecutionEvent] {
         let data = try await runProcess(.launcherExecute(planURL: planURL))
-        return Self.decodeEvents(from: data)
+        return try Self.validatedEvents(from: data)
     }
 
     public func streamLaunchers(planURL: URL) -> AsyncThrowingStream<ExecutionEvent, Error> {
@@ -292,13 +292,19 @@ public struct RoomyAPIClient {
         do {
             let endpoint = RoomyEndpoint.execute(domain: domain, planURL: planURL)
             let data = try await (administrator ? runAdministratorProcess(endpoint) : runProcess(endpoint))
-            return Self.decodeEvents(from: data)
-        } catch let RoomyAPIError.processFailed(_, message) {
-            let events = Self.decodeEvents(from: Data(message.utf8))
-            if !events.isEmpty {
+            return try Self.validatedEvents(from: data, privileged: administrator)
+        } catch let RoomyAPIError.processFailed(status, message) {
+            if status == 0 {
+                throw RoomyAPIError.processFailed(status: status, message: message)
+            }
+            if let events = try Self.validatedEventsFromFailedProcess(
+                status: status,
+                message: message,
+                privileged: administrator
+            ) {
                 return events
             }
-            throw RoomyAPIError.processFailed(status: 1, message: message)
+            throw RoomyAPIError.processFailed(status: status, message: message)
         }
     }
 
@@ -312,6 +318,74 @@ public struct RoomyAPIClient {
             .compactMap { line in
                 try? Self.decoder.decode(ExecutionEvent.self, from: Data(line))
             }
+    }
+
+    private static func validatedEvents(from data: Data, privileged: Bool = false) throws -> [ExecutionEvent] {
+        let events = decodeEvents(from: data)
+        let prefix = privileged ? "Privileged Roomy command" : "roomy"
+
+        guard !events.isEmpty else {
+            throw RoomyAPIError.processFailed(
+                status: 0,
+                message: "\(prefix) completed without emitting execution events"
+            )
+        }
+
+        guard events.contains(where: { $0.event == "completed" || $0.event == "failed" }) else {
+            throw RoomyAPIError.processFailed(
+                status: 0,
+                message: "\(prefix) completed without emitting a terminal execution event"
+            )
+        }
+
+        if let completedError = completedEventFailure(in: events, privileged: privileged) {
+            throw completedError
+        }
+
+        return events
+    }
+
+    private static func validatedEventsFromFailedProcess(
+        status: Int32,
+        message: String,
+        privileged: Bool
+    ) throws -> [ExecutionEvent]? {
+        let events = decodeEvents(from: Data(message.utf8))
+        guard !events.isEmpty else {
+            return nil
+        }
+
+        if let completedError = completedEventFailure(in: events, privileged: privileged) {
+            throw completedError
+        }
+
+        if events.contains(where: { $0.event == "failed" }) {
+            return events
+        }
+
+        let prefix = privileged ? "Privileged Roomy command" : "roomy"
+        throw RoomyAPIError.processFailed(
+            status: status,
+            message: "\(prefix) exited with status \(status) without emitting a failed terminal execution event"
+        )
+    }
+
+    private static func completedEventFailure(in events: [ExecutionEvent], privileged: Bool) -> RoomyAPIError? {
+        guard
+            let event = events.first(where: { event in
+                guard event.event == "completed", let exitCode = event.exitCode else { return false }
+                return exitCode != 0
+            }),
+            let exitCode = event.exitCode
+        else {
+            return nil
+        }
+
+        let prefix = privileged ? "Privileged Roomy command" : "roomy"
+        return RoomyAPIError.processFailed(
+            status: Int32(clamping: exitCode),
+            message: event.message ?? "\(prefix) completed event reported status \(exitCode)"
+        )
     }
 
     public func runJSON<T: Decodable>(_ endpoint: RoomyEndpoint) async throws -> T {
@@ -415,6 +489,7 @@ public struct RoomyAPIClient {
 
             var errorData = Data()
             let errorLock = NSLock()
+            let drainLock = NSLock()
             error.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty {
@@ -424,16 +499,10 @@ public struct RoomyAPIClient {
                 }
             }
 
-            let timeoutWork = DispatchWorkItem {
-                cleanup()
-                if process.isRunning {
-                    process.terminate()
-                }
-                state.finish(continuation, error: RoomyAPIError.timedOut(command: commandDescription, seconds: timeout))
-            }
+            let drainRemainingOutput: () -> Data = {
+                drainLock.lock()
+                defer { drainLock.unlock() }
 
-            process.terminationHandler = { terminatedProcess in
-                cleanup()
                 consumeOutput(output.fileHandleForReading.readDataToEndOfFile())
                 errorLock.lock()
                 errorData.append(error.fileHandleForReading.readDataToEndOfFile())
@@ -443,9 +512,62 @@ public struct RoomyAPIClient {
                     state.markEvent(event)
                     continuation.yield(event)
                 }
+                return capturedError
+            }
+
+            let timeoutError = RoomyAPIError.timedOut(command: commandDescription, seconds: timeout)
+            let timeoutWork = DispatchWorkItem {
+                state.markTimedOut()
+                if process.isRunning {
+                    process.terminate()
+                }
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2) {
+                    cleanup()
+                    if !process.isRunning {
+                        _ = drainRemainingOutput()
+                    }
+                    state.finish(continuation, error: timeoutError)
+                }
+            }
+
+            process.terminationHandler = { terminatedProcess in
+                cleanup()
+                let capturedError = drainRemainingOutput()
                 timeoutWork.cancel()
 
-                if terminatedProcess.terminationStatus == 0 || state.hasTerminalEvent {
+                if state.didTimeOut {
+                    state.finish(continuation, error: timeoutError)
+                    return
+                }
+
+                if terminatedProcess.terminationStatus == 0, !state.hasEvents {
+                    state.finish(
+                        continuation,
+                        error: RoomyAPIError.processFailed(
+                            status: 0,
+                            message: "roomy completed without emitting execution events"
+                        )
+                    )
+                    return
+                }
+
+                if terminatedProcess.terminationStatus == 0, !state.hasTerminalEvent {
+                    state.finish(
+                        continuation,
+                        error: RoomyAPIError.processFailed(
+                            status: 0,
+                            message: "roomy completed without emitting a terminal execution event"
+                        )
+                    )
+                    return
+                }
+
+                if let completedError = state.completedEventFailure {
+                    state.finish(continuation, error: completedError)
+                    return
+                }
+
+                if terminatedProcess.terminationStatus == 0 || state.hasFailedTerminalEvent {
                     state.finish(continuation)
                     return
                 }
@@ -490,12 +612,34 @@ public struct RoomyAPIClient {
                     let result = try await privilegedRunner.run(command: command)
                     let events = Self.decodeEvents(from: result.standardOutput)
                     let hasTerminalEvent = events.contains { $0.event == "completed" || $0.event == "failed" }
+                    let hasFailedTerminalEvent = events.contains { $0.event == "failed" }
+
+                    if result.exitCode == 0, events.isEmpty {
+                        continuation.finish(throwing: RoomyAPIError.processFailed(
+                            status: 0,
+                            message: "Privileged Roomy command completed without emitting execution events"
+                        ))
+                        return
+                    }
 
                     for event in events {
                         continuation.yield(event)
                     }
 
-                    if result.exitCode == 0 || hasTerminalEvent {
+                    if let completedError = Self.completedEventFailure(in: events, privileged: true) {
+                        continuation.finish(throwing: completedError)
+                        return
+                    }
+
+                    if result.exitCode == 0, !hasTerminalEvent {
+                        continuation.finish(throwing: RoomyAPIError.processFailed(
+                            status: 0,
+                            message: "Privileged Roomy command completed without emitting a terminal execution event"
+                        ))
+                        return
+                    }
+
+                    if result.exitCode == 0 || hasFailedTerminalEvent {
                         continuation.finish()
                         return
                     }
@@ -828,11 +972,43 @@ private final class ProcessEventStreamState {
     private var finished = false
     private var eventCount = 0
     private var terminalEventSeen = false
+    private var failedTerminalEventSeen = false
+    private var completedEventFailureStatus: Int?
+    private var completedEventFailureMessage: String?
+    private var timedOut = false
 
     var hasTerminalEvent: Bool {
         lock.lock()
         defer { lock.unlock() }
         return terminalEventSeen
+    }
+
+    var hasFailedTerminalEvent: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return failedTerminalEventSeen
+    }
+
+    var completedEventFailure: RoomyAPIError? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let status = completedEventFailureStatus else { return nil }
+        return RoomyAPIError.processFailed(
+            status: Int32(clamping: status),
+            message: completedEventFailureMessage ?? "roomy completed event reported status \(status)"
+        )
+    }
+
+    var hasEvents: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return eventCount > 0
+    }
+
+    var didTimeOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
     }
 
     func markEvent(_ event: ExecutionEvent) {
@@ -841,6 +1017,19 @@ private final class ProcessEventStreamState {
         if event.event == "completed" || event.event == "failed" {
             terminalEventSeen = true
         }
+        if event.event == "failed" {
+            failedTerminalEventSeen = true
+        }
+        if event.event == "completed", let exitCode = event.exitCode, exitCode != 0 {
+            completedEventFailureStatus = exitCode
+            completedEventFailureMessage = event.message ?? "roomy completed event reported status \(exitCode)"
+        }
+        lock.unlock()
+    }
+
+    func markTimedOut() {
+        lock.lock()
+        timedOut = true
         lock.unlock()
     }
 

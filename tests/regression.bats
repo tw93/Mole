@@ -48,9 +48,8 @@ setup() {
 
 @test "version comparison works correctly" {
     result=$(bash -c '
-        v1="1.11.8"
-        v2="1.11.9"
-        if [[ "$(printf "%s\n" "$v1" "$v2" | sort -V | head -1)" == "$v1" && "$v1" != "$v2" ]]; then
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        if roomy_version_gt "1.11.9" "1.11.8"; then
             echo "update_needed"
         fi
     ')
@@ -59,15 +58,40 @@ setup() {
 
 @test "version comparison with same versions" {
     result=$(bash -c '
-        v1="1.11.8"
-        v2="1.11.8"
-        if [[ "$(printf "%s\n" "$v1" "$v2" | sort -V | head -1)" == "$v1" && "$v1" != "$v2" ]]; then
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        if roomy_version_gt "1.11.8" "1.11.8"; then
             echo "update_needed"
         else
             echo "up_to_date"
         fi
     ')
     [[ "$result" == "up_to_date" ]]
+}
+
+@test "version comparison treats missing components as zero" {
+    result=$(bash -c '
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        roomy_version_compare "V1.2" "1.2.0"
+    ')
+    [[ "$result" == "0" ]]
+}
+
+@test "version comparison handles leading zero components numerically" {
+    result=$(bash -c '
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        if roomy_version_gt "1.09.0" "1.8.9"; then
+            echo "newer"
+        fi
+    ')
+    [[ "$result" == "newer" ]]
+}
+
+@test "latest version helper is numeric and macOS portable" {
+    result=$(bash -c '
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        roomy_latest_version "1.9.0" "1.10.0" "V1.2.0" "not-a-version"
+    ')
+    [[ "$result" == "1.10.0" ]]
 }
 
 @test "version prefix v/V is stripped correctly" {

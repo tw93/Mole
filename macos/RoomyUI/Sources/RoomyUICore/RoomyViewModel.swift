@@ -34,6 +34,7 @@ public final class RoomyViewModel: ObservableObject {
 
     public var apiClient: RoomyAPIClient
     public var privilegedHelperInstaller: RoomyPrivilegedHelperInstaller
+    private var activeLoadingTaskCount = 0
 
     public init(
         apiClient: RoomyAPIClient = RoomyAPIClient(),
@@ -78,7 +79,8 @@ public final class RoomyViewModel: ObservableObject {
     }
 
     public func loadHome() async {
-        isLoading = true
+        beginLoading()
+        defer { endLoading() }
         errorMessage = nil
         sectionErrors[.home] = nil
 
@@ -95,7 +97,6 @@ public final class RoomyViewModel: ObservableObject {
             sectionErrors[.home] = failures.joined(separator: "\n")
         }
         loadOperationJournal(limit: 8)
-        isLoading = false
     }
 
     public func loadStatus() async {
@@ -134,6 +135,7 @@ public final class RoomyViewModel: ObservableObject {
     public func executeCleanMyMac(section: RoomySection = .home) async {
         await runLoadingTask(section: section) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true))
+            defer { removeTemporaryPlan(planURL) }
             let useAdministrator = cleanupPreview?.adminRequired == true
                 && privilegedHelperStatus?.state == .enabled
             executionState = .running
@@ -174,6 +176,7 @@ public final class RoomyViewModel: ObservableObject {
                 scanPath: scanPath,
                 operation: operation
             ))
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamStorage(planURL: planURL))
@@ -200,22 +203,59 @@ public final class RoomyViewModel: ObservableObject {
 
     public func loadSettings() async {
         await runLoadingTask(section: .settings) {
-            async let clean = apiClient.whitelist(mode: "clean")
-            async let optimize = apiClient.whitelist(mode: "optimize")
-            async let paths = apiClient.purgePaths()
-            async let touchID = apiClient.touchIDStatus()
-            async let completion = apiClient.completionStatus()
-            async let launchers = apiClient.launcherStatus()
-            async let maintenance = apiClient.maintenanceStatus()
+            async let clean = captureSettingsValue("Cleanup protection") {
+                try await apiClient.whitelist(mode: "clean")
+            }
+            async let optimize = captureSettingsValue("Performance protection") {
+                try await apiClient.whitelist(mode: "optimize")
+            }
+            async let paths = captureSettingsValue("Project scan paths") {
+                try await apiClient.purgePaths()
+            }
+            async let touchID = captureSettingsValue("Touch ID") {
+                try await apiClient.touchIDStatus()
+            }
+            async let completion = captureSettingsValue("Shell completion") {
+                try await apiClient.completionStatus()
+            }
+            async let launchers = captureSettingsValue("Quick launchers") {
+                try await apiClient.launcherStatus()
+            }
+            async let maintenance = captureSettingsValue("Roomy maintenance") {
+                try await apiClient.maintenanceStatus()
+            }
 
-            cleanWhitelist = try await clean
-            optimizeWhitelist = try await optimize
-            purgePaths = try await paths
-            touchIDStatus = try await touchID
-            completionStatus = try await completion
-            launcherStatus = try await launchers
-            maintenanceStatus = try await maintenance
+            let results = await (
+                clean: clean,
+                optimize: optimize,
+                paths: paths,
+                touchID: touchID,
+                completion: completion,
+                launchers: launchers,
+                maintenance: maintenance
+            )
+
+            if let value = results.clean.value { cleanWhitelist = value }
+            if let value = results.optimize.value { optimizeWhitelist = value }
+            if let value = results.paths.value { purgePaths = value }
+            if let value = results.touchID.value { touchIDStatus = value }
+            if let value = results.completion.value { completionStatus = value }
+            if let value = results.launchers.value { launcherStatus = value }
+            if let value = results.maintenance.value { maintenanceStatus = value }
             privilegedHelperStatus = privilegedHelperInstaller.status()
+
+            let failures = [
+                results.clean.failure,
+                results.optimize.failure,
+                results.paths.failure,
+                results.touchID.failure,
+                results.completion.failure,
+                results.launchers.failure,
+                results.maintenance.failure
+            ].compactMap { $0 }
+            if !failures.isEmpty {
+                throw SettingsLoadError(messages: failures)
+            }
         }
     }
 
@@ -239,6 +279,7 @@ public final class RoomyViewModel: ObservableObject {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, paths: cleaned))
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamPurgePathsUpdate(planURL: planURL))
@@ -249,6 +290,7 @@ public final class RoomyViewModel: ObservableObject {
     public func updateWhitelist(mode: String, patterns: [String]) async {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, patterns: patterns))
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamWhitelistUpdate(mode: mode, planURL: planURL))
@@ -263,6 +305,7 @@ public final class RoomyViewModel: ObservableObject {
     public func executeTouchID(action: String, dryRun: Bool = false, administrator: Bool = false) async {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, dryRun: dryRun))
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamTouchID(
@@ -277,6 +320,7 @@ public final class RoomyViewModel: ObservableObject {
     public func executeCompletion(dryRun: Bool = false) async {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, dryRun: dryRun))
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamCompletion(planURL: planURL))
@@ -287,6 +331,7 @@ public final class RoomyViewModel: ObservableObject {
     public func executeLaunchers(dryRun: Bool = false) async {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, dryRun: dryRun))
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamLaunchers(planURL: planURL))
@@ -297,6 +342,7 @@ public final class RoomyViewModel: ObservableObject {
     public func execute(domain: ExecutionDomain, plan: ExecutionPlan, administrator: Bool = false) async {
         await runLoadingTask(section: section(for: domain)) {
             let planURL = try writeTemporaryPlan(plan)
+            defer { removeTemporaryPlan(planURL) }
             executionState = .running
             executionEvents = []
             try await consumeExecutionEvents(apiClient.streamExecute(
@@ -308,7 +354,7 @@ public final class RoomyViewModel: ObservableObject {
     }
 
     public func error(for section: RoomySection) -> String? {
-        sectionErrors[section] ?? errorMessage
+        sectionErrors[section]
     }
 
     public func performRecommendedAction(_ action: String) async {
@@ -332,6 +378,9 @@ public final class RoomyViewModel: ObservableObject {
         case "started":
             return .running
         case "completed":
+            if let exitCode = event.exitCode, exitCode != 0 {
+                return .failed(userFacingMessage(event.message ?? "Execution exited with status \(exitCode)"))
+            }
             return .completed
         case "failed":
             return .failed(userFacingMessage(event.message ?? "Execution failed"))
@@ -341,20 +390,42 @@ public final class RoomyViewModel: ObservableObject {
     }
 
     private func runLoadingTask(section: RoomySection, _ operation: () async throws -> Void) async {
-        isLoading = true
+        beginLoading()
+        defer { endLoading() }
         errorMessage = nil
         sectionErrors[section] = nil
+        let enteredWithCommandState = executionState.isCommandActive
         do {
             try await operation()
         } catch {
             let message = Self.displayMessage(for: error)
             errorMessage = message
             sectionErrors[section] = message
-            if section == selectedSection {
+            if section == selectedSection || enteredWithCommandState || executionState.isCommandActive {
                 executionState = .failed(message)
             }
         }
-        isLoading = false
+    }
+
+    private func captureSettingsValue<Value>(
+        _ label: String,
+        _ operation: () async throws -> Value
+    ) async -> SettingsValueResult<Value> {
+        do {
+            return SettingsValueResult(value: try await operation(), failure: nil)
+        } catch {
+            return SettingsValueResult(value: nil, failure: "\(label): \(Self.displayMessage(for: error))")
+        }
+    }
+
+    private func beginLoading() {
+        activeLoadingTaskCount += 1
+        isLoading = true
+    }
+
+    private func endLoading() {
+        activeLoadingTaskCount = max(0, activeLoadingTaskCount - 1)
+        isLoading = activeLoadingTaskCount > 0
     }
 
     private func consumeExecutionEvents(_ stream: AsyncThrowingStream<ExecutionEvent, Error>) async throws {
@@ -381,13 +452,27 @@ public final class RoomyViewModel: ObservableObject {
     }
 
     private func writeTemporaryPlan(_ plan: ExecutionPlan) throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let planDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RoomyPlans", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: planDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: planDirectory.path)
+
+        let url = planDirectory
             .appendingPathComponent("roomy-plan-\(UUID().uuidString)")
             .appendingPathExtension("json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(plan).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         return url
+    }
+
+    private func removeTemporaryPlan(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 
     private func section(for domain: ExecutionDomain) -> RoomySection {
@@ -436,4 +521,26 @@ public enum PreviewExecutionState: Equatable {
     case running
     case completed
     case failed(String)
+
+    var isCommandActive: Bool {
+        switch self {
+        case .previewReady, .confirming, .running:
+            true
+        case .idle, .completed, .failed:
+            false
+        }
+    }
+}
+
+private struct SettingsValueResult<Value> {
+    var value: Value?
+    var failure: String?
+}
+
+private struct SettingsLoadError: LocalizedError {
+    var messages: [String]
+
+    var errorDescription: String? {
+        messages.joined(separator: "\n")
+    }
 }

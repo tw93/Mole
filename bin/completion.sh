@@ -12,7 +12,8 @@ for entry in "${ROOMY_COMMANDS[@]}"; do
 done
 command_words="${command_names[*]}"
 clean_option_words="--dry-run -n --external --categories --exclude --list-categories --yes --max-delete-gb --max-risk --require-dry-run-age --whitelist --debug --help -h"
-analyze_option_words="--json --duplicates --duplicates-min-size --help -h"
+analyze_option_words="--json --duplicates --duplicates-min-size --duplicates-timeout --duplicates-max-candidates --help -h"
+update_option_words="--dry-run -n --force -f --nightly"
 
 emit_zsh_subcommands() {
     for entry in "${ROOMY_COMMANDS[@]}"; do
@@ -44,8 +45,13 @@ emit_fish_completions() {
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l json -d "Output analysis as JSON"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l duplicates -d "Include duplicate file groups in JSON output"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l duplicates-min-size -r -d "Minimum duplicate candidate size in bytes"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l duplicates-timeout -r -d "Maximum duplicate scan duration, for example 30s"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l duplicates-max-candidates -r -d "Maximum duplicate candidate files to inspect"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -c %s -n "__fish_seen_subcommand_from analyze analyse; and not __fish_seen_argument -l json -l help -s h" -a "(__fish_complete_directories)" -d "Path to analyze"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from update" -l dry-run -s n -d "Preview update source and target"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from update" -l force -s f -d "Force reinstall latest stable version"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from update" -l nightly -d "Install latest unreleased main branch build"\n' "$cmd"
     printf '\n'
     printf 'complete -f -c %s -n "not __fish_roomy_no_subcommand" -a bash -d "generate bash completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
     printf 'complete -f -c %s -n "not __fish_roomy_no_subcommand" -a zsh -d "generate zsh completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
@@ -69,6 +75,46 @@ remove_stale_completion_entries() {
     [[ -n "$original_mode" ]] && chmod "$original_mode" "$config_file" 2> /dev/null || true
     [[ -n "$success_message" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} $success_message"
     return 0
+}
+
+completion_require_regular_dir_path() {
+    local dir="$1"
+    local label="$2"
+    local current="${dir%/}"
+
+    if [[ -z "$current" ]]; then
+        echo "$label is empty" >&2
+        return 1
+    fi
+
+    while [[ "$current" != "/" && "$current" != "${HOME%/}" ]]; do
+        if [[ -L "$current" ]]; then
+            echo "$label must not include symlinked directories: $current" >&2
+            return 1
+        fi
+        current="$(dirname "$current")"
+    done
+
+    if [[ -e "$dir" && ! -d "$dir" ]]; then
+        echo "$label must be a directory: $dir" >&2
+        return 1
+    fi
+}
+
+write_generated_file_atomically() {
+    local target="$1"
+    local parent base temp_file
+
+    parent="$(dirname "$target")"
+    base="$(basename "$target")"
+    completion_require_regular_dir_path "$parent" "Completion target directory" || return 1
+    mkdir -p "$parent"
+    temp_file="$(mktemp "$parent/.${base}.XXXXXX")" || return 1
+    if ! cat > "$temp_file"; then
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    fi
+    commit_staged_user_file "$temp_file" "$target"
 }
 
 if [[ $# -gt 0 ]]; then
@@ -172,10 +218,12 @@ if [[ $# -eq 0 ]]; then
         fi
 
         mkdir -p "$fish_dir"
-        "$completion_name" completion fish > "$roomy_file"
+        "$completion_name" completion fish | write_generated_file_atomically "$roomy_file"
         # mo.fish sources roomy.fish so Fish loads mo completions on `mo<Tab>`
-        printf '# Roomy completions for mo (alias) -- auto-generated, do not edit\n' > "$mo_file"
-        printf 'source %s\n' "$roomy_file" >> "$mo_file"
+        {
+            printf '# Roomy completions for mo (alias) -- auto-generated, do not edit\n'
+            printf 'source %s\n' "$roomy_file"
+        } | write_generated_file_atomically "$mo_file"
 
         if [[ -f "$roomy_file" ]]; then
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Fish completions written to $fish_dir"
@@ -354,6 +402,9 @@ _roomy_completions()
             completion)
                 COMPREPLY=( \$(compgen -W "bash zsh fish" -- "\$cur_word") )
                 ;;
+            update)
+                COMPREPLY=( \$(compgen -W "$update_option_words" -- "\$cur_word") )
+                ;;
             *)
                 COMPREPLY=()
                 ;;
@@ -397,11 +448,19 @@ EOF
         printf "                '--json[Output analysis as JSON]' \\\\\n"
         printf "                '--duplicates[Include duplicate file groups in JSON output]' \\\\\n"
         printf "                '--duplicates-min-size[Minimum duplicate candidate size in bytes]:bytes:' \\\\\n"
+        printf "                '--duplicates-timeout[Maximum duplicate scan duration, for example 30s]:duration:' \\\\\n"
+        printf "                '--duplicates-max-candidates[Maximum duplicate candidate files to inspect]:count:' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]' \\\\\n"
         printf "                '*:path:_files'\n"
         printf '            ;;\n'
         printf '        completion)\n'
         printf "            _arguments '1:shell:(bash zsh fish)'\n"
+        printf '            ;;\n'
+        printf '        update)\n'
+        printf '            _arguments \\\n'
+        printf "                '(-n --dry-run)'{-n,--dry-run}'[Preview update source and target]' \\\\\n"
+        printf "                '(-f --force)'{-f,--force}'[Force reinstall latest stable version]' \\\\\n"
+        printf "                '--nightly[Install latest unreleased main branch build]'\n"
         printf '            ;;\n'
         printf '        *)\n'
         printf "            _describe 'subcommand' subcommands\n"

@@ -221,6 +221,30 @@ EOF
 	[[ "$output" == *"2 entries"* ]]
 }
 
+@test "opt_quarantine_cleanup refuses symlinked database path" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+mkdir -p "$HOME/Library/Preferences"
+protected_db="$HOME/protected-quarantine.sqlite"
+quarantine_db="$HOME/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2"
+sqlite3 "$protected_db" "CREATE TABLE IF NOT EXISTS LSQuarantineEvent (id TEXT);"
+sqlite3 "$protected_db" "DELETE FROM LSQuarantineEvent;"
+sqlite3 "$protected_db" "INSERT INTO LSQuarantineEvent VALUES ('keep');"
+ln -sf "$protected_db" "$quarantine_db"
+
+opt_quarantine_cleanup
+echo "rows=$(sqlite3 "$protected_db" "SELECT COUNT(*) FROM LSQuarantineEvent;")"
+[[ -L "$quarantine_db" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"redirected database path"* ]]
+	[[ "$output" == *"rows=1"* ]]
+}
+
 @test "opt_quarantine_cleanup skips when sqlite3 unavailable" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -258,6 +282,35 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"sqlite3 unavailable"* ]]
+}
+
+@test "opt_sqlite_vacuum skips symlinked databases" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+CALL_LOG="$HOME/sqlite-vacuum.log"
+> "$CALL_LOG"
+mkdir -p "$HOME/Library/Messages"
+touch "$HOME/protected-chat.db"
+ln -sf "$HOME/protected-chat.db" "$HOME/Library/Messages/chat.db"
+
+sqlite3() {
+    echo "sqlite:$*" >> "$CALL_LOG"
+    return 0
+}
+pgrep() {
+    return 1
+}
+
+opt_sqlite_vacuum
+cat "$CALL_LOG"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Already optimal for 1 databases"* ]]
+	[[ "$output" != *"sqlite:"* ]]
 }
 
 @test "opt_font_cache_rebuild succeeds in dry-run" {
@@ -342,6 +395,34 @@ EOF
 	[[ "$output" == *"Dock refreshed"* ]]
 }
 
+@test "opt_dock_refresh does not touch symlinked Dock plist" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+rm -rf "$HOME/Library/Preferences"
+trap 'rm -rf "$HOME/Library/Preferences"; mkdir -p "$HOME/Library/Preferences"' EXIT
+mkdir -p "$HOME/Library/Preferences"
+protected_plist="$HOME/protected-dock.plist"
+dock_plist="$HOME/Library/Preferences/com.apple.dock.plist"
+printf 'keep\n' > "$protected_plist"
+touch -t 202001010000 "$protected_plist"
+ln -sf "$protected_plist" "$dock_plist"
+before=$(stat -f %m "$protected_plist")
+
+killall() { return 0; }
+opt_dock_refresh
+
+after=$(stat -f %m "$protected_plist")
+echo "mtime=$before:$after"
+[[ "$before" == "$after" ]]
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Dock refreshed"* ]]
+}
+
 @test "opt_prevent_network_dsstore dry-run reports enabled" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -358,6 +439,33 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *".DS_Store prevention enabled"* ]]
+}
+
+@test "opt_prevent_network_dsstore skips redirected preferences directory" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+CALL_LOG="$HOME/dsstore-defaults.log"
+> "$CALL_LOG"
+rm -rf "$HOME/Library/Preferences"
+trap 'rm -rf "$HOME/Library/Preferences"; mkdir -p "$HOME/Library/Preferences"' EXIT
+mkdir -p "$HOME/Library" "$HOME/redirected-prefs"
+ln -sf "$HOME/redirected-prefs" "$HOME/Library/Preferences"
+
+defaults() {
+    echo "defaults:$*" >> "$CALL_LOG"
+    return 0
+}
+
+opt_prevent_network_dsstore
+cat "$CALL_LOG"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"redirected preferences path"* ]]
+	[[ "$output" != *"defaults:"* ]]
 }
 
 @test "opt_prevent_network_dsstore idempotent when already set" {
@@ -512,6 +620,24 @@ EOF
 	[[ "$output" == *"Launch Agents all healthy"* ]]
 }
 
+@test "opt_launch_agents_cleanup skips redirected launch agents directory" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOMY_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+rm -rf "$HOME/Library/LaunchAgents"
+trap 'rm -rf "$HOME/Library/LaunchAgents"; mkdir -p "$HOME/Library/LaunchAgents"' EXIT
+mkdir -p "$HOME/Library" "$HOME/redirected-launch-agents"
+ln -sf "$HOME/redirected-launch-agents" "$HOME/Library/LaunchAgents"
+
+opt_launch_agents_cleanup
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"redirected directory"* ]]
+}
+
 @test "execute_optimization dispatches launch_agents_cleanup" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -571,6 +697,87 @@ EOF
 
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Periodic maintenance triggered"* ]]
+}
+
+@test "opt_shared_file_list_repair skips redirected shared file list directory" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+sfl_path="$HOME/Library/Application Support/com.apple.sharedfilelist"
+rm -rf "$sfl_path"
+trap 'rm -rf "$sfl_path"; mkdir -p "$sfl_path"' EXIT
+mkdir -p "$HOME/Library/Application Support" "$HOME/redirected-sfl"
+ln -sf "$HOME/redirected-sfl" "$sfl_path"
+
+opt_shared_file_list_repair
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"redirected directory"* ]]
+}
+
+@test "opt_notification_cleanup refuses symlinked database path" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+CALL_LOG="$HOME/notification-sqlite.log"
+> "$CALL_LOG"
+darwin_dir="$HOME/darwin-user-dir"
+nc_dir="$darwin_dir/com.apple.notificationcenter/db2"
+mkdir -p "$nc_dir"
+touch "$HOME/protected-notification.db"
+ln -sf "$HOME/protected-notification.db" "$nc_dir/db"
+
+getconf() {
+    if [[ "$1" == "DARWIN_USER_DIR" ]]; then
+        printf '%s\n' "$darwin_dir"
+        return 0
+    fi
+    command getconf "$@"
+}
+sqlite3() {
+    echo "sqlite:$*" >> "$CALL_LOG"
+    return 0
+}
+
+opt_notification_cleanup
+cat "$CALL_LOG"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"redirected database path"* ]]
+	[[ "$output" != *"sqlite:"* ]]
+}
+
+@test "opt_coreduet_cleanup refuses symlinked knowledge database path" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+CALL_LOG="$HOME/coreduet-sqlite.log"
+> "$CALL_LOG"
+knowledge_dir="$HOME/Library/Application Support/Knowledge"
+mkdir -p "$knowledge_dir"
+touch "$HOME/protected-knowledge.db"
+ln -sf "$HOME/protected-knowledge.db" "$knowledge_dir/knowledgeC.db"
+
+sqlite3() {
+    echo "sqlite:$*" >> "$CALL_LOG"
+    return 0
+}
+
+opt_coreduet_cleanup
+cat "$CALL_LOG"
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"redirected database path"* ]]
+	[[ "$output" != *"sqlite:"* ]]
 }
 
 @test "run_optimize_diagnostics flags sustained CloudShell as primary bottleneck" {

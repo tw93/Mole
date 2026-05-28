@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roomy Demo Scene</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #151a1f;
+      --muted: #65717b;
+      --line: rgba(21, 26, 31, 0.12);
+      --blue: #0f6bff;
+      --green: #149b64;
+      --amber: #b97808;
+      --red: #c83f4b;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+      color: var(--ink);
+      background: #dfe6ea;
+    }
+
+    .stage {
+      position: relative;
+      width: 1280px;
+      height: 720px;
+      padding: 42px;
+      background:
+        radial-gradient(circle at 12% 15%, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0) 24%),
+        linear-gradient(135deg, #eef3f5 0%, #d7e0e5 46%, #c9d2d8 100%);
+    }
+
+    .mac-window {
+      display: grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+      width: 100%;
+      height: 636px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid rgba(17, 24, 39, 0.16);
+      background: #ffffff;
+      box-shadow: 0 28px 80px rgba(21, 26, 31, 0.24);
+    }
+
+    .sidebar {
+      padding: 22px 16px;
+      color: #ffffff;
+      background: #20272e;
+    }
+
+    .traffic {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+
+    .traffic span {
+      width: 12px;
+      height: 12px;
+      display: block;
+      border-radius: 50%;
+    }
+
+    .traffic span:nth-child(1) { background: #ff5f57; }
+    .traffic span:nth-child(2) { background: #febc2e; }
+    .traffic span:nth-child(3) { background: #28c840; }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-size: 22px;
+      font-weight: 780;
+    }
+
+    .logo-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+
+    .nav {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nav-item {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 8px;
+      padding: 0 12px;
+      color: rgba(255, 255, 255, 0.76);
+      font-weight: 680;
+    }
+
+    .nav-item.active {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .content {
+      padding: 32px 34px;
+      background: #f7f9fa;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .title h1 {
+      margin: 0 0 7px;
+      font-size: 42px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .status-pill {
+      height: 38px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 8px;
+      padding: 0 12px;
+      background: #eaf7f1;
+      color: var(--green);
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .metric {
+      min-height: 122px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #ffffff;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 680;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 14px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: #ffffff;
+    }
+
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .rows {
+      display: grid;
+      gap: 9px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 86px 78px;
+      gap: 12px;
+      align-items: center;
+      height: 42px;
+      border-radius: 8px;
+      padding: 0 12px;
+      background: #f3f6f8;
+      font-size: 15px;
+      font-weight: 680;
+    }
+
+    .row small {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+    }
+
+    .badge {
+      justify-self: end;
+      min-width: 68px;
+      border-radius: 8px;
+      padding: 5px 8px;
+      text-align: center;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    .badge.safe { background: var(--green); }
+    .badge.review { background: var(--amber); }
+    .badge.skip { background: var(--muted); }
+
+    .terminal {
+      min-height: 306px;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      border-radius: 8px;
+      padding: 16px;
+      background: #11161b;
+      color: #dce7ef;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .terminal .prompt {
+      color: #76e0a3;
+    }
+
+    .terminal .muted {
+      color: #93a0aa;
+    }
+
+    .terminal .warn {
+      color: #ffd27a;
+    }
+
+    .terminal .done {
+      color: #7ee0a7;
+    }
+
+    .progress {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .progress span {
+      display: block;
+      width: var(--progress, 0%);
+      height: 100%;
+      background: #7ee0a7;
+      transition: width 0.18s linear;
+    }
+
+    .overlay-callout {
+      position: absolute;
+      right: 76px;
+      bottom: 66px;
+      width: 360px;
+      border: 1px solid rgba(255, 255, 255, 0.54);
+      border-radius: 8px;
+      padding: 18px;
+      color: #ffffff;
+      background: rgba(17, 22, 27, 0.86);
+      box-shadow: 0 18px 40px rgba(21, 26, 31, 0.24);
+      opacity: var(--callout-opacity, 0);
+      transform: translateY(var(--callout-y, 16px));
+    }
+
+    .overlay-callout strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 20px;
+    }
+
+    .overlay-callout p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.76);
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="mac-window">
+      <aside class="sidebar">
+        <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="logo"><span class="logo-mark">R</span><span>Roomy</span></div>
+        <div class="nav">
+          <div class="nav-item active"><span class="dot"></span>Clean</div>
+          <div class="nav-item"><span class="dot"></span>Uninstall</div>
+          <div class="nav-item"><span class="dot"></span>Analyze</div>
+          <div class="nav-item"><span class="dot"></span>Report</div>
+        </div>
+      </aside>
+      <main class="content">
+        <div class="topline">
+          <div class="title">
+            <h1 id="scene-title">Preview cleanup plan</h1>
+            <p id="scene-subtitle">No files changed. Review targets, risk, and restore options first.</p>
+          </div>
+          <div class="status-pill" id="scene-status">Dry run active</div>
+        </div>
+        <div class="metric-grid">
+          <div class="metric"><span>Potential space</span><strong id="space">42.8GB</strong></div>
+          <div class="metric"><span>Protected skips</span><strong id="skips">18</strong></div>
+          <div class="metric"><span>Risk cap</span><strong id="risk">Medium</strong></div>
+          <div class="metric"><span>Restore path</span><strong id="restore">Trash</strong></div>
+        </div>
+        <div class="workflow">
+          <section class="panel">
+            <h2>Cleanup targets</h2>
+            <div class="rows">
+              <div class="row"><span>Developer caches</span><small>18.6GB</small><span class="badge safe">Safe</span></div>
+              <div class="row"><span>Browser data</span><small>7.2GB</small><span class="badge safe">Safe</span></div>
+              <div class="row"><span>Installer files</span><small>6.9GB</small><span class="badge safe">Safe</span></div>
+              <div class="row"><span>App leftovers</span><small>4.4GB</small><span class="badge review">Review</span></div>
+              <div class="row"><span>Recent projects</span><small>2.1GB</small><span class="badge skip">Skip</span></div>
+            </div>
+          </section>
+          <section class="terminal" id="terminal">
+            <div><span class="prompt">$</span> roomy clean --dry-run</div>
+            <div class="muted">Scanning protected cleanup boundaries...</div>
+            <div>✓ User cache candidates: 18.6GB</div>
+            <div>✓ Browser cache candidates: 7.2GB</div>
+            <div class="warn">◎ Skipped recent project artifacts</div>
+            <div class="progress"><span id="progress"></span></div>
+            <div class="done" id="terminal-done">Preview ready. Nothing changed.</div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div class="overlay-callout" id="callout">
+      <strong id="callout-title">Trustworthy by default</strong>
+      <p id="callout-copy">Roomy shows the plan, protects risky paths, and records what happened after cleanup.</p>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const frame = Number(params.get("frame") || 0);
+    const total = Number(params.get("total") || 144);
+    const t = Math.max(0, Math.min(1, frame / Math.max(1, total - 1)));
+    const progress = Math.round(Math.min(100, Math.max(4, t * 118)));
+    document.documentElement.style.setProperty("--progress", `${progress}%`);
+
+    const title = document.getElementById("scene-title");
+    const subtitle = document.getElementById("scene-subtitle");
+    const status = document.getElementById("scene-status");
+    const terminalDone = document.getElementById("terminal-done");
+    const callout = document.getElementById("callout");
+    const calloutTitle = document.getElementById("callout-title");
+    const calloutCopy = document.getElementById("callout-copy");
+    const space = document.getElementById("space");
+    const skips = document.getElementById("skips");
+    const risk = document.getElementById("risk");
+    const restore = document.getElementById("restore");
+
+    if (t > 0.34) {
+      title.textContent = "Approve a bounded cleanup";
+      subtitle.textContent = "Cap deletion size and keep recoverable items in Trash.";
+      status.textContent = "Risk limit on";
+      terminalDone.textContent = "Plan approved. Moving eligible files to Trash.";
+      space.textContent = "38.4GB";
+      risk.textContent = "Capped";
+    }
+
+    if (t > 0.68) {
+      title.textContent = "Report what changed";
+      subtitle.textContent = "Review operation history and restore eligible Trash-backed actions.";
+      status.textContent = "Journal saved";
+      terminalDone.textContent = "Cleanup complete. Report saved to operations.log.";
+      space.textContent = "38.4GB";
+      skips.textContent = "21";
+      restore.textContent = "Report";
+      calloutTitle.textContent = "Built for repeat work";
+      calloutCopy.textContent = "Profiles, schedules, JSON APIs, and reports turn cleanup into a repeatable workflow.";
+    }
+
+    let opacity = 0;
+    if (t > 0.18 && t < 0.92) {
+      opacity = Math.min(1, (t - 0.18) / 0.16, (0.92 - t) / 0.12);
+    }
+    callout.style.setProperty("--callout-opacity", opacity.toFixed(3));
+    callout.style.setProperty("--callout-y", `${Math.round((1 - opacity) * 16)}px`);
+  </script>
+</body>
+</html>

@@ -9,8 +9,46 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    name: Launch Readiness Preflight
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Install public release test tools
+        run: brew install bats-core shellcheck coreutils parallel
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Run public release gate
+        env:
+          ROOMY_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
+          ROOMY_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
+          ROOMY_TEST_JOBS: "6"
+          BATS_FORMATTER: tap
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: scripts/check-public-release.sh --tag "${GITHUB_REF_NAME}" --full --skip-clean-machine
+
   build:
     name: Build
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -32,11 +70,13 @@ jobs:
 
       - name: Build Binaries
         run: |
+          set -euo pipefail
           make ${{ matrix.target }}
           ls -l bin/
 
       - name: Package binaries for Homebrew
         run: |
+          set -euo pipefail
           cd bin
           # Package binaries into tar.gz for Homebrew resource
           if [[ "${{ matrix.target }}" == "release-arm64" ]]; then
@@ -63,6 +103,11 @@ jobs:
       attestations: write
       id-token: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          path: source
+
       - name: Download all artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -75,37 +120,148 @@ jobs:
 
       - name: Generate release checksums
         run: |
+          set -euo pipefail
           cd bin
+          expected_release_files=(
+            analyze-darwin-amd64
+            analyze-darwin-arm64
+            status-darwin-amd64
+            status-darwin-arm64
+            binaries-darwin-amd64.tar.gz
+            binaries-darwin-arm64.tar.gz
+          )
           mapfile -t release_files < <(find . -maxdepth 1 -type f -printf '%P\n' | sort)
-          if [[ ${#release_files[@]} -eq 0 ]]; then
-            echo "No release assets found"
+          if [[ ${#release_files[@]} -ne ${#expected_release_files[@]} ]]; then
+            echo "Release asset set is incomplete or contains unexpected files"
             exit 1
           fi
-          sha256sum "${release_files[@]}" > SHA256SUMS
+          for expected in "${expected_release_files[@]}"; do
+            if [[ ! -f "$expected" ]]; then
+              echo "Missing expected release asset: ${expected}"
+              exit 1
+            fi
+          done
+          for file in "${release_files[@]}"; do
+            expected_match=0
+            for expected in "${expected_release_files[@]}"; do
+              if [[ "$file" == "$expected" ]]; then
+                expected_match=1
+                break
+              fi
+            done
+            if [[ "$expected_match" -eq 0 ]]; then
+              echo "Unexpected release asset: ${file}"
+              exit 1
+            fi
+          done
+          sha256sum "${expected_release_files[@]}" > SHA256SUMS
           cat SHA256SUMS
+
+      - name: Generate release manifest
+        run: |
+          set -euo pipefail
+          cd bin
+
+          checksum_for() {
+            local file="$1"
+            awk -v file="$file" '$2 == file { print $1 }' SHA256SUMS
+          }
+
+          TAG="${GITHUB_REF_NAME}"
+          SOURCE_SHA=$(curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{ print $1 }')
+          ANALYZE_AMD_SHA=$(checksum_for "analyze-darwin-amd64")
+          ANALYZE_ARM_SHA=$(checksum_for "analyze-darwin-arm64")
+          STATUS_AMD_SHA=$(checksum_for "status-darwin-amd64")
+          STATUS_ARM_SHA=$(checksum_for "status-darwin-arm64")
+          TARBALL_AMD_SHA=$(checksum_for "binaries-darwin-amd64.tar.gz")
+          TARBALL_ARM_SHA=$(checksum_for "binaries-darwin-arm64.tar.gz")
+          NOTES_PATH="${PWD}/../source/docs/release/notes/${TAG}.md"
+
+          for value in "$SOURCE_SHA" "$ANALYZE_AMD_SHA" "$ANALYZE_ARM_SHA" "$STATUS_AMD_SHA" "$STATUS_ARM_SHA" "$TARBALL_AMD_SHA" "$TARBALL_ARM_SHA"; do
+            if [[ -z "$value" ]]; then
+              echo "Release manifest is missing a required checksum"
+              exit 1
+            fi
+          done
+          [[ -s "$NOTES_PATH" ]] || {
+            echo "Curated release notes are missing or empty: ${NOTES_PATH}"
+            exit 1
+          }
+          ../source/scripts/check-release-notes.sh --tag "$TAG" --notes "$NOTES_PATH"
+
+          cat > RELEASE_MANIFEST.md << EOF
+          # Release Manifest: ${TAG}
+
+          Tag: ${TAG}
+          Commit: ${GITHUB_SHA}
+          Release date: $(date -u '+%Y-%m-%d')
+          Launch scope: CLI
+          Generated by workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          Source archive SHA-256: ${SOURCE_SHA}
+          analyze-darwin-amd64 SHA-256: ${ANALYZE_AMD_SHA}
+          analyze-darwin-arm64 SHA-256: ${ANALYZE_ARM_SHA}
+          status-darwin-amd64 SHA-256: ${STATUS_AMD_SHA}
+          status-darwin-arm64 SHA-256: ${STATUS_ARM_SHA}
+          binaries-darwin-amd64.tar.gz SHA-256: ${TARBALL_AMD_SHA}
+          binaries-darwin-arm64.tar.gz SHA-256: ${TARBALL_ARM_SHA}
+          SHA256SUMS published: yes
+          Artifact attestation published: yes
+          Personal Homebrew tap updated: gated before stable/latest promotion by update-formula job
+          Homebrew core PR/status: gated before stable/latest promotion by update-formula job
+          GitHub release publication: draft until assets/checksums/attestations exist, prerelease for install-channel validation, stable/latest after install-channel-drill job
+          Release notes: docs/release/notes/${TAG}.md verified by workflow preflight
+          Landing page smoke check: passed by workflow preflight
+          Clean-machine drill record: clean-machine-drill-${TAG}.md uploaded before stable/latest promotion by install-channel-drill job
+          Clean-machine drill evidence: clean-machine-drill-${TAG}-evidence.tar.gz uploaded before stable/latest promotion by install-channel-drill job
+          Formula publishing secrets validated: gated before public prerelease staging by update-formula job
+          Known limitations: RoomyUI is preview-only and this release does not publish app, DMG, or notarization artifacts.
+          Rollback/remove notes: use \`roomy remove\` for manual installs, or \`brew uninstall roomy\` for Homebrew installs.
+          EOF
+          sed -i 's/^          //' RELEASE_MANIFEST.md
+          cat "$NOTES_PATH" > RELEASE_BODY.md
+          printf '\n---\n\n' >> RELEASE_BODY.md
+          cat RELEASE_MANIFEST.md >> RELEASE_BODY.md
+          cat RELEASE_MANIFEST.md
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
-            bin/analyze-darwin-*
-            bin/status-darwin-*
-            bin/binaries-darwin-*.tar.gz
+            bin/analyze-darwin-amd64
+            bin/analyze-darwin-arm64
+            bin/status-darwin-amd64
+            bin/status-darwin-arm64
+            bin/binaries-darwin-amd64.tar.gz
+            bin/binaries-darwin-arm64.tar.gz
             bin/SHA256SUMS
+            bin/RELEASE_MANIFEST.md
+            bin/RELEASE_BODY.md
 
-      - name: Create Release
+      - name: Create Draft Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: ${{ github.ref_name }}
-          files: bin/*
+          body_path: bin/RELEASE_BODY.md
+          files: |
+            bin/analyze-darwin-amd64
+            bin/analyze-darwin-arm64
+            bin/status-darwin-amd64
+            bin/status-darwin-arm64
+            bin/binaries-darwin-amd64.tar.gz
+            bin/binaries-darwin-arm64.tar.gz
+            bin/SHA256SUMS
+            bin/RELEASE_MANIFEST.md
+            bin/RELEASE_BODY.md
           generate_release_notes: false
-          draft: false
+          draft: true
           prerelease: false
 
   update-formula:
     runs-on: ubuntu-latest
     needs: release
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
@@ -113,39 +269,103 @@ jobs:
       - name: Extract version from tag
         id: tag_version
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#V}
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#V}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing version: $VERSION (tag: $TAG)"
+
+      - name: Validate release repository
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REPOSITORY,,}" != "tw93/roomy" ]]; then
+            echo "::error::Homebrew publishing is only allowed from tw93/roomy (got ${GITHUB_REPOSITORY})"
+            exit 1
+          fi
+
+      - name: Validate formula publishing secrets
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          if [[ -z "${PAT_TOKEN:-}" ]]; then
+            echo "::error::Missing PAT_TOKEN secret required to update tw93/homebrew-tap"
+            missing=1
+          fi
+          if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" ]]; then
+            echo "::error::Missing HOMEBREW_GITHUB_API_TOKEN secret required to open the Homebrew core update"
+            missing=1
+          fi
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Stage GitHub prerelease for install-channel drill
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag_version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --draft=false \
+            --prerelease
 
       - name: Update Homebrew formula (Personal Tap)
         env:
+          GH_TOKEN: ${{ github.token }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           TAG: ${{ steps.tag_version.outputs.tag }}
           VERSION: ${{ steps.tag_version.outputs.version }}
         run: |
           set -euo pipefail
 
-          curl -fsSL -o /tmp/SHA256SUMS "https://github.com/tw93/Roomy/releases/download/${TAG}/SHA256SUMS"
-          ARM_SHA=$(awk '$2 == "binaries-darwin-arm64.tar.gz" { print $1 }' /tmp/SHA256SUMS)
-          AMD_SHA=$(awk '$2 == "binaries-darwin-amd64.tar.gz" { print $1 }' /tmp/SHA256SUMS)
-          SOURCE_SHA=$(curl -fsSL "https://github.com/tw93/Roomy/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
+          release_asset_dir=""
+          tap_checkout_dir=""
+          cleanup_release_asset_dir() {
+            if [[ -n "$release_asset_dir" ]]; then
+              rm -rf "$release_asset_dir" # SAFE: temporary release checksum directory created by mktemp
+            fi
+            if [[ -n "$tap_checkout_dir" ]]; then
+              rm -rf "$tap_checkout_dir" # SAFE: temporary Homebrew tap checkout directory created by mktemp
+            fi
+          }
+          trap cleanup_release_asset_dir EXIT
+
+          release_asset_dir="$(mktemp -d)"
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern SHA256SUMS \
+            --dir "${release_asset_dir}"
+
+          sha_file="${release_asset_dir}/SHA256SUMS"
+          [[ -s "$sha_file" ]] || {
+            echo "Downloaded release checksums are missing or empty"
+            exit 1
+          }
+
+          ARM_SHA=$(awk '$2 == "binaries-darwin-arm64.tar.gz" { print $1 }' "$sha_file")
+          AMD_SHA=$(awk '$2 == "binaries-darwin-amd64.tar.gz" { print $1 }' "$sha_file")
+          SOURCE_SHA=$(curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{print $1}')
 
           if [[ -z "$ARM_SHA" || -z "$AMD_SHA" || -z "$SOURCE_SHA" ]]; then
             echo "Failed to resolve release checksums"
             exit 1
           fi
 
-          git clone "https://x-access-token:${PAT_TOKEN}@github.com/tw93/homebrew-tap.git" /tmp/homebrew-tap
+          tap_checkout_dir="$(mktemp -d)"
+          git clone "https://x-access-token:${PAT_TOKEN}@github.com/tw93/homebrew-tap.git" "$tap_checkout_dir"
           ./scripts/update_homebrew_tap_formula.sh \
-            --formula /tmp/homebrew-tap/Formula/roomy.rb \
+            --formula "${tap_checkout_dir}/Formula/roomy.rb" \
             --tag "${TAG}" \
             --source-sha "${SOURCE_SHA}" \
             --arm-sha "${ARM_SHA}" \
             --amd-sha "${AMD_SHA}"
 
-          cd /tmp/homebrew-tap
+          cd "$tap_checkout_dir"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -170,13 +390,272 @@ jobs:
             Automated release via GitHub Actions
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_GITHUB_API_TOKEN }}
-        continue-on-error: true
 
       - name: Verify formula updates
         if: success()
         run: |
+          set -euo pipefail
           echo "✓ Homebrew formulae updated successfully"
           echo "  Version: ${{ steps.tag_version.outputs.version }}"
           echo "  Tag: ${{ steps.tag_version.outputs.tag }}"
           echo "  Personal tap: tw93/homebrew-tap"
           echo "  Official core: Homebrew/homebrew-core (PR created)"
+
+  install-channel-drill:
+    name: Install Channel Drill And Publish
+    needs: update-formula
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install public release test tools
+        run: brew install bats-core shellcheck coreutils parallel
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Resolve previous release tag
+        id: previous_tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          TAG="${GITHUB_REF_NAME}"
+          previous_tag="$(git tag --list 'V[0-9]*' --sort=-v:refname | awk -v tag="$TAG" '$0 != tag { print; exit }')"
+          if [[ -z "$previous_tag" ]]; then
+            echo "Unable to determine previous release tag for update drill"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Run clean-machine install-channel drill
+        id: drill
+        env:
+          ROOMY_PERF_BYTES_TO_HUMAN_LIMIT_MS: "6000"
+          ROOMY_PERF_GET_FILE_SIZE_LIMIT_MS: "3000"
+          ROOMY_TEST_JOBS: "6"
+          BATS_FORMATTER: tap
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.previous_tag.outputs.tag }}"
+          record_dir="${RUNNER_TEMP}/clean-machine-drill"
+          evidence_dir="${record_dir}/evidence"
+          record_path="${record_dir}/${TAG}.md"
+          evidence_asset="clean-machine-drill-${TAG}-evidence.tar.gz"
+          evidence_url="https://github.com/tw93/roomy/releases/download/${TAG}/${evidence_asset}"
+          mkdir -p "$record_dir" "$evidence_dir"
+
+          scripts/run-clean-machine-cli-drill.sh \
+            --tag "$TAG" \
+            --previous-tag "${{ steps.previous_tag.outputs.previous_tag }}" \
+            --fresh-environment \
+            --tester "github-actions:${GITHUB_RUN_ID}" \
+            --record "$record_path" \
+            --evidence-dir "$evidence_dir" \
+            --evidence-location "$evidence_url" \
+            --homebrew-tap tw93/tap \
+            --homebrew-package tw93/tap/roomy \
+            --yes
+
+          echo "record_path=${record_path}" >> "$GITHUB_OUTPUT"
+          echo "evidence_dir=${evidence_dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate generated clean-machine record
+        run: scripts/check-clean-machine-drill-record.sh --tag "${{ steps.previous_tag.outputs.tag }}" --record "${{ steps.drill.outputs.record_path }}" --commit "${GITHUB_SHA}" --evidence "${{ steps.drill.outputs.evidence_dir }}"
+
+      - name: Run final public release gate
+        env:
+          TAG: ${{ steps.previous_tag.outputs.tag }}
+          RECORD_PATH: ${{ steps.drill.outputs.record_path }}
+          EVIDENCE_PATH: ${{ steps.drill.outputs.evidence_dir }}
+        run: scripts/check-public-release.sh --tag "${TAG}" --final --record "${RECORD_PATH}" --evidence "${EVIDENCE_PATH}"
+
+      - name: Upload clean-machine drill evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.previous_tag.outputs.tag }}
+          RECORD_PATH: ${{ steps.drill.outputs.record_path }}
+          EVIDENCE_DIR: ${{ steps.drill.outputs.evidence_dir }}
+        run: |
+          set -euo pipefail
+          release_record="clean-machine-drill-${TAG}.md"
+          release_evidence="clean-machine-drill-${TAG}-evidence.tar.gz"
+
+          cp "$RECORD_PATH" "$release_record"
+          tar -czf "$release_evidence" -C "$EVIDENCE_DIR" .
+
+          gh release upload "$TAG" \
+            "$release_record" \
+            "$release_evidence" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+
+      - name: Verify clean-machine release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.previous_tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_record="clean-machine-drill-${TAG}.md"
+          release_evidence="clean-machine-drill-${TAG}-evidence.tar.gz"
+          expected_assets=(
+            analyze-darwin-amd64
+            analyze-darwin-arm64
+            status-darwin-amd64
+            status-darwin-arm64
+            binaries-darwin-amd64.tar.gz
+            binaries-darwin-arm64.tar.gz
+            SHA256SUMS
+            RELEASE_MANIFEST.md
+            RELEASE_BODY.md
+            "${release_record}"
+            "${release_evidence}"
+          )
+          asset_dir=""
+          cleanup_asset_dir() {
+            if [[ -n "$asset_dir" ]]; then
+              rm -rf "$asset_dir" # SAFE: temporary release asset verification directory created by mktemp
+            fi
+          }
+          trap cleanup_asset_dir EXIT
+
+          assets="$(gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')"
+
+          while IFS= read -r asset; do
+            [[ -n "$asset" ]] || continue
+            expected_match=0
+            for expected in "${expected_assets[@]}"; do
+              if [[ "$asset" == "$expected" ]]; then
+                expected_match=1
+                break
+              fi
+            done
+            if [[ "$expected_match" -eq 0 ]]; then
+              echo "::error::Unexpected release asset before stable promotion: ${asset}"
+              exit 1
+            fi
+          done <<< "$assets"
+
+          for expected in "${expected_assets[@]}"; do
+            if ! grep -Fxq "$expected" <<< "$assets"; then
+              echo "::error::Missing release asset before stable promotion: ${expected}"
+              exit 1
+            fi
+          done
+
+          asset_dir="$(mktemp -d)"
+          for expected in "${expected_assets[@]}"; do
+            gh release download "$TAG" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern "$expected" \
+              --dir "$asset_dir"
+          done
+
+          grep -Fxq "Tag: ${TAG}" "${asset_dir}/RELEASE_MANIFEST.md" || {
+            echo "::error::Release manifest tag does not match ${TAG}"
+            exit 1
+          }
+          grep -Fxq "Commit: ${GITHUB_SHA}" "${asset_dir}/RELEASE_MANIFEST.md" || {
+            echo "::error::Release manifest commit does not match ${GITHUB_SHA}"
+            exit 1
+          }
+          body_title="$(sed -n '1p' "${asset_dir}/RELEASE_BODY.md")"
+          if [[ "$body_title" != "# Roomy ${TAG} Release Notes" ]]; then
+            echo "::error::Release body does not start with curated ${TAG} release notes"
+            exit 1
+          fi
+          scripts/check-release-notes.sh --tag "$TAG" --notes "${asset_dir}/RELEASE_BODY.md"
+          grep -Fxq "# Release Manifest: ${TAG}" "${asset_dir}/RELEASE_BODY.md" || {
+            echo "::error::Release body is missing appended release manifest"
+            exit 1
+          }
+          grep -Fxq "Commit: ${GITHUB_SHA}" "${asset_dir}/RELEASE_BODY.md" || {
+            echo "::error::Release body manifest commit does not match ${GITHUB_SHA}"
+            exit 1
+          }
+
+          manifest_value() {
+            local label="$1"
+            awk -F': ' -v label="$label" '$1 == label { print $2; exit }' "${asset_dir}/RELEASE_MANIFEST.md"
+          }
+
+          require_manifest_sha() {
+            local label="$1"
+            local file="$2"
+            local expected
+            local actual
+
+            expected="$(manifest_value "$label")"
+            if ! [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Release manifest has invalid checksum for ${label}: ${expected:-<missing>}"
+              exit 1
+            fi
+
+            actual="$(awk -v file="$file" '$2 == file { print $1; exit }' "${asset_dir}/SHA256SUMS")"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::Release manifest checksum for ${file} does not match SHA256SUMS"
+              exit 1
+            fi
+          }
+
+          source_expected="$(manifest_value "Source archive SHA-256")"
+          if ! [[ "$source_expected" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Release manifest has invalid source archive checksum: ${source_expected:-<missing>}"
+            exit 1
+          fi
+          source_actual="$(curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz" | sha256sum | awk '{ print $1 }')"
+          if [[ "$source_actual" != "$source_expected" ]]; then
+            echo "::error::Release manifest source archive checksum does not match ${TAG}"
+            exit 1
+          fi
+
+          require_manifest_sha "analyze-darwin-amd64 SHA-256" "analyze-darwin-amd64"
+          require_manifest_sha "analyze-darwin-arm64 SHA-256" "analyze-darwin-arm64"
+          require_manifest_sha "status-darwin-amd64 SHA-256" "status-darwin-amd64"
+          require_manifest_sha "status-darwin-arm64 SHA-256" "status-darwin-arm64"
+          require_manifest_sha "binaries-darwin-amd64.tar.gz SHA-256" "binaries-darwin-amd64.tar.gz"
+          require_manifest_sha "binaries-darwin-arm64.tar.gz SHA-256" "binaries-darwin-arm64.tar.gz"
+
+          (
+            cd "$asset_dir"
+            sha256sum --check SHA256SUMS
+          )
+
+          scripts/check-clean-machine-drill-record.sh \
+            --tag "$TAG" \
+            --record "${asset_dir}/${release_record}" \
+            --commit "${GITHUB_SHA}" \
+            --evidence "${asset_dir}/${release_evidence}"
+
+      - name: Promote GitHub release to stable latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.previous_tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --draft=false \
+            --prerelease=false \
+            --latest

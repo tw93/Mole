@@ -122,6 +122,29 @@ require_unzip_support() {
     [[ "$output" == "INSTALLER" ]]
 }
 
+@test "is_installer_zip: detects ZIP with uppercase installer payload extension" {
+    if ! require_zip_support; then
+        return 0
+    fi
+
+    mkdir -p "$HOME/Downloads/upper-content"
+    touch "$HOME/Downloads/upper-content/MyApp.APP"
+    (cd "$HOME/Downloads" && zip -q -r upper.zip upper-content)
+
+    run bash -euo pipefail -c '
+        export ROOMY_TEST_MODE=1
+        source "$1"
+        if is_installer_zip "'"$HOME/Downloads/upper.zip"'"; then
+            echo "INSTALLER"
+        else
+            echo "NOT_INSTALLER"
+        fi
+    ' bash "$PROJECT_ROOT/bin/installer.sh"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == "INSTALLER" ]]
+}
+
 @test "is_installer_zip: rejects ZIP when installer pattern appears after MAX_ZIP_ENTRIES" {
     if ! require_zip_support; then
         return 0

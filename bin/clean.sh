@@ -86,6 +86,31 @@ readonly CLEAN_CATEGORY_SPECS=(
     "project-artifacts|Review-only project artifact hints"
     "external|External volume metadata cleanup"
 )
+
+clean_export_write_lines() {
+    local parent tmp_file
+
+    parent=$(dirname "$EXPORT_LIST_FILE")
+    ensure_user_dir "$parent"
+
+    tmp_file=$(mktemp "$parent/.clean-list.XXXXXX") || return 1
+    if ! printf '%s\n' "$@" > "$tmp_file"; then
+        rm -f "$tmp_file" 2> /dev/null || true
+        return 1
+    fi
+    commit_staged_user_file "$tmp_file" "$EXPORT_LIST_FILE"
+}
+
+# shellcheck disable=SC2329  # Called by sourced cleanup modules and dry-run grouping loops.
+clean_export_append_line() {
+    local line="${1:-}"
+    append_log_line "$EXPORT_LIST_FILE" "$line"
+}
+
+clean_export_append_lines() {
+    append_log_lines "$EXPORT_LIST_FILE" "$@"
+}
+
 if [[ -f "$ROOMY_CONFIG_DIR/whitelist" ]]; then
     while IFS= read -r line; do
         # shellcheck disable=SC2295
@@ -287,7 +312,7 @@ check_required_dry_run_age() {
         echo "Invalid --require-dry-run-age value: $REQUIRE_DRY_RUN_HOURS" >&2
         return 1
     }
-    [[ -f "$EXPORT_LIST_FILE" ]] || {
+    [[ -f "$EXPORT_LIST_FILE" && ! -L "$EXPORT_LIST_FILE" ]] || {
         echo "No cleanup dry-run preview found at ${EXPORT_LIST_FILE/#$HOME/~}" >&2
         return 1
     }
@@ -400,6 +425,16 @@ register_dry_run_cleanup_target() {
 }
 
 # shellcheck disable=SC2329
+api_capture_clean_field() {
+    local value="${1:-}"
+    value="${value//\\/\\\\}"
+    value="${value//$'\t'/\\t}"
+    value="${value//$'\r'/\\r}"
+    value="${value//$'\n'/\\n}"
+    printf '%s' "$value"
+}
+
+# shellcheck disable=SC2329
 api_capture_clean_record() {
     [[ -n "${ROOMY_API_CLEAN_CAPTURE_FILE:-}" ]] || return 0
 
@@ -432,8 +467,15 @@ api_capture_clean_record() {
     fi
 
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$kind" "$section" "$description" "$size_kb" "$item_count" \
-        "$skipped_count" "$risk_level" "$risk_reason" "$admin_required" "$skip_reason" \
+        "$(api_capture_clean_field "$kind")" \
+        "$(api_capture_clean_field "$section")" \
+        "$(api_capture_clean_field "$description")" \
+        "$size_kb" "$item_count" \
+        "$skipped_count" \
+        "$(api_capture_clean_field "$risk_level")" \
+        "$(api_capture_clean_field "$risk_reason")" \
+        "$(api_capture_clean_field "$admin_required")" \
+        "$(api_capture_clean_field "$skip_reason")" \
         >> "$ROOMY_API_CLEAN_CAPTURE_FILE" 2> /dev/null || true
 }
 
@@ -474,9 +516,7 @@ start_section() {
     echo -e "${PURPLE_BOLD}${ICON_ARROW} $1${NC}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        ensure_user_file "$EXPORT_LIST_FILE"
-        echo "" >> "$EXPORT_LIST_FILE"
-        echo "=== $1 ===" >> "$EXPORT_LIST_FILE"
+        clean_export_append_lines "" "=== $1 ==="
     fi
 }
 
@@ -736,7 +776,7 @@ safe_clean() {
             api_capture_clean_record "skipped" "$CURRENT_SECTION" "$description" "$path" 0 0 1 "whitelist"
         fi
         [[ "$skip" == "true" ]] && continue
-        if [[ -e "$path" ]]; then
+        if [[ -e "$path" || -L "$path" ]]; then
             if [[ "$DRY_RUN" == "true" ]]; then
                 register_dry_run_cleanup_target "$path" || continue
             fi
@@ -936,7 +976,7 @@ safe_clean() {
                         total_count=$((total_count + 1))
                         removed_any=1
                     else
-                        if [[ -e "$path" && "$DRY_RUN" != "true" ]]; then
+                        if [[ ( -e "$path" || -L "$path" ) && "$DRY_RUN" != "true" ]]; then
                             removal_failed_count=$((removal_failed_count + 1))
                         fi
                     fi
@@ -981,7 +1021,7 @@ safe_clean() {
                     total_count=$((total_count + 1))
                     removed_any=1
                 else
-                    if [[ -e "$path" && "$DRY_RUN" != "true" ]]; then
+                    if [[ ( -e "$path" || -L "$path" ) && "$DRY_RUN" != "true" ]]; then
                         removal_failed_count=$((removal_failed_count + 1))
                     fi
                 fi
@@ -1073,9 +1113,9 @@ safe_clean() {
                     local size_human
                     size_human=$(bytes_to_human "$((total_size * 1024))")
                     if [[ $child_count -gt 1 ]]; then
-                        echo "$display_path  # $size_human, $child_count items" >> "$EXPORT_LIST_FILE"
+                        clean_export_append_line "$display_path  # $size_human, $child_count items"
                     else
-                        echo "$display_path  # $size_human" >> "$EXPORT_LIST_FILE"
+                        clean_export_append_line "$display_path  # $size_human"
                     fi
                 done
             fi
@@ -1127,19 +1167,17 @@ start_cleanup() {
         echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
         echo ""
 
-        ensure_user_file "$EXPORT_LIST_FILE"
-        cat > "$EXPORT_LIST_FILE" << EOF
-# Roomy Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
-#
-# How to protect files:
-# 1. Copy any path below to ${ROOMY_CONFIG_DIR/#$HOME/~}/whitelist
-# 2. Run: roomy clean --whitelist
-#
-# Example:
-#   /Users/*/Library/Caches/com.example.app
-#
-
-EOF
+        clean_export_write_lines \
+            "# Roomy Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')" \
+            "#" \
+            "# How to protect files:" \
+            "# 1. Copy any path below to ${ROOMY_CONFIG_DIR/#$HOME/~}/whitelist" \
+            "# 2. Run: roomy clean --whitelist" \
+            "#" \
+            "# Example:" \
+            "#   /Users/*/Library/Caches/com.example.app" \
+            "#" \
+            ""
 
         # Preview system section when sudo is already cached (no password prompt).
         if has_sudo_session; then
@@ -1514,15 +1552,14 @@ perform_cleanup() {
             [[ $total_items -gt 0 ]] && stats+=" | Categories: $total_items"
             summary_details+=("$stats")
 
-            {
-                echo ""
-                echo "# ============================================"
-                echo "# Summary"
-                echo "# ============================================"
-                echo "# Potential cleanup: ${freed_size_human}"
-                echo "# Items: $files_cleaned"
-                echo "# Categories: $total_items"
-            } >> "$EXPORT_LIST_FILE"
+            clean_export_append_lines \
+                "" \
+                "# ============================================" \
+                "# Summary" \
+                "# ============================================" \
+                "# Potential cleanup: ${freed_size_human}" \
+                "# Items: $files_cleaned" \
+                "# Categories: $total_items"
 
             summary_details+=("Detailed file list: ${GRAY}$EXPORT_LIST_FILE${NC}")
             summary_details+=("Use ${GRAY}roomy clean --whitelist${NC} to add protection rules")
@@ -1637,7 +1674,7 @@ main() {
                     echo "Missing path for --external" >&2
                     exit 1
                 fi
-                EXTERNAL_VOLUME_TARGET=$(validate_external_volume_target "$1") || exit 1
+                validate_external_volume_target_to_var EXTERNAL_VOLUME_TARGET "$1" || exit 1
                 ;;
             "--categories" | "--select")
                 shift

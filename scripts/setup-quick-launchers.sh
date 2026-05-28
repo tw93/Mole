@@ -49,6 +49,90 @@ detect_roomy() {
     fi
 }
 
+shell_quote() {
+    local value="$1"
+    if [[ "$value" =~ [[:cntrl:]] ]]; then
+        log_error "Refusing launcher value with control characters"
+        return 1
+    fi
+    printf '%q\n' "$value"
+}
+
+applescript_escape() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '%s\n' "$value"
+}
+
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s\n' "$value"
+}
+
+write_generated_file_atomically() {
+    local target="$1"
+    local parent base temp_file
+
+    parent="$(dirname "$target")"
+    base="$(basename "$target")"
+    launcher_require_regular_dir_path "$parent" "Launcher target directory" || return 1
+    mkdir -p "$parent"
+    temp_file="$(mktemp "$parent/.${base}.XXXXXX")" || return 1
+    if ! cat > "$temp_file"; then
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    fi
+    if [[ -L "$target" ]]; then
+        rm -f "$target" 2> /dev/null || {
+            rm -f "$temp_file" 2> /dev/null || true
+            return 1
+        }
+    elif [[ -e "$target" && ! -f "$target" ]]; then
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    fi
+    if ! mv -f "$temp_file" "$target"; then
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    fi
+}
+
+launcher_require_regular_dir_path() {
+    local dir="$1"
+    local label="$2"
+    local current="${dir%/}"
+
+    if [[ -z "$current" ]]; then
+        log_error "$label is empty"
+        return 1
+    fi
+    if [[ "$current" =~ [[:cntrl:]] ]]; then
+        log_error "$label contains control characters: $dir"
+        return 1
+    fi
+
+    while [[ "$current" != "/" && "$current" != "." ]]; do
+        if [[ -L "$current" ]]; then
+            log_error "$label must not include symlinked directories: $current"
+            return 1
+        fi
+        if [[ -e "$current" && ! -d "$current" ]]; then
+            log_error "$label must not include non-directory paths: $current"
+            return 1
+        fi
+        local parent
+        parent="$(dirname "$current")"
+        [[ "$parent" == "$current" ]] && break
+        current="$parent"
+    done
+}
+
 write_raycast_script() {
     local target="$1"
     local title="$2"
@@ -56,10 +140,20 @@ write_raycast_script() {
     local roomy_bin="$4"
     local subcommand="$5"
 
-    local cmd_for_applescript="${roomy_bin//\\/\\\\}"
-    cmd_for_applescript="${cmd_for_applescript//\"/\\\"}"
+    local roomy_bin_shell
+    local subcommand_shell
+    local shell_command
+    local shell_command_literal
+    local cmd_for_applescript
+    local cmd_for_applescript_literal
+    roomy_bin_shell=$(shell_quote "$roomy_bin")
+    subcommand_shell=$(shell_quote "$subcommand")
+    shell_command="${roomy_bin_shell} ${subcommand_shell}"
+    shell_command_literal=$(shell_quote "$shell_command")
+    cmd_for_applescript=$(applescript_escape "$shell_command")
+    cmd_for_applescript_literal=$(shell_quote "$cmd_for_applescript")
 
-    cat > "$target" << EOF
+    write_generated_file_atomically "$target" << EOF
 #!/bin/bash
 
 # Required parameters:
@@ -81,9 +175,10 @@ set -euo pipefail
 echo "🐹 Running ${title}..."
 echo ""
 
-ROOMY_BIN="${roomy_bin}"
-ROOMY_SUBCOMMAND="${subcommand}"
-ROOMY_BIN_ESCAPED="${cmd_for_applescript}"
+ROOMY_BIN=${roomy_bin_shell}
+ROOMY_SUBCOMMAND=${subcommand_shell}
+ROOMY_COMMAND=${shell_command_literal}
+ROOMY_COMMAND_APPLESCRIPT=${cmd_for_applescript_literal}
 
 has_app() {
     local name="\$1"
@@ -133,7 +228,7 @@ launch_with_app() {
         Terminal)
             if command -v osascript >/dev/null 2>&1; then
                 osascript <<APPLESCRIPT
-set targetCommand to "\${ROOMY_BIN_ESCAPED} \${ROOMY_SUBCOMMAND}"
+set targetCommand to "\${ROOMY_COMMAND_APPLESCRIPT}"
 tell application "Terminal"
     activate
     do script targetCommand
@@ -145,7 +240,7 @@ APPLESCRIPT
         iTerm|iTerm2)
             if command -v osascript >/dev/null 2>&1; then
                 osascript <<APPLESCRIPT
-set targetCommand to "\${ROOMY_BIN_ESCAPED} \${ROOMY_SUBCOMMAND}"
+set targetCommand to "\${ROOMY_COMMAND_APPLESCRIPT}"
 tell application "iTerm2"
     activate
     try
@@ -169,49 +264,49 @@ APPLESCRIPT
             ;;
         Alacritty)
             if launcher_available "Alacritty" && command -v open >/dev/null 2>&1; then
-                open -na "Alacritty" --args -e /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                open -na "Alacritty" --args -e /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             fi
             ;;
         Kitty)
             if has_bin "kitty"; then
-                kitty --hold /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                kitty --hold /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             elif [[ -x "/Applications/kitty.app/Contents/MacOS/kitty" ]]; then
-                "/Applications/kitty.app/Contents/MacOS/kitty" --hold /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                "/Applications/kitty.app/Contents/MacOS/kitty" --hold /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             fi
             ;;
         WezTerm)
             if has_bin "wezterm"; then
-                wezterm start -- /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                wezterm start -- /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             elif [[ -x "/Applications/WezTerm.app/Contents/MacOS/wezterm" ]]; then
-                "/Applications/WezTerm.app/Contents/MacOS/wezterm" start -- /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                "/Applications/WezTerm.app/Contents/MacOS/wezterm" start -- /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             fi
             ;;
         Ghostty)
             if launcher_available "Ghostty" && command -v open >/dev/null 2>&1; then
-                open -na "Ghostty" --args -e /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}; exec /bin/zsh -l"
+                open -na "Ghostty" --args -e /bin/zsh -lc "\${ROOMY_COMMAND}; exec /bin/zsh -l"
                 return \$?
             fi
             ;;
         Hyper)
             if launcher_available "Hyper" && command -v open >/dev/null 2>&1; then
-                open -na "Hyper" --args /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                open -na "Hyper" --args /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             fi
             ;;
         WindTerm)
             if launcher_available "WindTerm" && command -v open >/dev/null 2>&1; then
-                open -na "WindTerm" --args /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                open -na "WindTerm" --args /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             fi
             ;;
         Warp)
             if launcher_available "Warp" && command -v open >/dev/null 2>&1; then
-                open -na "Warp" --args /bin/zsh -lc "\"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+                open -na "Warp" --args /bin/zsh -lc "\${ROOMY_COMMAND}"
                 return \$?
             fi
             ;;
@@ -220,7 +315,7 @@ APPLESCRIPT
 }
 
 if [[ -n "\${TERM:-}" && "\${TERM}" != "dumb" ]]; then
-    "\${ROOMY_BIN}" \${ROOMY_SUBCOMMAND}
+    "\${ROOMY_BIN}" "\${ROOMY_SUBCOMMAND}"
     exit \$?
 fi
 
@@ -239,7 +334,7 @@ fi
 
 echo "TERM environment variable not set and no launcher succeeded."
 echo "Run this manually:"
-echo "    \"\${ROOMY_BIN}\" \${ROOMY_SUBCOMMAND}"
+echo "    \${ROOMY_COMMAND}"
 exit 1
 EOF
     chmod +x "$target"
@@ -256,6 +351,7 @@ create_raycast_commands() {
     local alfred_subtitle
 
     log_step "Installing Raycast commands..."
+    launcher_require_regular_dir_path "$dir" "Launcher target directory" || return 1
     mkdir -p "$dir"
     for entry in "${LAUNCHER_COMMAND_SPECS[@]}"; do
         IFS="|" read -r subcommand title description alfred_subtitle <<< "$entry"
@@ -306,20 +402,28 @@ create_alfred_workflow() {
     fi
 
     log_step "Installing Alfred workflows..."
+    launcher_require_regular_dir_path "$workflows_dir" "Launcher target directory" || return 1
     for entry in "${LAUNCHER_COMMAND_SPECS[@]}"; do
         IFS="|" read -r subcommand title _ subtitle <<< "$entry"
         bundle="fun.tw93.roomy.${subcommand}"
         keyword="${subcommand}"
-        command="\"${roomy_bin}\" ${subcommand}"
+        local roomy_bin_shell
+        local subcommand_shell
+        local command_xml
+        roomy_bin_shell=$(shell_quote "$roomy_bin")
+        subcommand_shell=$(shell_quote "$subcommand")
+        command="${roomy_bin_shell} ${subcommand_shell}"
+        command_xml=$(xml_escape "$command")
         local workflow_uid="user.workflow.$(uuid | LC_ALL=C tr '[:upper:]' '[:lower:]')"
         local input_uid
         local action_uid
         input_uid="$(uuid)"
         action_uid="$(uuid)"
         local dir="$workflows_dir/$workflow_uid"
+        launcher_require_regular_dir_path "$dir" "Launcher target directory" || return 1
         mkdir -p "$dir"
 
-        cat > "$dir/info.plist" << EOF
+        write_generated_file_atomically "$dir/info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -363,7 +467,7 @@ create_alfred_workflow() {
                 <key>script</key>
                 <string>#!/bin/bash
 PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
-${command}
+${command_xml}
 </string>
                 <key>scriptargtype</key>
                 <integer>1</integer>

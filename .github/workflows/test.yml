@@ -107,6 +107,27 @@ jobs:
       - name: Run native UI UX tests
         run: npm run test:ux
 
+  landing-site:
+    name: Landing Page Smoke
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Run landing page smoke checks
+        run: npm run site:check
+
   native-app-build:
     name: Native App Build Smoke
     runs-on: macos-latest
@@ -200,19 +221,8 @@ jobs:
       - name: Install tools
         run: brew install bats-core coreutils
 
-      - name: Check for unsafe rm usage
-        run: |
-          echo "Checking for unsafe rm patterns..."
-          # Filters in order:
-          #   safe_remove / validate_path: known safe wrapper helpers in file_ops.sh
-          #   # SAFE: explicit annotation that a direct rm is gated by narrow checks
-          #   ^path:line:[ws]#: pure comment lines that mention rm -rf in docs
-          #   echo : help text or messages that print rm -rf as documentation
-          if grep -rn "rm -rf" --include="*.sh" lib/ | grep -v -E "safe_remove|validate_path|# SAFE|^[^:]+:[0-9]+:[[:space:]]*#|echo "; then
-            echo "✗ Unsafe rm -rf usage found (annotate gated calls with '# SAFE: <reason>' or route through safe_remove)"
-            exit 1
-          fi
-          echo "✓ No unsafe rm usage found"
+      - name: Check for unsafe deletion usage
+        run: scripts/check-unsafe-rm.sh
 
       - name: Verify app protection
         run: |

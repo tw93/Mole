@@ -94,6 +94,25 @@ setup() {
 	[[ "$output" == *"_roomy_completions"* ]]
 }
 
+@test "completion scripts include update dry-run options" {
+	run "$PROJECT_ROOT/bin/completion.sh" bash
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"--dry-run -n --force -f --nightly"* ]]
+
+	run "$PROJECT_ROOT/bin/completion.sh" zsh
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"--dry-run"* ]]
+	[[ "$output" == *"--force"* ]]
+	[[ "$output" == *"--nightly"* ]]
+
+	run "$PROJECT_ROOT/bin/completion.sh" fish
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"__fish_seen_subcommand_from update"* ]]
+	[[ "$output" == *"-l dry-run"* ]]
+	[[ "$output" == *"-l force"* ]]
+	[[ "$output" == *"-l nightly"* ]]
+}
+
 @test "completion zsh generates valid zsh script" {
 	run "$PROJECT_ROOT/bin/completion.sh" zsh
 	[ "$status" -eq 0 ]
@@ -180,6 +199,57 @@ setup() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"DRY RUN MODE"* ]]
 	[ ! -f "$HOME/.zshrc" ]
+}
+
+@test "completion fish replaces generated file symlinks without following them" {
+	local test_shell=/usr/local/bin/fish
+	local fish_dir="$HOME/.config/fish/completions"
+	local protected_roomy="$HOME/protected-roomy.fish"
+	local protected_mo="$HOME/protected-mo.fish"
+	mkdir -p "$fish_dir"
+	printf 'keep-roomy\n' > "$protected_roomy"
+	printf 'keep-mo\n' > "$protected_mo"
+	ln -s "$protected_roomy" "$fish_dir/roomy.fish"
+	ln -s "$protected_mo" "$fish_dir/mo.fish"
+
+	run env SHELL="$test_shell" PATH="$PROJECT_ROOT:$PATH" "$PROJECT_ROOT/bin/completion.sh"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Fish completions written"* ]]
+	[ ! -L "$fish_dir/roomy.fish" ]
+	[ ! -L "$fish_dir/mo.fish" ]
+	[[ "$(cat "$protected_roomy")" == "keep-roomy" ]]
+	[[ "$(cat "$protected_mo")" == "keep-mo" ]]
+	grep -q "complete -f -c roomy" "$fish_dir/roomy.fish"
+	grep -q "source $fish_dir/roomy.fish" "$fish_dir/mo.fish"
+}
+
+@test "completion fish replaces generated file symlinks to directories without writing through them" {
+	local test_shell=/usr/local/bin/fish
+	local fish_dir="$HOME/.config/fish/completions"
+	local protected_dir="$HOME/protected-fish-completion-dir"
+	mkdir -p "$fish_dir" "$protected_dir"
+	ln -s "$protected_dir" "$fish_dir/roomy.fish"
+
+	run env SHELL="$test_shell" PATH="$PROJECT_ROOT:$PATH" "$PROJECT_ROOT/bin/completion.sh"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Fish completions written"* ]]
+	[ ! -L "$fish_dir/roomy.fish" ]
+	grep -q "complete -f -c roomy" "$fish_dir/roomy.fish"
+	[ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]
+}
+
+@test "completion fish refuses symlinked completions directory" {
+	local test_shell=/usr/local/bin/fish
+	local fish_root="$HOME/.config/fish"
+	local fish_dir="$fish_root/completions"
+	local redirected="$HOME/redirected-completions"
+	mkdir -p "$fish_root" "$redirected"
+	ln -s "$redirected" "$fish_dir"
+
+	run env SHELL="$test_shell" PATH="$PROJECT_ROOT:$PATH" "$PROJECT_ROOT/bin/completion.sh"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Completion target directory must not include symlinked directories"* ]]
+	[ -z "$(find "$redirected" -mindepth 1 -print -quit)" ]
 }
 
 @test "completion script handles invalid shell argument" {

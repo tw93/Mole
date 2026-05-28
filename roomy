@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/lib/core/commands.sh"
 trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
-VERSION="1.38.0"
+VERSION="1.39.0"
 ROOMY_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {
@@ -192,11 +192,30 @@ get_latest_commit_from_github() {
     echo "$sha"
 }
 
+write_update_message_cache() {
+    local msg_cache="$1"
+    local message="${2:-}"
+    local parent base temp_file
+
+    parent="$(dirname "$msg_cache")"
+    base="$(basename "$msg_cache")"
+    ensure_user_dir "$parent"
+    temp_file="$(mktemp "$parent/.${base}.XXXXXX")" || return 1
+    if ! printf '%s' "$message" > "$temp_file"; then
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    fi
+    if ! mv -f "$temp_file" "$msg_cache"; then
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    fi
+    ensure_user_file "$msg_cache"
+}
+
 # Background update notice
 check_for_updates() {
     local msg_cache="$HOME/.cache/roomy/update_message"
     ensure_user_dir "$(dirname "$msg_cache")"
-    ensure_user_file "$msg_cache"
 
     (
         (
@@ -210,9 +229,11 @@ check_for_updates() {
                 latest_commit=$(get_latest_commit_from_github)
 
                 if [[ -n "$installed_commit" && -n "$latest_commit" && "${installed_commit:0:7}" != "${latest_commit:0:7}" ]]; then
-                    printf "\nNew nightly commit %s available, run %smo update --nightly%s\n\n" "${latest_commit:0:7}" "$GREEN" "$NC" > "$msg_cache"
+                    local message
+                    printf -v message "\nNew nightly commit %s available, run %smo update --nightly%s\n\n" "${latest_commit:0:7}" "$GREEN" "$NC"
+                    write_update_message_cache "$msg_cache" "$message"
                 else
-                    echo -n > "$msg_cache"
+                    write_update_message_cache "$msg_cache" ""
                 fi
             else
                 local latest
@@ -222,21 +243,25 @@ check_for_updates() {
                     latest=$(get_latest_version)
                 fi
 
-                if [[ -n "$latest" && "$VERSION" != "$latest" && "$(printf '%s\n' "$VERSION" "$latest" | sort -V | head -1)" == "$VERSION" ]]; then
+                if [[ -n "$latest" && "$VERSION" != "$latest" ]] && roomy_version_gt "$latest" "$VERSION"; then
                     if is_homebrew_install; then
                         # For Homebrew, only notify if the brew tap has the new version available locally
                         local brew_latest
                         brew_latest=$(get_homebrew_latest_version || true)
-                        if [[ -n "$brew_latest" && "$brew_latest" != "$VERSION" && "$(printf '%s\n' "$VERSION" "$brew_latest" | sort -V | head -1)" == "$VERSION" ]]; then
-                            printf "\nUpdate %s available, run %smo update%s\n\n" "$brew_latest" "$GREEN" "$NC" > "$msg_cache"
+                        if [[ -n "$brew_latest" && "$brew_latest" != "$VERSION" ]] && roomy_version_gt "$brew_latest" "$VERSION"; then
+                            local message
+                            printf -v message "\nUpdate %s available, run %smo update%s\n\n" "$brew_latest" "$GREEN" "$NC"
+                            write_update_message_cache "$msg_cache" "$message"
                         else
-                            echo -n > "$msg_cache"
+                            write_update_message_cache "$msg_cache" ""
                         fi
                     else
-                        printf "\nUpdate %s available, run %smo update%s\n\n" "$latest" "$GREEN" "$NC" > "$msg_cache"
+                        local message
+                        printf -v message "\nUpdate %s available, run %smo update%s\n\n" "$latest" "$GREEN" "$NC"
+                        write_update_message_cache "$msg_cache" "$message"
                     fi
                 else
-                    echo -n > "$msg_cache"
+                    write_update_message_cache "$msg_cache" ""
                 fi
             fi
         ) > /dev/null 2>&1 < /dev/null &
@@ -245,7 +270,7 @@ check_for_updates() {
 
 show_update_notification() {
     local msg_cache="$HOME/.cache/roomy/update_message"
-    if [[ -f "$msg_cache" && -s "$msg_cache" ]]; then
+    if [[ -f "$msg_cache" && ! -L "$msg_cache" && -s "$msg_cache" ]]; then
         cat "$msg_cache"
         echo
     fi
@@ -347,6 +372,7 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy analyze --duplicates" "$NC" "Find duplicate files in JSON mode"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy schedule status" "$NC" "Show maintenance schedule"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy report --last 30d" "$NC" "Summarize recent cleanup history"
+    printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --dry-run" "$NC" "Preview update source and target"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --force" "$NC" "Force reinstall latest stable version"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --nightly" "$NC" "Install latest unreleased main branch build"
     printf "  %s%-28s%s %s\n" "$GREEN" "roomy remove --dry-run" "$NC" "Preview Roomy removal"
@@ -360,6 +386,7 @@ show_help() {
 update_roomy() {
     local force_update="${1:-false}"
     local nightly_update="${2:-false}"
+    local dry_run_update="${3:-false}"
     local update_interrupted=false
     local sudo_keepalive_pid=""
 
@@ -376,6 +403,22 @@ update_roomy() {
             printf '%s Reinstall via script to use: roomy update --nightly\n' "$review_icon"
             exit 1
         fi
+        if [[ "$dry_run_update" == "true" ]]; then
+            local brew_latest=""
+            brew_latest=$(get_homebrew_latest_version || true)
+            echo ""
+            echo -e "${BLUE}${ICON_REVIEW}${NC} Roomy update preview"
+            echo -e "  Current version: ${VERSION}"
+            if [[ -n "$brew_latest" ]]; then
+                echo -e "  Target version: ${brew_latest}"
+            else
+                echo -e "  Target version: latest available through Homebrew"
+            fi
+            echo -e "  Command: brew update && brew upgrade roomy"
+            echo -e "  No files changed."
+            echo ""
+            exit 0
+        fi
         update_via_homebrew "$VERSION"
         exit 0
     fi
@@ -391,8 +434,17 @@ update_roomy() {
         install_label="Installing nightly update..."
         final_success_label="nightly build (main)"
     else
-        latest=$(get_latest_version_from_github)
-        [[ -z "$latest" ]] && latest=$(get_latest_version)
+        if [[ -n "${ROOMY_UPDATE_TARGET_TAG:-}" ]]; then
+            if [[ ! "$ROOMY_UPDATE_TARGET_TAG" =~ ^[Vv]?[0-9]+(\.[0-9]+)*$ ]]; then
+                log_error "Invalid ROOMY_UPDATE_TARGET_TAG: $ROOMY_UPDATE_TARGET_TAG"
+                exit 1
+            fi
+            latest="${ROOMY_UPDATE_TARGET_TAG#v}"
+            latest="${latest#V}"
+        else
+            latest=$(get_latest_version_from_github)
+            [[ -z "$latest" ]] && latest=$(get_latest_version)
+        fi
 
         if [[ -z "$latest" ]]; then
             log_error "Unable to check for updates. Check network connection."
@@ -406,18 +458,21 @@ update_roomy() {
             exit 1
         fi
 
-        if [[ "$VERSION" == "$latest" && "$force_update" != "true" ]]; then
-            echo ""
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${VERSION}"
-            echo ""
-            exit 0
+        if [[ "$force_update" != "true" ]]; then
+            if [[ "$VERSION" == "$latest" ]]; then
+                echo ""
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} Already on latest version, ${VERSION}"
+                echo ""
+                exit 0
+            fi
+            if roomy_version_gt "$VERSION" "$latest"; then
+                echo ""
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} Installed version ${VERSION} is newer than latest public stable ${latest}"
+                echo -e "${GRAY}${ICON_REVIEW} No files changed. Use ${NC}roomy update --force${GRAY} to reinstall the public stable release.${NC}"
+                echo ""
+                exit 0
+            fi
         fi
-    fi
-
-    if [[ -t 1 ]]; then
-        start_inline_spinner "$download_label"
-    else
-        echo "${download_label%...}"
     fi
 
     local installer_ref="main"
@@ -425,6 +480,23 @@ update_roomy() {
         installer_ref="V${latest#V}"
     fi
     local installer_url="https://raw.githubusercontent.com/tw93/roomy/${installer_ref}/install.sh"
+
+    if [[ "$dry_run_update" == "true" ]]; then
+        echo ""
+        echo -e "${BLUE}${ICON_REVIEW}${NC} Roomy update preview"
+        echo -e "  Current version: ${VERSION}"
+        echo -e "  Target version: ${latest}"
+        echo -e "  Installer: ${installer_url}"
+        echo -e "  No files changed."
+        echo ""
+        exit 0
+    fi
+
+    if [[ -t 1 ]]; then
+        start_inline_spinner "$download_label"
+    else
+        echo "${download_label%...}"
+    fi
     local tmp_installer
     tmp_installer="$(mktemp_file)" || {
         log_error "Update failed"
@@ -601,6 +673,80 @@ remove_roomy() {
     local -a manual_installs=()
     local -a alias_installs=()
 
+    is_roomy_main_candidate() {
+        local path="$1"
+        [[ -f "$path" ]] || return 1
+        LC_ALL=C grep -Eq 'Roomy - Main CLI entrypoint|ROOMY_TAGLINE="Deep clean and optimize your Mac."' "$path" 2> /dev/null
+    }
+
+    is_roomy_mo_alias_candidate() {
+        local path="$1"
+        [[ -f "$path" ]] || return 1
+        LC_ALL=C grep -Fq "Compatibility alias named \`mo\` for the Roomy CLI." "$path" 2> /dev/null ||
+            LC_ALL=C grep -Fq "exec \"\$SCRIPT_DIR/roomy\" \"\$@\"" "$path" 2> /dev/null
+    }
+
+    remove_roomy_symlinked_parent() {
+        local target="$1"
+        local current parent
+
+        current="${target%/}"
+        parent="$(dirname "$current")"
+        while [[ "$parent" != "/" && "$parent" != "." && "$parent" != "${HOME%/}" ]]; do
+            if [[ -L "$parent" ]]; then
+                printf '%s\n' "$parent"
+                return 0
+            fi
+            if [[ -e "$parent" && ! -d "$parent" ]]; then
+                printf '%s\n' "$parent"
+                return 0
+            fi
+            local next_parent
+            next_parent="$(dirname "$parent")"
+            [[ "$next_parent" == "$parent" ]] && break
+            parent="$next_parent"
+        done
+        return 1
+    }
+
+    remove_roomy_owned_dir() {
+        local target="$1"
+        local label="$2"
+        local unsafe_parent=""
+
+        if [[ -L "$target" ]]; then
+            command rm -f "$target" 2> /dev/null || true
+            return 0
+        fi
+
+        if unsafe_parent=$(remove_roomy_symlinked_parent "$target"); then
+            log_warning "Skipping $label cleanup through redirected parent: $unsafe_parent"
+            return 0
+        fi
+
+        if [[ -d "$target" ]]; then
+            command rm -rf "$target" 2> /dev/null || true # SAFE: remove_roomy_owned_dir validated Roomy-owned directory path and symlink parents
+        fi
+    }
+
+    preview_remove_roomy_owned_dir() {
+        local target="$1"
+        local label="$2"
+        local unsafe_parent=""
+
+        if [[ -L "$target" ]]; then
+            echo -e "  ${GRAY}${ICON_LIST} Would remove: ${target}${NC}"
+            return 0
+        fi
+
+        if unsafe_parent=$(remove_roomy_symlinked_parent "$target"); then
+            echo -e "  ${GRAY}${ICON_LIST} Would skip ${label}: redirected parent ${unsafe_parent}${NC}"
+            return 0
+        fi
+
+        [[ -d "$target" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: ${target}${NC}"
+    }
+
     if [[ "$test_mode" != "true" ]]; then
         if command -v brew > /dev/null 2>&1; then
             brew_cmd="brew"
@@ -626,7 +772,7 @@ remove_roomy() {
     if [[ "$test_mode" != "true" ]]; then
         found_roomy=$(command -v roomy 2> /dev/null || true)
         if [[ -n "$found_roomy" && -f "$found_roomy" ]]; then
-            if [[ ! -L "$found_roomy" ]] || ! readlink "$found_roomy" | grep -q "Cellar/roomy"; then
+            if is_roomy_main_candidate "$found_roomy" && { [[ ! -L "$found_roomy" ]] || ! readlink "$found_roomy" | grep -q "Cellar/roomy"; }; then
                 manual_installs+=("$found_roomy")
             fi
         fi
@@ -645,7 +791,7 @@ remove_roomy() {
 
     for path in "${fallback_paths[@]}"; do
         if [[ -f "$path" && "$path" != "$found_roomy" ]]; then
-            if [[ ! -L "$path" ]] || ! readlink "$path" | grep -q "Cellar/roomy"; then
+            if is_roomy_main_candidate "$path" && { [[ ! -L "$path" ]] || ! readlink "$path" | grep -q "Cellar/roomy"; }; then
                 manual_installs+=("$path")
             fi
         fi
@@ -656,7 +802,7 @@ remove_roomy() {
     if [[ "$test_mode" != "true" ]]; then
         found_mo=$(command -v mo 2> /dev/null || true)
         if [[ -n "$found_mo" && -f "$found_mo" ]]; then
-            if [[ ! -L "$found_mo" ]] || ! readlink "$found_mo" | grep -q "Cellar/roomy"; then
+            if is_roomy_mo_alias_candidate "$found_mo" && { [[ ! -L "$found_mo" ]] || ! readlink "$found_mo" | grep -q "Cellar/roomy"; }; then
                 alias_installs+=("$found_mo")
             fi
         fi
@@ -675,7 +821,7 @@ remove_roomy() {
 
     for alias in "${alias_fallback[@]}"; do
         if [[ -f "$alias" && "$alias" != "$found_mo" ]]; then
-            if [[ ! -L "$alias" ]] || ! readlink "$alias" | grep -q "Cellar/roomy"; then
+            if is_roomy_mo_alias_candidate "$alias" && { [[ ! -L "$alias" ]] || ! readlink "$alias" | grep -q "Cellar/roomy"; }; then
                 alias_installs+=("$alias")
             fi
         fi
@@ -712,9 +858,9 @@ remove_roomy() {
                 [[ -f "$alias" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: ${alias}${NC}"
             done
         fi
-        [[ -d "$HOME/.cache/roomy" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/.cache/roomy${NC}"
-        [[ -d "$HOME/.config/roomy" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/.config/roomy${NC}"
-        [[ -d "$HOME/Library/Logs/roomy" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/Library/Logs/roomy${NC}"
+        preview_remove_roomy_owned_dir "$HOME/.cache/roomy" "cache"
+        preview_remove_roomy_owned_dir "$HOME/.config/roomy" "config"
+        preview_remove_roomy_owned_dir "$HOME/Library/Logs/roomy" "log"
 
         printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Dry run complete, no changes made"
         exit 0
@@ -800,15 +946,9 @@ remove_roomy() {
             fi
         done
     fi
-    if [[ -d "$HOME/.cache/roomy" ]]; then
-        rm -rf "$HOME/.cache/roomy" 2> /dev/null || true
-    fi
-    if [[ -d "$HOME/.config/roomy" ]]; then
-        rm -rf "$HOME/.config/roomy" 2> /dev/null || true
-    fi
-    if [[ -d "$HOME/Library/Logs/roomy" ]]; then
-        rm -rf "$HOME/Library/Logs/roomy" 2> /dev/null || true
-    fi
+    remove_roomy_owned_dir "$HOME/.cache/roomy" "cache"
+    remove_roomy_owned_dir "$HOME/.config/roomy" "config"
+    remove_roomy_owned_dir "$HOME/Library/Logs/roomy" "log"
 
     local final_message
     if [[ "$has_error" == "true" ]]; then
@@ -817,6 +957,8 @@ remove_roomy() {
         final_message="${GREEN}${ICON_SUCCESS} Roomy uninstalled successfully, thank you for using Roomy!${NC}"
     fi
     printf '\n%s\n\n' "$final_message"
+
+    remove_roomy_owned_dir "$HOME/Library/Logs/roomy" "log"
 
     exit 0
 }
@@ -882,7 +1024,7 @@ interactive_main_menu() {
     brand_banner="$(show_brand_banner)"
     MAIN_MENU_BANNER="$brand_banner"
 
-    if [[ -f "$msg_cache" && -s "$msg_cache" ]]; then
+    if [[ -f "$msg_cache" && ! -L "$msg_cache" && -s "$msg_cache" ]]; then
         update_message="$(cat "$msg_cache" 2> /dev/null || echo "")"
     fi
     MAIN_MENU_UPDATE_MESSAGE="$update_message"
@@ -1030,18 +1172,20 @@ main() {
         "update")
             local force_update=false
             local nightly_update=false
+            local dry_run_update=false
             for arg in "${args[@]:1}"; do
                 case "$arg" in
                     --force | -f) force_update=true ;;
                     --nightly) nightly_update=true ;;
+                    --dry-run | -n) dry_run_update=true ;;
                     *)
                         echo "Unknown update option: $arg"
-                        echo "Use 'roomy update [--force] [--nightly]' for supported options."
+                        echo "Use 'roomy update [--force] [--nightly] [--dry-run]' for supported options."
                         exit 1
                         ;;
                 esac
             done
-            update_roomy "$force_update" "$nightly_update"
+            update_roomy "$force_update" "$nightly_update" "$dry_run_update"
             exit 0
             ;;
         "remove")

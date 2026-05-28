@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Roomy is a transparent Mac cleanup toolkit for people who want CLI-grade control, dry-run previews, local execution, and auditable cleanup logs.">
+  <meta property="og:title" content="Roomy - Mac cleanup you can inspect before it runs">
+  <meta property="og:description" content="Clean caches, app leftovers, project artifacts, installers, and system clutter with dry-run previews, risk limits, restore flows, and local-only execution.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/roomy-demo-poster.png">
+  <meta name="theme-color" content="#14181c">
+  <title>Roomy - Transparent Mac cleanup</title>
+  <link rel="preload" href="assets/roomy-demo-poster.png" as="image">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #14181c;
+      --muted: #5f6a72;
+      --soft: #eef2f4;
+      --line: rgba(20, 24, 28, 0.12);
+      --surface: #ffffff;
+      --surface-2: #f8fafb;
+      --blue: #0f6bff;
+      --green: #149b64;
+      --amber: #b97808;
+      --red: #c83f4b;
+      --shadow: 0 18px 50px rgba(20, 24, 28, 0.12);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--surface);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .site-header {
+      position: absolute;
+      z-index: 5;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 74px;
+      padding: 0 42px;
+      color: #ffffff;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 760;
+      font-size: 18px;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      font-weight: 800;
+    }
+
+    .site-nav {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      font-size: 14px;
+      font-weight: 680;
+    }
+
+    .site-nav a {
+      opacity: 0.86;
+    }
+
+    .site-nav a:hover,
+    .site-nav a:focus-visible {
+      opacity: 1;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 84vh;
+      display: grid;
+      align-items: end;
+      overflow: hidden;
+      color: #ffffff;
+      background: #14181c;
+    }
+
+    .hero-media {
+      position: absolute;
+      inset: 0;
+    }
+
+    .hero-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.92) contrast(1.03);
+    }
+
+    .hero-media::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(13, 17, 20, 0.58);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      width: min(1120px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 122px 0 54px;
+    }
+
+    .eyebrow {
+      margin: 0 0 16px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 14px;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin-bottom: 18px;
+      font-size: 72px;
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .hero-copy {
+      max-width: 660px;
+      margin-bottom: 28px;
+      color: rgba(255, 255, 255, 0.84);
+      font-size: 21px;
+    }
+
+    .hero-actions,
+    .section-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .button {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 0 18px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      background: #ffffff;
+      color: var(--ink);
+    }
+
+    .button.secondary {
+      border-color: rgba(255, 255, 255, 0.34);
+      color: #ffffff;
+      background: rgba(20, 24, 28, 0.66);
+    }
+
+    .button.dark {
+      background: var(--ink);
+      color: #ffffff;
+    }
+
+    .button.light {
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .hero-proof {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 760px;
+      margin-top: 36px;
+    }
+
+    .proof-item {
+      min-width: 0;
+      padding: 14px 0 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.22);
+    }
+
+    .proof-item strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 18px;
+    }
+
+    .proof-item span {
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 14px;
+    }
+
+    .section {
+      padding: 78px 0;
+    }
+
+    .section.compact {
+      padding: 54px 0;
+    }
+
+    .section.soft {
+      background: var(--surface-2);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 48px));
+      margin: 0 auto;
+    }
+
+    .section-heading {
+      max-width: 760px;
+      margin-bottom: 34px;
+    }
+
+    .section-heading.center {
+      margin-left: auto;
+      margin-right: auto;
+      text-align: center;
+    }
+
+    .kicker {
+      margin-bottom: 9px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 42px;
+      line-height: 1.06;
+      letter-spacing: 0;
+    }
+
+    .section-heading p,
+    .lead {
+      color: var(--muted);
+      font-size: 19px;
+    }
+
+    .market-grid,
+    .feature-grid,
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      min-width: 0;
+      min-height: 196px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      background: var(--surface);
+      box-shadow: 0 10px 30px rgba(20, 24, 28, 0.06);
+    }
+
+    .card h3 {
+      margin-bottom: 8px;
+      font-size: 22px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .card p,
+    .comparison td,
+    .pricing-card p {
+      color: var(--muted);
+    }
+
+    .metric {
+      margin-bottom: 12px;
+      font-size: 30px;
+      font-weight: 780;
+      line-height: 1;
+    }
+
+    .metric.blue {
+      color: var(--blue);
+    }
+
+    .metric.green {
+      color: var(--green);
+    }
+
+    .metric.amber {
+      color: var(--amber);
+    }
+
+    .demo-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
+      gap: 26px;
+      align-items: center;
+    }
+
+    .video-shell {
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: #11161b;
+      box-shadow: var(--shadow);
+    }
+
+    .video-shell video {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #11161b;
+    }
+
+    .demo-points {
+      display: grid;
+      gap: 14px;
+    }
+
+    .demo-point {
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .demo-point:last-child {
+      border-bottom: 0;
+    }
+
+    .demo-point strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 17px;
+    }
+
+    .demo-point span {
+      color: var(--muted);
+    }
+
+    .feature-card {
+      min-height: 218px;
+    }
+
+    .feature-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      padding: 0 9px;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .comparison-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 10px 30px rgba(20, 24, 28, 0.06);
+    }
+
+    .comparison {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+    }
+
+    .comparison th,
+    .comparison td {
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .comparison th {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      color: #3d474f;
+      background: #f3f6f8;
+    }
+
+    .comparison tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .comparison strong {
+      color: var(--ink);
+    }
+
+    .cta {
+      background: #14181c;
+      color: #ffffff;
+    }
+
+    .cta-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+      gap: 34px;
+      align-items: center;
+    }
+
+    .cta h2 {
+      color: #ffffff;
+    }
+
+    .cta p {
+      max-width: 660px;
+      color: rgba(255, 255, 255, 0.75);
+    }
+
+    .command-box {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.07);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 14px;
+      color: #d7fbe8;
+      overflow-x: auto;
+    }
+
+    .site-footer {
+      border-top: 1px solid var(--line);
+      padding: 30px 0;
+      color: var(--muted);
+      font-size: 14px;
+      background: var(--surface);
+    }
+
+    .footer-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .footer-row a {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    @media (max-width: 900px) {
+      .site-header {
+        padding: 0 24px;
+      }
+
+      .site-nav {
+        display: none;
+      }
+
+      .hero {
+        min-height: 78vh;
+      }
+
+      .hero-media::after {
+        background: rgba(13, 17, 20, 0.68);
+      }
+
+      .hero-content {
+        width: min(100% - 36px, 720px);
+        padding-top: 104px;
+      }
+
+      h1 {
+        font-size: 48px;
+      }
+
+      h2 {
+        font-size: 34px;
+      }
+
+      .hero-copy,
+      .section-heading p,
+      .lead {
+        font-size: 18px;
+      }
+
+      .hero-proof,
+      .market-grid,
+      .feature-grid,
+      .pricing-grid,
+      .demo-layout,
+      .cta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .comparison-wrap {
+        overflow: visible;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .comparison {
+        min-width: 0;
+        display: block;
+      }
+
+      .comparison thead {
+        display: none;
+      }
+
+      .comparison tbody,
+      .comparison tr,
+      .comparison td {
+        display: block;
+        width: 100%;
+      }
+
+      .comparison tr {
+        margin-bottom: 14px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 10px 30px rgba(20, 24, 28, 0.06);
+      }
+
+      .comparison td {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .comparison td:last-child {
+        border-bottom: 0;
+      }
+
+      .comparison td::before {
+        display: block;
+        margin-bottom: 6px;
+        color: #3d474f;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      .comparison td:nth-child(1)::before {
+        content: "Common option";
+      }
+
+      .comparison td:nth-child(2)::before {
+        content: "Typical promise";
+      }
+
+      .comparison td:nth-child(3)::before {
+        content: "Where Roomy is different";
+      }
+    }
+
+    @media (max-width: 560px) {
+      .hero-content,
+      .wrap {
+        width: calc(100% - 28px);
+      }
+
+      .hero {
+        min-height: 82vh;
+      }
+
+      h1 {
+        font-size: 39px;
+      }
+
+      h2 {
+        font-size: 29px;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+      .section {
+        padding: 58px 0;
+      }
+
+      .card {
+        min-height: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header" aria-label="Site navigation">
+    <a class="brand" href="#top" aria-label="Roomy home">
+      <span class="brand-mark">R</span>
+      <span>Roomy</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="#demo">Demo</a>
+      <a href="#positioning">Why Roomy</a>
+      <a href="#compare">Compare</a>
+      <a href="#get">Install</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-media" aria-hidden="true">
+        <img src="assets/roomy-demo-poster.png" alt="">
+      </div>
+      <div class="hero-content">
+        <p class="eyebrow">Mac cleanup for people who need proof before deletion</p>
+        <h1 id="hero-title">Roomy</h1>
+        <p class="hero-copy">Clean caches, app leftovers, installers, project artifacts, and system clutter with dry-run previews, explicit risk limits, restore paths, and local-only execution.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#get">Install Roomy</a>
+          <a class="button secondary" href="#demo">Watch the demo</a>
+        </div>
+        <div class="hero-proof" aria-label="Product proof points">
+          <div class="proof-item">
+            <strong>Preview-first</strong>
+            <span>Dry-run output shows what will change before files move.</span>
+          </div>
+          <div class="proof-item">
+            <strong>Local by default</strong>
+            <span>No cloud cleanup engine, no account gate, no telemetry dependency.</span>
+          </div>
+          <div class="proof-item">
+            <strong>CLI-grade</strong>
+            <span>Scriptable commands for teams, developers, and managed Macs.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section compact soft" id="positioning">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="kicker">Trusted Cleanup</p>
+          <h2>Preview every cleanup before Roomy moves a file.</h2>
+          <p>Roomy is for Mac users, developers, and small teams that need storage back without trusting a black box. It combines cleanup, uninstall, project artifact, installer, duplicate scan, status, and report workflows in one auditable CLI.</p>
+        </div>
+        <div class="market-grid">
+          <article class="card">
+            <div class="metric blue">1</div>
+            <h3>Inspectable plans</h3>
+            <p>Dry-run previews, protected paths, Trash-backed cleanup, and operation journals keep risky changes visible before anything is removed.</p>
+          </article>
+          <article class="card">
+            <div class="metric green">2</div>
+            <h3>Developer storage relief</h3>
+            <p>Xcode, npm, package caches, build folders, simulators, installers, and stale project artifacts are treated as first-class cleanup jobs.</p>
+          </article>
+          <article class="card">
+            <div class="metric amber">3</div>
+            <h3>Repeatable by design</h3>
+            <p>Profiles, schedules, JSON APIs, and predictable command output make Roomy practical for freelancers, labs, and managed development Macs.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="demo">
+      <div class="wrap demo-layout">
+        <div class="video-shell">
+          <video controls playsinline preload="metadata" poster="assets/roomy-demo-poster.png">
+            <source src="assets/roomy-demo.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div>
+          <p class="kicker">Video Demo</p>
+          <h2>From scan to safe action in under a minute.</h2>
+          <div class="demo-points">
+            <div class="demo-point">
+              <strong>Scan surfaces the real storage story</strong>
+              <span>Developer caches, browser data, installers, duplicate candidates, and app remnants are grouped by risk.</span>
+            </div>
+            <div class="demo-point">
+              <strong>Plan makes deletion inspectable</strong>
+              <span>Roomy shows estimated space, protected skips, caps, and what will go to Trash before anything changes.</span>
+            </div>
+            <div class="demo-point">
+              <strong>Report closes the loop</strong>
+              <span>Users can review a cleanup journal and restore eligible Trash-backed actions.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section soft">
+      <div class="wrap">
+        <div class="section-heading center">
+          <p class="kicker">Built For Real Maintenance</p>
+          <h2>The cleanup workflow stays explainable.</h2>
+          <p>Roomy focuses on proof, recovery, and repeatable maintenance instead of vague speed claims. The result is a cleanup tool that can be reviewed before use and audited afterward.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="card feature-card">
+            <span class="feature-tag">Safety</span>
+            <h3>Every risky flow starts with a preview.</h3>
+            <p>Dry-run mode, path validation, protected-directory rules, and explicit confirmation make the product easier to defend than automatic deletion.</p>
+          </article>
+          <article class="card feature-card">
+            <span class="feature-tag">Automation</span>
+            <h3>Made for repeatable maintenance.</h3>
+            <p>Profiles, scheduling, JSON output, and API contracts give Roomy a workflow moat for users who want more than a single GUI button.</p>
+          </article>
+          <article class="card feature-card">
+            <span class="feature-tag">Mac Reality</span>
+            <h3>Targets clutter pros actually accumulate.</h3>
+            <p>Project artifacts, simulator data, package caches, installers, launch agents, and orphaned app data map to real Mac cleanup jobs.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="compare">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="kicker">How It Fits</p>
+          <h2>A focused alternative to opaque cleaner suites.</h2>
+          <p>Roomy is not trying to be a generic “make my Mac faster” button. It is a transparent local cleanup tool for people who want to inspect, automate, and recover from maintenance work.</p>
+        </div>
+        <div class="comparison-wrap">
+          <table class="comparison">
+            <thead>
+              <tr>
+                <th>Common option</th>
+                <th>Typical promise</th>
+                <th>Where Roomy is different</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>One-click cleaner suites</strong></td>
+                <td>Broad cleanup and performance guidance wrapped in a polished consumer app.</td>
+                <td>Roomy is narrower and easier to inspect: dry-run previews, explicit risk caps, local execution, and cleanup journals.</td>
+              </tr>
+              <tr>
+                <td><strong>Visual disk mappers</strong></td>
+                <td>Beautiful storage inspection that helps users decide what to remove manually.</td>
+                <td>Roomy pairs inspection with guarded cleanup actions for developer caches, app leftovers, installers, and reports.</td>
+              </tr>
+              <tr>
+                <td><strong>Generic cleanup utilities</strong></td>
+                <td>Simple clutter removal, duplicate cleanup, app management, and paid upgrade paths.</td>
+                <td>Roomy earns technical credibility with documented safety gates, command output, API contracts, and repeatable workflows.</td>
+              </tr>
+              <tr>
+                <td><strong>Dedicated app uninstallers</strong></td>
+                <td>Application removal plus related files, extensions, startup items, and leftover scans.</td>
+                <td>Roomy includes uninstall safety alongside cleanup, project artifact removal, installer cleanup, restore previews, and reporting.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section cta" id="get">
+      <div class="wrap cta-grid">
+        <div>
+          <p class="kicker">Start with the CLI release</p>
+          <h2>Install Roomy and run a safe preview first.</h2>
+          <p>The production product today is the command-line tool. RoomyUI remains a preview, so the current release focuses on the CLI workflow, the release tap, dry-run safety, and auditable local maintenance.</p>
+          <div class="section-actions">
+            <a class="button primary" href="https://github.com/tw93/roomy">View on GitHub</a>
+            <a class="button secondary" href="https://github.com/tw93/roomy#readme">Read the docs</a>
+          </div>
+        </div>
+        <div class="command-box" aria-label="Install commands">
+          <div>$ brew tap tw93/tap</div>
+          <div>$ brew install tw93/tap/roomy</div>
+          <div>$ roomy clean --dry-run</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <span>Roomy is local Mac maintenance software. Review previews before deletion.</span>
+      <span>
+        <a href="https://github.com/tw93/roomy/blob/main/LAUNCH_READINESS.md">Launch readiness</a>
+        ·
+        <a href="https://github.com/tw93/roomy/blob/main/PRIVACY.md">Privacy</a>
+        ·
+        <a href="https://github.com/tw93/roomy/blob/main/SUPPORT.md">Support</a>
+      </span>
+    </div>
+  </footer>
+</body>
+</html>

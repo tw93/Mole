@@ -9,6 +9,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/core/common.sh
 source "$PROJECT_ROOT/lib/core/common.sh"
 
+trap cleanup_temp_files EXIT INT TERM
+
 show_report_help() {
     cat << EOF
 Usage: roomy report [OPTIONS]
@@ -54,6 +56,14 @@ report_json_escape() {
     printf '%s' "$s"
 }
 
+report_create_temp_file() {
+    local target_var="$1"
+    local temp_path
+    temp_path=$(create_temp_file) || return 1
+    register_temp_file "$temp_path"
+    printf -v "$target_var" '%s' "$temp_path"
+}
+
 main() {
     local last=""
     local cutoff=""
@@ -64,13 +74,22 @@ main() {
         case "$1" in
             --last)
                 shift
-                [[ $# -gt 0 ]] || { echo "Missing value for --last" >&2; exit 1; }
+                [[ $# -gt 0 ]] || {
+                    echo "Missing value for --last" >&2
+                    exit 1
+                }
                 last="$1"
-                cutoff=$(report_cutoff_timestamp "$last") || { echo "Invalid --last value: $last" >&2; exit 1; }
+                cutoff=$(report_cutoff_timestamp "$last") || {
+                    echo "Invalid --last value: $last" >&2
+                    exit 1
+                }
                 ;;
             --limit)
                 shift
-                [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]] || { echo "Invalid --limit value" >&2; exit 1; }
+                [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]] || {
+                    echo "Invalid --limit value" >&2
+                    exit 1
+                }
                 limit="$1"
                 ;;
             --json) json="true" ;;
@@ -97,7 +116,7 @@ main() {
     fi
 
     local temp
-    temp=$(create_temp_file)
+    report_create_temp_file temp
     awk -v cutoff="$cutoff" -v limit="$limit" '
     function field(line, key,    pat, rest, i, c, out, esc) {
         pat = "\"" key "\":\""
@@ -108,7 +127,14 @@ main() {
         esc = 0
         for (i = 1; i <= length(rest); i++) {
             c = substr(rest, i, 1)
-            if (esc) { out = out c; esc = 0; continue }
+            if (esc) {
+                if (c == "n") out = out "\\n"
+                else if (c == "t") out = out "\\t"
+                else if (c == "r") out = out "\\r"
+                else out = out c
+                esc = 0
+                continue
+            }
             if (c == "\\") { esc = 1; continue }
             if (c == "\"") break
             out = out c
@@ -178,9 +204,9 @@ main() {
 
     local sessions=0 reclaimed=0
     local action_lines command_lines path_lines
-    action_lines=$(create_temp_file)
-    command_lines=$(create_temp_file)
-    path_lines=$(create_temp_file)
+    report_create_temp_file action_lines
+    report_create_temp_file command_lines
+    report_create_temp_file path_lines
 
     while IFS=$'\t' read -r kind a b c; do
         case "$kind" in

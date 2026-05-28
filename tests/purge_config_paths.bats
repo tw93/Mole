@@ -92,6 +92,62 @@ EOF
     [[ "$output" == *"$HOME/another/path"* ]]
 }
 
+@test "load_purge_config rejects unsafe broad and non-absolute paths" {
+    local config_file="$HOME/.config/roomy/purge_paths"
+    mkdir -p "$HOME/projects"
+
+    {
+        printf '/\n'
+        printf '%s\n' "$HOME"
+        printf '%s\n' "$HOME/.."
+        printf '/System/tmp\n'
+        printf '/Users\n'
+        printf '/Volumes/External\n'
+        printf '%s\n' "$HOME/Library"
+        printf '%s\n' "$HOME/Library/Application Support"
+        printf 'relative/project\n'
+        printf '%s\n' "\$(touch \"\$HOME/pwned\")"
+        printf '%s\n' "$HOME/projects"
+    } > "$config_file"
+
+    run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; printf '%s\n' \"\${PURGE_SEARCH_PATHS[@]}\""
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "$HOME/projects" ]
+    [ ! -e "$HOME/pwned" ]
+}
+
+@test "load_purge_config allows CloudStorage project roots without allowing all Library" {
+    local config_file="$HOME/.config/roomy/purge_paths"
+    {
+        printf '%s\n' "$HOME/Library"
+        printf '%s\n' "$HOME/Library/CloudStorage"
+        printf '%s\n' "$HOME/Library/CloudStorage/Work"
+    } > "$config_file"
+
+    run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; printf '%s\n' \"\${PURGE_SEARCH_PATHS[@]}\""
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"$HOME/Library"$'\n'* ]]
+    [[ "$output" == *"$HOME/Library/CloudStorage"* ]]
+    [[ "$output" == *"$HOME/Library/CloudStorage/Work"* ]]
+}
+
+@test "load_purge_config falls back to defaults if config file has only unsafe paths" {
+    local config_file="$HOME/.config/roomy/purge_paths"
+    {
+        printf '/\n'
+        printf '%s\n' "$HOME"
+        printf '/System/tmp\n'
+        printf 'relative/project\n'
+    } > "$config_file"
+
+    run env HOME="$HOME" bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$HOME/Projects"* ]]
+}
+
 @test "load_purge_config falls back to defaults if config file is empty" {
     local config_file="$HOME/.config/roomy/purge_paths"
     touch "$config_file"

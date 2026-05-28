@@ -107,10 +107,56 @@ discover_project_dirs() {
     printf '%s\n' "${discovered[@]+"${discovered[@]}"}" | sort -u
 }
 
+purge_path_has_symlinked_component() {
+    local path="$1"
+    local home_path="${HOME%/}"
+    local current="${path%/}"
+
+    [[ -n "$current" ]] || return 1
+
+    while [[ "$current" != "/" && "$current" != "." ]]; do
+        if [[ -L "$current" ]]; then
+            return 0
+        fi
+        if [[ -n "$home_path" && "$current" == "$home_path" ]]; then
+            break
+        fi
+
+        local parent
+        parent="$(dirname "$current")"
+        [[ "$parent" == "$current" ]] && break
+        current="$parent"
+    done
+
+    return 1
+}
+
 # Prepare purge config directory/file ownership when possible.
 prepare_purge_config_path() {
-    ensure_user_dir "$(dirname "$PURGE_CONFIG_FILE")"
+    local config_dir
+    config_dir="$(dirname "$PURGE_CONFIG_FILE")"
+    purge_path_has_symlinked_component "$config_dir" && return 1
+    ensure_user_dir "$config_dir"
     ensure_user_file "$PURGE_CONFIG_FILE"
+}
+
+purge_write_state_file() {
+    local output="$1"
+    local value="${2:-}"
+    local parent tmp_file
+
+    [[ -n "$output" ]] || return 1
+
+    parent=$(dirname "$output")
+    purge_path_has_symlinked_component "$parent" && return 1
+    ensure_user_dir "$parent"
+
+    tmp_file=$(mktemp "$parent/.roomy-purge-state.XXXXXX") || return 1
+    if ! printf '%s\n' "$value" > "$tmp_file"; then
+        rm -f "$tmp_file" 2> /dev/null || true
+        return 1
+    fi
+    commit_staged_user_file "$tmp_file" "$output"
 }
 
 # Write purge config content atomically when possible.
@@ -119,10 +165,13 @@ write_purge_config() {
     shift
     local -a paths=("$@")
 
-    prepare_purge_config_path
-
     local tmp_file
     tmp_file=$(mktemp_file "roomy-purge-paths") || return 1
+
+    if ! prepare_purge_config_path; then
+        rm -f "$tmp_file" 2> /dev/null || true
+        return 1
+    fi
 
     if ! cat > "$tmp_file" << EOF; then
 $header
@@ -144,7 +193,7 @@ EOF
         done
     fi
 
-    if ! mv "$tmp_file" "$PURGE_CONFIG_FILE" 2> /dev/null; then
+    if ! commit_staged_user_file "$tmp_file" "$PURGE_CONFIG_FILE"; then
         rm -f "$tmp_file" 2> /dev/null || true
         return 1
     fi
@@ -307,6 +356,11 @@ is_safe_project_artifact() {
     return 0
 }
 
+purge_path_is_line_safe() {
+    local path="${1:-}"
+    [[ -n "$path" && ! "$path" =~ [[:cntrl:]] ]]
+}
+
 # Detect if directory is a Rails project root
 is_rails_project_root() {
     local dir="$1"
@@ -427,7 +481,7 @@ scan_purge_targets() {
 
     # Update current scanning path
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/roomy"
-    echo "$search_path" > "$stats_dir/purge_scanning" 2> /dev/null || true
+    purge_write_state_file "$stats_dir/purge_scanning" "$search_path" || true
 
     emit_valid_cachedir_tag_dirs() {
         while IFS= read -r tag_file; do
@@ -449,11 +503,11 @@ scan_purge_targets() {
                     return
                 fi
 
-                if [[ -n "$item" ]] && is_safe_project_artifact "$item" "$search_path"; then
+                if purge_path_is_line_safe "$item" && is_safe_project_artifact "$item" "$search_path"; then
                     echo "$item"
                     # Update scanning path to show current project directory
                     local project_dir="${item%/*}"
-                    echo "$project_dir" > "$stats_dir/purge_scanning" 2> /dev/null || true
+                    purge_write_state_file "$stats_dir/purge_scanning" "$project_dir" || true
                 fi
             done < "$input_file" | filter_nested_artifacts | filter_protected_artifacts > "$output_file"
             rm -f "$input_file"
@@ -546,6 +600,181 @@ scan_purge_targets() {
             2> /dev/null | emit_valid_cachedir_tag_dirs >> "$output_file.raw" || true
 
         process_scan_results "$output_file.raw"
+    fi
+}
+
+# NUL-delimited variant for API callers that must preserve valid macOS paths
+# containing newlines. The interactive CLI keeps using scan_purge_targets()
+# because its menu/export surfaces are line-oriented.
+scan_purge_targets_nul() {
+    local search_path="$1"
+    local output_file="$2"
+    local min_depth="$PURGE_MIN_DEPTH_DEFAULT"
+    local max_depth="$PURGE_MAX_DEPTH_DEFAULT"
+    if [[ ! "$min_depth" =~ ^[0-9]+$ ]]; then
+        min_depth="$PURGE_MIN_DEPTH_DEFAULT"
+    fi
+    if [[ ! "$max_depth" =~ ^[0-9]+$ ]]; then
+        max_depth="$PURGE_MAX_DEPTH_DEFAULT"
+    fi
+    if [[ "$max_depth" -lt "$min_depth" ]]; then
+        max_depth="$min_depth"
+    fi
+    if [[ ! -d "$search_path" ]]; then
+        : > "$output_file"
+        return
+    fi
+
+    local cachedir_tag_min_depth=$((min_depth + 1))
+    local cachedir_tag_max_depth=$((max_depth + 1))
+    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/roomy"
+    purge_write_state_file "$stats_dir/purge_scanning" "$search_path" || true
+
+    emit_valid_cachedir_tag_dirs_nul() {
+        local input_file="$1"
+        local tag_file cache_dir
+        [[ -f "$input_file" ]] || return 0
+        while IFS= read -r -d '' tag_file; do
+            [[ -n "$tag_file" ]] || continue
+            cache_dir="${tag_file%/*}"
+            if [[ -n "$cache_dir" ]] && roomy_dir_has_cachedir_tag "$cache_dir"; then
+                printf '%s\0' "$cache_dir"
+            fi
+        done < "$input_file"
+    }
+
+    process_scan_results_nul() {
+        local input_file="$1"
+        local item existing skip
+        local -a kept_items=()
+        [[ -f "$input_file" ]] || {
+            : > "$output_file"
+            return
+        }
+
+        while IFS= read -r -d '' item; do
+            if [[ ! -f "$stats_dir/purge_scanning" ]]; then
+                return
+            fi
+            [[ -n "$item" ]] || continue
+            is_safe_project_artifact "$item" "$search_path" || continue
+            is_protected_purge_artifact "$item" && continue
+
+            skip=false
+            local -a next_kept=()
+            for existing in "${kept_items[@]+"${kept_items[@]}"}"; do
+                if [[ "$item" == "$existing" || "$item" == "$existing/"* ]]; then
+                    skip=true
+                    next_kept+=("$existing")
+                elif [[ "$existing" == "$item/"* ]]; then
+                    continue
+                else
+                    next_kept+=("$existing")
+                fi
+            done
+            if [[ "$skip" == "false" ]]; then
+                next_kept+=("$item")
+                local project_dir="${item%/*}"
+                purge_write_state_file "$stats_dir/purge_scanning" "$project_dir" || true
+            fi
+            kept_items=("${next_kept[@]+"${next_kept[@]}"}")
+        done < "$input_file"
+
+        : > "$output_file"
+        for item in "${kept_items[@]+"${kept_items[@]}"}"; do
+            printf '%s\0' "$item" >> "$output_file"
+        done
+        rm -f "$input_file"
+    }
+
+    local use_find=true
+
+    if [[ "${ROOMY_USE_FIND:-0}" == "1" ]]; then
+        debug_log "ROOMY_USE_FIND=1: Forcing find instead of fd"
+        use_find=true
+    elif command -v fd > /dev/null 2>&1; then
+        local _escaped_lines
+        _escaped_lines=$(printf '%s\n' "${PURGE_TARGETS[@]}" | sed -e 's/[][(){}.^$*+?|\\]/\\&/g')
+        local pattern
+        pattern="($(printf '%s\n' "$_escaped_lines" | sed -e 's/^/^/' -e 's/$/$/' | paste -sd '|' -))"
+        local fd_args=(
+            "-0"
+            "--absolute-path"
+            "--hidden"
+            "--no-ignore"
+            "--type" "d"
+            "--min-depth" "$min_depth"
+            "--max-depth" "$max_depth"
+            "--threads" "8"
+            "--exclude" ".git"
+            "--exclude" "Library"
+            "--exclude" ".Trash"
+            "--exclude" "Applications"
+        )
+        local fd_tag_args=(
+            "-0"
+            "--absolute-path"
+            "--hidden"
+            "--no-ignore"
+            "--type" "f"
+            "--min-depth" "$cachedir_tag_min_depth"
+            "--max-depth" "$cachedir_tag_max_depth"
+            "--threads" "8"
+            "--exclude" ".git"
+            "--exclude" "Library"
+            "--exclude" ".Trash"
+            "--exclude" "Applications"
+        )
+
+        if fd "${fd_args[@]}" "$pattern" "$search_path" 2> /dev/null > "$output_file.raw"; then
+            local tag_raw
+            tag_raw="$output_file.tags.raw"
+            if fd "${fd_tag_args[@]}" "^${ROOMY_CACHEDIR_TAG_NAME}$" "$search_path" 2> /dev/null > "$tag_raw"; then
+                emit_valid_cachedir_tag_dirs_nul "$tag_raw" >> "$output_file.raw"
+            fi
+            rm -f "$tag_raw" 2> /dev/null || true
+            debug_log "Using fd for NUL-safe scanning"
+            process_scan_results_nul "$output_file.raw"
+            use_find=false
+        else
+            debug_log "fd command failed, falling back to find"
+            rm -f "$output_file.raw" 2> /dev/null || true
+        fi
+    fi
+
+    if [[ "$use_find" == "true" ]]; then
+        debug_log "Using find for NUL-safe scanning"
+        local prune_dirs=(".git" "Library" ".Trash" "Applications")
+        local purge_targets=("${PURGE_TARGETS[@]}")
+
+        local prune_expr=()
+        local i
+        for i in "${!prune_dirs[@]}"; do
+            prune_expr+=(-name "${prune_dirs[$i]}")
+            [[ $i -lt $((${#prune_dirs[@]} - 1)) ]] && prune_expr+=(-o)
+        done
+
+        local target_expr=()
+        for i in "${!purge_targets[@]}"; do
+            target_expr+=(-name "${purge_targets[$i]}")
+            [[ $i -lt $((${#purge_targets[@]} - 1)) ]] && target_expr+=(-o)
+        done
+
+        find "$search_path" -mindepth "$min_depth" -maxdepth "$max_depth" -type d \
+            \( "${prune_expr[@]}" \) -prune -o \
+            \( "${target_expr[@]}" \) -print0 -prune \
+            2> /dev/null > "$output_file.raw" || true
+
+        local tag_raw
+        tag_raw="$output_file.tags.raw"
+        find "$search_path" -mindepth "$cachedir_tag_min_depth" -maxdepth "$cachedir_tag_max_depth" \
+            \( "${prune_expr[@]}" \) -prune -o \
+            -type f -name "$ROOMY_CACHEDIR_TAG_NAME" -print0 \
+            2> /dev/null > "$tag_raw" || true
+        emit_valid_cachedir_tag_dirs_nul "$tag_raw" >> "$output_file.raw"
+        rm -f "$tag_raw" 2> /dev/null || true
+
+        process_scan_results_nul "$output_file.raw"
     fi
 }
 # Filter out nested artifacts (e.g. node_modules inside node_modules, .build inside build).
@@ -1618,7 +1847,7 @@ clean_project_artifacts() {
                 if [[ "$dry_run_mode" == "1" || ! -e "$item_path" ]]; then
                     local current_total
                     current_total=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo "0")
-                    echo "$((current_total + size_kb))" > "$stats_dir/purge_stats"
+                    purge_write_state_file "$stats_dir/purge_stats" "$((current_total + size_kb))"
                     cleaned_count=$((cleaned_count + 1))
                     removal_recorded=true
                 fi
@@ -1636,6 +1865,6 @@ clean_project_artifacts() {
         fi
     done
     # Update count
-    echo "$cleaned_count" > "$stats_dir/purge_count"
+    purge_write_state_file "$stats_dir/purge_count" "$cleaned_count"
     unset PURGE_CATEGORY_SIZES PURGE_RECENT_CATEGORIES PURGE_AGE_LABELS PURGE_SELECTION_RESULT
 }

@@ -136,6 +136,34 @@ EOF
     grep -qF "roomy_delete $f2" "$trace"
 }
 
+@test "remove_file_list routes broken symlinks through per-file deletion" {
+    local link="$SANDBOX/broken-link.plist"
+    ln -s "$SANDBOX/missing-target.plist" "$link"
+    local list="$link"
+
+    local trace="$SANDBOX/trace"
+    : > "$trace"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+_roomy_move_to_trash_batch() {
+    echo "unexpected batch call" >&2
+    return 1
+}
+roomy_delete() {
+    printf 'roomy_delete %s %s\n' "\$1" "\$2" >> "$trace"
+    rm "\$1"
+    return 0
+}
+remove_file_list "$list" "false"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1"* ]]
+    [[ ! -e "$link" && ! -L "$link" ]]
+    grep -qF "roomy_delete $link false" "$trace"
+}
+
 @test "_roomy_move_to_trash_batch returns 1 when trash CLI is missing under ROOMY_TEST_NO_AUTH" {
     local f1="$SANDBOX/p.plist"
     : > "$f1"

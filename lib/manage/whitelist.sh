@@ -19,6 +19,30 @@ readonly WHITELIST_CONFIG_OPTIMIZE_LEGACY="$ROOMY_CONFIG_DIR/whitelist_checks"
 # - DEFAULT_WHITELIST_PATTERNS
 # - FINDER_METADATA_SENTINEL
 
+whitelist_path_has_symlinked_component() {
+    local path="$1"
+    local home_path="${HOME%/}"
+    local current="${path%/}"
+
+    [[ -n "$current" ]] || return 1
+
+    while [[ "$current" != "/" && "$current" != "." ]]; do
+        if [[ -L "$current" ]]; then
+            return 0
+        fi
+        if [[ -n "$home_path" && "$current" == "$home_path" ]]; then
+            break
+        fi
+
+        local parent
+        parent="$(dirname "$current")"
+        [[ "$parent" == "$current" ]] && break
+        current="$parent"
+    done
+
+    return 1
+}
+
 # Save whitelist patterns to config (defaults to "clean" for legacy callers)
 save_whitelist_patterns() {
     local mode="clean"
@@ -45,12 +69,8 @@ save_whitelist_patterns() {
         header_text="# Roomy Whitelist - Protected paths won't be deleted\n# Default protections: Playwright browsers, HuggingFace models, Maven repo, Ollama models, Surge Mac, R renv, Finder metadata\n# Add one pattern per line to keep items safe."
     fi
 
-    ensure_user_file "$config_file"
-
-    echo -e "$header_text" > "$config_file"
-
+    local -a unique_patterns=()
     if [[ ${#patterns[@]} -gt 0 ]]; then
-        local -a unique_patterns=()
         for pattern in "${patterns[@]}"; do
             local duplicate="false"
             if [[ ${#unique_patterns[@]} -gt 0 ]]; then
@@ -64,14 +84,29 @@ save_whitelist_patterns() {
             [[ "$duplicate" == "true" ]] && continue
             unique_patterns+=("$pattern")
         done
+    fi
 
+    local config_dir config_base temp_file
+    config_dir="$(dirname "$config_file")"
+    config_base="$(basename "$config_file")"
+    whitelist_path_has_symlinked_component "$config_dir" && return 1
+    ensure_user_dir "$config_dir"
+    temp_file="$(mktemp "$config_dir/.${config_base}.XXXXXX")" || return 1
+
+    {
+        printf '%b\n' "$header_text"
         if [[ ${#unique_patterns[@]} -gt 0 ]]; then
-            printf '\n' >> "$config_file"
+            printf '\n'
             for pattern in "${unique_patterns[@]}"; do
-                echo "$pattern" >> "$config_file"
+                printf '%s\n' "$pattern"
             done
         fi
-    fi
+    } > "$temp_file" || {
+        rm -f "$temp_file" 2> /dev/null || true
+        return 1
+    }
+
+    commit_staged_user_file "$temp_file" "$config_file"
 }
 
 # Get all cache items with their patterns

@@ -87,6 +87,29 @@ require_fd() {
     [[ "$output" == *"App.mpkg"* ]]
 }
 
+@test "scan_installers_in_path (fd): detects uppercase installer extensions" {
+    if ! require_fd; then
+        return 0
+    fi
+
+    touch "$HOME/Downloads/App1.DMG"
+    touch "$HOME/Downloads/App2.PKG"
+    touch "$HOME/Downloads/App3.ISO"
+    touch "$HOME/Downloads/App4.XIP"
+
+    run bash -euo pipefail -c '
+        export ROOMY_TEST_MODE=1
+        source "$1"
+        scan_installers_in_path "$2"
+    ' bash "$PROJECT_ROOT/bin/installer.sh" "$HOME/Downloads"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"App1.DMG"* ]]
+    [[ "$output" == *"App2.PKG"* ]]
+    [[ "$output" == *"App3.ISO"* ]]
+    [[ "$output" == *"App4.XIP"* ]]
+}
+
 @test "scan_installers_in_path (fd): respects max depth" {
     if ! require_fd; then
         return 0

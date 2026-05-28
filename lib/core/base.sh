@@ -355,7 +355,15 @@ ensure_user_dir() {
         target_path="${target_path/#\~/$HOME}"
     fi
 
+    if [[ -L "$target_path" ]]; then
+        rm -f "$target_path" 2> /dev/null || return 0
+    fi
+    if [[ -e "$target_path" && ! -d "$target_path" ]]; then
+        return 0
+    fi
+
     mkdir -p "$target_path" 2> /dev/null || true
+    [[ -d "$target_path" && ! -L "$target_path" ]] || return 0
 
     if ! is_root_user; then
         return 0
@@ -390,6 +398,8 @@ ensure_user_dir() {
 
     local dir="$target_path"
     while [[ -n "$dir" && "$dir" != "/" ]]; do
+        [[ -L "$dir" ]] && break
+
         # Early stop: if ownership is already correct, no need to continue up the tree
         if [[ -d "$dir" ]]; then
             local current_uid
@@ -423,7 +433,14 @@ ensure_user_file() {
     fi
 
     ensure_user_dir "$(dirname "$target_path")"
+    if [[ -L "$target_path" ]]; then
+        rm -f "$target_path" 2> /dev/null || return 0
+    fi
+    if [[ -e "$target_path" && ! -f "$target_path" ]]; then
+        return 0
+    fi
     touch "$target_path" 2> /dev/null || true
+    [[ -f "$target_path" && ! -L "$target_path" ]] || return 0
 
     if ! is_root_user; then
         return 0
@@ -455,6 +472,34 @@ ensure_user_file() {
     if [[ -n "$owner_uid" && -n "$owner_gid" ]]; then
         chown "$owner_uid:$owner_gid" "$target_path" 2> /dev/null || true
     fi
+}
+
+commit_staged_user_file() {
+    local staged_path="$1"
+    local target_path="$2"
+
+    [[ -n "$staged_path" && -n "$target_path" && -f "$staged_path" && ! -L "$staged_path" ]] || return 1
+
+    local parent
+    parent=$(dirname "$target_path")
+    ensure_user_dir "$parent"
+
+    if [[ -L "$target_path" ]]; then
+        rm -f "$target_path" 2> /dev/null || {
+            rm -f "$staged_path" 2> /dev/null || true
+            return 1
+        }
+    elif [[ -e "$target_path" && ! -f "$target_path" ]]; then
+        rm -f "$staged_path" 2> /dev/null || true
+        return 1
+    fi
+
+    if ! mv -f "$staged_path" "$target_path" 2> /dev/null; then
+        rm -f "$staged_path" 2> /dev/null || true
+        return 1
+    fi
+    ensure_user_file "$target_path"
+    return 0
 }
 
 # ============================================================================
@@ -561,6 +606,7 @@ cleanup_result_color_kb() {
 # Tracked temporary files and directories
 declare -a ROOMY_TEMP_FILES=()
 declare -a ROOMY_TEMP_DIRS=()
+ROOMY_TEMP_REGISTRY="${ROOMY_TEMP_REGISTRY:-}"
 
 normalize_temp_root() {
     local path="${1:-}"
@@ -635,7 +681,27 @@ get_roomy_temp_root() {
 prepare_roomy_tmpdir() {
     ensure_roomy_temp_root
     export TMPDIR="$ROOMY_RESOLVED_TMPDIR"
+    initialize_temp_registry
     printf '%s\n' "$ROOMY_RESOLVED_TMPDIR"
+}
+
+initialize_temp_registry() {
+    ensure_roomy_temp_root
+
+    case "${ROOMY_TEMP_REGISTRY:-}" in
+        "$ROOMY_RESOLVED_TMPDIR"/roomy.temp-registry.*) ;;
+        *) ROOMY_TEMP_REGISTRY="" ;;
+    esac
+
+    if [[ -z "${ROOMY_TEMP_REGISTRY:-}" ]]; then
+        ROOMY_TEMP_REGISTRY=$(mktemp "$ROOMY_RESOLVED_TMPDIR/roomy.temp-registry.XXXXXX" 2> /dev/null || true)
+        [[ -n "$ROOMY_TEMP_REGISTRY" ]] && rm -f "$ROOMY_TEMP_REGISTRY" 2> /dev/null || true
+    fi
+
+    # Keep this shell-local. Command substitutions inherit shell variables, but
+    # external child commands should not be able to clean the parent process'
+    # tracked temp files on their own EXIT traps.
+    export -n ROOMY_TEMP_REGISTRY 2> /dev/null || true
 }
 
 roomy_temp_path_template() {
@@ -665,11 +731,19 @@ create_temp_dir() {
 # Register existing file for cleanup
 register_temp_file() {
     ROOMY_TEMP_FILES+=("$1")
+    initialize_temp_registry
+    if [[ -n "${ROOMY_TEMP_REGISTRY:-}" ]]; then
+        printf 'file\t%s\n' "$1" >> "$ROOMY_TEMP_REGISTRY" 2> /dev/null || true
+    fi
 }
 
 # Register existing directory for cleanup
 register_temp_dir() {
     ROOMY_TEMP_DIRS+=("$1")
+    initialize_temp_registry
+    if [[ -n "${ROOMY_TEMP_REGISTRY:-}" ]]; then
+        printf 'dir\t%s\n' "$1" >> "$ROOMY_TEMP_REGISTRY" 2> /dev/null || true
+    fi
 }
 
 # Create temp file with prefix (for analyze.sh compatibility)
@@ -706,8 +780,30 @@ cleanup_temp_files() {
         done
     fi
 
+    local registry="${ROOMY_TEMP_REGISTRY:-}"
+    if [[ -n "$registry" && -f "$registry" ]]; then
+        local kind path
+        while IFS=$'\t' read -r kind path; do
+            [[ -n "$path" ]] || continue
+            case "$path" in
+                "$ROOMY_RESOLVED_TMPDIR"/*) ;;
+                *) continue ;;
+            esac
+            case "$kind" in
+                file)
+                    [[ -f "$path" ]] && rm -f "$path" 2> /dev/null || true
+                    ;;
+                dir)
+                    [[ -d "$path" ]] && rm -rf "$path" 2> /dev/null || true # SAFE: cleanup_temp_files registry
+                    ;;
+            esac
+        done < "$registry"
+        rm -f "$registry" 2> /dev/null || true
+    fi
+
     ROOMY_TEMP_FILES=()
     ROOMY_TEMP_DIRS=()
+    ROOMY_TEMP_REGISTRY=""
 }
 
 # ============================================================================
@@ -824,6 +920,7 @@ update_progress_if_needed() {
     local total="$2"
     local last_update_var="$3" # Name of variable holding last update time
     local interval="${4:-2}"   # Default: update every 2 seconds
+    [[ "$last_update_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
 
     # Get current time
     local current_time
@@ -831,7 +928,7 @@ update_progress_if_needed() {
 
     # Get last update time from variable
     local last_time
-    eval "last_time=\${$last_update_var:-0}"
+    last_time="${!last_update_var:-0}"
     [[ "$last_time" =~ ^[0-9]+$ ]] || last_time=0
 
     # Check if enough time has elapsed
@@ -841,7 +938,7 @@ update_progress_if_needed() {
         start_section_spinner "Scanning items... $completed/$total"
 
         # Update the last_update_time variable
-        eval "$last_update_var=$current_time"
+        printf -v "$last_update_var" '%s' "$current_time"
         return 0
     fi
 

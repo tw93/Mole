@@ -63,6 +63,41 @@ format_duration_human() {
 # Path Validation
 # ============================================================================
 
+roomy_physical_path_for_validation() {
+    local path="$1"
+    local parent existing suffix physical_existing physical_parent base
+
+    [[ -n "$path" && "$path" == /* ]] || return 1
+
+    parent=$(dirname "$path")
+    existing="$parent"
+
+    while [[ "$existing" != "/" && ! -e "$existing" && ! -L "$existing" ]]; do
+        existing=$(dirname "$existing")
+    done
+    [[ -d "$existing" ]] || return 1
+
+    physical_existing=$(cd -P "$existing" 2> /dev/null && pwd) || return 1
+    if [[ "$existing" == "/" ]]; then
+        suffix="${parent#/}"
+        if [[ -n "$suffix" ]]; then
+            physical_parent="/$suffix"
+        else
+            physical_parent="/"
+        fi
+    else
+        suffix="${parent#"$existing"}"
+        physical_parent="$physical_existing$suffix"
+    fi
+
+    base=$(basename "$path")
+    if [[ "$physical_parent" == "/" ]]; then
+        printf '/%s\n' "$base"
+    else
+        printf '%s/%s\n' "$physical_parent" "$base"
+    fi
+}
+
 # Validate path for deletion (absolute, no traversal, not system dir)
 validate_path_for_deletion() {
     local path="$1"
@@ -121,6 +156,14 @@ validate_path_for_deletion() {
     if [[ "$path" =~ [[:cntrl:]] ]] || [[ "$path" =~ $'\n' ]]; then
         log_error "Path validation failed: contains control characters: $path"
         return 1
+    fi
+
+    local physical_path
+    if physical_path=$(roomy_physical_path_for_validation "$path" 2> /dev/null) && [[ "$physical_path" != "$path" ]]; then
+        if ! validate_path_for_deletion "$physical_path" > /dev/null 2>&1; then
+            log_error "Path validation failed: physical path resolves to protected location: $path -> $physical_path"
+            return 1
+        fi
     fi
 
     # Allow deletion of coresymbolicationd cache (safe system cache that can be rebuilt)
@@ -193,8 +236,8 @@ safe_remove() {
         return 1
     fi
 
-    # Check if path exists
-    if [[ ! -e "$path" ]]; then
+    # Check if path exists. A broken symlink still needs cleanup.
+    if [[ ! -e "$path" && ! -L "$path" ]]; then
         return 0
     fi
 
@@ -274,7 +317,7 @@ safe_remove() {
     # Use || to capture the exit code so set -e won't abort on rm failures
     local error_msg
     local rm_exit=0
-    error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # safe_remove
+    error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # SAFE: safe_remove implementation after validate_path_for_deletion
 
     # Preserve interrupt semantics so callers can abort long-running deletions.
     if [[ $rm_exit -ge 128 ]]; then
@@ -421,7 +464,7 @@ safe_sudo_remove() {
 
     local output
     local ret=0
-    output=$(sudo rm -rf "$path" 2>&1) || ret=$? # safe_remove
+    output=$(sudo rm -rf "$path" 2>&1) || ret=$? # SAFE: safe_sudo_remove implementation after validate_path_for_deletion
 
     if [[ $ret -eq 0 ]]; then
         log_operation "${ROOMY_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
@@ -490,7 +533,7 @@ roomy_delete() {
     # up front to avoid a no-op Trash move followed by a validation failure.
     # The rejection itself is recorded in the forensic log so audit trails
     # can distinguish refused-by-policy from never-attempted.
-    if [[ ! -L "$path" ]] && ! validate_path_for_deletion "$path"; then
+    if ! validate_path_for_deletion "$path"; then
         _roomy_delete_log "$mode" "0" "rejected" "$path"
         return 1
     fi
@@ -660,7 +703,7 @@ _roomy_move_user_path_to_user_trash() {
     done
 
     mv -n "$path" "$dest" > /dev/null 2>&1 || return 1
-    [[ ! -e "$path" && ! -L "$path" && ( -e "$dest" || -L "$dest" ) ]]
+    [[ ! -e "$path" && ! -L "$path" && (-e "$dest" || -L "$dest") ]]
 }
 
 _roomy_move_sudo_path_to_user_trash() {

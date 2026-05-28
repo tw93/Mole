@@ -174,6 +174,7 @@ go run ./cmd/status
 ```
 
 For releases, GitHub Actions builds architecture-specific binaries automatically.
+Before tagging a public release, run `scripts/release-preflight.sh` and follow the launch runbooks in `LAUNCH_READINESS.md`, `docs/launch/clean-machine-cli-drill.md`, and `docs/release/release-integrity.md`.
 
 **Guidelines:**
 

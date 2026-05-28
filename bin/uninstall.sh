@@ -204,18 +204,44 @@ uninstall_persist_cache_file() {
         return 0
     }
 
-    # Heal stale file the user cannot write to (e.g. root-owned from a prior
-    # sudo run). The parent dir is user-owned, so rm succeeds regardless.
-    if [[ -e "$dst" && ! -w "$dst" ]]; then
-        rm -f "$dst" 2> /dev/null || true
+    if declare -f commit_staged_user_file > /dev/null 2>&1; then
+        commit_staged_user_file "$src" "$dst"
+        return $?
     fi
 
-    # shellcheck disable=SC2217 # BSD mv/cp read stdin when prompting; close it to avoid hang.
-    mv -f "$src" "$dst" < /dev/null 2> /dev/null || {
-        # shellcheck disable=SC2217
-        cp -f "$src" "$dst" < /dev/null 2> /dev/null || true
+    local dst_dir
+    dst_dir="$(dirname "$dst")"
+    if declare -f ensure_user_dir > /dev/null 2>&1; then
+        ensure_user_dir "$dst_dir" || {
+            rm -f "$src" 2> /dev/null || true
+            return 1
+        }
+    else
+        mkdir -p "$dst_dir" 2> /dev/null || {
+            rm -f "$src" 2> /dev/null || true
+            return 1
+        }
+    fi
+
+    if [[ -L "$dst" || ( -e "$dst" && ! -w "$dst" ) ]]; then
+        rm -f "$dst" 2> /dev/null || {
+            rm -f "$src" 2> /dev/null || true
+            return 1
+        }
+    elif [[ -e "$dst" && ! -f "$dst" ]]; then
         rm -f "$src" 2> /dev/null || true
-    }
+        return 1
+    fi
+
+    # shellcheck disable=SC2217 # BSD mv may read stdin when prompting; close it to avoid hangs.
+    if ! mv -f "$src" "$dst" < /dev/null 2> /dev/null; then
+        rm -f "$src" 2> /dev/null || true
+        return 1
+    fi
+    if declare -f ensure_user_file > /dev/null 2>&1; then
+        ensure_user_file "$dst"
+    fi
+    return 0
 }
 
 uninstall_collect_inline_metadata() {
@@ -262,7 +288,7 @@ start_uninstall_metadata_refresh() {
             if [[ "${ROOMY_DEBUG:-}" == "1" ]]; then
                 local ts
                 ts=$(date "+%Y-%m-%d %H:%M:%S" 2> /dev/null || echo "?")
-                echo "[$ts] DEBUG: [metadata-refresh] $*" >> "${HOME}/.config/roomy/roomy_debug_session.log" 2> /dev/null || true
+                append_log_line "${DEBUG_LOG_FILE:-${HOME}/Library/Logs/roomy/roomy_debug_session.log}" "[$ts] DEBUG: [metadata-refresh] $*"
             fi
         }
 
@@ -379,6 +405,11 @@ start_uninstall_metadata_refresh() {
 }
 
 uninstall_print_app_search_dirs() {
+    if [[ ("${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1") && -n "${ROOMY_TEST_UNINSTALL_APP_DIRS:-}" ]]; then
+        printf '%s\n' "$ROOMY_TEST_UNINSTALL_APP_DIRS" | tr ':' '\n'
+        return 0
+    fi
+
     local -a app_dirs=(
         "/Applications"
         "$HOME/Applications"
@@ -511,12 +542,27 @@ uninstall_resolve_eligible_bundle_id() {
     printf '%s\n' "$bundle_id"
 }
 
+uninstall_record_field_is_safe() {
+    local value="${1:-}"
+    [[ "$value" != *"|"* && "$value" != *[[:cntrl:]]* ]]
+}
+
+uninstall_sanitize_record_text() {
+    local value="${1:-}"
+    value="${value//|/-}"
+    if [[ "$value" == *[[:cntrl:]]* ]]; then
+        value=$(printf '%s' "$value" | LC_ALL=C tr -d '[:cntrl:]')
+    fi
+    printf '%s\n' "$value"
+}
+
 uninstall_app_inventory_fingerprint() {
     local app_dir app_path app_mtime pkg_app_path
 
     {
         while IFS= read -r pkg_app_path; do
             [[ -n "$pkg_app_path" && -d "$pkg_app_path" ]] || continue
+            uninstall_record_field_is_safe "$pkg_app_path" || continue
             app_mtime=$(get_file_mtime "$pkg_app_path")
             printf '%s|%s\n' "$pkg_app_path" "${app_mtime:-0}"
         done < <(pkg_receipt_nonstandard_app_paths)
@@ -526,6 +572,7 @@ uninstall_app_inventory_fingerprint() {
             while IFS=$'\t' read -r app_mtime app_path; do
                 [[ -n "$app_path" ]] || continue
                 uninstall_should_skip_app_path "$app_path" && continue
+                uninstall_record_field_is_safe "$app_path" || continue
                 printf '%s|%s\n' "$app_path" "${app_mtime:-0}"
             done < <(command find "$app_dir" -maxdepth 3 -name "*.app" -exec stat -f $'%m\t%N' {} + 2> /dev/null)
         done < <(uninstall_print_app_search_dirs)
@@ -569,6 +616,9 @@ scan_applications() {
         local cached_display_name="$4"
 
         [[ -n "$cached_bundle_id" && -n "$cached_display_name" ]] || return 1
+        uninstall_record_field_is_safe "$cached_app_path" || return 1
+        cached_bundle_id=$(uninstall_sanitize_record_text "$cached_bundle_id")
+        cached_display_name=$(uninstall_sanitize_record_text "$cached_display_name")
 
         cached_bundle_id=$(uninstall_resolve_eligible_bundle_id "$cached_app_path" "$cached_bundle_id") || return 1
 
@@ -636,6 +686,7 @@ scan_applications() {
     local pkg_app_path
     while IFS= read -r pkg_app_path; do
         [[ -n "$pkg_app_path" ]] || continue
+        uninstall_record_field_is_safe "$pkg_app_path" || continue
 
         local already_scanned=false
         for app_dir in "${app_dirs[@]}"; do
@@ -648,6 +699,7 @@ scan_applications() {
 
         local app_name="${pkg_app_path##*/}"
         app_name="${app_name%.app}"
+        app_name=$(uninstall_sanitize_record_text "$app_name")
 
         local app_mtime
         app_mtime=$(get_file_mtime "$pkg_app_path")
@@ -660,9 +712,11 @@ scan_applications() {
 
         while IFS=$'\t' read -r app_mtime app_path; do
             if [[ ! -e "$app_path" ]]; then continue; fi
+            uninstall_record_field_is_safe "$app_path" || continue
 
             local app_name="${app_path##*/}"
             app_name="${app_name%.app}"
+            app_name=$(uninstall_sanitize_record_text "$app_name")
 
             uninstall_should_skip_app_path "$app_path" && continue
 
@@ -697,6 +751,10 @@ scan_applications() {
 
         local uncached_app_path uncached_app_name uncached_app_mtime uncached_bundle_id uncached_display_name
         while IFS='|' read -r uncached_app_path uncached_app_name uncached_app_mtime uncached_bundle_id uncached_display_name; do
+            uninstall_record_field_is_safe "$uncached_app_path" || continue
+            uncached_app_name=$(uninstall_sanitize_record_text "$uncached_app_name")
+            uncached_bundle_id=$(uninstall_sanitize_record_text "$uncached_bundle_id")
+            uncached_display_name=$(uninstall_sanitize_record_text "$uncached_display_name")
             app_data_tuples+=("${uncached_app_path}|${uncached_app_name}|${uncached_app_mtime}|${uncached_bundle_id}|${uncached_display_name}")
         done < "$uncached_rows_file"
     fi
@@ -726,6 +784,10 @@ scan_applications() {
         local output_file="$2"
 
         IFS='|' read -r app_path app_name app_mtime cached_bundle_id cached_display_name <<< "$app_data_tuple"
+        uninstall_record_field_is_safe "$app_path" || return 0
+        app_name=$(uninstall_sanitize_record_text "$app_name")
+        cached_bundle_id=$(uninstall_sanitize_record_text "$cached_bundle_id")
+        cached_display_name=$(uninstall_sanitize_record_text "$cached_display_name")
 
         local bundle_id
         bundle_id=$(uninstall_resolve_eligible_bundle_id "$app_path" "${cached_bundle_id:-}") || return 0
@@ -736,8 +798,7 @@ scan_applications() {
         fi
 
         display_name="${display_name%.app}"
-        display_name="${display_name//|/-}"
-        display_name="${display_name//[$'\t\r\n']/}"
+        display_name=$(uninstall_sanitize_record_text "$display_name")
 
         echo "${app_path}|${display_name}|${bundle_id}|${app_mtime}" >> "$output_file"
     }
@@ -941,6 +1002,7 @@ scan_applications() {
                 update_scan_status "Collecting metadata..." "$metadata_processed" "$metadata_total"
             fi
 
+            uninstall_record_field_is_safe "$app_path" || continue
             [[ -n "$app_path" && -e "$app_path" ]] || continue
 
             local cache_match=false
@@ -1069,6 +1131,7 @@ load_applications() {
     selection_state=()
 
     while IFS='|' read -r epoch app_path app_name bundle_id size last_used size_kb; do
+        uninstall_record_field_is_safe "$app_path" || continue
         [[ ! -e "$app_path" ]] && continue
 
         apps_data+=("$epoch|$app_path|$app_name|$bundle_id|$size|$last_used|${size_kb:-0}")
@@ -1283,7 +1346,7 @@ uninstall_list_apps() {
             else
                 printf ',\n'
             fi
-            printf '  {"name": "%s", "bundle_id": "%s", "source": "%s", "uninstall_name": "%s", "path": "%s", "size": "%s"}' \
+            printf '  {"name": "%s", "bundle_id": "%s", "source": "%s", "uninstall_name": "%s", "path": "%s", "size": "%s", "uninstall_supported": true, "uninstall_reason": ""}' \
                 "$(uninstall_list_json_escape "$app_name")" \
                 "$(uninstall_list_json_escape "$bundle_id")" \
                 "$source_label" \
@@ -1361,7 +1424,13 @@ main() {
     # Parse flags and collect app name arguments
     local -a app_name_args=()
     local list_mode=0
+    local parsing_options=1
     for arg in "$@"; do
+        if [[ "$parsing_options" -eq 0 ]]; then
+            app_name_args+=("$arg")
+            continue
+        fi
+
         case "$arg" in
             "--help" | "-h")
                 show_uninstall_help
@@ -1378,6 +1447,9 @@ main() {
                 ;;
             "--list")
                 list_mode=1
+                ;;
+            "--")
+                parsing_options=0
                 ;;
             "--whitelist")
                 echo "Unknown uninstall option: $arg"

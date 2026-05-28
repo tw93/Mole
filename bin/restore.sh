@@ -35,6 +35,8 @@ restore_trash_dir() {
     printf '%s\n' "${ROOMY_TEST_TRASH_DIR:-$HOME/.Trash}"
 }
 
+RESTORE_LAST_CANDIDATE_STATUS=""
+
 restore_trashed_records() {
     local journal
     journal=$(restore_journal_path)
@@ -49,7 +51,14 @@ restore_trashed_records() {
         esc = 0
         for (i = 1; i <= length(rest); i++) {
             c = substr(rest, i, 1)
-            if (esc) { out = out c; esc = 0; continue }
+            if (esc) {
+                if (c == "n") out = out "\n"
+                else if (c == "t") out = out "\t"
+                else if (c == "r") out = out "\r"
+                else out = out c
+                esc = 0
+                continue
+            }
             if (c == "\\") { esc = 1; continue }
             if (c == "\"") break
             out = out c
@@ -58,9 +67,12 @@ restore_trashed_records() {
     }
     {
         if (field($0, "record_type") == "operation" && field($0, "action") == "TRASHED") {
-            printf "%s\t%s\n", field($0, "timestamp"), field($0, "path")
+            path = field($0, "path")
+            if (path != "" && !seen[path]++) {
+                printf "%s%c%s%c", field($0, "timestamp"), 0, path, 0
+            }
         }
-    }' "$journal" | awk -F'\t' '!seen[$2]++'
+    }' "$journal"
 }
 
 restore_sanitized_basename() {
@@ -73,27 +85,108 @@ restore_sanitized_basename() {
     printf '%s\n' "$base"
 }
 
+restore_destination_is_safe() {
+    local original="$1"
+    validate_path_for_deletion "$original" > /dev/null 2>&1 || return 1
+    ! restore_destination_has_symlinked_parent "$original" || return 1
+
+    local physical
+    physical=$(restore_destination_physical_path "$original") || return 1
+    validate_path_for_deletion "$physical" > /dev/null 2>&1
+}
+
+restore_destination_has_symlinked_parent() {
+    local original="$1"
+    local parent
+    parent=$(dirname "$original")
+
+    while [[ "$parent" != "/" && "$parent" != "." && -n "$parent" ]]; do
+        [[ -L "$parent" ]] && return 0
+        parent=$(dirname "$parent")
+    done
+    return 1
+}
+
+restore_destination_physical_path() {
+    roomy_physical_path_for_validation "$1"
+}
+
+restore_trash_physical_dir() {
+    local trash_dir="$1"
+
+    if [[ -z "$trash_dir" || "$trash_dir" != /* || -L "$trash_dir" ]]; then
+        RESTORE_LAST_CANDIDATE_STATUS="unsafe Trash directory"
+        return 1
+    fi
+    [[ -d "$trash_dir" ]] || return 1
+
+    local physical
+    if ! physical=$(cd -P "$trash_dir" 2> /dev/null && pwd); then
+        RESTORE_LAST_CANDIDATE_STATUS="unsafe Trash directory"
+        return 1
+    fi
+    printf '%s\n' "$physical"
+}
+
+restore_candidate_is_safe() {
+    local candidate="$1"
+    local trash_physical="$2"
+    local candidate_physical parent base
+
+    [[ -n "$candidate" && "$candidate" == /* ]] || return 1
+    [[ ! -L "$candidate" ]] || return 1
+    [[ -f "$candidate" || -d "$candidate" ]] || return 1
+
+    if [[ -d "$candidate" ]]; then
+        candidate_physical=$(cd -P "$candidate" 2> /dev/null && pwd) || return 1
+    else
+        parent=$(dirname "$candidate")
+        base=$(basename "$candidate")
+        candidate_physical="$(cd -P "$parent" 2> /dev/null && pwd)/$base" || return 1
+    fi
+
+    [[ "$candidate_physical" == "$trash_physical"/* ]]
+}
+
 restore_find_candidate() {
     local original="$1"
-    local trash_dir
+    RESTORE_LAST_CANDIDATE_STATUS="not found or ambiguous"
+
+    local trash_dir trash_physical
     trash_dir=$(restore_trash_dir)
-    [[ -d "$trash_dir" ]] || return 1
+    if ! trash_physical=$(restore_trash_physical_dir "$trash_dir"); then
+        return 1
+    fi
 
     local base
     base=$(restore_sanitized_basename "$original")
-    local -a matches=()
+    local -a raw_matches=()
+    local -a safe_matches=()
     local candidate
 
     candidate="$trash_dir/$base"
-    [[ -e "$candidate" || -L "$candidate" ]] && matches+=("$candidate")
+    if [[ -e "$candidate" || -L "$candidate" ]]; then
+        raw_matches+=("$candidate")
+        if restore_candidate_is_safe "$candidate" "$trash_physical"; then
+            safe_matches+=("$candidate")
+        fi
+    fi
 
     for candidate in "$trash_dir/$base".*; do
         [[ -e "$candidate" || -L "$candidate" ]] || continue
-        matches+=("$candidate")
+        raw_matches+=("$candidate")
+        if restore_candidate_is_safe "$candidate" "$trash_physical"; then
+            safe_matches+=("$candidate")
+        fi
     done
 
-    [[ ${#matches[@]} -eq 1 ]] || return 1
-    printf '%s\n' "${matches[0]}"
+    [[ ${#raw_matches[@]} -eq 1 ]] || return 1
+    if [[ ${#safe_matches[@]} -ne 1 ]]; then
+        RESTORE_LAST_CANDIDATE_STATUS="unsafe Trash item"
+        return 1
+    fi
+
+    printf '%s\n' "${safe_matches[0]}"
 }
 
 restore_list() {
@@ -102,28 +195,36 @@ restore_list() {
         case "$1" in
             --limit)
                 shift
-                [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]] || { echo "Invalid --limit value" >&2; return 1; }
+                [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]] || {
+                    echo "Invalid --limit value" >&2
+                    return 1
+                }
                 limit="$1"
                 ;;
             -h | --help)
                 show_restore_help
                 return 0
                 ;;
-            *) echo "Unknown restore list option: $1" >&2; return 1 ;;
+            *)
+                echo "Unknown restore list option: $1" >&2
+                return 1
+                ;;
         esac
         shift
     done
 
     local shown=0 timestamp original candidate status
-    while IFS=$'\t' read -r timestamp original; do
+    while IFS= read -r -d '' timestamp && IFS= read -r -d '' original; do
         [[ -n "$original" ]] || continue
         [[ "$shown" -lt "$limit" ]] || break
-        if [[ -e "$original" || -L "$original" ]]; then
+        if ! restore_destination_is_safe "$original"; then
+            status="unsafe destination"
+        elif [[ -e "$original" || -L "$original" ]]; then
             status="already restored"
         elif candidate=$(restore_find_candidate "$original"); then
             status="restorable: ${candidate/#$HOME/~}"
         else
-            status="not found or ambiguous"
+            status="${RESTORE_LAST_CANDIDATE_STATUS:-not found or ambiguous}"
         fi
         echo "$timestamp  $status"
         echo "  $original"
@@ -145,7 +246,10 @@ restore_targets() {
             --dry-run | -n) dry_run="true" ;;
             --limit)
                 shift
-                [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]] || { echo "Invalid --limit value" >&2; return 1; }
+                [[ $# -gt 0 && "$1" =~ ^[0-9]+$ ]] || {
+                    echo "Invalid --limit value" >&2
+                    return 1
+                }
                 limit="$1"
                 ;;
             -h | --help)
@@ -154,7 +258,10 @@ restore_targets() {
                 ;;
             --)
                 shift
-                while [[ $# -gt 0 ]]; do requested+=("$1"); shift; done
+                while [[ $# -gt 0 ]]; do
+                    requested+=("$1")
+                    shift
+                done
                 break
                 ;;
             -*)
@@ -175,7 +282,7 @@ restore_targets() {
 
     local restored=0 skipped=0 considered=0
     local timestamp original candidate parent match=false
-    while IFS=$'\t' read -r timestamp original; do
+    while IFS= read -r -d '' timestamp && IFS= read -r -d '' original; do
         [[ -n "$original" ]] || continue
         if [[ "$all" == "true" ]]; then
             match=true
@@ -192,13 +299,22 @@ restore_targets() {
             break
         fi
 
+        if ! restore_destination_is_safe "$original"; then
+            echo "Skipped, unsafe restore destination: $original"
+            skipped=$((skipped + 1))
+            continue
+        fi
         if [[ -e "$original" || -L "$original" ]]; then
             echo "Skipped, original already exists: $original"
             skipped=$((skipped + 1))
             continue
         fi
         if ! candidate=$(restore_find_candidate "$original"); then
-            echo "Skipped, Trash item not found or ambiguous: $original"
+            if [[ "${RESTORE_LAST_CANDIDATE_STATUS:-}" == unsafe\ Trash\ * ]]; then
+                echo "Skipped, $RESTORE_LAST_CANDIDATE_STATUS: $original"
+            else
+                echo "Skipped, Trash item not found or ambiguous: $original"
+            fi
             skipped=$((skipped + 1))
             continue
         fi
@@ -210,7 +326,21 @@ restore_targets() {
             continue
         fi
 
-        mkdir -p "$parent"
+        if ! mkdir -p "$parent"; then
+            echo "Failed to prepare restore destination: $parent" >&2
+            skipped=$((skipped + 1))
+            continue
+        fi
+        if ! restore_destination_is_safe "$original"; then
+            echo "Skipped, unsafe restore destination after preparing parent: $original"
+            skipped=$((skipped + 1))
+            continue
+        fi
+        if [[ -e "$original" || -L "$original" ]]; then
+            echo "Skipped, original already exists: $original"
+            skipped=$((skipped + 1))
+            continue
+        fi
         if mv -n "$candidate" "$original"; then
             echo "Restored: $original"
             log_operation "restore" "RESTORED" "$original" "from Trash"

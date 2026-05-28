@@ -70,6 +70,18 @@
       "items": "array"
     }
   },
+  "objects": {
+    "app": {
+      "name": "string",
+      "bundle_id": "string",
+      "source": "string",
+      "uninstall_name": "string",
+      "path": "string",
+      "size": "string",
+      "uninstall_supported": "boolean",
+      "uninstall_reason": "string"
+    }
+  },
   "events": {
     "base": {
       "event": "string",

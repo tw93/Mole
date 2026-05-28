@@ -15,15 +15,21 @@ trap cleanup_temp_files EXIT INT TERM
 api_json_escape() {
     local s="${1:-}"
     if command -v perl > /dev/null 2>&1; then
-        s=$(printf '%s' "$s" | perl -pe 's/\e\[[0-?]*[ -\/]*[@-~]//g' 2> /dev/null || printf '%s' "$s")
+        local clean_file
+        clean_file=$(mktemp_file "roomy-api-json-escape")
+        if printf '%s' "$s" | perl -pe 's/\e\[[0-?]*[ -\/]*[@-~]//g; s/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g; s/\n/\\n/g; s/([\x00-\x08\x0B\x0C\x0E-\x1F])/sprintf("\\u%04x", ord($1))/ge' > "$clean_file" 2> /dev/null; then
+            IFS= read -r -d '' s < <(cat "$clean_file"; printf '\0')
+        fi
     else
         s="${s//$'\033'/}"
+        s="${s//\\/\\\\}"
+        s="${s//\"/\\\"}"
+        s="${s//$'\t'/\\t}"
+        s="${s//$'\r'/\\r}"
+        s="${s//$'\n'/\\n}"
+        printf '%s' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037'
+        return 0
     fi
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\t'/\\t}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\n'/\\n}"
     printf '%s' "$s"
 }
 
@@ -61,6 +67,50 @@ api_json_extra() {
     done
 }
 
+api_json_array_is_valid() {
+    local json="${1:-}"
+    printf '%s' "$json" | grep -Eq '^[[:space:]]*\[' || return 1
+
+    local json_file
+    json_file=$(mktemp_file "roomy-api-json-array")
+    printf '%s' "$json" > "$json_file"
+    plutil -p "$json_file" > /dev/null 2>&1
+}
+
+api_base64_encode() {
+    printf '%s' "${1:-}" | base64 | tr -d '\n'
+}
+
+api_base64_decode_to_var() {
+    local target_var="$1"
+    local encoded="$2"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+
+    local decoded_file decoded_value=""
+    decoded_file=$(mktemp_file "roomy-api-base64")
+    if ! printf '%s' "$encoded" | base64 -D > "$decoded_file" 2> /dev/null; then
+        printf '%s' "$encoded" | base64 -d > "$decoded_file" 2> /dev/null || return 1
+    fi
+    IFS= read -r -d '' decoded_value < <(cat "$decoded_file"; printf '\0')
+    printf -v "$target_var" '%s' "$decoded_value"
+}
+
+api_plist_string_to_var() {
+    local target_var="$1"
+    local plist="$2"
+    local key="$3"
+    local fallback="${4:-}"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+
+    local value_file value="$fallback"
+    value_file=$(mktemp_file "roomy-api-plist")
+    if plutil -extract "$key" raw "$plist" > "$value_file" 2> /dev/null; then
+        api_chomp_one_trailing_newline_file "$value_file"
+        IFS= read -r -d '' value < <(cat "$value_file"; printf '\0')
+    fi
+    printf -v "$target_var" '%s' "$value"
+}
+
 api_error() {
     local code="$1"
     local message="$2"
@@ -77,8 +127,9 @@ api_event() {
     local extra="${4:-}"
     local payload
 
-    payload=$(printf '{"event":"%s","domain":"%s"' \
-        "$(api_json_escape "$event")" "$(api_json_escape "$domain")"
+    payload=$(
+        printf '{"event":"%s","domain":"%s"' \
+            "$(api_json_escape "$event")" "$(api_json_escape "$domain")"
     )
     if [[ -n "$message" ]]; then
         payload+=$(printf ',"message":"%s"' "$(api_json_escape "$message")")
@@ -118,23 +169,57 @@ api_find_analyze_bin() {
     fi
 }
 
-api_resolve_existing_path() {
-    local raw="$1"
+api_resolve_existing_path_to_var() {
+    local target_var="$1"
+    local raw="$2"
     local expanded="$raw"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
     [[ "$expanded" == "~"* ]] && expanded="${expanded/#\~/$HOME}"
 
-    if [[ ! -e "$expanded" ]]; then
+    if [[ ! -e "$expanded" && ! -L "$expanded" ]]; then
         return 1
     fi
 
-    local dir base
-    dir=$(dirname "$expanded")
-    base=$(basename "$expanded")
-    if [[ -d "$expanded" ]]; then
-        cd "$expanded" 2> /dev/null && pwd -P
+    local dir base resolved_path
+    if [[ "$expanded" == "/" ]]; then
+        printf -v "$target_var" '%s' "/"
+        return 0
+    elif [[ "$expanded" == */* ]]; then
+        dir="${expanded%/*}"
+        base="${expanded##*/}"
+        [[ -n "$dir" ]] || dir="/"
     else
-        cd "$dir" 2> /dev/null && printf '%s/%s\n' "$(pwd -P)" "$base"
+        dir="."
+        base="$expanded"
     fi
+
+    if [[ -L "$expanded" && -d "$expanded" ]]; then
+        local resolved_file
+        resolved_file=$(mktemp_file "roomy-api-resolve")
+        (cd "$expanded" 2> /dev/null && pwd -P) > "$resolved_file" || return 1
+        api_chomp_one_trailing_newline_file "$resolved_file"
+        IFS= read -r -d '' resolved_path < <(cat "$resolved_file"; printf '\0')
+        printf -v "$target_var" '%s' "$resolved_path"
+        return 0
+    fi
+
+    local parent parent_file
+    parent_file=$(mktemp_file "roomy-api-resolve-parent")
+    (cd "$dir" 2> /dev/null && pwd -P) > "$parent_file" || return 1
+    api_chomp_one_trailing_newline_file "$parent_file"
+    IFS= read -r -d '' parent < <(cat "$parent_file"; printf '\0')
+    if [[ "$parent" == "/" ]]; then
+        resolved_path="/$base"
+    else
+        resolved_path="$parent/$base"
+    fi
+    printf -v "$target_var" '%s' "$resolved_path"
+}
+
+api_resolve_existing_path() {
+    local resolved
+    api_resolve_existing_path_to_var resolved "$1" || return 1
+    printf '%s\n' "$resolved"
 }
 
 api_status() {
@@ -172,7 +257,7 @@ api_storage() {
     [[ -n "$path" ]] || api_error "usage" "Usage: roomy api storage scan --path <path>"
 
     local target
-    target=$(api_resolve_existing_path "$path") || api_error "invalid_path" "Storage scan path does not exist: $path"
+    api_resolve_existing_path_to_var target "$path" || api_error "invalid_path" "Storage scan path does not exist: $path"
 
     local bin
     bin=$(api_find_analyze_bin) || api_error "missing_analyze_binary" "Bundled analyzer binary not found. Run make build or reinstall Roomy."
@@ -221,7 +306,7 @@ api_storage_execute() {
     api_validate_plan_or_emit "storage" "$plan_file" || return 1
 
     local operation
-    operation=$(api_plan_string "$plan_file" "operation")
+    api_plan_string_to_var operation "$plan_file" "operation"
     [[ -n "$operation" ]] || operation="trash"
     case "$operation" in
         reveal | open | trash) ;;
@@ -229,18 +314,20 @@ api_storage_execute() {
     esac
 
     local scan_path
-    scan_path=$(api_plan_string "$plan_file" "scan_path")
+    api_plan_string_to_var scan_path "$plan_file" "scan_path"
     [[ -n "$scan_path" ]] || scan_path="$HOME"
 
-    local scan_root
-    scan_root=$(api_resolve_existing_path "$scan_path") || api_error "invalid_path" "Storage scan root does not exist: $scan_path"
+    local scan_root scan_root_input
+    api_expand_home_path_to_var scan_root_input "$scan_path"
+    [[ -d "$scan_root_input" ]] || api_error "invalid_path" "Storage scan root does not exist: $scan_path"
+    api_resolve_existing_path_to_var scan_root "$scan_path" || api_error "invalid_path" "Storage scan root does not exist: $scan_path"
 
     local dry_run=false
     api_plan_bool "$plan_file" "dry_run" && dry_run=true
 
     local -a targets=()
     local target
-    while IFS= read -r target; do
+    while IFS= read -r -d '' target; do
         [[ -n "$target" ]] && targets+=("$target")
     done < <(api_plan_extract_array "$plan_file" "targets")
 
@@ -257,18 +344,18 @@ api_storage_execute() {
     local total_bytes=0
     for target in "${targets[@]}"; do
         local expanded resolved bytes=0
-        expanded=$(api_expand_home_path "$target")
+        api_expand_home_path_to_var expanded "$target"
 
         if [[ ! -e "$expanded" && ! -L "$expanded" ]]; then
             api_event "skipped" "storage" "Path does not exist" "$(api_json_extra "$(api_json_field path "$expanded")")"
             continue
         fi
 
-        resolved=$(api_resolve_existing_path "$expanded") || {
+        if ! api_resolve_existing_path_to_var resolved "$expanded"; then
             api_event "skipped" "storage" "Path could not be resolved" "$(api_json_extra "$(api_json_field path "$expanded")")"
             failed=1
             continue
-        }
+        fi
 
         if ! api_path_within_root "$resolved" "$scan_root"; then
             api_event "skipped" "storage" "Path is outside the scanned folder" "$(api_json_extra "$(api_json_field path "$resolved")" "$(api_json_field scan_path "$scan_root")")"
@@ -304,7 +391,7 @@ api_storage_execute() {
                 fi
                 ;;
             trash)
-                if ! validate_path_for_deletion "$resolved"; then
+                if ! validate_path_for_deletion "$resolved" > /dev/null 2>&1; then
                     api_event "skipped" "storage" "Path failed deletion validation" "$(api_json_extra "$(api_json_field path "$resolved")")"
                     failed=1
                     continue
@@ -353,15 +440,30 @@ api_apps() {
         return 0
     fi
 
-    local apps_json=""
-    apps_json=$("$SCRIPT_DIR/uninstall.sh" --list 2> /dev/null || true)
-    if [[ -z "$apps_json" ]]; then
+    local apps_json="" app_status=0 stderr_file stderr_msg=""
+    stderr_file=$(mktemp_file "roomy-api-apps-full-stderr")
+    if [[ ("${ROOMY_TEST_MODE:-0}" == "1" || "${ROOMY_TEST_NO_AUTH:-0}" == "1") && -n "${ROOMY_TEST_API_FULL_APPS_JSON+x}" ]]; then
+        apps_json="$ROOMY_TEST_API_FULL_APPS_JSON"
+    else
+        set +e
+        apps_json=$("$SCRIPT_DIR/uninstall.sh" --list 2> "$stderr_file")
+        app_status=$?
+        set -e
+    fi
+    if [[ $app_status -ne 0 ]]; then
+        if [[ -z "$apps_json" ]] && grep -Eiq "No applications found|No applications available" "$stderr_file" 2> /dev/null; then
+            apps_json="[]"
+        else
+            if [[ -s "$stderr_file" ]]; then
+                IFS= read -r -d '' stderr_msg < <(cat "$stderr_file"; printf '\0')
+            fi
+            [[ -n "$stderr_msg" ]] || stderr_msg="uninstall --list exited $app_status"
+            api_error "apps_inventory_failed" "Application inventory failed: $stderr_msg"
+        fi
+    elif [[ -z "$apps_json" ]]; then
         apps_json="[]"
     fi
-    case "$apps_json" in
-        \[*\]) ;;
-        *) api_error "invalid_apps_json" "Application inventory did not return a JSON array" ;;
-    esac
+    api_json_array_is_valid "$apps_json" || api_error "invalid_apps_json" "Application inventory did not return a valid JSON array"
 
     printf '{\n'
     printf '  "schema_version": 1,\n'
@@ -384,11 +486,12 @@ api_apps_list_fast() {
     local app_dir app_path
     for app_dir in "${app_dirs[@]}"; do
         [[ -d "$app_dir" && -r "$app_dir" ]] || continue
-        while IFS= read -r app_path; do
+        while IFS= read -r -d '' app_path; do
             [[ -d "$app_path" ]] || continue
 
             local parent_dir
-            parent_dir=$(dirname "$app_path")
+            parent_dir="${app_path%/*}"
+            [[ "$parent_dir" != "$app_path" ]] || parent_dir="."
             case "$parent_dir" in
                 *.app | *.app/*) continue ;;
             esac
@@ -398,14 +501,17 @@ api_apps_list_fast() {
             local display_name=""
             local bundle_name=""
             if [[ -f "$plist" ]]; then
-                bundle_id=$(plutil -extract CFBundleIdentifier raw "$plist" 2> /dev/null || echo "unknown")
-                display_name=$(plutil -extract CFBundleDisplayName raw "$plist" 2> /dev/null || echo "")
-                bundle_name=$(plutil -extract CFBundleName raw "$plist" 2> /dev/null || echo "")
+                api_plist_string_to_var bundle_id "$plist" "CFBundleIdentifier" "unknown"
+                api_plist_string_to_var display_name "$plist" "CFBundleDisplayName" ""
+                api_plist_string_to_var bundle_name "$plist" "CFBundleName" ""
             fi
 
             local app_name
             app_name="${display_name:-$bundle_name}"
-            [[ -n "$app_name" && "$app_name" != "(null)" ]] || app_name="$(basename "$app_path" .app)"
+            if [[ -z "$app_name" || "$app_name" == "(null)" ]]; then
+                app_name="${app_path##*/}"
+                app_name="${app_name%.app}"
+            fi
             [[ -n "$bundle_id" && "$bundle_id" != "(null)" ]] || bundle_id="unknown"
 
             local size_display="N/A"
@@ -415,8 +521,13 @@ api_apps_list_fast() {
                 size_display=$(bytes_to_human "$((size_kb * 1024))")
             fi
 
-            printf '%s\t%s\t%s\t%s\t%s\n' "$app_name" "$bundle_id" "$app_path" "$size_display" "$app_name" >> "$records_file"
-        done < <(command find "$app_dir" -maxdepth 2 -name "*.app" -type d -prune 2> /dev/null)
+            printf '%s\t%s\t%s\t%s\t%s\n' \
+                "$(api_base64_encode "$app_name")" \
+                "$(api_base64_encode "$bundle_id")" \
+                "$(api_base64_encode "$app_path")" \
+                "$(api_base64_encode "$size_display")" \
+                "$(api_base64_encode "$app_name")" >> "$records_file"
+        done < <(command find "$app_dir" -maxdepth 2 -name "*.app" -type d -prune -print0 2> /dev/null)
     done
 
     printf '{\n'
@@ -424,21 +535,34 @@ api_apps_list_fast() {
     printf '  "apps": [\n'
 
     local first=true
-    local app_name bundle_id path size uninstall_name
-    while IFS=$'\t' read -r app_name bundle_id path size uninstall_name; do
+    local app_name bundle_id path size uninstall_name encoded_name encoded_bundle encoded_path encoded_size encoded_uninstall
+    while IFS=$'\t' read -r encoded_name encoded_bundle encoded_path encoded_size encoded_uninstall; do
+        api_base64_decode_to_var app_name "$encoded_name" || continue
+        api_base64_decode_to_var bundle_id "$encoded_bundle" || continue
+        api_base64_decode_to_var path "$encoded_path" || continue
+        api_base64_decode_to_var size "$encoded_size" || continue
+        api_base64_decode_to_var uninstall_name "$encoded_uninstall" || continue
         [[ -n "$path" ]] || continue
+        local uninstall_supported=true
+        local uninstall_reason=""
+        if [[ "$path" =~ [[:cntrl:]] || "$uninstall_name" =~ [[:cntrl:]] ]]; then
+            uninstall_supported=false
+            uninstall_reason="Path or uninstall name contains control characters"
+        fi
         if $first; then
             first=false
         else
             printf ',\n'
         fi
-        printf '    {"name":"%s","bundle_id":"%s","source":"App","uninstall_name":"%s","path":"%s","size":"%s"}' \
+        printf '    {"name":"%s","bundle_id":"%s","source":"App","uninstall_name":"%s","path":"%s","size":"%s","uninstall_supported":%s,"uninstall_reason":"%s"}' \
             "$(api_json_escape "$app_name")" \
             "$(api_json_escape "$bundle_id")" \
             "$(api_json_escape "$uninstall_name")" \
             "$(api_json_escape "$path")" \
-            "$(api_json_escape "$size")"
-    done < <(LC_COLLATE=C sort -fu "$records_file")
+            "$(api_json_escape "$size")" \
+            "$uninstall_supported" \
+            "$(api_json_escape "$uninstall_reason")"
+    done < <(LC_COLLATE=C sort -u "$records_file")
 
     printf '\n'
     printf '  ]\n'
@@ -590,13 +714,23 @@ api_installer_preview() {
     fi
 
     local total_bytes=0
+    local -a preview_paths=()
+    local -a preview_sizes=()
+    local -a preview_sources=()
     local count=${#INSTALLER_PATHS[@]}
     local i
     for ((i = 0; i < count; i++)); do
+        local path="${INSTALLER_PATHS[i]}"
+        validate_path_for_deletion "$path" > /dev/null 2>&1 || continue
         local bytes="${INSTALLER_SIZES[i]:-0}"
+        local source="${INSTALLER_SOURCES[i]:-}"
         [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
+        preview_paths+=("$path")
+        preview_sizes+=("$bytes")
+        preview_sources+=("$source")
         total_bytes=$((total_bytes + bytes))
     done
+    count=${#preview_paths[@]}
 
     printf '{\n'
     printf '  "schema_version": 1,\n'
@@ -607,9 +741,10 @@ api_installer_preview() {
 
     local first=true
     for ((i = 0; i < count; i++)); do
-        local path="${INSTALLER_PATHS[i]}"
-        local bytes="${INSTALLER_SIZES[i]:-0}"
-        local source="${INSTALLER_SOURCES[i]:-}"
+        local path="${preview_paths[i]}"
+        local bytes="${preview_sizes[i]:-0}"
+        local source="${preview_sources[i]:-}"
+        local name="${path##*/}"
         [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
         if $first; then
             first=false
@@ -617,7 +752,7 @@ api_installer_preview() {
             printf ',\n'
         fi
         printf '    {"name":"%s","path":"%s","source":"%s","bytes":%s}' \
-            "$(api_json_escape "$(basename "$path")")" \
+            "$(api_json_escape "$name")" \
             "$(api_json_escape "$path")" \
             "$(api_json_escape "$source")" \
             "$bytes"
@@ -649,30 +784,40 @@ api_purge_preview() {
     for search_path in "${PURGE_SEARCH_PATHS[@]+"${PURGE_SEARCH_PATHS[@]}"}"; do
         [[ -d "$search_path" ]] || continue
         temp_output=$(mktemp_file "roomy-api-purge-path")
-        scan_purge_targets "$search_path" "$temp_output"
+        scan_purge_targets_nul "$search_path" "$temp_output"
         [[ -f "$temp_output" ]] && cat "$temp_output" >> "$scan_output"
     done
     rm -f "$stats_dir/purge_scanning" 2> /dev/null || true
 
-    local deduped
-    deduped=$(mktemp_file "roomy-api-purge-deduped")
-    if [[ -s "$scan_output" ]]; then
-        LC_COLLATE=C sort -u "$scan_output" > "$deduped"
-    else
-        : > "$deduped"
-    fi
+    local -a deduped_paths=()
+    local path existing already_seen
+    while IFS= read -r -d '' path; do
+        [[ -n "$path" ]] || continue
+        already_seen=false
+        for existing in "${deduped_paths[@]+"${deduped_paths[@]}"}"; do
+            if [[ "$existing" == "$path" ]]; then
+                already_seen=true
+                break
+            fi
+        done
+        [[ "$already_seen" == "true" ]] && continue
+        deduped_paths+=("$path")
+    done < "$scan_output"
 
     local total_bytes=0
     local item_count=0
     local now_epoch
     now_epoch=$(get_epoch_seconds)
-    local records_file
-    records_file=$(mktemp_file "roomy-api-purge-records")
-    : > "$records_file"
+    local -a item_paths=()
+    local -a item_names=()
+    local -a item_bytes=()
+    local -a item_recent_flags=()
+    local -a item_age_days=()
+    local -a item_project_roots=()
 
-    local path
-    while IFS= read -r path; do
+    for path in "${deduped_paths[@]+"${deduped_paths[@]}"}"; do
         [[ -n "$path" && -e "$path" ]] || continue
+        validate_path_for_deletion "$path" > /dev/null 2>&1 || continue
         local size_kb=0
         local size_raw
         size_raw=$(get_dir_size_kb "$path")
@@ -704,14 +849,23 @@ api_purge_preview() {
                 break
             fi
         done
-        [[ -n "$project_root" ]] || project_root="$(dirname "$path")"
+        if [[ -z "$project_root" ]]; then
+            project_root="${path%/*}"
+            [[ "$project_root" != "$path" ]] || project_root="."
+            [[ -n "$project_root" ]] || project_root="/"
+        fi
 
         local bytes=$((size_kb * 1024))
         total_bytes=$((total_bytes + bytes))
         item_count=$((item_count + 1))
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "$path" "$(basename "$path")" "$bytes" "$recent" "$age_days" "$project_root" >> "$records_file"
-    done < "$deduped"
+        local name="${path##*/}"
+        item_paths+=("$path")
+        item_names+=("$name")
+        item_bytes+=("$bytes")
+        item_recent_flags+=("$recent")
+        item_age_days+=("$age_days")
+        item_project_roots+=("$project_root")
+    done
 
     printf '{\n'
     printf '  "schema_version": 1,\n'
@@ -731,9 +885,18 @@ api_purge_preview() {
     printf '],\n'
     printf '  "items": [\n'
 
-    local first=true name bytes recent age_days project_root
-    while IFS=$'\t' read -r path name bytes recent age_days project_root; do
+    local first=true i name bytes recent age_days project_root
+    for i in "${!item_paths[@]}"; do
+        path="${item_paths[i]}"
+        name="${item_names[i]}"
+        bytes="${item_bytes[i]}"
+        recent="${item_recent_flags[i]}"
+        age_days="${item_age_days[i]}"
+        project_root="${item_project_roots[i]}"
         [[ -n "$path" ]] || continue
+        [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
+        [[ "$recent" == "true" || "$recent" == "false" ]] || recent=false
+        [[ "$age_days" =~ ^[0-9]+$ ]] || age_days=0
         if $first; then
             first=false
         else
@@ -746,7 +909,7 @@ api_purge_preview() {
             "$bytes" \
             "$recent" \
             "$age_days"
-    done < "$records_file"
+    done
     printf '\n'
     printf '  ]\n'
     printf '}\n'
@@ -867,13 +1030,17 @@ api_whitelist_update() {
 
     local -a patterns=()
     local pattern
-    while IFS= read -r pattern; do
+    while IFS= read -r -d '' pattern; do
         [[ -n "$pattern" ]] && patterns+=("$pattern")
     done < <(api_plan_extract_array "$plan_file" "patterns")
 
     # shellcheck source=lib/manage/whitelist.sh
     source "$PROJECT_ROOT/lib/manage/whitelist.sh"
-    save_whitelist_patterns "$mode" "${patterns[@]+"${patterns[@]}"}"
+    if ! save_whitelist_patterns "$mode" "${patterns[@]+"${patterns[@]}"}" 2> /dev/null; then
+        api_event "started" "whitelist"
+        api_event "failed" "whitelist" "Could not write whitelist configuration" "$(api_json_extra "$(api_json_field mode "$mode")")"
+        return 1
+    fi
     api_event "completed" "whitelist" "Whitelist updated" "$(api_json_extra "$(api_json_field mode "$mode")" "$(api_json_number_field pattern_count "${#patterns[@]}")")"
 }
 
@@ -918,19 +1085,29 @@ api_purge_paths_update() {
     [[ -n "$plan_file" && -f "$plan_file" ]] || api_error "invalid_plan" "Plan file does not exist: $plan_file"
     api_validate_plan_or_emit "purge_paths" "$plan_file" || return 1
 
+    # shellcheck source=lib/clean/project.sh
+    source "$PROJECT_ROOT/lib/clean/project.sh"
+
     local -a paths=()
     local path expanded
-    while IFS= read -r path; do
+    while IFS= read -r -d '' path; do
         [[ -z "$path" ]] && continue
-        expanded=$(api_expand_home_path "$path")
+        api_expand_home_path_to_var expanded "$path"
+        if ! roomy_purge_is_safe_search_path "$expanded"; then
+            api_event "started" "purge_paths"
+            api_event "failed" "purge_paths" "Unsafe project scan path" "$(api_json_extra "$(api_json_field path "$expanded")")"
+            return 1
+        fi
         paths+=("$expanded")
     done < <(api_plan_extract_array "$plan_file" "paths")
 
-    # shellcheck source=lib/clean/project.sh
-    source "$PROJECT_ROOT/lib/clean/project.sh"
-    write_purge_config "# Roomy Purge Paths - Directories to scan for project artifacts
+    if ! write_purge_config "# Roomy Purge Paths - Directories to scan for project artifacts
 # Managed by RoomyUI. Add one path per line (supports ~ for home directory).
-" "${paths[@]+"${paths[@]}"}"
+" "${paths[@]+"${paths[@]}"}" 2> /dev/null; then
+        api_event "started" "purge_paths"
+        api_event "failed" "purge_paths" "Could not write project scan paths" "$(api_json_extra "$(api_json_field config_path "$PURGE_CONFIG_FILE")")"
+        return 1
+    fi
 
     api_event "completed" "purge_paths" "Project scan paths updated" "$(api_json_extra "$(api_json_number_field path_count "${#paths[@]}")" "$(api_json_field config_path "$PURGE_CONFIG_FILE")")"
 }
@@ -1270,18 +1447,56 @@ api_plan_extract_array() {
     local file="$1"
     local key="$2"
     local index=0
-    local value=""
+    local value_file
+    value_file=$(mktemp_file "roomy-api-plan-value")
 
-    while value=$(api_plan_raw "$file" "$key.$index" 2> /dev/null); do
-        printf '%s\n' "$value"
+    while api_plan_raw "$file" "$key.$index" > "$value_file" 2> /dev/null; do
+        api_chomp_one_trailing_newline_file "$value_file"
+        cat "$value_file"
+        printf '\0'
+        : > "$value_file"
         index=$((index + 1))
     done
+}
+
+api_chomp_one_trailing_newline_file() {
+    local file="$1"
+    [[ -s "$file" ]] || return 0
+
+    local last_hex
+    last_hex=$(tail -c 1 "$file" 2> /dev/null | od -An -tx1 | tr -d '[:space:]' || true)
+    [[ "$last_hex" == "0a" ]] || return 0
+
+    local size
+    size=$(wc -c < "$file" 2> /dev/null | tr -d '[:space:]' || echo 0)
+    [[ "$size" =~ ^[0-9]+$ && "$size" -gt 0 ]] || return 0
+
+    truncate -s "$((size - 1))" "$file" 2> /dev/null ||
+        perl -0pi -e 's/\n\z//' "$file" 2> /dev/null ||
+        true
 }
 
 api_plan_string() {
     local file="$1"
     local key="$2"
-    api_plan_raw "$file" "$key" 2> /dev/null || true
+    local value
+    api_plan_string_to_var value "$file" "$key" || true
+    printf '%s\n' "$value"
+}
+
+api_plan_string_to_var() {
+    local target_var="$1"
+    local file="$2"
+    local key="$3"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+
+    local value_file plan_string_value=""
+    value_file=$(mktemp_file "roomy-api-plan-string")
+    if api_plan_raw "$file" "$key" > "$value_file" 2> /dev/null; then
+        api_chomp_one_trailing_newline_file "$value_file"
+        IFS= read -r -d '' plan_string_value < <(cat "$value_file"; printf '\0')
+    fi
+    printf -v "$target_var" '%s' "$plan_string_value"
 }
 
 api_plan_key_exists() {
@@ -1320,7 +1535,7 @@ api_plan_expect_optional_type() {
         api_plan_validation_error "Plan field \"$key\" must be a $expected"
 }
 
-api_plan_require_string_array() {
+api_plan_expect_string_array() {
     local file="$1"
     local key="$2"
 
@@ -1329,8 +1544,6 @@ api_plan_require_string_array() {
         api_plan_validation_error "Plan field \"$key\" must be an array" || return 1
     [[ "$count" =~ ^[0-9]+$ ]] ||
         api_plan_validation_error "Plan field \"$key\" must be an array" || return 1
-    [[ "$count" -gt 0 ]] ||
-        api_plan_validation_error "Plan field \"$key\" must contain at least one item" || return 1
 
     local index actual
     for ((index = 0; index < count; index++)); do
@@ -1338,6 +1551,29 @@ api_plan_require_string_array() {
         [[ "$actual" == "string" ]] ||
             api_plan_validation_error "Plan field \"$key\" must contain only strings" || return 1
     done
+}
+
+api_plan_require_string_array() {
+    local file="$1"
+    local key="$2"
+    local count
+
+    api_plan_expect_string_array "$file" "$key" || return 1
+    count=$(api_plan_array_count "$file" "$key" 2> /dev/null) ||
+        api_plan_validation_error "Plan field \"$key\" must be an array" || return 1
+    [[ "$count" -gt 0 ]] ||
+        api_plan_validation_error "Plan field \"$key\" must contain at least one item" || return 1
+}
+
+api_plan_require_no_control_strings() {
+    local file="$1"
+    local key="$2"
+    local value
+
+    while IFS= read -r -d '' value; do
+        [[ ! "$value" =~ [[:cntrl:]] ]] ||
+            api_plan_validation_error "Plan field \"$key\" cannot contain control characters" || return 1
+    done < <(api_plan_extract_array "$file" "$key")
 }
 
 api_validate_common_plan_schema() {
@@ -1371,11 +1607,17 @@ api_validate_execute_plan_schema() {
             api_plan_expect_optional_type "$file" "scan_path" "string" || return 1
             api_plan_expect_optional_type "$file" "operation" "string" || return 1
             local operation
-            operation=$(api_plan_string "$file" "operation")
+            api_plan_string_to_var operation "$file" "operation"
             case "$operation" in
                 "" | reveal | open | trash) ;;
-                *) api_plan_validation_error "Plan field \"operation\" must be reveal, open, or trash" ;;
+                *)
+                    api_plan_validation_error "Plan field \"operation\" must be reveal, open, or trash"
+                    return 1
+                    ;;
             esac
+            if [[ -z "$operation" || "$operation" == "trash" ]]; then
+                api_plan_require_no_control_strings "$file" "targets" || return 1
+            fi
             ;;
         clean)
             api_plan_expect_optional_type "$file" "external_path" "string" || return 1
@@ -1385,6 +1627,7 @@ api_validate_execute_plan_schema() {
             for key in targets apps uninstall_names; do
                 if api_plan_key_exists "$file" "$key"; then
                     api_plan_require_string_array "$file" "$key" || return 1
+                    api_plan_require_no_control_strings "$file" "$key" || return 1
                     count=$(api_plan_array_count "$file" "$key" 2> /dev/null || echo 0)
                     [[ "$count" -gt 0 ]] && any_targets=true
                 fi
@@ -1394,6 +1637,7 @@ api_validate_execute_plan_schema() {
             ;;
         purge | installer)
             api_plan_require_string_array "$file" "targets" || return 1
+            api_plan_require_no_control_strings "$file" "targets" || return 1
             ;;
         update)
             api_plan_expect_optional_type "$file" "force" "bool" || return 1
@@ -1402,10 +1646,12 @@ api_validate_execute_plan_schema() {
         remove | optimize | completion | launchers | touchid)
             ;;
         whitelist)
-            api_plan_require_string_array "$file" "patterns" || return 1
+            api_plan_expect_string_array "$file" "patterns" || return 1
+            api_plan_require_no_control_strings "$file" "patterns" || return 1
             ;;
         purge_paths)
-            api_plan_require_string_array "$file" "paths" || return 1
+            api_plan_expect_string_array "$file" "paths" || return 1
+            api_plan_require_no_control_strings "$file" "paths" || return 1
             ;;
         *)
             api_plan_validation_error "Unknown executable API domain: $domain"
@@ -1474,9 +1720,65 @@ api_completion_metrics_extra() {
 }
 
 api_expand_home_path() {
-    local path="$1"
+    local expanded
+    api_expand_home_path_to_var expanded "$1" || return 1
+    printf '%s\n' "$expanded"
+}
+
+api_expand_home_path_to_var() {
+    local target_var="$1"
+    local path="$2"
+    [[ "$target_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
     [[ "$path" == "~"* ]] && path="${path/#\~/$HOME}"
-    printf '%s\n' "$path"
+    printf -v "$target_var" '%s' "$path"
+}
+
+api_installer_target_is_supported() {
+    local path="$1"
+    local lower_path
+    lower_path="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
+
+    case "$lower_path" in
+        *.dmg | *.pkg | *.mpkg | *.iso | *.xip | *.zip)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+api_installer_zip_has_payload() {
+    local zip="$1"
+    local cap=50
+    local -a zip_list_cmd=()
+
+    if command -v zipinfo > /dev/null 2>&1; then
+        zip_list_cmd=(zipinfo -1)
+    elif command -v unzip > /dev/null 2>&1; then
+        zip_list_cmd=(unzip -Z -1)
+    else
+        return 1
+    fi
+
+    "${zip_list_cmd[@]}" "$zip" 2> /dev/null |
+        head -n "$cap" |
+        awk '
+            {
+                entry=tolower($0)
+                if (entry ~ /\.(app|pkg|dmg|xip)(\/|$)/) {
+                    found=1
+                    exit 0
+                }
+            }
+            END { exit found ? 0 : 1 }
+        '
+}
+
+api_installer_target_needs_zip_payload_check() {
+    local path="$1"
+    local lower_path
+    lower_path="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
+    [[ "$lower_path" == *.zip && -f "$path" && ! -L "$path" ]]
 }
 
 api_execute_installer_targets() {
@@ -1485,7 +1787,7 @@ api_execute_installer_targets() {
     local -a targets=()
     local target
 
-    while IFS= read -r target; do
+    while IFS= read -r -d '' target; do
         [[ -n "$target" ]] && targets+=("$target")
     done < <(api_plan_extract_array "$plan_file" "targets")
 
@@ -1501,23 +1803,26 @@ api_execute_installer_targets() {
 
     for target in "${targets[@]}"; do
         local expanded
-        expanded=$(api_expand_home_path "$target")
+        api_expand_home_path_to_var expanded "$target"
 
-        case "$expanded" in
-            *.dmg | *.pkg | *.mpkg | *.iso | *.xip | *.zip) ;;
-            *)
-                api_event "skipped" "installer" "Unsupported installer target" "$(api_json_extra "$(api_json_field path "$expanded")")"
-                failed=1
-                continue
-                ;;
-        esac
+        if ! api_installer_target_is_supported "$expanded"; then
+            api_event "skipped" "installer" "Unsupported installer target" "$(api_json_extra "$(api_json_field path "$expanded")")"
+            failed=1
+            continue
+        fi
 
-        if [[ ! -e "$expanded" ]]; then
+        if [[ ! -e "$expanded" && ! -L "$expanded" ]]; then
             api_event "skipped" "installer" "Path does not exist" "$(api_json_extra "$(api_json_field path "$expanded")")"
             continue
         fi
 
-        if ! validate_path_for_deletion "$expanded"; then
+        if api_installer_target_needs_zip_payload_check "$expanded" && ! api_installer_zip_has_payload "$expanded"; then
+            api_event "skipped" "installer" "ZIP does not contain installer payload" "$(api_json_extra "$(api_json_field path "$expanded")")"
+            failed=1
+            continue
+        fi
+
+        if ! validate_path_for_deletion "$expanded" > /dev/null 2>&1; then
             api_event "skipped" "installer" "Path failed deletion validation" "$(api_json_extra "$(api_json_field path "$expanded")")"
             failed=1
             continue
@@ -1555,7 +1860,7 @@ api_execute_purge_targets() {
     local -a targets=()
     local target
 
-    while IFS= read -r target; do
+    while IFS= read -r -d '' target; do
         [[ -n "$target" ]] && targets+=("$target")
     done < <(api_plan_extract_array "$plan_file" "targets")
 
@@ -1574,7 +1879,7 @@ api_execute_purge_targets() {
 
     for target in "${targets[@]}"; do
         local expanded safe_target=false search_path=""
-        expanded=$(api_expand_home_path "$target")
+        api_expand_home_path_to_var expanded "$target"
 
         for search_path in "${PURGE_SEARCH_PATHS[@]+"${PURGE_SEARCH_PATHS[@]}"}"; do
             if is_safe_project_artifact "$expanded" "$search_path"; then
@@ -1589,8 +1894,14 @@ api_execute_purge_targets() {
             continue
         fi
 
-        if [[ ! -e "$expanded" ]]; then
+        if [[ ! -e "$expanded" && ! -L "$expanded" ]]; then
             api_event "skipped" "purge" "Path does not exist" "$(api_json_extra "$(api_json_field path "$expanded")")"
+            continue
+        fi
+
+        if ! validate_path_for_deletion "$expanded" > /dev/null 2>&1; then
+            api_event "skipped" "purge" "Path failed deletion validation" "$(api_json_extra "$(api_json_field path "$expanded")")"
+            failed=1
             continue
         fi
 
@@ -1627,7 +1938,7 @@ api_execute_uninstall() {
     local target key
 
     for key in targets apps uninstall_names; do
-        while IFS= read -r target; do
+        while IFS= read -r -d '' target; do
             [[ -n "$target" ]] && targets+=("$target")
         done < <(api_plan_extract_array "$plan_file" "$key")
         [[ ${#targets[@]} -gt 0 ]] && break
@@ -1643,6 +1954,7 @@ api_execute_uninstall() {
     if api_plan_bool "$plan_file" "permanent"; then
         args+=("--permanent")
     fi
+    args+=("--")
     args+=("${targets[@]}")
 
     ROOMY_API_AUTO_CONFIRM=1 api_run_command_stream "uninstall" "$SCRIPT_DIR/uninstall.sh" "${args[@]}"
@@ -1683,7 +1995,7 @@ api_execute() {
             local -a args=()
             [[ "$dry_run" == "true" ]] && args+=("--dry-run")
             local external_path
-            external_path=$(api_plan_string "$plan_file" "external_path")
+            api_plan_string_to_var external_path "$plan_file" "external_path"
             if [[ -n "$external_path" ]]; then
                 args+=("--external" "$external_path")
             fi

@@ -267,7 +267,8 @@ remove_file_list() {
     local -a fallback_paths=()
 
     while IFS= read -r file; do
-        [[ -n "$file" && -e "$file" ]] || continue
+        [[ -n "$file" ]] || continue
+        [[ -e "$file" || -L "$file" ]] || continue
 
         if ! validate_path_for_deletion "$file"; then
             continue
@@ -498,14 +499,14 @@ batch_uninstall_applications() {
 
         # Show all related files so users can fully review before deletion.
         while IFS= read -r file; do
-            if [[ -n "$file" && -e "$file" ]]; then
+            if [[ -n "$file" && ( -e "$file" || -L "$file" ) ]]; then
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} ${file/$HOME/~}"
             fi
         done <<< "$related_files"
 
         # Show all system files so users can fully review before deletion.
         while IFS= read -r file; do
-            if [[ -n "$file" && -e "$file" ]]; then
+            if [[ -n "$file" && ( -e "$file" || -L "$file" ) ]]; then
                 echo -e "  ${BLUE}${ICON_WARNING}${NC} System: $file"
             fi
         done <<< "$system_files"
@@ -743,7 +744,7 @@ batch_uninstall_applications() {
             local leftover_kb=0
             local -a leftover_paths=()
             while IFS= read -r _lf; do
-                [[ -n "$_lf" && -e "$_lf" ]] || continue
+                [[ -n "$_lf" && ( -e "$_lf" || -L "$_lf" ) ]] || continue
                 # Skip macOS-managed container stubs: containermanagerd protects
                 # these directories via com.apple.provenance xattr; rm -rf always
                 # fails on them by design. User data is already gone at this point.

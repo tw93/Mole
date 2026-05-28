@@ -79,11 +79,48 @@ safe_rm() {
     esac
 
     if [[ -d "$target" ]]; then
-        find "$target" -depth \( -type f -o -type l \) -exec rm -f {} + 2> /dev/null || true
+        find "$target" -depth \( -type f -o -type l \) -exec rm -f {} + 2> /dev/null || true # SAFE: safe_rm only accepts temporary install workspaces
         find "$target" -depth -type d -exec rmdir {} + 2> /dev/null || true
     else
         rm -f "$target" 2> /dev/null || true
     fi
+}
+
+archive_entries_are_safe() {
+    local archive="${1:-}"
+    local listing verbose entry
+    local saw_entry=false
+
+    [[ -n "$archive" ]] || return 1
+    if ! listing=$(tar -tzf "$archive" 2> /dev/null); then
+        return 1
+    fi
+
+    while IFS= read -r entry; do
+        [[ -n "$entry" ]] || continue
+        saw_entry=true
+        if [[ "$entry" =~ [[:cntrl:]] ]]; then
+            return 1
+        fi
+        case "$entry" in
+            /* | .. | ../* | */.. | */../*)
+                return 1
+                ;;
+        esac
+    done <<< "$listing"
+
+    [[ "$saw_entry" == "true" ]] || return 1
+
+    if ! verbose=$(tar -tvzf "$archive" 2> /dev/null); then
+        return 1
+    fi
+    while IFS= read -r entry; do
+        case "${entry:0:1}" in
+            l | h | b | c | p | s)
+                return 1
+                ;;
+        esac
+    done <<< "$verbose"
 }
 
 # Install defaults
@@ -160,7 +197,12 @@ resolve_source_dir() {
         branch="main"
     fi
     if [[ "$branch" != "main" && "$branch" != "dev" ]]; then
-        branch="$(normalize_release_tag "$branch")"
+        local normalized_branch
+        if ! normalized_branch="$(normalize_release_tag "$branch")"; then
+            log_error "Invalid Roomy release version: $branch"
+            exit 1
+        fi
+        branch="$normalized_branch"
     fi
     local url="https://github.com/tw93/roomy/archive/refs/heads/main.tar.gz"
 
@@ -173,6 +215,11 @@ resolve_source_dir() {
     start_line_spinner "Fetching Roomy source, ${branch}..."
     if command -v curl > /dev/null 2>&1; then
         if curl -fsSL --connect-timeout 10 --max-time 60 -o "$tmp/roomy.tar.gz" "$url" 2> /dev/null; then
+            if ! archive_entries_are_safe "$tmp/roomy.tar.gz"; then
+                stop_line_spinner
+                log_error "Downloaded source archive contains unsafe paths."
+                exit 1
+            fi
             if tar -xzf "$tmp/roomy.tar.gz" -C "$tmp" 2> /dev/null; then
                 stop_line_spinner
 
@@ -233,6 +280,89 @@ get_source_commit_hash() {
         sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]\{7\}\).*/\1/p' | head -1
 }
 
+installer_strip_version_prefix() {
+    local version="$1"
+    version="${version#v}"
+    version="${version#V}"
+    printf '%s\n' "$version"
+}
+
+installer_version_component_to_decimal() {
+    local component="$1"
+
+    while [[ "${#component}" -gt 1 && "$component" == 0* ]]; do
+        component="${component#0}"
+    done
+
+    printf '%s\n' "${component:-0}"
+}
+
+installer_version_compare() {
+    local left right
+    left=$(installer_strip_version_prefix "$1")
+    right=$(installer_strip_version_prefix "$2")
+
+    [[ "$left" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 2
+    [[ "$right" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 2
+
+    local IFS=.
+    local -a left_parts=()
+    local -a right_parts=()
+    read -r -a left_parts <<< "$left"
+    read -r -a right_parts <<< "$right"
+
+    local count="${#left_parts[@]}"
+    if (( ${#right_parts[@]} > count )); then
+        count="${#right_parts[@]}"
+    fi
+
+    local i left_part right_part
+    for ((i = 0; i < count; i++)); do
+        left_part=$(installer_version_component_to_decimal "${left_parts[$i]:-0}")
+        right_part=$(installer_version_component_to_decimal "${right_parts[$i]:-0}")
+
+        if (( left_part > right_part )); then
+            printf '1\n'
+            return 0
+        fi
+        if (( left_part < right_part )); then
+            printf -- '-1\n'
+            return 0
+        fi
+    done
+
+    printf '0\n'
+}
+
+installer_version_gt() {
+    local result
+    result=$(installer_version_compare "$1" "$2") || return 2
+    [[ "$result" == "1" ]]
+}
+
+installer_latest_version_tag() {
+    local latest=""
+    local candidate
+
+    for candidate in "$@"; do
+        [[ "$(installer_strip_version_prefix "$candidate")" =~ ^[0-9]+(\.[0-9]+)*$ ]] || continue
+        if [[ -z "$latest" ]] || installer_version_gt "$candidate" "$latest"; then
+            latest="$candidate"
+        fi
+    done
+
+    [[ -n "$latest" ]] && printf '%s\n' "$latest"
+    return 0
+}
+
+escape_sed_replacement() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//&/\\&}"
+    value="${value//|/\\|}"
+    printf '%s\n' "$value"
+}
+
 get_latest_release_tag() {
     local tag
     if ! command -v curl > /dev/null 2>&1; then
@@ -251,11 +381,18 @@ get_latest_release_tag_from_git() {
     if ! command -v git > /dev/null 2>&1; then
         return 1
     fi
-    git ls-remote --tags --refs https://github.com/tw93/roomy.git 2> /dev/null |
-        awk -F/ '{print $NF}' |
-        grep -E '^V[0-9]' |
-        sort -V |
-        tail -n 1
+
+    local -a tags=()
+    local tag
+    while IFS= read -r tag; do
+        [[ -n "$tag" ]] && tags+=("$tag")
+    done < <(
+        git ls-remote --tags --refs https://github.com/tw93/roomy.git 2> /dev/null |
+            awk -F/ '{print $NF}' |
+            grep -E '^V[0-9]' || true
+    )
+
+    installer_latest_version_tag "${tags[@]}"
 }
 
 normalize_release_tag() {
@@ -264,9 +401,8 @@ normalize_release_tag() {
         tag="${tag#v}"
         tag="${tag#V}"
     done
-    if [[ -n "$tag" ]]; then
-        printf 'V%s\n' "$tag"
-    fi
+    [[ "$tag" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || return 1
+    printf 'V%s\n' "$tag"
 }
 
 release_checksums_url() {
@@ -287,7 +423,16 @@ extract_release_checksum() {
     local checksums_file="$1"
     local asset_name="$2"
 
-    awk -v asset="$asset_name" '$2 == asset { print $1; found = 1; exit } END { exit found ? 0 : 1 }' "$checksums_file"
+    awk -v asset="$asset_name" '
+        $2 == asset && length($1) == 64 && $1 !~ /[^0-9a-f]/ {
+            print $1
+            found = 1
+            exit
+        }
+        END {
+            exit found ? 0 : 1
+        }
+    ' "$checksums_file"
 }
 
 calculate_file_sha256() {
@@ -389,6 +534,124 @@ write_install_channel_metadata() {
     }
 }
 
+installer_stage_for_target() {
+    local target_path="$1"
+    local target_dir
+    local target_base
+
+    target_dir="$(dirname "$target_path")"
+    target_base="$(basename "$target_path")"
+    mktemp "${target_dir}/.${target_base}.XXXXXX"
+}
+
+installer_commit_staged_path() {
+    local staged_path="$1"
+    local target_path="$2"
+
+    if [[ -L "$target_path" || -f "$target_path" ]]; then
+        rm -f "$target_path" 2> /dev/null || {
+            rm -rf "$staged_path" 2> /dev/null || true # SAFE: cleanup of installer-created staging path
+            return 1
+        }
+    elif [[ -e "$target_path" ]]; then
+        rm -rf "$target_path" 2> /dev/null || { # SAFE: replace exact Roomy support path under CONFIG_DIR
+            rm -rf "$staged_path" 2> /dev/null || true # SAFE: cleanup of installer-created staging path
+            return 1
+        }
+    fi
+
+    mv -f "$staged_path" "$target_path" || {
+        rm -rf "$staged_path" 2> /dev/null || true # SAFE: cleanup of installer-created staging path
+        return 1
+    }
+}
+
+installer_prepare_executable_stage() {
+    local staged_path="$1"
+    local label="$2"
+
+    if [[ -d "$staged_path" && ! -L "$staged_path" ]]; then
+        log_error "$label staging path must not be a directory: $staged_path"
+        return 1
+    fi
+
+    if [[ -e "$staged_path" || -L "$staged_path" ]]; then
+        maybe_sudo rm -f "$staged_path" 2> /dev/null || return 1
+    fi
+}
+
+installer_commit_executable_stage() {
+    local staged_path="$1"
+    local target_path="$2"
+    local label="$3"
+
+    if [[ -L "$target_path" || -f "$target_path" ]]; then
+        maybe_sudo rm -f "$target_path" 2> /dev/null || {
+            maybe_sudo rm -f "$staged_path" 2> /dev/null || true
+            return 1
+        }
+    elif [[ -e "$target_path" ]]; then
+        log_error "$label target must be a regular file: $target_path"
+        maybe_sudo rm -f "$staged_path" 2> /dev/null || true
+        return 1
+    fi
+
+    maybe_sudo mv -f "$staged_path" "$target_path" || {
+        maybe_sudo rm -f "$staged_path" 2> /dev/null || true
+        return 1
+    }
+}
+
+installer_copy_support_path() {
+    local source_path="$1"
+    local target_path="$2"
+    local make_executable="${3:-false}"
+    local staged_path
+
+    staged_path="$(installer_stage_for_target "$target_path")" || return 1
+    if [[ -d "$source_path" && ! -L "$source_path" ]]; then
+        rm -f "$staged_path" 2> /dev/null || return 1
+        mkdir "$staged_path" 2> /dev/null || return 1
+        if ! cp -R "$source_path/." "$staged_path/"; then
+            rm -rf "$staged_path" 2> /dev/null || true # SAFE: cleanup of installer-created staging path
+            return 1
+        fi
+    else
+        if ! cp "$source_path" "$staged_path"; then
+            rm -f "$staged_path" 2> /dev/null || true
+            return 1
+        fi
+    fi
+
+    if [[ "$make_executable" == "true" ]]; then
+        chmod -R +x "$staged_path" 2> /dev/null || true
+    fi
+
+    installer_commit_staged_path "$staged_path" "$target_path"
+}
+
+show_installer_usage() {
+    cat << EOF
+Roomy installer
+
+Usage:
+  install.sh [VERSION|main|latest|dev] [--prefix PATH] [--config PATH]
+  install.sh --update [VERSION|main|latest|dev] [--prefix PATH] [--config PATH]
+
+Options:
+  --prefix PATH   Install roomy and mo into PATH (default: /usr/local/bin)
+  --config PATH   Store Roomy support files in PATH (default: \$HOME/.config/roomy)
+  --update        Update an existing manual install
+  -h, --help      Show this help
+
+Examples:
+  install.sh
+  install.sh V1.39.0
+  install.sh --update V1.39.0
+  install.sh main --prefix "\$HOME/.local/bin"
+EOF
+}
+
 # CLI parsing (supports main/latest and version tokens).
 parse_args() {
     local -a args=("$@")
@@ -427,6 +690,10 @@ parse_args() {
                 unset 'args[$i]'
                 ;;
             [0-9]* | V[0-9]* | v[0-9]*)
+                if ! normalize_release_tag "$token" > /dev/null; then
+                    log_error "Invalid Roomy release version: $token"
+                    exit 1
+                fi
                 export ROOMY_VERSION="$token"
                 version_token="$token"
                 unset 'args[$i]'
@@ -470,8 +737,8 @@ parse_args() {
                 shift 1
                 ;;
             --help | -h)
-                log_error "Unknown option: $1"
-                exit 1
+                show_installer_usage
+                exit 0
                 ;;
             *)
                 log_error "Unknown option: $1"
@@ -523,14 +790,68 @@ check_requirements() {
     fi
 }
 
+installer_require_regular_dir_path() {
+    local path="$1"
+    local label="$2"
+    local current="${path%/}"
+
+    if [[ -z "$current" ]]; then
+        log_error "$label is empty"
+        return 1
+    fi
+
+    if [[ "$current" =~ [[:cntrl:]] ]]; then
+        log_error "$label contains control characters: $path"
+        return 1
+    fi
+
+    if [[ -L "$current" ]]; then
+        log_error "$label must not be a symlink: $path"
+        return 1
+    fi
+
+    while [[ "$current" != "/" && "$current" != "." && "$current" != "${HOME%/}" ]]; do
+        if [[ -L "$current" ]]; then
+            case "$(uname -s):$current" in
+                Darwin:/tmp | Darwin:/var | Darwin:/etc)
+                    ;;
+                *)
+                    log_error "$label must not include symlinked directories: $current"
+                    return 1
+                    ;;
+            esac
+            current="$(dirname "$current")"
+            continue
+        fi
+        if [[ -e "$current" && ! -d "$current" ]]; then
+            log_error "$label must not include non-directory paths: $current"
+            return 1
+        fi
+        local parent
+        parent="$(dirname "$current")"
+        [[ "$parent" == "$current" ]] && break
+        current="$parent"
+    done
+
+    if [[ -e "$path" && ! -d "$path" ]]; then
+        log_error "$label must be a directory: $path"
+        return 1
+    fi
+}
+
 create_directories() {
+    installer_require_regular_dir_path "$INSTALL_DIR" "Install directory" || return 1
+    installer_require_regular_dir_path "$CONFIG_DIR" "Config directory" || return 1
+    installer_require_regular_dir_path "$CONFIG_DIR/bin" "Config bin directory" || return 1
+    installer_require_regular_dir_path "$CONFIG_DIR/lib" "Config lib directory" || return 1
+
     if [[ ! -d "$INSTALL_DIR" ]]; then
         maybe_sudo mkdir -p "$INSTALL_DIR"
     fi
 
     if ! mkdir -p "$CONFIG_DIR" "$CONFIG_DIR/bin" "$CONFIG_DIR/lib"; then
         log_error "Failed to create config directory: $CONFIG_DIR"
-        exit 1
+        return 1
     fi
 
 }
@@ -579,6 +900,22 @@ build_binary_from_source() {
     return 1
 }
 
+install_built_binary_from_source() {
+    local binary_name="$1"
+    local target_path="$2"
+    local staged_path
+
+    staged_path="$(installer_stage_for_target "$target_path")" || return 1
+    if build_binary_from_source "$binary_name" "$staged_path"; then
+        chmod +x "$staged_path" 2> /dev/null || true
+        installer_commit_staged_path "$staged_path" "$target_path"
+        return $?
+    fi
+
+    rm -f "$staged_path" 2> /dev/null || true
+    return 1
+}
+
 download_binary() {
     local binary_name="$1"
     local target_path="$CONFIG_DIR/bin/${binary_name}-go"
@@ -590,19 +927,17 @@ download_binary() {
     fi
 
     if [[ -f "$SOURCE_DIR/bin/${binary_name}-go" ]]; then
-        cp "$SOURCE_DIR/bin/${binary_name}-go" "$target_path"
-        chmod +x "$target_path"
+        installer_copy_support_path "$SOURCE_DIR/bin/${binary_name}-go" "$target_path" true || return 1
         log_success "Installed local ${binary_name} binary"
         return 0
     elif [[ -f "$SOURCE_DIR/bin/${binary_name}-darwin-${arch_suffix}" ]]; then
-        cp "$SOURCE_DIR/bin/${binary_name}-darwin-${arch_suffix}" "$target_path"
-        chmod +x "$target_path"
+        installer_copy_support_path "$SOURCE_DIR/bin/${binary_name}-darwin-${arch_suffix}" "$target_path" true || return 1
         log_success "Installed local ${binary_name} binary"
         return 0
     fi
 
     if [[ "${ROOMY_EDGE_INSTALL:-}" == "true" ]]; then
-        if build_binary_from_source "$binary_name" "$target_path"; then
+        if install_built_binary_from_source "$binary_name" "$target_path"; then
             return 0
         fi
     fi
@@ -611,17 +946,26 @@ download_binary() {
     version=$(get_source_version)
     if [[ -z "$version" ]]; then
         log_warning "Could not determine version for ${binary_name}, trying local build"
-        if build_binary_from_source "$binary_name" "$target_path"; then
+        if install_built_binary_from_source "$binary_name" "$target_path"; then
             return 0
         fi
         return 1
     fi
     local release_tag
-    release_tag="$(normalize_release_tag "$version")"
+    if ! release_tag="$(normalize_release_tag "$version")"; then
+        log_warning "Invalid source version ${version} for ${binary_name}, trying local build"
+        if install_built_binary_from_source "$binary_name" "$target_path"; then
+            return 0
+        fi
+        return 1
+    fi
     local asset_name="${binary_name}-darwin-${arch_suffix}"
     local url="https://github.com/tw93/roomy/releases/download/${release_tag}/${asset_name}"
 
     # Skip preflight network checks to avoid false negatives.
+
+    local download_tmp
+    download_tmp="$(installer_stage_for_target "$target_path")" || return 1
 
     if [[ -t 1 ]]; then
         start_line_spinner "Downloading ${binary_name}..."
@@ -629,49 +973,57 @@ download_binary() {
         echo "Downloading ${binary_name}..."
     fi
 
-    if curl -fsSL --connect-timeout 10 --max-time 60 -o "$target_path" "$url"; then
+    if curl -fsSL --connect-timeout 10 --max-time 60 -o "$download_tmp" "$url"; then
         if [[ -t 1 ]]; then stop_line_spinner; fi
-        if verify_release_asset_checksum "$release_tag" "$asset_name" "$target_path"; then
-            chmod +x "$target_path"
-            xattr -c "$target_path" 2> /dev/null || true
+        if verify_release_asset_checksum "$release_tag" "$asset_name" "$download_tmp"; then
+            chmod +x "$download_tmp"
+            xattr -c "$download_tmp" 2> /dev/null || true
+            installer_commit_staged_path "$download_tmp" "$target_path" || return 1
             log_success "Downloaded ${binary_name} binary"
             return 0
         fi
-        rm -f "$target_path"
+        rm -f "$download_tmp"
         log_warning "Checksum verification failed for ${binary_name}, trying local build"
-        if build_binary_from_source "$binary_name" "$target_path"; then
+        if install_built_binary_from_source "$binary_name" "$target_path"; then
             return 0
         fi
         log_error "Failed to install verified ${binary_name} binary"
         return 1
     fi
+    rm -f "$download_tmp" 2> /dev/null || true
     if [[ -t 1 ]]; then stop_line_spinner; fi
 
     local fallback_tag
     fallback_tag=$(get_latest_release_tag 2> /dev/null || true)
+    if [[ -n "$fallback_tag" ]]; then
+        fallback_tag=$(normalize_release_tag "$fallback_tag" 2> /dev/null || true)
+    fi
     if [[ -n "$fallback_tag" && "$fallback_tag" != "$release_tag" ]]; then
         local fallback_url="https://github.com/tw93/roomy/releases/download/${fallback_tag}/${asset_name}"
+        download_tmp="$(installer_stage_for_target "$target_path")" || return 1
         if [[ -t 1 ]]; then
             start_line_spinner "Retrying ${binary_name} from ${fallback_tag}..."
         else
             echo "Retrying ${binary_name} from ${fallback_tag}..."
         fi
-        if curl -fsSL --connect-timeout 10 --max-time 60 -o "$target_path" "$fallback_url"; then
+        if curl -fsSL --connect-timeout 10 --max-time 60 -o "$download_tmp" "$fallback_url"; then
             if [[ -t 1 ]]; then stop_line_spinner; fi
-            if verify_release_asset_checksum "$fallback_tag" "$asset_name" "$target_path"; then
-                chmod +x "$target_path"
-                xattr -c "$target_path" 2> /dev/null || true
+            if verify_release_asset_checksum "$fallback_tag" "$asset_name" "$download_tmp"; then
+                chmod +x "$download_tmp"
+                xattr -c "$download_tmp" 2> /dev/null || true
+                installer_commit_staged_path "$download_tmp" "$target_path" || return 1
                 log_success "Downloaded ${binary_name} from ${fallback_tag} (v${version} not yet published)"
                 return 0
             fi
-            rm -f "$target_path"
+            rm -f "$download_tmp"
             log_warning "Checksum verification failed for ${binary_name} from ${fallback_tag}"
         fi
+        rm -f "$download_tmp" 2> /dev/null || true
         if [[ -t 1 ]]; then stop_line_spinner; fi
     fi
 
     log_warning "Could not download ${binary_name} binary, v${version}, trying local build"
-    if build_binary_from_source "$binary_name" "$target_path"; then
+    if install_built_binary_from_source "$binary_name" "$target_path"; then
         return 0
     fi
     log_error "Failed to install ${binary_name} binary"
@@ -702,9 +1054,10 @@ install_files() {
             fi
 
             # Atomic update: copy to temporary name first, then move
+            installer_prepare_executable_stage "$INSTALL_DIR/roomy.new" "Roomy executable" || return 1
             maybe_sudo cp "$SOURCE_DIR/roomy" "$INSTALL_DIR/roomy.new"
             maybe_sudo chmod +x "$INSTALL_DIR/roomy.new"
-            maybe_sudo mv -f "$INSTALL_DIR/roomy.new" "$INSTALL_DIR/roomy"
+            installer_commit_executable_stage "$INSTALL_DIR/roomy.new" "$INSTALL_DIR/roomy" "Roomy executable" || return 1
 
             log_success "Installed roomy to $INSTALL_DIR"
         fi
@@ -717,9 +1070,10 @@ install_files() {
         if [[ "$source_dir_abs" == "$install_dir_abs" ]]; then
             log_success "mo alias already present"
         else
+            installer_prepare_executable_stage "$INSTALL_DIR/mo.new" "mo alias" || return 1
             maybe_sudo cp "$SOURCE_DIR/mo" "$INSTALL_DIR/mo.new"
             maybe_sudo chmod +x "$INSTALL_DIR/mo.new"
-            maybe_sudo mv -f "$INSTALL_DIR/mo.new" "$INSTALL_DIR/mo"
+            installer_commit_executable_stage "$INSTALL_DIR/mo.new" "$INSTALL_DIR/mo" "mo alias" || return 1
             log_success "Installed mo alias"
         fi
     fi
@@ -731,10 +1085,9 @@ install_files() {
             log_success "Modules already synced"
         else
             local -a bin_files=("$SOURCE_DIR/bin"/*)
-            if [[ ${#bin_files[@]} -gt 0 ]]; then
-                cp -r "${bin_files[@]}" "$CONFIG_DIR/bin/"
-                for file in "$CONFIG_DIR/bin/"*; do
-                    [[ -e "$file" ]] && chmod +x "$file"
+            if [[ ${#bin_files[@]} -gt 0 && -e "${bin_files[0]}" ]]; then
+                for file in "${bin_files[@]}"; do
+                    installer_copy_support_path "$file" "$CONFIG_DIR/bin/$(basename "$file")" true || return 1
                 done
                 log_success "Installed modules"
             fi
@@ -748,8 +1101,10 @@ install_files() {
             log_success "Libraries already synced"
         else
             local -a lib_files=("$SOURCE_DIR/lib"/*)
-            if [[ ${#lib_files[@]} -gt 0 ]]; then
-                cp -r "${lib_files[@]}" "$CONFIG_DIR/lib/"
+            if [[ ${#lib_files[@]} -gt 0 && -e "${lib_files[0]}" ]]; then
+                for file in "${lib_files[@]}"; do
+                    installer_copy_support_path "$file" "$CONFIG_DIR/lib/$(basename "$file")" false || return 1
+                done
                 log_success "Installed libraries"
             fi
         fi
@@ -758,7 +1113,7 @@ install_files() {
     if [[ "$config_dir_abs" != "$source_dir_abs" ]]; then
         for file in README.md LICENSE install.sh; do
             if [[ -f "$SOURCE_DIR/$file" ]]; then
-                cp -f "$SOURCE_DIR/$file" "$CONFIG_DIR/"
+                installer_copy_support_path "$SOURCE_DIR/$file" "$CONFIG_DIR/$file" false || return 1
             fi
         done
     fi
@@ -770,7 +1125,9 @@ install_files() {
     if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
         # Use absolute /usr/bin/sed (always BSD on macOS) so PATH-shadowed
         # GNU sed from Homebrew gnu-sed does not break the -i '' syntax.
-        maybe_sudo /usr/bin/sed -i '' "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$CONFIG_DIR\"|" "$INSTALL_DIR/roomy"
+        local escaped_config_dir
+        escaped_config_dir=$(escape_sed_replacement "$CONFIG_DIR")
+        maybe_sudo /usr/bin/sed -i '' "s|SCRIPT_DIR=.*|SCRIPT_DIR=\"$escaped_config_dir\"|" "$INSTALL_DIR/roomy"
     fi
 
     if ! download_binary "analyze"; then

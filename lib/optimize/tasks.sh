@@ -23,6 +23,30 @@ opt_numeric_kb() {
     [[ "$size_kb" =~ ^[0-9]+$ ]] && echo "$size_kb" || echo "0"
 }
 
+opt_path_has_symlinked_component() {
+    local path="$1"
+    local home_path="${HOME%/}"
+    local current="${path%/}"
+
+    [[ -n "$current" ]] || return 1
+
+    while [[ "$current" != "/" && "$current" != "." ]]; do
+        if [[ -L "$current" ]]; then
+            return 0
+        fi
+        if [[ -n "$home_path" && "$current" == "$home_path" ]]; then
+            break
+        fi
+
+        local parent
+        parent="$(dirname "$current")"
+        [[ "$parent" == "$current" ]] && break
+        current="$parent"
+    done
+
+    return 1
+}
+
 # Whether the current optimize run can use sudo without re-prompting.
 # Set by bin/optimize.sh after the upfront ensure_sudo_session call.
 # Test-mode env vars hard-deny so ad-hoc task calls under ROOMY_TEST_NO_AUTH=1
@@ -334,6 +358,11 @@ opt_quarantine_cleanup() {
 
     local quarantine_db="$HOME/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2"
 
+    if opt_path_has_symlinked_component "$quarantine_db"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Quarantine cleanup skipped · redirected database path"
+        return 0
+    fi
+
     if [[ ! -f "$quarantine_db" ]]; then
         opt_msg "Quarantine database already clean"
         return 0
@@ -421,6 +450,10 @@ opt_sqlite_vacuum() {
         while IFS= read -r db_file; do
             [[ ! -f "$db_file" ]] && continue
             [[ "$db_file" == *"-wal" || "$db_file" == *"-shm" ]] && continue
+            if opt_path_has_symlinked_component "$db_file"; then
+                skipped=$((skipped + 1))
+                continue
+            fi
 
             should_protect_path "$db_file" && continue
 
@@ -943,8 +976,11 @@ opt_dock_refresh() {
     local dock_support="$HOME/Library/Application Support/Dock"
     local refreshed=false
 
-    if [[ -d "$dock_support" ]]; then
+    if opt_path_has_symlinked_component "$dock_support"; then
+        debug_log "Skipping Dock cache cleanup through redirected path: $dock_support"
+    elif [[ -d "$dock_support" ]]; then
         while IFS= read -r db_file; do
+            opt_path_has_symlinked_component "$db_file" && continue
             if [[ -f "$db_file" ]]; then
                 safe_remove "$db_file" true > /dev/null 2>&1 && refreshed=true
             fi
@@ -952,7 +988,7 @@ opt_dock_refresh() {
     fi
 
     local dock_plist="$HOME/Library/Preferences/com.apple.dock.plist"
-    if [[ -f "$dock_plist" ]]; then
+    if [[ -f "$dock_plist" ]] && ! opt_path_has_symlinked_component "$dock_plist"; then
         touch "$dock_plist" 2> /dev/null || true
     fi
 
@@ -975,6 +1011,12 @@ opt_prevent_network_dsstore() {
     local -a keys=("DSDontWriteNetworkStores" "DSDontWriteUSBStores")
     local changed=0
     local already=0
+    local prefs_dir="$HOME/Library/Preferences"
+
+    if opt_path_has_symlinked_component "$prefs_dir"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} .DS_Store prevention skipped · redirected preferences path"
+        return 0
+    fi
 
     for key in "${keys[@]}"; do
         local current
@@ -1008,6 +1050,11 @@ opt_prevent_network_dsstore() {
 opt_launch_agents_cleanup() {
     local agents_dir="$HOME/Library/LaunchAgents"
 
+    if opt_path_has_symlinked_component "$agents_dir"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Launch Agents cleanup skipped · redirected directory"
+        return 0
+    fi
+
     if [[ ! -d "$agents_dir" ]]; then
         opt_msg "Launch Agents all healthy"
         return 0
@@ -1018,6 +1065,7 @@ opt_launch_agents_cleanup() {
 
     for plist in "$agents_dir"/*.plist; do
         [[ -f "$plist" ]] || continue
+        opt_path_has_symlinked_component "$plist" && continue
 
         local binary=""
         binary=$(/usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" "$plist" 2> /dev/null || true)
@@ -1094,6 +1142,11 @@ opt_periodic_maintenance() {
 # Repair corrupted shared file list databases (Finder favorites, recent docs).
 opt_shared_file_list_repair() {
     local sfl_dir="$HOME/Library/Application Support/com.apple.sharedfilelist"
+    if opt_path_has_symlinked_component "$sfl_dir"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Shared file lists repair skipped · redirected directory"
+        return 0
+    fi
+
     if [[ ! -d "$sfl_dir" ]]; then
         opt_msg "Shared file lists directory not found"
         return 0
@@ -1102,6 +1155,7 @@ opt_shared_file_list_repair() {
     local repaired=0
     while IFS= read -r sfl_file; do
         [[ -f "$sfl_file" ]] || continue
+        opt_path_has_symlinked_component "$sfl_file" && continue
         # Skip recent-documents list (user data, not a cache)
         [[ "$sfl_file" == *"ApplicationRecentDocuments"* ]] && continue
         if ! plutil -lint "$sfl_file" > /dev/null 2>&1; then
@@ -1124,6 +1178,11 @@ opt_notification_cleanup() {
     local nc_db_dir
     nc_db_dir="$(getconf DARWIN_USER_DIR 2> /dev/null || true)/com.apple.notificationcenter/db2"
     local nc_db="$nc_db_dir/db"
+
+    if [[ -L "$nc_db" ]]; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Notification Center cleanup skipped · redirected database path"
+        return 0
+    fi
 
     if [[ ! -f "$nc_db" ]]; then
         opt_msg "Notification Center database not found"
@@ -1196,6 +1255,11 @@ opt_disk_verify() {
 opt_coreduet_cleanup() {
     local knowledge_dir="$HOME/Library/Application Support/Knowledge"
     local knowledge_db="$knowledge_dir/knowledgeC.db"
+
+    if opt_path_has_symlinked_component "$knowledge_db"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Knowledge database cleanup skipped · redirected database path"
+        return 0
+    fi
 
     if [[ ! -f "$knowledge_db" ]]; then
         opt_msg "Knowledge database not found"

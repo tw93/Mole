@@ -167,6 +167,20 @@ setup() {
     [ -d "$test_dir" ]
 }
 
+@test "ensure_user_dir replaces leaf symlinks without following them" {
+    real_dir="$HOME/real-cache-target"
+    link_dir="$HOME/.cache/roomy"
+    mkdir -p "$real_dir" "$(dirname "$link_dir")"
+    echo "keep" > "$real_dir/marker"
+    ln -s "$real_dir" "$link_dir"
+
+    bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_dir '$link_dir'"
+
+    [ -d "$link_dir" ]
+    [ ! -L "$link_dir" ]
+    [ "$(cat "$real_dir/marker")" = "keep" ]
+}
+
 @test "ensure_user_dir handles empty path gracefully" {
     run bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_dir ''"
     [ "$status" -eq 0 ]
@@ -201,6 +215,37 @@ setup() {
     bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_file '$test_file'"
     [ -f "$test_file" ]
     [ "$(cat "$test_file")" = "content" ]
+}
+
+@test "ensure_user_file replaces leaf symlinks without following them" {
+    protected_file="$HOME/protected-target.txt"
+    link_file="$HOME/.cache/roomy/log.txt"
+    mkdir -p "$(dirname "$link_file")"
+    echo "protected" > "$protected_file"
+    ln -s "$protected_file" "$link_file"
+
+    bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; ensure_user_file '$link_file'; printf 'generated\n' > '$link_file'"
+
+    [ -f "$link_file" ]
+    [ ! -L "$link_file" ]
+    [ "$(cat "$link_file")" = "generated" ]
+    [ "$(cat "$protected_file")" = "protected" ]
+}
+
+@test "commit_staged_user_file replaces symlinked target without following it" {
+    protected_dir="$HOME/protected-commit-dir"
+    target_file="$HOME/.cache/roomy/state.txt"
+    staged_file="$HOME/.cache/roomy/.state.tmp"
+    mkdir -p "$(dirname "$target_file")" "$protected_dir"
+    printf 'staged\n' > "$staged_file"
+    ln -s "$protected_dir" "$target_file"
+
+    bash -c "source '$PROJECT_ROOT/lib/core/base.sh'; commit_staged_user_file '$staged_file' '$target_file'"
+
+    [ -f "$target_file" ]
+    [ ! -L "$target_file" ]
+    [ "$(cat "$target_file")" = "staged" ]
+    [ -z "$(find "$protected_dir" -mindepth 1 -print -quit)" ]
 }
 
 @test "ensure_user_file handles empty path gracefully" {

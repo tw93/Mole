@@ -295,6 +295,27 @@ EOF
     [ "$size_col" = "0" ]
 }
 
+@test "roomy_delete refuses symlinks that point at protected system paths" {
+    local link_path="$SANDBOX/system-link"
+    ln -s "/System" "$link_path"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+export ROOMY_DELETE_MODE=trash
+roomy_delete "$link_path"
+EOF
+
+    [ "$status" -ne 0 ]
+    [[ -L "$link_path" ]]
+    [[ "$(readlink "$link_path")" = "/System" ]]
+
+    local status_col size_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$ROOMY_DELETE_LOG")
+    size_col=$(awk -F'\t' 'END { print $3 }' "$ROOMY_DELETE_LOG")
+    [ "$status_col" = "rejected" ]
+    [ "$size_col" = "0" ]
+}
+
 @test "roomy_delete is a no-op on a non-existent path" {
     run bash --noprofile --norc <<EOF
 $(prelude)

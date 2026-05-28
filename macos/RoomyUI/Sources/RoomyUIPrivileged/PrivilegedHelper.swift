@@ -158,8 +158,14 @@ public enum PrivilegedCommandPolicy {
         guard command.executablePath.hasPrefix("/") else {
             throw PrivilegedCommandPolicyError.refused("Privileged helper requires an absolute executable path")
         }
+        guard !containsControlCharacters(command.executablePath) else {
+            throw PrivilegedCommandPolicyError.refused("Privileged helper refused executable path with control characters")
+        }
         guard !containsTraversal(command.executablePath) else {
             throw PrivilegedCommandPolicyError.refused("Privileged helper refused executable path traversal")
+        }
+        guard !command.arguments.contains(where: containsControlCharacters) else {
+            throw PrivilegedCommandPolicyError.refused("Privileged helper refused argument with control characters")
         }
         let executableName = URL(fileURLWithPath: command.executablePath).lastPathComponent
         guard executableName == "roomy" || executableName == "mo" else {

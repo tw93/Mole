@@ -72,11 +72,17 @@ func TestPerformScanForJSONIncludesDuplicateGroupsWhenRequested(t *testing.T) {
 
 	oldDuplicatesMode := *duplicatesMode
 	oldMinSize := *duplicateMinSizeFlag
+	oldTimeout := *duplicateTimeoutFlag
+	oldMaxCandidates := *duplicateMaxCandidatesFlag
 	*duplicatesMode = true
 	*duplicateMinSizeFlag = 1
+	*duplicateTimeoutFlag = 5 * time.Second
+	*duplicateMaxCandidatesFlag = 100
 	t.Cleanup(func() {
 		*duplicatesMode = oldDuplicatesMode
 		*duplicateMinSizeFlag = oldMinSize
+		*duplicateTimeoutFlag = oldTimeout
+		*duplicateMaxCandidatesFlag = oldMaxCandidates
 	})
 
 	result := performScanForJSON(root, false)
@@ -90,6 +96,94 @@ func TestPerformScanForJSONIncludesDuplicateGroupsWhenRequested(t *testing.T) {
 	}
 	if len(group.Files) != 2 {
 		t.Fatalf("expected two duplicate files, got %#v", group.Files)
+	}
+	if result.DuplicateScan == nil {
+		t.Fatalf("expected duplicate_scan metadata")
+	}
+	if result.DuplicateScan.Partial {
+		t.Fatalf("expected complete duplicate scan, got %#v", result.DuplicateScan)
+	}
+	if result.DuplicateScan.HashedFiles != 3 {
+		t.Fatalf("expected 3 hashed files, got %d", result.DuplicateScan.HashedFiles)
+	}
+}
+
+func TestPerformScanForJSONReportsPartialDuplicateScanAtCandidateLimit(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("same payload"), 0o644); err != nil {
+			t.Fatalf("write candidate %s: %v", name, err)
+		}
+	}
+
+	oldDuplicatesMode := *duplicatesMode
+	oldMinSize := *duplicateMinSizeFlag
+	oldTimeout := *duplicateTimeoutFlag
+	oldMaxCandidates := *duplicateMaxCandidatesFlag
+	*duplicatesMode = true
+	*duplicateMinSizeFlag = 1
+	*duplicateTimeoutFlag = 5 * time.Second
+	*duplicateMaxCandidatesFlag = 1
+	t.Cleanup(func() {
+		*duplicatesMode = oldDuplicatesMode
+		*duplicateMinSizeFlag = oldMinSize
+		*duplicateTimeoutFlag = oldTimeout
+		*duplicateMaxCandidatesFlag = oldMaxCandidates
+	})
+
+	result := performScanForJSON(root, false)
+
+	if result.DuplicateScan == nil {
+		t.Fatalf("expected duplicate_scan metadata")
+	}
+	if !result.DuplicateScan.Partial {
+		t.Fatalf("expected partial duplicate scan")
+	}
+	if result.DuplicateScan.Reason != "candidate_limit" {
+		t.Fatalf("expected candidate_limit reason, got %q", result.DuplicateScan.Reason)
+	}
+	if result.DuplicateScan.Candidates != 1 {
+		t.Fatalf("expected 1 candidate, got %d", result.DuplicateScan.Candidates)
+	}
+}
+
+func TestValidateFlagsRejectsInvalidDuplicateControls(t *testing.T) {
+	oldMinSize := *duplicateMinSizeFlag
+	oldTimeout := *duplicateTimeoutFlag
+	oldMaxCandidates := *duplicateMaxCandidatesFlag
+	t.Cleanup(func() {
+		*duplicateMinSizeFlag = oldMinSize
+		*duplicateTimeoutFlag = oldTimeout
+		*duplicateMaxCandidatesFlag = oldMaxCandidates
+	})
+
+	*duplicateMinSizeFlag = 0
+	*duplicateTimeoutFlag = time.Second
+	*duplicateMaxCandidatesFlag = 1
+	if err := validateFlags(); err == nil {
+		t.Fatalf("expected invalid min size to fail")
+	}
+
+	*duplicateMinSizeFlag = 1
+	*duplicateTimeoutFlag = -time.Second
+	if err := validateFlags(); err == nil {
+		t.Fatalf("expected negative timeout to fail")
+	}
+
+	*duplicateTimeoutFlag = time.Second
+	*duplicateMaxCandidatesFlag = -1
+	if err := validateFlags(); err == nil {
+		t.Fatalf("expected negative max candidates to fail")
+	}
+
+	*duplicateMaxCandidatesFlag = 0
+	if err := validateFlags(); err != nil {
+		t.Fatalf("expected zero max candidates to mean unlimited: %v", err)
+	}
+
+	*duplicateTimeoutFlag = 0
+	if err := validateFlags(); err != nil {
+		t.Fatalf("expected zero timeout to mean unlimited: %v", err)
 	}
 }
 

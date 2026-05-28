@@ -18,6 +18,7 @@ type jsonOutput struct {
 	Entries         []jsonEntry          `json:"entries"`
 	LargeFiles      []jsonFileEntry      `json:"large_files,omitempty"`
 	DuplicateGroups []jsonDuplicateGroup `json:"duplicate_groups,omitempty"`
+	DuplicateScan   *jsonDuplicateScan   `json:"duplicate_scan,omitempty"`
 	TotalSize       int64                `json:"total_size"`
 	TotalFiles      int64                `json:"total_files,omitempty"`
 }
@@ -43,6 +44,18 @@ type jsonDuplicateGroup struct {
 	Size        int64           `json:"size"`
 	WastedBytes int64           `json:"wasted_bytes"`
 	Files       []jsonFileEntry `json:"files"`
+}
+
+type jsonDuplicateScan struct {
+	Partial         bool   `json:"partial"`
+	Reason          string `json:"reason,omitempty"`
+	Candidates      int    `json:"candidates"`
+	HashedFiles     int    `json:"hashed_files"`
+	Groups          int    `json:"groups"`
+	TruncatedGroups bool   `json:"truncated_groups,omitempty"`
+	DurationMS      int64  `json:"duration_ms"`
+	TimeoutMS       int64  `json:"timeout_ms,omitempty"`
+	MaxCandidates   int    `json:"max_candidates,omitempty"`
 }
 
 func runJSONMode(path string, isOverview bool) {
@@ -83,7 +96,9 @@ func performDirectoryScanForJSON(path string) jsonOutput {
 		TotalFiles: result.TotalFiles,
 	}
 	if *duplicatesMode {
-		output.DuplicateGroups = findDuplicateGroupsForJSON(path, *duplicateMinSizeFlag)
+		duplicateResult := findDuplicateGroupsForJSON(path, *duplicateMinSizeFlag, *duplicateTimeoutFlag, *duplicateMaxCandidatesFlag)
+		output.DuplicateGroups = duplicateResult.Groups
+		output.DuplicateScan = &duplicateResult.Scan
 	}
 	return output
 }

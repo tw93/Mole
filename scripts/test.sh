@@ -17,9 +17,9 @@ TEST_SYSTEM_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/roomy-test-stubs.XXXXXX")"
 TEST_GO_HELPER_DIR=""
 # shellcheck disable=SC2329  # Invoked by trap.
 cleanup_test_stubs() {
-    rm -rf "$TEST_SYSTEM_STUB_DIR"
+    rm -rf "$TEST_SYSTEM_STUB_DIR" # SAFE: removes mktemp test stub directory owned by this runner
     if [[ -n "$TEST_GO_HELPER_DIR" ]]; then
-        rm -rf "$TEST_GO_HELPER_DIR"
+        rm -rf "$TEST_GO_HELPER_DIR" # SAFE: removes mktemp Go helper directory owned by this runner
     fi
 }
 trap cleanup_test_stubs EXIT
@@ -119,7 +119,7 @@ report_unit_result() {
         printf "${GREEN}${ICON_SUCCESS} Unit tests passed${NC}\n"
     else
         printf "${RED}${ICON_ERROR} Unit tests failed${NC}\n"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 }
 
@@ -127,6 +127,13 @@ enforce_timeout_dependency_in_ci
 
 GO_TEST_CACHE="${ROOMY_GO_TEST_CACHE:-/tmp/roomy-go-build-cache}"
 export ROOMY_GO_TEST_CACHE="$GO_TEST_CACHE"
+GO_TEST_MOD_CACHE=""
+if command -v go > /dev/null 2>&1; then
+    GO_TEST_MOD_CACHE="${ROOMY_GO_TEST_MOD_CACHE:-$(go env GOMODCACHE 2> /dev/null || true)}"
+fi
+if [[ -z "$GO_TEST_MOD_CACHE" ]]; then
+    GO_TEST_MOD_CACHE="$PROJECT_ROOT/.cache/go-mod"
+fi
 
 test_selection_needs_go_helpers() {
     local test_file
@@ -151,7 +158,7 @@ prepare_go_test_helpers() {
         export ROOMY_TEST_ANALYZE_BIN="$TEST_GO_HELPER_DIR/analyze-go"
         export ROOMY_TEST_STATUS_BIN="$TEST_GO_HELPER_DIR/status-go"
     else
-        rm -rf "$TEST_GO_HELPER_DIR"
+        rm -rf "$TEST_GO_HELPER_DIR" # SAFE: removes failed mktemp Go helper directory
         TEST_GO_HELPER_DIR=""
     fi
 }
@@ -161,13 +168,13 @@ if command -v shellcheck > /dev/null 2>&1; then
     TEST_FILES=()
     while IFS= read -r file; do
         TEST_FILES+=("$file")
-    done < <(find tests -type f \( -name '*.bats' -o -name '*.sh' \) | sort)
+    done < <(find tests -path 'tests/tmp-*' -prune -o -type f \( -name '*.bats' -o -name '*.sh' \) -print | sort)
     if [[ ${#TEST_FILES[@]} -gt 0 ]]; then
         if shellcheck --rcfile "$PROJECT_ROOT/.shellcheckrc" "${TEST_FILES[@]}"; then
             printf "${GREEN}${ICON_SUCCESS} Test script lint passed${NC}\n"
         else
             printf "${RED}${ICON_ERROR} Test script lint failed${NC}\n"
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
         fi
     else
         printf "${YELLOW}${ICON_WARNING} No test scripts found, skipping${NC}\n"
@@ -213,7 +220,7 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
                     TEST_FILES+=("$file")
                     ;;
             esac
-        done < <(find tests -type f -name '*.bats' | sort)
+        done < <(find tests -path 'tests/tmp-*' -prune -o -type f -name '*.bats' -print | sort)
 
         if [[ ${#TEST_FILES[@]} -gt 0 ]]; then
             set -- "${TEST_FILES[@]}"
@@ -259,78 +266,111 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
         bats_opts+=("--timing")
     fi
 
-    # core_performance.bats has wall-clock timing assertions that are skewed by
-    # CPU contention from parallel test workers. When parallel mode is active,
-    # split it out to run sequentially after the parallel batch completes.
+    # Some files are sensitive to CPU/process contention from parallel test
+    # workers or cross-file shell state. Split them out to run sequentially
+    # after the main batch completes.
+    # - core_performance.bats has wall-clock timing assertions.
+    # - cli.bats invokes live Go helper binaries for status metrics.
     _perf_files=()
-    if [[ ${#bats_opts[@]} -gt 0 ]]; then
-        _all=("$@")
-        _rest=()
-        if [[ ${#_all[@]} -eq 1 && -d "${_all[0]}" ]]; then
-            while IFS= read -r _f; do
-                case "$_f" in
-                    *core_performance.bats) _perf_files+=("$_f") ;;
-                    *) _rest+=("$_f") ;;
-                esac
-            done < <(find "${_all[0]}" -type f -name '*.bats' | sort)
-        else
-            for _f in "${_all[@]}"; do
-                case "$_f" in
-                    *core_performance.bats) _perf_files+=("$_f") ;;
-                    *) _rest+=("$_f") ;;
-                esac
-            done
-        fi
-        if [[ ${#_rest[@]} -gt 0 ]]; then
-            set -- "${_rest[@]}"
-        else
-            set --
-        fi
-        unset _all _rest _f
+    _all=("$@")
+    _rest=()
+    if [[ ${#_all[@]} -eq 1 && -d "${_all[0]}" ]]; then
+        while IFS= read -r _f; do
+            case "$_f" in
+                *core_performance.bats | *cli.bats) _perf_files+=("$_f") ;;
+                *) _rest+=("$_f") ;;
+            esac
+        done < <(find "${_all[0]}" -type f -name '*.bats' | sort)
+    else
+        for _f in "${_all[@]}"; do
+            case "$_f" in
+                *core_performance.bats | *cli.bats) _perf_files+=("$_f") ;;
+                *) _rest+=("$_f") ;;
+            esac
+        done
     fi
+    if [[ ${#_rest[@]} -gt 0 ]]; then
+        set -- "${_rest[@]}"
+    else
+        set --
+    fi
+    unset _all _rest _f
 
     # Accumulate pass/fail across all bats invocations.
     _unit_rc=0
+    formatter="${BATS_FORMATTER:-}"
+    if [[ -z "$formatter" ]]; then
+        if $use_color; then
+            formatter="pretty"
+        else
+            formatter="tap"
+        fi
+    fi
 
     # Main run (parallel when bats_opts has --jobs, skipped if no files remain).
     if [[ $# -gt 0 ]]; then
-        if $bats_has_formatter; then
-            formatter="${BATS_FORMATTER:-pretty}"
-            if [[ "$formatter" == "tap" ]]; then
+        if [[ ${#bats_opts[@]} -gt 0 ]]; then
+            if $bats_has_formatter; then
+                if [[ "$formatter" == "tap" ]]; then
+                    if $use_color; then
+                        esc=$'\033'
+                        bats ${bats_opts[@]+"${bats_opts[@]}"} --formatter tap "$@" |
+                            sed -e "s/^ok /${esc}[32mok ${esc}[0m /" \
+                                -e "s/^not ok /${esc}[31mnot ok ${esc}[0m /" || _unit_rc=1
+                    else
+                        bats ${bats_opts[@]+"${bats_opts[@]}"} --formatter tap "$@" || _unit_rc=1
+                    fi
+                else
+                    # Pretty format for local development
+                    bats ${bats_opts[@]+"${bats_opts[@]}"} --formatter "$formatter" "$@" || _unit_rc=1
+                fi
+            else
                 if $use_color; then
                     esc=$'\033'
-                    bats ${bats_opts[@]+"${bats_opts[@]}"} --formatter tap "$@" |
+                    bats ${bats_opts[@]+"${bats_opts[@]}"} --tap "$@" |
                         sed -e "s/^ok /${esc}[32mok ${esc}[0m /" \
                             -e "s/^not ok /${esc}[31mnot ok ${esc}[0m /" || _unit_rc=1
                 else
-                    bats ${bats_opts[@]+"${bats_opts[@]}"} --formatter tap "$@" || _unit_rc=1
+                    bats ${bats_opts[@]+"${bats_opts[@]}"} --tap "$@" || _unit_rc=1
                 fi
-            else
-                # Pretty format for local development
-                bats ${bats_opts[@]+"${bats_opts[@]}"} --formatter "$formatter" "$@" || _unit_rc=1
             fi
         else
-            if $use_color; then
-                esc=$'\033'
-                bats ${bats_opts[@]+"${bats_opts[@]}"} --tap "$@" |
-                    sed -e "s/^ok /${esc}[32mok ${esc}[0m /" \
-                        -e "s/^not ok /${esc}[31mnot ok ${esc}[0m /" || _unit_rc=1
-            else
-                bats ${bats_opts[@]+"${bats_opts[@]}"} --tap "$@" || _unit_rc=1
-            fi
+            # Without Bats' parallel backend, run files independently. Large
+            # multi-file suites can leave bats' aggregator process alive in
+            # non-interactive shells after all tests have reported.
+            for _bf in "$@"; do
+                if $bats_has_formatter; then
+                    if [[ "$formatter" == "tap" ]]; then
+                        bats --formatter tap "$_bf" || _unit_rc=1
+                    else
+                        bats --formatter "$formatter" "$_bf" || _unit_rc=1
+                    fi
+                else
+                    bats --tap "$_bf" || _unit_rc=1
+                fi
+            done
+            unset _bf
         fi
     fi
 
     # Post-run: timing-sensitive perf tests run after parallel workers have
     # finished so CPU contention does not skew wall-clock assertions.
     for _pf in ${_perf_files[@]+"${_perf_files[@]}"}; do
+        _pf_opts=()
         if [[ "${ROOMY_TEST_TIMING:-0}" == "1" ]]; then
-            bats --timing "$_pf" || _unit_rc=1
+            _pf_opts+=("--timing")
+        fi
+        if $bats_has_formatter; then
+            if [[ "$formatter" == "tap" ]]; then
+                bats ${_pf_opts[@]+"${_pf_opts[@]}"} --formatter tap "$_pf" || _unit_rc=1
+            else
+                bats ${_pf_opts[@]+"${_pf_opts[@]}"} --formatter "$formatter" "$_pf" || _unit_rc=1
+            fi
         else
-            bats "$_pf" || _unit_rc=1
+            bats ${_pf_opts[@]+"${_pf_opts[@]}"} --tap "$_pf" || _unit_rc=1
         fi
     done
-    unset _perf_files _pf
+    unset _perf_files _pf _pf_opts
 
     report_unit_result "$_unit_rc"
 else
@@ -346,7 +386,7 @@ elif command -v node > /dev/null 2>&1 && [[ -f "tests/api_contract.test.mjs" ]];
         printf "${GREEN}${ICON_SUCCESS} API contract tests passed${NC}\n"
     else
         printf "${RED}${ICON_ERROR} API contract tests failed${NC}\n"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 else
     printf "${YELLOW}${ICON_WARNING} node not installed or API contract tests missing, skipping${NC}\n"
@@ -362,7 +402,7 @@ if command -v go > /dev/null 2>&1; then
         printf "${GREEN}${ICON_SUCCESS} Go tests passed${NC}\n"
     else
         printf "${RED}${ICON_ERROR} Go tests failed${NC}\n"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 else
     printf "${YELLOW}${ICON_WARNING} Go not installed, skipping Go tests${NC}\n"
@@ -374,7 +414,7 @@ if bash -c 'source lib/core/common.sh && echo "OK"' > /dev/null 2>&1; then
     printf "${GREEN}${ICON_SUCCESS} Module loading passed${NC}\n"
 else
     printf "${RED}${ICON_ERROR} Module loading failed${NC}\n"
-    ((FAILED++))
+    FAILED=$((FAILED + 1))
 fi
 echo ""
 
@@ -384,7 +424,7 @@ if bash -n roomy && bash -n bin/clean.sh && bash -n bin/optimize.sh; then
     printf "${GREEN}${ICON_SUCCESS} Integration tests passed${NC}\n"
 else
     printf "${RED}${ICON_ERROR} Integration tests failed${NC}\n"
-    ((FAILED++))
+    FAILED=$((FAILED + 1))
 fi
 echo ""
 
@@ -409,17 +449,19 @@ else
     elif HOME="$install_test_home" \
         XDG_CONFIG_HOME="$install_test_home/.config" \
         XDG_CACHE_HOME="$install_test_home/.cache" \
+        GOCACHE="$GO_TEST_CACHE" \
+        GOMODCACHE="$GO_TEST_MOD_CACHE" \
         ROOMY_NO_OPLOG=1 \
         ./install.sh --prefix /tmp/roomy-test > /dev/null 2>&1; then
         if [[ -f "/tmp/roomy-test/roomy" ]]; then
             printf "${GREEN}${ICON_SUCCESS} Installation test passed${NC}\n"
         else
             printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
         fi
     else
         printf "${RED}${ICON_ERROR} Installation test failed${NC}\n"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
     ROOMY_NO_OPLOG=1 safe_remove "/tmp/roomy-test" true || true
     if [[ -n "$install_test_home" ]]; then
