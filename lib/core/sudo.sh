@@ -310,3 +310,46 @@ stop_sudo_session() {
     fi
     MOLE_SUDO_ESTABLISHED="false"
 }
+
+# ============================================================================
+# Askpass Helper (for tools that invoke sudo internally)
+# ============================================================================
+
+# Create a temporary SUDO_ASKPASS helper script.
+#
+# Some tools (notably Homebrew cask uninstall scripts) invoke `sudo` directly
+# for embedded installer packages. When Mole runs these tools under its timeout
+# wrapper, the child may not inherit Mole's controlling terminal or its
+# tty-scoped sudo timestamp, so sudo fails with "a terminal is required to read
+# the password". Pointing SUDO_ASKPASS at this helper lets sudo obtain the
+# password through a GUI prompt without a terminal. The password is never
+# stored on disk; the helper prompts on demand only when sudo actually needs it.
+#
+# Prints: absolute path to the helper script on success.
+# Returns: 0 on success, 1 if a helper cannot be created (e.g. test mode).
+create_sudo_askpass_helper() {
+    # Never trigger real password or GUI prompts during tests.
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        return 1
+    fi
+
+    # The GUI prompt requires osascript (macOS only).
+    command -v osascript > /dev/null 2>&1 || return 1
+
+    local helper
+    helper=$(mktemp "${TMPDIR:-/tmp}/mole-askpass.XXXXXX") || return 1
+
+    cat > "$helper" << 'ASKPASS'
+#!/bin/bash
+/usr/bin/osascript \
+    -e 'display dialog "Mole needs administrator access to finish removing this app." default answer "" with title "Mole" with icon caution with hidden answer' \
+    -e 'text returned of result' 2> /dev/null
+ASKPASS
+
+    if ! chmod 700 "$helper" 2> /dev/null; then
+        rm -f "$helper"
+        return 1
+    fi
+
+    echo "$helper"
+}

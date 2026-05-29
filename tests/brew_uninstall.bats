@@ -468,3 +468,59 @@ EOF
 
     [ "$status" -eq 0 ]
 }
+
+@test "brew_uninstall_cask exports SUDO_ASKPASS so inner sudo prompts work" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/brew.sh"
+
+debug_log() { :; }
+get_path_size_kb() { echo "100"; }
+run_with_timeout() { shift; "$@"; }
+is_brew_cask_installed() { return 1; }
+
+# Provide a deterministic helper path instead of triggering a GUI prompt.
+create_sudo_askpass_helper() { echo "$HOME/fake-askpass"; }
+
+brew() {
+    # Record whether sudo's askpass hook is visible to the cask uninstall.
+    printf '%s\n' "${SUDO_ASKPASS:-UNSET}" >> "$HOME/askpass.log"
+    return 0
+}
+export -f brew
+
+# SUDO_ASKPASS must be unset before the call so we can prove brew set it.
+unset SUDO_ASKPASS || true
+brew_uninstall_cask "demo-cask"
+
+grep -Fx "$HOME/fake-askpass" "$HOME/askpass.log"
+# Helper must not leak into the caller's environment after the call returns.
+[[ -z "${SUDO_ASKPASS:-}" ]]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "brew_uninstall_cask restores a pre-existing SUDO_ASKPASS value" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/brew.sh"
+
+debug_log() { :; }
+get_path_size_kb() { echo "100"; }
+run_with_timeout() { shift; "$@"; }
+is_brew_cask_installed() { return 1; }
+create_sudo_askpass_helper() { echo "$HOME/fake-askpass"; }
+brew() { return 0; }
+export -f brew
+
+export SUDO_ASKPASS="$HOME/original-askpass"
+brew_uninstall_cask "demo-cask"
+
+[[ "${SUDO_ASKPASS:-}" == "$HOME/original-askpass" ]]
+EOF
+
+    [ "$status" -eq 0 ]
+}

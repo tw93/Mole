@@ -223,9 +223,35 @@ brew_uninstall_cask() {
         debug_log "App size: ${size_gb}GB, timeout: ${timeout}s"
     fi
 
+    # Homebrew cask uninstall scripts can invoke `sudo` directly for embedded
+    # installer packages (e.g. Wireshark's path-removal pkg). Mole runs brew
+    # under a timeout wrapper whose fallback path detaches the controlling
+    # terminal, so that inner sudo cannot read a password and fails with
+    # "a terminal is required to read the password". Providing SUDO_ASKPASS lets
+    # sudo obtain the password through a GUI prompt without a terminal; Homebrew
+    # automatically adds `sudo -A` when SUDO_ASKPASS is set. sudo only invokes
+    # the helper when it actually needs a password, so a still-valid timestamp
+    # avoids any extra prompt. Cleanup is inline (not a RETURN trap) because
+    # bash 3.2 RETURN traps are not function-scoped and would re-fire with the
+    # locals out of scope when the caller returns, tripping `set -u`.
+    local askpass_helper="" prev_askpass_set=0 prev_askpass=""
+    if command -v create_sudo_askpass_helper > /dev/null 2>&1; then
+        askpass_helper=$(create_sudo_askpass_helper 2> /dev/null || true)
+    fi
+    if [[ -n "$askpass_helper" ]]; then
+        if [[ -n "${SUDO_ASKPASS+x}" ]]; then
+            prev_askpass_set=1
+            prev_askpass="$SUDO_ASKPASS"
+        fi
+        export SUDO_ASKPASS="$askpass_helper"
+    fi
+
     # Run with timeout to prevent hangs from problematic cask scripts.
     if [[ -n "${SUDO_USER:-}" ]]; then
+        # The outer `sudo` scrubs the environment, so SUDO_ASKPASS must be
+        # re-injected via the inner `env` to reach brew's nested sudo calls.
         if run_with_timeout "$timeout" sudo -u "$SUDO_USER" env \
+            ${askpass_helper:+SUDO_ASKPASS="$askpass_helper"} \
             HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 NONINTERACTIVE=1 \
             brew uninstall --cask --zap "$cask_name" 2>&1; then
             uninstall_ok=true
@@ -237,6 +263,17 @@ brew_uninstall_cask() {
         uninstall_ok=true
     else
         brew_exit=$?
+    fi
+
+    # Restore the prior SUDO_ASKPASS state and remove the temp helper inline,
+    # right after brew has finished, while the locals are still in scope.
+    if [[ -n "$askpass_helper" ]]; then
+        rm -f "$askpass_helper"
+        if [[ "$prev_askpass_set" == "1" ]]; then
+            export SUDO_ASKPASS="$prev_askpass"
+        else
+            unset SUDO_ASKPASS
+        fi
     fi
 
     if [[ "$uninstall_ok" != "true" ]]; then
