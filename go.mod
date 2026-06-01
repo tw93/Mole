@@ -1,6 +1,6 @@
 module github.com/tw93/mole
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
