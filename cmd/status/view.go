@@ -296,7 +296,7 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 	lines = append(lines, fmt.Sprintf("Total  %s  %s", usageBar, headerText))
 
 	if cpu.PerCoreEstimated {
-		lines = append(lines, subtleStyle.Render("Per-core data unavailable, using averaged load"))
+		lines = append(lines, subtleStyle.Render("每核心数据不可用，使用平均负载"))
 	} else if len(cpu.PerCore) > 0 {
 		type coreUsage struct {
 			idx int
@@ -317,10 +317,10 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus) cardData {
 
 	// Load line at the end
 	if cpu.PCoreCount > 0 && cpu.ECoreCount > 0 {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %dP+%dE",
+		lines = append(lines, fmt.Sprintf("负载   %.2f / %.2f / %.2f, %dP+%dE",
 			cpu.Load1, cpu.Load5, cpu.Load15, cpu.PCoreCount, cpu.ECoreCount))
 	} else {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
+		lines = append(lines, fmt.Sprintf("负载   %.2f / %.2f / %.2f, %d 核心",
 			cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
 	}
 
