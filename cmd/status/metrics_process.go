@@ -20,7 +20,7 @@ func collectProcesses() ([]ProcessInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := runCmd(ctx, "ps", "-Aceo", "pid=,ppid=,pcpu=,pmem=,comm=", "-r")
+	out, err := runCmd(ctx, "ps", "-Aceo", "pid=,ppid=,pcpu=,pmem=,rss=,comm=", "-r")
 	if err != nil {
 		out, err = runCmd(ctx, "ps", "aux")
 		if err != nil {
@@ -53,17 +53,27 @@ func parseProcessOutput(raw string) []ProcessInfo {
 			continue
 		}
 
-		command := strings.Join(fields[4:], " ")
+		rssBytes := uint64(0)
+		commandStart := 4
+		if len(fields) >= 6 {
+			if rssKB, err := strconv.ParseUint(fields[4], 10, 64); err == nil {
+				rssBytes = rssKB * 1024
+				commandStart = 5
+			}
+		}
+
+		command := strings.Join(fields[commandStart:], " ")
 		if command == "" {
 			continue
 		}
 		procs = append(procs, ProcessInfo{
-			PID:     pid,
-			PPID:    ppid,
-			Name:    processNameFromCommand(command),
-			Command: command,
-			CPU:     cpuVal,
-			Memory:  memVal,
+			PID:         pid,
+			PPID:        ppid,
+			Name:        processNameFromCommand(command),
+			Command:     command,
+			CPU:         cpuVal,
+			Memory:      memVal,
+			MemoryBytes: rssBytes,
 		})
 	}
 	return procs
@@ -95,17 +105,22 @@ func parsePsAuxOutput(raw string) []ProcessInfo {
 		if err != nil {
 			continue
 		}
+		rssKB, err := strconv.ParseUint(fields[5], 10, 64)
+		if err != nil {
+			rssKB = 0
+		}
 		command := strings.Join(fields[10:], " ")
 		if command == "" {
 			continue
 		}
 		procs = append(procs, ProcessInfo{
-			PID:     pid,
-			PPID:    0,
-			Name:    processNameFromCommand(command),
-			Command: command,
-			CPU:     cpuVal,
-			Memory:  memVal,
+			PID:         pid,
+			PPID:        0,
+			Name:        processNameFromCommand(command),
+			Command:     command,
+			CPU:         cpuVal,
+			Memory:      memVal,
+			MemoryBytes: rssKB * 1024,
 		})
 	}
 	return procs

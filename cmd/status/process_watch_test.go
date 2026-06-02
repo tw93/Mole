@@ -9,8 +9,8 @@ import (
 
 func TestParseProcessOutput(t *testing.T) {
 	raw := strings.Join([]string{
-		"123 1 145.2 10.1 /Applications/Visual Studio Code.app/Contents/MacOS/Electron",
-		"456 1 99.5 2.2 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder",
+		"123 1 145.2 10.1 7340032 /Applications/Visual Studio Code.app/Contents/MacOS/Electron",
+		"456 1 99.5 2.2 262144 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder",
 		"bad line",
 	}, "\n")
 
@@ -27,6 +27,45 @@ func TestParseProcessOutput(t *testing.T) {
 	}
 	if !strings.Contains(procs[0].Command, "Visual Studio Code.app") {
 		t.Fatalf("command path missing spaces: %q", procs[0].Command)
+	}
+	if procs[0].MemoryBytes != 7340032*1024 {
+		t.Fatalf("unexpected memory bytes %d", procs[0].MemoryBytes)
+	}
+}
+
+func TestParseProcessOutputKeepsOldFiveColumnShape(t *testing.T) {
+	raw := "123 1 145.2 10.1 /Applications/Visual Studio Code.app/Contents/MacOS/Electron"
+
+	procs := parseProcessOutput(raw)
+	if len(procs) != 1 {
+		t.Fatalf("parseProcessOutput() len = %d, want 1", len(procs))
+	}
+	if procs[0].Memory != 10.1 {
+		t.Fatalf("unexpected memory percent %.1f", procs[0].Memory)
+	}
+	if procs[0].MemoryBytes != 0 {
+		t.Fatalf("old ps shape should not invent memory bytes, got %d", procs[0].MemoryBytes)
+	}
+	if procs[0].Command != "/Applications/Visual Studio Code.app/Contents/MacOS/Electron" {
+		t.Fatalf("unexpected command %q", procs[0].Command)
+	}
+}
+
+func TestParsePsAuxOutputCapturesResidentMemory(t *testing.T) {
+	raw := strings.Join([]string{
+		"USER PID %CPU %MEM VSZ RSS TT STAT STARTED TIME COMMAND",
+		"raj 123 4.5 6.0 123456 2097152 ?? S 10:00AM 1:23 /Applications/Chrome.app/Contents/MacOS/Chrome --type=renderer",
+	}, "\n")
+
+	procs := parsePsAuxOutput(raw)
+	if len(procs) != 1 {
+		t.Fatalf("parsePsAuxOutput() len = %d, want 1", len(procs))
+	}
+	if procs[0].MemoryBytes != 2097152*1024 {
+		t.Fatalf("unexpected memory bytes %d", procs[0].MemoryBytes)
+	}
+	if !strings.Contains(procs[0].Command, "--type=renderer") {
+		t.Fatalf("command path missing args: %q", procs[0].Command)
 	}
 }
 

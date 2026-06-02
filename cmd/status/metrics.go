@@ -102,12 +102,13 @@ type DiskIOStatus struct {
 }
 
 type ProcessInfo struct {
-	PID     int     `json:"pid"`
-	PPID    int     `json:"ppid"`
-	Name    string  `json:"name"`
-	Command string  `json:"command"`
-	CPU     float64 `json:"cpu"`
-	Memory  float64 `json:"memory"`
+	PID         int     `json:"pid"`
+	PPID        int     `json:"ppid"`
+	Name        string  `json:"name"`
+	Command     string  `json:"command"`
+	CPU         float64 `json:"cpu"`
+	Memory      float64 `json:"memory"` // Percent of physical memory, kept for compatibility.
+	MemoryBytes uint64  `json:"memory_bytes,omitempty"`
 }
 
 type CPUStatus struct {

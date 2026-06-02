@@ -1015,19 +1015,30 @@ func TestStatusDiagnosisLineFallsBackToAllClear(t *testing.T) {
 
 func TestRenderProcessCardAddsInlineHintWithoutExtraRows(t *testing.T) {
 	card := renderProcessCard([]ProcessInfo{
-		{Name: "Chrome", CPU: 12, Memory: 22},
-		{Name: "Xcode", CPU: 82, Memory: 8},
+		{Name: "Chrome", CPU: 12, Memory: 22, MemoryBytes: 2 * 1024 * 1024 * 1024},
+		{Name: "Xcode", CPU: 82, Memory: 8, MemoryBytes: 512 * 1024 * 1024},
 	})
 
 	if len(card.lines) != 2 {
 		t.Fatalf("renderProcessCard() lines = %d, want 2", len(card.lines))
 	}
 	plain := stripANSI(strings.Join(card.lines, "\n"))
-	if !strings.Contains(plain, "M22%") {
-		t.Fatalf("renderProcessCard() missing memory hint, got %q", plain)
+	if !strings.Contains(plain, "2.0G") {
+		t.Fatalf("renderProcessCard() missing resident memory hint, got %q", plain)
 	}
 	if !strings.Contains(plain, "hot") {
 		t.Fatalf("renderProcessCard() missing cpu hint, got %q", plain)
+	}
+}
+
+func TestRenderProcessCardFallsBackToMemoryPercent(t *testing.T) {
+	card := renderProcessCard([]ProcessInfo{
+		{Name: "Chrome", CPU: 12, Memory: 22},
+	})
+
+	plain := stripANSI(strings.Join(card.lines, "\n"))
+	if !strings.Contains(plain, "M22%") {
+		t.Fatalf("renderProcessCard() missing memory percent fallback, got %q", plain)
 	}
 }
 

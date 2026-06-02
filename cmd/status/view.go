@@ -501,6 +501,13 @@ func renderProcessCard(procs []ProcessInfo) cardData {
 }
 
 func processHint(p ProcessInfo) string {
+	if p.MemoryBytes > 0 {
+		hint := " " + humanBytesCompact(p.MemoryBytes)
+		if p.CPU >= cpuHighThreshold {
+			hint += " hot"
+		}
+		return hint
+	}
 	if p.Memory >= 10 {
 		return fmt.Sprintf(" M%.0f%%", p.Memory)
 	}
