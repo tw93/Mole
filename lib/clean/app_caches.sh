@@ -620,9 +620,10 @@ clean_note_apps() {
 clean_launcher_apps() {
     safe_clean ~/Library/Caches/com.runningwithcrayons.Alfred/* "Alfred cache"
     safe_clean ~/Library/Caches/cx.c3.theunarchiver/* "The Unarchiver cache"
-    # Raycast: only clean network and FS caches; Clipboard subfolder contains user's clipboard history.
-    safe_clean ~/Library/Caches/com.raycast.macos/urlcache/* "Raycast URL cache"
-    safe_clean ~/Library/Caches/com.raycast.macos/fsCachedData/* "Raycast FS cache"
+    if [[ -d "$HOME/Library/Caches/com.raycast.macos" ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Raycast cache · skipped by default"
+        note_activity
+    fi
 }
 # Remote desktop tools.
 clean_remote_desktop() {

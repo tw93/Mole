@@ -275,6 +275,14 @@ should_protect_path() {
             ;;
     esac
 
+    if [[ "${MOLE_UNINSTALL_MODE:-0}" != "1" ]]; then
+        case "$path" in
+            */Library/Caches/com.raycast.macos | */Library/Caches/com.raycast.macos/ | */Library/Caches/com.raycast.macos/*)
+                return 0
+                ;;
+        esac
+    fi
+
     # 3. Extract bundle ID from sandbox paths
     # Matches: .../Library/Containers/bundle.id/...
     # Matches: .../Library/Group Containers/group.id/...
