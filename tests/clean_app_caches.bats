@@ -708,21 +708,17 @@ EOF
     [[ -z "$output" ]]
 }
 
-@test "clean_launcher_apps skips Raycast cache by default" {
+@test "clean_launcher_apps does not touch Raycast cache" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 mkdir -p "$HOME/Library/Caches/com.raycast.macos/urlcache"
 mkdir -p "$HOME/Library/Caches/com.raycast.macos/fsCachedData"
-note_activity() { echo "NOTE_ACTIVITY"; }
 safe_clean() { echo "CLEAN:$2|$1"; }
 clean_launcher_apps
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Raycast cache · skipped by default"* ]]
-    [[ "$output" == *"NOTE_ACTIVITY"* ]]
-    [[ "$output" != *"Raycast URL cache"* ]]
-    [[ "$output" != *"Raycast FS cache"* ]]
+    [[ "$output" != *"Raycast"* ]] && [[ "$output" != *"raycast"* ]]
 }

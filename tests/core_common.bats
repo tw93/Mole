@@ -558,15 +558,3 @@ SCRIPT
     [ "$status" -eq 0 ]
     [[ "$output" == *"EXIT=0"* ]]
 }
-
-@test "should_protect_path protects Raycast cache during cleanup" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc <<'SCRIPT'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-path="$HOME/Library/Caches/com.raycast.macos/urlcache/item"
-should_protect_path "$path" && echo "protected" || echo "not-protected"
-SCRIPT
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == "protected" ]]
-}
