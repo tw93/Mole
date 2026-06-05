@@ -313,6 +313,65 @@ func TestUpdateKeyCtrlCQuits(t *testing.T) {
 	}
 }
 
+func TestUpdateKeyEmacsVerticalNavigation(t *testing.T) {
+	m := model{
+		entries: []dirEntry{
+			{Name: "one", Path: "/tmp/one", Size: 1},
+			{Name: "two", Path: "/tmp/two", Size: 1},
+			{Name: "three", Path: "/tmp/three", Size: 1},
+		},
+		selected: 1,
+		height:   24,
+	}
+
+	updated, cmd := m.updateKey(tea.KeyMsg{Type: tea.KeyCtrlN})
+	if cmd != nil {
+		t.Fatalf("expected no command for Ctrl-N navigation, got %v", cmd)
+	}
+	got := updated.(model)
+	if got.selected != 2 {
+		t.Fatalf("expected Ctrl-N to move selection down to 2, got %d", got.selected)
+	}
+
+	updated, cmd = got.updateKey(tea.KeyMsg{Type: tea.KeyCtrlP})
+	if cmd != nil {
+		t.Fatalf("expected no command for Ctrl-P navigation, got %v", cmd)
+	}
+	got = updated.(model)
+	if got.selected != 1 {
+		t.Fatalf("expected Ctrl-P to move selection up to 1, got %d", got.selected)
+	}
+}
+
+func TestUpdateKeyEmacsHorizontalNavigation(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+
+	m := newModel(parent, false)
+	m.entries = []dirEntry{{Name: "child", Path: child, Size: 1, IsDir: true}}
+
+	updated, cmd := m.updateKey(tea.KeyMsg{Type: tea.KeyCtrlF})
+	if cmd == nil {
+		t.Fatalf("expected Ctrl-F to enter selected directory and start scan")
+	}
+	got := updated.(model)
+	if got.path != child {
+		t.Fatalf("expected Ctrl-F to enter %s, got %s", child, got.path)
+	}
+
+	updated, cmd = got.updateKey(tea.KeyMsg{Type: tea.KeyCtrlB})
+	if cmd != nil {
+		t.Fatalf("expected no command when returning from cached history, got %v", cmd)
+	}
+	got = updated.(model)
+	if got.path != parent {
+		t.Fatalf("expected Ctrl-B to go back to %s, got %s", parent, got.path)
+	}
+}
+
 func TestViewShowsEscBackAndCtrlCQuitHints(t *testing.T) {
 	m := model{
 		path:       "/tmp/project",

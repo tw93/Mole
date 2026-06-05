@@ -372,7 +372,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.goBack()
-	case "up", "k", "K":
+	case "up", "k", "K", "ctrl+p":
 		if m.showLargeFiles {
 			if m.largeSelected > 0 {
 				m.largeSelected--
@@ -390,7 +390,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.offset = m.selected
 			}
 		}
-	case "down", "j", "J":
+	case "down", "j", "J", "ctrl+n":
 		if m.showLargeFiles {
 			if m.largeSelected < len(m.largeFiles)-1 {
 				m.largeSelected++
@@ -410,12 +410,12 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.offset = m.selected - viewport + 1
 			}
 		}
-	case "enter", "right", "l", "L":
+	case "enter", "right", "l", "L", "ctrl+f":
 		if m.showLargeFiles {
 			return m, nil
 		}
 		return m.enterSelectedDir()
-	case "b", "left", "h", "B", "H":
+	case "b", "left", "h", "B", "H", "ctrl+b":
 		if m.showLargeFiles {
 			m.showLargeFiles = false
 			return m, nil

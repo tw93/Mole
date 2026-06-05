@@ -171,6 +171,10 @@ read_key() {
             $'\n' | $'\r') echo "ENTER" ;;
             $'\x7f' | $'\x08') echo "DELETE" ;;
             $'\x15') echo "CLEAR_LINE" ;; # Ctrl+U (often mapped from Cmd+Delete in terminals)
+            $'\x02') echo "LEFT" ;;        # Ctrl+B, macOS/Emacs backward item
+            $'\x06') echo "RIGHT" ;;       # Ctrl+F, macOS/Emacs forward item
+            $'\x10') echo "UP" ;;         # Ctrl+P, macOS/Emacs previous item
+            $'\x0e') echo "DOWN" ;;       # Ctrl+N, macOS/Emacs next item
             $'\x1b')
                 if IFS= read -r -s -n 1 -t 1 rest 2> /dev/null; then
                     if [[ "$rest" == "[" ]]; then
@@ -231,6 +235,10 @@ read_key() {
         'k' | 'K') echo "UP" ;;
         'h' | 'H') echo "LEFT" ;;
         'l' | 'L') echo "RIGHT" ;;
+        $'\x02') echo "LEFT" ;;  # Ctrl+B, macOS/Emacs backward item
+        $'\x06') echo "RIGHT" ;; # Ctrl+F, macOS/Emacs forward item
+        $'\x10') echo "UP" ;;   # Ctrl+P, macOS/Emacs previous item
+        $'\x0e') echo "DOWN" ;; # Ctrl+N, macOS/Emacs next item
         'G') echo "BOTTOM" ;;
         'g')
             if IFS= read -r -s -n 1 -t 0.3 rest 2> /dev/null; then

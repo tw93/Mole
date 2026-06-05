@@ -96,7 +96,7 @@ Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for
 - Video tutorial: Watch the [Mole tutorial video](https://www.youtube.com/watch?v=UEe9-w4CcQ0), thanks to PAPAYA 電腦教室.
 - Safety and logs: `clean`, `uninstall`, `purge`, `installer`, and `remove` are destructive. Review with `--dry-run` first, and add `--debug` when needed. File operations are logged to `~/Library/Logs/mole/operations.log` and can be reviewed with `mo history`. Disable with `MO_NO_OPLOG=1`. Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 - App leftovers: use `mo clean` when the app is already uninstalled, and `mo uninstall` when the app is still installed.
-- Navigation: Mole supports arrow keys and Vim bindings `h/j/k/l`.
+- Navigation: Mole supports arrow keys, Vim bindings `h/j/k/l`, and macOS Emacs-style `Ctrl-P` / `Ctrl-N` / `Ctrl-B` / `Ctrl-F`.
 
 ## Features in Detail
 
