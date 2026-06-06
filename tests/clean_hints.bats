@@ -152,6 +152,53 @@ EOT2D
     [[ "$output" == *"skipped=true"* ]]
 }
 
+@test "probe_project_artifact_hints respects budget inside nested-dir loop (#1053)" {
+    # Regression: old code had no deadline check inside the nested-dir while loop.
+    # When a single scan root is used the outer-root deadline guard never fires for
+    # the second time (the loop ends before the next iteration), so the nested loop
+    # could run unchecked after SECONDS crossed the deadline.
+    #
+    # Setup: one root with one project containing two nested sub-projects, each
+    # with a build/ artifact.  hint_collect_child_dirs_with_timeout sleeps 2s on
+    # the nested call so SECONDS advances past the 1s budget before the nested-dir
+    # while loop starts.
+    #
+    # New code: deadline fires on the FIRST nested-dir iteration → count=0, skipped=true.
+    # Old code: nested loop runs without a deadline check → count=2, skipped=false.
+    local root="$HOME/hints-deadline-nested"
+    mkdir -p "$root/bigproject/sub1/build"
+    mkdir -p "$root/bigproject/sub2/build"
+    touch "$root/bigproject/package.json"
+    printf '%s\n' "$root" > "$HOME/.config/mole/purge_paths"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_TIMEOUT_HINT_SCAN_SEC=1 \
+        HINTS_ROOT="$root" \
+        bash --noprofile --norc << 'EOT_NESTED'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+run_with_timeout() { shift; "$@"; }
+hint_collect_child_dirs_with_timeout() {
+    local dir="$1" out="$2"
+    if [[ "$dir" == "$HINTS_ROOT" ]]; then
+        printf '%s\0' "$HINTS_ROOT/bigproject" >> "$out"
+    else
+        # Simulate a slow nested find that lets SECONDS cross the 1s budget.
+        sleep 2
+        printf '%s\0' "$HINTS_ROOT/bigproject/sub1" "$HINTS_ROOT/bigproject/sub2" >> "$out"
+    fi
+}
+probe_project_artifact_hints
+printf 'count=%s\n' "$PROJECT_ARTIFACT_HINT_COUNT"
+printf 'skipped=%s\n' "$PROJECT_ARTIFACT_HINT_SCAN_SKIPPED"
+EOT_NESTED
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"count=0"* ]]
+    [[ "$output" == *"skipped=true"* ]]
+}
+
 @test "show_system_data_hint_notice reports large clue paths" {
     mkdir -p "$HOME/Library/Developer/Xcode/DerivedData"
 

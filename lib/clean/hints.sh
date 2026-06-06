@@ -410,6 +410,13 @@ probe_project_artifact_hints() {
             done
             [[ "$stop_scan" == "true" ]] && break
 
+            if [[ $SECONDS -ge $scan_deadline ]]; then
+                PROJECT_ARTIFACT_HINT_TRUNCATED=true
+                PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+                stop_scan=true
+                break
+            fi
+
             local nested_count=0
             nested_dirs_file=$(mktemp_file "project_artifact_nested") || {
                 PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
@@ -424,6 +431,12 @@ probe_project_artifact_hints() {
             fi
 
             while IFS= read -r -d '' nested_dir; do
+                if [[ $SECONDS -ge $scan_deadline ]]; then
+                    PROJECT_ARTIFACT_HINT_TRUNCATED=true
+                    PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+                    stop_scan=true
+                    break
+                fi
                 [[ -d "$nested_dir" ]] || continue
 
                 local nested_name
@@ -447,8 +460,6 @@ probe_project_artifact_hints() {
                         record_project_artifact_hint "$candidate"
                     fi
                 done
-
-                [[ "$stop_scan" == "true" ]] && break
             done < "$nested_dirs_file"
             rm -f "$nested_dirs_file"
 
