@@ -46,7 +46,7 @@ clean_deep_system() {
     local cache_cleaned=0
     start_section_spinner "Cleaning system caches..."
     # Optimized: Single pass for /Library/Caches (3 patterns in 1 scan)
-    if sudo test -d "/Library/Caches" 2> /dev/null; then
+    if sudo -n test -d "/Library/Caches" 2> /dev/null; then
         while IFS= read -r -d '' file; do
             if should_protect_path "$file"; then
                 continue
@@ -54,7 +54,7 @@ clean_deep_system() {
             if safe_sudo_remove "$file"; then
                 cache_cleaned=1
             fi
-        done < <(sudo find "/Library/Caches" -maxdepth 5 -type f \( \
+        done < <(sudo -n find "/Library/Caches" -maxdepth 5 -type f \( \
             \( -name "*.cache" -mtime "+$MOLE_TEMP_FILE_AGE_DAYS" \) -o \
             \( -name "*.tmp" -mtime "+$MOLE_TEMP_FILE_AGE_DAYS" \) -o \
             \( -name "*.log" -mtime "+$MOLE_LOG_AGE_DAYS" \) \
@@ -66,7 +66,7 @@ clean_deep_system() {
     local tmp_cleaned=0
     local -a sys_temp_dirs=("/private/tmp" "/private/var/tmp")
     for tmp_dir in "${sys_temp_dirs[@]}"; do
-        if sudo find "$tmp_dir" -maxdepth 1 -type f -mtime "+${MOLE_TEMP_FILE_AGE_DAYS}" -print -quit 2> /dev/null | grep -q .; then
+        if sudo -n find "$tmp_dir" -maxdepth 1 -type f -mtime "+${MOLE_TEMP_FILE_AGE_DAYS}" -print -quit 2> /dev/null | grep -q .; then
             if safe_sudo_find_delete "$tmp_dir" "*" "${MOLE_TEMP_FILE_AGE_DAYS}" "f"; then
                 tmp_cleaned=1
             fi
@@ -75,13 +75,13 @@ clean_deep_system() {
     stop_section_spinner
     [[ $tmp_cleaned -eq 1 ]] && log_success "System temp files"
     start_section_spinner "Cleaning system crash reports..."
-    if sudo find "/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -mtime "+$MOLE_CRASH_REPORT_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+    if sudo -n find "/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -mtime "+$MOLE_CRASH_REPORT_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
         safe_sudo_find_delete "/Library/Logs/DiagnosticReports" "*" "$MOLE_CRASH_REPORT_AGE_DAYS" "f" || true
     fi
     stop_section_spinner
     log_success "System crash reports"
     start_section_spinner "Cleaning system logs..."
-    if sudo find "/private/var/log" -maxdepth 3 -type f \( -name "*.log" -o -name "*.gz" -o -name "*.asl" \) -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+    if sudo -n find "/private/var/log" -maxdepth 3 -type f \( -name "*.log" -o -name "*.gz" -o -name "*.asl" \) -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
         safe_sudo_find_delete "/private/var/log" "*.log" "$MOLE_LOG_AGE_DAYS" "f" || true
         safe_sudo_find_delete "/private/var/log" "*.gz" "$MOLE_LOG_AGE_DAYS" "f" || true
         safe_sudo_find_delete "/private/var/log" "*.asl" "$MOLE_LOG_AGE_DAYS" "f" || true
@@ -96,15 +96,15 @@ clean_deep_system() {
     local third_party_logs_cleaned=0
     local third_party_log_dir=""
     for third_party_log_dir in "${third_party_log_dirs[@]}"; do
-        if sudo test -d "$third_party_log_dir" 2> /dev/null; then
-            if sudo find "$third_party_log_dir" -maxdepth 5 -type f -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+        if sudo -n test -d "$third_party_log_dir" 2> /dev/null; then
+            if sudo -n find "$third_party_log_dir" -maxdepth 5 -type f -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
                 if safe_sudo_find_delete "$third_party_log_dir" "*" "$MOLE_LOG_AGE_DAYS" "f"; then
                     third_party_logs_cleaned=1
                 fi
             fi
         fi
     done
-    if sudo find "/Library/Logs" -maxdepth 1 -type f -name "adobegc.log" -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
+    if sudo -n find "/Library/Logs" -maxdepth 1 -type f -name "adobegc.log" -mtime "+$MOLE_LOG_AGE_DAYS" -print -quit 2> /dev/null | grep -q .; then
         if safe_sudo_remove "/Library/Logs/adobegc.log"; then
             third_party_logs_cleaned=1
         fi
@@ -221,7 +221,7 @@ clean_deep_system() {
     )
     local rebuildable_cache_dir=""
     for rebuildable_cache_dir in "${rebuildable_cache_dirs[@]}"; do
-        if sudo test -e "$rebuildable_cache_dir" 2> /dev/null; then
+        if sudo -n test -e "$rebuildable_cache_dir" 2> /dev/null; then
             if safe_sudo_remove "$rebuildable_cache_dir"; then
                 rebuildable_cache_cleaned=$((rebuildable_cache_cleaned + 1))
             fi
@@ -270,13 +270,13 @@ clean_deep_system() {
     start_section_spinner "Cleaning memory exception reports..."
     local mem_reports_dir="/private/var/db/reportmemoryexception/MemoryLimitViolations"
     local mem_cleaned=0
-    if sudo test -d "$mem_reports_dir" 2> /dev/null; then
+    if sudo -n test -d "$mem_reports_dir" 2> /dev/null; then
         # Count and size old files before deletion
         local file_count=0
         local total_size_kb=0
         local total_bytes=0
         local stats_out
-        stats_out=$(sudo find "$mem_reports_dir" -type f -mtime +30 -exec stat -f "%z" {} + 2> /dev/null | awk '{c++; s+=$1} END {print c+0, s+0}' || true)
+        stats_out=$(sudo -n find "$mem_reports_dir" -type f -mtime +30 -exec stat -f "%z" {} + 2> /dev/null | awk '{c++; s+=$1} END {print c+0, s+0}' || true)
         if [[ -n "$stats_out" ]]; then
             read -r file_count total_bytes <<< "$stats_out"
             total_size_kb=$((total_bytes / 1024))

@@ -35,6 +35,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
 
 sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
     if [[ "$1" == "test" ]]; then
         return 0
     fi
@@ -114,6 +115,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
 
 sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
     if [[ "$1" == "test" ]]; then
         return 0
     fi
@@ -166,6 +168,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
 
 sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
     if [[ "$1" == "test" ]]; then
         return 0
     fi
@@ -221,6 +224,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
 
 sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
     if [[ "$1" == "test" ]]; then
         return 0
     fi

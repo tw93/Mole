@@ -84,6 +84,9 @@ SH
     cat > "$fake_bin/sudo" <<'SH'
 #!/bin/bash
 printf 'sudo %s\n' "$*" >> "$MOLE_TEST_TRACE"
+if [[ "${1:-}" == "-n" ]]; then
+    shift
+fi
 "$@"
 SH
     cat > "$fake_bin/osascript" <<'SH'
@@ -107,8 +110,8 @@ EOF
     [ "$status" -eq 0 ]
     [[ ! -e "$victim" ]]
     [[ -d "$fake_home/.Trash/$(basename "$victim")" ]]
-    [[ "$(grep -c '^sudo mv ' "$trace" 2> /dev/null || true)" -eq 1 ]]
-    [[ "$(grep -c '^sudo trash ' "$trace" 2> /dev/null || true)" -eq 0 ]]
+    [[ "$(grep -c '^sudo -n mv ' "$trace" 2> /dev/null || true)" -eq 1 ]]
+    [[ "$(grep -c '^sudo -n trash ' "$trace" 2> /dev/null || true)" -eq 0 ]]
     [[ "$(grep -c '^trash ' "$trace" 2> /dev/null || true)" -eq 0 ]]
     [[ "$(grep -c '^osascript ' "$trace" 2> /dev/null || true)" -eq 0 ]]
 
@@ -131,6 +134,9 @@ EOF
     cat > "$fake_bin/sudo" <<'SH'
 #!/bin/bash
 printf 'sudo %s\n' "$*" >> "$MOLE_TEST_TRACE"
+if [[ "${1:-}" == "-n" ]]; then
+    shift
+fi
 "$@"
 SH
     chmod +x "$fake_bin/sudo"
@@ -149,7 +155,7 @@ EOF
     [ "$status" -ne 0 ]
     [[ -e "$victim" ]]
     [[ -z "$(ls -A "$redirected" 2> /dev/null || true)" ]]
-    [[ "$(grep -c '^sudo mv ' "$trace" 2> /dev/null || true)" -eq 0 ]]
+    [[ "$(grep -c '^sudo -n mv ' "$trace" 2> /dev/null || true)" -eq 0 ]]
 
     local status_col
     status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
@@ -169,6 +175,9 @@ EOF
     cat > "$fake_bin/sudo" <<'SH'
 #!/bin/bash
 printf 'sudo %s\n' "$*" >> "$MOLE_TEST_TRACE"
+if [[ "${1:-}" == "-n" ]]; then
+    shift
+fi
 "$@"
 SH
     chmod +x "$fake_bin/sudo"
@@ -188,7 +197,7 @@ EOF
     [[ ! -e "$victim" ]]
     [[ -d "$fake_home/.Trash/$(basename "$victim")" ]]
     [[ -n "$(find "$fake_home/.Trash" -mindepth 1 -maxdepth 1 -name "$(basename "$victim").*" -print -quit)" ]]
-    [[ "$(grep -c '^sudo mv -n ' "$trace" 2> /dev/null || true)" -eq 1 ]]
+    [[ "$(grep -c '^sudo -n mv -n ' "$trace" 2> /dev/null || true)" -eq 1 ]]
 
     local status_col
     status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")

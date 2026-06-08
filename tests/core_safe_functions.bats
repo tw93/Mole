@@ -244,6 +244,138 @@ EOF
     [[ "$output" == *"Refusing to sudo remove symlink"* ]]
 }
 
+@test "safe_sudo_remove never opens an interactive sudo prompt" {
+    local target_dir="$TEST_DIR/sudo-target"
+    mkdir -p "$target_dir"
+    touch "$target_dir/file"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+sudo() {
+    if [[ "${1:-}" != "-n" ]]; then
+        echo "INTERACTIVE_SUDO:$*" >&2
+        return 99
+    fi
+    shift
+    case "${1:-}" in
+        test)
+            shift
+            command test "$@"
+            ;;
+        du)
+            shift
+            command du "$@"
+            ;;
+        rm)
+            shift
+            command rm "$@"
+            ;;
+        *)
+            "$@"
+            ;;
+    esac
+}
+export -f sudo
+
+safe_sudo_remove "$TARGET_DIR"
+[[ ! -e "$TARGET_DIR" ]]
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"INTERACTIVE_SUDO"* ]]
+}
+
+@test "safe_sudo_remove returns auth failure when noninteractive sudo expires" {
+    local target_dir="$TEST_DIR/sudo-expired"
+    mkdir -p "$target_dir"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+
+sudo() {
+    if [[ "${1:-}" != "-n" ]]; then
+        echo "INTERACTIVE_SUDO:$*" >&2
+        return 99
+    fi
+    echo "sudo: a password is required" >&2
+    return 1
+}
+export -f sudo
+
+safe_sudo_remove "$TARGET_DIR" && rc=0 || rc=$?
+echo "RC=$rc"
+[[ -e "$TARGET_DIR" ]]
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RC=11"* ]]
+    [[ "$output" != *"INTERACTIVE_SUDO"* ]]
+}
+
+@test "safe_sudo_find_delete never opens an interactive sudo prompt" {
+    local target_dir="$TEST_DIR/sudo-find-target"
+    local script="$TEST_DIR/sudo-find-delete-test.sh"
+    mkdir -p "$target_dir"
+    touch "$target_dir/old.log"
+
+    cat > "$script" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+TRACE="$TARGET_DIR/sudo.trace"
+> "$TRACE"
+
+sudo() {
+    printf 'SUDO:%s\n' "$*" >> "$TRACE"
+    if [[ "${1:-}" != "-n" ]]; then
+        echo "INTERACTIVE_SUDO:$*" >&2
+        return 99
+    fi
+    shift
+    case "${1:-}" in
+        test)
+            shift
+            command test "$@"
+            ;;
+        find)
+            printf '%s\0' "$TARGET_DIR/old.log"
+            ;;
+        du)
+            shift
+            command du "$@"
+            ;;
+        rm)
+            return 0
+            ;;
+        *)
+            "$@"
+            ;;
+    esac
+}
+export -f sudo
+
+set +e
+safe_sudo_find_delete "$TARGET_DIR" "*.log" "0" "f"
+rc=$?
+set -e
+printf 'RC=%s\n' "$rc"
+cat "$TRACE" || true
+exit 0
+SCRIPT
+    chmod +x "$script"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 bash --noprofile --norc "$script"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RC=0"* ]]
+    [[ "$output" == *"SUDO:-n test -d "* ]]
+    [[ "$output" == *"SUDO:-n test -L "* ]]
+    [[ "$output" == *"SUDO:-n find "* ]]
+    [[ "$output" != *"INTERACTIVE_SUDO"* ]]
+}
+
 @test "safe_find_delete rejects symlinked directory" {
     local real_dir="$TEST_DIR/real"
     local link_dir="$TEST_DIR/link"

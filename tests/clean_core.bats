@@ -116,6 +116,42 @@ MOCK
     [[ "$output" == *"full preview"* ]]
 }
 
+@test "mo clean adopts cached sudo before system cleanup (#1084)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+TRACE="$HOME/sudo-adopt.log"
+> "$TRACE"
+
+source "$PROJECT_ROOT/bin/clean.sh"
+
+DRY_RUN=false
+EXTERNAL_VOLUME_TARGET=""
+
+sudo() {
+    printf 'sudo %s\n' "$*" >> "$TRACE"
+    [[ "${1:-}" == "-n" && "${2:-}" == "-v" ]]
+}
+_start_sudo_keepalive() {
+    printf 'keepalive\n' >> "$TRACE"
+    echo "keepalive-pid"
+}
+_stop_sudo_keepalive() { :; }
+
+start_cleanup
+cat "$TRACE"
+printf 'SYSTEM_CLEAN=%s\n' "$SYSTEM_CLEAN"
+printf 'MOLE_SUDO_ESTABLISHED=%s\n' "$MOLE_SUDO_ESTABLISHED"
+printf 'MOLE_SUDO_KEEPALIVE_PID=%s\n' "$MOLE_SUDO_KEEPALIVE_PID"
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"sudo -n -v"* ]]
+    [[ "$output" == *"keepalive"* ]]
+    [[ "$output" == *"SYSTEM_CLEAN=true"* ]]
+    [[ "$output" == *"MOLE_SUDO_ESTABLISHED=true"* ]]
+    [[ "$output" == *"MOLE_SUDO_KEEPALIVE_PID=keepalive-pid"* ]]
+}
+
 @test "mo clean sudo prompt preserves a directly typed password (#1059)" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
         bash --noprofile --norc <<'SCRIPT'

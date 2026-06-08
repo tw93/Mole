@@ -339,7 +339,7 @@ safe_remove_symlink() {
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sudo blocked in test mode"
             return 1
         fi
-        sudo rm "$path" 2> /dev/null || rm_exit=$?
+        sudo -n rm "$path" 2> /dev/null || rm_exit=$?
     else
         rm "$path" 2> /dev/null || rm_exit=$?
     fi
@@ -392,16 +392,16 @@ safe_sudo_remove() {
             local file_size=""
             local file_age=""
 
-            if sudo test -e "$path" 2> /dev/null; then
+            if sudo -n test -e "$path" 2> /dev/null; then
                 local size_kb
-                size_kb=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
+                size_kb=$(sudo -n du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
                 if [[ "$size_kb" -gt 0 ]]; then
                     file_size=$(bytes_to_human "$((size_kb * 1024))")
                 fi
 
-                if sudo test -f "$path" 2> /dev/null || sudo test -d "$path" 2> /dev/null; then
+                if sudo -n test -f "$path" 2> /dev/null || sudo -n test -d "$path" 2> /dev/null; then
                     local mod_time
-                    mod_time=$(sudo stat -f%m "$path" 2> /dev/null || echo "0")
+                    mod_time=$(sudo -n stat -f%m "$path" 2> /dev/null || echo "0")
                     local now
                     now=$(date +%s 2> /dev/null || echo "0")
                     if [[ "$mod_time" -gt 0 && "$now" -gt 0 ]]; then
@@ -423,8 +423,8 @@ safe_sudo_remove() {
     local size_kb=0
     local size_human=""
     if oplog_enabled; then
-        if sudo test -e "$path" 2> /dev/null; then
-            size_kb=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
+        if sudo -n test -e "$path" 2> /dev/null; then
+            size_kb=$(sudo -n du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
             if [[ "$size_kb" =~ ^[0-9]+$ ]] && [[ "$size_kb" -gt 0 ]]; then
                 size_human=$(bytes_to_human "$((size_kb * 1024))" 2> /dev/null || echo "${size_kb}KB")
             fi
@@ -433,7 +433,7 @@ safe_sudo_remove() {
 
     local output
     local ret=0
-    output=$(sudo rm -rf "$path" 2>&1) || ret=$? # safe_remove
+    output=$(sudo -n rm -rf "$path" 2>&1) || ret=$? # safe_remove
 
     if [[ $ret -eq 0 ]]; then
         log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$path" "$size_human"
@@ -441,6 +441,10 @@ safe_sudo_remove() {
     fi
 
     case "$output" in
+        *"a password is required"* | *"a terminal is required"* | *"Password:"*)
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "auth required"
+            return "$MOLE_ERR_AUTH_FAILED"
+            ;;
         *"Operation not permitted"*)
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "sip/mdm protected"
             return "$MOLE_ERR_SIP_PROTECTED"
@@ -531,7 +535,7 @@ mole_delete() {
             if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
                 du_rc=1
             else
-                raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
+                raw_size=$(sudo -n du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
                 du_rc=${PIPESTATUS[0]}
             fi
         else
@@ -665,7 +669,7 @@ _mole_move_sudo_path_to_user_trash() {
         return 1
     fi
     if ! mkdir -p "$trash_dir" 2> /dev/null; then
-        if ! sudo mkdir -p "$trash_dir" 2> /dev/null; then
+        if ! sudo -n mkdir -p "$trash_dir" 2> /dev/null; then
             debug_log "Failed to create invoking user Trash: $trash_dir"
             return 1
         fi
@@ -683,10 +687,10 @@ _mole_move_sudo_path_to_user_trash() {
         owner_gid=$(get_invoking_gid)
     fi
     if [[ "$owner_uid" =~ ^[0-9]+$ && "$owner_gid" =~ ^[0-9]+$ ]]; then
-        sudo chown "$owner_uid:$owner_gid" "$trash_dir" 2> /dev/null || true
+        sudo -n chown "$owner_uid:$owner_gid" "$trash_dir" 2> /dev/null || true
     fi
     if ! chmod 700 "$trash_dir" 2> /dev/null; then
-        sudo chmod 700 "$trash_dir" 2> /dev/null || true
+        sudo -n chmod 700 "$trash_dir" 2> /dev/null || true
     fi
 
     # Avoid Finder-style ':' path weirdness and keep generated names filesystem-safe.
@@ -710,7 +714,7 @@ _mole_move_sudo_path_to_user_trash() {
         dest="$trash_dir/$base.$ts.$$.$suffix"
     done
 
-    if ! sudo mv -n "$path" "$dest" > /dev/null 2>&1; then
+    if ! sudo -n mv -n "$path" "$dest" > /dev/null 2>&1; then
         debug_log "Failed to move sudo-required path to invoking user Trash: $path -> $dest"
         return 1
     fi
@@ -721,7 +725,7 @@ _mole_move_sudo_path_to_user_trash() {
 
     # Best-effort ownership repair makes restored Trash items behave like user files.
     if [[ "$owner_uid" =~ ^[0-9]+$ && "$owner_gid" =~ ^[0-9]+$ ]]; then
-        sudo chown -R "$owner_uid:$owner_gid" "$dest" 2> /dev/null || true
+        sudo -n chown -R "$owner_uid:$owner_gid" "$dest" 2> /dev/null || true
     fi
 
     debug_log "Moved sudo-required path to invoking user Trash: $path -> $dest"
@@ -870,12 +874,12 @@ safe_sudo_find_delete() {
     fi
 
     # Validate base directory (use sudo for permission-restricted dirs)
-    if ! sudo test -d "$base_dir" 2> /dev/null; then
+    if ! sudo -n test -d "$base_dir" 2> /dev/null; then
         debug_log "Directory does not exist, skipping: $base_dir"
         return 0
     fi
 
-    if sudo test -L "$base_dir" 2> /dev/null; then
+    if sudo -n test -L "$base_dir" 2> /dev/null; then
         log_error "Refusing to search symlinked directory: $base_dir"
         return 1
     fi
@@ -908,7 +912,7 @@ safe_sudo_find_delete() {
             continue
         fi
         safe_sudo_remove "$match" || true
-    done < <(sudo find "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
+    done < <(sudo -n find "$base_dir" "${find_args[@]}" -print0 2> /dev/null || true)
 
     return 0
 }

@@ -1017,7 +1017,7 @@ start_cleanup() {
 EOF
 
         # Preview system section when sudo is already cached (no password prompt).
-        if has_sudo_session; then
+        if adopt_sudo_session; then
             SYSTEM_CLEAN=true
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access available, system preview included"
             echo ""
@@ -1030,7 +1030,7 @@ EOF
     fi
 
     if [[ -t 0 ]]; then
-        if has_sudo_session; then
+        if adopt_sudo_session; then
             SYSTEM_CLEAN=true
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
             echo ""
@@ -1040,7 +1040,7 @@ EOF
     else
         echo ""
         echo "Running in non-interactive mode"
-        if has_sudo_session; then
+        if adopt_sudo_session; then
             SYSTEM_CLEAN=true
             echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
         else

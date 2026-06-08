@@ -575,6 +575,7 @@ sudo() {
   if [[ "$1" == "-n" && "$2" == "true" ]]; then
     return 0
   fi
+  [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     printf '%s\0' "$tmp_plist"
     return 0
@@ -626,6 +627,7 @@ sudo() {
   if [[ "$1" == "-n" && "$2" == "true" ]]; then
     return 0
   fi
+  [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     case "$2" in
       /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
@@ -678,6 +680,7 @@ sudo() {
   if [[ "$1" == "-n" && "$2" == "true" ]]; then
     return 0
   fi
+  [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     case "$2" in
       /Library/PrivilegedHelperTools) printf '%s\0' "$tmp_helper" ;;
@@ -729,6 +732,7 @@ sudo() {
   if [[ "$1" == "-n" && "$2" == "true" ]]; then
     return 0
   fi
+  [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     case "$2" in
       /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
@@ -773,6 +777,7 @@ sudo() {
   if [[ "$1" == "-n" && "$2" == "true" ]]; then
     return 0
   fi
+  [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     case "$2" in
       /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;

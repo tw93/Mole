@@ -573,3 +573,31 @@ SCRIPT
     [ "$status" -eq 0 ]
     [[ "$output" == *"EXIT=0"* ]]
 }
+
+@test "adopt_sudo_session starts keepalive for cached sudo" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/sudo.sh"
+
+sudo() {
+    printf 'SUDO:%s\n' "$*"
+    [[ "${1:-}" == "-n" && "${2:-}" == "-v" ]]
+}
+_start_sudo_keepalive() {
+    echo "keepalive-pid"
+}
+_stop_sudo_keepalive() { :; }
+
+adopt_sudo_session
+echo "EXIT=$?"
+echo "FLAG=$MOLE_SUDO_ESTABLISHED"
+echo "PID=$MOLE_SUDO_KEEPALIVE_PID"
+SCRIPT
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SUDO:-n -v"* ]]
+    [[ "$output" == *"EXIT=0"* ]]
+    [[ "$output" == *"FLAG=true"* ]]
+    [[ "$output" == *"PID=keepalive-pid"* ]]
+}

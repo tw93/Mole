@@ -278,6 +278,36 @@ has_sudo_session() {
     sudo -n true 2> /dev/null
 }
 
+adopt_sudo_session() {
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        MOLE_SUDO_ESTABLISHED="false"
+        return 1
+    fi
+
+    if [[ "$MOLE_SUDO_ESTABLISHED" == "true" && -n "$MOLE_SUDO_KEEPALIVE_PID" ]]; then
+        if has_sudo_session; then
+            return 0
+        fi
+        _stop_sudo_keepalive "$MOLE_SUDO_KEEPALIVE_PID"
+        MOLE_SUDO_KEEPALIVE_PID=""
+        MOLE_SUDO_ESTABLISHED="false"
+    fi
+
+    if ! sudo -n -v 2> /dev/null; then
+        MOLE_SUDO_ESTABLISHED="false"
+        return 1
+    fi
+
+    if [[ -n "$MOLE_SUDO_KEEPALIVE_PID" ]]; then
+        _stop_sudo_keepalive "$MOLE_SUDO_KEEPALIVE_PID"
+        MOLE_SUDO_KEEPALIVE_PID=""
+    fi
+
+    MOLE_SUDO_KEEPALIVE_PID=$(_start_sudo_keepalive)
+    MOLE_SUDO_ESTABLISHED="true"
+    return 0
+}
+
 # Request administrative access
 request_sudo() {
     local prompt_msg="${1:-Admin access required}"
