@@ -525,15 +525,30 @@ clean_orphaned_system_services() {
         return 1
     }
 
+    # Read a launchd program path from a system plist.
+    # The plist itself was discovered with sudo, so read it with sudo too:
+    # unreadable root-owned plists make PlistBuddy print a non-path "File Doesn't
+    # Exist, Will Create..." message on stdout, which must never be treated as a
+    # missing binary path.
+    _plist_program_value() {
+        local plist="$1"
+        local key="$2"
+        local value=""
+        value=$(sudo /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2> /dev/null || true)
+
+        [[ -z "$value" ]] && return 1
+        [[ "$value" != /* ]] && return 1
+
+        printf '%s\n' "$value"
+    }
+
     # Read the program binary from a plist (Program or ProgramArguments[0]).
-    # Prints the path; returns 1 if no Program key found.
+    # Prints the path; returns 1 if no usable absolute Program key found.
     _plist_binary_path() {
         local plist="$1"
         local binary=""
-        binary=$(/usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" "$plist" 2> /dev/null || true)
-        if [[ -z "$binary" ]]; then
-            binary=$(/usr/libexec/PlistBuddy -c "Print :Program" "$plist" 2> /dev/null || true)
-        fi
+        binary=$(_plist_program_value "$plist" "ProgramArguments:0" || true)
+        [[ -z "$binary" ]] && binary=$(_plist_program_value "$plist" "Program" || true)
         [[ -z "$binary" ]] && return 1
         printf '%s\n' "$binary"
     }

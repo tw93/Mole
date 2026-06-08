@@ -603,6 +603,65 @@ EOF
     [[ "$output" != *"launchctl-called"* ]]
 }
 
+@test "clean_orphaned_system_services reads unreadable plists through sudo PlistBuddy" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true MOLE_DRY_RUN=1 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { echo "debug: $*"; }
+should_protect_path() { return 1; }
+
+tmp_dir="$(mktemp -d)"
+tmp_binary="$tmp_dir/live-helper"
+tmp_plist="$tmp_dir/com.example.live-helper.plist"
+touch "$tmp_binary"
+cat > "$tmp_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.live-helper</string>
+    <key>Program</key>
+    <string>$tmp_binary</string>
+</dict>
+</plist>
+PLIST
+chmod 000 "$tmp_plist"
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  if [[ "$1" == "/usr/libexec/PlistBuddy" ]]; then
+    case "$3" in
+      "Print :ProgramArguments:0") return 1 ;;
+      "Print :Program") printf '%s\n' "$tmp_binary"; return 0 ;;
+    esac
+    return 1
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Found 1 orphaned"* ]] || return 1
+    [[ "$output" != *"Would remove orphaned service"* ]] || return 1
+}
+
 @test "clean_orphaned_system_services does not count protected skips as cleaned" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false MOLE_DRY_RUN=0 bash --noprofile --norc <<'EOF'
 set -euo pipefail
