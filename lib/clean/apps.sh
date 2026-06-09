@@ -718,14 +718,13 @@ clean_orphaned_system_services() {
         local failed_count=0
         local removed_kb=0
 
-        # Treat orphaned services like uninstall targets: we've already verified
-        # the parent app is gone, so skip data-protection checks that would block
-        # cleanup of legitimately orphaned files (e.g., Docker helpers). See #1082.
-        # Use trap to ensure cleanup even on error/interrupt.
-        MOLE_UNINSTALL_MODE=1
-        trap 'unset MOLE_UNINSTALL_MODE; trap - RETURN ERR INT TERM' RETURN ERR INT TERM
         for orphan_file in "${orphaned_files[@]}"; do
-            if should_protect_path "$orphan_file"; then
+            # Orphans were already verified to have no installed parent app, so
+            # bypass the data-protection filename check (which would otherwise block
+            # legitimately orphaned files like Docker helpers) for this single call.
+            # MOLE_UNINSTALL_MODE is scoped to the call and never leaks to later
+            # cleanup sections; SYSTEM_CRITICAL_BUNDLES stay protected. See #1082.
+            if MOLE_UNINSTALL_MODE=1 should_protect_path "$orphan_file"; then
                 debug_log "Skipping protected orphaned service: $orphan_file"
                 skipped_protected_count=$((skipped_protected_count + 1))
                 continue
@@ -750,8 +749,6 @@ clean_orphaned_system_services() {
                 fi
             fi
         done
-        unset MOLE_UNINSTALL_MODE
-        trap - RETURN ERR INT TERM
 
         local orphaned_kb_display
         if [[ $removed_kb -gt 1024 ]]; then

@@ -708,6 +708,62 @@ EOF
     [[ "$output" != *"unexpected-launchctl"* ]]
 }
 
+@test "clean_orphaned_system_services removes orphaned Docker helper despite data protection (#1082)" {
+    # com.docker.* matches should_protect_data, which would normally block cleanup.
+    # Orphan cleanup verifies the parent app is gone, so should_protect_path must be
+    # called in uninstall mode for orphans and let the leftover Docker helper through.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=false MOLE_DRY_RUN=0 bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+# Docker is uninstalled: no parent app for the helper bundle ID.
+bundle_has_installed_app() { return 1; }
+
+tmp_dir="$(mktemp -d)"
+tmp_helper="$tmp_dir/com.docker.vmnetd"
+touch "$tmp_helper"
+
+removed_marker="$tmp_dir/removed"
+safe_sudo_remove() {
+  echo "removed:$1"
+  printf '%s\n' "$1" >> "$removed_marker"
+  return 0
+}
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  [[ "${1:-}" == "-n" ]] && shift
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/PrivilegedHelperTools) printf '%s\0' "$tmp_helper" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  if [[ "$1" == "du" ]]; then
+    echo "4 $tmp_helper"
+    return 0
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Found 1 orphaned"* ]] || return 1
+    [[ "$output" == *"Cleaned 1 orphaned"* ]] || return 1
+    [[ "$output" == *"removed:"* ]] || return 1
+    [[ "$output" != *"skipped 1 protected"* ]] || return 1
+}
+
 @test "clean_orphaned_system_services dry-run skips protected paths (#886)" {
     # MOLE_TEST_NO_AUTH=0 overrides the CI default (=1) so the function actually
     # runs past the auth-skip guard in apps.sh; the sudo() mock satisfies the
