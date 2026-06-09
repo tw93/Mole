@@ -711,9 +711,10 @@ EOF
 @test "clean_orphaned_system_services removes orphaned helper despite data protection (#1082)" {
     # The Docker leftover in #1082 survived because should_protect_data matches
     # com.docker.* and blocked cleanup. com.getpostman.* hits the exact same
-    # should_protect_data branch but is not in known_protect_patterns, so detection
-    # stays Spotlight-independent (no mdfind) while still exercising the cleanup-loop
-    # uninstall-mode bypass that fixes #1082.
+    # should_protect_data branch; orphan cleanup must call should_protect_path in
+    # uninstall mode so a verified orphan is not blocked by data protection.
+    # Routed through /Library/LaunchDaemons (always present) rather than
+    # /Library/PrivilegedHelperTools (absent on CI runners).
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=false MOLE_DRY_RUN=0 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -723,12 +724,11 @@ start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
 debug_log() { :; }
-# App is uninstalled: no parent app for the helper bundle ID.
-bundle_has_installed_app() { return 1; }
 
 tmp_dir="$(mktemp -d)"
-tmp_helper="$tmp_dir/com.getpostman.helper"
-touch "$tmp_helper"
+tmp_plist="$tmp_dir/com.getpostman.helper.plist"
+# Program points at a missing binary, so the plist is a genuine orphan.
+/usr/libexec/PlistBuddy -c "Add :Program string $tmp_dir/missing-binary" "$tmp_plist" 2> /dev/null || true
 
 removed_marker="$tmp_dir/removed"
 safe_sudo_remove() {
@@ -744,13 +744,16 @@ sudo() {
   [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     case "$2" in
-      /Library/PrivilegedHelperTools) printf '%s\0' "$tmp_helper" ;;
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
       *) : ;;
     esac
     return 0
   fi
   if [[ "$1" == "du" ]]; then
-    echo "4 $tmp_helper"
+    echo "4 $tmp_plist"
+    return 0
+  fi
+  if [[ "$1" == "launchctl" ]]; then
     return 0
   fi
   command "$@"
