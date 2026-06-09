@@ -637,6 +637,7 @@ sudo() {
   if [[ "$1" == "-n" && "$2" == "true" ]]; then
     return 0
   fi
+  [[ "${1:-}" == "-n" ]] && shift
   if [[ "$1" == "find" ]]; then
     case "$2" in
       /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;

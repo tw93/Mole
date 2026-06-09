@@ -526,7 +526,8 @@ clean_orphaned_system_services() {
     }
 
     # Read a launchd program path from a system plist.
-    # The plist itself was discovered with sudo, so read it with sudo too:
+    # The plist itself was discovered with sudo, so read it with sudo too (the
+    # caller already cleared a `sudo -n true` probe, so keep it non-interactive):
     # unreadable root-owned plists make PlistBuddy print a non-path "File Doesn't
     # Exist, Will Create..." message on stdout, which must never be treated as a
     # missing binary path.
@@ -534,7 +535,7 @@ clean_orphaned_system_services() {
         local plist="$1"
         local key="$2"
         local value=""
-        value=$(sudo /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2> /dev/null || true)
+        value=$(sudo -n /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2> /dev/null || true)
 
         [[ -z "$value" ]] && return 1
         [[ "$value" != /* ]] && return 1
