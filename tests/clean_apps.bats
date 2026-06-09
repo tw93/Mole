@@ -708,10 +708,12 @@ EOF
     [[ "$output" != *"unexpected-launchctl"* ]]
 }
 
-@test "clean_orphaned_system_services removes orphaned Docker helper despite data protection (#1082)" {
-    # com.docker.* matches should_protect_data, which would normally block cleanup.
-    # Orphan cleanup verifies the parent app is gone, so should_protect_path must be
-    # called in uninstall mode for orphans and let the leftover Docker helper through.
+@test "clean_orphaned_system_services removes orphaned helper despite data protection (#1082)" {
+    # The Docker leftover in #1082 survived because should_protect_data matches
+    # com.docker.* and blocked cleanup. com.getpostman.* hits the exact same
+    # should_protect_data branch but is not in known_protect_patterns, so detection
+    # stays Spotlight-independent (no mdfind) while still exercising the cleanup-loop
+    # uninstall-mode bypass that fixes #1082.
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=false MOLE_DRY_RUN=0 bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -721,11 +723,11 @@ start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
 debug_log() { :; }
-# Docker is uninstalled: no parent app for the helper bundle ID.
+# App is uninstalled: no parent app for the helper bundle ID.
 bundle_has_installed_app() { return 1; }
 
 tmp_dir="$(mktemp -d)"
-tmp_helper="$tmp_dir/com.docker.vmnetd"
+tmp_helper="$tmp_dir/com.getpostman.helper"
 touch "$tmp_helper"
 
 removed_marker="$tmp_dir/removed"
