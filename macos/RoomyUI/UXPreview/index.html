@@ -124,6 +124,8 @@
       color: var(--ink);
       font: inherit;
       font-weight: 650;
+      max-width: 100%;
+      line-height: 1.15;
       white-space: nowrap;
     }
 
@@ -198,7 +200,30 @@
       margin-top: 20px;
     }
 
-    .quick-clean {
+    .state-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 18px;
+    }
+
+    .state-card {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .state-card h2 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    .state-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.42;
+    }
+
+    .quick-clean,
+    .permission-card {
       margin-top: 18px;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -206,12 +231,14 @@
       align-items: center;
     }
 
-    .quick-clean h2 {
+    .quick-clean h2,
+    .permission-card h2 {
       margin: 0;
       font-size: 21px;
     }
 
-    .quick-clean p {
+    .quick-clean p,
+    .permission-card p {
       margin: 7px 0 0;
       color: var(--muted);
       line-height: 1.42;
@@ -324,6 +351,50 @@
       flex-wrap: wrap;
       gap: 10px;
       margin-top: 14px;
+      min-width: 0;
+    }
+
+    .list-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .list-head h2 {
+      margin: 0;
+    }
+
+    .count-note {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .callout {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(245, 165, 36, 0.28);
+      background: rgba(245, 165, 36, 0.09);
+    }
+
+    .callout strong,
+    .callout span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .callout span {
+      color: var(--muted);
+      line-height: 1.36;
     }
 
     .failure-grid {
@@ -371,6 +442,7 @@
       .nav-item { justify-content: center; padding-inline: 0; }
       main { padding: 24px 20px; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .state-grid { grid-template-columns: 1fr; }
       .flow-rail { grid-template-columns: 1fr; }
     }
 
@@ -391,10 +463,19 @@
       .nav-item { padding-inline: 12px; }
       header { display: grid; }
       .metrics { grid-template-columns: 1fr; }
-      .quick-clean { grid-template-columns: 1fr; }
+      .quick-clean,
+      .permission-card { grid-template-columns: 1fr; }
       .failure-grid { grid-template-columns: 1fr; }
       .row { grid-template-columns: minmax(160px, 1fr) auto; }
       .row .secondary { display: none; }
+    }
+
+    @media (max-width: 420px) {
+      button {
+        min-height: 40px;
+        padding-block: 8px;
+        white-space: normal;
+      }
     }
   </style>
 </head>
@@ -419,7 +500,7 @@
           <h1>Free Up Your Mac</h1>
           <div class="subtitle">Start with disk space, preview cleanup, and move recoverable items to Trash.</div>
         </div>
-        <button class="primary">Clean My Mac</button>
+        <button class="primary">Preview Cleanup</button>
       </header>
 
       <section class="grid metrics" aria-label="Care summary">
@@ -440,35 +521,79 @@
           <div class="metric-label">966 items across 51 groups</div>
         </article>
         <article class="panel" data-ux-surface="metric">
-          <div class="metric-label">Recent Activity</div>
-          <div class="metric-value">8</div>
-          <div class="metric-label">Journal entries loaded</div>
+          <div class="metric-label">Scan Access</div>
+          <div class="metric-value">Limited</div>
+          <div class="metric-label">Full Disk Access optional</div>
+        </article>
+      </section>
+
+      <section class="panel permission-card" data-ux-surface="permission-card">
+        <div>
+          <h2>Scan Access</h2>
+          <p>Roomy can preview folders you choose now. Full Disk Access makes whole-Mac scans complete without repeated macOS prompts.</p>
+          <div class="safety" aria-label="Permission safeguards">
+            <span>CLI revalidates paths</span>
+            <span>Limited access allowed</span>
+            <span>Settings controlled by macOS</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button>Open Full Disk Access</button>
+          <button>Continue Limited</button>
+        </div>
+      </section>
+
+      <section class="grid state-grid" aria-label="First-run and recovery visibility">
+        <article class="panel state-card" data-ux-surface="first-run-card">
+          <div class="metric-label">First Run</div>
+          <h2>Ready for your first scan</h2>
+          <p>Choose a folder to preview results. Roomy shows estimates after scan data is loaded and changes nothing during preview.</p>
+          <div class="safety" aria-label="First-run safeguards">
+            <span>Pick Home or Downloads</span>
+            <span>No files changed</span>
+            <span>Estimates load after scan</span>
+          </div>
+        </article>
+        <article class="panel state-card" data-ux-surface="recovery-card">
+          <div class="metric-label">Recovery & Reports</div>
+          <h2>Reports stay visible after cleanup</h2>
+          <p>Trash-backed actions keep recovery and audit details available from the recent operation journal.</p>
+          <div class="safety" aria-label="Recovery safeguards">
+            <span>Trash-backed recovery</span>
+            <span>Operation journal saved</span>
+            <span>Report includes skipped paths</span>
+          </div>
+          <div class="actions">
+            <button>Open Cleanup Report</button>
+            <button>Show in Trash</button>
+          </div>
         </article>
       </section>
 
       <section class="panel quick-clean" data-ux-surface="quick-clean">
         <div>
-          <h2>Clean My Mac</h2>
-          <p>One guarded pass previews recoverable cache, log, and rebuildable files before cleanup runs.</p>
+          <h2>Cleanup Plan</h2>
+          <p>Preview recoverable cache, log, and rebuildable files, review the plan, then move approved items to Trash.</p>
           <div class="safety" aria-label="Cleanup safeguards">
-            <span>Preview first</span>
-            <span>Trash where supported</span>
+            <span>Preview cleanup</span>
+            <span>Review plan</span>
+            <span>Trash-backed</span>
             <span>Protected paths skipped</span>
           </div>
           <div class="flow-rail" aria-label="Cleanup progress">
-            <div class="step"><span>✓</span><div><strong>Preview</strong><span>22.6 GB</span></div></div>
-            <div class="step"><span>✓</span><div><strong>Plan</strong><span>966 items</span></div></div>
-            <div class="step pending"><span>○</span><div><strong>Activity</strong><span>8 recent</span></div></div>
+            <div class="step"><span>✓</span><div><strong>Preview Cleanup</strong><span>22.6 GB</span></div></div>
+            <div class="step"><span>✓</span><div><strong>Review Plan</strong><span>966 items</span></div></div>
+            <div class="step pending"><span>○</span><div><strong>Move Reviewed Items to Trash</strong><span>966 items</span></div></div>
           </div>
         </div>
         <div class="actions">
-          <button class="primary">Clean My Mac</button>
-          <button>Review Details</button>
+          <button class="primary">Preview Cleanup</button>
+          <button>Review Plan</button>
         </div>
       </section>
 
       <section class="band" data-ux-surface="scan-presets">
-        <h2>Free Up Space</h2>
+        <h2>Secondary Cleanup Tools</h2>
         <div class="actions">
           <button>Review Cleanup</button>
           <button>Scan Storage</button>
@@ -478,7 +603,10 @@
       </section>
 
       <section class="band" data-ux-surface="cleanup-table">
-        <h2>Recommended Cleanup</h2>
+        <div class="list-head">
+          <h2>Recommended Cleanup</h2>
+          <span class="count-note">Showing 4 of 51 groups · 47 groups hidden until you open the full plan</span>
+        </div>
         <div class="table">
           <div class="row">
             <strong>User app cache</strong>
@@ -501,15 +629,22 @@
             <span class="pill">10.6 GB</span>
           </div>
         </div>
+        <div class="callout" aria-label="Trash confirmation copy">
+          <strong>Before anything moves</strong>
+          <span>Roomy revalidates selected paths, skips protected locations, and moves approved files to Trash for recovery where supported.</span>
+        </div>
         <div class="actions">
-          <button>Preview Details</button>
-          <button class="danger">Clean My Mac</button>
-          <button>Open Settings</button>
+          <button>Review Plan</button>
+          <button class="danger">Move 966 Reviewed Items to Trash</button>
+          <button>Open Scan Access</button>
         </div>
       </section>
 
       <section class="band" data-ux-surface="operation-journal">
-        <h2>Recent Activity</h2>
+        <div class="list-head">
+          <h2>Recent Activity</h2>
+          <span class="count-note">Showing 2 of 8 journal entries · 6 entries hidden in this preview</span>
+        </div>
         <div class="table">
           <div class="row">
             <strong>Storage completed</strong>
@@ -525,7 +660,10 @@
       </section>
 
       <section class="band" data-ux-surface="monitor-table">
-        <h2>Live Signals</h2>
+        <div class="list-head">
+          <h2>Live Signals</h2>
+          <span class="count-note">Showing 5 of 9 signals · 4 signals hidden in this preview</span>
+        </div>
         <div class="table">
           <div class="row">
             <strong>Live refresh</strong>

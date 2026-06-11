@@ -341,44 +341,123 @@ show_version() {
     printf 'Shell: %s\n\n' "${SHELL:-Unknown}"
 }
 
+get_roomy_command_desc() {
+    local lookup="$1"
+    local entry name desc
+    for entry in "${ROOMY_COMMANDS[@]}"; do
+        name="${entry%%:*}"
+        desc="${entry#*:}"
+        if [[ "$name" == "$lookup" ]]; then
+            printf '%s\n' "$desc"
+            return 0
+        fi
+    done
+    printf '%s\n' "$lookup"
+}
+
+print_help_row() {
+    local display="$1"
+    local desc="$2"
+    local indent="${3:-  }"
+    printf "%s%s%-42s%s %s\n" "$indent" "$GREEN" "$display" "$NC" "$desc"
+}
+
+print_help_command() {
+    local name="$1"
+    local indent="${2:-  }"
+    local desc="${3:-}"
+    local display="roomy $name"
+    [[ "$name" == "help" ]] && display="roomy --help"
+    [[ "$name" == "version" ]] && display="roomy --version"
+    [[ -z "$desc" ]] && desc=$(get_roomy_command_desc "$name")
+    print_help_row "$display" "$desc" "$indent"
+}
+
+print_help_intent() {
+    printf "  %s\n" "$1"
+}
+
 show_help() {
     show_brand_banner
     echo
-    printf "%s%s%s\n" "$BLUE" "COMMANDS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy" "$NC" "Main menu"
-    for entry in "${ROOMY_COMMANDS[@]}"; do
-        local name="${entry%%:*}"
-        local desc="${entry#*:}"
-        local display="roomy $name"
-        [[ "$name" == "help" ]] && display="roomy --help"
-        [[ "$name" == "version" ]] && display="roomy --version"
-        printf "  %s%-28s%s %s\n" "$GREEN" "$display" "$NC" "$desc"
-    done
-    echo
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --dry-run" "$NC" "Preview cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --categories" "$NC" "Run selected cleanup categories"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --max-delete-gb" "$NC" "Limit automated cleanup size"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy clean --whitelist" "$NC" "Manage protected caches"
 
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy optimize --dry-run" "$NC" "Preview optimization"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy optimize --whitelist" "$NC" "Manage protected items"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy uninstall --dry-run" "$NC" "Preview app uninstall"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy purge --dry-run" "$NC" "Preview project purge"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy installer --dry-run" "$NC" "Preview installer cleanup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy touchid enable --dry-run" "$NC" "Preview Touch ID setup"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy completion --dry-run" "$NC" "Preview shell completion edits"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy purge --paths" "$NC" "Configure scan directories"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy analyze /Volumes" "$NC" "Analyze external drives only"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy analyze --duplicates" "$NC" "Find duplicate files in JSON mode"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy schedule status" "$NC" "Show maintenance schedule"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy report --last 30d" "$NC" "Summarize recent cleanup history"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --dry-run" "$NC" "Preview update source and target"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --force" "$NC" "Force reinstall latest stable version"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy update --nightly" "$NC" "Install latest unreleased main branch build"
-    printf "  %s%-28s%s %s\n" "$GREEN" "roomy remove --dry-run" "$NC" "Preview Roomy removal"
+    printf "%s%s%s\n" "$BLUE" "START SAFELY" "$NC"
+    print_help_row "roomy" "Main menu"
+    print_help_row "roomy clean --dry-run" "First safe command: preview cleanup without moving files"
+    print_help_row "roomy report --last 30d" "Audit recent cleanup history"
+    print_help_row "roomy restore list" "List items Roomy can recover from Trash"
     echo
-    printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
-    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
+
+    printf "%s%s%s\n" "$BLUE" "COMMANDS BY INTENT" "$NC"
+    print_help_intent "Clean up storage"
+    print_help_command "clean" "    "
+    print_help_command "optimize" "    "
+    print_help_command "purge" "    "
+    print_help_command "installer" "    "
+    print_help_command "uninstall" "    "
+    echo
+
+    print_help_intent "Inspect, recover, and audit"
+    print_help_command "analyze" "    "
+    print_help_command "status" "    "
+    print_help_command "report" "    "
+    print_help_command "restore" "    "
+    echo
+
+    print_help_intent "Automate and integrate"
+    print_help_command "schedule" "    "
+    print_help_command "profile" "    "
+    print_help_command "api" "    "
+    echo
+
+    print_help_intent "Configure Roomy"
+    print_help_command "touchid" "    "
+    print_help_command "completion" "    "
+    print_help_command "update" "    "
+    print_help_command "remove" "    "
+    echo
+
+    print_help_intent "Reference"
+    print_help_command "help" "    "
+    print_help_command "version" "    "
+    echo
+
+    printf "%s%s%s\n" "$BLUE" "COMMON OPTIONS AND EXAMPLES" "$NC"
+    print_help_intent "Preview before changes"
+    print_help_row "roomy clean --dry-run" "Preview cleanup" "    "
+    print_help_row "roomy optimize --dry-run" "Preview optimization" "    "
+    print_help_row "roomy uninstall --dry-run" "Preview app uninstall" "    "
+    print_help_row "roomy purge --dry-run" "Preview project purge" "    "
+    print_help_row "roomy installer --dry-run" "Preview installer cleanup" "    "
+    echo
+
+    print_help_intent "Cleanup controls"
+    print_help_row "roomy clean --categories" "Run selected cleanup categories" "    "
+    print_help_row "roomy clean --max-delete-gb" "Limit automated cleanup size" "    "
+    print_help_row "roomy clean --whitelist" "Manage protected caches" "    "
+    print_help_row "roomy optimize --whitelist" "Manage protected items" "    "
+    print_help_row "roomy purge --paths" "Configure scan directories" "    "
+    echo
+
+    print_help_intent "Inspect and audit"
+    print_help_row "roomy analyze /Volumes" "Analyze external drives only" "    "
+    print_help_row "roomy analyze --duplicates" "Find duplicate files in JSON mode" "    "
+    print_help_row "roomy schedule status" "Show maintenance schedule" "    "
+    print_help_row "roomy report --last 30d" "Summarize recent cleanup history" "    "
+    print_help_row "roomy restore restore --dry-run --all" "Preview restore of all eligible Trash-backed items" "    "
+    echo
+
+    print_help_intent "Setup, update, and remove"
+    print_help_row "roomy touchid enable --dry-run" "Preview Touch ID setup" "    "
+    print_help_row "roomy completion --dry-run" "Preview shell completion edits" "    "
+    print_help_row "roomy update --dry-run" "Preview update source and target" "    "
+    print_help_row "roomy update --force" "Force reinstall latest stable version" "    "
+    print_help_row "roomy update --nightly" "Install latest unreleased main branch build" "    "
+    print_help_row "roomy remove --dry-run" "Preview Roomy removal" "    "
+    echo
+
+    printf "%s%s%s\n" "$BLUE" "GLOBAL OPTIONS" "$NC"
+    print_help_row "--debug" "Show detailed operation logs"
     echo
 }
 

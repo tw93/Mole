@@ -382,6 +382,20 @@
       color: var(--muted);
     }
 
+    .command-line {
+      display: block;
+      margin-top: 14px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f3f6f8;
+      color: #27313a;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
     .feature-card {
       min-height: 218px;
     }
@@ -467,6 +481,19 @@
       font-size: 14px;
       color: #d7fbe8;
       overflow-x: auto;
+    }
+
+    .command-box div + div {
+      margin-top: 8px;
+    }
+
+    .command-comment {
+      color: rgba(255, 255, 255, 0.58);
+    }
+
+    .cta-actions {
+      grid-column: 1 / -1;
+      margin-top: -8px;
     }
 
     .site-footer {
@@ -721,7 +748,7 @@
             </div>
             <div class="demo-point">
               <strong>Report closes the loop</strong>
-              <span>Users can review a cleanup journal and restore eligible Trash-backed actions.</span>
+              <span>Users can audit the cleanup journal with roomy report --last 30d and find recoverable Trash-backed items with roomy restore list.</span>
             </div>
           </div>
         </div>
@@ -732,24 +759,27 @@
       <div class="wrap">
         <div class="section-heading center">
           <p class="kicker">Built For Real Maintenance</p>
-          <h2>The cleanup workflow stays explainable.</h2>
-          <p>Roomy focuses on proof, recovery, and repeatable maintenance instead of vague speed claims. The result is a cleanup tool that can be reviewed before use and audited afterward.</p>
+          <h2>The safe path is visible in the CLI.</h2>
+          <p>Roomy focuses on proof, recovery, and repeatable maintenance instead of vague speed claims. The core loop is a preview command, an operation journal, and a restore center for eligible Trash-backed actions.</p>
         </div>
         <div class="feature-grid">
           <article class="card feature-card">
             <span class="feature-tag">Safety</span>
-            <h3>Every risky flow starts with a preview.</h3>
-            <p>Dry-run mode, path validation, protected-directory rules, and explicit confirmation make the product easier to defend than automatic deletion.</p>
+            <h3>Start with no deletion.</h3>
+            <p>The first real command is a dry run. It prints estimated space, protected skips, and risk limits before Roomy moves files.</p>
+            <code class="command-line">roomy clean --dry-run</code>
           </article>
           <article class="card feature-card">
-            <span class="feature-tag">Automation</span>
-            <h3>Made for repeatable maintenance.</h3>
-            <p>Profiles, scheduling, JSON output, and API contracts give Roomy a workflow moat for users who want more than a single GUI button.</p>
+            <span class="feature-tag">Audit</span>
+            <h3>Review what happened afterward.</h3>
+            <p>The operation journal summarizes sessions, actions, reclaimed space, and top paths so cleanup work remains inspectable.</p>
+            <code class="command-line">roomy report --last 30d</code>
           </article>
           <article class="card feature-card">
-            <span class="feature-tag">Mac Reality</span>
-            <h3>Targets clutter pros actually accumulate.</h3>
-            <p>Project artifacts, simulator data, package caches, installers, launch agents, and orphaned app data map to real Mac cleanup jobs.</p>
+            <span class="feature-tag">Recovery</span>
+            <h3>Find eligible restore targets.</h3>
+            <p>Trash-backed operations can be listed before recovery, keeping the escape path concrete instead of buried in documentation.</p>
+            <code class="command-line">roomy restore list</code>
           </article>
         </div>
       </div>
@@ -803,16 +833,20 @@
         <div>
           <p class="kicker">Start with the CLI release</p>
           <h2>Install Roomy and run a safe preview first.</h2>
-          <p>The production product today is the command-line tool. RoomyUI remains a preview, so the current release focuses on the CLI workflow, the release tap, dry-run safety, and auditable local maintenance.</p>
-          <div class="section-actions">
-            <a class="button primary" href="https://github.com/tw93/roomy">View on GitHub</a>
-            <a class="button secondary" href="https://github.com/tw93/roomy#readme">Read the docs</a>
-          </div>
+          <p>The production product today is the command-line tool. RoomyUI remains a preview, so the current release focuses on the CLI workflow, the release tap, dry-run safety, and auditable local maintenance. Start with a no-delete preview, then use the report and restore commands to verify the trail.</p>
         </div>
-        <div class="command-box" aria-label="Install commands">
+        <div class="command-box" aria-label="First safe Roomy commands">
           <div>$ brew tap tw93/tap</div>
           <div>$ brew install tw93/tap/roomy</div>
+          <div class="command-comment"># first safe command, no files moved</div>
           <div>$ roomy clean --dry-run</div>
+          <div class="command-comment"># audit and recovery checks</div>
+          <div>$ roomy report --last 30d</div>
+          <div>$ roomy restore list</div>
+        </div>
+        <div class="section-actions cta-actions">
+          <a class="button primary" href="https://github.com/tw93/roomy">View on GitHub</a>
+          <a class="button secondary" href="https://github.com/tw93/roomy#readme">Read the docs</a>
         </div>
       </div>
     </section>

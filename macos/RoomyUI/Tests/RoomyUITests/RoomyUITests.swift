@@ -443,9 +443,9 @@ final class RoomyUITests: XCTestCase {
     }
 
     @MainActor
-    func testCleanMyMacFlowPreviewsThenExecutesGuardedCleanup() async throws {
+    func testCleanupFlowPreviewsThenExecutesGuardedCleanup() async throws {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("roomy-clean-my-mac-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("roomy-cleanup-flow-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -472,8 +472,8 @@ final class RoomyUITests: XCTestCase {
         let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
         let model = RoomyViewModel(apiClient: client)
 
-        await model.prepareCleanMyMac()
-        await model.executeCleanMyMac()
+        await model.prepareCleanupFlow()
+        await model.executeCleanupFlow()
 
         let calls = try String(contentsOf: callsLog, encoding: .utf8)
             .split(separator: "\n")

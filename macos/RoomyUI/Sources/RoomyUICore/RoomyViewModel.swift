@@ -26,6 +26,7 @@ public final class RoomyViewModel: ObservableObject {
     @Published public var executionEvents: [ExecutionEvent] = []
     @Published public var executionState: PreviewExecutionState = .idle
     @Published public var isLoading = false
+    @Published public var loadingSections: Set<RoomySection> = []
     @Published public var errorMessage: String?
     @Published public var sectionErrors: [RoomySection: String] = [:]
     @Published public var cliPath: String
@@ -35,6 +36,7 @@ public final class RoomyViewModel: ObservableObject {
     public var apiClient: RoomyAPIClient
     public var privilegedHelperInstaller: RoomyPrivilegedHelperInstaller
     private var activeLoadingTaskCount = 0
+    private var activeLoadingTaskCountsBySection: [RoomySection: Int] = [:]
 
     public init(
         apiClient: RoomyAPIClient = RoomyAPIClient(),
@@ -78,9 +80,26 @@ public final class RoomyViewModel: ObservableObject {
         return actions.isEmpty ? ["Run a fresh system care scan"] : actions
     }
 
+    public var loadingSummary: String {
+        guard isLoading else { return "Idle" }
+        let names = RoomySection.allCases
+            .filter { loadingSections.contains($0) }
+            .map(\.rawValue)
+        if executionState == .running, let first = names.first {
+            return "Running \(first) command"
+        }
+        if names.count == 1, let first = names.first {
+            return "Loading \(first)"
+        }
+        if names.isEmpty {
+            return "Loading"
+        }
+        return "Loading \(names.count) sections"
+    }
+
     public func loadHome() async {
-        beginLoading()
-        defer { endLoading() }
+        beginLoading(section: .home)
+        defer { endLoading(section: .home) }
         errorMessage = nil
         sectionErrors[.home] = nil
 
@@ -96,7 +115,7 @@ public final class RoomyViewModel: ObservableObject {
         } else {
             sectionErrors[.home] = failures.joined(separator: "\n")
         }
-        loadOperationJournal(limit: 8)
+        loadOperationJournal(limit: 24)
     }
 
     public func loadStatus() async {
@@ -124,7 +143,7 @@ public final class RoomyViewModel: ObservableObject {
         }
     }
 
-    public func prepareCleanMyMac(section: RoomySection = .home) async {
+    public func prepareCleanupFlow(section: RoomySection = .home) async {
         await runLoadingTask(section: section) {
             executionEvents = []
             cleanupPreview = try await apiClient.cleanupPreview()
@@ -132,7 +151,7 @@ public final class RoomyViewModel: ObservableObject {
         }
     }
 
-    public func executeCleanMyMac(section: RoomySection = .home) async {
+    public func executeCleanupFlow(section: RoomySection = .home) async {
         await runLoadingTask(section: section) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true))
             defer { removeTemporaryPlan(planURL) }
@@ -390,8 +409,8 @@ public final class RoomyViewModel: ObservableObject {
     }
 
     private func runLoadingTask(section: RoomySection, _ operation: () async throws -> Void) async {
-        beginLoading()
-        defer { endLoading() }
+        beginLoading(section: section)
+        defer { endLoading(section: section) }
         errorMessage = nil
         sectionErrors[section] = nil
         let enteredWithCommandState = executionState.isCommandActive
@@ -418,13 +437,21 @@ public final class RoomyViewModel: ObservableObject {
         }
     }
 
-    private func beginLoading() {
+    private func beginLoading(section: RoomySection) {
         activeLoadingTaskCount += 1
+        activeLoadingTaskCountsBySection[section, default: 0] += 1
+        loadingSections = Set(activeLoadingTaskCountsBySection.keys)
         isLoading = true
     }
 
-    private func endLoading() {
+    private func endLoading(section: RoomySection) {
         activeLoadingTaskCount = max(0, activeLoadingTaskCount - 1)
+        if let count = activeLoadingTaskCountsBySection[section], count > 1 {
+            activeLoadingTaskCountsBySection[section] = count - 1
+        } else {
+            activeLoadingTaskCountsBySection[section] = nil
+        }
+        loadingSections = Set(activeLoadingTaskCountsBySection.keys)
         isLoading = activeLoadingTaskCount > 0
     }
 

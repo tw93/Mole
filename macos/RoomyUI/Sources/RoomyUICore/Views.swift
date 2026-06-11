@@ -52,13 +52,18 @@ public struct RoomyRootView: View {
             }
             Spacer()
             if model.isLoading {
-                ProgressView()
-                    .controlSize(.small)
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(model.loadingSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Button {
                 Task { await refreshSelectedSection() }
             } label: {
-                Label(model.isLoading ? "Working" : "Refresh", systemImage: "arrow.clockwise")
+                Label("Refresh", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.bordered)
             .disabled(model.isLoading)
@@ -88,7 +93,7 @@ public struct RoomyRootView: View {
     private var subtitle: String {
         switch model.selectedSection {
         case .home: "Free up disk space with previews, storage scans, and recoverable cleanup"
-        case .cleanup: "Preview first, then choose what to remove"
+        case .cleanup: "Preview cleanup, review the plan, then choose what moves to Trash"
         case .applications: "Installed apps and uninstall metadata"
         case .storage: "Disk overview, large files, and cleanable folders"
         case .performance: "Safe maintenance tasks and admin requirements"
@@ -128,7 +133,7 @@ private struct AppBackground: View {
 
 private struct HomeView: View {
     @ObservedObject var model: RoomyViewModel
-    @State private var showCleanMyMacConfirm = false
+    @State private var showCleanupConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -149,28 +154,75 @@ private struct HomeView: View {
                 )
                 MetricCard(
                     title: "Potential Cleanup",
-                    value: Formatters.bytes(model.cleanupPreview?.estimatedBytes ?? 0),
-                    detail: "\(model.cleanupPreview?.itemCount ?? 0) items",
+                    value: cleanupMetricValue,
+                    detail: cleanupMetricDetail,
                     tint: .green,
                     symbol: "sparkles"
                 )
             }
 
-            CleanMyMacPanel(
+            if model.fullDiskAccessStatus.state != .enabled && !model.permissionOnboardingDismissed {
+                PermissionOnboardingCard(model: model)
+            }
+
+            CleanupFlowPanel(
                 preview: model.cleanupPreview,
                 executionState: model.executionState,
                 isLoading: model.isLoading,
-                recentActivityCount: model.operationJournalEntries.count,
-                onClean: startCleanMyMac,
+                onPreview: startCleanupFlow,
                 onReview: {
                     model.selectedSection = .cleanup
                     Task { await model.loadCleanupPreview() }
                 }
             )
 
+            RecoveryReportPanel(
+                entries: model.operationJournalEntries,
+                logPath: model.logPath,
+                isLoading: model.isLoading,
+                onRefresh: {
+                    model.loadOperationJournal(limit: 24)
+                }
+            )
+
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
 
-            SectionBand(title: "Free Up Space", symbol: "externaldrive.badge.minus") {
+            SectionBand(title: "Recent Activity", symbol: "clock.arrow.circlepath") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Operation journal")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            model.loadOperationJournal()
+                        } label: {
+                            Label("Refresh Activity", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(model.isLoading)
+                    }
+
+                    if model.operationJournalEntries.isEmpty {
+                        EmptyStateView(
+                            title: "No activity loaded",
+                            detail: "Recent previews, cleanup runs, skipped paths, and Trash operations appear here.",
+                            symbol: "clock.arrow.circlepath"
+                        )
+                    } else {
+                        DataTable {
+                            ForEach(model.operationJournalEntries.prefix(8)) { entry in
+                                OperationJournalRow(entry: entry)
+                            }
+                            HiddenCountLine(
+                                total: model.operationJournalEntries.count,
+                                visibleLimit: 8,
+                                noun: "journal entries"
+                            )
+                        }
+                    }
+                }
+            }
+
+            SectionBand(title: "Secondary Cleanup Tools", symbol: "square.grid.2x2") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
                     Button {
                         Task {
@@ -237,50 +289,20 @@ private struct HomeView: View {
                     .disabled(model.isLoading)
                 }
             }
-
-            SectionBand(title: "Recent Activity", symbol: "clock.arrow.circlepath") {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("Operation journal")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            model.loadOperationJournal()
-                        } label: {
-                            Label("Refresh Activity", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(model.isLoading)
-                    }
-
-                    if model.operationJournalEntries.isEmpty {
-                        EmptyStateView(
-                            title: "No activity loaded",
-                            detail: "Recent previews, cleanup runs, skipped paths, and Trash operations appear here.",
-                            symbol: "clock.arrow.circlepath"
-                        )
-                    } else {
-                        DataTable {
-                            ForEach(model.operationJournalEntries.prefix(8)) { entry in
-                                OperationJournalRow(entry: entry)
-                            }
-                        }
-                    }
-                }
-            }
         }
-        .confirmationDialog("Clean recoverable files?", isPresented: $showCleanMyMacConfirm) {
+        .confirmationDialog("Move recoverable files to Trash?", isPresented: $showCleanupConfirm) {
             if !model.isLoading, model.cleanupPreview != nil {
                 Button("Move Recoverable Files to Trash", role: .destructive) {
                     guard !model.isLoading else { return }
-                    Task { await model.executeCleanMyMac() }
+                    Task { await model.executeCleanupFlow() }
                 }
             }
-            Button("Review Details") {
+            Button("Review Plan") {
                 model.selectedSection = .cleanup
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(cleanMyMacConfirmationMessage)
+            Text(cleanupConfirmationMessage)
         }
     }
 
@@ -298,21 +320,29 @@ private struct HomeView: View {
         return "\(Formatters.bytes(primaryDisk.used)) of \(Formatters.bytes(primaryDisk.total)) used"
     }
 
-    private var cleanMyMacConfirmationMessage: String {
-        let previewText: String
-        if let preview = model.cleanupPreview {
-            previewText = "\(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) recoverable items"
-        } else {
-            previewText = "recoverable cache, log, and rebuildable files"
-        }
-        return "Roomy previewed \(previewText). Protected and whitelisted paths stay skipped, and cleanup uses Trash where supported."
+    private var cleanupMetricValue: String {
+        guard let preview = model.cleanupPreview else { return "Not scanned" }
+        return Formatters.bytes(preview.estimatedBytes)
     }
 
-    private func startCleanMyMac() {
+    private var cleanupMetricDetail: String {
+        guard let preview = model.cleanupPreview else { return "Run cleanup preview" }
+        return "\(preview.itemCount) items"
+    }
+
+    private var cleanupConfirmationMessage: String {
+        cleanupConfirmationCopy(for: model.cleanupPreview)
+    }
+
+    private func startCleanupFlow() {
+        if model.cleanupPreview != nil, model.executionState == .previewReady {
+            showCleanupConfirm = true
+            return
+        }
         Task {
-            await model.prepareCleanMyMac()
+            await model.prepareCleanupFlow()
             if model.cleanupPreview != nil, model.error(for: .home) == nil {
-                showCleanMyMacConfirm = true
+                showCleanupConfirm = true
             }
         }
     }
@@ -320,7 +350,7 @@ private struct HomeView: View {
 
 private struct CleanupView: View {
     @ObservedObject var model: RoomyViewModel
-    @State private var showCleanMyMacConfirm = false
+    @State private var showCleanupConfirm = false
     @State private var externalPath = "/Volumes/"
     @State private var previewedExternalPath = ""
     @State private var showExternalConfirm = false
@@ -330,33 +360,32 @@ private struct CleanupView: View {
             HStack(spacing: 14) {
                 MetricCard(
                     title: "Previewed Space",
-                    value: Formatters.bytes(model.cleanupPreview?.estimatedBytes ?? 0),
-                    detail: "\(model.cleanupPreview?.itemCount ?? 0) items",
+                    value: cleanupMetricValue,
+                    detail: cleanupMetricDetail,
                     tint: .green,
                     symbol: "sparkles"
                 )
                 MetricCard(
                     title: "Protected",
-                    value: "\(model.cleanupPreview?.protectedCount ?? 0)",
-                    detail: "\(model.cleanupPreview?.whitelistCount ?? 0) whitelist skips",
+                    value: protectedMetricValue,
+                    detail: protectedMetricDetail,
                     tint: .blue,
                     symbol: "shield"
                 )
                 MetricCard(
                     title: "Admin",
-                    value: model.cleanupPreview?.adminRequired == true ? "Needed" : "Not needed",
-                    detail: "Revalidated by CLI",
+                    value: adminMetricValue,
+                    detail: adminMetricDetail,
                     tint: model.cleanupPreview?.adminRequired == true ? .orange : .green,
                     symbol: "lock"
                 )
             }
 
-            CleanMyMacPanel(
+            CleanupFlowPanel(
                 preview: model.cleanupPreview,
                 executionState: model.executionState,
                 isLoading: model.isLoading,
-                recentActivityCount: model.operationJournalEntries.count,
-                onClean: startCleanMyMac,
+                onPreview: startCleanupFlow,
                 onReview: {
                     Task { await model.loadCleanupPreview() }
                 }
@@ -431,11 +460,11 @@ private struct CleanupView: View {
 
             ExecutionEventsView(events: model.executionEvents, state: model.executionState)
         }
-        .confirmationDialog("Clean recoverable files?", isPresented: $showCleanMyMacConfirm) {
+        .confirmationDialog("Move recoverable files to Trash?", isPresented: $showCleanupConfirm) {
             if !model.isLoading, model.cleanupPreview != nil {
                 Button("Move Recoverable Files to Trash", role: .destructive) {
                     guard !model.isLoading else { return }
-                    Task { await model.executeCleanMyMac(section: .cleanup) }
+                    Task { await model.executeCleanupFlow(section: .cleanup) }
                 }
             }
             Button("Refresh Preview") {
@@ -443,7 +472,7 @@ private struct CleanupView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(cleanMyMacConfirmationMessage)
+            Text(cleanupConfirmationMessage)
         }
         .confirmationDialog("Clean selected external volume?", isPresented: $showExternalConfirm) {
             if !model.isLoading, !previewedExternalPath.isEmpty {
@@ -462,25 +491,63 @@ private struct CleanupView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Roomy will revalidate that this is a mounted external volume before removing Mac metadata files.")
+            Text(externalCleanupConfirmationMessage)
         }
     }
 
-    private var cleanMyMacConfirmationMessage: String {
-        let previewText: String
-        if let preview = model.cleanupPreview {
-            previewText = "\(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) recoverable items"
+    private var cleanupConfirmationMessage: String {
+        cleanupConfirmationCopy(for: model.cleanupPreview)
+    }
+
+    private var externalCleanupConfirmationMessage: String {
+        let scope: String
+        if let preview = model.externalCleanupPreview {
+            scope = "\(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) metadata items in \(preview.categories.count) categories"
         } else {
-            previewText = "recoverable cache, log, and rebuildable files"
+            scope = "previewed macOS metadata on the selected mounted volume"
         }
-        return "Roomy previewed \(previewText). Protected and whitelisted paths stay skipped, and cleanup uses Trash where supported."
+        let path = previewedExternalPath.isEmpty ? externalPath : previewedExternalPath
+        return "Scope: \(scope) under \(path). Admin: requested so the CLI can inspect volume metadata and then revalidate the mount. Recovery: Trash is used where supported by the volume. Audit: execution events and skipped paths are written to the operation journal."
     }
 
-    private func startCleanMyMac() {
+    private var cleanupMetricValue: String {
+        guard let preview = model.cleanupPreview else { return "Not scanned" }
+        return Formatters.bytes(preview.estimatedBytes)
+    }
+
+    private var cleanupMetricDetail: String {
+        guard let preview = model.cleanupPreview else { return "Run cleanup preview" }
+        return "\(preview.itemCount) items"
+    }
+
+    private var protectedMetricValue: String {
+        guard let preview = model.cleanupPreview else { return "Unknown" }
+        return "\(preview.protectedCount)"
+    }
+
+    private var protectedMetricDetail: String {
+        guard let preview = model.cleanupPreview else { return "Preview checks skips" }
+        return "\(preview.whitelistCount) whitelist skips"
+    }
+
+    private var adminMetricValue: String {
+        guard let preview = model.cleanupPreview else { return "Unknown" }
+        return preview.adminRequired ? "Needed" : "Not needed"
+    }
+
+    private var adminMetricDetail: String {
+        model.cleanupPreview == nil ? "Preview checks admin" : "Revalidated by CLI"
+    }
+
+    private func startCleanupFlow() {
+        if model.cleanupPreview != nil, model.executionState == .previewReady {
+            showCleanupConfirm = true
+            return
+        }
         Task {
-            await model.prepareCleanMyMac(section: .cleanup)
+            await model.prepareCleanupFlow(section: .cleanup)
             if model.cleanupPreview != nil, model.error(for: .cleanup) == nil {
-                showCleanMyMacConfirm = true
+                showCleanupConfirm = true
             }
         }
     }
@@ -635,7 +702,16 @@ private struct ApplicationsView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(uninstallConfirmationMessage)
         }
+    }
+
+    private var uninstallConfirmationMessage: String {
+        guard let selectedApp else {
+            return "Scope: the selected application only. Admin: requested for protected app locations. Recovery: files are routed to Trash where supported. Audit: the uninstall run is recorded in the operation journal."
+        }
+        return "Scope: \(selectedApp.name) at \(selectedApp.path), using uninstall target \(selectedApp.uninstallName). Admin: requested so the CLI can revalidate protected app and support-file locations. Recovery: removable files route to Trash where supported, but app-specific uninstall scripts may not be fully restorable. Audit: preview and uninstall events are recorded in the operation journal."
     }
 }
 
@@ -779,6 +855,7 @@ private struct StorageView: View {
                             }
                             .padding(.vertical, 7)
                         }
+                        HiddenCountLine(total: scan.entries.count, visibleLimit: 18, noun: "entries")
                     }
                 } else {
                     EmptyStateView(
@@ -855,6 +932,7 @@ private struct StorageView: View {
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
                         }
+                        HiddenCountLine(total: scan.largeFiles.count, visibleLimit: 18, noun: "large files")
                     }
                 } else {
                     EmptyStateView(
@@ -921,6 +999,7 @@ private struct StorageView: View {
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
                         }
+                        HiddenCountLine(total: preview.items.count, visibleLimit: 18, noun: "artifacts")
                     }
                 } else {
                     EmptyStateView(
@@ -987,6 +1066,7 @@ private struct StorageView: View {
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
                         }
+                        HiddenCountLine(total: preview.items.count, visibleLimit: 18, noun: "installer files")
                     }
                 } else {
                     EmptyStateView(
@@ -1177,8 +1257,27 @@ private struct PerformanceView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(optimizeConfirmationMessage)
         }
     }
+
+    private var optimizeConfirmationMessage: String {
+        guard let preview = model.optimizePreview else {
+            return "Scope: previewed maintenance tasks only. Admin: requested for system-level maintenance. Recovery: optimization changes may not be Trash-restorable. Audit: every task emits execution events."
+        }
+        let categories = Set(preview.optimizations.map(\.category.capitalized)).sorted().joined(separator: ", ")
+        let categoryText = categories.isEmpty ? "maintenance" : categories
+        return "Scope: \(preview.optimizations.count) previewed tasks across \(categoryText). Admin: requested because maintenance may touch protected services or caches. Recovery: these are optimization actions, so they may not be restorable from Trash. Audit: each task is streamed to the execution log and operation journal."
+    }
+}
+
+private func cleanupConfirmationCopy(for preview: CleanupPreview?) -> String {
+    guard let preview else {
+        return "Scope: recoverable cache, log, and rebuildable files from the latest preview. Admin: checked during preview. Recovery: eligible files move to Trash where supported. Audit: execution events and skipped paths are written to the operation journal."
+    }
+    let admin = preview.adminRequired ? "needed for at least one previewed category" : "not needed by the preview"
+    return "Scope: \(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) recoverable items in \(preview.categoryCount) categories. Admin: \(admin). Recovery: eligible files move to Trash where supported; \(preview.protectedCount) protected and \(preview.whitelistCount) whitelisted paths stay skipped. Audit: execution events and skipped paths are written to the operation journal."
 }
 
 private struct MonitorView: View {
@@ -1215,6 +1314,7 @@ private struct MonitorView: View {
                             symbol: "network"
                         )
                     }
+                    HiddenCountLine(total: model.status?.network.count ?? 0, visibleLimit: 4, noun: "network interfaces")
                     ForEach((model.status?.bluetooth ?? []).prefix(6)) { device in
                         InfoLine(
                             title: device.name,
@@ -1222,6 +1322,7 @@ private struct MonitorView: View {
                             symbol: "dot.radiowaves.left.and.right"
                         )
                     }
+                    HiddenCountLine(total: model.status?.bluetooth.count ?? 0, visibleLimit: 6, noun: "Bluetooth devices")
                 }
             }
 
@@ -1240,6 +1341,7 @@ private struct MonitorView: View {
                             }
                             .padding(.vertical, 7)
                         }
+                        HiddenCountLine(total: status.topProcesses.count, visibleLimit: 12, noun: "processes")
                     }
                 } else {
                     EmptyStateView(
@@ -1421,8 +1523,8 @@ private struct SettingsView: View {
             SectionBand(title: "Safety Defaults", symbol: "shield.lefthalf.filled") {
                 VStack(alignment: .leading, spacing: 10) {
                     SettingsRow(title: "Destructive flows", value: "Preview before execute")
-                    SettingsRow(title: "Delete mode", value: model.cleanupPreview?.deleteMode ?? "trash")
-                    SettingsRow(title: "Whitelist skips", value: "\(model.cleanupPreview?.whitelistCount ?? 0)")
+                    SettingsRow(title: "Delete mode", value: cleanupDeleteModeValue)
+                    SettingsRow(title: "Whitelist skips", value: cleanupWhitelistValue)
                     SettingsRow(title: "Config", value: model.configPath)
                     SettingsRow(title: "Logs", value: model.logPath)
                     SettingsRow(title: "Privileged helper", value: privilegedHelperValue)
@@ -1713,6 +1815,7 @@ private struct SettingsView: View {
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
                         }
+                        HiddenCountLine(total: whitelistItems.count, visibleLimit: 28, noun: "protection rules")
                     }
                 }
             }
@@ -1930,6 +2033,15 @@ private struct SettingsView: View {
         }
     }
 
+    private var cleanupDeleteModeValue: String {
+        model.cleanupPreview?.deleteMode ?? "Preview not loaded"
+    }
+
+    private var cleanupWhitelistValue: String {
+        guard let preview = model.cleanupPreview else { return "Preview not loaded" }
+        return "\(preview.whitelistCount)"
+    }
+
     private func syncSelectionsFromModel() {
         selectedCleanPatterns = Set((model.cleanWhitelist?.items ?? []).filter(\.selected).map(\.pattern))
         selectedOptimizePatterns = Set((model.optimizeWhitelist?.items ?? []).filter(\.selected).map(\.pattern))
@@ -2005,27 +2117,27 @@ private struct HealthScoreCard: View {
     }
 }
 
-private struct CleanMyMacPanel: View {
+private struct CleanupFlowPanel: View {
     var preview: CleanupPreview?
     var executionState: PreviewExecutionState
     var isLoading: Bool
-    var recentActivityCount: Int
-    var onClean: () -> Void
+    var onPreview: () -> Void
     var onReview: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Clean My Mac", systemImage: "sparkles")
+                    Label("Cleanup Plan", systemImage: "sparkles")
                         .font(.title3.weight(.semibold))
                     Text(summary)
                         .font(.system(.body, design: .rounded))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 8) {
-                        SafetyPill(text: "Preview first", symbol: "doc.text.magnifyingglass")
-                        SafetyPill(text: "Trash where supported", symbol: "trash")
+                        SafetyPill(text: "Preview cleanup", symbol: "doc.text.magnifyingglass")
+                        SafetyPill(text: "Review plan", symbol: "list.bullet.rectangle")
+                        SafetyPill(text: "Trash-backed", symbol: "trash")
                         SafetyPill(text: "Protected paths skipped", symbol: "checkmark.shield")
                     }
                 }
@@ -2033,7 +2145,7 @@ private struct CleanMyMacPanel: View {
                 Spacer(minLength: 16)
 
                 VStack(alignment: .trailing, spacing: 10) {
-                    Button(action: onClean) {
+                    Button(action: onPreview) {
                         Label(primaryButtonTitle, systemImage: primaryButtonSymbol)
                             .frame(minWidth: 154)
                     }
@@ -2042,7 +2154,7 @@ private struct CleanMyMacPanel: View {
                     .disabled(isLoading || executionState == .running)
 
                     Button(action: onReview) {
-                        Label("Review Details", systemImage: "list.bullet.rectangle")
+                        Label("Review Plan", systemImage: "list.bullet.rectangle")
                     }
                     .buttonStyle(.borderless)
                     .disabled(isLoading)
@@ -2059,14 +2171,14 @@ private struct CleanMyMacPanel: View {
         case .completed:
             return "Cleanup finished. Recent activity shows what was moved, skipped, or left alone."
         case .running:
-            return "Cleanup is running through the guarded plan."
+            return "Roomy is moving approved recoverable files to Trash."
         case .failed(let message):
             return message
         default:
             if let preview {
-                return "\(Formatters.bytes(preview.estimatedBytes)) ready to recover across \(preview.itemCount) items."
+                return "\(Formatters.bytes(preview.estimatedBytes)) is ready for review across \(preview.itemCount) recoverable items."
             }
-            return "Run a guarded preview, then move recoverable cache, log, and rebuildable files to Trash."
+            return "Preview recoverable cache, log, and rebuildable files, review the plan, then move approved items to Trash."
         }
     }
 
@@ -2074,11 +2186,13 @@ private struct CleanMyMacPanel: View {
         if isLoading { return "Checking" }
         switch executionState {
         case .running:
-            return "Running"
+            return "Moving"
         case .completed:
-            return "Clean Again"
+            return "Preview Again"
+        case .previewReady:
+            return "Move to Trash"
         default:
-            return "Clean My Mac"
+            return "Preview Cleanup"
         }
     }
 
@@ -2088,32 +2202,58 @@ private struct CleanMyMacPanel: View {
             return "hourglass"
         case .completed:
             return "arrow.clockwise"
+        case .previewReady:
+            return "trash"
         default:
-            return "wand.and.stars"
+            return "doc.text.magnifyingglass"
         }
     }
 
     private var progressSteps: [ProgressRail.Step] {
         [
             ProgressRail.Step(
-                title: "Preview",
+                title: "Preview Cleanup",
                 value: preview == nil ? "Needed" : Formatters.bytes(preview?.estimatedBytes ?? 0),
                 symbol: "doc.text.magnifyingglass",
                 state: preview == nil ? .waiting : .complete
             ),
             ProgressRail.Step(
-                title: "Plan",
+                title: "Review Plan",
                 value: preview == nil ? "Not ready" : "\(preview?.itemCount ?? 0) items",
-                symbol: "checklist",
-                state: executionState == .previewReady || executionState == .running || executionState == .completed ? .complete : .waiting
+                symbol: "list.bullet.rectangle",
+                state: preview == nil ? .waiting : .complete
             ),
             ProgressRail.Step(
-                title: "Activity",
-                value: recentActivityCount == 0 ? "No entries" : "\(recentActivityCount) recent",
-                symbol: "clock.arrow.circlepath",
-                state: executionState == .running ? .active : (recentActivityCount == 0 ? .waiting : .complete)
+                title: "Move to Trash",
+                value: trashStepValue,
+                symbol: "trash",
+                state: trashStepState
             )
         ]
+    }
+
+    private var trashStepValue: String {
+        switch executionState {
+        case .running:
+            return "Running"
+        case .completed:
+            return "Done"
+        case .previewReady:
+            return "Confirm"
+        default:
+            return "After review"
+        }
+    }
+
+    private var trashStepState: ProgressRail.StepState {
+        switch executionState {
+        case .running:
+            return .active
+        case .completed:
+            return .complete
+        default:
+            return .waiting
+        }
     }
 }
 
@@ -2279,6 +2419,35 @@ private struct DataTable<Content: View>: View {
     }
 }
 
+private struct HiddenCountLine: View {
+    var total: Int
+    var visibleLimit: Int
+    var noun: String
+
+    private var hiddenCount: Int {
+        max(0, total - visibleLimit)
+    }
+
+    private var visibleCount: Int {
+        min(total, visibleLimit)
+    }
+
+    var body: some View {
+        if hiddenCount > 0 {
+            HStack(spacing: 8) {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+                Text("Showing \(visibleCount) of \(total); \(hiddenCount) more \(noun) hidden")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 7)
+        }
+    }
+}
+
 private struct CleanupCategoryRow: View {
     var item: CleanupCategory
 
@@ -2333,6 +2502,87 @@ private struct ActionRow: View {
         }
         .padding(12)
         .background(LiquidGlassSurface(cornerRadius: 8))
+    }
+}
+
+private struct RecoveryReportPanel: View {
+    var entries: [OperationJournalEntry]
+    var logPath: String
+    var isLoading: Bool
+    var onRefresh: () -> Void
+
+    var body: some View {
+        SectionBand(title: "Recovery & Reports", symbol: "arrow.uturn.backward.circle") {
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 12)], spacing: 12) {
+                    IntegrationStatusCard(
+                        title: "Restore",
+                        value: recoveryValue,
+                        detail: "roomy restore list checks which Trash-backed items are still resolvable.",
+                        symbol: "arrow.uturn.backward.circle",
+                        tint: trashedCount > 0 ? .green : .blue
+                    )
+                    IntegrationStatusCard(
+                        title: "Report",
+                        value: reportValue,
+                        detail: "roomy report --last 30d summarizes sessions, actions, and top paths.",
+                        symbol: "chart.bar.xaxis",
+                        tint: .blue
+                    )
+                    IntegrationStatusCard(
+                        title: "Audit Trail",
+                        value: "\(entries.count) loaded",
+                        detail: logPath,
+                        symbol: "doc.text.magnifyingglass",
+                        tint: failedCount > 0 ? .orange : .green
+                    )
+                }
+
+                HStack {
+                    if let latestEntry = entries.first {
+                        Text("Latest: \(latestEntry.title)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text("No journal entries loaded")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(action: onRefresh) {
+                        Label("Refresh Journal", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(isLoading)
+                }
+            }
+        }
+    }
+
+    private var trashedCount: Int {
+        entries.filter { $0.action == "TRASHED" }.count
+    }
+
+    private var sessionCount: Int {
+        entries.filter { $0.recordType == "session" && $0.action == "ENDED" }.count
+    }
+
+    private var failedCount: Int {
+        entries.filter { $0.event == "failed" || $0.action == "FAILED" }.count
+    }
+
+    private var recoveryValue: String {
+        if trashedCount == 0 {
+            return "No recent items"
+        }
+        return "\(trashedCount) recent"
+    }
+
+    private var reportValue: String {
+        if sessionCount == 0 {
+            return "Ready"
+        }
+        return "\(sessionCount) sessions"
     }
 }
 
