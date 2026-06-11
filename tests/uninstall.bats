@@ -41,11 +41,14 @@ create_app_artifacts() {
 	mkdir -p "$HOME/Library/Containers/com.example.TestApp"
 	mkdir -p "$HOME/Library/Preferences"
 	touch "$HOME/Library/Preferences/com.example.TestApp.plist"
+	touch "$HOME/Library/Preferences/TestApp.plist"
 	mkdir -p "$HOME/Library/Preferences/ByHost"
 	touch "$HOME/Library/Preferences/ByHost/com.example.TestApp.ABC123.plist"
 	mkdir -p "$HOME/Library/Saved Application State/com.example.TestApp.savedState"
+	mkdir -p "$HOME/Library/Saved Application State/TestApp.savedState"
 	mkdir -p "$HOME/Library/LaunchAgents"
 	touch "$HOME/Library/LaunchAgents/com.example.TestApp.plist"
+	mkdir -p "$HOME/.cache/testapp"
 }
 
 @test "find_app_files discovers user-level leftovers" {
@@ -62,9 +65,12 @@ EOF
 	[[ "$result" == *"Application Support/TestApp"* ]]
 	[[ "$result" == *"Caches/TestApp"* ]]
 	[[ "$result" == *"Preferences/com.example.TestApp.plist"* ]]
+	[[ "$result" == *"Preferences/TestApp.plist"* ]]
 	[[ "$result" == *"Saved Application State/com.example.TestApp.savedState"* ]]
+	[[ "$result" == *"Saved Application State/TestApp.savedState"* ]]
 	[[ "$result" == *"Containers/com.example.TestApp"* ]]
 	[[ "$result" == *"LaunchAgents/com.example.TestApp.plist"* ]]
+	[[ "$result" == *".cache/testapp"* ]]
 }
 
 @test "find_app_system_files discovers bundle-id-prefixed LaunchDaemons" {

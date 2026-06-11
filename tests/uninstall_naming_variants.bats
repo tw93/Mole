@@ -88,20 +88,28 @@ setup() {
 
 @test "find_app_files detects multiple naming variants simultaneously" {
     mkdir -p "$HOME/.config/maestro-studio"
+    mkdir -p "$HOME/.cache/maestro-studio"
     mkdir -p "$HOME/Library/Application Support/MaestroStudio"
     mkdir -p "$HOME/Library/Application Support/Maestro-Studio"
+    mkdir -p "$HOME/Library/Preferences"
+    mkdir -p "$HOME/Library/Saved Application State/MaestroStudio.savedState"
     mkdir -p "$HOME/.local/share/maestrostudio"
 
     echo "test" > "$HOME/.config/maestro-studio/config.json"
+    echo "test" > "$HOME/.cache/maestro-studio/cache.db"
     echo "test" > "$HOME/Library/Application Support/MaestroStudio/data.db"
     echo "test" > "$HOME/Library/Application Support/Maestro-Studio/prefs.json"
+    echo "test" > "$HOME/Library/Preferences/Maestro-Studio.plist"
     echo "test" > "$HOME/.local/share/maestrostudio/cache.db"
 
     result=$(find_app_files "com.maestro.studio" "Maestro Studio")
 
     [[ "$result" =~ .config/maestro-studio ]]
+    [[ "$result" =~ .cache/maestro-studio ]]
     [[ "$result" =~ "Library/Application Support/MaestroStudio" ]]
     [[ "$result" =~ "Library/Application Support/Maestro-Studio" ]]
+    [[ "$result" =~ "Library/Preferences/Maestro-Studio.plist" ]]
+    [[ "$result" =~ "Library/Saved Application State/MaestroStudio.savedState" ]]
     [[ "$result" =~ .local/share/maestrostudio ]]
 }
 
@@ -146,10 +154,17 @@ setup() {
 
 @test "find_app_files does not match empty app name" {
     mkdir -p "$HOME/Library/Application Support/test"
+    mkdir -p "$HOME/Library/Preferences"
+    mkdir -p "$HOME/.config" "$HOME/.cache" "$HOME/.local/share"
 
     result=$(find_app_files "com.test" "" 2> /dev/null || true)
 
     [[ ! "$result" =~ "Library/Application Support"$ ]]
+    [[ ! "$result" =~ "Library/Preferences"$ ]]
+    [[ ! "$result" =~ "$HOME/."$ ]]
+    [[ ! "$result" =~ ".config"$ ]]
+    [[ ! "$result" =~ ".cache"$ ]]
+    [[ ! "$result" =~ ".local/share"$ ]]
 }
 
 @test "find_app_files detects VS Code stable Application Support folder (#850)" {
