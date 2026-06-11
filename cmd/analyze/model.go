@@ -4,6 +4,7 @@ package main
 
 import (
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -120,6 +121,19 @@ type model struct {
 	lastTotalFiles      int64           // Total files from previous scan (for progress bar)
 	diskFree            int64           // Free disk space for the analyzed volume
 	viewNeedsRefresh    bool
+	// Top-files (T) view incremental filter. largeFilesAll is the full,
+	// size-ranked list; largeFiles is the view actually rendered and acted on,
+	// which equals largeFilesAll when no filter is set and the matching subset
+	// otherwise. largeFiltering is true only while the user is typing a query.
+	largeFilesAll  []fileEntry
+	largeFilter    string
+	largeFiltering bool
+	// Directory (drill-down) view incremental filter, mirroring the Top-files
+	// one. entriesAll is the full non-empty entry list; entries is the rendered,
+	// possibly filtered view. Disabled in overview mode.
+	entriesAll     []dirEntry
+	entryFilter    string
+	entryFiltering bool
 }
 
 func (m model) inOverviewMode() bool {
@@ -220,22 +234,21 @@ func (m *model) removePathFromView(path string) {
 	}
 
 	var removedSize int64
-	for i, entry := range m.entries {
+	for _, entry := range m.entriesAll {
 		if entry.Path == path {
 			if entry.Size > 0 {
 				removedSize = entry.Size
 			}
-			m.entries = append(m.entries[:i], m.entries[i+1:]...)
 			break
 		}
 	}
 
-	for i := 0; i < len(m.largeFiles); i++ {
-		if m.largeFiles[i].Path == path {
-			m.largeFiles = append(m.largeFiles[:i], m.largeFiles[i+1:]...)
-			break
-		}
-	}
+	// Trim the backing lists once, then rebuild each view from them. Removing
+	// directly from both a backing list and its (possibly aliased) view would
+	// shift the shared array twice and corrupt it; rebuilding via the filters
+	// keeps the view, the query, and the selection consistent.
+	m.entriesAll = removeByPath(m.entriesAll, path, dirEntryPath)
+	m.largeFilesAll = removeByPath(m.largeFilesAll, path, fileEntryPath)
 
 	if removedSize > 0 {
 		if removedSize > m.totalSize {
@@ -243,7 +256,90 @@ func (m *model) removePathFromView(path string) {
 		} else {
 			m.totalSize -= removedSize
 		}
-		m.clampEntrySelection()
 	}
+
+	m.applyEntryFilter()
+	m.applyLargeFilter()
+}
+
+func fileEntryName(f fileEntry) string { return f.Name }
+func fileEntryPath(f fileEntry) string { return f.Path }
+func dirEntryName(e dirEntry) string   { return e.Name }
+func dirEntryPath(e dirEntry) string   { return e.Path }
+
+// filterMatches reports whether an item with the given name and path matches a
+// case-insensitive substring query. Single source of truth for both the
+// Top-files and directory filters so their match semantics cannot drift.
+func filterMatches(name, path, query string) bool {
+	needle := strings.ToLower(query)
+	return strings.Contains(strings.ToLower(name), needle) ||
+		strings.Contains(strings.ToLower(displayPath(path)), needle)
+}
+
+// filterByQuery returns the items matching query, or the original slice
+// unchanged when the query is empty. nameOf/pathOf project the fields matched.
+func filterByQuery[T any](all []T, query string, nameOf, pathOf func(T) string) []T {
+	if query == "" {
+		return all
+	}
+	out := make([]T, 0, len(all))
+	for _, item := range all {
+		if filterMatches(nameOf(item), pathOf(item), query) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// removeByPath drops the first item whose projected path equals path.
+func removeByPath[T any](items []T, path string, pathOf func(T) string) []T {
+	for i := range items {
+		if pathOf(items[i]) == path {
+			return append(items[:i], items[i+1:]...)
+		}
+	}
+	return items
+}
+
+// visibleLargeFiles is the active Top-files slice: the filtered subset when a
+// query is set, otherwise the full list. largeFiles already holds the view, so
+// this is just an explicit accessor for call sites that want to be unambiguous.
+func (m model) visibleLargeFiles() []fileEntry {
+	return m.largeFiles
+}
+
+// applyLargeFilter rebuilds the rendered Top-files view from largeFilesAll
+// using the current query. An empty query restores the full list.
+func (m *model) applyLargeFilter() {
+	m.largeFiles = filterByQuery(m.largeFilesAll, m.largeFilter, fileEntryName, fileEntryPath)
 	m.clampLargeSelection()
+}
+
+// resetLargeFilter clears any active Top-files filter and restores the full
+// list. Callers that leave the Top-files view use this so the next visit and
+// the per-path navigation state start clean.
+func (m *model) resetLargeFilter() {
+	m.largeFilter = ""
+	m.largeFiltering = false
+	if m.largeFilesAll != nil {
+		m.largeFiles = m.largeFilesAll
+	}
+}
+
+// applyEntryFilter rebuilds the rendered directory view from entriesAll using
+// the current query. The directory view is the drill-down list (m.entries) in
+// non-overview mode.
+func (m *model) applyEntryFilter() {
+	m.entries = filterByQuery(m.entriesAll, m.entryFilter, dirEntryName, dirEntryPath)
+	m.clampEntrySelection()
+}
+
+// resetEntryFilter clears any active directory filter and restores the full
+// entry list.
+func (m *model) resetEntryFilter() {
+	m.entryFilter = ""
+	m.entryFiltering = false
+	if m.entriesAll != nil {
+		m.entries = m.entriesAll
+	}
 }

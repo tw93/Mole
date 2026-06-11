@@ -106,8 +106,21 @@ func (m model) View() string {
 	}
 
 	if m.showLargeFiles {
+		if m.largeFiltering || m.largeFilter != "" {
+			cursor := ""
+			if m.largeFiltering {
+				cursor = "▌"
+			}
+			fmt.Fprintf(&b, "  %sFilter:%s %s%s  %s(%d matches)%s\n\n",
+				colorCyan, colorReset, m.largeFilter, cursor,
+				colorGray, len(m.largeFiles), colorReset)
+		}
 		if len(m.largeFiles) == 0 {
-			fmt.Fprintln(&b, "  No large files found")
+			if m.largeFilter != "" {
+				fmt.Fprintf(&b, "  No matches for %q\n", m.largeFilter)
+			} else {
+				fmt.Fprintln(&b, "  No large files found")
+			}
 		} else {
 			viewport := calculateViewport(m.height, true)
 			start := max(m.largeOffset, 0)
@@ -146,8 +159,21 @@ func (m model) View() string {
 			}
 		}
 	} else {
+		if !m.inOverviewMode() && (m.entryFiltering || m.entryFilter != "") {
+			cursor := ""
+			if m.entryFiltering {
+				cursor = "▌"
+			}
+			fmt.Fprintf(&b, "  %sFilter:%s %s%s  %s(%d matches)%s\n\n",
+				colorCyan, colorReset, m.entryFilter, cursor,
+				colorGray, len(m.entries), colorReset)
+		}
 		if len(m.entries) == 0 {
-			fmt.Fprintln(&b, "  Empty directory")
+			if !m.inOverviewMode() && m.entryFilter != "" {
+				fmt.Fprintf(&b, "  No matches for %q\n", m.entryFilter)
+			} else {
+				fmt.Fprintln(&b, "  Empty directory")
+			}
 		} else {
 			if m.inOverviewMode() {
 				maxSize := maxDirEntrySize(m.entries)
@@ -295,26 +321,36 @@ func (m model) View() string {
 			fmt.Fprintf(&b, "%s↑↓→ | Enter | R Refresh | O Open | P Preview | F File | Esc/Q Quit%s\n", colorGray, colorReset)
 		}
 	} else if m.showLargeFiles {
-		selectCount := len(m.largeMultiSelected)
-		if selectCount > 0 {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+		if m.largeFiltering {
+			fmt.Fprintf(&b, "%sType to filter  |  Enter Apply  |  Esc Clear  |  Ctrl+C Quit%s\n", colorGray, colorReset)
+		} else if m.largeFilter != "" {
+			fmt.Fprintf(&b, "%s↑↓← | Space Select | / Edit | Esc Clear filter | O Open | P Preview | F File | ⌫ Del | Q Quit%s\n", colorGray, colorReset)
 		} else {
-			fmt.Fprintf(&b, "%s↑↓← | Space Select | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			selectCount := len(m.largeMultiSelected)
+			if selectCount > 0 {
+				fmt.Fprintf(&b, "%s↑↓← | Space Select | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+			} else {
+				fmt.Fprintf(&b, "%s↑↓← | Space Select | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+			}
 		}
+	} else if m.entryFiltering {
+		fmt.Fprintf(&b, "%sType to filter  |  Enter Apply  |  Esc Clear  |  Ctrl+C Quit%s\n", colorGray, colorReset)
+	} else if m.entryFilter != "" {
+		fmt.Fprintf(&b, "%s↑↓←→ | Enter | Space Select | / Edit | Esc Clear filter | O Open | P Preview | F File | ⌫ Del | Q Quit%s\n", colorGray, colorReset)
 	} else {
 		largeFileCount := len(m.largeFiles)
 		selectCount := len(m.multiSelected)
 		if selectCount > 0 {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, largeFileCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, selectCount, colorReset)
 			}
 		} else {
 			if largeFileCount > 0 {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, largeFileCount, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del | T Top %d | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, largeFileCount, colorReset)
 			} else {
-				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
+				fmt.Fprintf(&b, "%s↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | ⌫ Del | Esc Back | Q/Ctrl+C Quit%s\n", colorGray, colorReset)
 			}
 		}
 	}

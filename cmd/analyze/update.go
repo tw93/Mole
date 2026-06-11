@@ -214,13 +214,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		filteredEntries := filterNonEmptyEntries(msg.result.Entries)
 		result := msg.result
 		result.Entries = filteredEntries
+		m.entriesAll = filteredEntries
 		m.entries = filteredEntries
+		m.largeFilesAll = msg.result.LargeFiles
 		m.largeFiles = msg.result.LargeFiles
 		m.totalSize = msg.result.TotalSize
 		m.totalFiles = msg.result.TotalFiles
 		m.viewNeedsRefresh = msg.stale
-		m.clampEntrySelection()
-		m.clampLargeSelection()
+		// Re-narrow to the active query if a background refresh landed while a
+		// filter is showing; each is a no-op (restores the full list) when its
+		// query is empty.
+		m.applyEntryFilter()
+		m.applyLargeFilter()
 		m.cache[m.path] = historyEntryFromScanResult(m.path, result, m.cache[m.path], msg.stale)
 		if m.totalSize > 0 {
 			if m.overviewSizeCache == nil {
@@ -363,12 +368,32 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Filter prompts swallow all keys while the user types a query.
+	if m.largeFiltering {
+		return m.updateLargeFilterInput(msg)
+	}
+	if m.entryFiltering {
+		return m.updateEntryFilterInput(msg)
+	}
+
 	switch msg.String() {
 	case "q", "Q", "ctrl+c":
 		return m, tea.Quit
 	case "esc":
 		if m.showLargeFiles {
+			if m.largeFilter != "" {
+				m.resetLargeFilter()
+				m.clampLargeSelection()
+				m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+				return m, nil
+			}
 			m.showLargeFiles = false
+			return m, nil
+		}
+		if m.entryFilter != "" {
+			m.resetEntryFilter()
+			m.clampEntrySelection()
+			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
 			return m, nil
 		}
 		return m.goBack()
@@ -392,7 +417,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "down", "j", "J":
 		if m.showLargeFiles {
-			if m.largeSelected < len(m.largeFiles)-1 {
+			if m.largeSelected < len(m.visibleLargeFiles())-1 {
 				m.largeSelected++
 				viewport := calculateViewport(m.height, true)
 				if m.largeSelected >= m.largeOffset+viewport {
@@ -418,6 +443,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "b", "left", "h", "B", "H":
 		if m.showLargeFiles {
 			m.showLargeFiles = false
+			m.resetLargeFilter()
 			return m, nil
 		}
 		return m.goBack()
@@ -461,6 +487,8 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t", "T":
 		if !m.inOverviewMode() {
 			m.showLargeFiles = !m.showLargeFiles
+			m.resetLargeFilter()
+			m.resetEntryFilter()
 			if m.showLargeFiles {
 				m.largeSelected = 0
 				m.largeOffset = 0
@@ -469,6 +497,19 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.multiSelected = make(map[string]bool)
 			}
 			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		}
+	case "/":
+		if m.inOverviewMode() {
+			break
+		}
+		if m.showLargeFiles {
+			if len(m.largeFilesAll) > 0 {
+				m.largeFiltering = true
+				m.status = "Filter: type to match, Enter to apply, Esc to clear"
+			}
+		} else if len(m.entriesAll) > 0 {
+			m.entryFiltering = true
+			m.status = "Filter: type to match, Enter to apply, Esc to clear"
 		}
 	case "o", "O":
 		// Open selected entries (multi-select aware).
@@ -689,6 +730,94 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateLargeFilterInput handles keystrokes while the Top-files filter prompt
+// is active. Typing edits the query and re-filters live; Enter applies and
+// hands control back to navigation; Esc clears the filter entirely. Navigation
+// and action keys are intentionally swallowed so they edit the query instead of
+// moving the cursor or deleting files. Changing the query clears any
+// multi-selection so an action can never touch a row hidden by the filter.
+func (m model) updateLargeFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	case tea.KeyEsc:
+		m.resetLargeFilter()
+		m.clampLargeSelection()
+		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		return m, nil
+	case tea.KeyEnter:
+		m.largeFiltering = false
+		if m.largeFilter == "" {
+			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		} else {
+			m.status = fmt.Sprintf("Filter %q, %d matches", m.largeFilter, len(m.largeFiles))
+		}
+		return m, nil
+	case tea.KeyBackspace, tea.KeyDelete:
+		if r := []rune(m.largeFilter); len(r) > 0 {
+			m.largeFilter = string(r[:len(r)-1])
+			m.largeMultiSelected = make(map[string]bool)
+			m.applyLargeFilter()
+		}
+		return m, nil
+	case tea.KeySpace:
+		m.largeFilter += " "
+		m.largeMultiSelected = make(map[string]bool)
+		m.applyLargeFilter()
+		return m, nil
+	case tea.KeyRunes:
+		m.largeFilter += string(msg.Runes)
+		m.largeMultiSelected = make(map[string]bool)
+		m.applyLargeFilter()
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
+// updateEntryFilterInput is the directory-view counterpart to
+// updateLargeFilterInput: it edits the drill-down filter query live, applies on
+// Enter, clears on Esc, and clears multi-selection on any query change so an
+// action can never touch a row hidden by the filter.
+func (m model) updateEntryFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	case tea.KeyEsc:
+		m.resetEntryFilter()
+		m.clampEntrySelection()
+		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		return m, nil
+	case tea.KeyEnter:
+		m.entryFiltering = false
+		if m.entryFilter == "" {
+			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		} else {
+			m.status = fmt.Sprintf("Filter %q, %d matches", m.entryFilter, len(m.entries))
+		}
+		return m, nil
+	case tea.KeyBackspace, tea.KeyDelete:
+		if r := []rune(m.entryFilter); len(r) > 0 {
+			m.entryFilter = string(r[:len(r)-1])
+			m.multiSelected = make(map[string]bool)
+			m.applyEntryFilter()
+		}
+		return m, nil
+	case tea.KeySpace:
+		m.entryFilter += " "
+		m.multiSelected = make(map[string]bool)
+		m.applyEntryFilter()
+		return m, nil
+	case tea.KeyRunes:
+		m.entryFilter += string(msg.Runes)
+		m.multiSelected = make(map[string]bool)
+		m.applyEntryFilter()
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
 func (m model) goBack() (tea.Model, tea.Cmd) {
 	if len(m.history) == 0 {
 		if !m.inOverviewMode() {
@@ -705,7 +834,11 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 	m.largeSelected = last.LargeSelected
 	m.largeOffset = last.LargeOffset
 	m.isOverview = last.IsOverview
+	m.resetEntryFilter()
+	m.resetLargeFilter()
+	m.entriesAll = last.Entries
 	m.entries = last.Entries
+	m.largeFilesAll = last.LargeFiles
 	m.largeFiles = last.LargeFiles
 	m.totalSize = last.TotalSize
 	m.totalFiles = last.TotalFiles
@@ -744,6 +877,10 @@ func (m *model) switchToOverviewMode() tea.Cmd {
 	m.path = "/"
 	m.scanning = false
 	m.showLargeFiles = false
+	m.entriesAll = nil
+	m.resetEntryFilter()
+	m.resetLargeFilter()
+	m.largeFilesAll = nil
 	m.largeFiles = nil
 	m.largeSelected = 0
 	m.largeOffset = 0
@@ -766,6 +903,20 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 	}
 	selected := m.entries[m.selected]
 	if selected.IsDir {
+		// Drilling in commits and drops any active directory filter so the parent
+		// is snapshotted in full. Remap the selection onto the unfiltered list so
+		// the entry we enter stays highlighted when we navigate back.
+		if m.entryFilter != "" {
+			for i := range m.entriesAll {
+				if m.entriesAll[i].Path == selected.Path {
+					m.selected = i
+					break
+				}
+			}
+		}
+		m.resetEntryFilter()
+		m.clampEntrySelection()
+
 		if len(m.history) == 0 || m.history[len(m.history)-1].Path != m.path {
 			m.history = append(m.history, snapshotFromModel(m))
 		}
@@ -786,9 +937,12 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 			m.currentPath.Store("")
 		}
 
+		m.resetLargeFilter()
 		if cached, ok := m.cache[m.path]; ok {
-			m.entries = slices.Clone(cached.Entries)
-			m.largeFiles = slices.Clone(cached.LargeFiles)
+			m.entriesAll = slices.Clone(cached.Entries)
+			m.entries = m.entriesAll
+			m.largeFilesAll = slices.Clone(cached.LargeFiles)
+			m.largeFiles = m.largeFilesAll
 			m.totalSize = cached.TotalSize
 			m.totalFiles = cached.TotalFiles
 			m.viewNeedsRefresh = cached.NeedsRefresh
