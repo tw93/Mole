@@ -417,7 +417,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "down", "j", "J":
 		if m.showLargeFiles {
-			if m.largeSelected < len(m.visibleLargeFiles())-1 {
+			if m.largeSelected < len(m.largeFiles)-1 {
 				m.largeSelected++
 				viewport := calculateViewport(m.height, true)
 				if m.largeSelected >= m.largeOffset+viewport {

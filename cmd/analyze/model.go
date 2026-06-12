@@ -301,13 +301,6 @@ func removeByPath[T any](items []T, path string, pathOf func(T) string) []T {
 	return items
 }
 
-// visibleLargeFiles is the active Top-files slice: the filtered subset when a
-// query is set, otherwise the full list. largeFiles already holds the view, so
-// this is just an explicit accessor for call sites that want to be unambiguous.
-func (m model) visibleLargeFiles() []fileEntry {
-	return m.largeFiles
-}
-
 // applyLargeFilter rebuilds the rendered Top-files view from largeFilesAll
 // using the current query. An empty query restores the full list.
 func (m *model) applyLargeFilter() {
