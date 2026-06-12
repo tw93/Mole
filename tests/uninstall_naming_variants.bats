@@ -108,8 +108,8 @@ setup() {
     [[ "$result" =~ .cache/maestro-studio ]]
     [[ "$result" =~ "Library/Application Support/MaestroStudio" ]]
     [[ "$result" =~ "Library/Application Support/Maestro-Studio" ]]
-    [[ "$result" =~ "Library/Preferences/Maestro-Studio.plist" ]]
-    [[ "$result" =~ "Library/Saved Application State/MaestroStudio.savedState" ]]
+    [[ "$result" =~ Library/Preferences/Maestro-Studio\.plist ]]
+    [[ "$result" =~ Library/Saved\ Application\ State/MaestroStudio\.savedState ]]
     [[ "$result" =~ .local/share/maestrostudio ]]
 }
 
