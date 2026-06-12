@@ -804,8 +804,10 @@ find_app_files() {
         done < <(command find "$HOME/Library/HTTPStorages" -maxdepth 1 -name "dev.zed.Zed-*" -print0 2> /dev/null)
     fi
 
-    # Process standard patterns
-    for p in "${user_patterns[@]}"; do
+    # Process standard patterns. user_patterns can be empty when app_name is
+    # too short and bundle_id is invalid; bash 3.2 under set -u treats an empty
+    # "${arr[@]}" expansion as an unbound variable, so use the +-guard idiom.
+    for p in "${user_patterns[@]+"${user_patterns[@]}"}"; do
         local expanded_path="${p/#\~/$HOME}"
         # Skip if path doesn't exist
         [[ ! -e "$expanded_path" ]] && continue
@@ -817,6 +819,7 @@ find_app_files() {
                 */Library/Caches | */Library/Caches/ | \
                 */Library/Logs | */Library/Logs/ | \
                 */Library/Preferences | */Library/Preferences/ | \
+                */Library/Preferences/ByHost | */Library/Preferences/ByHost/ | \
                 */Library/Containers | */Library/Containers/ | \
                 */Library/WebKit | */Library/WebKit/ | \
                 */Library/HTTPStorages | */Library/HTTPStorages/ | \
@@ -1274,18 +1277,27 @@ find_app_system_files() {
     fi
 
     # Some vendors name privileged helpers after the product rather than the
-    # bundle id. System remnants are review-only in the CLI, but keep the same
-    # conservative name guards as LaunchAgents to avoid noisy system matches.
-    if [[ ${#app_name} -ge 5 ]] && ! [[ "$app_name" =~ ^(${LAUNCH_AGENT_NAME_COMMON_WORDS})$ ]] &&
-        [[ -d /Library/PrivilegedHelperTools ]]; then
+    # bundle id. System remnants are review-only in the CLI, but keep
+    # conservative name guards to avoid noisy system matches: reject common app
+    # words case-insensitively and require each matched variant to be at least
+    # 5 characters, since nospace variants can be shorter than app_name itself.
+    local -a helper_name_variants=()
+    if ! _mole_uninstall_is_common_app_name "$app_name"; then
+        local name_variant
+        for name_variant in "$lowercase_name" "$lowercase_nospace" "$lowercase_hyphen" "$lowercase_underscore"; do
+            if [[ ${#name_variant} -ge 5 ]]; then
+                helper_name_variants+=("$name_variant")
+            fi
+        done
+    fi
+    if [[ ${#helper_name_variants[@]} -gt 0 && -d /Library/PrivilegedHelperTools ]]; then
         while IFS= read -r -d '' helper; do
             local helper_name
             local helper_lower
             helper_name=$(basename "$helper")
             [[ "$helper_name" =~ ^com\.apple\. ]] && continue
             helper_lower=$(_mole_uninstall_lower "$helper_name")
-            if _mole_uninstall_name_variant_matches "$helper_lower" \
-                "$lowercase_name" "$lowercase_nospace" "$lowercase_hyphen" "$lowercase_underscore"; then
+            if _mole_uninstall_name_variant_matches "$helper_lower" "${helper_name_variants[@]}"; then
                 system_files+=("$helper")
             fi
         done < <(command find /Library/PrivilegedHelperTools -maxdepth 1 -print0 2> /dev/null)

@@ -167,6 +167,21 @@ setup() {
     [[ ! "$result" =~ ".local/share"$ ]]
 }
 
+# Regression: with an invalid bundle id AND an empty app name, no pattern
+# block fires, leaving user_patterns empty. macOS /bin/bash 3.2 under set -u
+# treats expanding an empty array as an unbound variable, so the scan must
+# use the +-guard idiom instead of crashing.
+@test "find_app_files survives empty pattern list under bash 3.2 set -u" {
+    run /bin/bash -c "set -u
+source '$PROJECT_ROOT/lib/core/base.sh'
+source '$PROJECT_ROOT/lib/core/log.sh'
+source '$PROJECT_ROOT/lib/core/app_protection.sh'
+find_app_files 'invalid_bundle' ''"
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"unbound variable"* ]] || return 1
+}
+
 @test "find_app_files detects VS Code stable Application Support folder (#850)" {
     mkdir -p "$HOME/Library/Application Support/Code"
     mkdir -p "$HOME/Library/Application Support/Code - Insiders"
