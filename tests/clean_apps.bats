@@ -1121,3 +1121,54 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"PASS: non-stub container preserved"* ]]
 }
+
+@test "clean_orphaned_system_services tolerates all-whitelisted orphans on /bin/bash 3.2 (#1127)" {
+    # macOS ships /bin/bash 3.2 (Apple does not upgrade past it, GPLv3) and
+    # lib/clean/apps.sh runs under `set -u`, where bash 3.2 treats "${empty[@]}"
+    # as an unbound variable rather than an empty expansion. When orphans are
+    # found but every one is whitelisted, kept_files ends up empty and the
+    # whitelist filter's `orphaned_files=("${kept_files[@]}")` aborted the whole
+    # clean run with "kept_files[@]: unbound variable". Force /bin/bash so the
+    # 3.2 expansion behaviour is exercised regardless of any newer bash on PATH.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+
+should_protect_path() { return 1; }
+# Every detected orphan is whitelisted, so kept_files stays empty.
+is_path_whitelisted() { return 0; }
+WHITELIST_PATTERNS=("com.example.*")
+
+tmp_dir="$(mktemp -d)"
+tmp_plist="$tmp_dir/com.example.whitelisted.orphan.plist"
+/usr/libexec/PlistBuddy -c "Add :Program string $tmp_dir/missing-binary" "$tmp_plist" 2> /dev/null || true
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  [[ "${1:-}" == "-n" ]] && shift
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"unbound variable"* ]] || return 1
+    # Whitelisted orphan must be filtered out, so nothing is reported for removal.
+    [[ "$output" != *"Would remove orphaned service"* ]] || return 1
+}

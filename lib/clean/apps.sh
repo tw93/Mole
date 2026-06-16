@@ -722,7 +722,15 @@ clean_orphaned_system_services() {
             kept_files+=("$orphan_file")
         done
         orphaned_count=${#kept_files[@]}
-        orphaned_files=("${kept_files[@]}")
+        # Guard the empty-array expansion: macOS /bin/bash is 3.2, which treats
+        # "${empty[@]}" as an unbound variable under `set -u`. When every orphan
+        # is whitelisted kept_files is empty, so a bare expansion would abort the
+        # whole clean run. See #1127.
+        if ((orphaned_count > 0)); then
+            orphaned_files=("${kept_files[@]}")
+        else
+            orphaned_files=()
+        fi
     fi
 
     # Report and clean
