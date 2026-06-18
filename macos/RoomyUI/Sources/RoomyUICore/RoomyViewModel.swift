@@ -25,6 +25,8 @@ public final class RoomyViewModel: ObservableObject {
     @Published public var operationJournalEntries: [OperationJournalEntry] = []
     @Published public var executionEvents: [ExecutionEvent] = []
     @Published public var executionState: PreviewExecutionState = .idle
+    @Published public private(set) var executionEventsBySection: [RoomySection: [ExecutionEvent]] = [:]
+    @Published public private(set) var executionStatesBySection: [RoomySection: PreviewExecutionState] = [:]
     @Published public var isLoading = false
     @Published public var loadingSections: Set<RoomySection> = []
     @Published public var errorMessage: String?
@@ -85,7 +87,7 @@ public final class RoomyViewModel: ObservableObject {
         let names = RoomySection.allCases
             .filter { loadingSections.contains($0) }
             .map(\.rawValue)
-        if executionState == .running, let first = names.first {
+        if executionStatesBySection.values.contains(.running), let first = names.first {
             return "Running \(first) command"
         }
         if names.count == 1, let first = names.first {
@@ -145,9 +147,9 @@ public final class RoomyViewModel: ObservableObject {
 
     public func prepareCleanupFlow(section: RoomySection = .home) async {
         await runLoadingTask(section: section) {
-            executionEvents = []
+            resetExecution(section: section)
             cleanupPreview = try await apiClient.cleanupPreview()
-            executionState = .previewReady
+            setExecutionState(.previewReady, section: section)
         }
     }
 
@@ -157,13 +159,13 @@ public final class RoomyViewModel: ObservableObject {
             defer { removeTemporaryPlan(planURL) }
             let useAdministrator = cleanupPreview?.adminRequired == true
                 && privilegedHelperStatus?.state == .enabled
-            executionState = .running
-            executionEvents = []
+            setExecutionState(.running, section: section)
+            resetExecution(section: section, state: .running)
             try await consumeExecutionEvents(apiClient.streamExecute(
                 domain: .clean,
                 planURL: planURL,
                 administrator: useAdministrator
-            ))
+            ), section: section)
             loadOperationJournal()
         }
     }
@@ -196,9 +198,9 @@ public final class RoomyViewModel: ObservableObject {
                 operation: operation
             ))
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
-            try await consumeExecutionEvents(apiClient.streamStorage(planURL: planURL))
+            setExecutionState(.running, section: .storage)
+            resetExecution(section: .storage, state: .running)
+            try await consumeExecutionEvents(apiClient.streamStorage(planURL: planURL), section: .storage)
         }
     }
 
@@ -299,9 +301,9 @@ public final class RoomyViewModel: ObservableObject {
                 .filter { !$0.isEmpty }
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, paths: cleaned))
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
-            try await consumeExecutionEvents(apiClient.streamPurgePathsUpdate(planURL: planURL))
+            setExecutionState(.running, section: .settings)
+            resetExecution(section: .settings, state: .running)
+            try await consumeExecutionEvents(apiClient.streamPurgePathsUpdate(planURL: planURL), section: .settings)
             purgePaths = try await apiClient.purgePaths()
         }
     }
@@ -310,9 +312,9 @@ public final class RoomyViewModel: ObservableObject {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, patterns: patterns))
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
-            try await consumeExecutionEvents(apiClient.streamWhitelistUpdate(mode: mode, planURL: planURL))
+            setExecutionState(.running, section: .settings)
+            resetExecution(section: .settings, state: .running)
+            try await consumeExecutionEvents(apiClient.streamWhitelistUpdate(mode: mode, planURL: planURL), section: .settings)
             if mode == "optimize" {
                 optimizeWhitelist = try await apiClient.whitelist(mode: "optimize")
             } else {
@@ -325,13 +327,13 @@ public final class RoomyViewModel: ObservableObject {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, dryRun: dryRun))
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
+            setExecutionState(.running, section: .settings)
+            resetExecution(section: .settings, state: .running)
             try await consumeExecutionEvents(apiClient.streamTouchID(
                 action: action,
                 planURL: planURL,
                 administrator: administrator && !dryRun
-            ))
+            ), section: .settings)
             touchIDStatus = try await apiClient.touchIDStatus()
         }
     }
@@ -340,9 +342,9 @@ public final class RoomyViewModel: ObservableObject {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, dryRun: dryRun))
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
-            try await consumeExecutionEvents(apiClient.streamCompletion(planURL: planURL))
+            setExecutionState(.running, section: .settings)
+            resetExecution(section: .settings, state: .running)
+            try await consumeExecutionEvents(apiClient.streamCompletion(planURL: planURL), section: .settings)
             completionStatus = try await apiClient.completionStatus()
         }
     }
@@ -351,29 +353,38 @@ public final class RoomyViewModel: ObservableObject {
         await runLoadingTask(section: .settings) {
             let planURL = try writeTemporaryPlan(ExecutionPlan(confirmed: true, dryRun: dryRun))
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
-            try await consumeExecutionEvents(apiClient.streamLaunchers(planURL: planURL))
+            setExecutionState(.running, section: .settings)
+            resetExecution(section: .settings, state: .running)
+            try await consumeExecutionEvents(apiClient.streamLaunchers(planURL: planURL), section: .settings)
             launcherStatus = try await apiClient.launcherStatus()
         }
     }
 
     public func execute(domain: ExecutionDomain, plan: ExecutionPlan, administrator: Bool = false) async {
-        await runLoadingTask(section: section(for: domain)) {
+        let section = section(for: domain)
+        await runLoadingTask(section: section) {
             let planURL = try writeTemporaryPlan(plan)
             defer { removeTemporaryPlan(planURL) }
-            executionState = .running
-            executionEvents = []
+            setExecutionState(.running, section: section)
+            resetExecution(section: section, state: .running)
             try await consumeExecutionEvents(apiClient.streamExecute(
                 domain: domain,
                 planURL: planURL,
                 administrator: administrator && !plan.dryRun
-            ))
+            ), section: section)
         }
     }
 
     public func error(for section: RoomySection) -> String? {
         sectionErrors[section]
+    }
+
+    public func executionEvents(for section: RoomySection) -> [ExecutionEvent] {
+        executionEventsBySection[section] ?? []
+    }
+
+    public func executionState(for section: RoomySection) -> PreviewExecutionState {
+        executionStatesBySection[section] ?? .idle
     }
 
     public func performRecommendedAction(_ action: String) async {
@@ -413,15 +424,15 @@ public final class RoomyViewModel: ObservableObject {
         defer { endLoading(section: section) }
         errorMessage = nil
         sectionErrors[section] = nil
-        let enteredWithCommandState = executionState.isCommandActive
+        let enteredWithCommandState = executionState(for: section).isCommandActive
         do {
             try await operation()
         } catch {
             let message = Self.displayMessage(for: error)
             errorMessage = message
             sectionErrors[section] = message
-            if section == selectedSection || enteredWithCommandState || executionState.isCommandActive {
-                executionState = .failed(message)
+            if section == selectedSection || enteredWithCommandState || executionState(for: section).isCommandActive {
+                setExecutionState(.failed(message), section: section)
             }
         }
     }
@@ -455,13 +466,29 @@ public final class RoomyViewModel: ObservableObject {
         isLoading = activeLoadingTaskCount > 0
     }
 
-    private func consumeExecutionEvents(_ stream: AsyncThrowingStream<ExecutionEvent, Error>) async throws {
+    private func resetExecution(section: RoomySection, state: PreviewExecutionState = .idle) {
+        executionEventsBySection[section] = []
+        executionEvents = []
+        setExecutionState(state, section: section)
+    }
+
+    private func setExecutionState(_ state: PreviewExecutionState, section: RoomySection) {
+        executionStatesBySection[section] = state
+        executionState = state
+    }
+
+    private func appendExecutionEvent(_ event: ExecutionEvent, section: RoomySection) {
+        executionEventsBySection[section, default: []].append(event)
+        executionEvents = executionEventsBySection[section] ?? []
+    }
+
+    private func consumeExecutionEvents(_ stream: AsyncThrowingStream<ExecutionEvent, Error>, section: RoomySection) async throws {
         for try await event in stream {
-            executionEvents.append(event)
-            executionState = Self.transition(from: executionState, event: event)
+            appendExecutionEvent(event, section: section)
+            setExecutionState(Self.transition(from: executionState(for: section), event: event), section: section)
         }
-        if case .running = executionState {
-            executionState = .completed
+        if case .running = executionState(for: section) {
+            setExecutionState(.completed, section: section)
         }
     }
 

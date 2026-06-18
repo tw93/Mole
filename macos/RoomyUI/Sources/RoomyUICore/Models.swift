@@ -285,6 +285,14 @@ public struct CleanupPreview: Decodable, Equatable {
     public var detailsPath: String
     public var categories: [CleanupCategory]
 
+    public var isTrashBacked: Bool {
+        deleteMode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "trash"
+    }
+
+    public var requiresNonRecoverableWarning: Bool {
+        !isTrashBacked
+    }
+
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case command

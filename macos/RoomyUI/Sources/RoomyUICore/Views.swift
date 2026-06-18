@@ -133,7 +133,14 @@ private struct AppBackground: View {
 
 private struct HomeView: View {
     @ObservedObject var model: RoomyViewModel
-    @State private var showCleanupConfirm = false
+    @State private var showAllJournalEntries = false
+
+    private let journalRowLimit = 8
+
+    private var visibleJournalEntries: ArraySlice<OperationJournalEntry> {
+        let entries = model.operationJournalEntries
+        return showAllJournalEntries ? entries[...] : entries.prefix(journalRowLimit)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -161,14 +168,19 @@ private struct HomeView: View {
                 )
             }
 
+            RecommendationPanel(recommendations: homeRecommendations)
+
             if model.fullDiskAccessStatus.state != .enabled && !model.permissionOnboardingDismissed {
                 PermissionOnboardingCard(model: model)
             }
 
             CleanupFlowPanel(
                 preview: model.cleanupPreview,
-                executionState: model.executionState,
+                executionState: model.executionState(for: .home),
                 isLoading: model.isLoading,
+                previewReadyPrimaryTitle: "Review Plan",
+                previewReadyPrimarySymbol: "list.bullet.rectangle",
+                showsReviewButton: model.cleanupPreview == nil,
                 onPreview: startCleanupFlow,
                 onReview: {
                     model.selectedSection = .cleanup
@@ -185,7 +197,7 @@ private struct HomeView: View {
                 }
             )
 
-            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+            ExecutionEventsView(events: model.executionEvents(for: .home), state: model.executionState(for: .home))
 
             SectionBand(title: "Recent Activity", symbol: "clock.arrow.circlepath") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -209,13 +221,15 @@ private struct HomeView: View {
                         )
                     } else {
                         DataTable {
-                            ForEach(model.operationJournalEntries.prefix(8)) { entry in
+                            ForEach(visibleJournalEntries) { entry in
                                 OperationJournalRow(entry: entry)
                             }
-                            HiddenCountLine(
+                            ExpandRowsLine(
                                 total: model.operationJournalEntries.count,
-                                visibleLimit: 8,
-                                noun: "journal entries"
+                                visibleCount: visibleJournalEntries.count,
+                                noun: "journal entries",
+                                expanded: showAllJournalEntries,
+                                onToggle: { showAllJournalEntries.toggle() }
                             )
                         }
                     }
@@ -290,20 +304,6 @@ private struct HomeView: View {
                 }
             }
         }
-        .confirmationDialog("Move recoverable files to Trash?", isPresented: $showCleanupConfirm) {
-            if !model.isLoading, model.cleanupPreview != nil {
-                Button("Move Recoverable Files to Trash", role: .destructive) {
-                    guard !model.isLoading else { return }
-                    Task { await model.executeCleanupFlow() }
-                }
-            }
-            Button("Review Plan") {
-                model.selectedSection = .cleanup
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(cleanupConfirmationMessage)
-        }
     }
 
     private var primaryDisk: DiskStatus? {
@@ -330,20 +330,108 @@ private struct HomeView: View {
         return "\(preview.itemCount) items"
     }
 
-    private var cleanupConfirmationMessage: String {
-        cleanupConfirmationCopy(for: model.cleanupPreview)
+    private var homeRecommendations: [HomeRecommendation] {
+        var items: [HomeRecommendation] = []
+
+        if let preview = model.cleanupPreview, preview.estimatedBytes > 0 {
+            items.append(HomeRecommendation(
+                id: "cleanup-review",
+                title: preview.requiresNonRecoverableWarning ? "Review cleanup warning" : "Review cleanup plan",
+                detail: "\(preview.categoryCount) categories, \(preview.protectedCount) protected skips",
+                value: Formatters.bytes(preview.estimatedBytes),
+                symbol: preview.requiresNonRecoverableWarning ? "exclamationmark.triangle" : "sparkles",
+                tint: preview.requiresNonRecoverableWarning ? .orange : .green,
+                actionTitle: "Review",
+                action: {
+                    model.selectedSection = .cleanup
+                }
+            ))
+        } else {
+            items.append(HomeRecommendation(
+                id: "cleanup-preview",
+                title: "Preview cleanup",
+                detail: "No files change during preview",
+                value: "Start here",
+                symbol: "doc.text.magnifyingglass",
+                tint: .green,
+                actionTitle: "Preview",
+                action: startCleanupFlow
+            ))
+        }
+
+        if model.diskPressure > 85 {
+            items.append(HomeRecommendation(
+                id: "storage-pressure",
+                title: "Scan storage pressure",
+                detail: "Find large folders, installers, and project artifacts",
+                value: Formatters.percent(model.diskPressure),
+                symbol: "internaldrive",
+                tint: .orange,
+                actionTitle: "Scan",
+                action: {
+                    model.selectedSection = .storage
+                    Task { await model.loadStorage() }
+                }
+            ))
+        }
+
+        if let alerts = model.status?.processAlerts, alerts.contains(where: { $0.status == "active" }) {
+            let count = alerts.filter { $0.status == "active" }.count
+            items.append(HomeRecommendation(
+                id: "process-alerts",
+                title: "Inspect process alerts",
+                detail: "Check active CPU or memory signals before optimizing",
+                value: "\(count) active",
+                symbol: "waveform.path.ecg",
+                tint: .orange,
+                actionTitle: "Inspect",
+                action: {
+                    model.selectedSection = .monitor
+                    Task { await model.loadStatus() }
+                }
+            ))
+        }
+
+        let trashedCount = model.operationJournalEntries.filter { $0.action == "TRASHED" }.count
+        if trashedCount > 0 {
+            items.append(HomeRecommendation(
+                id: "restore-report",
+                title: "Review recovery",
+                detail: "Recent Trash-backed actions are in the operation journal",
+                value: "\(trashedCount) items",
+                symbol: "arrow.uturn.backward.circle",
+                tint: .blue,
+                actionTitle: "Refresh",
+                action: {
+                    model.loadOperationJournal(limit: 48)
+                }
+            ))
+        }
+
+        items.append(HomeRecommendation(
+            id: "maintenance-plan",
+            title: "Set maintenance rhythm",
+            detail: "Use schedules, profiles, and reports for repeatable cleanup",
+            value: "Plan",
+            symbol: "calendar.badge.clock",
+            tint: .purple,
+            actionTitle: "Open",
+            action: {
+                model.selectedSection = .settings
+                Task { await model.loadSettings() }
+            }
+        ))
+
+        return Array(items.prefix(4))
     }
 
     private func startCleanupFlow() {
-        if model.cleanupPreview != nil, model.executionState == .previewReady {
-            showCleanupConfirm = true
+        model.selectedSection = .cleanup
+        if model.cleanupPreview != nil {
             return
         }
         Task {
-            await model.prepareCleanupFlow()
-            if model.cleanupPreview != nil, model.error(for: .home) == nil {
-                showCleanupConfirm = true
-            }
+            await model.prepareCleanupFlow(section: .cleanup)
         }
     }
 }
@@ -383,19 +471,25 @@ private struct CleanupView: View {
 
             CleanupFlowPanel(
                 preview: model.cleanupPreview,
-                executionState: model.executionState,
+                executionState: model.executionState(for: .cleanup),
                 isLoading: model.isLoading,
+                previewReadyPrimaryTitle: cleanupPrimaryActionTitle,
+                previewReadyPrimarySymbol: cleanupPrimaryActionSymbol,
+                reviewButtonTitle: "Refresh Preview",
+                reviewButtonSymbol: "arrow.clockwise",
                 onPreview: startCleanupFlow,
                 onReview: {
-                    Task { await model.loadCleanupPreview() }
+                    Task { await model.prepareCleanupFlow(section: .cleanup) }
                 }
             )
+
+            CleanupReviewPanel(preview: model.cleanupPreview)
 
             SectionBand(title: "Cleanup Categories", symbol: "list.bullet.rectangle") {
                 if let preview = model.cleanupPreview, !preview.categories.isEmpty {
                     DataTable {
                         ForEach(preview.categories) { item in
-                            CleanupCategoryRow(item: item)
+                            CleanupCategoryRow(item: item, deleteMode: preview.deleteMode)
                         }
                     }
                 } else {
@@ -435,7 +529,7 @@ private struct CleanupView: View {
                 if let preview = model.externalCleanupPreview, !preview.categories.isEmpty {
                     DataTable {
                         ForEach(preview.categories) { item in
-                            CleanupCategoryRow(item: item)
+                            CleanupCategoryRow(item: item, deleteMode: preview.deleteMode)
                         }
                     }
                     HStack {
@@ -458,11 +552,11 @@ private struct CleanupView: View {
                 }
             }
 
-            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+            ExecutionEventsView(events: model.executionEvents(for: .cleanup), state: model.executionState(for: .cleanup))
         }
-        .confirmationDialog("Move recoverable files to Trash?", isPresented: $showCleanupConfirm) {
+        .confirmationDialog(cleanupConfirmationTitle, isPresented: $showCleanupConfirm) {
             if !model.isLoading, model.cleanupPreview != nil {
-                Button("Move Recoverable Files to Trash", role: .destructive) {
+                Button(cleanupConfirmationButtonTitle, role: .destructive) {
                     guard !model.isLoading else { return }
                     Task { await model.executeCleanupFlow(section: .cleanup) }
                 }
@@ -497,6 +591,34 @@ private struct CleanupView: View {
 
     private var cleanupConfirmationMessage: String {
         cleanupConfirmationCopy(for: model.cleanupPreview)
+    }
+
+    private var cleanupConfirmationTitle: String {
+        if model.cleanupPreview?.requiresNonRecoverableWarning == true {
+            return "Permanently clean files?"
+        }
+        return "Move files to Trash?"
+    }
+
+    private var cleanupConfirmationButtonTitle: String {
+        if model.cleanupPreview?.requiresNonRecoverableWarning == true {
+            return "Clean Files Permanently"
+        }
+        return "Move Files to Trash"
+    }
+
+    private var cleanupPrimaryActionTitle: String {
+        if model.cleanupPreview?.requiresNonRecoverableWarning == true {
+            return "Clean Files"
+        }
+        return "Move to Trash"
+    }
+
+    private var cleanupPrimaryActionSymbol: String {
+        if model.cleanupPreview?.requiresNonRecoverableWarning == true {
+            return "exclamationmark.triangle"
+        }
+        return "trash"
     }
 
     private var externalCleanupConfirmationMessage: String {
@@ -540,16 +662,32 @@ private struct CleanupView: View {
     }
 
     private func startCleanupFlow() {
-        if model.cleanupPreview != nil, model.executionState == .previewReady {
-            showCleanupConfirm = true
+        if hasReviewableCleanupPreview {
+            executeReviewedCleanup()
             return
         }
         Task {
             await model.prepareCleanupFlow(section: .cleanup)
-            if model.cleanupPreview != nil, model.error(for: .cleanup) == nil {
-                showCleanupConfirm = true
-            }
         }
+    }
+
+    private var hasReviewableCleanupPreview: Bool {
+        guard model.cleanupPreview != nil else { return false }
+        switch model.executionState(for: .cleanup) {
+        case .idle, .previewReady:
+            return true
+        case .confirming, .running, .completed, .failed:
+            return false
+        }
+    }
+
+    private func executeReviewedCleanup() {
+        guard !model.isLoading, let preview = model.cleanupPreview else { return }
+        if preview.requiresNonRecoverableWarning {
+            showCleanupConfirm = true
+            return
+        }
+        Task { await model.executeCleanupFlow(section: .cleanup) }
     }
 
     private func chooseExternalVolume() {
@@ -570,6 +708,7 @@ private struct ApplicationsView: View {
     @ObservedObject var model: RoomyViewModel
     @State private var query = ""
     @State private var selectedPath: String?
+    @State private var previewedUninstallName: String?
     @State private var showUninstallConfirm = false
 
     private var filtered: [InstalledApplication] {
@@ -651,7 +790,7 @@ private struct ApplicationsView: View {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(selectedApp.name).font(.headline)
-                            Text(selectedApp.path).foregroundStyle(.secondary)
+                            PathValueText(selectedApp.path)
                             if !selectedApp.canUninstall, let reason = selectedApp.uninstallReason, !reason.isEmpty {
                                 Text(reason).foregroundStyle(.secondary)
                             }
@@ -659,11 +798,16 @@ private struct ApplicationsView: View {
                         Spacer()
                         Button {
                             guard selectedApp.canUninstall else { return }
+                            let uninstallName = selectedApp.uninstallName
+                            previewedUninstallName = nil
                             Task {
                                 await model.execute(
                                     domain: .uninstall,
-                                    plan: ExecutionPlan(confirmed: true, dryRun: true, targets: [selectedApp.uninstallName])
+                                    plan: ExecutionPlan(confirmed: true, dryRun: true, targets: [uninstallName])
                                 )
+                                if model.executionState(for: .applications) == .completed {
+                                    previewedUninstallName = uninstallName
+                                }
                             }
                         } label: {
                             Label("Preview Uninstall", systemImage: "doc.text.magnifyingglass")
@@ -671,33 +815,39 @@ private struct ApplicationsView: View {
                         .disabled(model.isLoading || !selectedApp.canUninstall)
 
                         Button(role: .destructive) {
-                            guard selectedApp.canUninstall else { return }
+                            guard selectedApp.canUninstall, hasUninstallPreview else { return }
                             showUninstallConfirm = true
                         } label: {
                             Label("Uninstall", systemImage: "trash")
                         }
-                        .disabled(model.isLoading || !selectedApp.canUninstall)
+                        .disabled(model.isLoading || !selectedApp.canUninstall || !hasUninstallPreview)
                     }
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(Color(nsColor: .controlBackgroundColor).opacity(0.72))
                     )
+                    if selectedApp.canUninstall {
+                        Text(hasUninstallPreview ? "Preview completed for this app. Review the execution log before uninstalling." : "Run Preview Uninstall before this destructive action is enabled.")
+                            .font(.caption)
+                            .foregroundStyle(hasUninstallPreview ? Color.secondary : Color.orange)
+                    }
                 }
             }
 
-            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+            ExecutionEventsView(events: model.executionEvents(for: .applications), state: model.executionState(for: .applications))
         }
         .confirmationDialog("Uninstall selected app?", isPresented: $showUninstallConfirm) {
-            if !model.isLoading, let selectedApp, selectedApp.canUninstall {
+            if !model.isLoading, let selectedApp, selectedApp.canUninstall, hasUninstallPreview {
                 Button("Uninstall \(selectedApp.name)", role: .destructive) {
-                    guard !model.isLoading else { return }
+                    guard !model.isLoading, selectedApp.canUninstall, hasUninstallPreview else { return }
                     Task {
                         await model.execute(
                             domain: .uninstall,
                             plan: ExecutionPlan(confirmed: true, targets: [selectedApp.uninstallName]),
                             administrator: true
                         )
+                        previewedUninstallName = nil
                     }
                 }
             }
@@ -713,6 +863,11 @@ private struct ApplicationsView: View {
         }
         return "Scope: \(selectedApp.name) at \(selectedApp.path), using uninstall target \(selectedApp.uninstallName). Admin: requested so the CLI can revalidate protected app and support-file locations. Recovery: removable files route to Trash where supported, but app-specific uninstall scripts may not be fully restorable. Audit: preview and uninstall events are recorded in the operation journal."
     }
+
+    private var hasUninstallPreview: Bool {
+        guard let selectedApp else { return false }
+        return previewedUninstallName == selectedApp.uninstallName
+    }
 }
 
 private struct StorageView: View {
@@ -724,6 +879,12 @@ private struct StorageView: View {
     @State private var showLargeFileConfirm = false
     @State private var showPurgeConfirm = false
     @State private var showInstallerConfirm = false
+    @State private var showAllEntries = false
+    @State private var showAllLargeFiles = false
+    @State private var showAllPurgeItems = false
+    @State private var showAllInstallerItems = false
+
+    private let visibleRowLimit = 18
 
     private var selectedLargeFileTargets: [String] {
         let available = Set((model.storageScan?.largeFiles ?? []).map(\.path))
@@ -738,6 +899,26 @@ private struct StorageView: View {
     private var selectedInstallerTargets: [String] {
         let available = Set((model.installerPreview?.items ?? []).map(\.path))
         return selectedInstallerPaths.filter { available.contains($0) }.sorted()
+    }
+
+    private var visibleEntries: ArraySlice<StorageEntry> {
+        let entries = model.storageScan?.entries ?? []
+        return showAllEntries ? entries[...] : entries.prefix(visibleRowLimit)
+    }
+
+    private var visibleLargeFiles: ArraySlice<StorageFile> {
+        let files = model.storageScan?.largeFiles ?? []
+        return showAllLargeFiles ? files[...] : files.prefix(visibleRowLimit)
+    }
+
+    private var visiblePurgeItems: ArraySlice<PurgeItem> {
+        let items = model.purgePreview?.items ?? []
+        return showAllPurgeItems ? items[...] : items.prefix(visibleRowLimit)
+    }
+
+    private var visibleInstallerItems: ArraySlice<InstallerItem> {
+        let items = model.installerPreview?.items ?? []
+        return showAllInstallerItems ? items[...] : items.prefix(visibleRowLimit)
     }
 
     private var selectedTargetCount: Int {
@@ -807,6 +988,8 @@ private struct StorageView: View {
                     Task {
                         await model.loadStorage(path: path)
                         selectedLargeFilePaths = []
+                        showAllEntries = false
+                        showAllLargeFiles = false
                     }
                 } label: {
                     Label(model.isLoading ? "Scanning" : "Scan", systemImage: "magnifyingglass")
@@ -838,24 +1021,41 @@ private struct StorageView: View {
                 )
             }
 
+            if selectedTargetCount > 0 {
+                SelectionReviewBar(
+                    title: "Selected cleanup",
+                    value: Formatters.bytes(selectedLargeFileBytes + selectedPurgeBytes + selectedInstallerBytes),
+                    detail: selectedScopeSummary,
+                    chips: selectedActionChips,
+                    onClear: clearStorageSelection
+                )
+            }
+
             SectionBand(title: "Largest Entries", symbol: "chart.bar.xaxis") {
                 if let scan = model.storageScan, !scan.entries.isEmpty {
                     DataTable {
-                        ForEach(scan.entries.prefix(18)) { entry in
+                        ForEach(visibleEntries) { entry in
                             HStack {
                                 Image(systemName: entry.isDir ? "folder" : "doc")
                                     .foregroundStyle(entry.cleanable == true ? .green : .blue)
                                     .frame(width: 22)
                                 VStack(alignment: .leading) {
                                     Text(entry.name).font(.headline)
-                                    Text(entry.path).foregroundStyle(.secondary)
+                                    PathValueText(entry.path)
                                 }
                                 Spacer()
                                 Text(Formatters.bytes(entry.size)).monospacedDigit()
                             }
                             .padding(.vertical, 7)
+                            .accessibilityElement(children: .combine)
                         }
-                        HiddenCountLine(total: scan.entries.count, visibleLimit: 18, noun: "entries")
+                        ExpandRowsLine(
+                            total: scan.entries.count,
+                            visibleCount: visibleEntries.count,
+                            noun: "entries",
+                            expanded: showAllEntries,
+                            onToggle: { showAllEntries.toggle() }
+                        )
                     }
                 } else {
                     EmptyStateView(
@@ -869,7 +1069,7 @@ private struct StorageView: View {
             SectionBand(title: "Large Files", symbol: "doc.badge.ellipsis") {
                 HStack {
                     Button {
-                        selectedLargeFilePaths = Set((model.storageScan?.largeFiles ?? []).prefix(18).map(\.path))
+                        selectedLargeFilePaths = Set(visibleLargeFiles.map(\.path))
                     } label: {
                         Label("Select Visible", systemImage: "checkmark.circle")
                     }
@@ -906,7 +1106,7 @@ private struct StorageView: View {
 
                 if let scan = model.storageScan, !scan.largeFiles.isEmpty {
                     DataTable {
-                        ForEach(scan.largeFiles.prefix(18)) { file in
+                        ForEach(visibleLargeFiles) { file in
                             Toggle(isOn: Binding(
                                 get: { selectedLargeFilePaths.contains(file.path) },
                                 set: { isSelected in
@@ -923,7 +1123,7 @@ private struct StorageView: View {
                                         .frame(width: 24)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(file.name).font(.headline)
-                                        Text(file.path).foregroundStyle(.secondary)
+                                        PathValueText(file.path)
                                     }
                                     Spacer()
                                     Text(Formatters.bytes(file.size)).monospacedDigit()
@@ -931,8 +1131,16 @@ private struct StorageView: View {
                             }
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityValue(selectedLargeFilePaths.contains(file.path) ? "Selected" : "Not selected")
                         }
-                        HiddenCountLine(total: scan.largeFiles.count, visibleLimit: 18, noun: "large files")
+                        ExpandRowsLine(
+                            total: scan.largeFiles.count,
+                            visibleCount: visibleLargeFiles.count,
+                            noun: "large files",
+                            expanded: showAllLargeFiles,
+                            onToggle: { showAllLargeFiles.toggle() }
+                        )
                     }
                 } else {
                     EmptyStateView(
@@ -948,12 +1156,20 @@ private struct StorageView: View {
                     Button {
                         Task {
                             await model.loadPurgePreview()
-                            selectedPurgePaths = Set((model.purgePreview?.items ?? []).filter { !$0.recent }.map(\.path))
+                            selectedPurgePaths = []
+                            showAllPurgeItems = false
                         }
                     } label: {
                         Label(model.isLoading ? "Scanning" : "Scan Artifacts", systemImage: "magnifyingglass")
                     }
                     .disabled(model.isLoading)
+
+                    Button {
+                        selectedPurgePaths = Set((model.purgePreview?.items ?? []).filter { !$0.recent }.map(\.path))
+                    } label: {
+                        Label("Select Safe Age", systemImage: "checkmark.shield")
+                    }
+                    .disabled(model.purgePreview?.items.isEmpty ?? true || model.isLoading)
 
                     Spacer()
 
@@ -970,7 +1186,7 @@ private struct StorageView: View {
 
                 if let preview = model.purgePreview, !preview.items.isEmpty {
                     DataTable {
-                        ForEach(preview.items.prefix(18)) { item in
+                        ForEach(visiblePurgeItems) { item in
                             Toggle(isOn: Binding(
                                 get: { selectedPurgePaths.contains(item.path) },
                                 set: { isSelected in
@@ -992,14 +1208,22 @@ private struct StorageView: View {
                                     Spacer()
                                     Text(item.recent ? "\(item.ageDays)d old" : "safe age")
                                         .font(.caption)
-                                        .foregroundStyle(item.recent ? .orange : .secondary)
+                                        .foregroundStyle(item.recent ? Color.orange : Color.secondary)
                                     Text(Formatters.bytes(item.bytes)).monospacedDigit()
                                 }
                             }
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityValue(selectedPurgePaths.contains(item.path) ? "Selected" : "Not selected")
                         }
-                        HiddenCountLine(total: preview.items.count, visibleLimit: 18, noun: "artifacts")
+                        ExpandRowsLine(
+                            total: preview.items.count,
+                            visibleCount: visiblePurgeItems.count,
+                            noun: "artifacts",
+                            expanded: showAllPurgeItems,
+                            onToggle: { showAllPurgeItems.toggle() }
+                        )
                     }
                 } else {
                     EmptyStateView(
@@ -1015,12 +1239,20 @@ private struct StorageView: View {
                     Button {
                         Task {
                             await model.loadInstallerPreview()
-                            selectedInstallerPaths = Set((model.installerPreview?.items ?? []).map(\.path))
+                            selectedInstallerPaths = []
+                            showAllInstallerItems = false
                         }
                     } label: {
                         Label(model.isLoading ? "Scanning" : "Find Installers", systemImage: "magnifyingglass")
                     }
                     .disabled(model.isLoading)
+
+                    Button {
+                        selectedInstallerPaths = Set(visibleInstallerItems.map(\.path))
+                    } label: {
+                        Label("Select Visible", systemImage: "checkmark.circle")
+                    }
+                    .disabled(model.installerPreview?.items.isEmpty ?? true || model.isLoading)
 
                     Spacer()
 
@@ -1037,7 +1269,7 @@ private struct StorageView: View {
 
                 if let preview = model.installerPreview, !preview.items.isEmpty {
                     DataTable {
-                        ForEach(preview.items.prefix(18)) { item in
+                        ForEach(visibleInstallerItems) { item in
                             Toggle(isOn: Binding(
                                 get: { selectedInstallerPaths.contains(item.path) },
                                 set: { isSelected in
@@ -1054,7 +1286,7 @@ private struct StorageView: View {
                                         .frame(width: 24)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.name).font(.headline)
-                                        Text(item.path).foregroundStyle(.secondary)
+                                        PathValueText(item.path)
                                     }
                                     Spacer()
                                     Text(item.source)
@@ -1065,8 +1297,16 @@ private struct StorageView: View {
                             }
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityValue(selectedInstallerPaths.contains(item.path) ? "Selected" : "Not selected")
                         }
-                        HiddenCountLine(total: preview.items.count, visibleLimit: 18, noun: "installer files")
+                        ExpandRowsLine(
+                            total: preview.items.count,
+                            visibleCount: visibleInstallerItems.count,
+                            noun: "installer files",
+                            expanded: showAllInstallerItems,
+                            onToggle: { showAllInstallerItems.toggle() }
+                        )
                     }
                 } else {
                     EmptyStateView(
@@ -1077,7 +1317,7 @@ private struct StorageView: View {
                 }
             }
 
-            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+            ExecutionEventsView(events: model.executionEvents(for: .storage), state: model.executionState(for: .storage))
         }
         .confirmationDialog("Move selected large files to Trash?", isPresented: $showLargeFileConfirm) {
             if !model.isLoading, !selectedLargeFileTargets.isEmpty {
@@ -1111,7 +1351,7 @@ private struct StorageView: View {
                             plan: ExecutionPlan(confirmed: true, targets: targets)
                         )
                         await model.loadPurgePreview()
-                        selectedPurgePaths = Set((model.purgePreview?.items ?? []).filter { !$0.recent }.map(\.path))
+                        selectedPurgePaths = []
                     }
                 }
             }
@@ -1130,7 +1370,7 @@ private struct StorageView: View {
                             plan: ExecutionPlan(confirmed: true, targets: targets)
                         )
                         await model.loadInstallerPreview()
-                        selectedInstallerPaths = Set((model.installerPreview?.items ?? []).map(\.path))
+                        selectedInstallerPaths = []
                     }
                 }
             }
@@ -1156,6 +1396,8 @@ private struct StorageView: View {
     private func scanPreset(_ newPath: String) {
         path = newPath
         selectedLargeFilePaths = []
+        showAllEntries = false
+        showAllLargeFiles = false
         Task {
             await model.loadStorage(path: newPath)
         }
@@ -1173,6 +1415,39 @@ private struct StorageView: View {
             "\(NSHomeDirectory())/Documents"
         ]
         return candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) ?? candidates[0]
+    }
+
+    private var selectedScopeSummary: String {
+        var parts: [String] = []
+        if !selectedLargeFileTargets.isEmpty {
+            parts.append("\(selectedLargeFileTargets.count) large files")
+        }
+        if !selectedPurgeTargets.isEmpty {
+            parts.append("\(selectedPurgeTargets.count) project artifacts")
+        }
+        if !selectedInstallerTargets.isEmpty {
+            parts.append("\(selectedInstallerTargets.count) installers")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var selectedActionChips: [StatusChipModel] {
+        var chips = [
+            StatusChipModel(text: "Paths revalidated", symbol: "checkmark.shield", tint: .green)
+        ]
+        if !selectedLargeFileTargets.isEmpty || !selectedPurgeTargets.isEmpty {
+            chips.append(StatusChipModel(text: "Trash where supported", symbol: "trash", tint: .blue))
+        }
+        if !selectedInstallerTargets.isEmpty {
+            chips.append(StatusChipModel(text: "Installer types checked", symbol: "shippingbox", tint: .orange))
+        }
+        return chips
+    }
+
+    private func clearStorageSelection() {
+        selectedLargeFilePaths = []
+        selectedPurgePaths = []
+        selectedInstallerPaths = []
     }
 }
 
@@ -1212,11 +1487,15 @@ private struct PerformanceView: View {
                                     Text(task.description).foregroundStyle(.secondary)
                                 }
                                 Spacer()
+                                Text(task.safe ? "Standard" : "Admin review")
+                                    .font(.caption)
+                                    .foregroundStyle(task.safe ? Color.secondary : Color.orange)
                                 Text(task.category.capitalized)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.vertical, 8)
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 } else {
@@ -1245,7 +1524,7 @@ private struct PerformanceView: View {
                 .disabled((model.optimizePreview?.optimizations.isEmpty ?? true) || model.isLoading)
             }
 
-            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+            ExecutionEventsView(events: model.executionEvents(for: .performance), state: model.executionState(for: .performance))
         }
         .confirmationDialog("Run optimization tasks?", isPresented: $showOptimizeConfirm) {
             if !model.isLoading, model.optimizePreview?.optimizations.isEmpty == false {
@@ -1268,26 +1547,139 @@ private struct PerformanceView: View {
         }
         let categories = Set(preview.optimizations.map(\.category.capitalized)).sorted().joined(separator: ", ")
         let categoryText = categories.isEmpty ? "maintenance" : categories
-        return "Scope: \(preview.optimizations.count) previewed tasks across \(categoryText). Admin: requested because maintenance may touch protected services or caches. Recovery: these are optimization actions, so they may not be restorable from Trash. Audit: each task is streamed to the execution log and operation journal."
+        return "Scope: \(preview.optimizations.count) previewed tasks across \(categoryText). Admin: requested because maintenance may touch protected services or caches. If authorization is denied, Roomy stops or skips sudo-required work instead of widening scope. Recovery: these are optimization actions, so they may not be restorable from Trash. Audit: each task is streamed to the execution log and operation journal."
     }
 }
 
 private func cleanupConfirmationCopy(for preview: CleanupPreview?) -> String {
     guard let preview else {
-        return "Scope: recoverable cache, log, and rebuildable files from the latest preview. Admin: checked during preview. Recovery: eligible files move to Trash where supported. Audit: execution events and skipped paths are written to the operation journal."
+        return "Scope: previewed cache, log, and rebuildable files. Admin: checked during preview. Recovery: unknown until a preview reports whether cleanup is Trash-backed. Audit: execution events and skipped paths are written to the operation journal."
     }
     let admin = preview.adminRequired ? "needed for at least one previewed category" : "not needed by the preview"
+    if preview.requiresNonRecoverableWarning {
+        return "Warning: \(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) items is not Trash-backed and may not be recoverable after cleanup. Admin: \(admin). \(preview.protectedCount) protected and \(preview.whitelistCount) whitelisted paths stay skipped. Audit: execution events and skipped paths are written to the operation journal."
+    }
     return "Scope: \(Formatters.bytes(preview.estimatedBytes)) across \(preview.itemCount) recoverable items in \(preview.categoryCount) categories. Admin: \(admin). Recovery: eligible files move to Trash where supported; \(preview.protectedCount) protected and \(preview.whitelistCount) whitelisted paths stay skipped. Audit: execution events and skipped paths are written to the operation journal."
 }
 
 private struct MonitorView: View {
     @ObservedObject var model: RoomyViewModel
     @State private var liveRefresh = true
+    @State private var showAllNetworkInterfaces = false
+    @State private var showAllBluetoothDevices = false
+    @State private var showAllProcesses = false
 
     private let refreshInterval: UInt64 = 5_000_000_000
+    private let networkRowLimit = 4
+    private let bluetoothRowLimit = 6
+    private let processRowLimit = 12
+
+    private var visibleNetworkInterfaces: ArraySlice<NetworkStatus> {
+        let interfaces = model.status?.network ?? []
+        return showAllNetworkInterfaces ? interfaces[...] : interfaces.prefix(networkRowLimit)
+    }
+
+    private var visibleBluetoothDevices: ArraySlice<BluetoothStatus> {
+        let devices = model.status?.bluetooth ?? []
+        return showAllBluetoothDevices ? devices[...] : devices.prefix(bluetoothRowLimit)
+    }
+
+    private var visibleTopProcesses: ArraySlice<ProcessInfo> {
+        let processes = model.status?.topProcesses ?? []
+        return showAllProcesses ? processes[...] : processes.prefix(processRowLimit)
+    }
+
+    private var hasNetworkOrBluetoothData: Bool {
+        !(model.status?.network.isEmpty ?? true) || !(model.status?.bluetooth.isEmpty ?? true)
+    }
+
+    private var monitorFindings: [MonitorFinding] {
+        guard let status = model.status else {
+            return [
+                MonitorFinding(
+                    title: "Snapshot needed",
+                    detail: "Refresh loads current CPU, memory, disk, battery, network, and process data.",
+                    symbol: "arrow.clockwise",
+                    tint: .blue
+                )
+            ]
+        }
+
+        var findings: [MonitorFinding] = []
+        let diskPressure = model.diskPressure
+        if diskPressure > 85 {
+            findings.append(MonitorFinding(
+                title: "Disk pressure is high",
+                detail: "Start with cleanup preview or scan storage to find large reclaimable groups.",
+                symbol: "internaldrive",
+                tint: .orange
+            ))
+        } else {
+            findings.append(MonitorFinding(
+                title: "Disk pressure is manageable",
+                detail: "Current disk usage is \(Formatters.percent(diskPressure)).",
+                symbol: "checkmark.circle",
+                tint: .green
+            ))
+        }
+
+        if let memory = status.memory, memory.usedPercent > 82 {
+            findings.append(MonitorFinding(
+                title: "Memory pressure needs attention",
+                detail: "\(Formatters.percent(memory.usedPercent)) used, \(memory.pressure ?? "pressure unknown"). Check top processes before optimization.",
+                symbol: "memorychip",
+                tint: .orange
+            ))
+        } else if let memory = status.memory {
+            findings.append(MonitorFinding(
+                title: "Memory looks stable",
+                detail: "\(Formatters.percent(memory.usedPercent)) used, \(memory.pressure ?? "pressure normal").",
+                symbol: "memorychip",
+                tint: .green
+            ))
+        }
+
+        if let cpu = status.cpu, cpu.usage > 80 {
+            findings.append(MonitorFinding(
+                title: "CPU load is elevated",
+                detail: "Top processes can show whether a single app is driving the spike.",
+                symbol: "cpu",
+                tint: .orange
+            ))
+        }
+
+        let activeAlerts = status.processAlerts.filter { $0.status == "active" }
+        if !activeAlerts.isEmpty {
+            findings.append(MonitorFinding(
+                title: "Process alerts are active",
+                detail: "\(activeAlerts.count) process signals need review before running maintenance.",
+                symbol: "exclamationmark.triangle",
+                tint: .orange
+            ))
+        }
+
+        if status.proxy?.enabled == true {
+            findings.append(MonitorFinding(
+                title: "Proxy is enabled",
+                detail: proxyDetail,
+                symbol: "network",
+                tint: .blue
+            ))
+        }
+
+        return Array(findings.prefix(5))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            SectionBand(title: "Diagnosis", symbol: "checklist") {
+                DataTable {
+                    ForEach(monitorFindings) { finding in
+                        FindingRow(finding: finding)
+                    }
+                }
+            }
+
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14)], spacing: 14) {
                 MetricCard(title: "CPU", value: Formatters.percent(model.status?.cpu?.usage ?? 0), detail: "Load \(String(format: "%.2f", model.status?.cpu?.load1 ?? 0))", tint: .blue, symbol: "cpu")
                 MetricCard(title: "Memory", value: Formatters.percent(model.status?.memory?.usedPercent ?? 0), detail: model.status?.memory?.pressure ?? "pressure unknown", tint: .green, symbol: "memorychip")
@@ -1306,30 +1698,50 @@ private struct MonitorView: View {
             }
 
             SectionBand(title: "Network & Bluetooth", symbol: "antenna.radiowaves.left.and.right") {
-                DataTable {
-                    ForEach((model.status?.network ?? []).prefix(4)) { network in
-                        InfoLine(
-                            title: network.name,
-                            value: "Down \(String(format: "%.2f", network.rxRateMBs)) MB/s · Up \(String(format: "%.2f", network.txRateMBs)) MB/s",
-                            symbol: "network"
+                if hasNetworkOrBluetoothData {
+                    DataTable {
+                        ForEach(visibleNetworkInterfaces) { network in
+                            InfoLine(
+                                title: network.name,
+                                value: "Down \(String(format: "%.2f", network.rxRateMBs)) MB/s · Up \(String(format: "%.2f", network.txRateMBs)) MB/s",
+                                symbol: "network"
+                            )
+                        }
+                        ExpandRowsLine(
+                            total: model.status?.network.count ?? 0,
+                            visibleCount: visibleNetworkInterfaces.count,
+                            noun: "network interfaces",
+                            expanded: showAllNetworkInterfaces,
+                            onToggle: { showAllNetworkInterfaces.toggle() }
+                        )
+                        ForEach(visibleBluetoothDevices) { device in
+                            InfoLine(
+                                title: device.name,
+                                value: device.connected ? "Connected \(device.battery ?? "")" : "Not connected",
+                                symbol: "dot.radiowaves.left.and.right"
+                            )
+                        }
+                        ExpandRowsLine(
+                            total: model.status?.bluetooth.count ?? 0,
+                            visibleCount: visibleBluetoothDevices.count,
+                            noun: "Bluetooth devices",
+                            expanded: showAllBluetoothDevices,
+                            onToggle: { showAllBluetoothDevices.toggle() }
                         )
                     }
-                    HiddenCountLine(total: model.status?.network.count ?? 0, visibleLimit: 4, noun: "network interfaces")
-                    ForEach((model.status?.bluetooth ?? []).prefix(6)) { device in
-                        InfoLine(
-                            title: device.name,
-                            value: device.connected ? "Connected \(device.battery ?? "")" : "Not connected",
-                            symbol: "dot.radiowaves.left.and.right"
-                        )
-                    }
-                    HiddenCountLine(total: model.status?.bluetooth.count ?? 0, visibleLimit: 6, noun: "Bluetooth devices")
+                } else {
+                    EmptyStateView(
+                        title: "No network or Bluetooth data",
+                        detail: "Refresh Snapshot to load interface throughput and paired device status.",
+                        symbol: "antenna.radiowaves.left.and.right"
+                    )
                 }
             }
 
             SectionBand(title: "Top Processes", symbol: "list.number") {
                 if let status = model.status, !status.topProcesses.isEmpty {
                     DataTable {
-                        ForEach(status.topProcesses.prefix(12)) { process in
+                        ForEach(visibleTopProcesses) { process in
                             HStack {
                                 Text(process.name).font(.headline)
                                 Spacer()
@@ -1341,7 +1753,13 @@ private struct MonitorView: View {
                             }
                             .padding(.vertical, 7)
                         }
-                        HiddenCountLine(total: status.topProcesses.count, visibleLimit: 12, noun: "processes")
+                        ExpandRowsLine(
+                            total: status.topProcesses.count,
+                            visibleCount: visibleTopProcesses.count,
+                            noun: "processes",
+                            expanded: showAllProcesses,
+                            onToggle: { showAllProcesses.toggle() }
+                        )
                     }
                 } else {
                     EmptyStateView(
@@ -1450,6 +1868,7 @@ private struct MonitorView: View {
         let adapter = thermal.adapterPower.map { "Adapter \(String(format: "%.0f", $0))W" }
         return [system, adapter].compactMap { $0 }.joined(separator: " · ")
     }
+
 }
 
 private struct SettingsView: View {
@@ -1466,8 +1885,21 @@ private struct SettingsView: View {
     @State private var showNightlyUpdateConfirm = false
     @State private var showRemoveConfirm = false
     @State private var pendingTouchIDAction: String?
+    @State private var previewedTouchIDAction: String?
+    @State private var completionPreviewReady = false
+    @State private var launchersPreviewReady = false
+    @State private var previewedMaintenanceAction: MaintenanceAction?
     @State private var editablePurgePaths: [String] = []
     @State private var purgePathInput = ""
+    @State private var showAllProtectionRules = false
+
+    private let protectionRuleLimit = 28
+
+    private enum MaintenanceAction: Equatable {
+        case stableUpdate
+        case nightlyUpdate
+        case remove
+    }
 
     private var whitelistItems: [WhitelistItem] {
         whitelistMode == "optimize"
@@ -1477,6 +1909,27 @@ private struct SettingsView: View {
 
     private var selectedPatterns: Set<String> {
         whitelistMode == "optimize" ? selectedOptimizePatterns : selectedCleanPatterns
+    }
+
+    private var visibleWhitelistItems: ArraySlice<WhitelistItem> {
+        showAllProtectionRules ? whitelistItems[...] : whitelistItems.prefix(protectionRuleLimit)
+    }
+
+    private var launchersAlreadyInstalled: Bool {
+        model.launcherStatus?.raycastInstalled == true
+            && (model.launcherStatus?.alfredInstalled == true || model.launcherStatus?.alfredAvailable == false)
+    }
+
+    private var stableUpdatePreviewReady: Bool {
+        previewedMaintenanceAction == .stableUpdate
+    }
+
+    private var nightlyUpdatePreviewReady: Bool {
+        previewedMaintenanceAction == .nightlyUpdate
+    }
+
+    private var removePreviewReady: Bool {
+        previewedMaintenanceAction == .remove
     }
 
     private var privilegedHelperValue: String {
@@ -1511,8 +1964,7 @@ private struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             SectionBand(title: "CLI Location", symbol: "terminal") {
                 HStack {
-                    Text(model.cliPath)
-                        .font(.system(.body, design: .monospaced))
+                    PathValueText(model.cliPath, font: .system(.body, design: .monospaced))
                     Spacer()
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -1532,6 +1984,12 @@ private struct SettingsView: View {
                     SettingsRow(title: "Shell completion", value: completionValue)
                 }
             }
+
+            MaintenancePlanPanel(
+                maintenanceStatus: model.maintenanceStatus,
+                journalEntries: model.operationJournalEntries,
+                configPath: model.configPath
+            )
 
             SectionBand(title: "Privileged Helper", symbol: "lock.badge.checkmark") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
@@ -1588,8 +2046,12 @@ private struct SettingsView: View {
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
                     Button {
+                        previewedTouchIDAction = nil
                         Task {
                             await model.executeTouchID(action: touchIDAction, dryRun: true)
+                            if model.executionState(for: .settings) == .completed {
+                                previewedTouchIDAction = touchIDAction
+                            }
                         }
                     } label: {
                         Label("Preview Touch ID", systemImage: "doc.text.magnifyingglass")
@@ -1602,10 +2064,16 @@ private struct SettingsView: View {
                     } label: {
                         Label(model.touchIDStatus?.configured == true ? "Disable Touch ID" : "Enable Touch ID", systemImage: "touchid")
                     }
-                    .disabled(model.touchIDStatus?.supported == false || model.isLoading)
+                    .disabled(model.touchIDStatus?.supported == false || model.isLoading || previewedTouchIDAction != touchIDAction)
 
                     Button {
-                        Task { await model.executeCompletion(dryRun: true) }
+                        completionPreviewReady = false
+                        Task {
+                            await model.executeCompletion(dryRun: true)
+                            if model.executionState(for: .settings) == .completed {
+                                completionPreviewReady = true
+                            }
+                        }
                     } label: {
                         Label("Preview Completion", systemImage: "doc.text.magnifyingglass")
                     }
@@ -1616,10 +2084,16 @@ private struct SettingsView: View {
                     } label: {
                         Label("Install Completion", systemImage: "terminal")
                     }
-                    .disabled(model.completionStatus?.installed == true || model.isLoading)
+                    .disabled(model.completionStatus?.installed == true || model.isLoading || !completionPreviewReady)
 
                     Button {
-                        Task { await model.executeLaunchers(dryRun: true) }
+                        launchersPreviewReady = false
+                        Task {
+                            await model.executeLaunchers(dryRun: true)
+                            if model.executionState(for: .settings) == .completed {
+                                launchersPreviewReady = true
+                            }
+                        }
                     } label: {
                         Label("Preview Launchers", systemImage: "doc.text.magnifyingglass")
                     }
@@ -1630,7 +2104,7 @@ private struct SettingsView: View {
                     } label: {
                         Label("Install Launchers", systemImage: "sparkle.magnifyingglass")
                     }
-                    .disabled(model.launcherStatus?.raycastInstalled == true && model.launcherStatus?.alfredInstalled == true || model.isLoading)
+                    .disabled(launchersAlreadyInstalled || model.isLoading || !launchersPreviewReady)
                 }
             }
 
@@ -1654,14 +2128,18 @@ private struct SettingsView: View {
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
                     Button {
+                        previewedMaintenanceAction = nil
                         Task {
                             await model.execute(
                                 domain: .update,
-                                plan: ExecutionPlan(confirmed: true, dryRun: true)
+                                plan: ExecutionPlan(confirmed: true, dryRun: true, force: true)
                             )
+                            if model.executionState(for: .settings) == .completed {
+                                previewedMaintenanceAction = .stableUpdate
+                            }
                         }
                     } label: {
-                        Label("Preview Update", systemImage: "doc.text.magnifyingglass")
+                        Label("Preview Stable Update", systemImage: "doc.text.magnifyingglass")
                     }
                     .disabled(model.isLoading)
 
@@ -1670,6 +2148,22 @@ private struct SettingsView: View {
                     } label: {
                         Label("Force Stable Update", systemImage: "arrow.down.circle")
                     }
+                    .disabled(model.isLoading || !stableUpdatePreviewReady)
+
+                    Button {
+                        previewedMaintenanceAction = nil
+                        Task {
+                            await model.execute(
+                                domain: .update,
+                                plan: ExecutionPlan(confirmed: true, dryRun: true, nightly: true)
+                            )
+                            if model.executionState(for: .settings) == .completed {
+                                previewedMaintenanceAction = .nightlyUpdate
+                            }
+                        }
+                    } label: {
+                        Label("Preview Nightly", systemImage: "doc.text.magnifyingglass")
+                    }
                     .disabled(model.isLoading)
 
                     Button {
@@ -1677,14 +2171,18 @@ private struct SettingsView: View {
                     } label: {
                         Label("Install Nightly", systemImage: "moon.stars")
                     }
-                    .disabled(model.isLoading)
+                    .disabled(model.isLoading || !nightlyUpdatePreviewReady)
 
                     Button {
+                        previewedMaintenanceAction = nil
                         Task {
                             await model.execute(
                                 domain: .remove,
                                 plan: ExecutionPlan(confirmed: true, dryRun: true)
                             )
+                            if model.executionState(for: .settings) == .completed {
+                                previewedMaintenanceAction = .remove
+                            }
                         }
                     } label: {
                         Label("Preview Remove", systemImage: "doc.text.magnifyingglass")
@@ -1696,7 +2194,7 @@ private struct SettingsView: View {
                     } label: {
                         Label("Remove Roomy", systemImage: "trash")
                     }
-                    .disabled(model.isLoading)
+                    .disabled(model.isLoading || !removePreviewReady)
                 }
             }
 
@@ -1739,7 +2237,7 @@ private struct SettingsView: View {
                                 Image(systemName: "folder")
                                     .foregroundStyle(.blue)
                                     .frame(width: 22)
-                                Text(path)
+                                PathValueText(path)
                                 Spacer()
                                 Text(FileManager.default.fileExists(atPath: path) ? "Ready" : "Missing")
                                     .foregroundStyle(FileManager.default.fileExists(atPath: path) ? .green : .orange)
@@ -1793,7 +2291,7 @@ private struct SettingsView: View {
                     )
                 } else {
                     DataTable {
-                        ForEach(whitelistItems.prefix(28)) { item in
+                        ForEach(visibleWhitelistItems) { item in
                             Toggle(isOn: Binding(
                                 get: { isSelected(item.pattern) },
                                 set: { setSelected($0, pattern: item.pattern) }
@@ -1815,7 +2313,13 @@ private struct SettingsView: View {
                             .toggleStyle(.checkbox)
                             .padding(.vertical, 7)
                         }
-                        HiddenCountLine(total: whitelistItems.count, visibleLimit: 28, noun: "protection rules")
+                        ExpandRowsLine(
+                            total: whitelistItems.count,
+                            visibleCount: visibleWhitelistItems.count,
+                            noun: "protection rules",
+                            expanded: showAllProtectionRules,
+                            onToggle: { showAllProtectionRules.toggle() }
+                        )
                     }
                 }
             }
@@ -1867,7 +2371,7 @@ private struct SettingsView: View {
                 .disabled(model.isLoading)
             }
 
-            ExecutionEventsView(events: model.executionEvents, state: model.executionState)
+            ExecutionEventsView(events: model.executionEvents(for: .settings), state: model.executionState(for: .settings))
         }
         .onChange(of: model.cleanWhitelist) { _ in
             syncSelectionsFromModel()
@@ -1877,6 +2381,9 @@ private struct SettingsView: View {
         }
         .onChange(of: model.purgePaths) { _ in
             syncPurgePathsFromModel()
+        }
+        .onChange(of: whitelistMode) { _ in
+            showAllProtectionRules = false
         }
         .confirmationDialog("Install privileged helper?", isPresented: $showPrivilegedHelperInstallConfirm) {
             if !model.isLoading, model.privilegedHelperStatus?.state != .enabled {
@@ -1901,11 +2408,15 @@ private struct SettingsView: View {
             Text("Roomy will unregister the launch daemon. Admin cleanup will be unavailable until the helper is installed again.")
         }
         .confirmationDialog("Change Touch ID sudo setting?", isPresented: $showTouchIDConfirm) {
-            if !model.isLoading, let action = pendingTouchIDAction, model.touchIDStatus?.supported != false {
+            if !model.isLoading,
+               let action = pendingTouchIDAction,
+               model.touchIDStatus?.supported != false,
+               previewedTouchIDAction == action {
                 Button(action == "disable" ? "Disable Touch ID" : "Enable Touch ID") {
-                    guard !model.isLoading else { return }
+                    guard !model.isLoading, previewedTouchIDAction == action else { return }
                     Task {
                         await model.executeTouchID(action: action, administrator: true)
+                        previewedTouchIDAction = nil
                         pendingTouchIDAction = nil
                     }
                 }
@@ -1917,10 +2428,13 @@ private struct SettingsView: View {
             Text("macOS will ask for administrator authorization. Roomy modifies sudo configuration through its existing Touch ID helper.")
         }
         .confirmationDialog("Install shell completion?", isPresented: $showCompletionConfirm) {
-            if !model.isLoading, model.completionStatus?.installed != true {
+            if !model.isLoading, model.completionStatus?.installed != true, completionPreviewReady {
                 Button("Install Completion") {
-                    guard !model.isLoading else { return }
-                    Task { await model.executeCompletion() }
+                    guard !model.isLoading, completionPreviewReady else { return }
+                    Task {
+                        await model.executeCompletion()
+                        completionPreviewReady = false
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -1928,10 +2442,13 @@ private struct SettingsView: View {
             Text("Roomy will update the shell config file shown in Settings so roomy commands autocomplete in new terminal sessions.")
         }
         .confirmationDialog("Install Raycast and Alfred launchers?", isPresented: $showLaunchersConfirm) {
-            if !model.isLoading, !(model.launcherStatus?.raycastInstalled == true && model.launcherStatus?.alfredInstalled == true) {
+            if !model.isLoading, !launchersAlreadyInstalled, launchersPreviewReady {
                 Button("Install Launchers") {
-                    guard !model.isLoading else { return }
-                    Task { await model.executeLaunchers() }
+                    guard !model.isLoading, launchersPreviewReady else { return }
+                    Task {
+                        await model.executeLaunchers()
+                        launchersPreviewReady = false
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -1939,15 +2456,16 @@ private struct SettingsView: View {
             Text("Roomy will create Raycast script commands and Alfred workflows for Clean, Uninstall, Optimize, Analyze, and Status.")
         }
         .confirmationDialog("Force Roomy stable update?", isPresented: $showForceUpdateConfirm) {
-            if !model.isLoading {
+            if !model.isLoading, stableUpdatePreviewReady {
                 Button("Force Stable Update") {
-                    guard !model.isLoading else { return }
+                    guard !model.isLoading, stableUpdatePreviewReady else { return }
                     Task {
                         await model.execute(
                             domain: .update,
                             plan: ExecutionPlan(confirmed: true, force: true),
                             administrator: true
                         )
+                        previewedMaintenanceAction = nil
                     }
                 }
             }
@@ -1956,15 +2474,16 @@ private struct SettingsView: View {
             Text("Roomy will run its existing update workflow. macOS may ask for administrator authorization if the install location needs it.")
         }
         .confirmationDialog("Install nightly Roomy build?", isPresented: $showNightlyUpdateConfirm) {
-            if !model.isLoading {
+            if !model.isLoading, nightlyUpdatePreviewReady {
                 Button("Install Nightly") {
-                    guard !model.isLoading else { return }
+                    guard !model.isLoading, nightlyUpdatePreviewReady else { return }
                     Task {
                         await model.execute(
                             domain: .update,
                             plan: ExecutionPlan(confirmed: true, nightly: true),
                             administrator: true
                         )
+                        previewedMaintenanceAction = nil
                     }
                 }
             }
@@ -1973,15 +2492,16 @@ private struct SettingsView: View {
             Text("Nightly uses Roomy's main-branch installer and is intended for testing unreleased fixes.")
         }
         .confirmationDialog("Remove Roomy from this Mac?", isPresented: $showRemoveConfirm) {
-            if !model.isLoading {
+            if !model.isLoading, removePreviewReady {
                 Button("Remove Roomy", role: .destructive) {
-                    guard !model.isLoading else { return }
+                    guard !model.isLoading, removePreviewReady else { return }
                     Task {
                         await model.execute(
                             domain: .remove,
                             plan: ExecutionPlan(confirmed: true),
                             administrator: true
                         )
+                        previewedMaintenanceAction = nil
                     }
                 }
             }
@@ -2090,6 +2610,78 @@ private struct SettingsView: View {
     }
 }
 
+private struct StatusChipModel: Identifiable {
+    var text: String
+    var symbol: String
+    var tint: Color
+
+    var id: String { "\(symbol)-\(text)" }
+}
+
+private struct HomeRecommendation: Identifiable {
+    var id: String
+    var title: String
+    var detail: String
+    var value: String
+    var symbol: String
+    var tint: Color
+    var actionTitle: String
+    var action: () -> Void
+}
+
+private struct RecommendationPanel: View {
+    var recommendations: [HomeRecommendation]
+
+    var body: some View {
+        SectionBand(title: "Recommended Next Steps", symbol: "sparkles.rectangle.stack") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 12)], spacing: 12) {
+                ForEach(recommendations) { recommendation in
+                    Button(action: recommendation.action) {
+                        RecommendationCard(recommendation: recommendation)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+private struct RecommendationCard: View {
+    var recommendation: HomeRecommendation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: recommendation.symbol)
+                    .font(.title3)
+                    .foregroundStyle(recommendation.tint)
+                    .frame(width: 26)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(recommendation.title)
+                        .font(.headline)
+                    Text(recommendation.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+
+            HStack {
+                Text(recommendation.value)
+                    .font(.system(.title3, design: .rounded).weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer()
+                Label(recommendation.actionTitle, systemImage: "arrow.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(recommendation.tint)
+            }
+        }
+        .panelStyle(minHeight: 150)
+    }
+}
+
 private struct HealthScoreCard: View {
     var score: Int
     var message: String?
@@ -2121,6 +2713,11 @@ private struct CleanupFlowPanel: View {
     var preview: CleanupPreview?
     var executionState: PreviewExecutionState
     var isLoading: Bool
+    var previewReadyPrimaryTitle: String = "Move to Trash"
+    var previewReadyPrimarySymbol: String = "trash"
+    var reviewButtonTitle: String = "Review Plan"
+    var reviewButtonSymbol: String = "list.bullet.rectangle"
+    var showsReviewButton: Bool = true
     var onPreview: () -> Void
     var onReview: () -> Void
 
@@ -2137,7 +2734,7 @@ private struct CleanupFlowPanel: View {
                     HStack(spacing: 8) {
                         SafetyPill(text: "Preview cleanup", symbol: "doc.text.magnifyingglass")
                         SafetyPill(text: "Review plan", symbol: "list.bullet.rectangle")
-                        SafetyPill(text: "Trash-backed", symbol: "trash")
+                        SafetyPill(text: recoveryPillText, symbol: recoveryPillSymbol, tint: recoveryPillTint)
                         SafetyPill(text: "Protected paths skipped", symbol: "checkmark.shield")
                     }
                 }
@@ -2153,11 +2750,13 @@ private struct CleanupFlowPanel: View {
                     .controlSize(.large)
                     .disabled(isLoading || executionState == .running)
 
-                    Button(action: onReview) {
-                        Label("Review Plan", systemImage: "list.bullet.rectangle")
+                    if showsReviewButton {
+                        Button(action: onReview) {
+                            Label(reviewButtonTitle, systemImage: reviewButtonSymbol)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(isLoading)
                     }
-                    .buttonStyle(.borderless)
-                    .disabled(isLoading)
                 }
             }
 
@@ -2171,15 +2770,33 @@ private struct CleanupFlowPanel: View {
         case .completed:
             return "Cleanup finished. Recent activity shows what was moved, skipped, or left alone."
         case .running:
+            if preview?.requiresNonRecoverableWarning == true {
+                return "Roomy is cleaning approved files."
+            }
             return "Roomy is moving approved recoverable files to Trash."
         case .failed(let message):
             return message
         default:
             if let preview {
+                if preview.requiresNonRecoverableWarning {
+                    return "\(Formatters.bytes(preview.estimatedBytes)) includes non-recoverable cleanup across \(preview.itemCount) items. Review before cleaning."
+                }
                 return "\(Formatters.bytes(preview.estimatedBytes)) is ready for review across \(preview.itemCount) recoverable items."
             }
             return "Preview recoverable cache, log, and rebuildable files, review the plan, then move approved items to Trash."
         }
+    }
+
+    private var recoveryPillText: String {
+        preview?.requiresNonRecoverableWarning == true ? "Non-recoverable warning" : "Trash-backed"
+    }
+
+    private var recoveryPillSymbol: String {
+        preview?.requiresNonRecoverableWarning == true ? "exclamationmark.triangle" : "trash"
+    }
+
+    private var recoveryPillTint: Color {
+        preview?.requiresNonRecoverableWarning == true ? .orange : .secondary
     }
 
     private var primaryButtonTitle: String {
@@ -2190,8 +2807,11 @@ private struct CleanupFlowPanel: View {
         case .completed:
             return "Preview Again"
         case .previewReady:
-            return "Move to Trash"
+            return previewReadyPrimaryTitle
         default:
+            if preview != nil {
+                return previewReadyPrimaryTitle
+            }
             return "Preview Cleanup"
         }
     }
@@ -2203,8 +2823,11 @@ private struct CleanupFlowPanel: View {
         case .completed:
             return "arrow.clockwise"
         case .previewReady:
-            return "trash"
+            return previewReadyPrimarySymbol
         default:
+            if preview != nil {
+                return previewReadyPrimarySymbol
+            }
             return "doc.text.magnifyingglass"
         }
     }
@@ -2224,12 +2847,20 @@ private struct CleanupFlowPanel: View {
                 state: preview == nil ? .waiting : .complete
             ),
             ProgressRail.Step(
-                title: "Move to Trash",
+                title: cleanupActionStepTitle,
                 value: trashStepValue,
-                symbol: "trash",
+                symbol: cleanupActionStepSymbol,
                 state: trashStepState
             )
         ]
+    }
+
+    private var cleanupActionStepTitle: String {
+        preview?.requiresNonRecoverableWarning == true ? "Clean Files" : "Move to Trash"
+    }
+
+    private var cleanupActionStepSymbol: String {
+        preview?.requiresNonRecoverableWarning == true ? "exclamationmark.triangle" : "trash"
     }
 
     private var trashStepValue: String {
@@ -2239,8 +2870,11 @@ private struct CleanupFlowPanel: View {
         case .completed:
             return "Done"
         case .previewReady:
-            return "Confirm"
+            return preview?.requiresNonRecoverableWarning == true ? "Warning" : "Ready"
         default:
+            if preview != nil {
+                return preview?.requiresNonRecoverableWarning == true ? "Warning" : "Ready"
+            }
             return "After review"
         }
     }
@@ -2314,20 +2948,133 @@ private struct ProgressRail: View {
     }
 }
 
+private struct CleanupReviewPanel: View {
+    var preview: CleanupPreview?
+
+    var body: some View {
+        SectionBand(title: "Review Before Cleanup", symbol: "doc.text.magnifyingglass") {
+            if let preview {
+                DataTable {
+                    InfoLine(title: "Scope", value: "\(preview.categoryCount) categories · \(preview.itemCount) items · \(Formatters.bytes(preview.estimatedBytes))", symbol: "scope")
+                    InfoLine(title: "Recovery", value: preview.isTrashBacked ? "Trash-backed where supported" : "Not Trash-backed; recovery may be unavailable", symbol: preview.isTrashBacked ? "trash" : "exclamationmark.triangle")
+                    InfoLine(title: "Admin", value: preview.adminRequired ? "Needed for at least one category" : "Not needed by preview", symbol: "lock")
+                    InfoLine(title: "Protected", value: "\(preview.protectedCount) protected · \(preview.whitelistCount) whitelist skips", symbol: "checkmark.shield")
+                    InfoLine(title: "Details", value: preview.detailsPath, symbol: "doc.text")
+                }
+            } else {
+                EmptyStateView(
+                    title: "Preview required",
+                    detail: "Run Preview to load size, category, recovery, admin, and protected-path details.",
+                    symbol: "doc.text.magnifyingglass"
+                )
+            }
+        }
+    }
+}
+
+private struct SelectionReviewBar: View {
+    var title: String
+    var value: String
+    var detail: String
+    var chips: [StatusChipModel]
+    var onClear: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "checklist.checked")
+                .font(.title3)
+                .foregroundStyle(.orange)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.headline)
+                    Text(value)
+                        .font(.system(.headline, design: .rounded).weight(.semibold))
+                }
+                Text(detail.isEmpty ? "No grouped selection detail" : detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    ForEach(chips) { chip in
+                        StatusChip(chip: chip)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button(action: onClear) {
+                Label("Clear", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(14)
+        .background(LiquidGlassSurface(cornerRadius: 8, tint: Color.orange.opacity(0.05)))
+    }
+}
+
+private struct StatusChip: View {
+    var chip: StatusChipModel
+
+    var body: some View {
+        Label(chip.text, systemImage: chip.symbol)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(chip.tint)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule(style: .continuous).fill(chip.tint.opacity(0.10)))
+    }
+}
+
+private struct MonitorFinding: Identifiable {
+    var title: String
+    var detail: String
+    var symbol: String
+    var tint: Color
+
+    var id: String { "\(symbol)-\(title)-\(detail)" }
+}
+
+private struct FindingRow: View {
+    var finding: MonitorFinding
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: finding.symbol)
+                .foregroundStyle(finding.tint)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(finding.title)
+                    .font(.headline)
+                Text(finding.detail)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 7)
+    }
+}
+
 private struct SafetyPill: View {
     var text: String
     var symbol: String
+    var tint: Color = .secondary
 
     var body: some View {
         Label(text, systemImage: symbol)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(tint)
             .lineLimit(1)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(
                 Capsule()
-                    .fill(Color.primary.opacity(0.06))
+                    .fill(tint.opacity(0.09))
             )
     }
 }
@@ -2419,37 +3166,60 @@ private struct DataTable<Content: View>: View {
     }
 }
 
-private struct HiddenCountLine: View {
-    var total: Int
-    var visibleLimit: Int
-    var noun: String
+private struct PathValueText: View {
+    var value: String
+    var font: Font?
 
-    private var hiddenCount: Int {
-        max(0, total - visibleLimit)
-    }
-
-    private var visibleCount: Int {
-        min(total, visibleLimit)
+    init(_ value: String, font: Font? = nil) {
+        self.value = value
+        self.font = font
     }
 
     var body: some View {
-        if hiddenCount > 0 {
-            HStack(spacing: 8) {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
-                Text("Showing \(visibleCount) of \(total); \(hiddenCount) more \(noun) hidden")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        Text(value)
+            .font(font ?? .caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .help(value)
+    }
+}
+
+private struct ExpandRowsLine: View {
+    var total: Int
+    var visibleCount: Int
+    var noun: String
+    var expanded: Bool
+    var onToggle: () -> Void
+
+    private var hiddenCount: Int {
+        max(0, total - visibleCount)
+    }
+
+    var body: some View {
+        if expanded || hiddenCount > 0 {
+            Button(action: onToggle) {
+                HStack(spacing: 8) {
+                    Image(systemName: expanded ? "chevron.up.circle" : "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22)
+                    Text(expanded ? "Show fewer \(noun)" : "Show \(hiddenCount) more \(noun)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 7)
+            .buttonStyle(.plain)
         }
     }
 }
 
 private struct CleanupCategoryRow: View {
     var item: CleanupCategory
+    var deleteMode: String
 
     var body: some View {
         HStack(spacing: 12) {
@@ -2461,6 +3231,9 @@ private struct CleanupCategoryRow: View {
                 Text("\(item.section) · \(item.riskReason)").foregroundStyle(.secondary)
             }
             Spacer()
+            Text(recoveryText)
+                .font(.caption)
+                .foregroundStyle(recoveryTint)
             Text("\(item.itemCount) items")
                 .foregroundStyle(.secondary)
             Text(Formatters.bytes(item.estimatedBytes))
@@ -2480,6 +3253,18 @@ private struct CleanupCategoryRow: View {
         case "LOW": .green
         default: .blue
         }
+    }
+
+    private var isTrashBacked: Bool {
+        deleteMode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "trash"
+    }
+
+    private var recoveryText: String {
+        isTrashBacked ? "Trash-backed" : "Permanent"
+    }
+
+    private var recoveryTint: Color {
+        isTrashBacked ? .secondary : .orange
     }
 }
 
@@ -2502,6 +3287,63 @@ private struct ActionRow: View {
         }
         .padding(12)
         .background(LiquidGlassSurface(cornerRadius: 8))
+    }
+}
+
+private struct MaintenancePlanPanel: View {
+    var maintenanceStatus: RoomyMaintenanceStatus?
+    var journalEntries: [OperationJournalEntry]
+    var configPath: String
+
+    var body: some View {
+        SectionBand(title: "Maintenance Plan", symbol: "calendar.badge.clock") {
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 12)], spacing: 12) {
+                    IntegrationStatusCard(
+                        title: "Reports",
+                        value: reportValue,
+                        detail: "CLI-backed: roomy report --last 30d summarizes sessions, actions, and top paths.",
+                        symbol: "chart.bar.xaxis",
+                        tint: .blue
+                    )
+                    IntegrationStatusCard(
+                        title: "Schedule",
+                        value: "Available",
+                        detail: "CLI-backed: roomy schedule can run clean, purge, or installer on a daily, weekly, or monthly cadence.",
+                        symbol: "calendar.badge.clock",
+                        tint: .purple
+                    )
+                    IntegrationStatusCard(
+                        title: "Profiles",
+                        value: "Portable",
+                        detail: "CLI-backed: roomy profile saves whitelists, purge paths, and automation config.",
+                        symbol: "person.text.rectangle",
+                        tint: .green
+                    )
+                }
+
+                DataTable {
+                    InfoLine(title: "Current version", value: maintenanceStatus.map { "v\($0.version) · \($0.channel)" } ?? "Load Settings to check", symbol: "app.badge.checkmark")
+                    InfoLine(title: "Config location", value: configPath, symbol: "folder.badge.gearshape")
+                    InfoLine(title: "Suggested schedule", value: "roomy schedule enable --weekly --time 03:00 --command clean", symbol: "clock")
+                    InfoLine(title: "Profile starter", value: "roomy profile create work-laptop", symbol: "person.text.rectangle")
+                }
+
+                NoticeView(
+                    text: "Reports, schedules, and profiles are available in the CLI today. The native app shows their state and recommended commands without treating text-only flows as stable API contracts.",
+                    symbol: "terminal",
+                    tint: .blue
+                )
+            }
+        }
+    }
+
+    private var completedSessions: Int {
+        journalEntries.filter { $0.recordType == "session" && $0.action == "ENDED" }.count
+    }
+
+    private var reportValue: String {
+        completedSessions == 0 ? "Ready" : "\(completedSessions) sessions"
     }
 }
 
@@ -2750,7 +3592,11 @@ private struct SettingsRow: View {
         HStack {
             Text(title)
             Spacer()
-            Text(value).foregroundStyle(.secondary)
+            Text(value)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(value)
         }
         .padding(.vertical, 5)
     }

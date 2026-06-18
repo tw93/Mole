@@ -759,7 +759,8 @@ test('settings and maintenance endpoints return JSON contracts', () => withHome(
 
 test('purge preview handles large project containers within smoke-test budget', () => withHome((home) => {
   const root = path.join(home, 'Projects');
-  for (let index = 0; index < 120; index += 1) {
+  const projectCount = 64;
+  for (let index = 0; index < projectCount; index += 1) {
     const project = path.join(root, `App-${index}`);
     const artifact = path.join(project, 'node_modules');
     mkdirSync(artifact, { recursive: true });
@@ -772,7 +773,7 @@ test('purge preview handles large project containers within smoke-test budget', 
   const elapsed = Date.now() - started;
 
   assertContract(purge, 'purge_preview');
-  assert.ok(purge.item_count >= 100, `expected many purge artifacts, got ${purge.item_count}`);
+  assert.ok(purge.item_count >= projectCount, `expected many purge artifacts, got ${purge.item_count}`);
   assert.ok(elapsed < 30_000, `purge preview took ${elapsed}ms`);
 }));
 

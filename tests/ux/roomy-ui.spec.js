@@ -54,6 +54,15 @@ test.describe('RoomyUI UX preview', () => {
     await expect(page.getByText('Disk Used')).toBeVisible();
     await expect(page.getByText('Potential Cleanup')).toBeVisible();
     await expect(page.getByLabel('Care summary').getByText('Scan Access')).toBeVisible();
+    await expect(page.getByLabel('Home recommendation center').getByText('Home Recommendation Center')).toBeVisible();
+    await expect(page.getByText('Top 3 actions ranked by impact, risk, and readiness')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Review Top Recommendation' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Diagnose Monitor' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Schedule Maintenance' })).toBeVisible();
+    await expect(page.getByLabel('Selected action summary').getByText('Selected Action Summary')).toBeVisible();
+    await expect(page.getByLabel('Selected action summary').getByText('3 actions')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Review Selected Actions' })).toBeVisible();
+    await expect(page.locator('[data-ux-surface="selected-action-summary"]')).toHaveCSS('position', 'sticky');
     await expect(page.getByRole('button', { name: 'Open Full Disk Access' })).toBeVisible();
     await expect(page.getByLabel('First-run and recovery visibility').getByText('Ready for your first scan')).toBeVisible();
     await expect(page.getByLabel('First-run safeguards').getByText('No files changed', { exact: true })).toBeVisible();
@@ -73,11 +82,21 @@ test.describe('RoomyUI UX preview', () => {
     await expect(page.getByText('Recommended Cleanup')).toBeVisible();
     await expect(page.getByText('Showing 4 of 51 groups · 47 groups hidden until you open the full plan')).toBeVisible();
     await expect(page.getByLabel('Trash confirmation copy').getByText('Roomy revalidates selected paths')).toBeVisible();
+    await expect(page.getByLabel('Cleanup review and result closure').getByText('Review & Result Closure')).toBeVisible();
+    await expect(page.getByLabel('Cleanup review and result closure').getByText('Selected items staged by group')).toBeVisible();
+    await expect(page.getByLabel('Cleanup review and result closure').getByText('Result state stays actionable')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open Last Result Report' })).toBeVisible();
     await expect(page.getByText('Secondary Cleanup Tools')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Recent Activity' })).toBeVisible();
     await expect(page.getByText('Showing 2 of 8 journal entries · 6 entries hidden in this preview')).toBeVisible();
+    await expect(page.getByLabel('Monitor diagnosis').getByText('Monitor Diagnosis')).toBeVisible();
+    await expect(page.getByText('3 findings explain what is slowing cleanup confidence')).toBeVisible();
+    await expect(page.getByText('Write bursts after app updates')).toBeVisible();
     await expect(page.getByText('Showing 5 of 9 signals · 4 signals hidden in this preview')).toBeVisible();
     await expect(page.getByText('Quick launchers')).toBeVisible();
+    await expect(page.getByLabel('Maintenance plan').getByText('Maintenance Plan')).toBeVisible();
+    await expect(page.getByText('Balanced profile · weekly schedule · approval before Trash')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit Maintenance Profile' })).toBeVisible();
     await expect(page.getByText('CPU and memory')).toHaveCount(0);
     await expect(page.getByText('Full Disk Access is a one-time option')).toHaveCount(0);
     await expect(page.getByText('Administrator action needs approval')).toHaveCount(0);
@@ -105,7 +124,7 @@ test.describe('RoomyUI UX preview', () => {
       expect(pageWidths.scrollWidth, `document overflow at ${viewport.width}px`).toBeLessThanOrEqual(pageWidths.clientWidth + 1);
       expect(pageWidths.bodyScrollWidth, `body overflow at ${viewport.width}px`).toBeLessThanOrEqual(pageWidths.bodyClientWidth + 1);
 
-      const overflowing = await page.locator('button, .row strong, .row span, .panel, .notice, .count-note, .callout strong, .callout span, .state-card h2, .state-card p').evaluateAll((nodes) =>
+      const overflowing = await page.locator('button, .row strong, .row span, .panel, .notice, .count-note, .callout strong, .callout span, .state-card h2, .state-card p, .recommendation-card h3, .recommendation-card p, .closure-card h3, .closure-card p, .diagnosis-card h3, .diagnosis-card p, .summary-stat strong, .summary-stat span').evaluateAll((nodes) =>
         nodes
           .filter((node) => node.scrollWidth > node.clientWidth + 1)
           .map((node) => node.textContent.trim())

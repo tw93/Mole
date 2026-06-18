@@ -261,6 +261,129 @@
       white-space: nowrap;
     }
 
+    .recommendation-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .recommendation-card,
+    .closure-card,
+    .diagnosis-card {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .recommendation-card h3,
+    .closure-card h3,
+    .diagnosis-card h3 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.18;
+    }
+
+    .recommendation-card p,
+    .closure-card p,
+    .diagnosis-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.38;
+      overflow-wrap: anywhere;
+    }
+
+    .rec-top,
+    .diagnosis-top {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .rank {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: rgba(10, 132, 255, 0.12);
+      color: #0758a9;
+      font-weight: 760;
+      font-size: 13px;
+      flex: 0 0 auto;
+    }
+
+    .selected-summary {
+      position: sticky;
+      top: 14px;
+      z-index: 1;
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .selected-summary h2 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    .selected-summary p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .selected-summary .actions {
+      justify-content: flex-end;
+      margin-top: 0;
+    }
+
+    .summary-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .summary-stat {
+      min-width: 104px;
+    }
+
+    .summary-stat strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.12;
+    }
+
+    .summary-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    .closure-grid,
+    .diagnosis-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .closure-grid + .table,
+    .diagnosis-grid + .table {
+      margin-top: 14px;
+    }
+
     .flow-rail {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -443,6 +566,10 @@
       main { padding: 24px 20px; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .state-grid { grid-template-columns: 1fr; }
+      .recommendation-grid,
+      .closure-grid,
+      .diagnosis-grid { grid-template-columns: 1fr; }
+      .selected-summary { grid-template-columns: 1fr; }
       .flow-rail { grid-template-columns: 1fr; }
     }
 
@@ -465,6 +592,7 @@
       .metrics { grid-template-columns: 1fr; }
       .quick-clean,
       .permission-card { grid-template-columns: 1fr; }
+      .selected-summary { top: 58px; }
       .failure-grid { grid-template-columns: 1fr; }
       .row { grid-template-columns: minmax(160px, 1fr) auto; }
       .row .secondary { display: none; }
@@ -490,6 +618,7 @@
         <div class="nav-item"><span class="glyph">▤</span><span class="nav-text">Storage</span></div>
         <div class="nav-item"><span class="glyph">◷</span><span class="nav-text">Performance</span></div>
         <div class="nav-item"><span class="glyph">⌁</span><span class="nav-text">Monitor</span></div>
+        <div class="nav-item"><span class="glyph">◫</span><span class="nav-text">Maintenance</span></div>
         <div class="nav-item"><span class="glyph">⚙</span><span class="nav-text">Settings</span></div>
       </nav>
     </aside>
@@ -498,7 +627,7 @@
       <header data-ux-surface="header">
         <div>
           <h1>Free Up Your Mac</h1>
-          <div class="subtitle">Start with disk space, preview cleanup, and move recoverable items to Trash.</div>
+          <div class="subtitle">Start with ranked recommendations, review selected actions, and keep cleanup recoverable.</div>
         </div>
         <button class="primary">Preview Cleanup</button>
       </header>
@@ -525,6 +654,70 @@
           <div class="metric-value">Limited</div>
           <div class="metric-label">Full Disk Access optional</div>
         </article>
+      </section>
+
+      <section class="band" data-ux-surface="recommendation-center" aria-label="Home recommendation center">
+        <div class="list-head">
+          <h2>Home Recommendation Center</h2>
+          <span class="count-note">Top 3 actions ranked by impact, risk, and readiness</span>
+        </div>
+        <div class="recommendation-grid">
+          <article class="recommendation-card">
+            <div class="rec-top">
+              <span class="rank">1</span>
+              <span class="pill safe">Selected</span>
+            </div>
+            <h3>Review 22.6 GB cleanup</h3>
+            <p>Open the grouped plan first, then approve cache and build artifacts before anything moves.</p>
+            <div class="safety" aria-label="Top cleanup recommendation">
+              <span>Trash-backed</span>
+              <span>Low risk</span>
+            </div>
+            <button>Review Top Recommendation</button>
+          </article>
+          <article class="recommendation-card">
+            <div class="rec-top">
+              <span class="rank">2</span>
+              <span class="pill">Watch</span>
+            </div>
+            <h3>Diagnose disk pressure</h3>
+            <p>Monitor recent write bursts and permission gaps that may make cleanup estimates stale.</p>
+            <div class="safety" aria-label="Monitor recommendation">
+              <span>Live signal</span>
+              <span>Needs attention</span>
+            </div>
+            <button>Diagnose Monitor</button>
+          </article>
+          <article class="recommendation-card">
+            <div class="rec-top">
+              <span class="rank">3</span>
+              <span class="pill safe">Ready</span>
+            </div>
+            <h3>Schedule weekly maintenance</h3>
+            <p>Use the Balanced profile to remind, rescan, and wait for approval before moving files.</p>
+            <div class="safety" aria-label="Maintenance recommendation">
+              <span>Weekly</span>
+              <span>Manual approval</span>
+            </div>
+            <button>Schedule Maintenance</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel selected-summary" data-ux-surface="selected-action-summary" aria-label="Selected action summary">
+        <div>
+          <h2>Selected Action Summary</h2>
+          <p>3 recommendations selected: cleanup review, monitor diagnosis, and weekly maintenance setup.</p>
+          <div class="summary-stats">
+            <div class="summary-stat"><strong>22.6 GB</strong><span>Potential space</span></div>
+            <div class="summary-stat"><strong>3 actions</strong><span>Queued for review</span></div>
+            <div class="summary-stat"><strong>Trash</strong><span>Recovery mode</span></div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary">Review Selected Actions</button>
+          <button>Clear Selection</button>
+        </div>
       </section>
 
       <section class="panel permission-card" data-ux-surface="permission-card">
@@ -640,6 +833,57 @@
         </div>
       </section>
 
+      <section class="band" data-ux-surface="cleanup-review-result" aria-label="Cleanup review and result closure">
+        <div class="list-head">
+          <h2>Review & Result Closure</h2>
+          <span class="count-note">Approval, movement, recovery, and skipped-path detail stay together</span>
+        </div>
+        <div class="closure-grid">
+          <article class="closure-card">
+            <div class="metric-label">Review Gate</div>
+            <h3>Selected items staged by group</h3>
+            <p>The review state separates checked groups, skipped protected paths, and items that need fresh access.</p>
+            <div class="safety" aria-label="Review gate safeguards">
+              <span>Group approval</span>
+              <span>Stale paths rechecked</span>
+              <span>Protected skipped</span>
+            </div>
+          </article>
+          <article class="closure-card">
+            <div class="metric-label">Result Closure</div>
+            <h3>Result state stays actionable</h3>
+            <p>After cleanup, the result keeps Trash location, operation report, and retry guidance in one place.</p>
+            <div class="safety" aria-label="Result closure safeguards">
+              <span>Trash location saved</span>
+              <span>Skipped paths visible</span>
+              <span>Retry from report</span>
+            </div>
+          </article>
+        </div>
+        <div class="table">
+          <div class="row">
+            <strong>Ready to move</strong>
+            <span class="secondary">42 groups approved after review</span>
+            <span class="pill safe">21.8 GB</span>
+          </div>
+          <div class="row">
+            <strong>Needs access</strong>
+            <span class="secondary">9 groups hidden until scan access changes</span>
+            <span class="pill">Review later</span>
+          </div>
+          <div class="row">
+            <strong>Cleanup result</strong>
+            <span class="secondary">Report, Trash link, and skipped paths pinned</span>
+            <span class="pill safe">Closed loop</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button>Open Last Result Report</button>
+          <button>Open Trash Location</button>
+          <button>Retry Skipped Paths</button>
+        </div>
+      </section>
+
       <section class="band" data-ux-surface="operation-journal">
         <div class="list-head">
           <h2>Recent Activity</h2>
@@ -655,6 +899,48 @@
             <strong>Clean TRASHED</strong>
             <span class="secondary">Moved selected cache files to Trash</span>
             <span class="pill safe">Recoverable</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" data-ux-surface="monitor-diagnosis" aria-label="Monitor diagnosis">
+        <div class="list-head">
+          <h2>Monitor Diagnosis</h2>
+          <span class="count-note">3 findings explain what is slowing cleanup confidence</span>
+        </div>
+        <div class="diagnosis-grid">
+          <article class="diagnosis-card">
+            <div class="diagnosis-top">
+              <span class="metric-label">Disk Pressure</span>
+              <span class="pill">Medium</span>
+            </div>
+            <h3>Write bursts after app updates</h3>
+            <p>Temporary installer and browser caches grew during the last hour, so a fresh cleanup preview is recommended.</p>
+          </article>
+          <article class="diagnosis-card">
+            <div class="diagnosis-top">
+              <span class="metric-label">Access Quality</span>
+              <span class="pill safe">Guided</span>
+            </div>
+            <h3>Limited scan still useful</h3>
+            <p>Home and Downloads are readable, while system and container paths remain marked as skipped until access changes.</p>
+          </article>
+        </div>
+        <div class="table">
+          <div class="row">
+            <strong>Memory pressure</strong>
+            <span class="secondary">Stable while cleanup preview runs</span>
+            <span class="pill safe">Normal</span>
+          </div>
+          <div class="row">
+            <strong>Thermal state</strong>
+            <span class="secondary">Cool enough for scheduled scanning</span>
+            <span class="pill safe">OK</span>
+          </div>
+          <div class="row">
+            <strong>Permission drift</strong>
+            <span class="secondary">Full Disk Access reminder remains available</span>
+            <span class="pill">Explain</span>
           </div>
         </div>
       </section>
@@ -690,6 +976,40 @@
             <span class="secondary">Open Full Disk Access from Settings</span>
             <span class="pill safe">Guided</span>
           </div>
+        </div>
+      </section>
+
+      <section class="band" data-ux-surface="maintenance-plan" aria-label="Maintenance plan">
+        <div class="list-head">
+          <h2>Maintenance Plan</h2>
+          <span class="count-note">Balanced profile · weekly schedule · approval before Trash</span>
+        </div>
+        <div class="table">
+          <div class="row">
+            <strong>Profile</strong>
+            <span class="secondary">Balanced cleanup, monitor diagnosis, and report closure</span>
+            <span class="pill safe">Balanced</span>
+          </div>
+          <div class="row">
+            <strong>Schedule</strong>
+            <span class="secondary">Friday 9:00 AM, laptop awake, power preferred</span>
+            <span class="pill">Weekly</span>
+          </div>
+          <div class="row">
+            <strong>Approval</strong>
+            <span class="secondary">Notify with selected-action summary before moving files</span>
+            <span class="pill safe">Manual</span>
+          </div>
+          <div class="row">
+            <strong>Closure</strong>
+            <span class="secondary">Save report and keep skipped paths in the next plan</span>
+            <span class="pill safe">Audited</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button>Edit Maintenance Profile</button>
+          <button>Pause Weekly Schedule</button>
+          <button>Run Maintenance Check</button>
         </div>
       </section>
     </main>

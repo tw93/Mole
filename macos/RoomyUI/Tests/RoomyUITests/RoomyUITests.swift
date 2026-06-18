@@ -493,6 +493,39 @@ final class RoomyUITests: XCTestCase {
     }
 
     @MainActor
+    func testExecutionEventsRemainScopedBySection() async throws {
+        let script = try makeExecutableScript("""
+        #!/bin/sh
+        if [ "$1 $2 $3" = "api clean execute" ] && [ "$4" = "--plan" ]; then
+          printf '%s\\n' '{"event":"started","domain":"clean"}'
+          printf '%s\\n' '{"event":"completed","domain":"clean","exit_code":0}'
+          exit 0
+        fi
+        if [ "$1 $2 $3" = "api completion execute" ] && [ "$4" = "--plan" ]; then
+          printf '%s\\n' '{"event":"started","domain":"completion"}'
+          printf '%s\\n' '{"event":"completed","domain":"completion","exit_code":0}'
+          exit 0
+        fi
+        if [ "$1 $2 $3" = "api completion status" ]; then
+          printf '%s\\n' '{"schema_version":1,"shell":"zsh","config_file":"/Users/example/.zshrc","installed":false,"command_name":"roomy"}'
+          exit 0
+        fi
+        exit 64
+        """)
+        let client = RoomyAPIClient(executableURL: script, environment: [:], processTimeout: 5)
+        let model = RoomyViewModel(apiClient: client)
+
+        await model.execute(domain: .clean, plan: ExecutionPlan(confirmed: true))
+        await model.executeCompletion(dryRun: true)
+
+        XCTAssertEqual(model.executionEvents(for: .cleanup).map(\.domain), ["clean", "clean"])
+        XCTAssertEqual(model.executionEvents(for: .settings).map(\.domain), ["completion", "completion"])
+        XCTAssertEqual(model.executionEvents.map(\.domain), ["completion", "completion"])
+        XCTAssertEqual(model.executionState(for: .cleanup), .completed)
+        XCTAssertEqual(model.executionState(for: .settings), .completed)
+    }
+
+    @MainActor
     func testExecutionFailureUpdatesStateAfterSectionChanges() async throws {
         let script = try makeExecutableScript("""
         #!/bin/sh
@@ -907,6 +940,34 @@ final class RoomyUITests: XCTestCase {
         XCTAssertEqual(preview.estimatedBytes, 2048)
         XCTAssertEqual(preview.categories.first?.name, "User app cache")
         XCTAssertEqual(preview.categories.first?.risk, "LOW")
+        XCTAssertTrue(preview.isTrashBacked)
+        XCTAssertFalse(preview.requiresNonRecoverableWarning)
+    }
+
+    func testCleanupPreviewFlagsNonRecoverableDeleteModes() throws {
+        let json = """
+        {
+          "schema_version": 1,
+          "command": "clean.preview",
+          "dry_run": true,
+          "status": "success",
+          "estimated_bytes": 2048,
+          "item_count": 1,
+          "category_count": 1,
+          "skipped_count": 0,
+          "protected_count": 0,
+          "whitelist_count": 0,
+          "admin_required": false,
+          "delete_mode": "permanent",
+          "details_path": "/tmp/clean-list.txt",
+          "categories": []
+        }
+        """
+
+        let preview = try JSONDecoder().decode(CleanupPreview.self, from: Data(json.utf8))
+
+        XCTAssertFalse(preview.isTrashBacked)
+        XCTAssertTrue(preview.requiresNonRecoverableWarning)
     }
 
     func testApplicationListDecodesContract() throws {

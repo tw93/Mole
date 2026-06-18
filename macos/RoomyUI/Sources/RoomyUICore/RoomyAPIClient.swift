@@ -464,6 +464,8 @@ public struct RoomyAPIClient {
             let buffer = ProcessEventLineBuffer(decoder: Self.decoder)
             let state = ProcessEventStreamState()
             let timeout = processTimeout
+            let outputReadQueue = DispatchQueue(label: "RoomyAPIClient.streamEvents.output")
+            let errorReadQueue = DispatchQueue(label: "RoomyAPIClient.streamEvents.error")
 
             process.standardOutput = output
             process.standardError = error
@@ -481,37 +483,45 @@ public struct RoomyAPIClient {
             }
 
             output.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    consumeOutput(data)
+                outputReadQueue.async {
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        consumeOutput(data)
+                    }
                 }
             }
 
             var errorData = Data()
             let errorLock = NSLock()
-            let drainLock = NSLock()
             error.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    errorLock.lock()
-                    errorData.append(data)
-                    errorLock.unlock()
+                errorReadQueue.async {
+                    let data = handle.availableData
+                    if !data.isEmpty {
+                        errorLock.lock()
+                        errorData.append(data)
+                        errorLock.unlock()
+                    }
                 }
             }
 
             let drainRemainingOutput: () -> Data = {
-                drainLock.lock()
-                defer { drainLock.unlock() }
+                outputReadQueue.sync {
+                    consumeOutput(output.fileHandleForReading.readDataToEndOfFile())
+                    buffer.flush { event in
+                        state.markEvent(event)
+                        continuation.yield(event)
+                    }
+                }
 
-                consumeOutput(output.fileHandleForReading.readDataToEndOfFile())
+                errorReadQueue.sync {
+                    errorLock.lock()
+                    errorData.append(error.fileHandleForReading.readDataToEndOfFile())
+                    errorLock.unlock()
+                }
+
                 errorLock.lock()
-                errorData.append(error.fileHandleForReading.readDataToEndOfFile())
                 let capturedError = errorData
                 errorLock.unlock()
-                buffer.flush { event in
-                    state.markEvent(event)
-                    continuation.yield(event)
-                }
                 return capturedError
             }
 
