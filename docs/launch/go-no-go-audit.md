@@ -8,6 +8,8 @@ Run the source gate before release assets are created:
 scripts/check-public-release.sh --tag <TAG> --full --skip-clean-machine
 ```
 
+Local `.env` files are not required for the CLI release path. The release gate does not load them; Homebrew publishing credentials must live in GitHub Actions secrets, and native signing/notarization environment variables only apply to RoomyUI preview builds while the launch scope is CLI.
+
 ## Release Candidate
 
 - Release tag: `V<major>.<minor>.<patch>`
@@ -36,6 +38,7 @@ scripts/check-public-release.sh --tag <TAG> --full --skip-clean-machine
 | Release integrity is preserved | `docs/release/release-integrity.md`, release workflow output | Manifest includes tag, commit, checksums, attestation status, Homebrew status, clean-machine record, and rollback/remove notes. |
 | Homebrew publishing runs from the canonical repository | Release workflow output | Public tap and Homebrew core publishing only run when `GITHUB_REPOSITORY` resolves to `tw93/roomy`. |
 | Formula publishing secrets are validated before public staging | Release workflow output | `PAT_TOKEN` and `HOMEBREW_GITHUB_API_TOKEN` are present before the draft release is staged as a public prerelease. |
+| Local environment is not release-critical | `scripts/check-public-release.sh`, local shell transcript | No local `.env` file is required or loaded for the CLI release gate; any local `.env` warning is informational only. |
 | Homebrew update path is ready | Release workflow and tap update output | The GitHub release is created as a draft, staged as a prerelease before formula publication, the personal tap update succeeds, the Homebrew core update succeeds, and stable/latest promotion happens only after the drill record passes. |
 | Clean-machine evidence is attached and validated | GitHub release assets, release workflow output | The final public release gate validates the generated local evidence before upload; then `clean-machine-drill-<TAG>.md` and `clean-machine-drill-<TAG>-evidence.tar.gz` are visible release assets, and the workflow validates the downloaded evidence archive contents before stable/latest promotion. Public evidence URLs are downloaded and inspected by the verifier when no local `--evidence` override is supplied. The record's transcript/results SHA-256 fields must match the evidence files. |
 | Uploaded release assets match the release commit | GitHub release assets, release workflow output | Before stable/latest promotion, the workflow rejects missing or unexpected uploaded assets, verifies the downloaded `RELEASE_MANIFEST.md` tag and commit, validates the manifest source archive checksum, compares manifest helper/tarball checksums with `SHA256SUMS`, and runs `sha256sum --check SHA256SUMS` against the downloaded helper binaries and Homebrew tarballs. |
@@ -56,6 +59,7 @@ scripts/check-public-release.sh --tag <TAG> --full --skip-clean-machine
 - Release notes omit known destructive-workflow, install/update/remove, compatibility, or rollback impacts.
 - Homebrew publishing is attempted from a fork, renamed repository, or any repository other than `tw93/roomy`.
 - Formula publishing secrets are missing when the release is about to be staged as a public prerelease.
+- A local `.env` file is treated as proof that release publishing credentials exist in CI.
 - The generated clean-machine evidence fails the final public release gate, the record or evidence archive is missing from release assets, or the downloaded evidence archive fails validation before stable/latest promotion.
 - Uploaded release assets are missing, unexpected, checksum-invalid, or have a release manifest whose tag/commit does not match the workflow ref.
 - Privacy or support guidance is missing from public docs or the landing page.

@@ -48,6 +48,17 @@ Rollback/remove notes:
 - Release notes are curated and describe user-visible changes, safety changes, and compatibility impact.
 - The release workflow validates the exact curated notes file used for the GitHub release body.
 
+## Local Environment and Secrets
+
+The CLI release path does not require local `.env` files. Local `.env` and `.env.*` files are ignored by the source gate and should not be treated as release evidence.
+
+Publishing credentials belong in GitHub Actions secrets:
+
+- `PAT_TOKEN` for the personal Homebrew tap update.
+- `HOMEBREW_GITHUB_API_TOKEN` for Homebrew core publication.
+
+Native app signing and notarization variables such as `SIGN_IDENTITY`, `NOTARIZATION_PROFILE`, `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_APP_SPECIFIC_PASSWORD` are only for local RoomyUI preview builds while the production launch scope remains CLI-only. Do not add those variables to a CLI release checklist unless the RoomyUI release decision and launch scope have changed.
+
 ## Post-Tag Checklist
 
 - Homebrew publishing runs only from the canonical `tw93/roomy` repository.

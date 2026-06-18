@@ -26,6 +26,11 @@ Options:
   --final         Run the final public-release gate: disallow skipped/dirty
                   gates and run the full local test script
   --help          Show this help
+
+Local environment:
+  CLI release gates do not load .env files. Homebrew publishing secrets must be
+  configured in GitHub Actions, and native app signing/notarization variables
+  are only for preview RoomyUI builds outside the current CLI release scope.
 EOF
 }
 
@@ -58,6 +63,21 @@ run_site_check_with_retry() {
     done
 
     return 1
+}
+
+warn_local_env_files() {
+    local -a files=()
+    local file
+
+    for file in .env .env.*; do
+        [[ -e "$file" ]] || continue
+        files+=("$file")
+    done
+
+    [[ "${#files[@]}" -eq 0 ]] || {
+        printf 'warning: local .env files are ignored by CLI release gates: %s\n' "${files[*]}" >&2
+        printf 'warning: use GitHub Actions secrets for publishing; use signing env vars only for preview RoomyUI builds\n' >&2
+    }
 }
 
 tag=""
@@ -135,6 +155,7 @@ if [[ "$final_gate" -eq 1 ]]; then
 fi
 
 printf 'Running Roomy public release gate for %s...\n' "$tag"
+warn_local_env_files
 
 git update-index -q --refresh || true
 head_sha="$(git rev-parse HEAD 2> /dev/null || true)"

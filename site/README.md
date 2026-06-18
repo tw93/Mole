@@ -5,6 +5,8 @@ This directory contains a static product landing page for the current Roomy CLI 
 ## Files
 
 - `index.html` is the public landing page.
+- `pricing.html` is the dedicated pricing page.
+- `styles.css` contains the shared minimal site styling.
 - `demo-scene.html` is the deterministic browser scene used to render the demo.
 - `assets/roomy-demo.mp4` is the generated demo video embedded in the page.
 - `assets/roomy-demo-poster.png` is the generated poster image.
