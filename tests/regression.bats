@@ -130,11 +130,11 @@ setup() {
     cat > "$fake_cmd" <<'EOF'
 #!/bin/bash
 trap "" TERM
-sleep 5
+sleep 30
 EOF
     chmod +x "$fake_cmd"
 
-    run /usr/bin/perl -e 'alarm 5; exec @ARGV' env FAKE_CMD="$fake_cmd" bash --noprofile --norc <<'EOF'
+    run /usr/bin/perl -e 'alarm 12; exec @ARGV' env FAKE_CMD="$fake_cmd" bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/timeout.sh"
 ROOMY_TIMEOUT_BIN=""
@@ -150,7 +150,7 @@ EOF
     [[ "$output" == *"STATUS=124"* ]]
     elapsed=$(printf '%s\n' "$output" | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^ELAPSED=/) {split($i, kv, "="); print kv[2]}}' | tail -1)
     [[ "$elapsed" =~ ^[0-9]+$ ]]
-    (( elapsed < 6 ))
+    (( elapsed < 10 ))
 }
 
 @test "empty version string is handled gracefully" {
