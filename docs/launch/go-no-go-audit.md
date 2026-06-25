@@ -37,6 +37,7 @@ Local `.env` files are not required for the CLI release path. The release gate d
 | Public release notes are curated | `docs/release/notes/<TAG>.md`, `RELEASE_BODY.md` | `scripts/check-release-notes.sh --tag <TAG>` passes, the uploaded release body starts with the curated notes, and the appended manifest names the release commit. |
 | Release integrity is preserved | `docs/release/release-integrity.md`, release workflow output | Manifest includes tag, commit, checksums, attestation status, Homebrew status, clean-machine record, and rollback/remove notes. |
 | Open-source compliance is preserved | `LICENSE`, `NOTICE`, `docs/legal/open-source-compliance.md`, release workflow output | `scripts/check-license-compliance.sh` passes, release assets preserve GPL-3.0 license/notice text, and public copy identifies Roomy as a modified and renamed fork without implying upstream endorsement. |
+| Distribution prerequisites exist | Local command transcript | `scripts/check-distribution-prereqs.sh --check-secrets` passes against `jake-seo-cl/roomy` and `jake-seo-cl/homebrew-tap`. |
 | Homebrew publishing runs from the canonical repository | Release workflow output | Public tap and Homebrew core publishing only run when `GITHUB_REPOSITORY` resolves to `jake-seo-cl/roomy`. |
 | Formula publishing secrets are validated before public staging | Release workflow output | `PAT_TOKEN` and `HOMEBREW_GITHUB_API_TOKEN` are present before the draft release is staged as a public prerelease. |
 | Local environment is not release-critical | `scripts/check-public-release.sh`, local shell transcript | No local `.env` file is required or loaded for the CLI release gate; any local `.env` warning is informational only. |
@@ -60,6 +61,7 @@ Local `.env` files are not required for the CLI release path. The release gate d
 - Release notes omit known destructive-workflow, install/update/remove, compatibility, or rollback impacts.
 - `LICENSE`, `NOTICE`, README, site, or release notes contradict the GPL-3.0 fork posture.
 - Public launch still uses `jake-seo-cl/Mole`, the Mole name, Mole assets, or upstream Mole support channels for Roomy distribution.
+- `scripts/check-distribution-prereqs.sh --check-secrets` cannot access the canonical repository, Homebrew tap, or required release secrets.
 - Homebrew publishing is attempted from a fork, renamed repository, or any repository other than `jake-seo-cl/roomy`.
 - Formula publishing secrets are missing when the release is about to be staged as a public prerelease.
 - A local `.env` file is treated as proof that release publishing credentials exist in CI.

@@ -83,7 +83,7 @@ Performance regressions that affect launch-critical flows must be triaged before
 
 Sales gate: the public launch surface must sell the current supported product, not an unreleased native app. The static landing page in `site/` must present Roomy as a CLI-first Mac maintenance product, embed the generated demo media, link to install/readiness material, and avoid claiming that RoomyUI is production-ready while the scope lock excludes native app artifacts.
 
-The market position must stay grounded in `docs/marketing/competitor-benchmark.md` and `docs/marketing/pricing-strategy.md`, and the landing page smoke check must run in CI through `npm run site:check` so desktop/mobile layout, required sections, GPL-friendly pricing, and demo assets remain present.
+The market position must stay grounded in `docs/launch/launch-strategy.md`, `docs/marketing/competitor-benchmark.md`, and `docs/marketing/pricing-strategy.md`, and the landing page smoke check must run in CI through `npm run site:check` so desktop/mobile layout, required sections, GPL-friendly pricing, and demo assets remain present.
 
 The final launch review must use `docs/launch/go-no-go-audit.md` to map the release candidate to evidence instead of relying only on proxy signals.
 

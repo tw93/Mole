@@ -19,14 +19,15 @@ Do not run a public launch from `jake-seo-cl/Mole`. The upstream trademark polic
 The normal public release should be tag-driven:
 
 1. Maintainer creates a clean release commit and curated notes under `docs/release/notes/<TAG>.md`.
-2. Maintainer runs `scripts/check-public-release.sh --tag <TAG> --full --skip-clean-machine`.
-3. Maintainer pushes tag `V<major>.<minor>.<patch>`.
-4. GitHub Actions runs release preflight, tests, site checks, binary builds, checksum generation, release manifest generation, and artifact attestations.
-5. The release workflow creates a draft release and keeps it hidden until assets, checksums, manifest, release body, and attestations exist.
-6. The workflow stages the release as a public prerelease so Homebrew and script-install URLs are reachable.
-7. The workflow updates `jake-seo-cl/homebrew-tap`, opens the Homebrew core update when credentials allow it, and then runs the clean-machine install-channel drill.
-8. The workflow uploads the clean-machine drill record and evidence archive.
-9. The workflow validates downloaded release assets, source archive checksum, manifest checksums, and clean-machine evidence before stable/latest promotion.
+2. Maintainer runs `scripts/check-distribution-prereqs.sh --check-secrets` after the public repo, tap, and GitHub Actions secrets exist.
+3. Maintainer runs `scripts/check-public-release.sh --tag <TAG> --full --skip-clean-machine`.
+4. Maintainer pushes tag `V<major>.<minor>.<patch>`.
+5. GitHub Actions runs release preflight, tests, site checks, binary builds, checksum generation, release manifest generation, and artifact attestations.
+6. The release workflow creates a draft release and keeps it hidden until assets, checksums, manifest, release body, and attestations exist.
+7. The workflow stages the release as a public prerelease so Homebrew and script-install URLs are reachable.
+8. The workflow updates `jake-seo-cl/homebrew-tap`, opens the Homebrew core update when credentials allow it, and then runs the clean-machine install-channel drill.
+9. The workflow uploads the clean-machine drill record and evidence archive.
+10. The workflow validates downloaded release assets, source archive checksum, manifest checksums, and clean-machine evidence before stable/latest promotion.
 
 ## Manual Inputs That Remain
 
@@ -36,6 +37,20 @@ The normal public release should be tag-driven:
 - Reviewing the Homebrew core PR if Homebrew core publication is desired.
 - Responding to failed clean-machine drill evidence.
 - Making the final go/no-go decision from `docs/launch/go-no-go-audit.md`.
+
+## External Prerequisite Check
+
+Run this before pushing a public release tag:
+
+```bash
+scripts/check-distribution-prereqs.sh --check-secrets
+```
+
+For local dry-runs that only validate the script and configured defaults:
+
+```bash
+scripts/check-distribution-prereqs.sh --skip-network --skip-remotes
+```
 
 ## Launch Blockers
 
