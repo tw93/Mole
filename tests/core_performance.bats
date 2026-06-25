@@ -30,6 +30,7 @@ setup() {
 
     elapsed=$(( (end - start) / 1000000 ))
 
+    echo "bytes_to_human elapsed=${elapsed}ms limit=${limit_ms}ms" >&3
     [ "$elapsed" -lt "$limit_ms" ]
 }
 
