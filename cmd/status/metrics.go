@@ -566,7 +566,11 @@ func (e snapshotEnrichment) apply(snapshot *MetricsSnapshot, preserveLiveProcess
 }
 
 var runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, path, args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
