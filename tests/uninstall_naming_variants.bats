@@ -206,13 +206,13 @@ find_app_files 'invalid_bundle' ''"
     [[ ! "$result" =~ Library/Application\ Support/Code$'\n' ]]
 }
 
-@test "find_app_files detects Anki profile Application Support folders (#1145)" {
+@test "find_app_files detects Anki support files but preserves user profile data (#1145)" {
     mkdir -p "$HOME/Library/Application Support/Anki2"
     mkdir -p "$HOME/Library/Application Support/AnkiProgramFiles"
 
     result=$(find_app_files "net.ankiweb.anki" "Anki")
 
-    [[ "$result" == *"Library/Application Support/Anki2"* ]]
+    [[ "$result" != *"Library/Application Support/Anki2"* ]]
     [[ "$result" == *"Library/Application Support/AnkiProgramFiles"* ]]
 }
 

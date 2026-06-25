@@ -1116,9 +1116,9 @@ find_app_files() {
         [[ -d ~/.mobiledev ]] && files_to_clean+=("$HOME/.mobiledev")
     fi
 
-    # Anki stores profile data outside the app-name and bundle-id defaults.
+    # Anki's profile directory (Anki2) contains decks, media, and backups.
+    # Only collect the launcher-managed support files here.
     if [[ "$bundle_id" == "net.ankiweb.anki" ]] || [[ "$app_name" == "Anki" ]]; then
-        [[ -d "$HOME/Library/Application Support/Anki2" ]] && files_to_clean+=("$HOME/Library/Application Support/Anki2")
         [[ -d "$HOME/Library/Application Support/AnkiProgramFiles" ]] && files_to_clean+=("$HOME/Library/Application Support/AnkiProgramFiles")
     fi
 
