@@ -45,7 +45,7 @@ Include command transcripts or links that cover:
 - `go test ./...`
 - `ROOMY_SKIP_API_TESTS=1 scripts/test.sh`
 - `npm run test:api`
-- `brew install roomy` or the explicit release tap formula, for example `brew install tw93/tap/roomy`
+- `brew install roomy` or the explicit release tap formula, for example `brew install jake-seo-cl/tap/roomy`
 - `roomy --version`
 - `roomy clean --dry-run`
 - `roomy uninstall --dry-run`

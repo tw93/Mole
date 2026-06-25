@@ -106,7 +106,7 @@ if [[ "$MODE" == "format" ]]; then
 
     if command -v goimports > /dev/null 2>&1; then
         echo -e "${YELLOW}Formatting Go code, goimports...${NC}"
-        goimports -w -local github.com/tw93/roomy ./cmd
+        goimports -w -local github.com/jake-seo-cl/roomy ./cmd
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting complete${NC}\n"
     elif command -v go > /dev/null 2>&1; then
         echo -e "${YELLOW}Formatting Go code, gofmt...${NC}"
@@ -132,7 +132,7 @@ if [[ "$MODE" != "check" ]]; then
 
     if command -v goimports > /dev/null 2>&1; then
         echo -e "${YELLOW}2. Formatting Go code, goimports...${NC}"
-        goimports -w -local github.com/tw93/roomy ./cmd
+        goimports -w -local github.com/jake-seo-cl/roomy ./cmd
         echo -e "${GREEN}${ICON_SUCCESS} Go formatting applied${NC}\n"
     elif command -v go > /dev/null 2>&1; then
         echo -e "${YELLOW}2. Formatting Go code, gofmt...${NC}"
@@ -199,7 +199,14 @@ find lib -name "*.sh" | while read -r script; do
 done
 echo -e "${GREEN}${ICON_SUCCESS} Syntax check passed${NC}\n"
 
-echo -e "${YELLOW}6. Running safety hygiene checks...${NC}"
+echo -e "${YELLOW}6. Running license and safety hygiene checks...${NC}"
+if scripts/check-license-compliance.sh; then
+    echo -e "${GREEN}${ICON_SUCCESS} License compliance checks passed${NC}\n"
+else
+    echo -e "${RED}${ICON_ERROR} License compliance checks failed${NC}\n"
+    exit 1
+fi
+
 if scripts/check-unsafe-rm.sh; then
     echo -e "${GREEN}${ICON_SUCCESS} Safety hygiene checks passed${NC}\n"
 else

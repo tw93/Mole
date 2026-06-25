@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/tw93/roomy/internal/units"
+	"github.com/jake-seo-cl/roomy/internal/units"
 )
 
 var (

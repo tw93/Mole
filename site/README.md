@@ -13,8 +13,11 @@ This directory contains a static product landing page for the current Roomy CLI 
 - `scripts/render-demo-video.mjs` regenerates the video and poster with Playwright plus `ffmpeg`.
 - `scripts/check-site.mjs` runs responsive smoke checks and saves screenshots to `test-results/site/`.
 
-The footer links to the launch readiness, privacy, and support documents in the
-repository so buyer-facing expectations stay aligned with the CLI release.
+The footer links to privacy, support, and license documents in the repository
+so buyer-facing expectations stay aligned with the GPL CLI release.
+
+Pricing copy must stay support-based. The free CLI remains the full local
+cleanup engine; paid plans fund maintenance, triage, and team rollout support.
 
 ## Local Use
 

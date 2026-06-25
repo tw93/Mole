@@ -64,10 +64,10 @@ const pages = [
       if (!checks.bodyText.includes("Clean your Mac. See every change.")) {
         throw new Error(`${viewport.name} index hero copy is missing`);
       }
-      if (!checks.bodyText.includes("Roomy Pro") || !checks.bodyText.includes("$19/year")) {
+      if (!checks.bodyText.includes("Roomy Supporter") || !checks.bodyText.includes("$19/year")) {
         throw new Error(`${viewport.name} index pricing teaser is missing`);
       }
-      if (!checks.commandText.includes("brew install tw93/tap/roomy")) {
+      if (!checks.commandText.includes("brew install jake-seo-cl/tap/roomy")) {
         throw new Error(`${viewport.name} install commands should use the release tap`);
       }
     }
@@ -78,14 +78,17 @@ const pages = [
     expectedTitle: "Simple pricing for a focused Mac cleaner.",
     requiredSections: ["plans"],
     validate(checks) {
-      if (!checks.bodyText.includes("$19") || !checks.bodyText.includes("$49")) {
-        throw new Error("pricing page should include launch annual and lifetime prices");
+      if (!checks.bodyText.includes("$19") || !checks.bodyText.includes("$99")) {
+        throw new Error("pricing page should include supporter and team prices");
       }
       if (!checks.bodyText.includes("CleanMyMac") || !checks.bodyText.includes("$3.33/month")) {
         throw new Error("pricing page should explain the CleanMyMac undercut");
       }
       if (!checks.bodyText.includes("$1.58/month")) {
         throw new Error("pricing page should show the Roomy monthly equivalent");
+      }
+      if (!checks.bodyText.includes("same GPL CLI") || checks.bodyText.includes("Pro unlocks")) {
+        throw new Error("pricing page should keep paid plans GPL-compatible");
       }
     }
   }
@@ -130,8 +133,8 @@ for (const viewport of viewports) {
     if (!checks.sectionsPresent) {
       throw new Error(`${viewport.name} ${sitePage.name} is missing required sections`);
     }
-    if (!checks.footerText.includes("Privacy") || !checks.footerText.includes("Support")) {
-      throw new Error(`${viewport.name} ${sitePage.name} footer should link privacy and support guidance`);
+    if (!checks.footerText.includes("Privacy") || !checks.footerText.includes("Support") || !checks.footerText.includes("License")) {
+      throw new Error(`${viewport.name} ${sitePage.name} footer should link privacy, support, and license guidance`);
     }
 
     sitePage.validate(checks, viewport);

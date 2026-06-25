@@ -85,20 +85,20 @@ replacement_counts="$(
         my $text = $_;
 
         my $source_replacements = (
-            $text =~ s{url "https://github.com/tw93/(?:Roomy|roomy)/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
-              qq{url "https://github.com/tw93/roomy/archive/refs/tags/$ENV{TAG}.tar.gz"\n  sha256 "$ENV{SOURCE_SHA}"}
+            $text =~ s{url "https://github.com/jake-seo-cl/(?:Roomy|roomy)/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
+              qq{url "https://github.com/jake-seo-cl/roomy/archive/refs/tags/$ENV{TAG}.tar.gz"\n  sha256 "$ENV{SOURCE_SHA}"}
             }se
         );
 
         my $arm_replacements = (
-            $text =~ s{(on_arm do\s+url ")https://github.com/tw93/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
-              qq{$1https://github.com/tw93/roomy/releases/download/$ENV{TAG}/binaries-darwin-arm64.tar.gz$2$ENV{ARM_SHA}$3}
+            $text =~ s{(on_arm do\s+url ")https://github.com/jake-seo-cl/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+              qq{$1https://github.com/jake-seo-cl/roomy/releases/download/$ENV{TAG}/binaries-darwin-arm64.tar.gz$2$ENV{ARM_SHA}$3}
             }se
         );
 
         my $amd_replacements = (
-            $text =~ s{(on_intel do\s+url ")https://github.com/tw93/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
-              qq{$1https://github.com/tw93/roomy/releases/download/$ENV{TAG}/binaries-darwin-amd64.tar.gz$2$ENV{AMD_SHA}$3}
+            $text =~ s{(on_intel do\s+url ")https://github.com/jake-seo-cl/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+              qq{$1https://github.com/jake-seo-cl/roomy/releases/download/$ENV{TAG}/binaries-darwin-amd64.tar.gz$2$ENV{AMD_SHA}$3}
             }se
         );
 
@@ -118,15 +118,15 @@ TAG="$tag" \
     ARM_SHA="$arm_sha" \
     AMD_SHA="$amd_sha" \
     perl -0pi -e '
-    s{url "https://github.com/tw93/(?:Roomy|roomy)/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
-      qq{url "https://github.com/tw93/roomy/archive/refs/tags/$ENV{TAG}.tar.gz"\n  sha256 "$ENV{SOURCE_SHA}"}
+    s{url "https://github.com/jake-seo-cl/(?:Roomy|roomy)/archive/refs/tags/[^"]+\.tar\.gz"\n  sha256 "[^"]+"}{
+      qq{url "https://github.com/jake-seo-cl/roomy/archive/refs/tags/$ENV{TAG}.tar.gz"\n  sha256 "$ENV{SOURCE_SHA}"}
     }se;
 
-    s{(on_arm do\s+url ")https://github.com/tw93/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
-      qq{$1https://github.com/tw93/roomy/releases/download/$ENV{TAG}/binaries-darwin-arm64.tar.gz$2$ENV{ARM_SHA}$3}
+    s{(on_arm do\s+url ")https://github.com/jake-seo-cl/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-arm64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+      qq{$1https://github.com/jake-seo-cl/roomy/releases/download/$ENV{TAG}/binaries-darwin-arm64.tar.gz$2$ENV{ARM_SHA}$3}
     }se;
 
-    s{(on_intel do\s+url ")https://github.com/tw93/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
-      qq{$1https://github.com/tw93/roomy/releases/download/$ENV{TAG}/binaries-darwin-amd64.tar.gz$2$ENV{AMD_SHA}$3}
+    s{(on_intel do\s+url ")https://github.com/jake-seo-cl/(?:Roomy|roomy)/releases/download/[^/]+/binaries-darwin-amd64\.tar\.gz("\s+sha256 ")[^"]+(")}{
+      qq{$1https://github.com/jake-seo-cl/roomy/releases/download/$ENV{TAG}/binaries-darwin-amd64.tar.gz$2$ENV{AMD_SHA}$3}
     }se;
 ' "$formula_path"

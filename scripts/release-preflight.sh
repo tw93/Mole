@@ -14,6 +14,7 @@ printf 'Running Roomy release preflight...\n'
 git diff --check
 
 scripts/check-launch-readiness.sh
+scripts/check-license-compliance.sh
 scripts/check-unsafe-rm.sh
 
 if [[ -f package.json && ! -f package-lock.json ]]; then

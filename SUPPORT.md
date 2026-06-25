@@ -23,7 +23,8 @@ executing run.
 - Small fixes and documentation improvements: open a pull request.
 - Security-sensitive reports: use [SECURITY.md](SECURITY.md), not a public
   issue.
-- Commercial, team, or support inquiries: email `hitw93@gmail.com`.
+- Commercial, team, or support inquiries: open a GitHub Discussion or issue in
+  the Roomy repository until a dedicated support email is published.
 
 ## Include This Context
 

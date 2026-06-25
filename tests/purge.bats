@@ -1210,7 +1210,7 @@ EOF
 # array (menu_options, item_paths, item_sizes, …) was in size order.
 # Effect: the "Full path" footer showed the wrong project for the highlighted
 # item, and the confirmation dialog listed paths that did not match the
-# selection. See https://github.com/tw93/Roomy/issues/647
+# selection. See https://github.com/jake-seo-cl/Roomy/issues/647
 #
 # These tests run clean_project_artifacts under a pseudo-terminal (so the
 # interactive code path is taken and select_purge_categories is called).

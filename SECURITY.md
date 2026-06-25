@@ -6,12 +6,15 @@ Roomy is a local system maintenance tool. It includes high-risk operations such 
 
 Please report suspected security issues privately.
 
-- Email: `hitw93@gmail.com`
-- Subject line: `Roomy security report`
+- Use GitHub private vulnerability reporting for `jake-seo-cl/roomy` once it is
+  enabled.
+- If private vulnerability reporting is not enabled, use the private maintainer
+  contact published on the Roomy repository profile.
 
 Do not open a public GitHub issue for an unpatched vulnerability.
 
-If GitHub Security Advisories private reporting is enabled for the repository, you may use that channel instead of email.
+Do not send Roomy fork reports to upstream Mole maintainers unless you have
+confirmed the issue also affects upstream Mole.
 
 Include as much of the following as possible:
 

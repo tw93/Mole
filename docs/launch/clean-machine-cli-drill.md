@@ -23,7 +23,7 @@ When validating immediately after the release workflow updates the project tap
 and before Homebrew core has merged, test that channel explicitly:
 
 ```bash
-scripts/run-clean-machine-cli-drill.sh --tag <TAG> --previous-tag <PREVIOUS_TAG> --fresh-environment --tester <NAME> --homebrew-tap tw93/tap --homebrew-package tw93/tap/roomy --yes
+scripts/run-clean-machine-cli-drill.sh --tag <TAG> --previous-tag <PREVIOUS_TAG> --fresh-environment --tester <NAME> --homebrew-tap jake-seo-cl/tap --homebrew-package jake-seo-cl/tap/roomy --yes
 ```
 
 The automated runner also requires `--fresh-environment`; pass it only after
@@ -78,9 +78,9 @@ scripts/check.sh --no-format --strict
 On a clean macOS user account or VM:
 
 ```bash
-brew tap tw93/tap # use when Homebrew core propagation is pending
+brew tap jake-seo-cl/tap # use when Homebrew core propagation is pending
 brew update
-brew install tw93/tap/roomy # or `brew install roomy` after Homebrew core is live
+brew install jake-seo-cl/tap/roomy # or `brew install roomy` after Homebrew core is live
 roomy --version
 roomy clean --dry-run
 roomy uninstall --dry-run
@@ -104,7 +104,7 @@ Acceptance:
 On a separate clean user account, VM snapshot, or reset machine:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/roomy/<TAG>/install.sh | ROOMY_VERSION=<TAG> bash
+curl -fsSL https://raw.githubusercontent.com/jake-seo-cl/roomy/<TAG>/install.sh | ROOMY_VERSION=<TAG> bash
 roomy --version
 roomy clean --dry-run
 roomy uninstall --dry-run
@@ -167,7 +167,7 @@ When validating downloaded release assets, pass the downloaded archive with
 `--evidence <archive>` so the verifier checks the exact evidence archive being
 promoted, even if the record's `Evidence location` points at the public release
 URL. Public evidence URLs must use the canonical tag-specific asset:
-`https://github.com/tw93/roomy/releases/download/<TAG>/clean-machine-drill-<TAG>-evidence.tar.gz`.
+`https://github.com/jake-seo-cl/roomy/releases/download/<TAG>/clean-machine-drill-<TAG>-evidence.tar.gz`.
 When no local `--evidence` override is supplied for a public evidence URL, the
 verifier downloads that canonical URL and validates the archive contents before
 passing the record. During pre-upload staging, validate the generated local

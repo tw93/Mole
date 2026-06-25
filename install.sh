@@ -204,12 +204,12 @@ resolve_source_dir() {
         fi
         branch="$normalized_branch"
     fi
-    local url="https://github.com/tw93/roomy/archive/refs/heads/main.tar.gz"
+    local url="https://github.com/jake-seo-cl/roomy/archive/refs/heads/main.tar.gz"
 
     if [[ "$branch" == "dev" ]]; then
-        url="https://github.com/tw93/roomy/archive/refs/heads/dev.tar.gz"
+        url="https://github.com/jake-seo-cl/roomy/archive/refs/heads/dev.tar.gz"
     elif [[ "$branch" != "main" ]]; then
-        url="https://github.com/tw93/roomy/archive/refs/tags/${branch}.tar.gz"
+        url="https://github.com/jake-seo-cl/roomy/archive/refs/tags/${branch}.tar.gz"
     fi
 
     start_line_spinner "Fetching Roomy source, ${branch}..."
@@ -249,7 +249,7 @@ resolve_source_dir() {
             git_args+=("--branch" "$branch")
         fi
 
-        if git clone "${git_args[@]}" https://github.com/tw93/roomy.git "$tmp/roomy" > /dev/null 2>&1; then
+        if git clone "${git_args[@]}" https://github.com/jake-seo-cl/roomy.git "$tmp/roomy" > /dev/null 2>&1; then
             stop_line_spinner
             SOURCE_DIR="$tmp/roomy"
             return 0
@@ -276,7 +276,7 @@ get_source_commit_hash() {
     fi
     # Fallback to GitHub API
     curl -fsSL --connect-timeout 3 \
-        "https://api.github.com/repos/tw93/roomy/commits/main" 2> /dev/null |
+        "https://api.github.com/repos/jake-seo-cl/roomy/commits/main" 2> /dev/null |
         sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]\{7\}\).*/\1/p' | head -1
 }
 
@@ -369,7 +369,7 @@ get_latest_release_tag() {
         return 1
     fi
     tag=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/roomy/releases/latest" 2> /dev/null |
+        "https://api.github.com/repos/jake-seo-cl/roomy/releases/latest" 2> /dev/null |
         sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
     if [[ -z "$tag" ]]; then
         return 1
@@ -387,7 +387,7 @@ get_latest_release_tag_from_git() {
     while IFS= read -r tag; do
         [[ -n "$tag" ]] && tags+=("$tag")
     done < <(
-        git ls-remote --tags --refs https://github.com/tw93/roomy.git 2> /dev/null |
+        git ls-remote --tags --refs https://github.com/jake-seo-cl/roomy.git 2> /dev/null |
             awk -F/ '{print $NF}' |
             grep -E '^V[0-9]' || true
     )
@@ -407,7 +407,7 @@ normalize_release_tag() {
 
 release_checksums_url() {
     local tag="$1"
-    printf 'https://github.com/tw93/roomy/releases/download/%s/SHA256SUMS\n' "$tag"
+    printf 'https://github.com/jake-seo-cl/roomy/releases/download/%s/SHA256SUMS\n' "$tag"
 }
 
 download_release_checksums() {
@@ -960,7 +960,7 @@ download_binary() {
         return 1
     fi
     local asset_name="${binary_name}-darwin-${arch_suffix}"
-    local url="https://github.com/tw93/roomy/releases/download/${release_tag}/${asset_name}"
+    local url="https://github.com/jake-seo-cl/roomy/releases/download/${release_tag}/${asset_name}"
 
     # Skip preflight network checks to avoid false negatives.
 
@@ -999,7 +999,7 @@ download_binary() {
         fallback_tag=$(normalize_release_tag "$fallback_tag" 2> /dev/null || true)
     fi
     if [[ -n "$fallback_tag" && "$fallback_tag" != "$release_tag" ]]; then
-        local fallback_url="https://github.com/tw93/roomy/releases/download/${fallback_tag}/${asset_name}"
+        local fallback_url="https://github.com/jake-seo-cl/roomy/releases/download/${fallback_tag}/${asset_name}"
         download_tmp="$(installer_stage_for_target "$target_path")" || return 1
         if [[ -t 1 ]]; then
             start_line_spinner "Retrying ${binary_name} from ${fallback_tag}..."

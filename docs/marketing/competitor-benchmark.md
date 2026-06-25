@@ -1,6 +1,6 @@
 # Roomy Competitor Benchmark
 
-Last reviewed: 2026-05-21
+Last reviewed: 2026-06-25
 
 ## Objective
 
@@ -12,9 +12,10 @@ Position Roomy so it can sell in a crowded Mac cleanup market without pretending
 | --- | --- | --- | --- |
 | CleanMyMac | Smart Care combines cleanup, malware scan, performance tasks, app updates, and duplicate-file checks. MacPaw emphasizes safety through a long-running Safety Database. | MacPaw Store shows Annual, Monthly, and One Time options, a 4.9 rating, version 5.5.4 dated 14 May 2026, and pricing starting at $3.33/month. | Do not compete as another all-purpose consumer suite. Sell trust, local execution, dry-run previews, audit logs, and CLI automation. |
 | DaisyDisk | Fast, visual disk analysis with user-led deletion. It stresses local privacy, metadata-only scanning, and no analytics. | FAQ says DaisyDisk is a one-time purchase, not a subscription, with a trial. | Roomy can borrow the trust posture but expand beyond disk maps: app leftovers, project artifacts, installers, scheduled maintenance, reports, and JSON workflows. |
-| CCleaner for Mac | Broad cleanup suite with free/pro tiers: clutter cleanup, duplicate files, app uninstall, photo analysis, automatic browser cleaning, bookmark import, and automatic Trash emptying. | Current page shows Free and Professional plans and a Professional price displayed as AU$62.95. | Roomy should avoid generic speed claims and differentiate with proof: preview, protected skips, risk caps, and operation journals. |
+| CCleaner for Mac | Broad cleanup suite with free/pro positioning: clutter cleanup, duplicate files, app uninstall, photo analysis, automatic browser cleaning, bookmark import, and automatic Trash emptying. | Pricing varies by locale and storefront. Treat it as a broad suite anchor rather than a precise Roomy price target. | Roomy should avoid generic speed claims and differentiate with proof: preview, protected skips, risk caps, and operation journals. |
 | Nektony App Cleaner & Uninstaller / MacCleaner Pro | App management, uninstall/remnants, startup programs, extensions, updates, and bundle upsells for duplicate, disk, and memory tools. | App Cleaner starts at $14.95/year for one Mac or $34.95 one-time; MacCleaner Pro bundle starts at $39.95/year or $85.95 one-time for one Mac. | Roomy has room to sell broader maintenance if uninstall safety and developer cleanup are prominent. |
 | Trend Micro Cleaner One Pro | Storage optimization, memory monitoring, quick disk cleaning, duplicate removal, and privacy scanning from a security brand. | Sold through Trend Micro subscription/support flow. | Roomy can win buyers who do not want a security-suite bundle and prefer local, inspectable cleanup. |
+| Mole for Mac | Native Mac app from the upstream Mole project with cleanup review, app updates, uninstall, maintenance, disk maps, live status, and menu bar HUD. | Official site currently lists $19 one-time, lifetime updates, 2 Macs, and a 14-day refund. | Roomy must avoid Mole brand confusion. Sell the GPL CLI and support/rollout help, not a competing app under the Mole name. |
 
 ## Buyer Segment
 
@@ -61,11 +62,14 @@ CTA:
 
 ## Pricing Direction
 
-Roomy should keep the open-source CLI as the trust anchor. A sellable commercial path would be:
+Roomy should keep the open-source CLI as the trust anchor. The sellable commercial path is support and rollout help, not proprietary CLI feature gates:
 
-- Free CLI: core cleanup, dry-run, report, restore, analyze, status.
-- Pro support or team license: managed profiles, policy presets, signed installer guidance, priority support, and team rollout docs.
+- Free CLI: full GPL cleanup, dry-run, report, restore, analyze, status, profiles, schedules, and install/update paths.
+- Supporter plan: $19/year for priority issue triage, maintenance funding, and release candidate notifications.
+- Team rollout: $99/year for up to 10 Macs with rollout docs, managed profile examples, signed installer guidance, and upgrade support.
 - Future native app: only after RoomyUI release gates are complete.
+
+See `docs/marketing/pricing-strategy.md` for the launch pricing rules.
 
 ## Launch Risks
 
@@ -73,6 +77,8 @@ Roomy should keep the open-source CLI as the trust anchor. A sellable commercial
 - DaisyDisk owns visual disk exploration. Roomy should not lead with disk maps alone.
 - Mac cleanup tools are high-risk. Marketing must prove safety with demos, docs, and test gates.
 - RoomyUI is preview-only. The landing page must sell the current CLI release unless the native release decision changes.
+- GPL compliance is part of launch trust. Paid plans must not restrict CLI source access, modification, or redistribution rights.
+- Mole for Mac is a directly adjacent upstream product. Roomy must use its own name, assets, and support channels.
 
 ## Sources
 
@@ -83,3 +89,5 @@ Roomy should keep the open-source CLI as the trust anchor. A sellable commercial
 - CCleaner for Mac: https://www.ccleaner.com/ccleaner-mac/download
 - Nektony App Cleaner & Uninstaller pricing: https://nektony.com/mac-app-cleaner/buy
 - Trend Micro Cleaner One Pro support: https://helpcenter.trendmicro.com/en-us/product-support/cleaner-one-pro/
+- Mole repository: https://github.com/tw93/mole
+- Mole for Mac: https://mole.fit

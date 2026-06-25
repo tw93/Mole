@@ -23,9 +23,9 @@ Options:
   --evidence-dir DIR Output transcript directory
   --evidence-location LOCATION
                     Evidence location to write in the record
-  --homebrew-tap TAP Tap before Homebrew install, for example tw93/tap
+  --homebrew-tap TAP Tap before Homebrew install, for example jake-seo-cl/tap
   --homebrew-package FORMULA
-                    Formula to install, for example tw93/tap/roomy
+                    Formula to install, for example jake-seo-cl/tap/roomy
   --help             Show this help
 EOF
 }
@@ -402,8 +402,8 @@ script_gate="pass"
 checksum_gate="pass"
 update_gate="pass"
 rollback_gate="pass"
-run_command "download install script" curl -fsSL -o "$installer" "https://raw.githubusercontent.com/tw93/roomy/${tag}/install.sh" || script_gate="fail"
-run_command "download previous install script" curl -fsSL -o "$previous_installer" "https://raw.githubusercontent.com/tw93/roomy/${previous_tag}/install.sh" || update_gate="fail"
+run_command "download install script" curl -fsSL -o "$installer" "https://raw.githubusercontent.com/jake-seo-cl/roomy/${tag}/install.sh" || script_gate="fail"
+run_command "download previous install script" curl -fsSL -o "$previous_installer" "https://raw.githubusercontent.com/jake-seo-cl/roomy/${previous_tag}/install.sh" || update_gate="fail"
 installer_ready=0
 previous_installer_ready=0
 if [[ -f "$installer" ]]; then

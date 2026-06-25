@@ -22,14 +22,14 @@ is_touchid_configured() {
 
 get_latest_version() {
     curl -fsSL --connect-timeout 2 --max-time 3 -H "Cache-Control: no-cache" \
-        "https://raw.githubusercontent.com/tw93/roomy/main/roomy" 2> /dev/null |
+        "https://raw.githubusercontent.com/jake-seo-cl/roomy/main/roomy" 2> /dev/null |
         grep '^VERSION=' | head -1 | sed 's/VERSION="\(.*\)"/\1/'
 }
 
 get_latest_version_from_github() {
     local version
     version=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/roomy/releases/latest" 2> /dev/null |
+        "https://api.github.com/repos/jake-seo-cl/roomy/releases/latest" 2> /dev/null |
         grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
     version="${version#v}"
     version="${version#V}"
@@ -187,7 +187,7 @@ get_install_commit() {
 get_latest_commit_from_github() {
     local sha
     sha=$(curl -fsSL --connect-timeout 2 --max-time 3 \
-        "https://api.github.com/repos/tw93/roomy/commits/main" 2> /dev/null |
+        "https://api.github.com/repos/jake-seo-cl/roomy/commits/main" 2> /dev/null |
         grep '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' | head -1 | sed -E 's/.*"sha"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
     echo "$sha"
 }
@@ -282,7 +282,7 @@ show_brand_banner() {
 ${GREEN} ____                              ${NC}
 ${GREEN}|  _ \\ ___   ___  _ __ ___  _   _ ${NC}
 ${GREEN}| |_) / _ \\ / _ \\| '_ ' _ \\| | | |${NC}
-${GREEN}|  _ < (_) | (_) | | | | | | |_| |${NC}  ${BLUE}https://github.com/tw93/roomy${NC}
+${GREEN}|  _ < (_) | (_) | | | | | | |_| |${NC}  ${BLUE}https://github.com/jake-seo-cl/roomy${NC}
 ${GREEN}|_| \\_\\___/ \\___/|_| |_| |_|\\__, |${NC}  ${GREEN}${ROOMY_TAGLINE}${NC}
 ${GREEN}                            |___/ ${NC}
 
@@ -558,7 +558,7 @@ update_roomy() {
     if [[ "$nightly_update" != "true" ]]; then
         installer_ref="V${latest#V}"
     fi
-    local installer_url="https://raw.githubusercontent.com/tw93/roomy/${installer_ref}/install.sh"
+    local installer_url="https://raw.githubusercontent.com/jake-seo-cl/roomy/${installer_ref}/install.sh"
 
     if [[ "$dry_run_update" == "true" ]]; then
         echo ""

@@ -42,7 +42,7 @@ go tests	0
 shell and integration tests without API	0
 API contract tests	0
 brew update	0
-brew install tw93/tap/roomy	0
+brew install jake-seo-cl/tap/roomy	0
 homebrew roomy version	0
 homebrew clean dry-run	0
 homebrew uninstall dry-run	0
@@ -257,13 +257,13 @@ EOF
         --record "$record"
     [ "$status" -ne 0 ]
     [[ "$output" == *"Evidence location must not use a placeholder or local-only URL"* ]]
-    sed -i.bak 's#Evidence location: https://example.invalid/transcript#Evidence location: https://github.com/tw93/roomy/releases/download/V9.9.8/clean-machine-drill-V9.9.8-evidence.tar.gz#' "$record"
+    sed -i.bak 's#Evidence location: https://example.invalid/transcript#Evidence location: https://github.com/jake-seo-cl/roomy/releases/download/V9.9.8/clean-machine-drill-V9.9.8-evidence.tar.gz#' "$record"
     run "$PROJECT_ROOT/scripts/check-clean-machine-drill-record.sh" \
         --tag "V9.9.9" \
         --record "$record"
     [ "$status" -ne 0 ]
     [[ "$output" == *"Evidence location URL must be the tag-specific Roomy release evidence asset"* ]]
-    sed -i.bak "s#Evidence location: https://github.com/tw93/roomy/releases/download/V9.9.8/clean-machine-drill-V9.9.8-evidence.tar.gz#Evidence location: ${evidence_dir}#" "$record"
+    sed -i.bak "s#Evidence location: https://github.com/jake-seo-cl/roomy/releases/download/V9.9.8/clean-machine-drill-V9.9.8-evidence.tar.gz#Evidence location: ${evidence_dir}#" "$record"
 
     local unsupported_evidence="$HOME/evidence.txt"
     printf 'not an evidence directory or archive\n' > "$unsupported_evidence"
@@ -324,7 +324,7 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Clean-machine drill record passed"* ]]
 
-    sed -i.bak "s#Evidence location: ${evidence_archive}#Evidence location: https://github.com/tw93/roomy/releases/download/V9.9.9/clean-machine-drill-V9.9.9-evidence.tar.gz#" "$record"
+    sed -i.bak "s#Evidence location: ${evidence_archive}#Evidence location: https://github.com/jake-seo-cl/roomy/releases/download/V9.9.9/clean-machine-drill-V9.9.9-evidence.tar.gz#" "$record"
     run "$PROJECT_ROOT/scripts/check-clean-machine-drill-record.sh" \
         --tag "V9.9.9" \
         --record "$record" \
@@ -353,7 +353,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 [[ -n "$out" ]] || exit 2
-[[ "$url" == "https://github.com/tw93/roomy/releases/download/V9.9.9/clean-machine-drill-V9.9.9-evidence.tar.gz" ]] || exit 22
+[[ "$url" == "https://github.com/jake-seo-cl/roomy/releases/download/V9.9.9/clean-machine-drill-V9.9.9-evidence.tar.gz" ]] || exit 22
 cp "$ROOMY_TEST_REMOTE_EVIDENCE_ARCHIVE" "$out"
 SCRIPT
     chmod +x "$fake_curl_bin/curl"
@@ -375,7 +375,7 @@ SCRIPT
     [ "$status" -ne 0 ]
     [[ "$output" == *"Evidence archive contains an unsupported entry type"* ]]
 
-    sed -i.bak "s#Evidence location: https://github.com/tw93/roomy/releases/download/V9.9.9/clean-machine-drill-V9.9.9-evidence.tar.gz#Evidence location: ${evidence_archive}#" "$record"
+    sed -i.bak "s#Evidence location: https://github.com/jake-seo-cl/roomy/releases/download/V9.9.9/clean-machine-drill-V9.9.9-evidence.tar.gz#Evidence location: ${evidence_archive}#" "$record"
 
     sed -i.bak "s#Evidence location: ${evidence_archive}#Evidence location: ${evidence_dir}#" "$record"
 
@@ -440,7 +440,7 @@ SCRIPT
     [ "$status" -ne 0 ]
     [[ "$output" == *"missing value for --homebrew-tap"* ]]
 
-    local bad_tap=$'tw93/tap\nbad'
+    local bad_tap=$'jake-seo-cl/tap\nbad'
     run "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh" \
         --tag V9.9.9 \
         --previous-tag V9.9.8 \
@@ -455,7 +455,7 @@ SCRIPT
     [ "$status" -ne 0 ]
     [[ "$output" == *"missing value for --homebrew-package"* ]]
 
-    local bad_package=$'tw93/tap/roomy\tbad'
+    local bad_package=$'jake-seo-cl/tap/roomy\tbad'
     run "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh" \
         --tag V9.9.9 \
         --previous-tag V9.9.8 \
@@ -470,7 +470,7 @@ SCRIPT
     [ "$status" -ne 0 ]
     [[ "$output" == *"missing value for --evidence-location"* ]]
 
-    local bad_evidence_location=$'https://github.com/tw93/roomy/releases/download/V9.9.9/evidence.tar.gz\nbad'
+    local bad_evidence_location=$'https://github.com/jake-seo-cl/roomy/releases/download/V9.9.9/evidence.tar.gz\nbad'
     run "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh" \
         --tag V9.9.9 \
         --previous-tag V9.9.8 \
@@ -514,7 +514,7 @@ SCRIPT
     run grep -q "ROOMY_VERSION=\"\$previous_tag\"" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
     [ "$status" -eq 0 ]
 
-    run grep -q "raw.githubusercontent.com/tw93/roomy/\\\${previous_tag}/install.sh" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
+    run grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/\\\${previous_tag}/install.sh" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
     [ "$status" -eq 0 ]
 
     run grep -q "Evidence location: \${evidence_location}" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
@@ -529,7 +529,7 @@ SCRIPT
     run grep -q "check-release-version.sh --tag \"\\\$tag\"" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
     [ "$status" -eq 0 ]
 
-    run grep -q "raw.githubusercontent.com/tw93/roomy/\\\${tag}/install.sh" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
+    run grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/\\\${tag}/install.sh" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
     [ "$status" -eq 0 ]
 
     run grep -q "run_version_command()" "$PROJECT_ROOT/scripts/run-clean-machine-cli-drill.sh"
@@ -619,6 +619,10 @@ Dry-run, protected path, confirmation, restore, and audit log behavior remain co
 
 Homebrew, install script, update, rollback, and remove flows are validated for this tag.
 
+## License And Source
+
+This release preserves GPL-3.0 licensing, NOTICE attribution, and corresponding source for V9.9.9.
+
 ## Known Limitations
 
 RoomyUI remains preview-only and is not published as a production native app.
@@ -653,6 +657,10 @@ Dry-run, protected path, confirmation, restore, and audit log behavior remain co
 ## Install, Update, And Remove
 
 Homebrew, install script, update, rollback, and remove flows are validated for this tag.
+
+## License And Source
+
+This release preserves GPL-3.0 licensing, NOTICE attribution, and corresponding source for V9.9.9.
 
 ## Known Limitations
 
@@ -690,6 +698,10 @@ Dry-run, protected path, confirmation, restore, and audit log behavior remain co
 ## Install, Update, And Remove
 
 Homebrew, install script, update, rollback, and remove flows are validated for this tag.
+
+## License And Source
+
+This release preserves GPL-3.0 licensing, NOTICE attribution, and corresponding source for V9.9.9.
 
 ## Known Limitations
 
@@ -883,6 +895,10 @@ Dry-run, protected path, confirmation, restore, and audit log behavior remain co
 
 Homebrew, install script, update, rollback, and remove flows are validated for this tag.
 
+## License And Source
+
+This release preserves GPL-3.0 licensing, NOTICE attribution, and corresponding source for V9.9.9.
+
 ## Known Limitations
 
 RoomyUI remains preview-only and is not published as a production native app.
@@ -1010,10 +1026,10 @@ SCRIPT
     run grep -q 'Validate release repository' "$workflow"
     [ "$status" -eq 0 ]
 
-    run grep -q "\\\${GITHUB_REPOSITORY,,}.*tw93/roomy" "$workflow"
+    run grep -q "\\\${GITHUB_REPOSITORY,,}.*jake-seo-cl/roomy" "$workflow"
     [ "$status" -eq 0 ]
 
-    run grep -q 'Homebrew publishing is only allowed from tw93/roomy' "$workflow"
+    run grep -q 'Homebrew publishing is only allowed from jake-seo-cl/roomy' "$workflow"
     [ "$status" -eq 0 ]
 
     run grep -q 'cleanup_release_asset_dir' "$workflow"
@@ -1333,17 +1349,17 @@ EOF
     cat > "$formula_file" <<'EOF'
 class Roomy < Formula
   desc "Roomy"
-  homepage "https://github.com/tw93/Roomy"
-  url "https://github.com/tw93/Roomy/archive/refs/tags/V1.32.0.tar.gz"
+  homepage "https://github.com/jake-seo-cl/Roomy"
+  url "https://github.com/jake-seo-cl/Roomy/archive/refs/tags/V1.32.0.tar.gz"
   sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
   on_arm do
-    url "https://github.com/tw93/Roomy/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
+    url "https://github.com/jake-seo-cl/Roomy/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
     sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   end
 
   on_intel do
-    url "https://github.com/tw93/Roomy/releases/download/V1.32.0/binaries-darwin-amd64.tar.gz"
+    url "https://github.com/jake-seo-cl/Roomy/releases/download/V1.32.0/binaries-darwin-amd64.tar.gz"
     sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   end
 end
@@ -1357,15 +1373,15 @@ EOF
         --amd-sha "$new_amd_sha"
     [ "$status" -eq 0 ]
 
-    run grep -q 'url "https://github.com/tw93/roomy/archive/refs/tags/V1.33.0.tar.gz"' "$formula_file"
+    run grep -q 'url "https://github.com/jake-seo-cl/roomy/archive/refs/tags/V1.33.0.tar.gz"' "$formula_file"
     [ "$status" -eq 0 ]
     run grep -q "sha256 \"$new_source_sha\"" "$formula_file"
     [ "$status" -eq 0 ]
-    run grep -q 'url "https://github.com/tw93/roomy/releases/download/V1.33.0/binaries-darwin-arm64.tar.gz"' "$formula_file"
+    run grep -q 'url "https://github.com/jake-seo-cl/roomy/releases/download/V1.33.0/binaries-darwin-arm64.tar.gz"' "$formula_file"
     [ "$status" -eq 0 ]
     run grep -q "sha256 \"$new_arm_sha\"" "$formula_file"
     [ "$status" -eq 0 ]
-    run grep -q 'url "https://github.com/tw93/roomy/releases/download/V1.33.0/binaries-darwin-amd64.tar.gz"' "$formula_file"
+    run grep -q 'url "https://github.com/jake-seo-cl/roomy/releases/download/V1.33.0/binaries-darwin-amd64.tar.gz"' "$formula_file"
     [ "$status" -eq 0 ]
     run grep -q "sha256 \"$new_amd_sha\"" "$formula_file"
     [ "$status" -eq 0 ]
@@ -1380,17 +1396,17 @@ EOF
     cat > "$formula_file" <<'EOF'
 class Roomy < Formula
   desc "Roomy"
-  homepage "https://github.com/tw93/Roomy"
-  url "https://github.com/tw93/Roomy/archive/refs/tags/V1.32.0.tar.gz"
+  homepage "https://github.com/jake-seo-cl/Roomy"
+  url "https://github.com/jake-seo-cl/Roomy/archive/refs/tags/V1.32.0.tar.gz"
   sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
   on_arm do
-    url "https://github.com/tw93/Roomy/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
+    url "https://github.com/jake-seo-cl/Roomy/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
     sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   end
 
   on_intel do
-    url "https://github.com/tw93/Roomy/releases/download/V1.32.0/binaries-darwin-amd64.tar.gz"
+    url "https://github.com/jake-seo-cl/Roomy/releases/download/V1.32.0/binaries-darwin-amd64.tar.gz"
     sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   end
 end
@@ -1420,12 +1436,12 @@ EOF
     cat > "$formula_file" <<'EOF'
 class Roomy < Formula
   desc "Roomy"
-  homepage "https://github.com/tw93/Roomy"
-  url "https://github.com/tw93/Roomy/archive/refs/tags/V1.32.0.tar.gz"
+  homepage "https://github.com/jake-seo-cl/Roomy"
+  url "https://github.com/jake-seo-cl/Roomy/archive/refs/tags/V1.32.0.tar.gz"
   sha256 "old-source-sha"
 
   on_arm do
-    url "https://github.com/tw93/Roomy/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
+    url "https://github.com/jake-seo-cl/Roomy/releases/download/V1.32.0/binaries-darwin-arm64.tar.gz"
     sha256 "old-arm-sha"
   end
 end

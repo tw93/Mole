@@ -1,6 +1,6 @@
 # Roomy Launch Readiness
 
-Updated: 2026-05-21
+Updated: 2026-06-25
 
 This file codifies the production launch goals that must stay true before a public launch tag is promoted to stable/latest.
 
@@ -22,7 +22,7 @@ The drill must cover Homebrew installation, script installation, checksum verifi
 
 ## Goal 3: Release Integrity Manifest
 
-Release integrity gate: every public tag must have curated release notes, a recorded release manifest, SHA-256 checksums, artifact attestations, and Homebrew formula verification as described in `docs/release/release-integrity.md`.
+Release integrity gate: every public tag must have curated release notes, a recorded release manifest, SHA-256 checksums, artifact attestations, corresponding source availability, and Homebrew formula verification as described in `docs/release/release-integrity.md`.
 
 The manifest is the human-readable bridge between CI output and user trust. It must identify the exact tag, assets, source archive checksum, helper binary checksums, Homebrew tarball checksums, attestation status, and formula update status.
 
@@ -83,8 +83,14 @@ Performance regressions that affect launch-critical flows must be triaged before
 
 Sales gate: the public launch surface must sell the current supported product, not an unreleased native app. The static landing page in `site/` must present Roomy as a CLI-first Mac maintenance product, embed the generated demo media, link to install/readiness material, and avoid claiming that RoomyUI is production-ready while the scope lock excludes native app artifacts.
 
-The market position must stay grounded in `docs/marketing/competitor-benchmark.md`, and the landing page smoke check must run in CI through `npm run site:check` so desktop/mobile layout, required sections, and demo assets remain present.
+The market position must stay grounded in `docs/marketing/competitor-benchmark.md` and `docs/marketing/pricing-strategy.md`, and the landing page smoke check must run in CI through `npm run site:check` so desktop/mobile layout, required sections, GPL-friendly pricing, and demo assets remain present.
 
 The final launch review must use `docs/launch/go-no-go-audit.md` to map the release candidate to evidence instead of relying only on proxy signals.
 
-Launch acceptance requires the release preflight to pass, the clean-machine drill record for the tag to validate, the safety matrix anchors to remain present, the sales launch surface smoke check to pass, and the normal shell/API/native validation suites to pass for the launch commit.
+## Goal 10: Open Source Compliance And Namespace
+
+Compliance gate: Roomy must launch as a GPL-3.0 Roomy-branded fork, not as an MIT project and not as a Mole-branded public product. The source repository, Homebrew tap, release workflow, README, site, release notes, and support/security docs must point to the Roomy namespace and preserve upstream attribution.
+
+The compliance checklist lives in `docs/legal/open-source-compliance.md`, and the automation/distribution assumptions live in `docs/launch/distribution-automation.md`. `scripts/check-license-compliance.sh` must pass as part of release preflight.
+
+Launch acceptance requires the release preflight to pass, the clean-machine drill record for the tag to validate, the safety matrix anchors to remain present, the license compliance gate to pass, the sales launch surface smoke check to pass, and the normal shell/API/native validation suites to pass for the launch commit.

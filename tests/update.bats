@@ -352,14 +352,14 @@ chmod +x "$HOME/fake-bin/brew"
 
 URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --dry-run
 
-! grep -q "raw.githubusercontent.com/tw93/roomy/V9.9.9/install.sh" "$url_log"
+! grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/V9.9.9/install.sh" "$url_log"
 EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Roomy update preview"* ]]
     [[ "$output" == *"Current version:"* ]]
     [[ "$output" == *"Target version: 9.9.9"* ]]
-    [[ "$output" == *"Installer: https://raw.githubusercontent.com/tw93/roomy/V9.9.9/install.sh"* ]]
+    [[ "$output" == *"Installer: https://raw.githubusercontent.com/jake-seo-cl/roomy/V9.9.9/install.sh"* ]]
     [[ "$output" == *"No files changed."* ]]
 }
 
@@ -411,7 +411,7 @@ chmod +x "$HOME/fake-bin/brew"
 
 URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update
 
-! grep -q "raw.githubusercontent.com/tw93/roomy/V0.1.0/install.sh" "$url_log"
+! grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/V0.1.0/install.sh" "$url_log"
 EOF
 
     [ "$status" -eq 0 ]
@@ -469,7 +469,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Target version: 9.9.9"* ]]
-    [[ "$output" == *"Installer: https://raw.githubusercontent.com/tw93/roomy/V9.9.9/install.sh"* ]]
+    [[ "$output" == *"Installer: https://raw.githubusercontent.com/jake-seo-cl/roomy/V9.9.9/install.sh"* ]]
     [[ "$output" == *"No files changed."* ]]
 }
 
@@ -695,8 +695,8 @@ chmod +x "$HOME/fake-bin/brew"
 
 URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --force
 
-grep -q "raw.githubusercontent.com/tw93/roomy/V${CURRENT_VERSION}/install.sh" "$url_log"
-! grep -q "raw.githubusercontent.com/tw93/roomy/main/install.sh" "$url_log"
+grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/V${CURRENT_VERSION}/install.sh" "$url_log"
+! grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/main/install.sh" "$url_log"
 EOF
 
     [ "$status" -eq 0 ]
@@ -776,7 +776,7 @@ chmod +x "$HOME/fake-bin/brew"
 
 URL_LOG="$url_log" "$PROJECT_ROOT/roomy" update --nightly
 
-grep -q "raw.githubusercontent.com/tw93/roomy/main/install.sh" "$url_log"
+grep -q "raw.githubusercontent.com/jake-seo-cl/roomy/main/install.sh" "$url_log"
 EOF
 
     [ "$status" -eq 0 ]
@@ -826,11 +826,11 @@ ROOMY_TEST_MODE=1 ROOMY_SKIP_MAIN=1 source "$PROJECT_ROOT/roomy"
 cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
 #!/usr/bin/env bash
   if [[ "${1:-}" == "outdated" ]]; then
-    echo "tw93/tap/roomy (1.29.0) < 1.31.0"
+    echo "jake-seo-cl/tap/roomy (1.29.0) < 1.31.0"
     exit 0
   fi
   if [[ "${1:-}" == "info" ]]; then
-    echo "==> tw93/tap/roomy: stable 9.9.9 (bottled)"
+    echo "==> jake-seo-cl/tap/roomy: stable 9.9.9 (bottled)"
     exit 0
   fi
   exit 0
@@ -855,7 +855,7 @@ cat > "$MOCK_BIN_DIR/brew" <<'SCRIPT'
     exit 0
   fi
   if [[ "${1:-}" == "info" ]]; then
-    echo "==> tw93/tap/roomy: stable 1.31.1 (bottled), HEAD"
+    echo "==> jake-seo-cl/tap/roomy: stable 1.31.1 (bottled), HEAD"
     exit 0
   fi
   exit 0

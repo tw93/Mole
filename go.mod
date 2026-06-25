@@ -1,4 +1,4 @@
-module github.com/tw93/roomy
+module github.com/jake-seo-cl/roomy
 
 go 1.25.0
 

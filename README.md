@@ -4,17 +4,17 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/tw93/roomy/stargazers"><img src="https://img.shields.io/github/stars/tw93/roomy?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/tw93/roomy/releases"><img src="https://img.shields.io/github/v/tag/tw93/roomy?label=version&style=flat-square" alt="Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
-  <a href="https://github.com/tw93/roomy/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/roomy?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
-  <a href="https://t.me/+GclQS9ZnxyI2ODQ1"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
+  <a href="https://github.com/jake-seo-cl/roomy/stargazers"><img src="https://img.shields.io/github/stars/jake-seo-cl/roomy?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/jake-seo-cl/roomy/releases"><img src="https://img.shields.io/github/v/tag/jake-seo-cl/roomy?label=version&style=flat-square" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square" alt="License"></a>
+  <a href="https://github.com/jake-seo-cl/roomy/commits"><img src="https://img.shields.io/github/commit-activity/m/jake-seo-cl/roomy?style=flat-square" alt="Commits"></a>
 </p>
 
 <p align="center">
   <img src="https://gw.alipayobjects.com/zos/k/ro/ZzF8e8.png" alt="Roomy - 95.50GB freed" width="1000" />
 </p>
+
+Roomy is a modified and renamed fork of [Mole](https://github.com/tw93/mole). The fork uses its own Roomy name for public distribution and is not endorsed by the upstream Mole project.
 
 ## Features
 
@@ -29,8 +29,8 @@
 **Install the current release via Homebrew**
 
 ```bash
-brew tap tw93/tap
-brew install tw93/tap/roomy
+brew tap jake-seo-cl/tap
+brew install jake-seo-cl/tap/roomy
 ```
 
 After Homebrew core has merged the latest formula, `brew install roomy` is enough.
@@ -39,10 +39,10 @@ After Homebrew core has merged the latest formula, `brew install roomy` is enoug
 
 ```bash
 # Optional args: -s latest for main branch code, -s 1.17.0 for specific version
-curl -fsSL https://raw.githubusercontent.com/tw93/roomy/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jake-seo-cl/roomy/main/install.sh | bash
 ```
 
-> Note: Roomy is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/tw93/roomy/tree/windows) for early adopters.
+> Note: Roomy is built for macOS. An experimental Windows version is available in the [windows branch](https://github.com/jake-seo-cl/roomy/tree/windows) for early adopters.
 
 ### Release Status
 
@@ -345,7 +345,7 @@ Select Installers to Remove - 3.8GB (5 selected)
 Launch Roomy commands from Raycast or Alfred:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/roomy/main/scripts/setup-quick-launchers.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jake-seo-cl/roomy/main/scripts/setup-quick-launchers.sh | bash
 ```
 
 Adds 5 commands: `Roomy Clean`, `Roomy Uninstall`, `Roomy Optimize`, `Roomy Analyze`, `Roomy Status`.
@@ -367,18 +367,13 @@ After running the script, complete these steps in Raycast:
 
 Roomy auto-detects your terminal app. iTerm2 has known compatibility issues. We highly recommend [Kaku](https://github.com/tw93/Kaku). Other good options are Alacritty, kitty, WezTerm, Ghostty, and Warp. To override, set `ROOMY_LAUNCHER_APP=<name>`.
 
-## Community Love
+## Attribution
 
-Thanks to everyone who helped build Roomy. Go follow them. ❤️
+Thanks to the upstream Mole project and everyone who helped build the code this fork is based on.
 
-<a href="https://github.com/tw93/roomy/graphs/contributors">
+<a href="https://github.com/jake-seo-cl/roomy/graphs/contributors">
   <img src="./CONTRIBUTORS.svg?v=2" width="1000" />
 </a>
-
-<br/><br/>
-Real feedback from users who shared Roomy on X.
-
-<img src="https://gw.alipayobjects.com/zos/k/dl/loveroomy.jpeg" alt="Community feedback on Roomy" width="1000" />
 
 ## Support
 
@@ -389,4 +384,4 @@ Real feedback from users who shared Roomy on X.
 
 ## License
 
-MIT License. Feel free to use Roomy and contribute.
+Roomy is distributed under GPL-3.0. See [LICENSE](LICENSE) for the full license and [NOTICE](NOTICE) for upstream attribution and fork status.

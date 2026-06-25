@@ -1,11 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Private Security Report
-    url: mailto:hitw93@gmail.com?subject=Roomy%20security%20report
+    url: https://github.com/jake-seo-cl/roomy/security/advisories/new
     about: Report a suspected vulnerability privately instead of opening a public issue
-  - name: Telegram Community
-    url: https://t.me/+GclQS9ZnxyI2ODQ1
-    about: Join our Telegram group for questions and discussions
   - name: GitHub Discussions
-    url: https://github.com/tw93/roomy/discussions
+    url: https://github.com/jake-seo-cl/roomy/discussions
     about: Ask questions and share ideas with the community

@@ -133,7 +133,7 @@ is_release_tag() {
 expected_evidence_url() {
     local record_tag
     record_tag="$(field_value "Release tag")"
-    printf 'https://github.com/tw93/roomy/releases/download/%s/clean-machine-drill-%s-evidence.tar.gz\n' "$record_tag" "$record_tag"
+    printf 'https://github.com/jake-seo-cl/roomy/releases/download/%s/clean-machine-drill-%s-evidence.tar.gz\n' "$record_tag" "$record_tag"
 }
 
 require_canonical_evidence_url() {
