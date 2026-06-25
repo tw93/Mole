@@ -95,7 +95,7 @@ jobs:
             bin/SHA256SUMS
 
       - name: Create Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: ${{ github.ref_name }}
