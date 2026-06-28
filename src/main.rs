@@ -153,10 +153,43 @@ async fn run_app<B: ratatui::backend::Backend>(
                     if app.current_screen == Screen::Uninstall && app.uninstall_confirm_open {
                         match key.code {
                             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                                // Execute mock uninstall: remove selected items, close modal, and exit screen
-                                app.uninstall_items.retain(|i| !i.selected);
-                                app.uninstall_confirm_open = false;
-                                app.go_back();
+                                // Extract the selected application names to uninstall
+                                let selected_names: Vec<String> = app.uninstall_items.iter()
+                                    .filter(|i| i.selected)
+                                    .map(|i| i.name.clone())
+                                    .collect();
+
+                                if !selected_names.is_empty() {
+                                    app.uninstall_scanning_status = true;
+                                    app.uninstall_confirm_open = false;
+                                    app.go_back();
+
+                                    let tx_scan = event_tx.clone();
+                                    tokio::spawn(async move {
+                                        let mut cmd = tokio::process::Command::new("bash");
+                                        cmd.arg("bin/uninstall.sh");
+                                        for name in &selected_names {
+                                            cmd.arg(name);
+                                        }
+                                        cmd.stdin(std::process::Stdio::piped());
+                                        cmd.stdout(std::process::Stdio::null());
+                                        cmd.stderr(std::process::Stdio::null());
+
+                                        if let Ok(mut child) = cmd.spawn() {
+                                            if let Some(mut stdin) = child.stdin.take() {
+                                                use tokio::io::AsyncWriteExt;
+                                                let _ = stdin.write_all(b"y\n").await;
+                                            }
+                                            let _ = child.wait().await;
+                                        }
+
+                                        // Rescan Applications directory to refresh real status
+                                        let items = app::scan_applications();
+                                        let _ = tx_scan.send(AppEvent::UninstallScanComplete(items)).await;
+                                    });
+                                } else {
+                                    app.uninstall_confirm_open = false;
+                                }
                             }
                             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                                 app.uninstall_confirm_open = false;
