@@ -175,25 +175,33 @@ async fn run_app<B: ratatui::backend::Backend>(
                     if app.current_screen == Screen::Uninstall && app.uninstall_confirm_open {
                         match key.code {
                             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                                // Extract the selected application names to uninstall
-                                let selected_names: Vec<String> = app.uninstall_items.iter()
-                                    .filter(|i| i.selected)
-                                    .map(|i| i.name.clone())
-                                    .collect();
+                                 // Extract the selected application names to uninstall, stripping the '.app' suffix
+                                 // to match the exact pattern matchers of bin/uninstall.sh
+                                 let selected_names: Vec<String> = app.uninstall_items.iter()
+                                     .filter(|i| i.selected)
+                                     .map(|i| {
+                                         if i.name.ends_with(".app") {
+                                             i.name[..i.name.len() - 4].to_string()
+                                         } else {
+                                             i.name.clone()
+                                         }
+                                     })
+                                     .collect();
 
-                                if !selected_names.is_empty() {
-                                    app.uninstall_scanning_status = true;
-                                    app.uninstall_confirm_open = false;
-                                    app.go_back();
+                                 if !selected_names.is_empty() {
+                                     app.uninstall_scanning_status = true;
+                                     app.uninstall_confirm_open = false;
+                                     app.go_back();
 
-                                    let _ = run_sub_tui_impl("bin/uninstall.sh", &selected_names, &is_suspended);
+                                     let _ = run_sub_tui_impl("bin/uninstall.sh", &selected_names, &is_suspended);
+                                     let _ = terminal.clear(); // Clear the Ratatui cached view to redraw correctly
 
-                                    let tx_scan = event_tx.clone();
-                                    tokio::spawn(async move {
-                                        // Rescan Applications directory to refresh real status
-                                        let items = app::scan_applications();
-                                        let _ = tx_scan.send(AppEvent::UninstallScanComplete(items)).await;
-                                    });
+                                     let tx_scan = event_tx.clone();
+                                     tokio::spawn(async move {
+                                         // Rescan Applications directory to refresh real status
+                                         let items = app::scan_applications();
+                                         let _ = tx_scan.send(AppEvent::UninstallScanComplete(items)).await;
+                                     });
                                 } else {
                                     app.uninstall_confirm_open = false;
                                 }
@@ -240,23 +248,26 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app.next_menu_item();
                             }
                             (Screen::MainMenu, KeyCode::Enter) => {
-                                app.select_current_menu_item();
-                                match app.current_screen {
-                                    Screen::Optimize => {
-                                        let _ = run_sub_tui_impl("bin/optimize.sh", &[], &is_suspended);
-                                        app.current_screen = Screen::MainMenu;
-                                    }
-                                    Screen::Analyze => {
-                                        let _ = run_sub_tui_impl("bin/analyze-go", &[], &is_suspended);
-                                        app.current_screen = Screen::MainMenu;
-                                    }
-                                    Screen::Status => {
-                                        let _ = run_sub_tui_impl("bin/status-go", &[], &is_suspended);
-                                        app.current_screen = Screen::MainMenu;
-                                    }
-                                    _ => {}
-                                }
-                            }
+                                 app.select_current_menu_item();
+                                 match app.current_screen {
+                                     Screen::Optimize => {
+                                         let _ = run_sub_tui_impl("bin/optimize.sh", &[], &is_suspended);
+                                         let _ = terminal.clear();
+                                         app.current_screen = Screen::MainMenu;
+                                     }
+                                     Screen::Analyze => {
+                                         let _ = run_sub_tui_impl("bin/analyze-go", &[], &is_suspended);
+                                         let _ = terminal.clear();
+                                         app.current_screen = Screen::MainMenu;
+                                     }
+                                     Screen::Status => {
+                                         let _ = run_sub_tui_impl("bin/status-go", &[], &is_suspended);
+                                         let _ = terminal.clear();
+                                         app.current_screen = Screen::MainMenu;
+                                     }
+                                     _ => {}
+                                 }
+                             }
                             // Uninstall Navigation
                             (Screen::Uninstall, KeyCode::Up) => {
                                 app.uninstall_prev();
