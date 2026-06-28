@@ -1,0 +1,11 @@
+[package]
+name = "mole"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.28.1"
+crossterm = { version = "0.28.1", features = ["event-stream"] }
+tokio = { version = "1.38.0", features = ["full"] }
+anyhow = "1.0.86"
+libc = "0.2"
