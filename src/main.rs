@@ -193,7 +193,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                      app.uninstall_confirm_open = false;
                                      app.go_back();
 
-                                     let _ = run_sub_tui_impl("bin/uninstall.sh", &selected_names, &is_suspended);
+                                     // Execute real uninstall with auto-confirmation for script prompts
+                                     let _ = run_sub_tui_impl("bin/uninstall.sh", &selected_names, &is_suspended, true);
                                      let _ = terminal.clear(); // Clear the Ratatui cached view to redraw correctly
 
                                      let tx_scan = event_tx.clone();
@@ -202,9 +203,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                                          let items = app::scan_applications();
                                          let _ = tx_scan.send(AppEvent::UninstallScanComplete(items)).await;
                                      });
-                                } else {
-                                    app.uninstall_confirm_open = false;
-                                }
+                                 } else {
+                                     app.uninstall_confirm_open = false;
+                                 }
                             }
                             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                                 app.uninstall_confirm_open = false;
@@ -251,17 +252,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                                  app.select_current_menu_item();
                                  match app.current_screen {
                                      Screen::Optimize => {
-                                         let _ = run_sub_tui_impl("bin/optimize.sh", &[], &is_suspended);
+                                         let _ = run_sub_tui_impl("bin/optimize.sh", &[], &is_suspended, false);
                                          let _ = terminal.clear();
                                          app.current_screen = Screen::MainMenu;
                                      }
                                      Screen::Analyze => {
-                                         let _ = run_sub_tui_impl("bin/analyze-go", &[], &is_suspended);
+                                         let _ = run_sub_tui_impl("bin/analyze-go", &[], &is_suspended, false);
                                          let _ = terminal.clear();
                                          app.current_screen = Screen::MainMenu;
                                      }
                                      Screen::Status => {
-                                         let _ = run_sub_tui_impl("bin/status-go", &[], &is_suspended);
+                                         let _ = run_sub_tui_impl("bin/status-go", &[], &is_suspended, false);
                                          let _ = terminal.clear();
                                          app.current_screen = Screen::MainMenu;
                                      }
@@ -317,7 +318,12 @@ async fn run_app<B: ratatui::backend::Backend>(
     Ok(())
 }
 
-fn run_sub_tui_impl(cmd_name: &str, extra_args: &[String], is_suspended: &Arc<AtomicBool>) -> anyhow::Result<()> {
+fn run_sub_tui_impl(
+    cmd_name: &str,
+    extra_args: &[String],
+    is_suspended: &Arc<AtomicBool>,
+    auto_confirm: bool,
+) -> anyhow::Result<()> {
     // 1. Suspend the background event listener loops
     is_suspended.store(true, Ordering::SeqCst);
 
@@ -367,12 +373,26 @@ fn run_sub_tui_impl(cmd_name: &str, extra_args: &[String], is_suspended: &Arc<At
         }
     };
 
-    // Run subprocess interactively
-    let mut child = cmd
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .spawn()?;
+    // Configure stdin based on auto-confirm requirements
+    if auto_confirm {
+        cmd.stdin(std::process::Stdio::piped());
+    } else {
+        cmd.stdin(std::process::Stdio::inherit());
+    }
+    cmd.stdout(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::inherit());
+
+    // Run subprocess
+    let mut child = cmd.spawn()?;
+
+    // Auto-feed confirm inputs to stdin if running with auto_confirm
+    if auto_confirm {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(b"y\n\n");
+        }
+    }
+
     let _ = child.wait()?;
 
     // 4. Restore TUI raw mode and return alternate screen views
