@@ -1021,30 +1021,6 @@ pub fn scan_applications() -> Vec<UninstallItem> {
     // Sort items by size descending
     items.sort_by(|a, b| b.size_mb.cmp(&a.size_mb));
 
-    if items.is_empty() {
-        // Mock fallback if empty or run on non-macOS platforms
-        items = vec![
-            UninstallItem {
-                name: "Xcode.app".to_string(),
-                size_mb: 32400,
-                last_used: "2026-06-20".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Google Chrome.app".to_string(),
-                size_mb: 1200,
-                last_used: "2026-06-27".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Slack.app".to_string(),
-                size_mb: 850,
-                last_used: "2026-06-25".to_string(),
-                selected: false,
-            },
-        ];
-    }
-
     items
 }
 

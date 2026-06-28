@@ -234,6 +234,21 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                             (Screen::MainMenu, KeyCode::Enter) => {
                                 app.select_current_menu_item();
+                                match app.current_screen {
+                                    Screen::Optimize => {
+                                        let _ = run_sub_tui("bin/optimize.sh");
+                                        app.current_screen = Screen::MainMenu;
+                                    }
+                                    Screen::Analyze => {
+                                        let _ = run_sub_tui("bin/analyze-go");
+                                        app.current_screen = Screen::MainMenu;
+                                    }
+                                    Screen::Status => {
+                                        let _ = run_sub_tui("bin/status-go");
+                                        app.current_screen = Screen::MainMenu;
+                                    }
+                                    _ => {}
+                                }
                             }
                             // Uninstall Navigation
                             (Screen::Uninstall, KeyCode::Up) => {
@@ -282,6 +297,58 @@ async fn run_app<B: ratatui::backend::Backend>(
         // Draw terminal screen on state change
         terminal.draw(|f| ui::draw(f, app))?;
     }
+
+    Ok(())
+}
+
+fn run_sub_tui(cmd_name: &str) -> anyhow::Result<()> {
+    // 1. Temporarily restore terminal raw mode and show cursor
+    crossterm::terminal::disable_raw_mode()?;
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::terminal::LeaveAlternateScreen,
+        crossterm::cursor::Show
+    )?;
+
+    // 2. Resolve command path or execute package directly via Go
+    let has_binary = std::path::Path::new(cmd_name).exists();
+    let mut cmd = if has_binary {
+        std::process::Command::new(cmd_name)
+    } else {
+        let package_path = if cmd_name.contains("analyze") {
+            "cmd/analyze/main.go"
+        } else if cmd_name.contains("status") {
+            "cmd/status/main.go"
+        } else {
+            ""
+        };
+
+        if !package_path.is_empty() {
+            let mut c = std::process::Command::new("go");
+            c.arg("run");
+            c.arg(package_path);
+            c
+        } else {
+            let mut c = std::process::Command::new("bash");
+            c.arg(cmd_name);
+            c
+        }
+    };
+
+    let mut child = cmd
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()?;
+    let _ = child.wait()?;
+
+    // 3. Re-initialize raw mode and return focus
+    crossterm::terminal::enable_raw_mode()?;
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::terminal::EnterAlternateScreen,
+        crossterm::cursor::Hide
+    )?;
 
     Ok(())
 }
