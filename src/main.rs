@@ -8,6 +8,8 @@ use app::{App, Screen};
 use crossterm::event::{self, Event, KeyCode};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub enum AppEvent {
     Key(crossterm::event::KeyEvent),
@@ -40,11 +42,22 @@ async fn main() -> anyhow::Result<()> {
     // Create unified event channel
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>(256);
 
+    // Shared suspension state for running subprocesses
+    let is_suspended = Arc::new(AtomicBool::new(false));
+
     // Spawn keypress event listener task
     let tx_keys = event_tx.clone();
+    let is_suspended_keys = is_suspended.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok(true) = event::poll(Duration::from_millis(500)) {
+            if is_suspended_keys.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
+            if let Ok(true) = event::poll(Duration::from_millis(100)) {
+                if is_suspended_keys.load(Ordering::SeqCst) {
+                    continue;
+                }
                 if let Ok(Event::Key(key)) = event::read() {
                     if tx_keys.send(AppEvent::Key(key)).await.is_err() {
                         break; // Channel closed
@@ -56,9 +69,17 @@ async fn main() -> anyhow::Result<()> {
 
     // Spawn Ctrl+C listener task
     let tx_ctrl_c = event_tx.clone();
+    let is_suspended_ctrl = is_suspended.clone();
     tokio::spawn(async move {
         loop {
+            if is_suspended_ctrl.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
             if tokio::signal::ctrl_c().await.is_ok() {
+                if is_suspended_ctrl.load(Ordering::SeqCst) {
+                    continue;
+                }
                 let ctrl_c_key = crossterm::event::KeyEvent::new(
                     crossterm::event::KeyCode::Char('c'),
                     crossterm::event::KeyModifiers::CONTROL,
@@ -90,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let mut app = App::new();
-    let run_result = run_app(&mut terminal, &mut app, event_rx, event_tx.clone()).await;
+    let run_result = run_app(&mut terminal, &mut app, event_rx, event_tx.clone(), is_suspended.clone()).await;
 
     // Restore terminal
     restore_terminal()?;
@@ -117,6 +138,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     app: &mut App,
     mut event_rx: mpsc::Receiver<AppEvent>,
     event_tx: mpsc::Sender<AppEvent>,
+    is_suspended: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     // Draw initial state
     terminal.draw(|f| ui::draw(f, app))?;
@@ -164,25 +186,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     app.uninstall_confirm_open = false;
                                     app.go_back();
 
+                                    let _ = run_sub_tui_impl("bin/uninstall.sh", &selected_names, &is_suspended);
+
                                     let tx_scan = event_tx.clone();
                                     tokio::spawn(async move {
-                                        let mut cmd = tokio::process::Command::new("bash");
-                                        cmd.arg("bin/uninstall.sh");
-                                        for name in &selected_names {
-                                            cmd.arg(name);
-                                        }
-                                        cmd.stdin(std::process::Stdio::piped());
-                                        cmd.stdout(std::process::Stdio::null());
-                                        cmd.stderr(std::process::Stdio::null());
-
-                                        if let Ok(mut child) = cmd.spawn() {
-                                            if let Some(mut stdin) = child.stdin.take() {
-                                                use tokio::io::AsyncWriteExt;
-                                                let _ = stdin.write_all(b"y\n").await;
-                                            }
-                                            let _ = child.wait().await;
-                                        }
-
                                         // Rescan Applications directory to refresh real status
                                         let items = app::scan_applications();
                                         let _ = tx_scan.send(AppEvent::UninstallScanComplete(items)).await;
@@ -236,15 +243,15 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 app.select_current_menu_item();
                                 match app.current_screen {
                                     Screen::Optimize => {
-                                        let _ = run_sub_tui("bin/optimize.sh");
+                                        let _ = run_sub_tui_impl("bin/optimize.sh", &[], &is_suspended);
                                         app.current_screen = Screen::MainMenu;
                                     }
                                     Screen::Analyze => {
-                                        let _ = run_sub_tui("bin/analyze-go");
+                                        let _ = run_sub_tui_impl("bin/analyze-go", &[], &is_suspended);
                                         app.current_screen = Screen::MainMenu;
                                     }
                                     Screen::Status => {
-                                        let _ = run_sub_tui("bin/status-go");
+                                        let _ = run_sub_tui_impl("bin/status-go", &[], &is_suspended);
                                         app.current_screen = Screen::MainMenu;
                                     }
                                     _ => {}
@@ -284,8 +291,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                 app.handle_tick();
             }
             AppEvent::Script(script_event) => {
-                // If script errors with custom user-friendly message, we can populate it in clean_error
-                // Or set global_error if it fails abruptly
                 app.handle_clean_event(script_event);
             }
             AppEvent::UninstallScanComplete(items) => {
@@ -301,8 +306,14 @@ async fn run_app<B: ratatui::backend::Backend>(
     Ok(())
 }
 
-fn run_sub_tui(cmd_name: &str) -> anyhow::Result<()> {
-    // 1. Temporarily restore terminal raw mode and show cursor
+fn run_sub_tui_impl(cmd_name: &str, extra_args: &[String], is_suspended: &Arc<AtomicBool>) -> anyhow::Result<()> {
+    // 1. Suspend the background event listener loops
+    is_suspended.store(true, Ordering::SeqCst);
+
+    // Wait briefly for raw state events to settle
+    std::thread::sleep(Duration::from_millis(150));
+
+    // 2. Temporarily disable TUI raw mode and return terminal screens
     crossterm::terminal::disable_raw_mode()?;
     crossterm::execute!(
         std::io::stdout(),
@@ -310,10 +321,14 @@ fn run_sub_tui(cmd_name: &str) -> anyhow::Result<()> {
         crossterm::cursor::Show
     )?;
 
-    // 2. Resolve command path or execute package directly via Go
+    // 3. Resolve the execution target path
     let has_binary = std::path::Path::new(cmd_name).exists();
     let mut cmd = if has_binary {
-        std::process::Command::new(cmd_name)
+        let mut c = std::process::Command::new(cmd_name);
+        for arg in extra_args {
+            c.arg(arg);
+        }
+        c
     } else {
         let package_path = if cmd_name.contains("analyze") {
             "cmd/analyze/main.go"
@@ -327,14 +342,21 @@ fn run_sub_tui(cmd_name: &str) -> anyhow::Result<()> {
             let mut c = std::process::Command::new("go");
             c.arg("run");
             c.arg(package_path);
+            for arg in extra_args {
+                c.arg(arg);
+            }
             c
         } else {
             let mut c = std::process::Command::new("bash");
             c.arg(cmd_name);
+            for arg in extra_args {
+                c.arg(arg);
+            }
             c
         }
     };
 
+    // Run subprocess interactively
     let mut child = cmd
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
@@ -342,13 +364,16 @@ fn run_sub_tui(cmd_name: &str) -> anyhow::Result<()> {
         .spawn()?;
     let _ = child.wait()?;
 
-    // 3. Re-initialize raw mode and return focus
+    // 4. Restore TUI raw mode and return alternate screen views
     crossterm::terminal::enable_raw_mode()?;
     crossterm::execute!(
         std::io::stdout(),
         crossterm::terminal::EnterAlternateScreen,
         crossterm::cursor::Hide
     )?;
+
+    // 5. Resume background loops
+    is_suspended.store(false, Ordering::SeqCst);
 
     Ok(())
 }
