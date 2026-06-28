@@ -13,6 +13,7 @@ pub enum AppEvent {
     Key(crossterm::event::KeyEvent),
     Tick,
     Script(crate::scripts::ScriptEvent),
+    UninstallScanComplete(Vec<crate::app::UninstallItem>),
 }
 
 #[tokio::main]
@@ -79,6 +80,13 @@ async fn main() -> anyhow::Result<()> {
                 break;
             }
         }
+    });
+
+    // Spawn background application directory scanner
+    let tx_scan = event_tx.clone();
+    tokio::spawn(async move {
+        let items = app::scan_applications();
+        let _ = tx_scan.send(AppEvent::UninstallScanComplete(items)).await;
     });
 
     let mut app = App::new();
@@ -231,6 +239,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                 // If script errors with custom user-friendly message, we can populate it in clean_error
                 // Or set global_error if it fails abruptly
                 app.handle_clean_event(script_event);
+            }
+            AppEvent::UninstallScanComplete(items) => {
+                app.uninstall_items = items;
+                app.uninstall_scanning_status = false;
             }
         }
 

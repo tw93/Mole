@@ -70,7 +70,31 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .block(header_block);
     frame.render_widget(header_content, chunks[0]);
 
-    // Draw the Table
+    // Draw the Table (or Loading Screen)
+    if app.uninstall_scanning_status {
+        let loading_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(purple))
+            .title(" Applications ")
+            .title_alignment(Alignment::Center)
+            .title_style(theme::STYLE_HEADER)
+            .padding(ratatui::widgets::Padding::uniform(2));
+
+        let loading_text = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled("🔍 Scanning /Applications folder...", theme::STYLE_SELECTED.add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(Span::styled("Calculating directory size and sorting applications by footprint.", theme::STYLE_MUTED)),
+            Line::from(Span::styled("This will take just a moment...", theme::STYLE_MUTED)),
+        ])
+        .alignment(Alignment::Center)
+        .block(loading_block);
+
+        frame.render_widget(loading_text, chunks[1]);
+        return;
+    }
+
     let filtered = app.filtered_uninstall_items();
     let rows: Vec<Row> = filtered
         .iter()

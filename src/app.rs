@@ -94,6 +94,9 @@ pub struct App {
 
     // Global error banner state
     pub global_error: Option<String>,
+
+    // Uninstall scanner state
+    pub uninstall_scanning_status: bool,
 }
 
 impl Default for App {
@@ -104,62 +107,11 @@ impl Default for App {
 
 impl App {
     pub fn new() -> Self {
-        let mock_items = vec![
-            UninstallItem {
-                name: "Xcode.app".to_string(),
-                size_mb: 32400,
-                last_used: "2026-06-20".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Google Chrome.app".to_string(),
-                size_mb: 1200,
-                last_used: "2026-06-27".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Slack.app".to_string(),
-                size_mb: 850,
-                last_used: "2026-06-25".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Docker.app".to_string(),
-                size_mb: 4500,
-                last_used: "2026-06-15".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Visual Studio Code.app".to_string(),
-                size_mb: 680,
-                last_used: "2026-06-28".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Spotify.app".to_string(),
-                size_mb: 320,
-                last_used: "2026-06-10".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Steam.app".to_string(),
-                size_mb: 12100,
-                last_used: "2026-05-30".to_string(),
-                selected: false,
-            },
-            UninstallItem {
-                name: "Zoom.us.app".to_string(),
-                size_mb: 450,
-                last_used: "2026-06-22".to_string(),
-                selected: false,
-            },
-        ];
-
         Self {
             current_screen: Screen::MainMenu,
             menu_index: 0,
             should_quit: false,
-            uninstall_items: mock_items,
+            uninstall_items: Vec::new(),
             uninstall_search: String::new(),
             uninstall_searching: false,
             uninstall_index: 0,
@@ -177,6 +129,7 @@ impl App {
             uninstall_prev_index: None,
             uninstall_transition_ticks: 0,
             global_error: None,
+            uninstall_scanning_status: true,
         }
     }
 
@@ -895,6 +848,56 @@ mod tests {
     #[test]
     fn test_uninstall_search_and_toggle() {
         let mut app = App::new();
+        app.uninstall_items = vec![
+            UninstallItem {
+                name: "Xcode.app".to_string(),
+                size_mb: 32400,
+                last_used: "2026-06-20".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Google Chrome.app".to_string(),
+                size_mb: 1200,
+                last_used: "2026-06-27".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Slack.app".to_string(),
+                size_mb: 850,
+                last_used: "2026-06-25".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Docker.app".to_string(),
+                size_mb: 4500,
+                last_used: "2026-06-15".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Visual Studio Code.app".to_string(),
+                size_mb: 680,
+                last_used: "2026-06-28".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Spotify.app".to_string(),
+                size_mb: 320,
+                last_used: "2026-06-10".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Steam.app".to_string(),
+                size_mb: 12100,
+                last_used: "2026-05-30".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Zoom.us.app".to_string(),
+                size_mb: 450,
+                last_used: "2026-06-22".to_string(),
+                selected: false,
+            },
+        ];
         
         // Assert initial sizes
         assert_eq!(app.uninstall_items.len(), 8);
@@ -953,5 +956,132 @@ pub fn is_root() -> bool {
     #[cfg(not(unix))]
     {
         false
+    }
+}
+
+pub fn scan_applications() -> Vec<UninstallItem> {
+    use std::fs;
+    use std::time::SystemTime;
+
+    let mut items = Vec::new();
+    let scan_paths = vec!["/Applications"];
+
+    for path in scan_paths {
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let entry_path = entry.path();
+                if entry_path.is_dir() && entry_path.extension().map_or(false, |ext| ext == "app") {
+                    let name = entry_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if name.starts_with('.') {
+                        continue;
+                    }
+
+                    // Iterative directory size summation to prevent stack overflow
+                    let mut size_bytes = 0;
+                    let mut dir_stack = vec![entry_path.clone()];
+                    let start_time = std::time::Instant::now();
+
+                    while let Some(current_dir) = dir_stack.pop() {
+                        // Max scan timeout per application directory to avoid lags on huge folders
+                        if start_time.elapsed().as_millis() > 100 {
+                            break;
+                        }
+                        if let Ok(read_entries) = fs::read_dir(&current_dir) {
+                            for sub_entry in read_entries.flatten() {
+                                if let Ok(meta) = sub_entry.metadata() {
+                                    if meta.is_file() {
+                                        size_bytes += meta.len();
+                                    } else if meta.is_dir() {
+                                        dir_stack.push(sub_entry.path());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let size_mb = size_bytes / (1024 * 1024);
+                    let last_used = if let Ok(metadata) = entry.metadata() {
+                        let mtime = metadata.modified().unwrap_or(SystemTime::now());
+                        format_system_time(mtime)
+                    } else {
+                        "Unknown".to_string()
+                    };
+
+                    items.push(UninstallItem {
+                        name,
+                        size_mb,
+                        last_used,
+                        selected: false,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort items by size descending
+    items.sort_by(|a, b| b.size_mb.cmp(&a.size_mb));
+
+    if items.is_empty() {
+        // Mock fallback if empty or run on non-macOS platforms
+        items = vec![
+            UninstallItem {
+                name: "Xcode.app".to_string(),
+                size_mb: 32400,
+                last_used: "2026-06-20".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Google Chrome.app".to_string(),
+                size_mb: 1200,
+                last_used: "2026-06-27".to_string(),
+                selected: false,
+            },
+            UninstallItem {
+                name: "Slack.app".to_string(),
+                size_mb: 850,
+                last_used: "2026-06-25".to_string(),
+                selected: false,
+            },
+        ];
+    }
+
+    items
+}
+
+fn format_system_time(time: std::time::SystemTime) -> String {
+    if let Ok(duration) = time.duration_since(std::time::SystemTime::UNIX_EPOCH) {
+        let secs = duration.as_secs();
+        let days = secs / 86400;
+        let mut year = 1970;
+        let mut day_count = days;
+        loop {
+            let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+            let days_in_year = if is_leap { 366 } else { 365 };
+            if day_count < days_in_year {
+                break;
+            }
+            day_count -= days_in_year;
+            year += 1;
+        }
+
+        let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let month_days = if is_leap {
+            vec![31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        } else {
+            vec![31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        };
+
+        let mut month = 1;
+        for &days in &month_days {
+            if day_count < days {
+                break;
+            }
+            day_count -= days;
+            month += 1;
+        }
+
+        format!("{:04}-{:02}-{:02}", year, month, day_count + 1)
+    } else {
+        "Unknown".to_string()
     }
 }
