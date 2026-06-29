@@ -121,7 +121,6 @@ readonly SYSTEM_CRITICAL_BUNDLES=(
     "KeyLayout*"
     "GlobalPreferences"
     ".GlobalPreferences"
-    "org.pqrs.Karabiner*"
 )
 
 # Apple apps that CAN be uninstalled (from App Store or developer.apple.com)

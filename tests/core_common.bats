@@ -416,6 +416,16 @@ EOF
     [ "$result" = "protected" ]
 }
 
+@test "Karabiner-Elements is protected during cleanup but allowed for uninstall" {
+    # Keyboard config and preferences stay protected during clean
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data 'org.pqrs.Karabiner-Elements.Settings' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "protected" ]
+
+    # But the app itself is a third-party app, not a system component, so it can be uninstalled
+    result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_from_uninstall 'org.pqrs.Karabiner-Elements.Settings' && echo 'protected' || echo 'not-protected'")
+    [ "$result" = "not-protected" ]
+}
+
 @test "Apple apps from App Store can be uninstalled (Issue #386)" {
     # Xcode should NOT be protected from uninstall
     result=$(HOME="$HOME" bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_from_uninstall 'com.apple.dt.Xcode' && echo 'protected' || echo 'not-protected'")
