@@ -883,7 +883,7 @@ func TestRenderDiskCardHighlightsFailingSMARTAndFitsNarrowWidth(t *testing.T) {
 	}
 
 	const narrowWidth = 38
-	rendered := renderCard(card, narrowWidth, 0)
+	rendered := renderCard(card, narrowWidth)
 	for line := range strings.Lines(rendered) {
 		if lipgloss.Width(stripANSI(line)) > narrowWidth {
 			t.Fatalf("narrow disk card line exceeds %d columns: %q", narrowWidth, line)
@@ -1322,7 +1322,7 @@ func TestRenderCardWrapsOnNarrowWidth(t *testing.T) {
 		},
 	}
 
-	rendered := renderCard(card, 26, 0)
+	rendered := renderCard(card, 26)
 	for line := range strings.Lines(rendered) {
 		if lipgloss.Width(stripANSI(line)) > 26 {
 			t.Fatalf("renderCard() line exceeds width: %q", line)
@@ -1430,6 +1430,64 @@ func TestViewShrinksCPUCardToFitHeight(t *testing.T) {
 	}
 	if strings.Count(stripANSI(short.View()), "Core") > 8 {
 		t.Error("short window should have stepped the core count down")
+	}
+}
+
+func TestLayoutColumnRowsStacksBesideTallCard(t *testing.T) {
+	tall := cardData{icon: iconCPU, title: "CPU", lines: make([]string, 12)}
+	short := func(title string) cardData {
+		return cardData{title: title, lines: []string{"x"}}
+	}
+	cards := []cardData{tall, short("GPU"), short("Memory"), short("Disk")}
+
+	rows := layoutColumnRows(cards, colWidth)
+
+	if len(rows) == 0 || len(rows[0].left) != 1 || rows[0].left[0].title != "CPU" {
+		t.Fatalf("first row should seed its left cell with CPU, got %+v", rows)
+	}
+	// Several short cards stack beside the tall CPU to fill its height and keep
+	// the following rows' titles aligned.
+	if len(rows[0].right) < 2 {
+		t.Errorf("tall CPU should be matched by >=2 stacked cards, got %d", len(rows[0].right))
+	}
+	// Every card is placed exactly once.
+	total := 0
+	for _, r := range rows {
+		total += len(r.left) + len(r.right)
+	}
+	if total != len(cards) {
+		t.Errorf("placed %d cards, want %d", total, len(cards))
+	}
+}
+
+func TestRenderTwoColumnsAlignsRowTitles(t *testing.T) {
+	mk := func(icon, title string, n int) cardData {
+		lines := make([]string, n)
+		for i := range lines {
+			lines[i] = title
+		}
+		return cardData{icon: icon, title: title, lines: lines}
+	}
+	// A tall CPU beside short cards: GPU+Memory stack in row 0, then Disk and
+	// Power form row 1 and must line up on the same output line.
+	cards := []cardData{
+		mk(iconCPU, "CPU", 11),
+		mk(iconGPU, "GPU", 6),
+		mk(iconMemory, "Memory", 4),
+		mk(iconDisk, "Disk", 3),
+		mk(iconBattery, "Power", 3),
+	}
+
+	out := stripANSI(renderTwoColumns(cards, 120))
+	aligned := false
+	for line := range strings.Lines(out) {
+		if strings.Contains(line, "Disk") && strings.Contains(line, "Power") {
+			aligned = true
+			break
+		}
+	}
+	if !aligned {
+		t.Errorf("Disk and Power titles should sit on the same row:\n%s", out)
 	}
 }
 

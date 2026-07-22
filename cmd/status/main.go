@@ -206,7 +206,7 @@ func (m model) View() string {
 				if i > 0 {
 					rendered = append(rendered, "")
 				}
-				rendered = append(rendered, renderCard(c, cardWidth, 0))
+				rendered = append(rendered, renderCard(c, cardWidth))
 			}
 			cardContent = lipgloss.JoinVertical(lipgloss.Left, rendered...)
 		} else {

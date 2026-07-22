@@ -842,7 +842,7 @@ func formatBatteryStatus(status string) string {
 	return strings.ToUpper(status[:1]) + strings.ToLower(status[1:])
 }
 
-func renderCard(data cardData, width int, height int) string {
+func renderCard(data cardData, width int) string {
 	if width <= 0 {
 		width = colWidth
 	}
@@ -860,9 +860,6 @@ func renderCard(data cardData, width int, height int) string {
 		lines = append(lines, wrapToWidth(line, width)...)
 	}
 
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
 	return strings.Join(lines, "\n")
 }
 
@@ -1002,6 +999,47 @@ func remainingLineWidth(width int, prefix string) int {
 	return max(width-lipgloss.Width(prefix)-1, 0)
 }
 
+// columnRow is one row of the two-column layout: a left cell and a right cell,
+// each a vertical stack of one or more cards.
+type columnRow struct {
+	left  []cardData
+	right []cardData
+}
+
+// layoutColumnRows groups cards into rows so section titles stay aligned across
+// the two columns. Each row seeds its left cell with one card, then stacks cards
+// into the right cell until it is at least as tall as the left — so a tall card
+// (e.g. CPU listing many cores) is matched by several short cards (GPU, Memory,
+// ...) beside it instead of leaving a gap. The shorter cell is padded to the row
+// height at render time, which keeps the next row's titles aligned. Heights are
+// measured at column width cw, so the grouping adapts live as cards grow/shrink.
+func layoutColumnRows(cards []cardData, cw int) []columnRow {
+	stackHeight := func(cs []cardData) int {
+		h := 0
+		for i, c := range cs {
+			if i > 0 {
+				h++ // blank separator between stacked cards
+			}
+			h += lipgloss.Height(renderCard(c, cw))
+		}
+		return h
+	}
+
+	var rows []columnRow
+	i := 0
+	for i < len(cards) {
+		row := columnRow{left: []cardData{cards[i]}}
+		i++
+		leftH := stackHeight(row.left)
+		for i < len(cards) && stackHeight(row.right) < leftH {
+			row.right = append(row.right, cards[i])
+			i++
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 func renderTwoColumns(cards []cardData, width int) string {
 	if len(cards) == 0 {
 		return ""
@@ -1010,29 +1048,37 @@ func renderTwoColumns(cards []cardData, width int) string {
 	if width > 0 && width/2-2 > cw {
 		cw = width/2 - 2
 	}
-	var rows []string
-	for i := 0; i < len(cards); i += 2 {
-		left := renderCard(cards[i], cw, 0)
-		right := ""
-		if i+1 < len(cards) {
-			right = renderCard(cards[i+1], cw, 0)
+
+	renderCell := func(cs []cardData) string {
+		var parts []string
+		for i, c := range cs {
+			if i > 0 {
+				parts = append(parts, "")
+			}
+			parts = append(parts, renderCard(c, cw))
 		}
-		targetHeight := max(lipgloss.Height(left), lipgloss.Height(right))
-		left = renderCard(cards[i], cw, targetHeight)
-		if right != "" {
-			right = renderCard(cards[i+1], cw, targetHeight)
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right))
-		} else {
-			rows = append(rows, left)
-		}
+		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 
-	var spacedRows []string
+	var rows []string
+	for _, row := range layoutColumnRows(cards, cw) {
+		left := renderCell(row.left)
+		if len(row.right) == 0 {
+			rows = append(rows, left)
+			continue
+		}
+		right := renderCell(row.right)
+		// JoinHorizontal (Top) pads the shorter cell to the taller, so the next
+		// row's titles line up in both columns.
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right))
+	}
+
+	var spaced []string
 	for i, r := range rows {
 		if i > 0 {
-			spacedRows = append(spacedRows, "")
+			spaced = append(spaced, "")
 		}
-		spacedRows = append(spacedRows, r)
+		spaced = append(spaced, r)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, spacedRows...)
+	return lipgloss.JoinVertical(lipgloss.Left, spaced...)
 }
