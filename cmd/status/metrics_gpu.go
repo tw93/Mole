@@ -16,13 +16,32 @@ const (
 	macGPUInfoTTL         = 10 * time.Minute
 	macGPUUsageTTL        = 5 * time.Second
 	powermetricsTimeout   = 2 * time.Second
+	ioregTimeout          = 1 * time.Second
 )
 
 // Regex for GPU usage parsing.
 var (
 	gpuActiveResidencyRe = regexp.MustCompile(`GPU HW active residency:\s+([\d.]+)%`)
 	gpuIdleResidencyRe   = regexp.MustCompile(`GPU idle residency:\s+([\d.]+)%`)
+	// IOKit exposes GPU load without root: AGXAccelerator's PerformanceStatistics
+	// dict carries three whole-device utilization figures. Apple does not expose
+	// any per-core/per-SM breakdown, so these three are the finest granularity
+	// available. Read via `ioreg`.
+	gpuDeviceUtilRe   = regexp.MustCompile(`"Device Utilization %"\s*=\s*(\d+)`)
+	gpuRendererUtilRe = regexp.MustCompile(`"Renderer Utilization %"\s*=\s*(\d+)`)
+	gpuTilerUtilRe    = regexp.MustCompile(`"Tiler Utilization %"\s*=\s*(\d+)`)
 )
+
+// gpuUsageSample holds the whole-device GPU utilization figures. Renderer and
+// Tiler are -1 when unknown (e.g. the powermetrics fallback only yields Device).
+type gpuUsageSample struct {
+	device   float64
+	renderer float64
+	tiler    float64
+}
+
+// unknownGPUUsage is the zero sample: nothing could be read.
+var unknownGPUUsage = gpuUsageSample{device: -1, renderer: -1, tiler: -1}
 
 func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 	if runtime.GOOS == "darwin" {
@@ -41,7 +60,9 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 			copy(result, c.cachedGPU)
 			// Apply usage to first GPU (Apple Silicon).
 			if len(result) > 0 {
-				result[0].Usage = usage
+				result[0].Usage = usage.device
+				result[0].Renderer = usage.renderer
+				result[0].Tiler = usage.tiler
 			}
 			return result, nil
 		}
@@ -76,6 +97,8 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 		gpus = append(gpus, GPUStatus{
 			Name:        name,
 			Usage:       util,
+			Renderer:    -1, // not exposed outside Apple Silicon
+			Tiler:       -1,
 			MemoryUsed:  memUsed,
 			MemoryTotal: memTotal,
 		})
@@ -137,6 +160,8 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 		gpus = append(gpus, GPUStatus{
 			Name:      d.Name,
 			Usage:     -1, // Will be updated with real-time data
+			Renderer:  -1,
+			Tiler:     -1,
 			CoreCount: coreCount,
 			Note:      note,
 		})
@@ -152,7 +177,7 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 	return gpus, nil
 }
 
-func (c *Collector) getMacGPUUsage(now time.Time) float64 {
+func (c *Collector) getMacGPUUsage(now time.Time) gpuUsageSample {
 	if !c.lastGPUUsageAt.IsZero() && now.Sub(c.lastGPUUsageAt) < macGPUUsageTTL {
 		return c.cachedGPUUsage
 	}
@@ -163,34 +188,75 @@ func (c *Collector) getMacGPUUsage(now time.Time) float64 {
 	return usage
 }
 
-// getMacGPUUsage reads GPU active residency from powermetrics.
-func getMacGPUUsage() float64 {
+// getMacGPUUsage returns the current GPU utilization figures, or unknownGPUUsage
+// if none can be read. It prefers IOKit via ioreg (no root required) and falls
+// back to powermetrics (which usually needs root) only when ioreg yields nothing.
+func getMacGPUUsage() gpuUsageSample {
+	if usage := getMacGPUUsageIOReg(); usage.device >= 0 {
+		return usage
+	}
+	return getMacGPUUsagePowermetrics()
+}
+
+// getMacGPUUsageIOReg reads the Device/Renderer/Tiler utilization figures from
+// AGXAccelerator's PerformanceStatistics dict, without elevated privileges. A
+// figure whose key is absent stays -1.
+func getMacGPUUsageIOReg() gpuUsageSample {
+	ctx, cancel := context.WithTimeout(context.Background(), ioregTimeout)
+	defer cancel()
+
+	if !commandExists("ioreg") {
+		return unknownGPUUsage
+	}
+	out, err := runCmd(ctx, "ioreg", "-r", "-c", "AGXAccelerator", "-d", "1")
+	if err != nil {
+		return unknownGPUUsage
+	}
+
+	return gpuUsageSample{
+		device:   parseGPUUtil(gpuDeviceUtilRe, out),
+		renderer: parseGPUUtil(gpuRendererUtilRe, out),
+		tiler:    parseGPUUtil(gpuTilerUtilRe, out),
+	}
+}
+
+// parseGPUUtil returns the first integer captured by re in text, or -1.
+func parseGPUUtil(re *regexp.Regexp, text string) float64 {
+	m := re.FindStringSubmatch(text)
+	if len(m) >= 2 {
+		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+			return v
+		}
+	}
+	return -1
+}
+
+// getMacGPUUsagePowermetrics reads GPU active residency from powermetrics. It
+// only yields the overall device figure; Renderer/Tiler remain unknown.
+func getMacGPUUsagePowermetrics() gpuUsageSample {
 	ctx, cancel := context.WithTimeout(context.Background(), powermetricsTimeout)
 	defer cancel()
 
 	// powermetrics may require root.
 	out, err := runCmd(ctx, "powermetrics", "--samplers", "gpu_power", "-i", "500", "-n", "1")
 	if err != nil {
-		return -1
+		return unknownGPUUsage
 	}
 
+	sample := unknownGPUUsage
 	// Parse "GPU HW active residency: X.XX%".
-	matches := gpuActiveResidencyRe.FindStringSubmatch(out)
-	if len(matches) >= 2 {
-		usage, err := strconv.ParseFloat(matches[1], 64)
-		if err == nil {
-			return usage
+	if m := gpuActiveResidencyRe.FindStringSubmatch(out); len(m) >= 2 {
+		if usage, err := strconv.ParseFloat(m[1], 64); err == nil {
+			sample.device = usage
+			return sample
 		}
 	}
-
 	// Fallback: parse idle residency and derive active.
-	matchesIdle := gpuIdleResidencyRe.FindStringSubmatch(out)
-	if len(matchesIdle) >= 2 {
-		idle, err := strconv.ParseFloat(matchesIdle[1], 64)
-		if err == nil {
-			return 100.0 - idle
+	if m := gpuIdleResidencyRe.FindStringSubmatch(out); len(m) >= 2 {
+		if idle, err := strconv.ParseFloat(m[1], 64); err == nil {
+			sample.device = 100.0 - idle
+			return sample
 		}
 	}
-
-	return -1
+	return unknownGPUUsage
 }

@@ -128,7 +128,9 @@ type CPUStatus struct {
 
 type GPUStatus struct {
 	Name        string  `json:"name"`
-	Usage       float64 `json:"usage"`
+	Usage       float64 `json:"usage"`          // overall "Device Utilization %"
+	Renderer    float64 `json:"renderer"`       // "Renderer Utilization %" (Apple; -1 if unknown)
+	Tiler       float64 `json:"tiler"`          // "Tiler Utilization %" (Apple; -1 if unknown)
 	MemoryUsed  float64 `json:"memory_used"`
 	MemoryTotal float64 `json:"memory_total"`
 	CoreCount   int     `json:"core_count"`
@@ -231,7 +233,7 @@ type Collector struct {
 	lastGPUAt      time.Time
 	cachedGPU      []GPUStatus
 	lastGPUUsageAt time.Time
-	cachedGPUUsage float64
+	cachedGPUUsage gpuUsageSample
 	prevDiskIO     disk.IOCountersStat
 	lastDiskAt     time.Time
 
