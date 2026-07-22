@@ -15,6 +15,7 @@ const (
 	systemProfilerTimeout = 4 * time.Second
 	macGPUInfoTTL         = 10 * time.Minute
 	macGPUUsageTTL        = 5 * time.Second
+	macGPUPowerTTL        = 5 * time.Second
 	powermetricsTimeout   = 2 * time.Second
 	ioregTimeout          = 1 * time.Second
 )
@@ -67,6 +68,9 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 				result[0].Usage = usage.device
 				result[0].Renderer = usage.renderer
 				result[0].Tiler = usage.tiler
+				// Power via IOReport (no root); cached at the usage cadence since
+				// each read opens a subscription and blocks ~100ms to delta energy.
+				result[0].Power = c.getGPUPower(now)
 			}
 			return result, nil
 		}
@@ -103,6 +107,7 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 			Usage:       util,
 			Renderer:    -1, // not exposed outside Apple Silicon
 			Tiler:       -1,
+			Power:       -1,
 			MemoryUsed:  memUsed,
 			MemoryTotal: memTotal,
 		})
@@ -166,6 +171,7 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 			Usage:     -1, // Will be updated with real-time data
 			Renderer:  -1,
 			Tiler:     -1,
+			Power:     -1,
 			CoreCount: coreCount,
 			Note:      note,
 		})
@@ -232,6 +238,22 @@ func (c *Collector) getMacGPUUsage(now time.Time) gpuUsageSample {
 	c.cachedGPUUsage = usage
 	c.lastGPUUsageAt = now
 	return usage
+}
+
+// getGPUPower returns GPU power in watts, cached for macGPUPowerTTL. Each read
+// opens an IOReport subscription and blocks ~100ms to delta the energy, so it is
+// sampled at the usage cadence rather than on every collection (the dedicated GPU
+// tick runs every ~2s). -1 (unavailable) is cached like any other value. The
+// caller must hold gpuMu.
+func (c *Collector) getGPUPower(now time.Time) float64 {
+	if !c.lastGPUPowerAt.IsZero() && now.Sub(c.lastGPUPowerAt) < macGPUPowerTTL {
+		return c.cachedGPUPower
+	}
+
+	power := readGPUPowerWatts(100 * time.Millisecond)
+	c.cachedGPUPower = power
+	c.lastGPUPowerAt = now
+	return power
 }
 
 // getMacGPUUsage returns the current GPU utilization figures, or unknownGPUUsage

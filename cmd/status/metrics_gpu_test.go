@@ -3,7 +3,23 @@ package main
 import (
 	"sync"
 	"testing"
+	"time"
 )
+
+// TestGetGPUPowerCachesWithinTTL verifies the power read is served from cache
+// within the TTL, so it does not open a fresh IOReport subscription on every
+// collection. A live read (cache miss) would return a real figure or -1; the
+// sentinel here is only returned if the cache path is honoured.
+func TestGetGPUPowerCachesWithinTTL(t *testing.T) {
+	c := NewCollector(ProcessWatchOptions{})
+	base := time.Unix(1000, 0)
+	c.cachedGPUPower = 12.5
+	c.lastGPUPowerAt = base
+
+	if got := c.getGPUPower(base.Add(macGPUPowerTTL - time.Millisecond)); got != 12.5 {
+		t.Fatalf("within TTL: getGPUPower = %v, want cached 12.5", got)
+	}
+}
 
 // TestGPUHistoryConcurrentAccess exercises the GPU mutex: concurrent pushes and
 // snapshots must not race (run with -race). It mirrors how the dedicated GPU

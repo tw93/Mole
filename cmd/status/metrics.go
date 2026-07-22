@@ -129,9 +129,10 @@ type CPUStatus struct {
 
 type GPUStatus struct {
 	Name        string  `json:"name"`
-	Usage       float64 `json:"usage"`          // overall "Device Utilization %"
-	Renderer    float64 `json:"renderer"`       // "Renderer Utilization %" (Apple; -1 if unknown)
-	Tiler       float64 `json:"tiler"`          // "Tiler Utilization %" (Apple; -1 if unknown)
+	Usage       float64 `json:"usage"`       // overall "Device Utilization %"
+	Renderer    float64 `json:"renderer"`    // "Renderer Utilization %" (Apple; -1 if unknown)
+	Tiler       float64 `json:"tiler"`       // "Tiler Utilization %" (Apple; -1 if unknown)
+	Power       float64 `json:"power_watts"` // GPU power draw in watts (IOReport; -1 if unknown)
 	MemoryUsed  float64 `json:"memory_used"`
 	MemoryTotal float64 `json:"memory_total"`
 	CoreCount   int     `json:"core_count"`
@@ -234,10 +235,10 @@ type Collector struct {
 	lastBT   []BluetoothDevice
 
 	// Fast metrics (1s).
-	prevNet        map[string]net.IOCountersStat
-	lastNetAt      time.Time
-	rxHistoryBuf   *RingBuffer
-	txHistoryBuf   *RingBuffer
+	prevNet      map[string]net.IOCountersStat
+	lastNetAt    time.Time
+	rxHistoryBuf *RingBuffer
+	txHistoryBuf *RingBuffer
 
 	// gpuMu guards all GPU collector state (cached info, usage cache, history
 	// buffers) because a dedicated GPU tick samples concurrently with the main
@@ -246,14 +247,16 @@ type Collector struct {
 	gpuDeviceHistBuf   *RingBuffer
 	gpuRendererHistBuf *RingBuffer
 	gpuTilerHistBuf    *RingBuffer
-	lastNetIPAt    time.Time
-	cachedNetIPs   map[string]string
-	lastGPUAt      time.Time
-	cachedGPU      []GPUStatus
-	lastGPUUsageAt time.Time
-	cachedGPUUsage gpuUsageSample
-	prevDiskIO     disk.IOCountersStat
-	lastDiskAt     time.Time
+	lastNetIPAt        time.Time
+	cachedNetIPs       map[string]string
+	lastGPUAt          time.Time
+	cachedGPU          []GPUStatus
+	lastGPUUsageAt     time.Time
+	cachedGPUUsage     gpuUsageSample
+	lastGPUPowerAt     time.Time
+	cachedGPUPower     float64
+	prevDiskIO         disk.IOCountersStat
+	lastDiskAt         time.Time
 
 	watchMu        sync.Mutex
 	processWatch   ProcessWatchConfig
@@ -304,16 +307,16 @@ type snapshotEnrichment struct {
 
 func NewCollector(options ProcessWatchOptions) *Collector {
 	c := &Collector{
-		prevNet:        make(map[string]net.IOCountersStat),
-		rxHistoryBuf:   NewRingBuffer(NetworkHistorySize),
-		txHistoryBuf:   NewRingBuffer(NetworkHistorySize),
+		prevNet:      make(map[string]net.IOCountersStat),
+		rxHistoryBuf: NewRingBuffer(NetworkHistorySize),
+		txHistoryBuf: NewRingBuffer(NetworkHistorySize),
 
 		gpuDeviceHistBuf:   NewRingBuffer(GPUHistorySize),
 		gpuRendererHistBuf: NewRingBuffer(GPUHistorySize),
 		gpuTilerHistBuf:    NewRingBuffer(GPUHistorySize),
-		cachedNetIPs:   make(map[string]string),
-		processWatch:   options.SnapshotConfig(),
-		processWatcher: NewProcessWatcher(options),
+		cachedNetIPs:       make(map[string]string),
+		processWatch:       options.SnapshotConfig(),
+		processWatcher:     NewProcessWatcher(options),
 	}
 	c.primeNetworkCounters(time.Now())
 	return c

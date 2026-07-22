@@ -406,6 +406,9 @@ func renderGPUCard(gpus []GPUStatus, detail int, history GPUHistory, cardWidth i
 	if detail >= 3 && g.Tiler >= 0 {
 		lines = append(lines, row("Tiler", g.Tiler, history.TilerHistory))
 	}
+	if g.Power >= 0 {
+		lines = append(lines, fmt.Sprintf("%-6s %.2f W", "Power", g.Power))
+	}
 	if g.CoreCount > 0 {
 		lines = append(lines, fmt.Sprintf("%-6s %d", "Cores", g.CoreCount))
 	}

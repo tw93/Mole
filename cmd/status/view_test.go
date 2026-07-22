@@ -1441,6 +1441,20 @@ func TestNextGPUDetailCyclesAndWraps(t *testing.T) {
 	}
 }
 
+func TestRenderGPUCardPower(t *testing.T) {
+	// Power >= 0 renders a watts row.
+	withPower := stripANSI(strings.Join(renderGPUCard([]GPUStatus{{Usage: 10, Renderer: -1, Tiler: -1, Power: 8.5, CoreCount: 40}}, 1, GPUHistory{}, 38).lines, "\n"))
+	if !strings.Contains(withPower, "Power") || !strings.Contains(withPower, "8.50 W") {
+		t.Errorf("expected a power row with 8.50 W, got %q", withPower)
+	}
+
+	// Power -1 (unknown, e.g. cgo disabled / non-Apple) hides the row.
+	noPower := stripANSI(strings.Join(renderGPUCard([]GPUStatus{{Usage: 10, Renderer: -1, Tiler: -1, Power: -1, CoreCount: 40}}, 1, GPUHistory{}, 38).lines, "\n"))
+	if strings.Contains(noPower, "Power") {
+		t.Errorf("power row should be hidden when unknown, got %q", noPower)
+	}
+}
+
 func TestHasGPUCard(t *testing.T) {
 	cases := []struct {
 		name string
