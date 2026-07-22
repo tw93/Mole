@@ -10,37 +10,7 @@ import (
 	"github.com/tw93/mole/internal/units"
 )
 
-var (
-	titleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#C79FD7")).Bold(true)
-	subtleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#737373"))
-	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD75F"))
-	dangerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5F5F")).Bold(true)
-	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#A5D6A7"))
-	lineStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#404040"))
-
-	primaryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#BD93F9"))
-	alertBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#2B1200")).
-			Background(lipgloss.Color("#FFD75F")).
-			Bold(true).
-			Padding(0, 1)
-)
-
-const (
-	colWidth    = 38
-	iconCPU     = "◉"
-	iconMemory  = "◫"
-	iconGPU     = "◧"
-	iconDisk    = "▥"
-	iconNetwork = "⇅"
-	iconBattery = "◪"
-	iconSensors = "◈"
-	iconProcs   = "❊"
-
-	metricLabelWidth    = 6
-	processMemoryWidth  = 7
-	processWideMinWidth = 46
-)
+// Colors, text styles, layout tokens and icons live in theme.go.
 
 // Mole body frames (facing right).
 var moleBody = [][]string{
@@ -269,19 +239,6 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 		return headerLine, ""
 	}
 	return headerLine, mole
-}
-
-func getScoreStyle(score int) lipgloss.Style {
-	switch {
-	case score >= scoreExcellentThreshold:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#87FF87")).Bold(true)
-	case score >= scoreGoodThreshold:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#87D787")).Bold(true)
-	case score >= scoreFairThreshold:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD75F")).Bold(true)
-	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Bold(true)
-	}
 }
 
 func renderProcessAlertBar(alerts []ProcessAlert, width int) string {
