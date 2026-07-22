@@ -72,6 +72,7 @@ type MetricsSnapshot struct {
 
 	CPU            CPUStatus          `json:"cpu"`
 	GPU            []GPUStatus        `json:"gpu"`
+	GPUHistory     GPUHistory         `json:"gpu_history"`
 	Memory         MemoryStatus       `json:"memory"`
 	Disks          []DiskStatus       `json:"disks"`
 	TrashSize      uint64             `json:"trash_size"`
@@ -174,6 +175,15 @@ type NetworkHistory struct {
 
 const NetworkHistorySize = 120 // Increased history size for wider graph
 
+// GPUHistory holds the recent GPU utilization samples used to draw sparklines.
+type GPUHistory struct {
+	DeviceHistory   []float64 `json:"device_history"`
+	RendererHistory []float64 `json:"renderer_history"`
+	TilerHistory    []float64 `json:"tiler_history"`
+}
+
+const GPUHistorySize = 120
+
 type ProxyStatus struct {
 	Enabled bool   `json:"enabled"`
 	Type    string `json:"type"` // HTTP, HTTPS, SOCKS, PAC, WPAD, TUN
@@ -228,6 +238,14 @@ type Collector struct {
 	lastNetAt      time.Time
 	rxHistoryBuf   *RingBuffer
 	txHistoryBuf   *RingBuffer
+
+	// gpuMu guards all GPU collector state (cached info, usage cache, history
+	// buffers) because a dedicated GPU tick samples concurrently with the main
+	// collection goroutines.
+	gpuMu              sync.Mutex
+	gpuDeviceHistBuf   *RingBuffer
+	gpuRendererHistBuf *RingBuffer
+	gpuTilerHistBuf    *RingBuffer
 	lastNetIPAt    time.Time
 	cachedNetIPs   map[string]string
 	lastGPUAt      time.Time
@@ -289,6 +307,10 @@ func NewCollector(options ProcessWatchOptions) *Collector {
 		prevNet:        make(map[string]net.IOCountersStat),
 		rxHistoryBuf:   NewRingBuffer(NetworkHistorySize),
 		txHistoryBuf:   NewRingBuffer(NetworkHistorySize),
+
+		gpuDeviceHistBuf:   NewRingBuffer(GPUHistorySize),
+		gpuRendererHistBuf: NewRingBuffer(GPUHistorySize),
+		gpuTilerHistBuf:    NewRingBuffer(GPUHistorySize),
 		cachedNetIPs:   make(map[string]string),
 		processWatch:   options.SnapshotConfig(),
 		processWatcher: NewProcessWatcher(options),
@@ -492,6 +514,7 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 			RxHistory: c.rxHistoryBuf.Slice(),
 			TxHistory: c.txHistoryBuf.Slice(),
 		},
+		GPUHistory:    c.gpuHistorySnapshot(),
 		Proxy:         collected.proxyStats,
 		Batteries:     collected.batteryStats,
 		Thermal:       collected.thermalStats,

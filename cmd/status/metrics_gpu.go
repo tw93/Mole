@@ -44,6 +44,9 @@ type gpuUsageSample struct {
 var unknownGPUUsage = gpuUsageSample{device: -1, renderer: -1, tiler: -1}
 
 func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
+	c.gpuMu.Lock()
+	defer c.gpuMu.Unlock()
+
 	if runtime.GOOS == "darwin" {
 		// Static GPU info (cached 10 min).
 		if len(c.cachedGPU) == 0 || c.lastGPUAt.IsZero() || now.Sub(c.lastGPUAt) >= macGPUInfoTTL {
@@ -56,6 +59,7 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 		// Real-time GPU usage.
 		if len(c.cachedGPU) > 0 {
 			usage := c.getMacGPUUsage(now)
+			c.pushGPUHistory(usage)
 			result := make([]GPUStatus, len(c.cachedGPU))
 			copy(result, c.cachedGPU)
 			// Apply usage to first GPU (Apple Silicon).
@@ -175,6 +179,48 @@ func readMacGPUInfo() ([]GPUStatus, error) {
 	}
 
 	return gpus, nil
+}
+
+// gpuHistorySnapshot returns a copy of the GPU history buffers. It takes the
+// GPU lock so it is safe to call from the main collection goroutine while the
+// dedicated GPU tick pushes new samples.
+func (c *Collector) gpuHistorySnapshot() GPUHistory {
+	c.gpuMu.Lock()
+	defer c.gpuMu.Unlock()
+	return c.gpuHistoryLocked()
+}
+
+// gpuHistoryLocked reads the history buffers. The caller must hold gpuMu.
+func (c *Collector) gpuHistoryLocked() GPUHistory {
+	hist := GPUHistory{}
+	if c.gpuDeviceHistBuf != nil {
+		hist.DeviceHistory = c.gpuDeviceHistBuf.Slice()
+	}
+	if c.gpuRendererHistBuf != nil {
+		hist.RendererHistory = c.gpuRendererHistBuf.Slice()
+	}
+	if c.gpuTilerHistBuf != nil {
+		hist.TilerHistory = c.gpuTilerHistBuf.Slice()
+	}
+	return hist
+}
+
+// pushGPUHistory records one GPU utilization sample into the ring buffers.
+// Unknown figures (-1) are stored as 0 so the sparkline stays well-formed.
+// Buffers are lazily created to stay robust if a Collector was built directly.
+func (c *Collector) pushGPUHistory(u gpuUsageSample) {
+	if c.gpuDeviceHistBuf == nil {
+		c.gpuDeviceHistBuf = NewRingBuffer(GPUHistorySize)
+	}
+	if c.gpuRendererHistBuf == nil {
+		c.gpuRendererHistBuf = NewRingBuffer(GPUHistorySize)
+	}
+	if c.gpuTilerHistBuf == nil {
+		c.gpuTilerHistBuf = NewRingBuffer(GPUHistorySize)
+	}
+	c.gpuDeviceHistBuf.Add(max(u.device, 0))
+	c.gpuRendererHistBuf.Add(max(u.renderer, 0))
+	c.gpuTilerHistBuf.Add(max(u.tiler, 0))
 }
 
 func (c *Collector) getMacGPUUsage(now time.Time) gpuUsageSample {

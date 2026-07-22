@@ -1,6 +1,33 @@
 package main
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
+
+// TestGPUHistoryConcurrentAccess exercises the GPU mutex: concurrent pushes and
+// snapshots must not race (run with -race). It mirrors how the dedicated GPU
+// tick and the main collection goroutine touch the same buffers.
+func TestGPUHistoryConcurrentAccess(t *testing.T) {
+	c := NewCollector(ProcessWatchOptions{})
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 200 {
+				c.gpuMu.Lock()
+				c.pushGPUHistory(gpuUsageSample{device: 5, renderer: 3, tiler: 1})
+				c.gpuMu.Unlock()
+				_ = c.gpuHistorySnapshot()
+			}
+		})
+	}
+	wg.Wait()
+
+	if got := c.gpuHistorySnapshot(); len(got.DeviceHistory) == 0 {
+		t.Fatal("expected device history to be populated after concurrent pushes")
+	}
+}
 
 // TestGPUDeviceUtilRegex checks we extract "Device Utilization %" from a realistic
 // ioreg PerformanceStatistics dict (as emitted by `ioreg -r -c AGXAccelerator`).

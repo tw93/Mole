@@ -1380,9 +1380,15 @@ func TestRenderCPUCardHonoursCoreCount(t *testing.T) {
 
 func TestRenderGPUCard(t *testing.T) {
 	gpu := []GPUStatus{{Name: "Apple M3 Max", Usage: 12, Renderer: 9, Tiler: 5, CoreCount: 40, Note: "Metal 3"}}
+	hist := GPUHistory{
+		DeviceHistory:   []float64{2, 5, 8, 12},
+		RendererHistory: []float64{1, 3, 6, 9},
+		TilerHistory:    []float64{0, 1, 3, 5},
+	}
+	const cw = 38
 
 	// detail=1: only the Device (Usage) row, no Render/Tiler.
-	d1 := stripANSI(strings.Join(renderGPUCard(gpu, 1).lines, "\n"))
+	d1 := stripANSI(strings.Join(renderGPUCard(gpu, 1, hist, cw).lines, "\n"))
 	if !strings.Contains(d1, "Usage") || !strings.Contains(d1, "12.0%") {
 		t.Errorf("detail=1 should show the usage row, got %q", d1)
 	}
@@ -1394,7 +1400,7 @@ func TestRenderGPUCard(t *testing.T) {
 	}
 
 	// detail=2 adds Render (but not Tiler).
-	d2 := stripANSI(strings.Join(renderGPUCard(gpu, 2).lines, "\n"))
+	d2 := stripANSI(strings.Join(renderGPUCard(gpu, 2, hist, cw).lines, "\n"))
 	if !strings.Contains(d2, "Render") || !strings.Contains(d2, "9.0%") {
 		t.Errorf("detail=2 should add the Render row, got %q", d2)
 	}
@@ -1403,21 +1409,35 @@ func TestRenderGPUCard(t *testing.T) {
 	}
 
 	// detail=3 adds Tiler too.
-	d3 := stripANSI(strings.Join(renderGPUCard(gpu, 3).lines, "\n"))
+	d3 := stripANSI(strings.Join(renderGPUCard(gpu, 3, hist, cw).lines, "\n"))
 	if !strings.Contains(d3, "Tiler") || !strings.Contains(d3, "5.0%") {
 		t.Errorf("detail=3 should add the Tiler row, got %q", d3)
 	}
 
 	// Unknown Renderer/Tiler (-1) are skipped even when detail asks for them.
-	partial := stripANSI(strings.Join(renderGPUCard([]GPUStatus{{Usage: 12, Renderer: -1, Tiler: -1, CoreCount: 40}}, 3).lines, "\n"))
+	partial := stripANSI(strings.Join(renderGPUCard([]GPUStatus{{Usage: 12, Renderer: -1, Tiler: -1, CoreCount: 40}}, 3, GPUHistory{}, cw).lines, "\n"))
 	if strings.Contains(partial, "Render") || strings.Contains(partial, "Tiler") {
 		t.Errorf("rows with unknown (-1) data must be skipped, got %q", partial)
 	}
 
 	// Usage unavailable (-1): the row says so rather than showing 0%.
-	na := stripANSI(strings.Join(renderGPUCard([]GPUStatus{{Usage: -1, CoreCount: 40}}, 1).lines, "\n"))
+	na := stripANSI(strings.Join(renderGPUCard([]GPUStatus{{Usage: -1, CoreCount: 40}}, 1, GPUHistory{}, cw).lines, "\n"))
 	if !strings.Contains(na, "unavailable") {
 		t.Errorf("expected an 'unavailable' usage row, got %q", na)
+	}
+}
+
+func TestNextGPUDetailCyclesAndWraps(t *testing.T) {
+	want := []int{2, 3, 1} // from 1, one full loop back to 1
+	got := 1
+	for i, exp := range want {
+		got = nextGPUDetail(got)
+		if got != exp {
+			t.Fatalf("step %d: nextGPUDetail gave %d, want %d", i, got, exp)
+		}
+	}
+	if n := nextGPUDetail(99); n != 1 {
+		t.Fatalf("nextGPUDetail(99) = %d, want default 1", n)
 	}
 }
 
@@ -1436,20 +1456,6 @@ func TestHasGPUCard(t *testing.T) {
 		if got := hasGPUCard(tc.gpus); got != tc.want {
 			t.Errorf("hasGPUCard(%s) = %v, want %v", tc.name, got, tc.want)
 		}
-	}
-}
-
-func TestNextGPUDetailCyclesAndWraps(t *testing.T) {
-	want := []int{2, 3, 1} // from 1, one full loop back to 1
-	got := 1
-	for i, exp := range want {
-		got = nextGPUDetail(got)
-		if got != exp {
-			t.Fatalf("step %d: nextGPUDetail gave %d, want %d", i, got, exp)
-		}
-	}
-	if n := nextGPUDetail(99); n != 1 {
-		t.Fatalf("nextGPUDetail(99) = %d, want default 1", n)
 	}
 }
 

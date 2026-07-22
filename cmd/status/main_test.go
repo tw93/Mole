@@ -408,6 +408,7 @@ func TestMetricsSnapshotFieldsHaveCollectionClassifications(t *testing.T) {
 		"HealthScoreMsg": "recomputed",
 		"CPU":            "mixed",
 		"GPU":            "enrichment",
+		"GPUHistory":     "fast",
 		"Memory":         "mixed",
 		"Disks":          "enrichment",
 		"TrashSize":      "enrichment",

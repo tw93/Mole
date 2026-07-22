@@ -17,6 +17,9 @@ const (
 	refreshInterval      = time.Second
 	processWatchInterval = refreshInterval
 	slowRefreshInterval  = 30 * time.Second
+	// gpuRefreshInterval drives a dedicated GPU sample so the sparkline stays
+	// lively (~2s) without adding a subprocess to the 1s no-command fast path.
+	gpuRefreshInterval = 2 * time.Second
 )
 
 var (
@@ -47,6 +50,13 @@ func shouldUseJSONOutput(forceJSON bool, stdout *os.File) bool {
 
 type tickMsg struct{}
 type animTickMsg struct{}
+type gpuTickMsg struct{}
+
+// gpuResultMsg carries a lightweight GPU-only sample from the dedicated GPU tick.
+type gpuResultMsg struct {
+	gpu     []GPUStatus
+	history GPUHistory
+}
 
 type collectionMode int
 
@@ -122,7 +132,7 @@ func validateFlags() error {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(tickAfter(0), animTick())
+	return tea.Batch(tickAfter(0), animTick(), gpuTick())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -164,6 +174,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.errMessage = ""
 		}
+		// The dedicated GPU tick owns the GPU section once it has data; keep it
+		// across full/fast snapshots so it doesn't flicker to a stale value.
+		if len(m.metrics.GPU) > 0 {
+			msg.data.GPU = m.metrics.GPU
+			msg.data.GPUHistory = m.metrics.GPUHistory
+		}
 		m.metrics = msg.data
 		m.lastUpdated = msg.data.CollectedAt
 		if msg.err == nil {
@@ -182,6 +198,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case animTickMsg:
 		m.animFrame++
 		return m, animTickWithSpeed(m.metrics.CPU.Usage)
+	case gpuTickMsg:
+		// Sample the GPU on its own cadence and schedule the next tick.
+		return m, tea.Batch(m.sampleGPUCmd(), gpuTick())
+	case gpuResultMsg:
+		if len(msg.gpu) > 0 {
+			m.metrics.GPU = msg.gpu
+			m.metrics.GPUHistory = msg.history
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -297,6 +322,20 @@ func tickAfter(delay time.Duration) tea.Cmd {
 
 func animTick() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return animTickMsg{} })
+}
+
+func gpuTick() tea.Cmd {
+	return tea.Tick(gpuRefreshInterval, func(time.Time) tea.Msg { return gpuTickMsg{} })
+}
+
+// sampleGPUCmd performs a lightweight GPU-only sample off the main collection
+// path (its own cadence), returning fresh usage plus the updated history.
+func (m model) sampleGPUCmd() tea.Cmd {
+	return func() tea.Msg {
+		now := time.Now()
+		gpu, _ := m.collector.collectGPU(now)
+		return gpuResultMsg{gpu: gpu, history: m.collector.gpuHistorySnapshot()}
+	}
 }
 
 func animTickWithSpeed(cpuUsage float64) tea.Cmd {

@@ -382,20 +382,29 @@ func hasGPUCard(gpus []GPUStatus) bool {
 // 3=+Tiler). Apple exposes no per-core/per-SM breakdown, so these three
 // whole-device figures are the finest granularity available. A row is skipped
 // when its figure is unknown (-1), e.g. the non-Apple / powermetrics paths.
-func renderGPUCard(gpus []GPUStatus, detail int) cardData {
+func renderGPUCard(gpus []GPUStatus, detail int, history GPUHistory, cardWidth int) cardData {
 	var lines []string
 	g := gpus[0]
 
-	if g.Usage >= 0 {
-		lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", "Usage", progressBar(g.Usage), g.Usage))
-	} else {
-		lines = append(lines, subtleStyle.Render("Usage  unavailable"))
+	// Sparkline width, mirroring the network card's layout budget.
+	graphWidth := min(max(cardWidth-22, 5), 16)
+
+	// row draws "<label> <trend sparkline> <value>%", the sparkline colored by
+	// the current percentage. An unknown value (-1) is reported instead.
+	row := func(label string, val float64, hist []float64) string {
+		if val < 0 {
+			return subtleStyle.Render(fmt.Sprintf("%-6s unavailable", label))
+		}
+		spark := colorizePercent(val, sparklineBars(hist, graphWidth))
+		return fmt.Sprintf("%-6s %s  %5.1f%%", label, spark, val)
 	}
+
+	lines = append(lines, row("Usage", g.Usage, history.DeviceHistory))
 	if detail >= 2 && g.Renderer >= 0 {
-		lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", "Render", progressBar(g.Renderer), g.Renderer))
+		lines = append(lines, row("Render", g.Renderer, history.RendererHistory))
 	}
 	if detail >= 3 && g.Tiler >= 0 {
-		lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", "Tiler", progressBar(g.Tiler), g.Tiler))
+		lines = append(lines, row("Tiler", g.Tiler, history.TilerHistory))
 	}
 	if g.CoreCount > 0 {
 		lines = append(lines, fmt.Sprintf("%-6s %d", "Cores", g.CoreCount))
@@ -668,7 +677,7 @@ func buildCards(m MetricsSnapshot, width int, cpuCores int, gpuDetail int) []car
 	cards := []cardData{renderCPUCard(m.CPU, m.Thermal, cpuCores)}
 	// GPU sits right after CPU when there is real data to show.
 	if hasGPUCard(m.GPU) {
-		cards = append(cards, renderGPUCard(m.GPU, gpuDetail))
+		cards = append(cards, renderGPUCard(m.GPU, gpuDetail, m.GPUHistory, width))
 	}
 	cards = append(cards,
 		renderMemoryCard(m.Memory, width),
@@ -731,8 +740,10 @@ func renderNetworkCard(netStats []NetworkStatus, history NetworkHistory, proxy P
 	return cardData{icon: iconNetwork, title: "Network", lines: lines}
 }
 
-// 8 levels: ▁▂▃▄▅▆▇█
-func sparkline(history []float64, current float64, width int) string {
+// sparklineBars renders history as uncolored block runes (8 levels: ▁▂▃▄▅▆▇█),
+// right-aligned to width and scaled to the window's own maximum. Callers apply
+// whatever coloring fits their metric.
+func sparklineBars(history []float64, width int) string {
 	blocks := []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
 	data := make([]float64, 0, width)
@@ -767,8 +778,12 @@ func sparkline(history []float64, current float64, width int) string {
 		}
 		builder.WriteRune(blocks[level])
 	}
+	return builder.String()
+}
 
-	result := builder.String()
+// sparkline draws a network-rate sparkline, colored by the current rate (MB/s).
+func sparkline(history []float64, current float64, width int) string {
+	result := sparklineBars(history, width)
 	if current > 8 {
 		return dangerStyle.Render(result)
 	}
