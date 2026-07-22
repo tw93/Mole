@@ -150,6 +150,39 @@ func saveCatHidden(hidden bool) {
 	savePref("cat_hidden", strconv.FormatBool(hidden))
 }
 
+// gpuDetailCycle is how many GPU utilization rows the 'g' key steps through:
+// 1 = Device only, 2 = +Renderer, 3 = +Tiler. Apple exposes no finer breakdown.
+var gpuDetailCycle = []int{1, 2, 3}
+
+// loadGPUDetail reports how many GPU utilization rows to show (1..3), defaulting
+// to 1 when unset or invalid.
+func loadGPUDetail() int {
+	raw, ok := loadPrefs()["gpu_detail"]
+	if !ok {
+		return gpuDetailCycle[0]
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < gpuDetailCycle[0] || n > gpuDetailCycle[len(gpuDetailCycle)-1] {
+		return gpuDetailCycle[0]
+	}
+	return n
+}
+
+// saveGPUDetail persists the GPU detail-level preference.
+func saveGPUDetail(n int) {
+	savePref("gpu_detail", strconv.Itoa(n))
+}
+
+// nextGPUDetail returns the value after current in gpuDetailCycle, wrapping.
+func nextGPUDetail(current int) int {
+	for i, v := range gpuDetailCycle {
+		if v == current {
+			return gpuDetailCycle[(i+1)%len(gpuDetailCycle)]
+		}
+	}
+	return gpuDetailCycle[0]
+}
+
 // cpuCoresCycle is the sequence the 'c' key steps through. 0 means "all cores".
 // The default (first entry) is 2, matching the historical hard-coded behaviour.
 var cpuCoresCycle = []int{2, 4, 8, 0}

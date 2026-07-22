@@ -76,6 +76,7 @@ type model struct {
 	animFrame     int
 	catHidden     bool // true = hidden, false = visible
 	cpuCores      int  // how many CPU cores to list; 0 = all
+	gpuDetail     int  // GPU utilization rows to show: 1=Device, 2=+Renderer, 3=+Tiler
 }
 
 // padViewToHeight ensures the rendered frame always overwrites the full
@@ -98,6 +99,7 @@ func newModel() model {
 		collector: NewCollector(processWatchOptionsFromFlags()),
 		catHidden: loadCatHidden(),
 		cpuCores:  loadCPUCores(),
+		gpuDetail: loadGPUDetail(),
 	}
 }
 
@@ -138,6 +140,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Cycle how many CPU cores the card lists (2 → 4 → 8 → all) and persist.
 			m.cpuCores = nextCPUCores(m.cpuCores)
 			saveCPUCores(m.cpuCores)
+			return m, nil
+		case "g":
+			// Cycle GPU detail (Device → +Renderer → +Tiler) and persist.
+			m.gpuDetail = nextGPUDetail(m.gpuDetail)
+			saveGPUDetail(m.gpuDetail)
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
@@ -199,7 +206,7 @@ func (m model) View() string {
 			if cardWidth > 2 {
 				cardWidth -= 2
 			}
-			cards := buildCards(m.metrics, cardWidth, cpuCores)
+			cards := buildCards(m.metrics, cardWidth, cpuCores, m.gpuDetail)
 
 			var rendered []string
 			for i, c := range cards {
@@ -211,7 +218,7 @@ func (m model) View() string {
 			cardContent = lipgloss.JoinVertical(lipgloss.Left, rendered...)
 		} else {
 			cardWidth := max(24, termWidth/2-4)
-			cards := buildCards(m.metrics, cardWidth, cpuCores)
+			cards := buildCards(m.metrics, cardWidth, cpuCores, m.gpuDetail)
 			cardContent = renderTwoColumns(cards, termWidth)
 		}
 

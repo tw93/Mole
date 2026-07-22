@@ -363,6 +363,50 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus, cpuCores int) cardData 
 	return cardData{icon: iconCPU, title: "CPU", lines: lines}
 }
 
+// hasGPUCard reports whether there is enough GPU data to be worth its own card.
+// Placeholder entries (e.g. "No GPU metrics available" on machines without a
+// readable GPU) carry neither usage nor a core count and are skipped.
+func hasGPUCard(gpus []GPUStatus) bool {
+	if len(gpus) == 0 {
+		return false
+	}
+	g := gpus[0]
+	return g.Usage >= 0 || g.CoreCount > 0
+}
+
+// renderGPUCard renders the standalone GPU section. On Apple Silicon the usage
+// figures come from IOKit (no root); when they cannot be read the row says so
+// instead of showing a misleading 0%.
+//
+// detail controls how many utilization rows appear (1=Device, 2=+Renderer,
+// 3=+Tiler). Apple exposes no per-core/per-SM breakdown, so these three
+// whole-device figures are the finest granularity available. A row is skipped
+// when its figure is unknown (-1), e.g. the non-Apple / powermetrics paths.
+func renderGPUCard(gpus []GPUStatus, detail int) cardData {
+	var lines []string
+	g := gpus[0]
+
+	if g.Usage >= 0 {
+		lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", "Usage", progressBar(g.Usage), g.Usage))
+	} else {
+		lines = append(lines, subtleStyle.Render("Usage  unavailable"))
+	}
+	if detail >= 2 && g.Renderer >= 0 {
+		lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", "Render", progressBar(g.Renderer), g.Renderer))
+	}
+	if detail >= 3 && g.Tiler >= 0 {
+		lines = append(lines, fmt.Sprintf("%-6s %s  %5.1f%%", "Tiler", progressBar(g.Tiler), g.Tiler))
+	}
+	if g.CoreCount > 0 {
+		lines = append(lines, fmt.Sprintf("%-6s %d", "Cores", g.CoreCount))
+	}
+	if g.Note != "" {
+		lines = append(lines, subtleStyle.Render(g.Note))
+	}
+
+	return cardData{icon: iconGPU, title: "GPU", lines: lines}
+}
+
 func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 	// Check if swap is being used (or at least allocated).
 	hasSwap := mem.SwapTotal > 0 || mem.SwapUsed > 0
@@ -620,15 +664,19 @@ func processMemoryText(p ProcessInfo) string {
 	return ""
 }
 
-func buildCards(m MetricsSnapshot, width int, cpuCores int) []cardData {
-	cards := []cardData{
-		renderCPUCard(m.CPU, m.Thermal, cpuCores),
+func buildCards(m MetricsSnapshot, width int, cpuCores int, gpuDetail int) []cardData {
+	cards := []cardData{renderCPUCard(m.CPU, m.Thermal, cpuCores)}
+	// GPU sits right after CPU when there is real data to show.
+	if hasGPUCard(m.GPU) {
+		cards = append(cards, renderGPUCard(m.GPU, gpuDetail))
+	}
+	cards = append(cards,
 		renderMemoryCard(m.Memory, width),
 		renderDiskCard(m.Disks, m.DiskIO, m.TrashSize, m.TrashApprox),
 		renderBatteryCard(m.Batteries, m.Thermal),
 		renderProcessCard(m.TopProcesses, width),
 		renderNetworkCard(m.Network, m.NetworkHistory, m.Proxy, width),
-	}
+	)
 	// Sensors card disabled - redundant with CPU temp
 	// if hasSensorData(m.Sensors) {
 	// 	cards = append(cards, renderSensorsCard(m.Sensors))
