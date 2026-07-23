@@ -1676,6 +1676,9 @@ clean_project_artifacts() {
         fi
         local removal_recorded=false
         if [[ -e "$item_path" ]]; then
+            if [[ -n "${MOLE_PURGE_JSON_CANDIDATE_FILE:-}" ]]; then
+                printf '%s\0%s\0' "$size_kb" "$item_path" >> "$MOLE_PURGE_JSON_CANDIDATE_FILE"
+            fi
             if safe_remove "$item_path" true; then
                 if [[ "$dry_run_mode" == "1" || ! -e "$item_path" ]]; then
                     local current_total

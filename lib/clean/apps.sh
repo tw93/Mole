@@ -820,6 +820,9 @@ clean_orphaned_system_services() {
                     orphan_size_kb=$(run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" sudo -n du -skP "$orphan_file" 2> /dev/null | awk '{print $1}' || echo "0")
                     [[ -n "$orphan_size_kb" ]] || orphan_size_kb=0
                     echo "$orphan_file  # $(bytes_to_human "$((orphan_size_kb * 1024))")" >> "$EXPORT_LIST_FILE"
+                    if [[ -n "${MOLE_CLEAN_JSON_CANDIDATE_FILE:-}" ]] && command -v record_clean_json_candidate > /dev/null 2>&1; then
+                        record_clean_json_candidate "$orphan_file" "$orphan_size_kb"
+                    fi
                 fi
             else
                 local file_size_kb

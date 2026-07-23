@@ -438,6 +438,9 @@ clean_python_bytecode_cache_group() {
                 local path_size_human
                 path_size_human=$(bytes_to_human "$((path_size_kb * 1024))")
                 echo "${path}  # ${path_size_human}" >> "$EXPORT_LIST_FILE"
+                if [[ -n "${MOLE_CLEAN_JSON_CANDIDATE_FILE:-}" ]] && command -v record_clean_json_candidate > /dev/null 2>&1; then
+                    record_clean_json_candidate "$path" "$path_size_kb"
+                fi
             done
         fi
 

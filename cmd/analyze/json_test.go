@@ -3,9 +3,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -34,6 +37,13 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 	if got := len(result.Entries); got != totalFiles {
 		t.Fatalf("expected %d entries, got %d", totalFiles, got)
 	}
+	if result.SchemaVersion != 1 {
+		t.Fatalf("expected schema version 1, got %d", result.SchemaVersion)
+	}
+	if result.EntriesTotal != totalFiles || result.EntriesReturned != totalFiles || result.EntriesTruncated {
+		t.Fatalf("unexpected entry metadata: total=%d returned=%d truncated=%t",
+			result.EntriesTotal, result.EntriesReturned, result.EntriesTruncated)
+	}
 	if result.TotalFiles != int64(totalFiles) {
 		t.Fatalf("expected %d total files, got %d", totalFiles, result.TotalFiles)
 	}
@@ -50,6 +60,64 @@ func TestPerformScanForJSONIncludesAllEntriesAndLargeFiles(t *testing.T) {
 	}
 	if !foundHuge {
 		t.Fatalf("expected huge.bin in large_files, got %#v", result.LargeFiles)
+	}
+}
+
+func TestLimitJSONEntriesPreservesTotalsAndLargestEntries(t *testing.T) {
+	result := jsonOutput{
+		SchemaVersion:   1,
+		Entries:         []jsonEntry{{Name: "large", Size: 300}, {Name: "medium", Size: 200}, {Name: "small", Size: 100}},
+		EntriesTotal:    3,
+		EntriesReturned: 3,
+		TotalSize:       600,
+		TotalFiles:      9,
+	}
+
+	limited := limitJSONEntries(result, 2)
+
+	if len(limited.Entries) != 2 || limited.Entries[0].Name != "large" || limited.Entries[1].Name != "medium" {
+		t.Fatalf("unexpected limited entries: %#v", limited.Entries)
+	}
+	if limited.EntriesTotal != 3 || limited.EntriesReturned != 2 || !limited.EntriesTruncated {
+		t.Fatalf("unexpected entry metadata: total=%d returned=%d truncated=%t",
+			limited.EntriesTotal, limited.EntriesReturned, limited.EntriesTruncated)
+	}
+	if limited.TotalSize != 600 || limited.TotalFiles != 9 {
+		t.Fatalf("scan totals changed: size=%d files=%d", limited.TotalSize, limited.TotalFiles)
+	}
+}
+
+func TestWriteJSONOutputCompactPreservesDocument(t *testing.T) {
+	result := jsonOutput{
+		SchemaVersion:   1,
+		Path:            "/tmp/example",
+		Entries:         []jsonEntry{{Name: "cache", Path: "/tmp/example/cache", Size: 42, IsDir: true}},
+		EntriesTotal:    1,
+		EntriesReturned: 1,
+		TotalSize:       42,
+	}
+
+	var indented bytes.Buffer
+	if err := writeJSONOutput(&indented, result, false); err != nil {
+		t.Fatalf("write indented JSON: %v", err)
+	}
+	var compact bytes.Buffer
+	if err := writeJSONOutput(&compact, result, true); err != nil {
+		t.Fatalf("write compact JSON: %v", err)
+	}
+
+	var indentedDoc, compactDoc map[string]any
+	if err := json.Unmarshal(indented.Bytes(), &indentedDoc); err != nil {
+		t.Fatalf("decode indented JSON: %v", err)
+	}
+	if err := json.Unmarshal(compact.Bytes(), &compactDoc); err != nil {
+		t.Fatalf("decode compact JSON: %v", err)
+	}
+	if !reflect.DeepEqual(indentedDoc, compactDoc) {
+		t.Fatalf("documents differ: indented=%#v compact=%#v", indentedDoc, compactDoc)
+	}
+	if compact.Len() >= indented.Len() || bytes.Count(compact.Bytes(), []byte("\n")) != 1 {
+		t.Fatalf("compact output was not compact: indented=%d compact=%d", indented.Len(), compact.Len())
 	}
 }
 

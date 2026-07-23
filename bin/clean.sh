@@ -10,6 +10,7 @@ export LANG=C
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
+source "$SCRIPT_DIR/../lib/core/history.sh"
 
 source "$SCRIPT_DIR/../lib/core/sudo.sh"
 source "$SCRIPT_DIR/../lib/clean/brew.sh"
@@ -26,6 +27,8 @@ SYSTEM_CLEAN=false
 DRY_RUN=false
 PROTECT_FINDER_METADATA=false
 EXTERNAL_VOLUME_TARGET=""
+CLEAN_JSON=false
+CLEAN_JSON_CANDIDATE_FILE=""
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
 # Whitelist and preview belong to the invoking user even when the whole
@@ -1046,6 +1049,7 @@ safe_clean() {
                     else
                         echo "$display_path  # $size_human" >> "$EXPORT_LIST_FILE"
                     fi
+                    record_clean_json_candidate "$display_path" "$total_size"
                 done
             fi
         else
@@ -1530,6 +1534,63 @@ run_cloud_and_office_cleanup() {
     clean_office_applications
 }
 
+record_clean_json_candidate() {
+    local path="$1"
+    local size_kb="${2:-0}"
+    [[ -n "${MOLE_CLEAN_JSON_CANDIDATE_FILE:-}" ]] || return 0
+    [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+    printf '%s\0%s\0' "$size_kb" "$path" >> "$MOLE_CLEAN_JSON_CANDIDATE_FILE"
+}
+
+emit_clean_preview_json() {
+    local candidate_count=0
+    local size_kb path
+    while IFS= read -r -d '' size_kb && IFS= read -r -d '' path; do
+        candidate_count=$((candidate_count + 1))
+    done < "$CLEAN_JSON_CANDIDATE_FILE"
+    local system_included=false
+    [[ "$SYSTEM_CLEAN" == "true" ]] && system_included=true
+    local potential_bytes=$((total_size_cleaned * 1024))
+
+    printf '{'
+    printf '"schema_version":1,'
+    printf '"command":"clean",'
+    printf '"mode":"preview",'
+    printf '"dry_run":true,'
+    printf '"apply_supported":false,'
+    printf '"scope":{"system_included":%s,' "$system_included"
+    printf '"external_path":'
+    if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
+        history_json_string "$EXTERNAL_VOLUME_TARGET"
+    else
+        printf 'null'
+    fi
+    printf '},'
+    printf '"summary":{"status":"complete","candidate_groups":%d,"items":%d,"potential_bytes":%d},' \
+        "$candidate_count" "$files_cleaned" "$potential_bytes"
+    printf '"warnings":['
+    if [[ "$SYSTEM_CLEAN" != "true" ]]; then
+        printf '{"code":"system_scope_excluded","message":"System-level candidates require a pre-authorized sudo session and were not scanned."}'
+    fi
+    printf '],'
+    printf '"candidates":['
+
+    local first=true
+    while IFS= read -r -d '' size_kb && IFS= read -r -d '' path; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            printf ','
+        fi
+        printf '{"path":'
+        history_json_string "$path"
+        printf ',"action":"remove","recoverability":"permanent","safety":"eligible_after_runtime_validation","size_bytes":%d}' \
+            "$((size_kb * 1024))"
+    done < "$CLEAN_JSON_CANDIDATE_FILE"
+
+    printf ']}\n'
+}
+
 main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1543,6 +1604,9 @@ main() {
             "--dry-run" | "-n")
                 DRY_RUN=true
                 export MOLE_DRY_RUN=1
+                ;;
+            "--json")
+                CLEAN_JSON=true
                 ;;
             "--external")
                 shift
@@ -1575,6 +1639,22 @@ main() {
         esac
         shift
     done
+
+    if [[ "$CLEAN_JSON" == "true" && "$DRY_RUN" != "true" ]]; then
+        echo "mo clean --json requires --dry-run" >&2
+        exit 2
+    fi
+
+    if [[ "$CLEAN_JSON" == "true" ]]; then
+        CLEAN_JSON_CANDIDATE_FILE=$(create_temp_file)
+        export MOLE_CLEAN_JSON_CANDIDATE_FILE="$CLEAN_JSON_CANDIDATE_FILE"
+        start_cleanup >&2
+        hide_cursor >&2
+        perform_cleanup >&2
+        show_cursor >&2
+        emit_clean_preview_json
+        exit 0
+    fi
 
     start_cleanup
     hide_cursor

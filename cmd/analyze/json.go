@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"sync"
@@ -13,12 +14,16 @@ import (
 )
 
 type jsonOutput struct {
-	Path       string          `json:"path"`
-	Overview   bool            `json:"overview"`
-	Entries    []jsonEntry     `json:"entries"`
-	LargeFiles []jsonFileEntry `json:"large_files,omitempty"`
-	TotalSize  int64           `json:"total_size"`
-	TotalFiles int64           `json:"total_files,omitempty"`
+	SchemaVersion    int             `json:"schema_version"`
+	Path             string          `json:"path"`
+	Overview         bool            `json:"overview"`
+	Entries          []jsonEntry     `json:"entries"`
+	EntriesTotal     int             `json:"entries_total"`
+	EntriesReturned  int             `json:"entries_returned"`
+	EntriesTruncated bool            `json:"entries_truncated"`
+	LargeFiles       []jsonFileEntry `json:"large_files,omitempty"`
+	TotalSize        int64           `json:"total_size"`
+	TotalFiles       int64           `json:"total_files,omitempty"`
 }
 
 type jsonEntry struct {
@@ -37,15 +42,22 @@ type jsonFileEntry struct {
 	Size int64  `json:"size"`
 }
 
-func runJSONMode(path string, isOverview bool) {
+func runJSONMode(path string, isOverview bool, limit int, compact bool) {
 	result := performScanForJSON(path, isOverview)
+	result = limitJSONEntries(result, limit)
 
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(result); err != nil {
+	if err := writeJSONOutput(os.Stdout, result, compact); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode JSON: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func writeJSONOutput(w io.Writer, result jsonOutput, compact bool) error {
+	encoder := json.NewEncoder(w)
+	if !compact {
+		encoder.SetIndent("", "  ")
+	}
+	return encoder.Encode(result)
 }
 
 func performScanForJSON(path string, isOverview bool) jsonOutput {
@@ -66,13 +78,17 @@ func performDirectoryScanForJSON(path string) jsonOutput {
 		os.Exit(1)
 	}
 
+	entries := jsonEntriesFromDirEntries(result.Entries, false, nil)
 	return jsonOutput{
-		Path:       path,
-		Overview:   false,
-		Entries:    jsonEntriesFromDirEntries(result.Entries, false, nil),
-		LargeFiles: jsonFileEntriesFromFileEntries(result.LargeFiles),
-		TotalSize:  result.TotalSize,
-		TotalFiles: result.TotalFiles,
+		SchemaVersion:   1,
+		Path:            path,
+		Overview:        false,
+		Entries:         entries,
+		EntriesTotal:    len(entries),
+		EntriesReturned: len(entries),
+		LargeFiles:      jsonFileEntriesFromFileEntries(result.LargeFiles),
+		TotalSize:       result.TotalSize,
+		TotalFiles:      result.TotalFiles,
 	}
 }
 
@@ -99,12 +115,27 @@ func performOverviewScanForJSON(path string) jsonOutput {
 		return entries[i].Size > entries[j].Size
 	})
 
+	jsonEntries := jsonEntriesFromDirEntries(entries, true, insightPaths)
 	return jsonOutput{
-		Path:      path,
-		Overview:  true,
-		Entries:   jsonEntriesFromDirEntries(entries, true, insightPaths),
-		TotalSize: totalSize,
+		SchemaVersion:   1,
+		Path:            path,
+		Overview:        true,
+		Entries:         jsonEntries,
+		EntriesTotal:    len(jsonEntries),
+		EntriesReturned: len(jsonEntries),
+		TotalSize:       totalSize,
 	}
+}
+
+func limitJSONEntries(result jsonOutput, limit int) jsonOutput {
+	if limit <= 0 || len(result.Entries) <= limit {
+		return result
+	}
+
+	result.Entries = result.Entries[:limit]
+	result.EntriesReturned = len(result.Entries)
+	result.EntriesTruncated = true
+	return result
 }
 
 func measureOverviewEntriesForJSON(overviewEntries []dirEntry, insightPaths map[string]bool) []dirEntry {

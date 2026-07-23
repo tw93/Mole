@@ -89,10 +89,10 @@ setup() {
 @test "completion bash includes current clean, analyze, history, and purge options only" {
 	run "$PROJECT_ROOT/bin/completion.sh" bash
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"--dry-run -n --external --whitelist --debug --help -h"* ]]
-	[[ "$output" == *"--json --help -h"* ]]
+	[[ "$output" == *"--dry-run -n --json --external --whitelist --debug --help -h"* ]]
+	[[ "$output" == *"--json --limit --compact --help -h"* ]]
 	[[ "$output" == *"--json --limit --help -h"* ]]
-	[[ "$output" == *"--paths --dry-run -n --include-empty --debug --help -h"* ]]
+	[[ "$output" == *"--paths --dry-run -n --json --include-empty --debug --help -h"* ]]
 	[[ "$output" != *"--select"* ]]
 	[[ "$output" != *"--categories"* ]]
 	[[ "$output" != *"--exclude-paths"* ]]

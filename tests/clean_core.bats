@@ -369,6 +369,53 @@ EOF
     [ -f "$HOME/Library/Caches/TestApp/cache.tmp" ]
 }
 
+@test "mo clean --dry-run --json emits a safe machine preview on stdout" {
+    local cache_path="$HOME/Library/Caches/Test  # App"
+    mkdir -p "$cache_path"
+    printf 'cache data\n' > "$cache_path/cache.tmp"
+
+    local stdout_file="$HOME/clean-preview.json"
+    local stderr_file="$HOME/clean-preview.stderr"
+    env HOME="$HOME" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=1 \
+        "$PROJECT_ROOT/mole" clean --dry-run --json > "$stdout_file" 2> "$stderr_file"
+
+    python3 - "$stdout_file" "$cache_path" <<'PY'
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert data["schema_version"] == 1
+assert data["command"] == "clean"
+assert data["mode"] == "preview"
+assert data["dry_run"] is True
+assert data["apply_supported"] is False
+assert data["summary"]["status"] == "complete"
+assert isinstance(data["candidates"], list)
+assert data["warnings"] == [{
+    "code": "system_scope_excluded",
+    "message": "System-level candidates require a pre-authorized sudo session and were not scanned.",
+}]
+assert any(item["path"] == sys.argv[2] for item in data["candidates"])
+assert all(item["action"] == "remove" for item in data["candidates"])
+assert all(item["safety"] == "eligible_after_runtime_validation" for item in data["candidates"])
+PY
+    [[ "$(wc -l < "$stdout_file")" -eq 1 ]] || return 1
+    [[ "$(cat "$stderr_file")" == *"Dry Run Mode"* ]] || return 1
+    [[ -f "$cache_path/cache.tmp" ]] || return 1
+}
+
+@test "mo clean --json refuses to run without dry-run" {
+    mkdir -p "$HOME/Library/Caches/TestApp"
+    printf 'keep\n' > "$HOME/Library/Caches/TestApp/cache.tmp"
+
+    run env HOME="$HOME" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" clean --json
+
+    [ "$status" -eq 2 ] || return 1
+    [[ "$output" == *"requires --dry-run"* ]] || return 1
+    [[ -f "$HOME/Library/Caches/TestApp/cache.tmp" ]] || return 1
+}
+
 @test "mo clean --dry-run reports stale login item without deleting it" {
     mkdir -p "$HOME/Library/LaunchAgents"
     cat > "$HOME/Library/LaunchAgents/com.example.stale.plist" <<'PLIST'

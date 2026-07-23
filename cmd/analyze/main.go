@@ -17,11 +17,33 @@ import (
 )
 
 var (
-	jsonMode = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	jsonMode    = flag.Bool("json", false, "output analysis as JSON instead of TUI")
+	jsonLimit   = flag.Int("limit", 0, "limit JSON output to the largest N top-level entries (0 = all)")
+	jsonCompact = flag.Bool("compact", false, "emit compact JSON without indentation")
 )
 
 func main() {
 	flag.Parse()
+
+	limitSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "limit" {
+			limitSet = true
+		}
+	})
+
+	if *jsonLimit < 0 {
+		fmt.Fprintln(os.Stderr, "analyze: --limit must be 0 or greater")
+		os.Exit(2)
+	}
+	if limitSet && !*jsonMode {
+		fmt.Fprintln(os.Stderr, "analyze: --limit requires --json")
+		os.Exit(2)
+	}
+	if *jsonCompact && !*jsonMode {
+		fmt.Fprintln(os.Stderr, "analyze: --compact requires --json")
+		os.Exit(2)
+	}
 
 	target := os.Getenv("MO_ANALYZE_PATH")
 	if target == "" && len(flag.Args()) > 0 {
@@ -46,7 +68,7 @@ func main() {
 
 	go pruneAnalyzerCache()
 	if *jsonMode {
-		runJSONMode(abs, isOverview)
+		runJSONMode(abs, isOverview, *jsonLimit, *jsonCompact)
 	} else {
 		runTUIMode(abs, isOverview)
 	}

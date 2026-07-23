@@ -1086,6 +1086,53 @@ EOF
 	[[ "$output" == *"DRY RUN MODE"* ]] || [[ "$output" == *"Dry run complete"* ]]
 }
 
+@test "mo purge --dry-run --json emits rebuildable candidates without removal" {
+	mkdir -p "$HOME/www/agent-spike/build" "$HOME/.config/mole"
+	printf '{}\n' > "$HOME/www/agent-spike/package.json"
+	printf 'rebuildable artifact\n' > "$HOME/www/agent-spike/build/output.bin"
+	touch -t 202001010000 "$HOME/www/agent-spike/build" "$HOME/www/agent-spike/build/output.bin"
+	printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
+
+	local stdout_file="$HOME/purge-preview.json"
+	local stderr_file="$HOME/purge-preview.stderr"
+	env HOME="$HOME" MOLE_TEST_NO_AUTH=1 \
+		"$PROJECT_ROOT/mole" purge --dry-run --json \
+		> "$stdout_file" 2> "$stderr_file" < /dev/null
+
+	python3 - "$stdout_file" "$HOME/www/agent-spike/build" <<'PY'
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert data["schema_version"] == 1
+assert data["command"] == "purge"
+assert data["mode"] == "preview"
+assert data["dry_run"] is True
+assert data["apply_supported"] is False
+assert data["summary"]["status"] == "complete"
+assert data["warnings"] == []
+candidate = next(item for item in data["candidates"] if item["path"] == sys.argv[2])
+assert candidate["action"] == "remove"
+assert candidate["recoverability"] == "rebuild"
+assert candidate["safety"] == "validated_project_artifact"
+PY
+	[[ "$(wc -l < "$stdout_file")" -eq 1 ]] || return 1
+	[[ "$(cat "$stderr_file")" == *"DRY RUN MODE"* ]] || return 1
+	[[ -f "$HOME/www/agent-spike/build/output.bin" ]] || return 1
+}
+
+@test "mo purge --json refuses to run without dry-run" {
+	mkdir -p "$HOME/www/agent-spike/build"
+	printf 'keep\n' > "$HOME/www/agent-spike/build/output.bin"
+
+	run env HOME="$HOME" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --json
+
+	[ "$status" -eq 2 ] || return 1
+	[[ "$output" == *"requires --dry-run"* ]] || return 1
+	[[ -f "$HOME/www/agent-spike/build/output.bin" ]] || return 1
+}
+
 @test "mo purge: accepts --include-empty flag" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"

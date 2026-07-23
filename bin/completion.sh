@@ -11,10 +11,10 @@ for entry in "${MOLE_COMMANDS[@]}"; do
     command_names+=("${entry%%:*}")
 done
 command_words="${command_names[*]}"
-clean_option_words="--dry-run -n --external --whitelist --debug --help -h"
-analyze_option_words="--json --help -h"
+clean_option_words="--dry-run -n --json --external --whitelist --debug --help -h"
+analyze_option_words="--json --limit --compact --help -h"
 history_option_words="--json --limit --help -h"
-purge_option_words="--paths --dry-run -n --include-empty --debug --help -h"
+purge_option_words="--paths --dry-run -n --json --include-empty --debug --help -h"
 
 emit_zsh_subcommands() {
     for entry in "${MOLE_COMMANDS[@]}"; do
@@ -32,18 +32,22 @@ emit_fish_completions() {
 
     printf '\n'
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l dry-run -s n -d "Preview cleanup without making changes"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l json -d "Output a machine-readable dry-run preview"\n' "$cmd"
     printf 'complete -c %s -n "__fish_seen_subcommand_from clean" -l external -r -a "(__fish_complete_directories)" -d "Clean OS metadata from an external volume"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l whitelist -d "Manage protected paths"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l debug -d "Show detailed logs"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from clean" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l json -d "Output analysis as JSON"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l limit -r -d "Limit JSON top-level entries"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l compact -d "Emit compact JSON"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from analyze analyse" -l help -s h -d "Show help"\n' "$cmd"
-    printf 'complete -c %s -n "__fish_seen_subcommand_from analyze analyse; and not __fish_seen_argument -l json -l help -s h" -a "(__fish_complete_directories)" -d "Path to analyze"\n' "$cmd"
+    printf 'complete -c %s -n "__fish_seen_subcommand_from analyze analyse; and not __fish_seen_argument -l json -l limit -l compact -l help -s h" -a "(__fish_complete_directories)" -d "Path to analyze"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from history" -l json -d "Output history as JSON"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from history" -l limit -r -d "Limit recent entries"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from history" -l help -s h -d "Show help"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l paths -d "Edit custom scan directories"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l dry-run -s n -d "Preview purge actions without making changes"\n' "$cmd"
+    printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l json -d "Output a machine-readable dry-run preview"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l include-empty -d "Show zero-size project artifact directories"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l debug -d "Show detailed logs"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l help -s h -d "Show help"\n' "$cmd"
@@ -374,6 +378,7 @@ EOF
         printf '            _arguments \\\n'
         printf "                '--dry-run[Preview cleanup without making changes]' \\\\\n"
         printf "                '-n[Preview cleanup without making changes]' \\\\\n"
+        printf "                '--json[Output a machine-readable dry-run preview]' \\\\\n"
         printf "                '--external[Clean OS metadata from an external volume]:path:_files -/' \\\\\n"
         printf "                '--whitelist[Manage protected paths]' \\\\\n"
         printf "                '--debug[Show detailed logs]' \\\\\n"
@@ -382,6 +387,8 @@ EOF
         printf '        analyze|analyse)\n'
         printf '            _arguments \\\n'
         printf "                '--json[Output analysis as JSON]' \\\\\n"
+        printf "                '--limit[Limit JSON top-level entries]:limit:' \\\\\n"
+        printf "                '--compact[Emit compact JSON]' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]' \\\\\n"
         printf "                '*:path:_files'\n"
         printf '            ;;\n'
@@ -396,6 +403,7 @@ EOF
         printf "                '--paths[Edit custom scan directories]' \\\\\n"
         printf "                '--dry-run[Preview purge actions without making changes]' \\\\\n"
         printf "                '-n[Preview purge actions without making changes]' \\\\\n"
+        printf "                '--json[Output a machine-readable dry-run preview]' \\\\\n"
         printf "                '--include-empty[Show zero-size project artifact directories]' \\\\\n"
         printf "                '--debug[Show detailed logs]' \\\\\n"
         printf "                '(-h --help)'{-h,--help}'[Show help]'\n"

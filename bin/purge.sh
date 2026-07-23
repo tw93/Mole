@@ -12,6 +12,7 @@ export LANG=C
 # Get script directory and source common functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
+source "$SCRIPT_DIR/../lib/core/history.sh"
 
 # Restores cursor and clears temp files even when set -e aborts (#915).
 cleanup() {
@@ -25,6 +26,8 @@ source "$SCRIPT_DIR/../lib/clean/project.sh"
 
 # Configuration
 CURRENT_SECTION=""
+PURGE_JSON=false
+PURGE_JSON_CANDIDATE_FILE=""
 
 # IMPORTANT: This file overrides start_section / end_section / note_activity
 # from lib/core/base.sh by virtue of being sourced after it. The purge variant
@@ -48,6 +51,57 @@ note_activity() {
     if [[ -n "$CURRENT_SECTION" ]]; then
         printf '%s\n' "$CURRENT_SECTION" >> "$EXPORT_LIST_FILE"
     fi
+}
+
+emit_purge_preview_json() {
+    local candidate_count=0
+    local potential_bytes=0
+    local size_kb path
+
+    while IFS= read -r -d '' size_kb && IFS= read -r -d '' path; do
+        candidate_count=$((candidate_count + 1))
+        potential_bytes=$((potential_bytes + (size_kb * 1024)))
+    done < "$PURGE_JSON_CANDIDATE_FILE"
+
+    printf '{'
+    printf '"schema_version":1,'
+    printf '"command":"purge",'
+    printf '"mode":"preview",'
+    printf '"dry_run":true,'
+    printf '"apply_supported":false,'
+    printf '"scope":{"search_roots":['
+    local first=true
+    local search_root
+    if [[ ${#PURGE_SEARCH_PATHS[@]} -gt 0 ]]; then
+        for search_root in "${PURGE_SEARCH_PATHS[@]}"; do
+            if [[ "$first" == "true" ]]; then
+                first=false
+            else
+                printf ','
+            fi
+            history_json_string "$search_root"
+        done
+    fi
+    printf ']},'
+    printf '"summary":{"status":"complete","candidate_groups":%d,"items":%d,"potential_bytes":%d},' \
+        "$candidate_count" "$candidate_count" "$potential_bytes"
+    printf '"warnings":[],'
+    printf '"candidates":['
+
+    first=true
+    while IFS= read -r -d '' size_kb && IFS= read -r -d '' path; do
+        if [[ "$first" == "true" ]]; then
+            first=false
+        else
+            printf ','
+        fi
+        printf '{"path":'
+        history_json_string "$path"
+        printf ',"action":"remove","recoverability":"rebuild","safety":"validated_project_artifact","size_bytes":%d}' \
+            "$((size_kb * 1024))"
+    done < "$PURGE_JSON_CANDIDATE_FILE"
+
+    printf ']}\n'
 }
 
 # Keep the most specific tail of a long purge path visible on the live scan line.
@@ -292,6 +346,7 @@ show_help() {
     echo -e "${YELLOW}Options:${NC}"
     echo "  --paths         Edit custom scan directories"
     echo "  --dry-run       Preview purge actions without making changes"
+    echo "  --json          Output a machine-readable preview (requires --dry-run)"
     echo "  --include-empty Show zero-size project artifact directories"
     echo "  --debug         Enable debug logging"
     echo "  --help          Show this help message"
@@ -322,6 +377,9 @@ main() {
             "--dry-run" | "-n")
                 export MOLE_DRY_RUN=1
                 ;;
+            "--json")
+                PURGE_JSON=true
+                ;;
             "--include-empty")
                 export MOLE_PURGE_INCLUDE_EMPTY=1
                 ;;
@@ -332,6 +390,23 @@ main() {
                 ;;
         esac
     done
+
+    if [[ "$PURGE_JSON" == "true" && "${MOLE_DRY_RUN:-0}" != "1" ]]; then
+        echo "mo purge --json requires --dry-run" >&2
+        exit 2
+    fi
+
+    if [[ "$PURGE_JSON" == "true" ]]; then
+        PURGE_JSON_CANDIDATE_FILE=$(create_temp_file)
+        export MOLE_PURGE_JSON_CANDIDATE_FILE="$PURGE_JSON_CANDIDATE_FILE"
+        start_purge >&2
+        echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No project artifacts will be removed" >&2
+        printf '\n' >&2
+        hide_cursor >&2
+        perform_purge >&2
+        emit_purge_preview_json
+        return 0
+    fi
 
     start_purge
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
