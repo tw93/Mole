@@ -1154,6 +1154,531 @@ EOF
 	[[ "$output" == *"REMOVE:$BATS_TEST_TMPDIR/var-www/site/node_modules"* ]]
 }
 
+# --- git worktree awareness --------------------------------------------------
+#
+# These fixtures build real repositories on purpose. run_with_timeout execs the
+# real git binary, so a shell-function mock is invisible to it (see AGENTS.md),
+# and the guards read remote-tracking refs, reflogs and per-worktree git dirs
+# that only a real repo has.
+
+_purge_wt_require_git() {
+	command -v git > /dev/null 2>&1 || skip "git not available"
+}
+
+# Build "$1" as a repo with a pushed origin and "$2" as a linked worktree whose
+# work is committed and pushed: clean, remote-backed, nothing unpushed.
+_purge_wt_fixture() {
+	local repo="$1"
+	local wt="$2"
+	local origin="${3:-${repo}-origin.git}"
+
+	git init --bare -q "$origin" || return 1
+	git init -q "$repo" || return 1
+	git -C "$repo" config user.name "Mole Test" || return 1
+	git -C "$repo" config user.email "mole@example.com" || return 1
+	git -C "$repo" config commit.gpgsign false || return 1
+	printf 'hello\n' > "$repo/README.md"
+	git -C "$repo" add README.md || return 1
+	git -C "$repo" commit -qm "init" || return 1
+	git -C "$repo" remote add origin "$origin" || return 1
+	git -C "$repo" push -q -u origin HEAD || return 1
+	git -C "$repo" worktree add -q "$wt" -b "agent-run" || return 1
+	printf 'payload\n' > "$wt/payload.txt"
+	git -C "$wt" add payload.txt || return 1
+	git -C "$wt" commit -qm "agent work" || return 1
+	git -C "$wt" push -q origin HEAD || return 1
+}
+
+# Push a worktree's git activity past the age bar. Stamp the directories last:
+# touching a file inside one bumps that directory's own mtime.
+_purge_wt_age() {
+	local wt="$1"
+	local stamp="${2:-202001010101}"
+	local gitdir
+
+	gitdir=$(git -C "$wt" rev-parse --absolute-git-dir) || return 1
+	# The checkout content has to age too, not just the git metadata the
+	# worktree guards read: purge_target_activity_still_safe reprobes file
+	# mtimes inside the tree right before deletion, so a worktree whose files
+	# are fresh is skipped there no matter what git says.
+	find "$wt" -exec touch -t "$stamp" {} + 2> /dev/null || true
+	touch -t "$stamp" "$gitdir/HEAD" "$gitdir/index" 2> /dev/null || true
+	if [[ -f "$gitdir/logs/HEAD" ]]; then
+		touch -t "$stamp" "$gitdir/logs/HEAD" || return 1
+	fi
+	touch -t "$stamp" "$gitdir" "$wt" || return 1
+}
+
+# Inner-script preamble: real git needs headroom on a cold CI runner, and
+# MO_DEBUG turns each guard's rejection into an assertable line.
+_purge_wt_prelude() {
+	cat << 'EOF'
+set -euo pipefail
+exec 2>&1
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+EOF
+}
+
+@test "mole_purge_worktree_is_reclaimable: accepts a clean, pushed, stale worktree" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"RECLAIMABLE"* ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: keeps a worktree with uncommitted changes" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	printf 'scratch\n' > "$HOME/www/repo-wt/uncommitted.txt"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"KEPT"* ]] || return 1
+	[[ "$output" == *"uncommitted changes"* ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: keeps a worktree with unpushed commits" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	printf 'more\n' > "$HOME/www/repo-wt/extra.txt"
+	git -C "$HOME/www/repo-wt" add extra.txt
+	git -C "$HOME/www/repo-wt" commit -qm "local only"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"KEPT"* ]] || return 1
+	[[ "$output" == *"unpushed commit"* ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: keeps a worktree whose repo has no remote" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	git -C "$HOME/www/repo" remote remove origin
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"KEPT"* ]] || return 1
+	[[ "$output" == *"no remote"* ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: keeps a worktree with recent git activity" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"KEPT"* ]] || return 1
+	[[ "$output" == *"git activity"* ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: keeps a worktree holding an unrecognized ignored entry" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	# .env is gitignored, so status reports the tree clean while the only copy
+	# of a secret sits inside it. node_modules is ignored too and IS a known
+	# purge target, so the guard has to reject on .env specifically.
+	printf 'node_modules/\n.env\n' > "$HOME/www/repo-wt/.gitignore"
+	git -C "$HOME/www/repo-wt" add .gitignore
+	git -C "$HOME/www/repo-wt" commit -qm "ignore deps and env"
+	git -C "$HOME/www/repo-wt" push -q origin HEAD
+	mkdir -p "$HOME/www/repo-wt/node_modules"
+	printf 'dep\n' > "$HOME/www/repo-wt/node_modules/index.js"
+	printf 'TOKEN=secret\n' > "$HOME/www/repo-wt/.env"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"KEPT"* ]] || return 1
+	[[ "$output" == *"ignored entry outside the purge whitelist (.env)"* ]] || return 1
+	[[ -f "$HOME/www/repo-wt/.env" ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: allows a worktree whose ignored entries are all purge targets" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	printf 'node_modules/\ndist/\n' > "$HOME/www/repo-wt/.gitignore"
+	git -C "$HOME/www/repo-wt" add .gitignore
+	git -C "$HOME/www/repo-wt" commit -qm "ignore deps"
+	git -C "$HOME/www/repo-wt" push -q origin HEAD
+	mkdir -p "$HOME/www/repo-wt/node_modules" "$HOME/www/repo-wt/dist"
+	printf 'dep\n' > "$HOME/www/repo-wt/node_modules/index.js"
+	printf 'out\n' > "$HOME/www/repo-wt/dist/bundle.js"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo-wt"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"RECLAIMABLE"* ]] || return 1
+}
+
+@test "mole_purge_worktree_is_reclaimable: keeps a main worktree even when stale" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	touch -t 202001010101 "$HOME/www/repo"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+if mole_purge_worktree_is_reclaimable "\$HOME/www/repo"; then
+    echo RECLAIMABLE
+else
+    echo KEPT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"KEPT"* ]] || return 1
+}
+
+@test "mole_purge_worktree_registrations: skips the main worktree and prunable entries" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	git -C "$HOME/www/repo" worktree add -q "$HOME/www/repo-dead" -b "dead-run"
+	rm -rf "$HOME/www/repo-dead"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+mole_purge_worktree_registrations "\$HOME/www/repo"
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"$HOME/www/repo-wt"* ]] || return 1
+	[[ "$output" != *"repo-dead"* ]] || return 1
+	# The main worktree must never be offered.
+	[[ "$(printf '%s\n' "$output" | grep -cx "$HOME/www/repo")" == "0" ]] || return 1
+}
+
+@test "scan_purge_worktrees: finds a worktree registered outside the search root" {
+	_purge_wt_require_git
+	local outside="$BATS_TEST_TMPDIR/agent-checkout"
+	_purge_wt_fixture "$HOME/www/repo" "$outside"
+	_purge_wt_age "$outside"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" OUTSIDE="$outside" \
+		BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+out=\$(mktemp)
+scan_purge_worktrees "\$HOME/www" "\$out"
+cat "\$out"
+rm -f "\$out"
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	# "<worktree>\t<parent repo>\t<activity epoch>"
+	[[ "$output" == *"$outside	$HOME/www/repo	"* ]] || return 1
+}
+
+@test "is_safe_purge_worktree: rejects a worktree whose repo is outside the configured roots" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+PURGE_SEARCH_PATHS=("\$HOME/dev")
+if is_safe_purge_worktree "\$HOME/www/repo-wt"; then
+    echo UNSAFE
+else
+    echo BLOCKED
+fi
+PURGE_SEARCH_PATHS=("\$HOME/www")
+if is_safe_purge_worktree "\$HOME/www/repo-wt"; then
+    echo ALLOWED
+else
+    echo BLOCKED_IN_ROOT
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"BLOCKED"* ]] || return 1
+	[[ "$output" != *"UNSAFE"* ]] || return 1
+	[[ "$output" == *"ALLOWED"* ]] || return 1
+}
+
+@test "is_safe_purge_worktree: rejects a directory that only looks like a worktree" {
+	_purge_wt_require_git
+	mkdir -p "$HOME/www/not-a-worktree"
+	printf 'gitdir: /nonexistent/.git/worktrees/fake\n' > "$HOME/www/not-a-worktree/.git"
+	touch -t 202001010101 "$HOME/www/not-a-worktree"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+PURGE_SEARCH_PATHS=("\$HOME/www")
+if is_safe_purge_worktree "\$HOME/www/not-a-worktree"; then
+    echo UNSAFE
+else
+    echo BLOCKED
+fi
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"BLOCKED"* ]] || return 1
+	[[ -d "$HOME/www/not-a-worktree" ]] || return 1
+}
+
+@test "mole_purge_remove_worktree: trashes the checkout and prunes the registration" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_TRASH_DIR="$BATS_TEST_TMPDIR/Trash" \
+		MOLE_DELETE_LOG="$BATS_TEST_TMPDIR/deletions.log" \
+		MOLE_TEST_NO_AUTH=1 MOLE_TIMEOUT_QUICK_DETECT_SEC=15 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+mole_purge_remove_worktree "\$HOME/www/repo-wt" "\$HOME/www/repo"
+echo "REGISTRATIONS:\$(git -C "\$HOME/www/repo" worktree list --porcelain | grep -c '^worktree ')"
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	# Recoverable: the checkout went to the Trash, not to rm -rf.
+	[[ ! -d "$HOME/www/repo-wt" ]] || return 1
+	[[ -n "$(ls -A "$BATS_TEST_TMPDIR/Trash" 2> /dev/null || true)" ]] || return 1
+	[[ "$(cat "$BATS_TEST_TMPDIR/Trash"/repo-wt.*/payload.txt 2> /dev/null)" == "payload" ]] || return 1
+	# Only the main worktree registration is left behind.
+	[[ "$output" == *"REGISTRATIONS:1"* ]] || return 1
+	[[ "$(grep -c 'trash' "$BATS_TEST_TMPDIR/deletions.log")" -ge 1 ]] || return 1
+}
+
+@test "mole_purge_worktree_prune: keeps a registration whose worktree still exists" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+mole_purge_worktree_prune "\$HOME/www/repo-wt" "\$HOME/www/repo"
+echo "REGISTRATIONS:\$(git -C "\$HOME/www/repo" worktree list --porcelain | grep -c '^worktree ')"
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"REGISTRATIONS:2"* ]] || return 1
+	[[ -d "$HOME/www/repo-wt" ]] || return 1
+}
+
+@test "clean_project_artifacts: a non-interactive purge never auto-selects a worktree" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TIMEOUT_QUICK_DETECT_SEC=15 MO_DEBUG=1 /bin/bash --noprofile --norc << EOF
+$(_purge_wt_prelude)
+mkdir -p "\$HOME/.cache/mole"
+PURGE_SEARCH_PATHS=("\$HOME/www")
+scan_purge_targets() { : > "\$2"; }
+get_dir_size_kb() { echo 4096; }
+mole_purge_remove_worktree() {
+    echo "WORKTREE_REMOVE:\$1"
+    return 0
+}
+safe_remove() {
+    echo "REMOVE:\$1"
+    return 0
+}
+clean_project_artifacts < /dev/null
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	# The worktree really did reach the selection step (guards against a
+	# vacuous pass where discovery found nothing at all)...
+	[[ "$output" == *"Not auto-selecting worktree in non-interactive purge"* ]] || return 1
+	# ...and was then left alone.
+	[[ "$output" == *"No items selected"* ]] || return 1
+	[[ "$output" != *"WORKTREE_REMOVE:"* ]] || return 1
+	[[ -d "$HOME/www/repo-wt" ]] || return 1
+}
+
+@test "clean_project_artifacts: a listed worktree absorbs the artifacts inside it" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	# Gitignored, so `git status --porcelain` still reports the worktree clean:
+	# the same blind spot that makes Trash the right delete mode here.
+	printf 'node_modules/\n' > "$HOME/www/repo-wt/.gitignore"
+	git -C "$HOME/www/repo-wt" add .gitignore
+	git -C "$HOME/www/repo-wt" commit -qm "ignore deps"
+	git -C "$HOME/www/repo-wt" push -q origin HEAD
+	mkdir -p "$HOME/www/repo-wt/node_modules"
+	printf 'dep\n' > "$HOME/www/repo-wt/node_modules/index.js"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	local capture_file script_file
+	capture_file=$(mktemp "$HOME/wt_capture.XXXXXX")
+	script_file=$(mktemp "$HOME/wt_script.XXXXXX.sh")
+
+	cat > "$script_file" << SCRIPT
+set -euo pipefail
+# Timeout constants are readonly once the libs load, so widen before sourcing.
+export MOLE_TIMEOUT_QUICK_DETECT_SEC=15
+export XDG_CACHE_HOME="$HOME/.cache"
+export TERM="dumb"
+mkdir -p "$HOME/.cache/mole"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+PURGE_SEARCH_PATHS=("$HOME/www")
+scan_purge_targets() { printf '%s\n' "$HOME/www/repo-wt/node_modules" > "\$2"; }
+get_dir_size_kb() { echo 4096; }
+
+select_purge_categories() {
+	printf '%s\n' "\${PURGE_CATEGORY_FULL_PATHS_ARRAY[@]}" > "$capture_file"
+	PURGE_SELECTION_RESULT=""
+	return 1
+}
+
+clean_project_artifacts 2>/dev/null || true
+SCRIPT
+
+	local pty_log="$HOME/wt_absorb.log"
+	_run_in_pty "$script_file" > "$pty_log" 2>&1 || printf 'PTY_RC=%s\n' "$?" >> "$pty_log"
+	rm -f "$script_file"
+
+	if [[ ! -s "$capture_file" ]]; then
+		printf 'select_purge_categories was never called; pty output:\n%s\n' "$(cat "$pty_log" 2> /dev/null)" >&2
+		return 1
+	fi
+
+	local listed
+	listed=$(cat "$capture_file")
+	rm -f "$capture_file"
+
+	# The worktree is offered as one entry; the node_modules inside it is not a
+	# second entry, so the same bytes are never listed (or counted) twice.
+	if [[ "$listed" != *"/www/repo-wt"* ]]; then
+		printf 'worktree row missing; listed:\n%s\n' "$listed" >&2
+		return 1
+	fi
+	[[ "$listed" != *"node_modules"* ]] || return 1
+}
+
+@test "clean_project_artifacts: an interactively selected worktree is trashed and pruned" {
+	_purge_wt_require_git
+	_purge_wt_fixture "$HOME/www/repo" "$HOME/www/repo-wt"
+	_purge_wt_age "$HOME/www/repo-wt"
+
+	local script_file trash_dir
+	trash_dir="$BATS_TEST_TMPDIR/Trash"
+	script_file=$(mktemp "$HOME/wt_remove.XXXXXX.sh")
+
+	cat > "$script_file" << SCRIPT
+set -euo pipefail
+# Timeout constants are readonly once the libs load, so widen before sourcing.
+export MOLE_TIMEOUT_QUICK_DETECT_SEC=15
+export XDG_CACHE_HOME="$HOME/.cache"
+export TERM="dumb"
+export MOLE_TEST_TRASH_DIR="$trash_dir"
+export MOLE_DELETE_LOG="$BATS_TEST_TMPDIR/deletions.log"
+export MOLE_TEST_NO_AUTH=1
+mkdir -p "$HOME/.cache/mole"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+PURGE_SEARCH_PATHS=("$HOME/www")
+scan_purge_targets() { : > "\$2"; }
+
+# Select every listed entry, then accept the confirmation, so the real
+# revalidation gate and the real delete path both run.
+select_purge_categories() {
+	local total=\$#
+	local i=0
+	PURGE_SELECTION_RESULT=""
+	while [[ \$i -lt \$total ]]; do
+		[[ -n "\$PURGE_SELECTION_RESULT" ]] && PURGE_SELECTION_RESULT+=","
+		PURGE_SELECTION_RESULT+="\$i"
+		i=\$((i + 1))
+	done
+	return 0
+}
+confirm_purge_cleanup() { return 0; }
+
+clean_project_artifacts
+SCRIPT
+
+	local pty_log="$HOME/wt_remove.log"
+	_run_in_pty "$script_file" > "$pty_log" 2>&1 || true
+	rm -f "$script_file"
+
+	# Recoverable delete, not purge's usual permanent rm -rf.
+	if [[ -d "$HOME/www/repo-wt" ]]; then
+		printf 'worktree still present; pty output:\n%s\n' "$(cat "$pty_log" 2> /dev/null)" >&2
+		return 1
+	fi
+	[[ "$(cat "$trash_dir"/repo-wt.*/payload.txt 2> /dev/null)" == "payload" ]] || return 1
+	# The dangling registration is reaped, so `git worktree list` stays clean.
+	[[ "$(git -C "$HOME/www/repo" worktree list --porcelain | grep -c '^worktree ')" == "1" ]] || return 1
+	# The main worktree is untouched.
+	[[ -d "$HOME/www/repo" ]] || return 1
+}
+
 @test "clean_project_artifacts: scans and finds artifacts" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"
@@ -1376,7 +1901,12 @@ EOF
 # stdin is a tty.
 _run_in_pty() {
 	local script_file="$1"
-	script -q /dev/null /bin/bash --noprofile --norc "$script_file" 2>/dev/null
+	# stdin must come from /dev/null (or any pipe), not from whatever the test
+	# runner inherited: macOS script(1) only tolerates a non-tty stdin when
+	# ioctl fails with ENOTTY, and dies with "tcgetattr/ioctl: Operation not
+	# supported on socket" otherwise. The child still gets the allocated pty,
+	# so [[ -t 0 ]] inside the script stays true either way.
+	script -q /dev/null /bin/bash --noprofile --norc "$script_file" < /dev/null 2>/dev/null
 }
 
 @test "sort: PURGE_CATEGORY_FULL_PATHS_ARRAY[0] is the largest artifact after size-descending sort" {

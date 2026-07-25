@@ -269,7 +269,7 @@ $ mo status | jq '.health_score'
 
 ### Project Artifact Purge
 
-Clean old build artifacts such as `node_modules`, `target`, `.build`, `build`, and `dist` to free up disk space.
+Clean old build artifacts such as `node_modules`, `target`, `.build`, `build`, and `dist` to free up disk space. Stale git worktrees are offered too, including the throwaway checkouts AI coding agents leave behind: `mo purge` asks every repo under your scan paths for its registrations, so it finds them wherever they live.
 
 ```bash
 mo purge
@@ -283,13 +283,15 @@ Select Categories to Clean - 18.5GB (8 selected)
   ○ current-work       856MB | node_modules  | Recent
   ● django-api         2.3GB | venv
   ● vue-dashboard      1.7GB | node_modules
-  ● backend-service    2.5GB | node_modules
+  ○ ~/dev/api-agent-run  789MB | worktree     | 22d
 ```
 
 > Note: We recommend installing `fd` on macOS.
 > `brew install fd`
 
 > Safety: This permanently deletes selected artifacts. Review carefully before confirming. Projects newer than 7 days are marked and unselected by default.
+
+> Worktrees: only offered when git can prove the checkout is restorable, meaning no uncommitted changes, nothing unpushed, a remote to restore from, no git activity for 7 days, and no ignored file that is not itself a known build artifact, so a gitignored `.env` keeps the whole worktree. They are never selected for you, they go to the Trash rather than being deleted outright, and the parent repo's stale registration is pruned afterwards.
 
 <details>
 <summary><strong>Custom Scan Paths</strong></summary>

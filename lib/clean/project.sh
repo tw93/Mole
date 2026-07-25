@@ -11,6 +11,8 @@ if ! command -v ensure_user_dir > /dev/null 2>&1; then
 fi
 # shellcheck disable=SC1090
 source "$PROJECT_LIB_DIR/purge_shared.sh"
+# shellcheck disable=SC1090
+source "$PROJECT_LIB_DIR/purge_worktrees.sh"
 
 readonly PURGE_TARGETS=("${MOLE_PURGE_TARGETS[@]}")
 # Minimum age in days before considering for cleanup.
@@ -1115,6 +1117,11 @@ clean_project_artifacts() {
     local -a safe_to_clean=()
     local -a safe_recent_flags=()
     local -a safe_activity_states=()
+    # Parallel to safe_to_clean: whether the entry is a whole git worktree
+    # checkout, the repo that registered it, and its last git activity.
+    local -a safe_worktree_flags=()
+    local -a safe_worktree_parents=()
+    local -a safe_worktree_activity=()
     local previous_int_trap=""
     local previous_term_trap=""
     local trap_installed_by_this_call=false
@@ -1122,6 +1129,7 @@ clean_project_artifacts() {
     # Note: Declared without 'local' so cleanup_scan trap can access them
     scan_pids=()
     scan_temps=()
+    worktree_temps=()
     _cleanup_scan_done=false
     # shellcheck disable=SC2329
     cleanup_scan() {
@@ -1132,7 +1140,7 @@ clean_project_artifacts() {
             kill "$pid" 2> /dev/null || true
         done
         # Clean up temp files
-        for temp in "${scan_temps[@]+"${scan_temps[@]}"}"; do
+        for temp in "${scan_temps[@]+"${scan_temps[@]}"}" "${worktree_temps[@]+"${worktree_temps[@]}"}"; do
             rm -f "$temp" 2> /dev/null || true
         done
         # Clean up purge scanning file
@@ -1146,6 +1154,10 @@ clean_project_artifacts() {
     previous_term_trap=$(trap -p TERM || true)
     trap cleanup_scan INT TERM
     trap_installed_by_this_call=true
+    # Shared by the age bar, the worktree staleness guard and the age labels, so
+    # every judgement in one run is made against the same clock.
+    local _now_epoch
+    _now_epoch=$(get_epoch_seconds)
     # Scanning is started from purge.sh with start_inline_spinner
     # Launch all scans in parallel
     for path in "${PURGE_SEARCH_PATHS[@]}"; do
@@ -1157,6 +1169,15 @@ clean_project_artifacts() {
             scan_purge_targets "$path" "$scan_output" &
             local scan_pid=$!
             scan_pids+=("$scan_pid")
+
+            # Worktrees are found by asking every repo under this root, not by
+            # matching paths, so they need their own pass alongside the
+            # name-matching scan rather than a wider find.
+            local worktree_output
+            worktree_output=$(mktemp)
+            worktree_temps+=("$worktree_output")
+            scan_purge_worktrees "$path" "$worktree_output" "$PURGE_MAX_DEPTH_DEFAULT" "$_now_epoch" &
+            scan_pids+=("$!")
         fi
     done
     # Wait for all scans to complete
@@ -1189,6 +1210,59 @@ clean_project_artifacts() {
         done < <(LC_COLLATE=C sort -u "$dedupe_output")
     fi
     rm -f "$dedupe_output"
+
+    # Collect discovered worktrees. Kept in their own arrays because the
+    # authority, the age source, the last-mile gate and the delete mode all
+    # differ from a name-matched artifact.
+    local -a worktree_paths=()
+    local -a worktree_parents=()
+    local -a worktree_activity=()
+    if [[ ${#worktree_temps[@]} -gt 0 ]]; then
+        local worktree_dedupe
+        worktree_dedupe=$(mktemp_file "mole-purge-worktrees") || return 1
+        local worktree_output
+        for worktree_output in "${worktree_temps[@]}"; do
+            if [[ -f "$worktree_output" ]]; then
+                cat "$worktree_output" >> "$worktree_dedupe"
+                rm -f "$worktree_output"
+            fi
+        done
+        if [[ -s "$worktree_dedupe" ]]; then
+            local _wt_path _wt_parent _wt_activity
+            while IFS=$'\t' read -r _wt_path _wt_parent _wt_activity; do
+                [[ -n "$_wt_path" && -n "$_wt_parent" ]] || continue
+                [[ "$_wt_activity" =~ ^[0-9]+$ ]] || continue
+                worktree_paths+=("$_wt_path")
+                worktree_parents+=("$_wt_parent")
+                worktree_activity+=("$_wt_activity")
+            done < <(LC_COLLATE=C sort -u "$worktree_dedupe")
+        fi
+        rm -f "$worktree_dedupe"
+    fi
+
+    # A whole worktree wins over the named artifacts inside it: listing both
+    # would double-count the same bytes, and removing the parent would leave the
+    # child entry pointing at nothing.
+    if [[ ${#worktree_paths[@]} -gt 0 && ${#all_found_items[@]} -gt 0 ]]; then
+        local -a _outside_worktrees=()
+        local _wt_prefix
+        for item in "${all_found_items[@]}"; do
+            local _nested=false
+            for _wt_prefix in "${worktree_paths[@]}"; do
+                if [[ "$item" == "$_wt_prefix/"* ]]; then
+                    _nested=true
+                    break
+                fi
+            done
+            [[ "$_nested" == "true" ]] && continue
+            _outside_worktrees+=("$item")
+        done
+        all_found_items=("${_outside_worktrees[@]+"${_outside_worktrees[@]}"}")
+    fi
+    if [[ ${#worktree_paths[@]} -gt 0 ]]; then
+        all_found_items+=("${worktree_paths[@]}")
+    fi
+
     # Restore caller traps after this function completes.
     if [[ "$trap_installed_by_this_call" == "true" ]]; then
         trap - INT TERM
@@ -1206,17 +1280,38 @@ clean_project_artifacts() {
     if [[ -t 1 ]]; then
         start_inline_spinner "Checking recent activity..."
     fi
-    local _now_epoch
-    _now_epoch=$(get_epoch_seconds)
     local _activity_total_timeout="${MO_PURGE_ACTIVITY_TOTAL_TIMEOUT_SEC:-$MOLE_TIMEOUT_HINT_SCAN_SEC}"
     if [[ ! "$_activity_total_timeout" =~ ^[1-9][0-9]*$ ]]; then
         _activity_total_timeout="$MOLE_TIMEOUT_HINT_SCAN_SEC"
     fi
     local _PURGE_ACTIVITY_DEADLINE_EPOCH=$((_now_epoch + _activity_total_timeout))
+    local _wt_idx
     for item in "${all_found_items[@]}"; do
         local is_recent=false
+        local is_worktree=false
+        local worktree_parent=""
+        local worktree_seen=""
         _PURGE_ACTIVITY_STATE="uncertain"
-        if is_recently_modified "$item" "$_now_epoch"; then
+
+        if [[ ${#worktree_paths[@]} -gt 0 ]]; then
+            for _wt_idx in "${!worktree_paths[@]}"; do
+                if [[ "${worktree_paths[$_wt_idx]}" == "$item" ]]; then
+                    is_worktree=true
+                    worktree_parent="${worktree_parents[$_wt_idx]}"
+                    worktree_seen="${worktree_activity[$_wt_idx]}"
+                    break
+                fi
+            done
+        fi
+
+        if [[ "$is_worktree" == "true" ]]; then
+            # Staleness for a worktree was already proven from git metadata,
+            # which is a different signal from the file-mtime classification:
+            # git records when this worktree was last checked out or committed
+            # to, classify_purge_activity records when its files last changed.
+            # The pre-delete recheck below still applies the filesystem side.
+            _PURGE_ACTIVITY_STATE="old"
+        elif is_recently_modified "$item" "$_now_epoch"; then
             is_recent=true
         fi
         local activity_state="${_PURGE_ACTIVITY_STATE:-uncertain}"
@@ -1231,6 +1326,9 @@ clean_project_artifacts() {
         safe_to_clean+=("$item")
         safe_recent_flags+=("$is_recent")
         safe_activity_states+=("$activity_state")
+        safe_worktree_flags+=("$is_worktree")
+        safe_worktree_parents+=("$worktree_parent")
+        safe_worktree_activity+=("$worktree_seen")
     done
     if [[ -t 1 ]]; then
         stop_inline_spinner
@@ -1299,6 +1397,8 @@ clean_project_artifacts() {
     local -a item_size_unknown_flags=()
     local -a item_recent_flags=()
     local -a item_age_labels=()
+    local -a item_worktree_flags=()
+    local -a item_worktree_parents=()
     # Find the best project root for an artifact once; callers decide how to
     # display it. Monorepo indicators win over plain project indicators.
     find_purge_project_root_for_artifact() {
@@ -1525,8 +1625,16 @@ clean_project_artifacts() {
     for item in "${safe_to_clean[@]}"; do
         local item_index=$_sz_idx
         local project_path="${_cached_project_paths[$item_index]}"
+        local item_is_worktree="${safe_worktree_flags[$item_index]:-false}"
         local artifact_type
-        artifact_type=$(get_artifact_display_name "$item")
+        if [[ "$item_is_worktree" == "true" ]]; then
+            # A worktree is the entry being removed, not an artifact inside a
+            # project, so show its own path and name the row for what it is.
+            project_path=$(format_purge_target_path "$item")
+            artifact_type="worktree"
+        else
+            artifact_type=$(get_artifact_display_name "$item")
+        fi
         local size_raw
         size_raw=$(cat "${_size_tmpfiles[$item_index]}" 2> /dev/null || echo "0")
         rm -f "${_size_tmpfiles[$item_index]}" 2> /dev/null || true
@@ -1561,9 +1669,16 @@ clean_project_artifacts() {
         item_sizes+=("$size_kb")
         item_size_unknown_flags+=("$size_unknown")
         item_recent_flags+=("$is_recent")
+        item_worktree_flags+=("$item_is_worktree")
+        item_worktree_parents+=("${safe_worktree_parents[$item_index]:-}")
         # Build human-readable age label (bash 3.2 compatible, no assoc arrays).
         local _mod_time _age_secs _age_d
-        _mod_time=$(get_file_mtime "$item" 2> /dev/null || echo "0")
+        if [[ "$item_is_worktree" == "true" ]]; then
+            _mod_time="${safe_worktree_activity[$item_index]:-0}"
+            [[ "$_mod_time" =~ ^[0-9]+$ ]] || _mod_time=0
+        else
+            _mod_time=$(get_file_mtime "$item" 2> /dev/null || echo "0")
+        fi
         _age_secs=$((_now_epoch - _mod_time))
         _age_d=$((_age_secs / 86400))
         if [[ "$activity_state" == "uncertain" ]]; then
@@ -1657,6 +1772,8 @@ clean_project_artifacts() {
         local -a sorted_item_recent_flags=()
         local -a sorted_item_display_paths=()
         local -a sorted_item_age_labels=()
+        local -a sorted_item_worktree_flags=()
+        local -a sorted_item_worktree_parents=()
 
         for idx in "${sorted_indices[@]}"; do
             sorted_menu_options+=("${menu_options[idx]}")
@@ -1666,6 +1783,8 @@ clean_project_artifacts() {
             sorted_item_recent_flags+=("${item_recent_flags[idx]}")
             sorted_item_display_paths+=("${item_display_paths[idx]}")
             sorted_item_age_labels+=("${item_age_labels[idx]}")
+            sorted_item_worktree_flags+=("${item_worktree_flags[idx]}")
+            sorted_item_worktree_parents+=("${item_worktree_parents[idx]}")
         done
 
         # Replace original arrays with sorted versions
@@ -1676,6 +1795,8 @@ clean_project_artifacts() {
         item_recent_flags=("${sorted_item_recent_flags[@]}")
         item_display_paths=("${sorted_item_display_paths[@]}")
         item_age_labels=("${sorted_item_age_labels[@]}")
+        item_worktree_flags=("${sorted_item_worktree_flags[@]}")
+        item_worktree_parents=("${sorted_item_worktree_parents[@]}")
     fi
     if [[ -t 1 ]]; then
         stop_inline_spinner
@@ -1713,6 +1834,13 @@ clean_project_artifacts() {
     else
         # Non-interactive: select all non-recent items
         for ((i = 0; i < ${#menu_options[@]}; i++)); do
+            # Worktrees are whole checkouts, never auto-selected: a scripted
+            # `mo purge` must not remove one with no prompt at all. They are
+            # still listed, so an interactive run can pick them.
+            if [[ "${item_worktree_flags[i]:-false}" == "true" ]]; then
+                debug_log "Not auto-selecting worktree in non-interactive purge: ${item_paths[i]}"
+                continue
+            fi
             if [[ ${item_recent_flags[i]} != "true" ]]; then
                 [[ -n "$PURGE_SELECTION_RESULT" ]] && PURGE_SELECTION_RESULT+=","
                 PURGE_SELECTION_RESULT+="$i"
@@ -1769,8 +1897,19 @@ clean_project_artifacts() {
         else
             size_human=$(bytes_to_human "$((size_kb * 1024))")
         fi
-        # Safety checks
-        if ! is_safe_configured_purge_artifact "$item_path"; then
+        local is_worktree="${item_worktree_flags[idx]:-false}"
+        # Safety checks. Both branches revalidate from scratch immediately
+        # before deletion. A worktree is judged by its git registration rather
+        # than by the artifact predicate, which rejects the direct children of
+        # a search root where agent worktrees usually sit and would clear the
+        # deeper ones on depth alone, which proves nothing about a checkout.
+        # Neither branch may be skipped.
+        if [[ "$is_worktree" == "true" ]]; then
+            if ! is_safe_purge_worktree "$item_path"; then
+                debug_log "Skipping worktree that no longer passes its git guards: ${item_path:-<empty>}"
+                continue
+            fi
+        elif ! is_safe_configured_purge_artifact "$item_path"; then
             debug_log "Skipping purge target outside configured safe roots: ${item_path:-<empty>}"
             continue
         fi
@@ -1782,8 +1921,16 @@ clean_project_artifacts() {
             start_inline_spinner "Cleaning $display_item_path..."
         fi
         local removal_recorded=false
+        local removal_ok=false
         if [[ -e "$item_path" ]]; then
-            if safe_remove "$item_path" true; then
+            if [[ "$is_worktree" == "true" ]]; then
+                if mole_purge_remove_worktree "$item_path" "${item_worktree_parents[idx]:-}"; then
+                    removal_ok=true
+                fi
+            elif safe_remove "$item_path" true; then
+                removal_ok=true
+            fi
+            if [[ "$removal_ok" == "true" ]]; then
                 if [[ "$dry_run_mode" == "1" || ! -e "$item_path" ]]; then
                     local current_total
                     current_total=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo "0")
@@ -1796,11 +1943,21 @@ clean_project_artifacts() {
         if [[ -t 1 ]]; then
             stop_inline_spinner
             if [[ "$removal_recorded" == "true" ]]; then
+                # Worktrees go to the Trash, so say so rather than implying the
+                # bytes are already back.
+                local removal_note=""
+                if [[ "$is_worktree" == "true" && "$dry_run_mode" != "1" ]]; then
+                    removal_note="${GRAY} to Trash${NC}"
+                fi
                 if [[ "$dry_run_mode" == "1" ]]; then
                     echo -e "${GREEN}${ICON_SUCCESS}${NC} [DRY RUN] $display_item_path${NC}, ${GREEN}$size_human${NC}"
                 else
-                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $display_item_path${NC}, ${GREEN}$size_human${NC}"
+                    echo -e "${GREEN}${ICON_SUCCESS}${NC} $display_item_path${NC}, ${GREEN}$size_human${NC}${removal_note}"
                 fi
+            elif [[ "$is_worktree" == "true" && "$removal_ok" != "true" && -e "$item_path" ]]; then
+                # Trash mode fails closed rather than deleting outright, so the
+                # checkout is still here. Say that instead of staying silent.
+                echo -e "${GRAY}${ICON_WARNING}${NC} ${GRAY}Kept $display_item_path, Trash unavailable${NC}"
             fi
         fi
     done
