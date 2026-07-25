@@ -575,8 +575,34 @@ func (e snapshotEnrichment) apply(snapshot *MetricsSnapshot, preserveLiveProcess
 	}
 }
 
+// allowedCmds is the set of system binaries that runCmd is permitted to execute.
+var allowedCmds = map[string]bool{
+	"bluetoothctl":    true,
+	"diskutil":        true,
+	"ioreg":           true,
+	"memory_pressure": true,
+	"nvidia-smi":      true,
+	"osascript":       true,
+	"pmset":           true,
+	"powermetrics":    true,
+	"ps":              true,
+	"scutil":          true,
+	"sw_vers":         true,
+	"sysctl":          true,
+	"system_profiler": true,
+	"uptime":          true,
+	"vm_stat":         true,
+}
+
 var runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	if !allowedCmds[name] {
+		return "", fmt.Errorf("runCmd: %q is not an allowed command", name)
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd.Env = cLocaleEnv()
 	output, err := cmd.Output()
 	if err != nil {
