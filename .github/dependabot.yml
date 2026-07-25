@@ -9,6 +9,8 @@ updates:
     reviewers:
       - "tw93"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
@@ -23,3 +25,5 @@ updates:
     reviewers:
       - "tw93"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
