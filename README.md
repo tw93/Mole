@@ -289,7 +289,7 @@ Select Categories to Clean - 18.5GB (8 selected)
 > Note: We recommend installing `fd` on macOS.
 > `brew install fd`
 
-> Safety: This permanently deletes selected artifacts. Review carefully before confirming. Projects newer than 7 days are marked and unselected by default.
+> Safety: This permanently deletes selected build artifacts; worktrees are the one exception and go to the Trash. Review carefully before confirming. Projects newer than 7 days are marked and unselected by default.
 
 > Worktrees: only offered when git can prove the checkout is restorable, meaning no uncommitted changes, nothing unpushed, a remote to restore from, no git activity for 7 days, and no ignored file that is not itself a known build artifact, so a gitignored `.env` keeps the whole worktree. They are never selected for you, they go to the Trash rather than being deleted outright, and the parent repo's stale registration is pruned afterwards.
 

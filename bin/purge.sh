@@ -112,9 +112,11 @@ start_purge() {
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
     ensure_user_dir "$stats_dir"
     ensure_user_file "$stats_dir/purge_stats"
+    ensure_user_file "$stats_dir/purge_trashed"
     ensure_user_file "$stats_dir/purge_count"
     ensure_user_file "$stats_dir/purge_scanning"
     echo "0" > "$stats_dir/purge_stats"
+    echo "0" > "$stats_dir/purge_trashed"
     echo "0" > "$stats_dir/purge_count"
     echo "" > "$stats_dir/purge_scanning"
 }
@@ -244,11 +246,17 @@ perform_purge() {
     local summary_heading="Purge complete"
     local -a summary_details=()
     local total_size_cleaned=0
+    local total_size_trashed=0
     local total_items_cleaned=0
 
     if [[ -f "$stats_dir/purge_stats" ]]; then
         total_size_cleaned=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo "0")
         rm -f "$stats_dir/purge_stats"
+    fi
+
+    if [[ -f "$stats_dir/purge_trashed" ]]; then
+        total_size_trashed=$(cat "$stats_dir/purge_trashed" 2> /dev/null || echo "0")
+        rm -f "$stats_dir/purge_trashed"
     fi
 
     if [[ -f "$stats_dir/purge_count" ]]; then
@@ -260,24 +268,45 @@ perform_purge() {
         summary_heading="Dry run complete - no changes made"
     fi
 
-    if [[ $total_size_cleaned -gt 0 ]]; then
-        local freed_size_human
-        freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
+    if [[ $total_size_cleaned -gt 0 || $total_size_trashed -gt 0 ]]; then
+        if [[ $total_size_cleaned -gt 0 ]]; then
+            local freed_size_human
+            freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
 
-        local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
-        if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-            summary_line="Would free: ${GREEN}${freed_size_human}${NC}"
+            local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
+            if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+                summary_line="Would free: ${GREEN}${freed_size_human}${NC}"
+            fi
+            [[ $total_items_cleaned -gt 0 ]] && summary_line+=" | Items: $total_items_cleaned"
+            summary_line+=" | Free: $(get_free_space)"
+            summary_details+=("$summary_line")
         fi
-        [[ $total_items_cleaned -gt 0 ]] && summary_line+=" | Items: $total_items_cleaned"
-        summary_line+=" | Free: $(get_free_space)"
-        summary_details+=("$summary_line")
+
+        # Worktrees are trashed rather than deleted, so those bytes come back
+        # only once the Trash is emptied. Counting them under "Space freed"
+        # would print a number the user cannot confirm with df.
+        if [[ $total_size_trashed -gt 0 ]]; then
+            local trashed_size_human
+            trashed_size_human=$(bytes_to_human_kb "$total_size_trashed")
+
+            local trash_line="Moved to Trash: ${GREEN}${trashed_size_human}${NC}, frees space when emptied"
+            if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
+                trash_line="Would move to Trash: ${GREEN}${trashed_size_human}${NC}"
+            fi
+            if [[ $total_size_cleaned -eq 0 ]]; then
+                [[ $total_items_cleaned -gt 0 ]] && trash_line+=" | Items: $total_items_cleaned"
+                trash_line+=" | Free: $(get_free_space)"
+            fi
+            summary_details+=("$trash_line")
+        fi
     else
         summary_details+=("No old project artifacts to clean.")
         summary_details+=("Free space: $(get_free_space)")
     fi
 
     # Log session end
-    log_operation_session_end "purge" "${total_items_cleaned:-0}" "${total_size_cleaned:-0}"
+    log_operation_session_end "purge" "${total_items_cleaned:-0}" \
+        "$((${total_size_cleaned:-0} + ${total_size_trashed:-0}))"
 
     print_summary_block "$summary_heading" "${summary_details[@]}"
     printf '\n'

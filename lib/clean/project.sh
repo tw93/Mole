@@ -1932,9 +1932,14 @@ clean_project_artifacts() {
             fi
             if [[ "$removal_ok" == "true" ]]; then
                 if [[ "$dry_run_mode" == "1" || ! -e "$item_path" ]]; then
+                    # Worktrees go to the Trash, so their bytes are not free
+                    # until it is emptied. Keep them in a separate bucket so
+                    # the summary's "Space freed" stays a true statement.
+                    local stats_file="$stats_dir/purge_stats"
+                    [[ "$is_worktree" == "true" ]] && stats_file="$stats_dir/purge_trashed"
                     local current_total
-                    current_total=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo "0")
-                    echo "$((current_total + size_kb))" > "$stats_dir/purge_stats"
+                    current_total=$(cat "$stats_file" 2> /dev/null || echo "0")
+                    echo "$((current_total + size_kb))" > "$stats_file"
                     cleaned_count=$((cleaned_count + 1))
                     removal_recorded=true
                 fi

@@ -1663,6 +1663,10 @@ confirm_purge_cleanup() { return 0; }
 clean_project_artifacts
 SCRIPT
 
+	# setup() clears ~/www and ~/dev but not ~/.cache/mole, and HOME is created
+	# once per file, so these buckets carry earlier tests' totals unless reset.
+	rm -f "$HOME/.cache/mole/purge_stats" "$HOME/.cache/mole/purge_trashed"
+
 	local pty_log="$HOME/wt_remove.log"
 	_run_in_pty "$script_file" > "$pty_log" 2>&1 || true
 	rm -f "$script_file"
@@ -1677,6 +1681,21 @@ SCRIPT
 	[[ "$(git -C "$HOME/www/repo" worktree list --porcelain | grep -c '^worktree ')" == "1" ]] || return 1
 	# The main worktree is untouched.
 	[[ -d "$HOME/www/repo" ]] || return 1
+
+	# Trashed bytes are not freed bytes: they must land in the trashed bucket,
+	# never in purge_stats, which bin/purge.sh prints as "Space freed".
+	local trashed_kb freed_kb
+	trashed_kb=$(cat "$HOME/.cache/mole/purge_trashed" 2> /dev/null || echo "0")
+	freed_kb=$(cat "$HOME/.cache/mole/purge_stats" 2> /dev/null || echo "0")
+	if [[ "$trashed_kb" -le 0 ]]; then
+		printf 'expected trashed bytes to be recorded, got %s; pty output:\n%s\n' \
+			"$trashed_kb" "$(cat "$pty_log" 2> /dev/null)" >&2
+		return 1
+	fi
+	if [[ "$freed_kb" -ne 0 ]]; then
+		printf 'trashed worktree counted as freed space: purge_stats=%s\n' "$freed_kb" >&2
+		return 1
+	fi
 }
 
 @test "clean_project_artifacts: scans and finds artifacts" {
