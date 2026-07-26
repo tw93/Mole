@@ -1045,12 +1045,14 @@ find_app_files() {
             while IFS= read -r -d '' derived_path; do
                 mole_name_has_bundle_id_boundary "$derived_path" "$bundle_id" || continue
                 already_added=false
-                for existing_path in "${files_to_clean[@]}"; do
-                    if [[ "$existing_path" == "$derived_path" ]]; then
-                        already_added=true
-                        break
-                    fi
-                done
+                if [[ ${#files_to_clean[@]} -gt 0 ]]; then
+                    for existing_path in "${files_to_clean[@]}"; do
+                        if [[ "$existing_path" == "$derived_path" ]]; then
+                            already_added=true
+                            break
+                        fi
+                    done
+                fi
                 [[ "$already_added" == "true" ]] || files_to_clean+=("$derived_path")
             done < <(command find "$derived_root" -maxdepth 1 -type d -print0 2> /dev/null)
         done
