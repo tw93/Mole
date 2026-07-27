@@ -422,6 +422,38 @@ is_protected_purge_artifact() {
     return 1
 }
 
+# Discover orphaned Xcode DerivedData entries whose source workspace or project
+# no longer exists on disk. These survive deleted worktrees because Xcode stores
+# build outputs in a global ~/Library/Developer/Xcode/DerivedData/ directory
+# indexed by a hash suffix, not by project location. Each subdirectory carries
+# an info.plist whose WorkspacePath field records the original source tree path;
+# when that path no longer exists, the DerivedData is reclaimable.
+# Outputs one absolute DerivedData subdirectory path per line to stdout.
+discover_orphaned_xcode_derived_data() {
+    local dd_dir="$HOME/Library/Developer/Xcode/DerivedData"
+    [[ -d "$dd_dir" ]] || return 0
+
+    # Skip while Xcode is running to avoid interfering with active builds.
+    if pgrep -x "Xcode" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    local entry info_path ws_path
+    while IFS= read -r -d '' entry; do
+        info_path="$entry/info.plist"
+        [[ -f "$info_path" ]] || continue
+
+        ws_path=$(/usr/libexec/PlistBuddy -c "Print WorkspacePath" "$info_path" 2> /dev/null)
+        [[ -n "$ws_path" ]] || continue
+
+        # If the source workspace or project still exists, this DerivedData
+        # may still be useful during a rebuild or for indexing.
+        [[ -d "$ws_path" ]] && continue
+
+        printf '%s\n' "${entry%/}"
+    done < <(command find "$dd_dir" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null || true)
+}
+
 # Scan purge targets using fd (fast) or pruned find.
 scan_purge_targets() {
     local search_path="$1"
@@ -1197,6 +1229,14 @@ clean_project_artifacts() {
         done < <(LC_COLLATE=C sort -u "$dedupe_output")
     fi
     rm -f "$dedupe_output"
+
+    # Discover orphaned Xcode DerivedData: entries whose source workspace or
+    # project directory no longer exists.  Append them to all_found_items so
+    # they participate in the activity classification, size calc, and menu.
+    while IFS= read -r _orphan_path; do
+        all_found_items+=("$_orphan_path")
+    done < <(discover_orphaned_xcode_derived_data || true)
+
     # Restore caller traps after this function completes.
     if [[ "$trap_installed_by_this_call" == "true" ]]; then
         trap - INT TERM
@@ -1308,6 +1348,7 @@ clean_project_artifacts() {
     local -a item_recent_flags=()
     local -a item_age_labels=()
     local -a item_cloud_flags=()
+    local -a item_orphan_flags=()
     # Find the best project root for an artifact once; callers decide how to
     # display it. Monorepo indicators win over plain project indicators.
     find_purge_project_root_for_artifact() {
@@ -1582,6 +1623,34 @@ clean_project_artifacts() {
             display_project_path="[cloud] $display_project_path"
             display_item_path="[cloud] $display_item_path"
         fi
+
+        # Detect orphaned Xcode DerivedData entries whose entire workspace
+        # directory no longer exists. Override the display to show the deleted
+        # workspace path and mark the artifact type so the user can identify
+        # what left this orphaned build cache behind.
+        local is_orphan=false
+        if [[ "$item" == "$HOME/Library/Developer/Xcode/DerivedData/"* ]]; then
+            local dd_ws
+            dd_ws=$(/usr/libexec/PlistBuddy -c "Print WorkspacePath" "$item/info.plist" 2> /dev/null || echo "")
+            if [[ -n "$dd_ws" && ! -d "$dd_ws" ]]; then
+                is_orphan=true
+                artifact_type="DerivedData [orphaned]"
+                # Show the deleted workspace path as the project context so
+                # the user can recognise what project left this behind.
+                local _ws_parent="${dd_ws%/*}"
+                local _ws_name="${dd_ws##*/}"
+                if [[ -n "$_ws_name" ]]; then
+                    project_path="${_ws_parent/#$HOME/~}/${_ws_name}"
+                fi
+                display_project_path="$project_path"
+                display_item_path="${project_path} → $(format_purge_target_path "$item")"
+                if [[ "$is_cloud" == "true" ]]; then
+                    display_project_path="[cloud] $display_project_path"
+                    display_item_path="[cloud] $display_item_path"
+                fi
+            fi
+        fi
+
         raw_project_paths+=("$display_project_path")
         raw_artifact_types+=("$artifact_type")
         item_paths+=("$item")
@@ -1590,6 +1659,7 @@ clean_project_artifacts() {
         item_size_unknown_flags+=("$size_unknown")
         item_recent_flags+=("$is_recent")
         item_cloud_flags+=("$is_cloud")
+        item_orphan_flags+=("$is_orphan")
         # Build human-readable age label (bash 3.2 compatible, no assoc arrays).
         local _mod_time _age_secs _age_d
         _mod_time=$(get_file_mtime "$item" 2> /dev/null || echo "0")
@@ -1687,6 +1757,7 @@ clean_project_artifacts() {
         local -a sorted_item_display_paths=()
         local -a sorted_item_age_labels=()
         local -a sorted_item_cloud_flags=()
+        local -a sorted_item_orphan_flags=()
 
         for idx in "${sorted_indices[@]}"; do
             sorted_menu_options+=("${menu_options[idx]}")
@@ -1697,6 +1768,7 @@ clean_project_artifacts() {
             sorted_item_display_paths+=("${item_display_paths[idx]}")
             sorted_item_age_labels+=("${item_age_labels[idx]}")
             sorted_item_cloud_flags+=("${item_cloud_flags[idx]}")
+            sorted_item_orphan_flags+=("${item_orphan_flags[idx]}")
         done
 
         # Replace original arrays with sorted versions
@@ -1708,6 +1780,7 @@ clean_project_artifacts() {
         item_display_paths=("${sorted_item_display_paths[@]}")
         item_age_labels=("${sorted_item_age_labels[@]}")
         item_cloud_flags=("${sorted_item_cloud_flags[@]}")
+        item_orphan_flags=("${sorted_item_orphan_flags[@]}")
     fi
     if [[ -t 1 ]]; then
         stop_inline_spinner
@@ -1815,10 +1888,13 @@ clean_project_artifacts() {
         else
             size_human=$(bytes_to_human "$((size_kb * 1024))")
         fi
-        # Safety checks
-        if ! is_safe_configured_purge_artifact "$item_path"; then
-            debug_log "Skipping purge target outside configured safe roots: ${item_path:-<empty>}"
-            continue
+        # Safety checks — skip location check for orphaned Xcode DerivedData
+        # (paths selected via WorkspacePath analysis, not scan-root containment).
+        if [[ "${item_orphan_flags[idx]:-false}" != "true" ]]; then
+            if ! is_safe_configured_purge_artifact "$item_path"; then
+                debug_log "Skipping purge target outside configured safe roots: ${item_path:-<empty>}"
+                continue
+            fi
         fi
         if ! purge_target_activity_still_safe "$item_path" "${item_recent_flags[idx]:-true}"; then
             echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (activity changed after review)"
