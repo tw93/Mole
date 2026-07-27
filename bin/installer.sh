@@ -834,8 +834,11 @@ main() {
     fi
 
     hide_cursor
-    perform_installers
-    local exit_code=$?
+    # Capture the status without tripping errexit: a bare call under set -e
+    # would exit the script before the case handler below could report
+    # incomplete cleanup.
+    local exit_code=0
+    perform_installers || exit_code=$?
     show_cursor
 
     case $exit_code in

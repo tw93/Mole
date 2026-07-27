@@ -438,3 +438,41 @@ setup() {
 	[[ "$output" == *"rc=1"* ]] || return 1
 	[[ "$output" == *"removed=yes"* ]]
 }
+
+@test "main reports incomplete cleanup under errexit" {
+	local removable="$HOME/Downloads/ErrexitGood.dmg"
+	printf 'good' > "$removable"
+
+	# Production runs installer.sh with set -euo pipefail active, so main must
+	# not let a nonzero perform_installers status trip errexit before the
+	# incomplete-cleanup summary is printed.
+	# shellcheck disable=SC2016
+	run env HOME="$HOME" TERM="$TERM" /bin/bash -euo pipefail -c '
+        export MOLE_TEST_MODE=1
+        export MOLE_TEST_NO_AUTH=1
+        export MOLE_DELETE_LOG="$HOME/deletions.log"
+        source "$1"
+        test_removable="$2"
+
+        collect_installers() {
+            local system_size
+            system_size=$(get_file_size "/System")
+            INSTALLER_PATHS=("$test_removable" "/System")
+            INSTALLER_SIZES=(4 "$system_size")
+            DISPLAY_NAMES=("ErrexitGood.dmg" "System")
+            return 0
+        }
+
+        show_installer_menu() {
+            MOLE_SELECTION_RESULT="0,1"
+            return 0
+        }
+
+        main < <(printf "\n")
+    ' bash "$PROJECT_ROOT/bin/installer.sh" "$removable"
+
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"Installer cleanup incomplete"* ]] || return 1
+	[[ "$output" == *"Failed to remove"* ]] || return 1
+	[[ ! -e "$removable" ]]
+}
