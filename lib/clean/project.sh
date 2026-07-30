@@ -263,6 +263,10 @@ is_safe_project_artifact() {
     local path="$1"
     local search_path="$2"
 
+    if is_safe_terraform_provider_artifact "$path" "$search_path"; then
+        return 0
+    fi
+
     # Normalize search path to tolerate user config entries with trailing slash.
     if [[ "$search_path" != "/" ]]; then
         search_path="${search_path%/}"
@@ -304,6 +308,184 @@ is_safe_project_artifact() {
         return 1
     fi
     return 0
+}
+
+# Return the provider selections recorded by a Terraform dependency lock file.
+# Output format: <provider source address>|<selected version>.
+# This intentionally parses only the stable provider block/version fields; a
+# malformed or incomplete lock file produces no selection and therefore fails
+# closed in the caller.
+terraform_lock_selected_versions() {
+    local lock_file="$1"
+
+    awk '
+        /^[[:space:]]*"[^"]+"[[:space:]]*\{/ {
+            provider = $0
+            sub(/^[[:space:]]*"/, "", provider)
+            sub(/"[[:space:]]*\{[[:space:]]*$/, "", provider)
+            next
+        }
+        provider != "" && /^[[:space:]]*version[[:space:]]*=/ {
+            version = $0
+            sub(/^[^"]*"/, "", version)
+            sub(/".*$/, "", version)
+            if (version != "") {
+                print provider "|" version
+            }
+            provider = ""
+        }
+        /^[[:space:]]*\}/ && provider != "" { provider = "" }
+    ' "$lock_file" 2> /dev/null
+}
+
+# Validate and identify an unpacked provider version directory.
+# Expected layout: .terraform/providers/<host>/<namespace>/<type>/<version>.
+is_terraform_provider_version_dir() {
+    local path="$1"
+    [[ -d "$path" && ! -L "$path" ]] || return 1
+
+    local version="${path##*/}"
+    [[ "$version" =~ ^[0-9]+(\.[0-9]+)+([+-][[:alnum:].-]+)?$ ]] || return 1
+
+    local provider_type="${path%/*}"
+    local provider_namespace="${provider_type%/*}"
+    local provider_host="${provider_namespace%/*}"
+    [[ "${provider_type##*/}" != "" ]] || return 1
+    [[ "${provider_namespace##*/}" != "" ]] || return 1
+    [[ "${provider_host##*/}" != "" ]] || return 1
+    return 0
+}
+
+# Return 0 only for a provider version under a project .terraform/providers
+# tree whose source/version is not selected by that project's lock file.
+is_safe_terraform_provider_artifact() {
+    local path="$1"
+    local search_path="$2"
+    [[ "$path" == /* ]] || return 1
+    if [[ "$search_path" != "/" ]]; then
+        search_path="${search_path%/}"
+    fi
+    if [[ "$path" != "$search_path/"* ]]; then
+        local physical_path=""
+        local physical_search_path=""
+        if [[ -d "$path" && -d "$search_path" ]]; then
+            physical_path=$(cd "$path" 2> /dev/null && pwd -P || echo "")
+            physical_search_path=$(cd "$search_path" 2> /dev/null && pwd -P || echo "")
+        fi
+        [[ -n "$physical_path" && -n "$physical_search_path" ]] || return 1
+        [[ "$physical_path" == "$physical_search_path/"* ]] || return 1
+        path="$physical_path"
+        search_path="$physical_search_path"
+    fi
+    is_terraform_provider_version_dir "$path" || return 1
+
+    local provider_root="${path%/*/*/*/*}"
+    [[ "${provider_root##*/}" == "providers" ]] || return 1
+    local terraform_dir="${provider_root%/*}"
+    [[ "${terraform_dir##*/}" == ".terraform" ]] || return 1
+    local project_root="${terraform_dir%/*}"
+    [[ -f "$project_root/.terraform.lock.hcl" ]] || return 1
+
+    local version="${path##*/}"
+    local provider_type="${path%/*}"
+    local provider_namespace="${provider_type%/*}"
+    local provider_host="${provider_namespace%/*}"
+    local source="${provider_host##*/}/${provider_namespace##*/}/${provider_type##*/}"
+    while IFS='|' read -r selected_source selected_version; do
+        if [[ "$selected_source" == "$source" && "$selected_version" == "$version" ]]; then
+            return 1
+        fi
+    done < <(terraform_lock_selected_versions "$project_root/.terraform.lock.hcl")
+
+    return 0
+}
+
+# Emit old local Terraform provider version directories under a search root.
+scan_terraform_provider_targets() {
+    local search_path="$1"
+    local output_file="$2"
+    [[ -d "$search_path" ]] || return 0
+
+    local max_depth="$PURGE_MAX_DEPTH_DEFAULT"
+    [[ "$max_depth" =~ ^[0-9]+$ ]] || max_depth="$PURGE_MAX_DEPTH_DEFAULT"
+    local lock_file project_root provider_root candidate
+    while IFS= read -r lock_file; do
+        [[ -n "$lock_file" && -f "$lock_file" ]] || continue
+        project_root="${lock_file%/.terraform.lock.hcl}"
+        provider_root="$project_root/.terraform/providers"
+        [[ -d "$provider_root" && ! -L "$provider_root" ]] || continue
+
+        while IFS= read -r candidate; do
+            [[ -n "$candidate" ]] || continue
+            if is_safe_terraform_provider_artifact "$candidate" "$search_path"; then
+                printf '%s\n' "$candidate" >> "$output_file"
+            fi
+        done < <(find "$provider_root" -mindepth 4 -maxdepth 4 -type d -print 2> /dev/null)
+    done < <(run_with_timeout "$MOLE_TIMEOUT_TERRAFORM_SCAN_SEC" \
+        find "$search_path" -type f -name '.terraform.lock.hcl' -maxdepth "$max_depth" -print 2> /dev/null || true)
+}
+
+# Resolve Terraform's optional global plugin cache configuration.
+terraform_global_plugin_cache_paths() {
+    local configured="${TF_PLUGIN_CACHE_DIR:-}"
+    if [[ -n "$configured" ]]; then
+        configured="${configured/#\~/$HOME}"
+        printf '%s\n' "$configured"
+    fi
+
+    local config_file="${TF_CLI_CONFIG_FILE:-}"
+    if [[ -z "$config_file" ]]; then
+        for config_file in "$HOME/.terraformrc" "$HOME/.terraform.d/terraform.rc"; do
+            [[ -f "$config_file" ]] && break
+        done
+    fi
+    [[ -f "$config_file" ]] || return 0
+
+    sed -nE 's/^[[:space:]]*plugin_cache_dir[[:space:]]*=[[:space:]]*"([^"]+)".*$/\1/p' "$config_file" |
+        while IFS= read -r configured; do
+            configured="${configured/#\~/$HOME}"
+            [[ -n "$configured" ]] && printf '%s\n' "$configured"
+        done
+}
+
+# Report global-cache candidates without making them deletable. A plugin cache
+# may be shared by checkouts outside Mole's configured search roots.
+report_terraform_global_plugin_cache() {
+    local selected_file
+    selected_file=$(mktemp_file "terraform-lock-selections") || return 0
+    local search_path lock_file
+    for search_path in "${PURGE_SEARCH_PATHS[@]+${PURGE_SEARCH_PATHS[@]}}"; do
+        [[ -d "$search_path" ]] || continue
+        while IFS= read -r lock_file; do
+            [[ -f "$lock_file" ]] || continue
+            terraform_lock_selected_versions "$lock_file" >> "$selected_file"
+        done < <(run_with_timeout "$MOLE_TIMEOUT_TERRAFORM_SCAN_SEC" \
+            find "$search_path" -type f -name '.terraform.lock.hcl' -maxdepth "$PURGE_MAX_DEPTH_DEFAULT" -print 2> /dev/null || true)
+    done
+    sort -u "$selected_file" -o "$selected_file" 2> /dev/null || true
+
+    local cache_path candidate count=0
+    while IFS= read -r cache_path; do
+        [[ -d "$cache_path" && ! -L "$cache_path" ]] || continue
+        while IFS= read -r candidate; do
+            [[ -n "$candidate" ]] || continue
+            is_terraform_provider_version_dir "$candidate" || continue
+            local version="${candidate##*/}"
+            local provider_type="${candidate%/*}"
+            local provider_namespace="${provider_type%/*}"
+            local provider_host="${provider_namespace%/*}"
+            local source="${provider_host##*/}/${provider_namespace##*/}/${provider_type##*/}"
+            if ! grep -Fqx "$source|$version" "$selected_file" 2> /dev/null; then
+                count=$((count + 1))
+            fi
+        done < <(run_with_timeout "$MOLE_TIMEOUT_TERRAFORM_SCAN_SEC" \
+            find "$cache_path" -mindepth 4 -maxdepth 4 -type d -print 2> /dev/null || true)
+    done < <(terraform_global_plugin_cache_paths | sort -u)
+    rm -f "$selected_file"
+
+    if [[ $count -gt 0 ]]; then
+        echo -e "${YELLOW}${ICON_WARNING}${NC} Terraform global provider cache: ${count} unreferenced version(s) found (analysis only)"
+    fi
 }
 
 # Revalidate a selected artifact against the configured scan roots immediately
@@ -1162,7 +1344,10 @@ clean_project_artifacts() {
             scan_output=$(mktemp)
             scan_temps+=("$scan_output")
             # Launch scan in background for true parallelism
-            scan_purge_targets "$path" "$scan_output" < /dev/null &
+            (
+                scan_purge_targets "$path" "$scan_output" < /dev/null
+                scan_terraform_provider_targets "$path" "$scan_output" < /dev/null
+            ) &
             local scan_pid=$!
             scan_pids+=("$scan_pid")
         fi
@@ -1171,6 +1356,10 @@ clean_project_artifacts() {
     for pid in "${scan_pids[@]+"${scan_pids[@]}"}"; do
         wait "$pid" 2> /dev/null || true
     done
+
+    # Global plugin caches are shared by unrelated checkouts, so report their
+    # reclaimable-looking entries without adding them to the deletion menu.
+    report_terraform_global_plugin_cache
 
     # Stop the scanning monitor (removes purge_scanning file to signal completion)
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
@@ -1417,6 +1606,10 @@ clean_project_artifacts() {
         local artifact_name="${path##*/}"
         local parent_name="${path%/*}"
         parent_name="${parent_name##*/}"
+
+        if [[ "$path" == */.terraform/providers/* ]] && is_terraform_provider_version_dir "$path"; then
+            artifact_name="Terraform provider ${path##*/}"
+        fi
 
         local project_name
         if [[ -n "${_cached_project_names[*]+x}" ]]; then

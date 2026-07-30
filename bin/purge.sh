@@ -285,7 +285,7 @@ perform_purge() {
 
 # Show help message
 show_help() {
-    echo -e "${PURPLE_BOLD}Mole Purge${NC}, Clean old project build artifacts"
+    echo -e "${PURPLE_BOLD}Mole Purge${NC}, Clean old project build artifacts and Terraform providers"
     echo ""
     echo -e "${YELLOW}Usage:${NC} mo purge [options]"
     echo ""

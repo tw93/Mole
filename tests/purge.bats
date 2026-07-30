@@ -992,6 +992,92 @@ EOF
 	[[ "$result" == *".terragrunt-cache"* ]]
 }
 
+@test "scan_terraform_provider_targets finds unselected provider versions" {
+	project="$HOME/www/terraform-project"
+	old_provider="$project/.terraform/providers/registry.terraform.io/hashicorp/aws/4.0.0"
+	active_provider="$project/.terraform/providers/registry.terraform.io/hashicorp/aws/5.0.0"
+	mkdir -p "$old_provider/darwin_arm64" "$active_provider/darwin_arm64"
+	printf '%s\n' '"registry.terraform.io/hashicorp/aws" {' '  version = "5.0.0"' '}' > "$project/.terraform.lock.hcl"
+
+	scan_output=$(mktemp)
+	source "$PROJECT_ROOT/lib/clean/project.sh"
+	scan_terraform_provider_targets "$HOME/www" "$scan_output"
+
+	grep -qxF "$old_provider" "$scan_output"
+	if grep -qxF "$active_provider" "$scan_output"; then
+		return 1
+	fi
+}
+
+@test "scan_terraform_provider_targets fails closed without a lock file" {
+	project="$HOME/www/terraform-no-lock"
+	provider="$project/.terraform/providers/registry.terraform.io/hashicorp/aws/4.0.0"
+	mkdir -p "$provider/darwin_arm64"
+
+	scan_output=$(mktemp)
+	source "$PROJECT_ROOT/lib/clean/project.sh"
+	scan_terraform_provider_targets "$HOME/www" "$scan_output"
+
+	[ ! -s "$scan_output" ]
+}
+
+@test "is_safe_terraform_provider_artifact rejects paths outside configured roots" {
+	project="$HOME/www/terraform-project"
+	provider="$project/.terraform/providers/registry.terraform.io/hashicorp/aws/4.0.0"
+	mkdir -p "$provider/darwin_arm64"
+	printf '%s\n' '"registry.terraform.io/hashicorp/aws" {' '  version = "5.0.0"' '}' > "$project/.terraform.lock.hcl"
+
+	source "$PROJECT_ROOT/lib/clean/project.sh"
+	if is_safe_terraform_provider_artifact "$provider" "$HOME/dev"; then
+		return 1
+	fi
+}
+
+@test "clean_project_artifacts includes old Terraform providers in dry-run" {
+	project="$HOME/www/terraform-project"
+	provider="$project/.terraform/providers/registry.terraform.io/hashicorp/aws/4.0.0"
+	mkdir -p "$provider/darwin_arm64" "$HOME/.cache/mole"
+	printf '%s\n' '"registry.terraform.io/hashicorp/aws" {' '  version = "5.0.0"' '}' > "$project/.terraform.lock.hcl"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+PURGE_SEARCH_PATHS=("$HOME/www")
+get_dir_size_kb() { echo 4; }
+is_recently_modified() {
+	_PURGE_ACTIVITY_STATE=old
+	return 1
+}
+purge_target_activity_still_safe() { return 0; }
+safe_remove() {
+	printf 'REMOVE:%s\n' "$1"
+	return 0
+}
+clean_project_artifacts </dev/null
+EOF
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"REMOVE:$provider"* ]]
+}
+
+@test "report_terraform_global_plugin_cache is analysis-only" {
+	project="$HOME/www/terraform-project"
+	cache="$HOME/terraform-plugin-cache"
+	provider="$cache/registry.terraform.io/hashicorp/aws/4.0.0"
+	mkdir -p "$provider/darwin_arm64" "$HOME/.cache/mole"
+	printf '%s\n' '"registry.terraform.io/hashicorp/aws" {' '  version = "5.0.0"' '}' > "$project/.terraform.lock.hcl"
+	TF_PLUGIN_CACHE_DIR="$cache"
+	export TF_PLUGIN_CACHE_DIR
+
+	source "$PROJECT_ROOT/lib/clean/project.sh"
+	PURGE_SEARCH_PATHS=("$HOME/www")
+	output=$(report_terraform_global_plugin_cache)
+
+	[[ "$output" == *"analysis only"* ]]
+	[[ -d "$provider" ]]
+}
+
 @test "get_dir_size_kb: calculates directory size" {
 	mkdir -p "$HOME/www/test-project/node_modules"
 	dd if=/dev/zero of="$HOME/www/test-project/node_modules/file.bin" bs=1024 count=1024 2>/dev/null
