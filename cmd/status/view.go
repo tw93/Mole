@@ -10,7 +10,37 @@ import (
 	"github.com/tw93/mole/internal/units"
 )
 
-// Colors, text styles, layout tokens and icons live in theme.go.
+var (
+	titleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#C79FD7")).Bold(true)
+	subtleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#737373"))
+	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD75F"))
+	dangerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5F5F")).Bold(true)
+	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#A5D6A7"))
+	lineStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#404040"))
+
+	primaryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#BD93F9"))
+	alertBarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#2B1200")).
+			Background(lipgloss.Color("#FFD75F")).
+			Bold(true).
+			Padding(0, 1)
+)
+
+const (
+	colWidth    = 38
+	iconCPU     = "◉"
+	iconMemory  = "◫"
+	iconGPU     = "◧"
+	iconDisk    = "▥"
+	iconNetwork = "⇅"
+	iconBattery = "◪"
+	iconSensors = "◈"
+	iconProcs   = "❊"
+
+	metricLabelWidth    = 6
+	processMemoryWidth  = 7
+	processWideMinWidth = 46
+)
 
 // Mole body frames (facing right).
 var moleBody = [][]string{
@@ -239,6 +269,19 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 		return headerLine, ""
 	}
 	return headerLine, mole
+}
+
+func getScoreStyle(score int) lipgloss.Style {
+	switch {
+	case score >= scoreExcellentThreshold:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#87FF87")).Bold(true)
+	case score >= scoreGoodThreshold:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#87D787")).Bold(true)
+	case score >= scoreFairThreshold:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD75F")).Bold(true)
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Bold(true)
+	}
 }
 
 func renderProcessAlertBar(alerts []ProcessAlert, width int) string {
@@ -965,7 +1008,7 @@ type columnRow struct {
 
 // layoutColumnRows groups cards into rows so section titles stay aligned across
 // the two columns. Each row seeds its left cell with one card, then stacks cards
-// into the right cell until it is at least as tall as the left — so a tall card
+// into the right cell until it is at least as tall as the left, so a tall card
 // (e.g. CPU listing many cores) is matched by several short cards (GPU, Memory,
 // ...) beside it instead of leaving a gap. The shorter cell is padded to the row
 // height at render time, which keeps the next row's titles aligned. Heights are
@@ -1017,25 +1060,46 @@ func renderTwoColumns(cards []cardData, width int) string {
 		return lipgloss.JoinVertical(lipgloss.Left, parts...)
 	}
 
-	var rows []string
-	for _, row := range layoutColumnRows(cards, cw) {
-		left := renderCell(row.left)
-		if len(row.right) == 0 {
-			rows = append(rows, left)
-			continue
+	renderRows := func(layout []columnRow) string {
+		var rows []string
+		for _, row := range layout {
+			left := renderCell(row.left)
+			if len(row.right) == 0 {
+				rows = append(rows, left)
+				continue
+			}
+			right := renderCell(row.right)
+			// JoinHorizontal (Top) pads the shorter cell to the taller, so the next
+			// row's titles line up in both columns.
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right))
 		}
-		right := renderCell(row.right)
-		// JoinHorizontal (Top) pads the shorter cell to the taller, so the next
-		// row's titles line up in both columns.
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right))
+
+		var spaced []string
+		for i, row := range rows {
+			if i > 0 {
+				spaced = append(spaced, "")
+			}
+			spaced = append(spaced, row)
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, spaced...)
 	}
 
-	var spaced []string
-	for i, r := range rows {
-		if i > 0 {
-			spaced = append(spaced, "")
+	var fixedLayout []columnRow
+	for i := 0; i < len(cards); i += 2 {
+		row := columnRow{left: []cardData{cards[i]}}
+		if i+1 < len(cards) {
+			row.right = []cardData{cards[i+1]}
 		}
-		spaced = append(spaced, r)
+		fixedLayout = append(fixedLayout, row)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, spaced...)
+
+	fixed := renderRows(fixedLayout)
+	stacked := renderRows(layoutColumnRows(cards, cw))
+	// Dynamic stacking is useful for a tall CPU card, but a greedy stack can
+	// overshoot a shorter row and grow the whole dashboard. Keep the stable
+	// pair layout unless stacking saves vertical space.
+	if lipgloss.Height(stacked) < lipgloss.Height(fixed) {
+		return stacked
+	}
+	return fixed
 }

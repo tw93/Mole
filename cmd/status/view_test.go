@@ -1491,6 +1491,36 @@ func TestRenderTwoColumnsAlignsRowTitles(t *testing.T) {
 	}
 }
 
+func TestRenderTwoColumnsNeverGrowsFixedPairLayout(t *testing.T) {
+	const width = 120
+	cards := buildCards(MetricsSnapshot{}, width/2-4, 2)
+	cw := width/2 - 2
+
+	var fixedRows []string
+	for i := 0; i < len(cards); i += 2 {
+		left := renderCard(cards[i], cw)
+		if i+1 >= len(cards) {
+			fixedRows = append(fixedRows, left)
+			continue
+		}
+		right := renderCard(cards[i+1], cw)
+		fixedRows = append(fixedRows, lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right))
+	}
+	var spacedFixedRows []string
+	for i, row := range fixedRows {
+		if i > 0 {
+			spacedFixedRows = append(spacedFixedRows, "")
+		}
+		spacedFixedRows = append(spacedFixedRows, row)
+	}
+	fixed := lipgloss.JoinVertical(lipgloss.Left, spacedFixedRows...)
+	balanced := renderTwoColumns(cards, width)
+
+	if got, limit := lipgloss.Height(balanced), lipgloss.Height(fixed); got > limit {
+		t.Fatalf("balanced layout grew from %d to %d lines:\n%s", limit, got, stripANSI(balanced))
+	}
+}
+
 func TestRenderTwoColumnsInsertsRowGap(t *testing.T) {
 	cards := []cardData{
 		{icon: iconCPU, title: "CPU", lines: []string{"Total  ok"}},
