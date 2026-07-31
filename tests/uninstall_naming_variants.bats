@@ -140,6 +140,22 @@ setup() {
     [[ ! "$result" =~ Library/Containers/com.tencent.otherapp.Helper ]]
 }
 
+@test "find_app_files handles the first derived bundle match under bash 3.2 set -u" {
+    mkdir -p "$HOME/Library/Containers/com.example.Widget.Helper"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/log.sh"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
+find_app_files "com.example.Widget" "Widget"
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"Library/Containers/com.example.Widget.Helper"* ]] || return 1
+    [[ "$output" != *"unbound variable"* ]]
+}
+
 @test "find_app_files detects vendor-nested Application Support directories" {
     mkdir -p "$HOME/Library/Application Support/Avid/Sibelius"
     mkdir -p "$HOME/Library/Application Support/OtherVendor/Sibelius"
