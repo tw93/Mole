@@ -283,6 +283,83 @@ EOF
 	[[ "$output" == *"APP_METADATA_FAILURE_CLOSED"* ]] || return 1
 }
 
+@test "scan_installed_apps skips a bundle on the app-scan skip list instead of failing closed (#1339)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+rm -f "$HOME/.cache/mole/installed_apps_cache"
+
+# Same "unreadable bundle" fixture as the fails-closed test above, but this
+# time the broken app is on the skip list -- e.g. a Mac Catalyst / wrapped
+# iOS bundle whose Info.plist lives under Wrapper/*.app instead of
+# Contents/, which is a real, reproducible case (#1339), not just a
+# synthetic one; this fixture just exercises the same "unreadable" path.
+mkdir -p "$HOME/Applications/FakeApp.app/Contents"
+cat > "$HOME/Applications/FakeApp.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>FakeApp</string>
+</dict>
+</plist>
+PLIST
+
+mkdir -p "$HOME/Applications/GoodApp.app/Contents"
+cat > "$HOME/Applications/GoodApp.app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.GoodApp</string>
+</dict>
+</plist>
+PLIST
+
+add_app_scan_skip "FakeApp.app"
+
+# Scope the scan to just this fixture directory: the real /Applications on
+# whatever machine runs this suite may contain its own unreadable bundles
+# (that's the whole bug this feature works around), which would otherwise
+# make this test flaky depending on what's installed on the CI box.
+MOLE_APP_SCAN_DIRS_OVERRIDE=("$HOME/Applications")
+
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+grep -Fxq "com.example.GoodApp" "$HOME/installed.txt" || exit 1
+! grep -q "FakeApp" "$HOME/installed.txt" || exit 1
+printf 'APP_SCAN_SKIP_HONORED\n'
+EOF
+
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"APP_SCAN_SKIP_HONORED"* ]] || return 1
+}
+
+@test "add_app_scan_skip is idempotent and is_app_scan_skipped matches by basename only" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+add_app_scan_skip "SecuritySpy.app"
+add_app_scan_skip "SecuritySpy.app"
+[[ "$(grep -c '^SecuritySpy\.app$' "$APP_SCAN_SKIP_CONFIG")" -eq 1 ]] || exit 1
+
+load_app_scan_skip_list
+is_app_scan_skipped "/Applications/SecuritySpy.app" || exit 1
+is_app_scan_skipped "/Applications/Other.app" && exit 1
+
+printf 'SKIP_LIST_OK\n'
+EOF
+
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"SKIP_LIST_OK"* ]] || return 1
+}
+
 @test "scan_installed_apps fails closed when every running-app probe fails" {
     local scan_home="$HOME/running-probe-failure"
     rm -rf "$scan_home"

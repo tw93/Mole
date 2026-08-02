@@ -9,6 +9,9 @@ show_clean_help() {
     echo "  --dry-run, -n     Preview cleanup without making changes"
     echo "  --external PATH   Clean OS metadata from a mounted external volume"
     echo "  --whitelist       Manage protected paths"
+    echo "  --skip-app NAME   Exclude an app (e.g. \"SecuritySpy.app\") from installed-app"
+    echo "                    scanning, so an unreadable bundle doesn't skip App leftovers"
+    echo "                    cleanup for every other app (~/.config/mole/app_scan_skip)"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"
 }

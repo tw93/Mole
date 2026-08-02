@@ -1973,6 +1973,20 @@ main() {
                 manage_whitelist "clean"
                 exit 0
                 ;;
+            "--skip-app")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing app name for --skip-app (e.g. \"SecuritySpy.app\")" >&2
+                    exit 1
+                fi
+                if ! add_app_scan_skip "$1"; then
+                    echo "Failed to update $APP_SCAN_SKIP_CONFIG" >&2
+                    exit 1
+                fi
+                echo "Added \"$1\" to the app-scan skip list ($APP_SCAN_SKIP_CONFIG)."
+                echo "It will be excluded from installed-app scanning on the next 'mo clean' run."
+                exit 0
+                ;;
             "--select" | "--categories" | "--exclude")
                 echo "mo clean $1 was removed in this release." >&2
                 echo "Use 'mo clean --dry-run' to preview cleanup and 'mo clean --whitelist' to protect paths." >&2

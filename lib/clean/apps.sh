@@ -5,6 +5,80 @@ set -euo pipefail
 readonly ORPHAN_AGE_THRESHOLD=${ORPHAN_AGE_THRESHOLD:-${MOLE_ORPHAN_AGE_DAYS:-30}}
 readonly CLAUDE_VM_ORPHAN_AGE_THRESHOLD=${MOLE_CLAUDE_VM_ORPHAN_AGE_DAYS:-7}
 readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v3:complete"
+
+# User-configurable list of app bundles to exclude from the installed-app
+# scan below. One "*.app" basename per line, "#" comments allowed. Populated
+# via "mo clean --skip-app <name>" or by hand.
+#
+# Why this exists: some bundles (Mac Catalyst / wrapped iOS apps on Apple
+# Silicon, e.g. apps that ship an "Info.plist" under Wrapper/*.app instead of
+# the usual Contents/Info.plist) can't be read by the scan below. Because we
+# can't tell "unreadable" apart from "this app might be an orphan we should
+# feel free to delete", a single such bundle used to abort the *entire*
+# installed-app scan for every /Applications entry, which in turn skipped
+# "App leftovers" cleanup entirely (see #1339). Letting the user explicitly
+# name a known-fine bundle here lets the scan skip just that one app and
+# keep trusting the rest of the results, without weakening orphan detection
+# for anything the user hasn't vouched for.
+readonly APP_SCAN_SKIP_CONFIG="$HOME/.config/mole/app_scan_skip"
+
+# Populate the (bash 3.2 compatible, no associative arrays) skip list from
+# APP_SCAN_SKIP_CONFIG into the newline-delimited _MOLE_APP_SCAN_SKIP_LIST
+# global. Safe to call repeatedly; each call re-reads the config so
+# "mo clean --skip-app" changes take effect on the next run without needing
+# a fresh shell.
+_MOLE_APP_SCAN_SKIP_LIST=""
+load_app_scan_skip_list() {
+    _MOLE_APP_SCAN_SKIP_LIST=""
+    [[ -f "$APP_SCAN_SKIP_CONFIG" ]] || return 0
+    local line
+    while IFS= read -r line; do
+        # shellcheck disable=SC2295
+        line="${line#"${line%%[![:space:]]*}"}"
+        # shellcheck disable=SC2295
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        _MOLE_APP_SCAN_SKIP_LIST="${_MOLE_APP_SCAN_SKIP_LIST}${_MOLE_APP_SCAN_SKIP_LIST:+$'\n'}${line}"
+    done < "$APP_SCAN_SKIP_CONFIG"
+}
+
+# Usage: is_app_scan_skipped "/Applications/SecuritySpy.app"
+# Matches on the bundle's basename (e.g. "SecuritySpy.app"), exact string
+# only, same "no glob expansion" safety rule the whitelist matcher uses.
+is_app_scan_skipped() {
+    local app_path="$1"
+    [[ -n "$_MOLE_APP_SCAN_SKIP_LIST" ]] || return 1
+    local app_name
+    app_name=$(basename -- "$app_path")
+    local _nl=$'\n'
+    case "${_nl}${_MOLE_APP_SCAN_SKIP_LIST}${_nl}" in
+        *"${_nl}${app_name}${_nl}"*) return 0 ;;
+    esac
+    return 1
+}
+
+# Usage: add_app_scan_skip "SecuritySpy.app"
+# Appends to APP_SCAN_SKIP_CONFIG if not already present. Returns 0 whether
+# or not the entry was newly added (idempotent), 1 only on a write failure.
+add_app_scan_skip() {
+    local app_name="$1"
+    [[ -n "$app_name" ]] || return 1
+    ensure_user_file "$APP_SCAN_SKIP_CONFIG"
+    load_app_scan_skip_list
+    if is_app_scan_skipped "$app_name"; then
+        return 0
+    fi
+    if [[ ! -s "$APP_SCAN_SKIP_CONFIG" ]]; then
+        {
+            echo "# Mole app-scan skip list"
+            echo "# App bundles listed here (one *.app basename per line) are excluded"
+            echo "# from the installed-app scan that 'mo clean' uses for orphan detection,"
+            echo "# so an unreadable Info.plist in one of these no longer aborts scanning"
+            echo "# every other app. Add with: mo clean --skip-app <name>"
+        } >> "$APP_SCAN_SKIP_CONFIG"
+    fi
+    echo "$app_name" >> "$APP_SCAN_SKIP_CONFIG"
+}
 # Args: $1=target_dir, $2=label
 clean_ds_store_tree() {
     local target="$1"
@@ -182,16 +256,30 @@ scan_installed_apps() {
         debug_log "Failed to initialize installed application scan output"
         return 1
     fi
-    local -a app_dirs=(
-        "/Applications"
-        "/System/Applications"
-        "$HOME/Applications"
-        # Homebrew Cask locations
-        "/opt/homebrew/Caskroom"
-        "/usr/local/Caskroom"
-        # Setapp applications
-        "$HOME/Library/Application Support/Setapp/Applications"
-    )
+    # Loaded once here (not inside each per-directory subshell below): forked
+    # subshells inherit the parent's variables at fork time, so this is
+    # visible to all of them without re-reading the config file per app.
+    load_app_scan_skip_list
+    # Overridable from tests (same convention as
+    # _MOLE_BUNDLE_RESOLVER_APP_ROOTS in bundle_resolver.sh), so a test can
+    # exercise this function without every real bundle under the actual
+    # /Applications on the machine running the suite needing to have a
+    # readable Info.plist.
+    local -a app_dirs=()
+    if [[ -n "${MOLE_APP_SCAN_DIRS_OVERRIDE+x}" && ${#MOLE_APP_SCAN_DIRS_OVERRIDE[@]} -gt 0 ]]; then
+        app_dirs=("${MOLE_APP_SCAN_DIRS_OVERRIDE[@]}")
+    else
+        app_dirs=(
+            "/Applications"
+            "/System/Applications"
+            "$HOME/Applications"
+            # Homebrew Cask locations
+            "/opt/homebrew/Caskroom"
+            "/usr/local/Caskroom"
+            # Setapp applications
+            "$HOME/Library/Application Support/Setapp/Applications"
+        )
+    fi
     # Temp dir avoids write contention across parallel scans. The temp registry
     # owns cleanup because safe_remove intentionally rejects root's private tree.
     local scan_tmp_dir
@@ -217,6 +305,20 @@ scan_installed_apps() {
                 if [[ ! -f "$plist_path" || ! -r "$plist_path" ]] ||
                     ! bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist_path" 2> /dev/null) ||
                     [[ -z "$bundle_id" || "$bundle_id" == "missing value" ]]; then
+                    # A bundle we can't read normally means we can't trust the
+                    # installed-app list, so the whole scan aborts (better to
+                    # skip orphan cleanup than risk deleting a live app's data
+                    # off a false "not installed" read). But some apps are
+                    # unreadable this way for reasons that have nothing to do
+                    # with whether they're installed -- e.g. Mac Catalyst /
+                    # wrapped iOS bundles keep Info.plist under Wrapper/*.app
+                    # instead of Contents/. The user can explicitly vouch for
+                    # those via "mo clean --skip-app", in which case we just
+                    # leave this one bundle out of the list instead of giving
+                    # up on scanning every other app too (#1339).
+                    if is_app_scan_skipped "$app_path"; then
+                        continue
+                    fi
                     printf '%s\n' "$app_path" >> "$scan_tmp_dir/scan_failures.list"
                     exit 1
                 fi
