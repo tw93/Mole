@@ -2660,3 +2660,42 @@ EOF
 		return 1
 	}
 }
+
+@test "installed-app scan skips an iOS app with a dangling WrappedBundle symlink" {
+  # This was found when mole tried to scan AudioCopy.app. It has no
+  # Contents/ and WarpBundle is a symlink -> Wrapper/<name>.app. Great...
+  # but Wrapper/ does not exist!
+  # No plist can be found anywhere, so the bundle has no bundle ID and cannot
+  # own any bundle-ID-named leftovers. The scan should skip it (not fail closed,
+  # and skip scanning altogether).
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+rm -f "$HOME/.cache/mole/installed_apps_cache"
+
+apps="$HOME/Applications"
+rm -rf "$apps"
+mkdir -p "$apps/Good.app/Contents"
+mkdir -p "$apps/AudioCopy.app"
+# WrappedBundle symlink pointing to a Wrapper/ path that does not exist.
+ln -s "Wrapper/AudioCopy.app" "$apps/AudioCopy.app/WrappedBundle"
+
+plist() {
+	cat > "$1" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>$2</dict></plist>
+PLIST
+}
+plist "$apps/Good.app/Contents/Info.plist" '<key>CFBundleIdentifier</key><string>com.example.good</string>'
+
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt" || { echo "SCAN_FAILED"; exit 1; }
+grep -Fxq "com.example.good" "$HOME/installed.txt" || { echo "MISSING_GOOD"; exit 1; }
+EOF
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+}

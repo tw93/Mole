@@ -245,10 +245,14 @@ scan_installed_apps() {
                     # Vendor uninstallers and Steam launchers ship those, and a
                     # bundle with no id owns no bundle-id-named leftovers, so
                     # leaving it out of the list cannot invent an orphan.
+                    # No plist at all (absent Contents/ and no Wrapper/ found,
+                    # e.g. an iOS app whose WrappedBundle symlink is dangling)
+                    # is the same: the bundle cannot own any bundle-id-named
+                    # leftovers and cannot be mistaken for one.
                     # Anything that will not parse still fails the scan closed,
                     # because there the id may exist and simply be unreadable,
                     # which is what would turn a live app's data into an orphan.
-                    if [[ -f "$plist_path" ]] && /usr/bin/plutil -lint "$plist_path" > /dev/null 2>&1; then
+                    if [[ ! -f "$plist_path" ]] || /usr/bin/plutil -lint "$plist_path" > /dev/null 2>&1; then
                         continue
                     fi
                     printf '%s\n' "$app_path" >> "$scan_tmp_dir/scan_failures.list"
