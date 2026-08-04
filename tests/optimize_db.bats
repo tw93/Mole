@@ -42,6 +42,7 @@ create_logical_file() {
 set -euo pipefail
 source "\$PROJECT_ROOT/lib/core/common.sh"
 source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
+sw_vers() { echo "14.0"; }
 getconf() { echo "$tmp_dir"; }
 execute_optimization notification_cleanup
 EOF
@@ -62,6 +63,7 @@ EOF
 set -euo pipefail
 source "\$PROJECT_ROOT/lib/core/common.sh"
 source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
+sw_vers() { echo "14.0"; }
 getconf() { echo "$tmp_dir"; }
 sqlite3() { return 1; }
 execute_optimization notification_cleanup
@@ -70,6 +72,99 @@ EOF
 	rm -rf "$tmp_dir"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"busy or locked"* ]]
+}
+
+@test "opt_notification_cleanup uses the group-container database on macOS 15+" {
+	local tmp_dir group_db
+	tmp_dir=$(mktemp -d)
+	group_db="$tmp_dir/Library/Group Containers/group.com.apple.usernoted/db2/db"
+	mkdir -p "$(dirname "$group_db")"
+	create_logical_file "$group_db" 1k
+
+	run env HOME="$tmp_dir" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 /bin/bash --noprofile --norc <<EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
+sw_vers() { echo "15.0"; }
+getconf() { echo "$tmp_dir/runtime"; }
+execute_optimization notification_cleanup
+EOF
+
+	rm -rf "$tmp_dir"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"healthy"* ]]
+	[[ "$output" == *"Database: $group_db"* ]]
+}
+
+@test "opt_notification_cleanup falls back to the legacy database below macOS 15" {
+	local tmp_dir legacy_db
+	tmp_dir=$(mktemp -d)
+	legacy_db="$tmp_dir/runtime/com.apple.notificationcenter/db2/db"
+	mkdir -p "$(dirname "$legacy_db")"
+	create_logical_file "$legacy_db" 1k
+
+	run env HOME="$tmp_dir" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 /bin/bash --noprofile --norc <<EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
+sw_vers() { echo "14.0"; }
+getconf() { echo "$tmp_dir/runtime"; }
+execute_optimization notification_cleanup
+EOF
+
+	rm -rf "$tmp_dir"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"healthy"* ]]
+	[[ "$output" == *"Database: $legacy_db"* ]]
+}
+
+@test "opt_notification_cleanup reports attempted paths as unavailable when no database exists" {
+	local tmp_dir
+	tmp_dir=$(mktemp -d)
+
+	run env HOME="$tmp_dir" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
+sw_vers() { echo "15.0"; }
+getconf() { echo "$tmp_dir/runtime"; }
+execute_optimization notification_cleanup
+[[ "\$(optimize_outcome_count unavailable)" == "1" ]] || exit 1
+EOF
+
+	rm -rf "$tmp_dir"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Notification Center database not found"* ]]
+	[[ "$output" == *"group.com.apple.usernoted/db2/db"* ]]
+	[[ "$output" == *"com.apple.notificationcenter/db2/db"* ]]
+}
+
+@test "opt_notification_cleanup skips cleanup when the record table is missing" {
+	local tmp_dir
+	tmp_dir=$(mktemp -d)
+	mkdir -p "$tmp_dir/Library/Group Containers/group.com.apple.usernoted/db2"
+	create_logical_file "$tmp_dir/Library/Group Containers/group.com.apple.usernoted/db2/db" 60m
+
+	run env HOME="$tmp_dir" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/lib/optimize/tasks.sh"
+sw_vers() { echo "15.0"; }
+getconf() { echo "$tmp_dir/runtime"; }
+sqlite3() {
+	if [[ "\$2" == *sqlite_master* ]]; then
+		echo ""
+		return 0
+	fi
+	return 1
+}
+execute_optimization notification_cleanup
+[[ "\$(optimize_outcome_count failed)" == "1" ]] || exit 1
+EOF
+
+	rm -rf "$tmp_dir"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"unexpected database schema"* ]]
 }
 
 @test "opt_coreduet_cleanup reports healthy when db is small" {

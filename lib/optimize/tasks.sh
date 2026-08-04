@@ -1419,14 +1419,53 @@ opt_shared_file_list_repair() {
 
 # Clean old delivered notifications from NotificationCenter database.
 opt_notification_cleanup() {
-    local nc_db_dir
-    nc_db_dir="$(getconf DARWIN_USER_DIR 2> /dev/null || true)/com.apple.notificationcenter/db2"
-    local nc_db="$nc_db_dir/db"
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        debug_operation_start "Notification Center Cleanup" "Remove delivered notifications older than 30 days from the active NotificationCenter database"
+        debug_operation_detail "Method" "DELETE + VACUUM on the active SQLite database (group-container path on macOS 15+)"
+        debug_risk_level "LOW" "Only delivered notifications older than 30 days are removed"
+    fi
 
-    if [[ ! -f "$nc_db" ]]; then
-        opt_msg "Notification Center database not found"
-        optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_UNCHANGED"
+    # The notification database moved in macOS 15 to the usernoted group
+    # container; the Darwin-user-directory path only holds stale files there.
+    local os_major=""
+    os_major=$(sw_vers -productVersion 2> /dev/null | cut -d. -f1 || true)
+
+    local group_db="$HOME/Library/Group Containers/group.com.apple.usernoted/db2/db"
+    local legacy_dir=""
+    local darwin_user_dir=""
+    darwin_user_dir=$(getconf DARWIN_USER_DIR 2> /dev/null || true)
+    if [[ -n "$darwin_user_dir" ]]; then
+        legacy_dir="$darwin_user_dir/com.apple.notificationcenter/db2/db"
+    fi
+
+    local -a db_candidates=()
+    if [[ "$os_major" =~ ^[0-9]+$ && "$os_major" -ge 15 ]]; then
+        db_candidates=("$group_db")
+        [[ -n "$legacy_dir" ]] && db_candidates+=("$legacy_dir")
+    else
+        [[ -n "$legacy_dir" ]] && db_candidates+=("$legacy_dir")
+        db_candidates+=("$group_db")
+    fi
+
+    local nc_db=""
+    local -a attempted_paths=()
+    local candidate=""
+    for candidate in "${db_candidates[@]}"; do
+        attempted_paths+=("$candidate")
+        if [[ -f "$candidate" ]]; then
+            nc_db="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$nc_db" ]]; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Notification Center database not found (tried: ${attempted_paths[*]})"
+        optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_UNAVAILABLE"
         return 0
+    fi
+
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        debug_operation_detail "Database" "$nc_db"
     fi
 
     local db_size=""
@@ -1434,6 +1473,10 @@ opt_notification_cleanup() {
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to inspect Notification Center database size"
         optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_FAILED"
         return 0
+    fi
+
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        debug_operation_detail "Size" "$(bytes_to_human $((db_size * 1024)))"
     fi
 
     # Only clean if database exceeds 50MB (51200 KB)
@@ -1445,6 +1488,22 @@ opt_notification_cleanup() {
 
     if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
         if command -v sqlite3 > /dev/null 2>&1; then
+            local schema_probe_rc=0
+            local record_table=""
+            record_table=$(sqlite3 "$nc_db" \
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='record' LIMIT 1;" \
+                2> /dev/null) || schema_probe_rc=$?
+            if [[ $schema_probe_rc -ne 0 ]]; then
+                echo -e "  ${YELLOW}${ICON_WARNING}${NC} Notification Center cleanup skipped (database busy or locked)"
+                optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_FAILED"
+                return 0
+            fi
+            if [[ "$record_table" != "record" ]]; then
+                echo -e "  ${YELLOW}${ICON_WARNING}${NC} Notification Center cleanup skipped (unexpected database schema)"
+                optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_FAILED"
+                return 0
+            fi
+
             local sql_ok=0
             sqlite3 "$nc_db" \
                 "DELETE FROM record WHERE delivered_date < strftime('%s','now','-30 days'); VACUUM;" \
