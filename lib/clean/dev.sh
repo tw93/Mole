@@ -362,11 +362,35 @@ clean_dev_mise() {
 
     safe_clean "$mise_cache_path"/* "mise cache"
 }
-# Rust/cargo caches.
+# Rust/cargo caches. CARGO_HOME and RUSTUP_HOME are honored when a setup
+# (mise, rustup-wrapper shells, etc.) relocates the homes outside ~/.cargo
+# and ~/.rustup; unsafe roots are rejected instead of swept.
 clean_dev_rust() {
-    safe_clean ~/.cargo/registry/cache/* "Rust cargo cache"
-    safe_clean ~/.cargo/git/* "Cargo git cache"
-    safe_clean ~/.rustup/downloads/* "Rust downloads cache"
+    local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+    local rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+    [[ -n "$cargo_home" && "$cargo_home" == /* ]] || {
+        debug_log "Skipping unsafe Cargo home: $cargo_home"
+        return 0
+    }
+    [[ -n "$rustup_home" && "$rustup_home" == /* ]] || {
+        debug_log "Skipping unsafe Rustup home: $rustup_home"
+        return 0
+    }
+    case "$cargo_home" in
+        / | "$HOME" | "$HOME/" | "$HOME/Library" | "$HOME/Library/")
+            debug_log "Skipping unsafe Cargo home: $cargo_home"
+            return 0
+            ;;
+    esac
+    case "$rustup_home" in
+        / | "$HOME" | "$HOME/" | "$HOME/Library" | "$HOME/Library/")
+            debug_log "Skipping unsafe Rustup home: $rustup_home"
+            return 0
+            ;;
+    esac
+    safe_clean "$cargo_home/registry/cache/"* "Rust cargo cache"
+    safe_clean "$cargo_home/git/"* "Cargo git cache"
+    safe_clean "$rustup_home/downloads/"* "Rust downloads cache"
 }
 # Ruby/gem ecosystem caches (not installed versions).
 clean_dev_ruby() {
@@ -409,9 +433,11 @@ check_multiple_versions() {
 # Check for multiple Rust toolchains.
 check_rust_toolchains() {
     command -v rustup > /dev/null 2>&1 || return 0
+    local rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+    [[ -n "$rustup_home" && "$rustup_home" == /* ]] || return 0
 
     check_multiple_versions \
-        "$HOME/.rustup/toolchains" \
+        "$rustup_home/toolchains" \
         "Rust toolchains" \
         "rustup toolchain list"
 }

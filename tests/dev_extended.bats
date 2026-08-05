@@ -1541,6 +1541,13 @@ EOF
     [[ "$output" != *"Rust toolchains"* ]]
 }
 
+@test "check_rust_toolchains follows RUSTUP_HOME" {
+    run /bin/bash -c 'HOME=$(mktemp -d) && mkdir -p "$HOME/.local/share/mise/rustup/toolchains"/{stable,nightly,1.75.0}-aarch64-apple-darwin && source "$0" && note_activity() { :; } && NC="" && GREEN="" && GRAY="" && YELLOW="" && ICON_REVIEW="☞" && rustup() { :; } && export -f rustup && RUSTUP_HOME="$HOME/.local/share/mise/rustup" check_rust_toolchains' "$PROJECT_ROOT/lib/clean/dev.sh"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Rust toolchains · 3 found"* ]]
+}
+
 @test "clean_dev_jetbrains_toolbox cleans old versions and bypasses toolbox whitelist" {
     local toolbox_channel="$HOME/Library/Application Support/JetBrains/Toolbox/apps/IDEA/ch-0"
     mkdir -p "$toolbox_channel/241.1" "$toolbox_channel/241.2" "$toolbox_channel/241.3"

@@ -1204,6 +1204,61 @@ EOF
     [[ "$output" != *".local/share/mise"* ]]
 }
 
+@test "clean_dev_rust follows CARGO_HOME and RUSTUP_HOME" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CARGO_HOME="$HOME/.local/share/mise/cargo" RUSTUP_HOME="$HOME/.local/share/mise/rustup" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "$2|$1"; }
+clean_dev_rust
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Rust cargo cache|$HOME/.local/share/mise/cargo/registry/cache/*"* ]] || return 1
+    [[ "$output" == *"Cargo git cache|$HOME/.local/share/mise/cargo/git/*"* ]] || return 1
+    [[ "$output" == *"Rust downloads cache|$HOME/.local/share/mise/rustup/downloads/*"* ]] || return 1
+    [[ "$output" != *"$HOME/.cargo"* ]]
+}
+
+@test "clean_dev_rust falls back to default homes" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "$2|$1"; }
+clean_dev_rust
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Rust cargo cache|$HOME/.cargo/registry/cache/*"* ]] || return 1
+    [[ "$output" == *"Cargo git cache|$HOME/.cargo/git/*"* ]] || return 1
+    [[ "$output" == *"Rust downloads cache|$HOME/.rustup/downloads/*"* ]] || return 1
+}
+
+@test "clean_dev_rust rejects unsafe custom homes" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CARGO_HOME="/" RUSTUP_HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "UNEXPECTED_SAFE_CLEAN|$2|$1"; }
+clean_dev_rust
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UNEXPECTED_SAFE_CLEAN"* ]] || return 1
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CARGO_HOME="relative/cargo" RUSTUP_HOME="relative/rustup" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { echo "UNEXPECTED_SAFE_CLEAN|$2|$1"; }
+clean_dev_rust
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UNEXPECTED_SAFE_CLEAN"* ]] || return 1
+}
+
 @test "clean_dev_other_langs cleans configured composer cache paths" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" COMPOSER_HOME="$HOME/.config/composer-home" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
