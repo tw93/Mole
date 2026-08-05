@@ -1071,8 +1071,12 @@ _safe_clean_impl() {
             run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
                 stat -f%z "${existing_paths[@]}" < /dev/null \
                 > "$bulk_stat_file" 2> /dev/null || bulk_stat_rc=$?
-            if [[ $bulk_stat_rc -eq 124 || $bulk_stat_rc -ge 128 ]]; then
+            if [[ $bulk_stat_rc -ge 128 ]]; then
                 cleanup_interrupt_rc=$bulk_stat_rc
+            elif [[ $bulk_stat_rc -eq 124 ]]; then
+                # The size is only used for the freed total; a stalled stat
+                # must not cancel the delete set. Sizes are already 0 here.
+                MOLE_CLEAN_SIZING_TIMEOUTS=$((${MOLE_CLEAN_SIZING_TIMEOUTS:-0} + 1))
             fi
             while IFS= read -r _bytes; do
                 [[ "$_bytes" =~ ^[0-9]+$ ]] || _bytes=0
@@ -1094,9 +1098,11 @@ _safe_clean_impl() {
                     local _dsize_rc=0
                     _dsize=$(get_cleanup_path_size_kb \
                         "${existing_paths[$idx]}") || _dsize_rc=$?
-                    if [[ $_dsize_rc -eq 124 || $_dsize_rc -ge 128 ]]; then
+                    if [[ $_dsize_rc -ge 128 ]]; then
                         cleanup_interrupt_rc=$_dsize_rc
                         break
+                    elif [[ $_dsize_rc -eq 124 ]]; then
+                        MOLE_CLEAN_SIZING_TIMEOUTS=$((${MOLE_CLEAN_SIZING_TIMEOUTS:-0} + 1))
                     fi
                     [[ "$_dsize" =~ ^[0-9]+$ ]] || _dsize=0
                     if [[ "$_dsize" -gt 0 ]]; then
@@ -1118,16 +1124,22 @@ _safe_clean_impl() {
                 for path in "${existing_paths[@]}"; do
                     (
                         local size=0 size_rc=0
+                        local size_unknown=0
                         size=$(get_cleanup_path_size_kb "$path") || size_rc=$?
-                        if [[ $size_rc -eq 124 || $size_rc -ge 128 ]]; then
+                        if [[ $size_rc -ge 128 ]]; then
                             exit "$size_rc"
+                        fi
+                        if [[ $size_rc -eq 124 ]]; then
+                            # Sizing budget exhausted: keep the item in the
+                            # delete set and report its size as 0.
+                            size_unknown=1
                         fi
                         [[ ! "$size" =~ ^[0-9]+$ ]] && size=0
                         local tmp_file="$temp_dir/result_${idx}.$$"
                         if [[ "$size" -gt 0 ]]; then
-                            echo "$size 1" > "$tmp_file"
+                            echo "$size 1 $size_unknown" > "$tmp_file"
                         else
-                            echo "0 0" > "$tmp_file"
+                            echo "0 0 $size_unknown" > "$tmp_file"
                         fi
                         mv "$tmp_file" "$temp_dir/result_${idx}" 2> /dev/null || true
                     ) < /dev/null &
@@ -1137,7 +1149,7 @@ _safe_clean_impl() {
                     if ((${#pids[@]} >= MOLE_MAX_PARALLEL_JOBS)); then
                         local wait_rc=0
                         wait "${pids[0]}" 2> /dev/null || wait_rc=$?
-                        if [[ $wait_rc -eq 124 || $wait_rc -ge 128 ]]; then
+                        if [[ $wait_rc -ge 128 ]]; then
                             cleanup_interrupt_rc=$wait_rc
                             break
                         fi
@@ -1155,7 +1167,7 @@ _safe_clean_impl() {
                 for pid in "${pids[@]}"; do
                     local wait_rc=0
                     wait "$pid" 2> /dev/null || wait_rc=$?
-                    if [[ $wait_rc -eq 124 || $wait_rc -ge 128 ]]; then
+                    if [[ $wait_rc -ge 128 ]]; then
                         [[ $cleanup_interrupt_rc -ne 0 ]] || cleanup_interrupt_rc=$wait_rc
                     fi
                     completed=$((completed + 1))
@@ -1166,6 +1178,19 @@ _safe_clean_impl() {
                 done
             fi
         fi
+
+        # Count the items whose size check hit the budget; they were still
+        # cleaned, only the freed total is under-reported.
+        local _t_size=0
+        local _t_count=0
+        local _t_flag=0
+        local _t_file
+        for _t_file in "$temp_dir"/result_*; do
+            [[ -f "$_t_file" ]] || continue
+            _t_flag=0
+            read -r _t_size _t_count _t_flag < "$_t_file" 2> /dev/null || true
+            [[ "$_t_flag" == "1" ]] && MOLE_CLEAN_SIZING_TIMEOUTS=$((${MOLE_CLEAN_SIZING_TIMEOUTS:-0} + 1))
+        done
 
         if [[ $cleanup_interrupt_rc -ne 0 ]]; then
             if [[ "$show_spinner" == "true" || "$show_scan_feedback" == "true" ]]; then
@@ -1192,7 +1217,7 @@ _safe_clean_impl() {
             for path in "${existing_paths[@]}"; do
                 local result_file="$temp_dir/result_${idx}"
                 if [[ -f "$result_file" ]]; then
-                    read -r size count < "$result_file" 2> /dev/null || true
+                    read -r size count size_unknown < "$result_file" 2> /dev/null || true
                     local removed=0
                     local action_rc=0
                     if [[ "$DRY_RUN" != "true" ]]; then
@@ -1289,9 +1314,12 @@ _safe_clean_impl() {
                 local size_kb=0
                 local size_rc=0
                 size_kb=$(get_cleanup_path_size_kb "$path") || size_rc=$?
-                if [[ $size_rc -eq 124 || $size_rc -ge 128 ]]; then
+                if [[ $size_rc -ge 128 ]]; then
                     cleanup_interrupt_rc=$size_rc
                     break
+                elif [[ $size_rc -eq 124 ]]; then
+                    # Sizing budget exhausted: keep cleaning with size 0.
+                    MOLE_CLEAN_SIZING_TIMEOUTS=$((${MOLE_CLEAN_SIZING_TIMEOUTS:-0} + 1))
                 fi
                 [[ ! "$size_kb" =~ ^[0-9]+$ ]] && size_kb=0
 
@@ -1452,6 +1480,8 @@ start_cleanup() {
     export MOLE_CURRENT_COMMAND="clean"
     MOLE_CLEAN_CANCEL_STATUS=0
     export MOLE_CLEAN_CANCEL_STATUS
+    MOLE_CLEAN_SIZING_TIMEOUTS=0
+    export MOLE_CLEAN_SIZING_TIMEOUTS
     log_operation_session_start "clean"
     DRY_RUN_SEEN_IDENTITIES=()
     DRY_RUN_TOTAL_PARTIAL=false
@@ -1958,6 +1988,10 @@ perform_cleanup() {
         fi
     elif [[ "$DRY_RUN" == "true" ]]; then
         publish_clean_preview_file || true
+    fi
+
+    if [[ ${MOLE_CLEAN_SIZING_TIMEOUTS:-0} -gt 0 ]]; then
+        summary_details+=("${GRAY}${ICON_WARNING}${NC} Some items exceeded the ${MOLE_TIMEOUT_DISK_VERIFY_SEC}s size-check budget and were counted as 0, so the total is under-reported. Raise ${GRAY}MOLE_TIMEOUT_DISK_VERIFY_SEC${NC} to measure them.")
     fi
 
     if [[ $had_errexit -eq 1 ]]; then

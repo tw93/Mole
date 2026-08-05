@@ -445,7 +445,7 @@ EOF
     [[ "$output" != *"UNEXPECTED_REMOVE"* ]]
 }
 
-@test "safe_clean propagates a real directory size timeout before deletion" {
+@test "safe_clean treats a real directory size timeout as size-unknown and keeps cleaning" {
     local base="$HOME/safe-clean-real-timeout"
     mkdir -p "$base/candidate"
 
@@ -455,21 +455,69 @@ set -euo pipefail
 source "\$PROJECT_ROOT/bin/clean.sh"
 DRY_RUN=false
 MOLE_CURRENT_COMMAND=clean
+unset MOLE_CLEAN_SIZING_TIMEOUTS
 run_with_timeout() { return 124; }
-safe_remove() { echo "UNEXPECTED_REMOVE:\$1"; return 0; }
+safe_remove() { echo "REMOVE:\$1"; /bin/rm -rf "\$1"; }
 
 rc=0
 safe_clean "$base/candidate" "Timed out directory" || rc=\$?
-printf 'RC=%s CANCEL=%s\n' "\$rc" "\${MOLE_CLEAN_CANCEL_STATUS:-0}"
-[[ -d "$base/candidate" ]]
+printf 'RC=%s CANCEL=%s TIMEOUTS=%s\n' "\$rc" "\${MOLE_CLEAN_CANCEL_STATUS:-0}" "\${MOLE_CLEAN_SIZING_TIMEOUTS:-0}"
+[[ ! -e "$base/candidate" ]]
 EOF
 
     [ "$status" -eq 0 ] || {
         echo "$output"
         return 1
     }
-    [[ "$output" == *"RC=124 CANCEL=124"* ]] || return 1
-    [[ "$output" != *"UNEXPECTED_REMOVE"* ]]
+    [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=1"* ]] || return 1
+    [[ "$output" == *"REMOVE:$base/candidate"* ]] || return 1
+}
+
+@test "safe_clean keeps cleaning when a parallel size worker times out (#1374)" {
+    local base="$HOME/safe_clean_parallel_timeout"
+    mkdir -p "$base/a" "$base/b" "$base/c" "$base/d" "$base/e"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc << EOF
+set -euo pipefail
+source "\$PROJECT_ROOT/lib/core/common.sh"
+source "\$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=false
+MOLE_CURRENT_COMMAND=clean
+MOLE_CLEAN_CANCEL_STATUS=0
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+unset MOLE_CLEAN_SIZING_TIMEOUTS
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+get_cleanup_path_size_kb() {
+    [[ "\$1" == "$base/c" ]] && return 124
+    echo 1
+}
+safe_remove() { echo "REMOVE:\$1"; /bin/rm -rf "\$1"; }
+
+rc=0
+safe_clean "$base/a" "$base/b" "$base/c" "$base/d" "$base/e" \
+    "Timed out size batch" || rc=\$?
+printf 'RC=%s CANCEL=%s TIMEOUTS=%s\n' "\$rc" "\${MOLE_CLEAN_CANCEL_STATUS:-0}" "\${MOLE_CLEAN_SIZING_TIMEOUTS:-0}"
+for path in "$base/a" "$base/b" "$base/c" "$base/d" "$base/e"; do
+    if [[ -d "\$path" ]]; then
+        echo "WRONG: kept \$path"
+        exit 1
+    fi
+done
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=1"* ]] || return 1
+    [[ "$output" == *"REMOVE:$base/c"* ]] || return 1
 }
 
 @test "mo clean --dry-run skips system cleanup in non-interactive mode" {
