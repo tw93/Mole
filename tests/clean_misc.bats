@@ -350,7 +350,9 @@ EOF
 @test "clean_3d_tools calls expected caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
 safe_clean() { echo "$2"; }
 clean_3d_tools
 EOF
@@ -358,6 +360,7 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Blender cache"* ]] || return 1
     [[ "$output" == *"Cinema 4D cache"* ]]
+    [[ "$output" == *"Autodesk cache"* ]] || return 1
 }
 
 @test "clean_gaming_platforms calls expected caches" {

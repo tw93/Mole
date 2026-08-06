@@ -1053,6 +1053,30 @@ EOF
     [[ "$output" == *"cache.bin  # size unknown"* ]] || return 1
 }
 
+@test "mo clean --dry-run never previews a live SQLite database family (#1390)" {
+    local test_home
+    test_home="$(mktemp -d "${BATS_TEST_TMPDIR}/clean-1390-home.XXXXXX")"
+    mkdir -p "$test_home/.config/mole" \
+        "$test_home/Library/Caches/com.autodesk.AcCoreConsole"
+
+    local db="$test_home/Library/Caches/com.autodesk.AcCoreConsole/Cache.db"
+    printf 'cache-db' > "$db"
+    printf 'wal' > "$db-wal"
+    printf 'shm' > "$db-shm"
+
+    # Dry-run must not list the family even though the sweep reaches it: a
+    # live WAL-mode database stays put, and the preview must agree with the
+    # real run so the promised totals are the ones actually reclaimable.
+    # Real-run preservation is pinned at the deletion boundary by
+    # validate_path_for_deletion (tests/core_safe_functions.bats).
+    set_mock_host_toolchains
+    run env HOME="$test_home" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=1 \
+        PATH="$MOCK_TOOLCHAIN_BIN:$PATH" "$PROJECT_ROOT/mole" clean --dry-run
+    [ "$status" -eq 0 ] || return 1
+    [[ "$(grep -cF "Cache.db" "$test_home/.config/mole/clean-list.txt")" -eq 0 ]] || return 1
+    [[ -f "$db" && -f "$db-wal" && -f "$db-shm" ]] || return 1
+}
+
 @test "mo clean honors whitelist entries" {
     mkdir -p "$HOME/Library/Caches/WhitelistedApp"
     echo "keep me" > "$HOME/Library/Caches/WhitelistedApp/data.tmp"

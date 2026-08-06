@@ -338,6 +338,20 @@ record_dry_run_cleanup_target() {
     if declare -f holds_compiled_model_cache > /dev/null 2>&1 && holds_compiled_model_cache "$path" 2> /dev/null; then
         return 1
     fi
+    # Keep preview eligibility identical to real cleanup (#1390 / PR #1391).
+    if declare -f _mole_should_refuse_live_user_cache_path > /dev/null 2>&1 &&
+        _mole_should_refuse_live_user_cache_path "$path"; then
+        return 1
+    fi
+    if declare -f _mole_is_sqlite_database_path > /dev/null 2>&1 &&
+        _mole_is_sqlite_database_path "$path" &&
+        declare -f _mole_sqlite_database_in_use > /dev/null 2>&1; then
+        local sqlite_state=0
+        _mole_sqlite_database_in_use "$path" || sqlite_state=$?
+        if [[ $sqlite_state -eq 0 || $sqlite_state -eq 2 ]]; then
+            return 1
+        fi
+    fi
 
     if [[ -z "${CLEAN_PREVIEW_LEDGER_FILE:-}" || ! -f "$CLEAN_PREVIEW_LEDGER_FILE" ]]; then
         register_dry_run_cleanup_target "$path" || return 1

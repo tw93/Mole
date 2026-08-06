@@ -183,17 +183,34 @@ _mole_user_cache_owner_component() {
     return 0
 }
 
-_mole_is_user_cache_sqlite_family_path() {
-    local base
-    base=$(basename "$1")
+# SQLite main file or -wal / -shm / -journal companion. Case-insensitive so a
+# cache sweep cannot delete a database through a case variant of its name
+# (contributor PR #1391 + main reverse-DNS gate).
+_mole_is_sqlite_database_path() {
+    local restore_nocasematch=false
+    local result=1
+    local path="$1"
+    local base="${path%-wal}"
+    base="${base%-shm}"
+    base="${base%-journal}"
+
+    if ! shopt -q nocasematch; then
+        shopt -s nocasematch
+        restore_nocasematch=true
+    fi
+
     case "$base" in
-        *.db | *.db-wal | *.db-shm | \
-            *.sqlite | *.sqlite-wal | *.sqlite-shm | \
-            *.sqlite3 | *.sqlite3-wal | *.sqlite3-shm)
-            return 0
+        *.db | *.sqlite | *.sqlite3)
+            result=0
             ;;
     esac
-    return 1
+
+    [[ "$restore_nocasematch" == "true" ]] && shopt -u nocasematch
+    return "$result"
+}
+
+_mole_is_user_cache_sqlite_family_path() {
+    _mole_is_sqlite_database_path "$1"
 }
 
 _mole_user_cache_sqlite_main_path() {
@@ -201,8 +218,13 @@ _mole_user_cache_sqlite_main_path() {
     case "$path" in
         *-wal) printf '%s\n' "${path%-wal}" ;;
         *-shm) printf '%s\n' "${path%-shm}" ;;
+        *-journal) printf '%s\n' "${path%-journal}" ;;
         *) printf '%s\n' "$path" ;;
     esac
+}
+
+_mole_sqlite_family_base_path() {
+    _mole_user_cache_sqlite_main_path "$1"
 }
 
 # Tri-state process probe for a reverse-DNS cache owner:
@@ -253,20 +275,44 @@ _mole_user_cache_owner_process_state() {
     return "$state"
 }
 
-_mole_user_cache_sqlite_has_open_handle() {
+# Is the database family live? 0 = in use, 1 = idle, 2 = could not tell.
+# WAL-mode -shm only exists while at least one connection is open (PR #1391).
+_mole_sqlite_database_in_use() {
     local path="$1"
+    local base
+    base=$(_mole_sqlite_family_base_path "$path")
+
+    if [[ -f "${base}-shm" ]]; then
+        return 0
+    fi
+
     command -v lsof > /dev/null 2>&1 || return 2
 
-    local main_db
-    main_db=$(_mole_user_cache_sqlite_main_path "$path")
     local candidate
-    for candidate in "$main_db" "${main_db}-wal" "${main_db}-shm"; do
+    for candidate in "$base" "${base}-wal" "${base}-shm"; do
         [[ -e "$candidate" ]] || continue
-        if lsof -F n -- "$candidate" > /dev/null 2>&1; then
+        local lsof_rc=0
+        if declare -f run_with_timeout > /dev/null 2>&1; then
+            run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" lsof -F n -- "$candidate" \
+                > /dev/null 2>&1 || lsof_rc=$?
+        else
+            lsof -F n -- "$candidate" > /dev/null 2>&1 || lsof_rc=$?
+        fi
+        if [[ $lsof_rc -eq 0 ]]; then
             return 0
+        fi
+        if [[ $lsof_rc -ne 1 ]]; then
+            return 2
         fi
     done
     return 1
+}
+
+_mole_user_cache_sqlite_has_open_handle() {
+    local path="$1"
+    local state=0
+    _mole_sqlite_database_in_use "$path" || state=$?
+    return "$state"
 }
 
 # Return 0 when deletion must be refused (live owner or open SQLite handle).
@@ -287,7 +333,7 @@ _mole_should_refuse_live_user_cache_path() {
     fi
 
     # Process is conclusively idle. Still refuse SQLite family members that
-    # another process has open under a different name (rare, fail-closed).
+    # another process has open, or that still expose a WAL -shm (PR #1391).
     if _mole_is_user_cache_sqlite_family_path "$path"; then
         local open_state=0
         _mole_user_cache_sqlite_has_open_handle "$path" || open_state=$?
@@ -295,8 +341,7 @@ _mole_should_refuse_live_user_cache_path() {
             debug_log "Open SQLite user cache handle, keep: $path"
             return 0
         fi
-        # open_state 2 (lsof missing) is not evidence of use once the process
-        # probe already returned idle; allow deletion.
+        # open_state 2 (lsof missing) with no -shm: process probe already idle.
     elif [[ -d "$path" ]]; then
         local candidate open_state
         for candidate in "$path/Cache.db" "$path"/*.db; do
@@ -544,6 +589,24 @@ validate_path_for_deletion() {
     if _mole_is_active_powerlog_database_path "$policy_path"; then
         debug_log "Path validation: active powerlog database kept: $policy_path"
         return 1
+    fi
+
+    # Live reverse-DNS user caches (process + SQLite handle). Covers Autodesk
+    # helpers and every other com.vendor tree under ~/Library/Caches (#1390).
+    if _mole_should_refuse_live_user_cache_path "$policy_path"; then
+        debug_log "Path validation: live user cache kept: $policy_path"
+        return 1
+    fi
+
+    # General SQLite family gate from PR #1391: refuse any in-use database even
+    # outside reverse-DNS cache dirs (fail closed when lsof cannot answer).
+    if _mole_is_sqlite_database_path "$policy_path"; then
+        local sqlite_state=0
+        _mole_sqlite_database_in_use "$policy_path" || sqlite_state=$?
+        if [[ $sqlite_state -eq 0 || $sqlite_state -eq 2 ]]; then
+            debug_log "Path validation: in-use SQLite database kept: $policy_path"
+            return 1
+        fi
     fi
 
     # Endpoint-security/EDR agent caches under var/folders look like ordinary

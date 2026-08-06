@@ -120,6 +120,52 @@ EOF
     [[ "$output" != *"UNEXPECTED_CLEAN"* ]]
 }
 
+@test "clean_3d_tools defers Autodesk cache while Fusion helper is active (#1390)" {
+    mkdir -p "$HOME/Library/Caches/com.autodesk.AcCoreConsole"
+    touch "$HOME/Library/Caches/com.autodesk.AcCoreConsole/Cache.db"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 0; }
+safe_clean() {
+    case "${!#}" in
+        "Autodesk cache") echo "UNEXPECTED_CLEAN:${!#}" ;;
+    esac
+}
+defer_cleanup_family() { echo "DEFER:$1"; }
+clean_3d_tools
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"DEFER:Autodesk Fusion"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_CLEAN"* ]]
+}
+
+@test "clean_3d_tools cleans Autodesk cache when Fusion is not running (#1390)" {
+    mkdir -p "$HOME/Library/Caches/com.autodesk.AcCoreConsole"
+    touch "$HOME/Library/Caches/com.autodesk.AcCoreConsole/Cache.db"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_clean() { echo "CLEAN:${!#}"; }
+clean_3d_tools
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"CLEAN:Autodesk cache"* ]] || return 1
+}
+
 @test "clean_xcode_tools does not defer empty Xcode and Simulator roots" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

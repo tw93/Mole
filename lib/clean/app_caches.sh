@@ -62,6 +62,21 @@ _final_cut_pro_delete_guard_allows() {
     mole_clean_process_guard final_cut_pro_is_running "Final Cut Pro started"
 }
 
+_autodesk_cleanup_process_state() {
+    # Fusion 360 was renamed "Autodesk Fusion"; the app process and the helpers
+    # that keep the cleaned cache databases open (AcCoreConsole, ADPClientService),
+    # which can outlive the main window, all count as running (#1390).
+    mole_pgrep_any \
+        -x "Autodesk Fusion" \
+        -x "Fusion 360" \
+        -x "AcCoreConsole" \
+        -x "ADPClientService"
+}
+
+_autodesk_app_cache_delete_guard_allows() {
+    mole_clean_process_guard _autodesk_cleanup_process_state "Autodesk Fusion running"
+}
+
 _defer_app_cache_guard_family() {
     case "$1" in
         _simulator_app_cache_delete_guard_allows) mole_defer_cleanup_family "Simulator" ;;

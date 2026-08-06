@@ -230,6 +230,51 @@ teardown() {
     [ "$status" -eq 0 ]
 }
 
+@test "validate_path_for_deletion refuses a live SQLite database family (#1390)" {
+    local db="$TEST_DIR/live-sqlite/Cache.db"
+    mkdir -p "$(dirname "$db")"
+    printf 'db' > "$db"
+    printf 'wal' > "$db-wal"
+    printf 'shm' > "$db-shm"
+
+    for path in "$db" "$db-wal" "$db-shm"; do
+        run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '$path'"
+        [ "$status" -eq 1 ] || return 1
+    done
+}
+
+@test "validate_path_for_deletion refuses an SQLite database held open by a process (#1390)" {
+    local db="$TEST_DIR/open-sqlite/Cache.db"
+    mkdir -p "$(dirname "$db")"
+    printf 'db' > "$db"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" db="$db" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+lsof() { return 0; }
+run_with_timeout() { shift; "$@"; }
+validate_path_for_deletion "$db"
+EOF
+
+    [ "$status" -eq 1 ]
+}
+
+@test "validate_path_for_deletion allows an idle SQLite cache database (#1390)" {
+    local db="$TEST_DIR/idle-sqlite/Cache.db"
+    mkdir -p "$(dirname "$db")"
+    printf 'db' > "$db"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" db="$db" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+lsof() { return 1; }
+run_with_timeout() { shift; "$@"; }
+validate_path_for_deletion "$db"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "should_protect_path applies high-risk cleanup denylist" {
     run /bin/bash -c "
         source '$PROJECT_ROOT/lib/core/common.sh'
