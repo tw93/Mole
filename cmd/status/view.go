@@ -752,7 +752,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus) cardData {
 
 		// Add capacity line if available.
 		if b.Capacity > 0 {
-			capacityText := fmt.Sprintf("%5d%%", b.Capacity)
+			capacityText := fmt.Sprintf("%5.1f%%", float64(b.Capacity))
 			if b.Capacity < 70 {
 				capacityText = dangerStyle.Render(capacityText)
 			} else if b.Capacity < 85 {
