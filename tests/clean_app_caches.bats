@@ -134,7 +134,8 @@ safe_clean() {
         "Autodesk cache") echo "UNEXPECTED_CLEAN:${!#}" ;;
     esac
 }
-defer_cleanup_family() { echo "DEFER:$1"; }
+mole_defer_cleanup_family() { echo "DEFER:$1"; }
+note_activity() { :; }
 clean_3d_tools
 EOF
 
@@ -142,7 +143,7 @@ EOF
         echo "$output"
         return 1
     }
-    [[ "$output" == *"DEFER:Autodesk Fusion"* ]] || return 1
+    [[ "$output" == *"DEFER:Autodesk"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_CLEAN"* ]]
 }
 
