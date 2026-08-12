@@ -194,23 +194,12 @@ list_installed_pnpm_binaries() {
     fi
 }
 
-# Prune every distinct pnpm store generation reachable through an already
-# installed matching pnpm binary. Owner command only (plain `store prune`,
-# no --force, no raw directory delete). Dedupes by store path so two
-# binaries that resolve to the same generation run once (issue #1370).
+# Resolve the store path of every usable installed pnpm binary, deduplicated,
+# one pair per line: "<store_path><TAB><pnpm_bin>". Never downloads; unusable
+# binaries are skipped. The binary is the first one that resolved the store,
+# which is the one that owns the prune call for that generation.
 # shellcheck disable=SC2329
-clean_pnpm_stores() {
-    local pnpm_default_store="$HOME/Library/pnpm/store"
-
-    if pnpm_process_blocks_prune; then
-        debug_log "pnpm process running or process state unknown, skipping store prune"
-        if [[ "${DRY_RUN:-false}" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} pnpm cache · would skip (pnpm busy)"
-            note_activity
-        fi
-        return 0
-    fi
-
+list_in_use_pnpm_store_paths() {
     local -a pnpm_bins=()
     local bin_line
     while IFS= read -r bin_line; do
@@ -218,13 +207,7 @@ clean_pnpm_stores() {
         pnpm_bins+=("$bin_line")
     done < <(list_installed_pnpm_binaries)
 
-    if [[ ${#pnpm_bins[@]} -eq 0 ]]; then
-        debug_log "pnpm is unavailable, leaving global pnpm store for manual review: $pnpm_default_store"
-        return 0
-    fi
-
     local -a seen_stores=()
-    local pruned_any=false
     local pnpm_bin store_path store_seen store_entry
     for pnpm_bin in "${pnpm_bins[@]}"; do
         # Usable binary only; never prompt Corepack to download another major.
@@ -257,16 +240,101 @@ clean_pnpm_stores() {
             continue
         fi
         seen_stores+=("$store_path")
+        printf '%s\t%s\n' "$store_path" "$pnpm_bin"
+    done
+}
 
+# Prune every distinct pnpm store generation reachable through an already
+# installed matching pnpm binary. Owner command only (plain `store prune`,
+# no --force, no raw directory delete). Dedupes by store path so two
+# binaries that resolve to the same generation run once (issue #1370).
+# shellcheck disable=SC2329
+clean_pnpm_stores() {
+    local pnpm_default_store="$HOME/Library/pnpm/store"
+
+    if pnpm_process_blocks_prune; then
+        debug_log "pnpm process running or process state unknown, skipping store prune"
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} pnpm cache · would skip (pnpm busy)"
+            note_activity
+        fi
+        return 0
+    fi
+
+    local -a store_pairs=()
+    local pair_line
+    while IFS= read -r pair_line; do
+        [[ -n "$pair_line" ]] || continue
+        store_pairs+=("$pair_line")
+    done < <(list_in_use_pnpm_store_paths)
+
+    if [[ ${#store_pairs[@]} -eq 0 ]]; then
+        debug_log "pnpm is unavailable, leaving global pnpm store for manual review: $pnpm_default_store"
+        return 0
+    fi
+
+    local pair store_path pnpm_bin
+    for pair in "${store_pairs[@]}"; do
+        IFS=$'\t' read -r store_path pnpm_bin <<< "$pair"
         COREPACK_ENABLE_DOWNLOAD_PROMPT=0 clean_tool_cache "pnpm cache" "$store_path" \
             run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" \
             env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$pnpm_bin" store prune
-        pruned_any=true
     done
+}
 
-    if [[ "$pruned_any" != "true" ]]; then
-        debug_log "No pruneable pnpm store resolved from installed binaries"
+# pnpm `store prune` only prunes the generation its own store path points at.
+# Generations left behind by older pnpm majors (for example v3 from pnpm 6-8)
+# are never touched by any prune and stay orphaned after an upgrade. Remove
+# them only on exact evidence: every usable installed pnpm resolves its store
+# path, and cleanup requires at least one resolved generation inside this root
+# so the root's role as a pnpm generation container is proven before any
+# sibling generation is judged orphaned.
+# shellcheck disable=SC2329
+clean_orphaned_pnpm_store_generations() {
+    local pnpm_store_root="$HOME/Library/pnpm/store"
+    [[ -d "$pnpm_store_root" ]] || return 0
+
+    if pnpm_process_blocks_prune; then
+        debug_log "pnpm process running or process state unknown, skipping orphaned store generation cleanup"
+        return 0
     fi
+
+    local -a in_use_paths=()
+    local pair_line in_use
+    while IFS= read -r pair_line; do
+        [[ -n "$pair_line" ]] || continue
+        IFS=$'\t' read -r in_use _ <<< "$pair_line"
+        in_use_paths+=("$in_use")
+    done < <(list_in_use_pnpm_store_paths)
+
+    [[ ${#in_use_paths[@]} -gt 0 ]] || return 0
+
+    # Fail closed without at least one resolved generation under this root:
+    # an unusable or unresolved pnpm may still own a generation here.
+    local root_has_in_use_generation=false
+    for in_use in "${in_use_paths[@]}"; do
+        case "$in_use" in
+            "$pnpm_store_root"/v[0-9]*)
+                root_has_in_use_generation=true
+                ;;
+        esac
+    done
+    [[ "$root_has_in_use_generation" == "true" ]] || return 0
+
+    local generation_path in_use_match generation_name
+    for generation_path in "$pnpm_store_root"/v[0-9]*; do
+        [[ -d "$generation_path" ]] || continue
+        in_use_match=false
+        for in_use in "${in_use_paths[@]}"; do
+            if [[ "$in_use" == "$generation_path" ]]; then
+                in_use_match=true
+                break
+            fi
+        done
+        [[ "$in_use_match" == "true" ]] && continue
+        generation_name="${generation_path##*/}"
+        safe_clean "$generation_path" "Orphaned pnpm store generation ($generation_name)"
+    done
 }
 
 # npm/pnpm/yarn/bun caches.
@@ -315,6 +383,7 @@ clean_dev_npm() {
     fi
 
     clean_pnpm_stores
+    clean_orphaned_pnpm_store_generations
     clean_corepack_cache
     local bun_default_cache="$HOME/.bun/install/cache"
     local bun_cache_path="$bun_default_cache"
