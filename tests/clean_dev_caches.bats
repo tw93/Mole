@@ -158,122 +158,111 @@ EOF
     [[ "$output" != *"UNEXPECTED"* ]] || return 1
 }
 
-@test "clean_orphaned_pnpm_store_generations removes generations no pnpm resolves" {
-    rm -rf "$HOME/Library/pnpm" "$HOME/bin"
-    mkdir -p "$HOME/bin" "$HOME/Library/pnpm/store/v3" "$HOME/Library/pnpm/store/v10" "$HOME/Library/pnpm/store/v11"
-    touch "$HOME/Library/pnpm/store/v3/entry" "$HOME/Library/pnpm/store/v10/entry" "$HOME/Library/pnpm/store/v11/entry"
-    cat > "$HOME/bin/pnpm" <<'SCRIPT'
-#!/bin/bash
-case "${1:-}" in
-    --version) echo "11.17.0"; exit 0 ;;
-    store)
-        if [[ "${2:-}" == "path" ]]; then
-            echo "$HOME/Library/pnpm/store/v11"
-            exit 0
-        fi
-        ;;
-esac
-exit 2
-SCRIPT
-    chmod +x "$HOME/bin/pnpm"
-
-    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
-        /bin/bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/dev.sh"
-start_section_spinner() { :; }
-stop_section_spinner() { :; }
-note_activity() { :; }
-run_with_timeout() { shift; "$@"; }
-pgrep() { return 1; }
-safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
-export -f pgrep
-clean_orphaned_pnpm_store_generations
-EOF
-
-    [ "$status" -eq 0 ] || {
-        echo "$output"
-        return 1
-    }
-    [[ "$output" == *"SAFE_CLEAN:Orphaned pnpm store generation (v3)|$HOME/Library/pnpm/store/v3"* ]] || return 1
-    [[ "$output" == *"SAFE_CLEAN:Orphaned pnpm store generation (v10)|$HOME/Library/pnpm/store/v10"* ]] || return 1
-    [[ "$output" != *"|$HOME/Library/pnpm/store/v11"* ]] || return 1
-}
-
-@test "clean_orphaned_pnpm_store_generations fails closed when no resolved generation lives in root" {
-    rm -rf "$HOME/Library/pnpm" "$HOME/bin" "$HOME/.local"
-    mkdir -p "$HOME/bin" "$HOME/Library/pnpm/store/v10"
-    touch "$HOME/Library/pnpm/store/v10/entry"
-    cat > "$HOME/bin/pnpm" <<'SCRIPT'
-#!/bin/bash
-case "${1:-}" in
-    --version) echo "10.34.5"; exit 0 ;;
-    store)
-        if [[ "${2:-}" == "path" ]]; then
-            echo "$HOME/.local/share/pnpm/store/v10"
-            exit 0
-        fi
-        ;;
-esac
-exit 2
-SCRIPT
-    chmod +x "$HOME/bin/pnpm"
-
-    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
-        /bin/bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/dev.sh"
-start_section_spinner() { :; }
-stop_section_spinner() { :; }
-note_activity() { :; }
-run_with_timeout() { shift; "$@"; }
-pgrep() { return 1; }
-safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
-export -f pgrep
-clean_orphaned_pnpm_store_generations
-EOF
-
-    [ "$status" -eq 0 ] || {
-        echo "$output"
-        return 1
-    }
-    [[ "$output" != *"SAFE_CLEAN"* ]] || return 1
-}
-
-@test "clean_orphaned_pnpm_store_generations skips while pnpm is running" {
-    rm -rf "$HOME/Library/pnpm"
-    mkdir -p "$HOME/Library/pnpm/store/v3"
-    touch "$HOME/Library/pnpm/store/v3/entry"
+@test "report_unmatched_pnpm_store_generations reports only exact generation directories" {
+    rm -rf "${HOME:?}/Library/pnpm"
+    mkdir -p "$HOME/Library/pnpm/store/v3" "$HOME/Library/pnpm/store/v10" \
+        "$HOME/Library/pnpm/store/v11" "$HOME/Library/pnpm/store/v10-backup" \
+        "$HOME/Library/pnpm/store/v1.2" "$HOME/Library/pnpm/store/vendor"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
-start_section_spinner() { :; }
-stop_section_spinner() { :; }
-note_activity() { :; }
 debug_log() { printf 'DEBUG:%s\n' "$*"; }
-pgrep() { return 0; }
-pnpm() { echo "UNEXPECTED"; return 0; }
-export -f pgrep pnpm
-clean_orphaned_pnpm_store_generations
+safe_clean() { printf 'UNEXPECTED_DELETE:%s\n' "$1"; }
+report_unmatched_pnpm_store_generations "$HOME/Library/pnpm/store/v11"
 EOF
 
     [ "$status" -eq 0 ] || {
         echo "$output"
         return 1
     }
-    [[ "$output" == *"skipping orphaned store generation cleanup"* ]] || return 1
-    [[ "$output" != *"SAFE_CLEAN"* ]] || return 1
-    [[ "$output" != *"UNEXPECTED"* ]] || return 1
+    [[ "$output" == *"manual review: $HOME/Library/pnpm/store/v3"* ]] || return 1
+    [[ "$output" == *"manual review: $HOME/Library/pnpm/store/v10"* ]] || return 1
+    [[ "$output" != *"manual review: $HOME/Library/pnpm/store/v11"* ]] || return 1
+    [[ "$output" != *"v10-backup"* ]] || return 1
+    [[ "$output" != *"v1.2"* ]] || return 1
+    [[ "$output" != *"vendor"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_DELETE"* ]] || return 1
 }
 
-@test "clean_orphaned_pnpm_store_generations leaves generations alone without pnpm" {
-    rm -rf "$HOME/Library/pnpm" "$HOME/bin"
-    mkdir -p "$HOME/Library/pnpm/store/v3" "$HOME/Library/pnpm/store/v10"
-    touch "$HOME/Library/pnpm/store/v3/entry" "$HOME/Library/pnpm/store/v10/entry"
+@test "clean_dev_npm does not delete or report generations from an incomplete pnpm snapshot" {
+    rm -rf "${HOME:?}/Library/pnpm" "${HOME:?}/bin" "${HOME:?}/.local"
+    mkdir -p "$HOME/bin" "$HOME/.local/share/mise/installs/pnpm/10.34.5" \
+        "$HOME/Library/pnpm/store/v10" "$HOME/Library/pnpm/store/v11"
+    cat > "$HOME/bin/pnpm" <<'SCRIPT'
+#!/bin/bash
+case "${1:-}" in
+    --version) echo "11.17.0"; exit 0 ;;
+    store)
+        [[ "${2:-}" == "path" ]] && { echo "$HOME/Library/pnpm/store/v11"; exit 0; }
+        [[ "${2:-}" == "prune" ]] && { echo "PRUNE_V11"; exit 0; }
+        ;;
+esac
+exit 2
+SCRIPT
+    cat > "$HOME/.local/share/mise/installs/pnpm/10.34.5/pnpm" <<'SCRIPT'
+#!/bin/bash
+[[ "${1:-}" == "--version" ]] && { echo "10.34.5"; exit 0; }
+# An installed candidate whose store path cannot be resolved makes ownership incomplete.
+exit 2
+SCRIPT
+    chmod +x "$HOME/bin/pnpm" "$HOME/.local/share/mise/installs/pnpm/10.34.5/pnpm"
+
+    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+pgrep() { return 1; }
+safe_clean() { printf 'SAFE_CLEAN:%s|%s\n' "$2" "$1"; }
+clean_tool_cache() {
+    local description="$1"
+    local cache_path="$2"
+    shift 2
+    printf 'CACHE:%s|%s\n' "$description" "$cache_path"
+    "$@"
+}
+export -f pgrep
+clean_dev_npm
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"PRUNE_V11"* ]] || return 1
+    [[ "$output" != *"Orphaned pnpm store"* ]] || return 1
+    [[ "$output" != *"manual review: $HOME/Library/pnpm/store/v10"* ]] || return 1
+}
+
+@test "report_unmatched_pnpm_store_generations requires a resolved generation in the default root" {
+    rm -rf "${HOME:?}/Library/pnpm"
+    mkdir -p "$HOME/Library/pnpm/store/v10"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { printf 'DEBUG:%s\n' "$*"; }
+report_unmatched_pnpm_store_generations "$HOME/.local/share/pnpm/store/v11"
+printf 'COMPLETE\n'
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == "COMPLETE" ]] || return 1
+}
+
+@test "clean_pnpm_stores is quiet under nounset when no pnpm is installed" {
+    rm -rf "${HOME:?}/Library/pnpm" "${HOME:?}/bin" "${HOME:?}/.local"
+    mkdir -p "$HOME/Library/pnpm/store/v3"
 
     run env HOME="$HOME" PATH="/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
         /bin/bash --noprofile --norc <<'EOF'
@@ -285,16 +274,17 @@ stop_section_spinner() { :; }
 note_activity() { :; }
 run_with_timeout() { shift; "$@"; }
 pgrep() { return 1; }
-safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 export -f pgrep
-clean_orphaned_pnpm_store_generations
+clean_pnpm_stores
+printf 'COMPLETE\n'
 EOF
 
     [ "$status" -eq 0 ] || {
         echo "$output"
         return 1
     }
-    [[ "$output" != *"SAFE_CLEAN"* ]] || return 1
+    [[ "$output" == "COMPLETE" ]] || return 1
+    [[ "$output" != *"unbound variable"* ]] || return 1
 }
 
 # Corepack and npm-installed pnpm run as `node .../pnpm.cjs`, so the busy
