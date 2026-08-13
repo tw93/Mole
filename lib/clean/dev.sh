@@ -4562,5 +4562,8 @@ clean_developer_tools() {
             fi
         fi
     done
+    # Leftover cask staging files (interrupted/failed upgrades) can grow to
+    # several GB; clean them independently of the 7-day cleanup throttle.
+    _run_developer_cleanup_step clean_homebrew_tmp_staged || return $?
     _run_developer_cleanup_step clean_homebrew || return $?
 }

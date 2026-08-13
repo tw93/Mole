@@ -1703,6 +1703,7 @@ stop_section_spinner() { :; }
 clean_sqlite_temp_files() { :; }
 clean_dev_npm() { echo "npm"; }
 clean_homebrew() { echo "brew"; }
+clean_homebrew_tmp_staged() { :; }
 clean_project_caches() { :; }
 clean_dev_python() { :; }
 clean_dev_go() { :; }

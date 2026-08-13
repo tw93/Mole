@@ -198,6 +198,71 @@ restore_homebrew_active_links() {
     fi
 }
 
+# Clean leftover cask staging files under var/homebrew/tmp/.caskroom.
+# Homebrew stages cask installs here; an interrupted or failed upgrade (e.g.
+# the app is running, or a .pkg installer needs sudo) leaves the <version>
+# dir and its <version>.staged symlink behind, which can grow to several GB.
+# Runs independently of the 7-day clean_homebrew throttle so leftovers are
+# removed on every clean.
+clean_homebrew_tmp_staged() {
+    command -v brew > /dev/null 2>&1 || return 0
+    # Never race an in-progress cask install.
+    if pgrep -x brew > /dev/null 2>&1; then
+        debug_log "Homebrew cask staging cleanup skipped: brew is running"
+        return 0
+    fi
+
+    local prefix=""
+    prefix=$(HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 \
+        run_with_timeout "$MOLE_TIMEOUT_PKG_LIST_SEC" brew --prefix 2> /dev/null) || return 0
+    [[ -n "$prefix" && -d "$prefix" ]] || return 0
+
+    local staged_root="$prefix/var/homebrew/tmp/.caskroom"
+    [[ -d "$staged_root" ]] || return 0
+
+    if is_path_whitelisted "$staged_root"; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Homebrew cask staging · would skip (whitelist)"
+        else
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cask staging · skipped (whitelist)"
+        fi
+        note_activity
+        return 0
+    fi
+
+    local removed=0
+    local cask_dir link target resolved
+    for cask_dir in "$staged_root"/*/; do
+        [[ -d "$cask_dir" ]] || continue
+        while IFS= read -r -d '' link; do
+            target=$(readlink "$link" 2> /dev/null) || continue
+            case "$target" in
+                /*) resolved="$target" ;;
+                *) resolved="$(cd "$(dirname "$link")" && pwd)/$target" ;;
+            esac
+            # Only ever remove leftovers inside the staging root.
+            case "$resolved" in
+                "$staged_root"/*) ;;
+                *) continue ;;
+            esac
+            if [[ -e "$resolved" || -L "$resolved" ]]; then
+                safe_remove "$resolved" || true
+            fi
+            safe_remove_symlink "$link" || true
+            removed=$((removed + 1))
+        done < <(find "$cask_dir" -maxdepth 1 -name "*.staged" -type l -print0 2> /dev/null)
+    done
+
+    if [[ $removed -gt 0 ]]; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Homebrew cask staging · would remove ${removed} leftover(s)"
+        else
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cask staging · removed ${removed} leftover(s)"
+        fi
+        note_activity
+    fi
+}
+
 clean_homebrew() {
     command -v brew > /dev/null 2>&1 || return 0
     local cleanup_timeout="${MOLE_TIMEOUT_PKG_CLEANUP_SEC:-20}"

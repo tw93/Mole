@@ -1774,6 +1774,7 @@ clean_dev_ocaml() { :; }
 clean_xcode_tools() { :; }
 clean_code_editors() { :; }
 clean_homebrew() { :; }
+clean_homebrew_tmp_staged() { :; }
 clean_developer_tools
 EOF
 

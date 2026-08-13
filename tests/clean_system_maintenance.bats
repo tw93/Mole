@@ -2244,3 +2244,64 @@ EOF
     [ "$status" -eq 0 ] || return 1
     [ "$output" -ge 1 ]
 }
+
+@test "clean_homebrew_tmp_staged removes leftover .staged cask staging trees" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+TEST_BREW_PREFIX="$HOME/homebrew"
+STAGED_ROOT="$TEST_BREW_PREFIX/var/homebrew/tmp/.caskroom"
+mkdir -p "$STAGED_ROOT/docker-desktop/4.86.0,236216/Docker.app/Contents"
+mkdir -p "$STAGED_ROOT/lark/7.72.9,f0c167f0"
+printf 'payload' > "$STAGED_ROOT/docker-desktop/4.86.0,236216/Docker.app/Contents/Info.plist"
+printf 'payload' > "$STAGED_ROOT/lark/7.72.9,f0c167f0/app"
+ln -s "$STAGED_ROOT/docker-desktop/4.86.0,236216" "$STAGED_ROOT/docker-desktop/4.86.0,236216.staged"
+ln -s "$STAGED_ROOT/lark/7.72.9,f0c167f0" "$STAGED_ROOT/lark/7.72.9,f0c167f0.staged"
+
+pgrep() { return 1; }
+run_with_timeout() { shift; "$@"; }
+brew() {
+    case "${1:-}" in
+        --prefix) printf '%s\n' "$TEST_BREW_PREFIX" ;;
+        *) return 0 ;;
+    esac
+}
+
+clean_homebrew_tmp_staged > "$HOME/staged_cleanup.out" 2>&1
+
+[[ ! -e "$STAGED_ROOT/docker-desktop/4.86.0,236216" ]] || { echo "docker target still present" >&2; exit 1; }
+[[ ! -L "$STAGED_ROOT/docker-desktop/4.86.0,236216.staged" ]] || { echo "docker .staged link still present" >&2; exit 1; }
+[[ ! -e "$STAGED_ROOT/lark/7.72.9,f0c167f0" ]] || { echo "lark target still present" >&2; exit 1; }
+[[ ! -L "$STAGED_ROOT/lark/7.72.9,f0c167f0.staged" ]] || { echo "lark .staged link still present" >&2; exit 1; }
+grep -q "Homebrew cask staging · removed 2 leftover(s)" "$HOME/staged_cleanup.out" || { echo "missing summary: $(cat "$HOME/staged_cleanup.out")" >&2; exit 1; }
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "clean_homebrew_tmp_staged is a no-op without staged leftovers" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+TEST_BREW_PREFIX="$HOME/homebrew"
+mkdir -p "$TEST_BREW_PREFIX/var/homebrew/tmp/.caskroom/docker-desktop/4.83.0,234302"
+
+pgrep() { return 1; }
+run_with_timeout() { shift; "$@"; }
+brew() {
+    case "${1:-}" in
+        --prefix) printf '%s\n' "$TEST_BREW_PREFIX" ;;
+        *) return 0 ;;
+    esac
+}
+
+clean_homebrew_tmp_staged
+[[ -d "$TEST_BREW_PREFIX/var/homebrew/tmp/.caskroom/docker-desktop/4.83.0,234302" ]] || exit 1
+EOF
+
+    [ "$status" -eq 0 ]
+}
