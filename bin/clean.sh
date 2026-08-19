@@ -28,6 +28,27 @@ if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
 fi
 PROTECT_FINDER_METADATA=false
 EXTERNAL_VOLUME_TARGET=""
+
+# Section selection for --only/--skip. Keys are the stable CLI identifiers;
+# every label must match a name passed to start_section, which is where the
+# selection is resolved back to a key.
+readonly CLEAN_SECTION_KEYS=(
+    system essentials app-caches browsers cloud-office dev apps
+    virtualization app-support leftovers apple-silicon firmware
+    time-machine large-files projects
+)
+readonly CLEAN_SECTION_LABELS=(
+    "System" "User essentials" "App caches" "Browsers" "Cloud & Office"
+    "Developer tools" "Apps & utilities" "Virtualization"
+    "Application Support" "App leftovers" "Apple Silicon updates"
+    "Device backups & firmware" "Time Machine" "Large files"
+    "Project artifacts"
+)
+CLEAN_ONLY_SECTIONS=()
+CLEAN_SKIP_SECTIONS=()
+CLEAN_PARSED_SECTIONS=()
+# 1 while a selected section is running, 0 inside a deselected one.
+CLEAN_SECTION_ACTIVE=1
 IS_M_SERIES=$([[ "$(uname -m)" == "arm64" ]] && echo "true" || echo "false")
 
 # Whitelist and preview belong to the invoking user even when the whole
@@ -546,6 +567,102 @@ trap 'cleanup TERM 143; exit 143' TERM
 # flush_idle_section_slot.
 IDLE_SECTION_PENDING=0
 
+clean_section_key_for_label() {
+    local label="$1"
+    local index=0
+    for ((index = 0; index < ${#CLEAN_SECTION_LABELS[@]}; index++)); do
+        if [[ "${CLEAN_SECTION_LABELS[$index]}" == "$label" ]]; then
+            printf '%s\n' "${CLEAN_SECTION_KEYS[$index]}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+clean_section_key_is_valid() {
+    local key="$1"
+    local candidate
+    for candidate in "${CLEAN_SECTION_KEYS[@]}"; do
+        [[ "$candidate" == "$key" ]] && return 0
+    done
+    return 1
+}
+
+# Decide whether a section runs. Unknown labels fail open: a nested section is
+# only reachable through a step whose own section was already selected, so
+# refusing it here would drop work the user did ask for.
+clean_section_enabled() {
+    local label="$1"
+
+    # --external is a single-purpose sweep with its own section, and main()
+    # rejects the selection flags alongside it, so there is nothing to gate.
+    [[ -n "$EXTERNAL_VOLUME_TARGET" ]] && return 0
+
+    local key=""
+    key=$(clean_section_key_for_label "$label") || return 0
+
+    local candidate
+    if [[ ${#CLEAN_ONLY_SECTIONS[@]} -gt 0 ]]; then
+        for candidate in "${CLEAN_ONLY_SECTIONS[@]}"; do
+            [[ "$candidate" == "$key" ]] && return 0
+        done
+        return 1
+    fi
+    if [[ ${#CLEAN_SKIP_SECTIONS[@]} -gt 0 ]]; then
+        for candidate in "${CLEAN_SKIP_SECTIONS[@]}"; do
+            [[ "$candidate" == "$key" ]] && return 1
+        done
+    fi
+    return 0
+}
+
+# Parse a comma-separated section list into CLEAN_PARSED_SECTIONS. An unknown
+# key is an error rather than a no-op: silently ignoring a typo would run a
+# different cleanup than the one that was asked for.
+clean_parse_section_list() {
+    local raw="$1"
+    local flag="$2"
+    local -a parsed=()
+    local item
+
+    local old_ifs="$IFS"
+    IFS=','
+    # shellcheck disable=SC2086  # deliberate split on the comma-separated list
+    set -- $raw
+    IFS="$old_ifs"
+
+    for item in "$@"; do
+        [[ -z "$item" ]] && continue
+        if ! clean_section_key_is_valid "$item"; then
+            echo "Unknown section for $flag: $item" >&2
+            echo "Run 'mo clean --list-sections' to see the available keys." >&2
+            return 1
+        fi
+        parsed+=("$item")
+    done
+
+    if [[ ${#parsed[@]} -eq 0 ]]; then
+        echo "Missing section list for $flag" >&2
+        return 1
+    fi
+
+    CLEAN_PARSED_SECTIONS=("${parsed[@]}")
+    return 0
+}
+
+clean_print_sections() {
+    local index=0
+    echo "Sections accepted by mo clean --only and --skip:"
+    echo ""
+    for ((index = 0; index < ${#CLEAN_SECTION_KEYS[@]}; index++)); do
+        printf '  %-15s %s\n' "${CLEAN_SECTION_KEYS[$index]}" "${CLEAN_SECTION_LABELS[$index]}"
+    done
+    echo ""
+    echo "Examples:"
+    echo "  mo clean --skip dev,projects"
+    echo "  mo clean --only browsers,app-caches"
+}
+
 flush_idle_section_slot() {
     if [[ "${IDLE_SECTION_PENDING:-0}" == "1" ]]; then
         IDLE_SECTION_PENDING=0
@@ -557,6 +674,18 @@ start_section() {
     TRACK_SECTION=1
     SECTION_ACTIVITY=0
     CURRENT_SECTION="$1"
+
+    # Every section name passes through here, so this is the one place the
+    # --only/--skip selection has to be resolved. A deselected section prints
+    # no header and, through _run_cleanup_step and _safe_clean_impl, performs
+    # no work either.
+    CLEAN_SECTION_ACTIVE=1
+    if ! clean_section_enabled "$1"; then
+        CLEAN_SECTION_ACTIVE=0
+        TRACK_SECTION=0
+        return 0
+    fi
+
     if [[ "${IDLE_SECTION_PENDING:-0}" == "1" ]]; then
         # Overwrite the previous idle section's header line in place (the
         # pending flag is only ever set on an interactive ANSI terminal).
@@ -576,6 +705,9 @@ start_section() {
 
 end_section() {
     stop_section_spinner
+
+    # Steps that run between sections are never part of a selection.
+    CLEAN_SECTION_ACTIVE=1
 
     if [[ "${TRACK_SECTION:-0}" == "1" && "${SECTION_ACTIVITY:-0}" == "0" ]]; then
         # On an interactive ANSI terminal, leave the header on screen and let
@@ -809,6 +941,13 @@ classify_cleanup_risk() {
 _safe_clean_impl() {
     local delete_guard="$1"
     shift
+
+    # Backstop for a step that opens its own section: it was already running
+    # when start_section resolved the selection, so the deselection has to land
+    # here at the sink instead of at _run_cleanup_step.
+    if [[ "${CLEAN_SECTION_ACTIVE:-1}" == "0" ]]; then
+        return 0
+    fi
 
     local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" &&
@@ -1456,6 +1595,14 @@ start_cleanup() {
     echo -e "${PURPLE_BOLD}Clean Your Mac${NC}"
     echo ""
 
+    if [[ ${#CLEAN_ONLY_SECTIONS[@]} -gt 0 ]]; then
+        echo -e "${BLUE}${ICON_SUCCESS}${NC} Sections: only ${CLEAN_ONLY_SECTIONS[*]}"
+        echo ""
+    elif [[ ${#CLEAN_SKIP_SECTIONS[@]} -gt 0 ]]; then
+        echo -e "${BLUE}${ICON_SUCCESS}${NC} Sections: skipping ${CLEAN_SKIP_SECTIONS[*]}"
+        echo ""
+    fi
+
     if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
         echo -e "${GRAY}${ICON_WARNING} Use --dry-run to preview, --whitelist to manage protected paths${NC}"
     fi
@@ -1481,6 +1628,12 @@ start_cleanup() {
             echo ""
         fi
         return
+    fi
+
+    # Never ask for admin access the run cannot use.
+    if ! clean_section_enabled "System"; then
+        SYSTEM_CLEAN=false
+        return 0
     fi
 
     if [[ -t 0 ]]; then
@@ -1640,6 +1793,9 @@ perform_cleanup() {
     set +e
 
     _run_cleanup_step() {
+        if [[ "${CLEAN_SECTION_ACTIVE:-1}" == "0" ]]; then
+            return 0
+        fi
         local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
         if [[ $pending_clean_cancel -eq 124 || $pending_clean_cancel -ge 128 ]]; then
             return "$pending_clean_cancel"
@@ -1991,6 +2147,28 @@ main() {
                 DRY_RUN=true
                 export MOLE_DRY_RUN=1
                 ;;
+            "--only")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing section list for --only" >&2
+                    exit 1
+                fi
+                clean_parse_section_list "$1" "--only" || exit 1
+                CLEAN_ONLY_SECTIONS=("${CLEAN_PARSED_SECTIONS[@]}")
+                ;;
+            "--skip")
+                shift
+                if [[ $# -eq 0 ]]; then
+                    echo "Missing section list for --skip" >&2
+                    exit 1
+                fi
+                clean_parse_section_list "$1" "--skip" || exit 1
+                CLEAN_SKIP_SECTIONS=("${CLEAN_PARSED_SECTIONS[@]}")
+                ;;
+            "--list-sections")
+                clean_print_sections
+                exit 0
+                ;;
             "--external")
                 shift
                 if [[ $# -eq 0 ]]; then
@@ -2022,6 +2200,17 @@ main() {
         esac
         shift
     done
+
+    if [[ ${#CLEAN_ONLY_SECTIONS[@]} -gt 0 && ${#CLEAN_SKIP_SECTIONS[@]} -gt 0 ]]; then
+        echo "mo clean accepts either --only or --skip, not both." >&2
+        exit 1
+    fi
+
+    if [[ -n "$EXTERNAL_VOLUME_TARGET" ]] &&
+        [[ ${#CLEAN_ONLY_SECTIONS[@]} -gt 0 || ${#CLEAN_SKIP_SECTIONS[@]} -gt 0 ]]; then
+        echo "mo clean --external runs a single external-volume sweep; --only and --skip do not apply." >&2
+        exit 1
+    fi
 
     start_cleanup
     hide_cursor

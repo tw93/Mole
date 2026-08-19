@@ -11,7 +11,7 @@ for entry in "${MOLE_COMMANDS[@]}"; do
     command_names+=("${entry%%:*}")
 done
 command_words="${command_names[*]}"
-clean_option_words="--dry-run -n --external --whitelist --debug --help -h"
+clean_option_words="--dry-run -n --only --skip --list-sections --external --whitelist --debug --help -h"
 analyze_option_words="--json --help -h"
 history_option_words="--json --limit --help -h"
 purge_option_words="--paths --dry-run -n --include-empty --debug --help -h"
