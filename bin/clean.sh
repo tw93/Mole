@@ -442,10 +442,24 @@ read_clean_sudo_password_remainder() {
     printf -v "$__remainder_var" '%s' "$remainder"
 }
 
+# Seam for the interactive check so the authorization policy can be covered
+# without allocating a pty.
+clean_stdin_is_tty() {
+    [[ -t 0 ]]
+}
+
 prompt_for_system_clean() {
+    local sudo_cached="${1:-false}"
     local prompt_attempt=0
+    local prompt_line="System caches need sudo."
+    if [[ "$sudo_cached" == "true" ]]; then
+        # A cached timestamp settles who the user is, not whether this run was
+        # meant to sweep system caches. Keep asking; only the password step is
+        # already done.
+        prompt_line="System caches, admin access already active."
+    fi
     while true; do
-        echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} ${prompt_line} ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
 
         local choice
         choice=$(read_clean_sudo_choice)
@@ -1432,6 +1446,8 @@ start_cleanup() {
     export MOLE_CLEAN_SIZING_TIMEOUTS
     MOLE_CLEAN_REMOVAL_TIMEOUTS=0
     export MOLE_CLEAN_REMOVAL_TIMEOUTS
+    MOLE_CLEAN_TRASH_FAILURES=0
+    export MOLE_CLEAN_TRASH_FAILURES
     log_operation_session_start "clean"
     DRY_RUN_SEEN_IDENTITIES=()
     DRY_RUN_TOTAL_PARTIAL=false
@@ -1455,6 +1471,11 @@ start_cleanup() {
 
     echo -e "${PURPLE_BOLD}Clean Your Mac${NC}"
     echo ""
+
+    if [[ "${MOLE_CLEAN_TRASH:-0}" == "1" && "$DRY_RUN" != "true" ]]; then
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} Trash mode, removals stay restorable, space frees up when you empty the Trash"
+        echo ""
+    fi
 
     if [[ "$DRY_RUN" != "true" && -t 0 ]]; then
         echo -e "${GRAY}${ICON_WARNING} Use --dry-run to preview, --whitelist to manage protected paths${NC}"
@@ -1483,18 +1504,22 @@ start_cleanup() {
         return
     fi
 
-    if [[ -t 0 ]]; then
-        if adopt_sudo_session; then
-            SYSTEM_CLEAN=true
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
-            echo ""
-        else
-            prompt_for_system_clean
-        fi
+    local sudo_cached=false
+    adopt_sudo_session && sudo_cached=true
+
+    if clean_stdin_is_tty; then
+        # Confirm the privileged sweep on every interactive run. A sudo
+        # timestamp the user established for something else authenticates them;
+        # it does not say this run was meant to delete outside $HOME. The
+        # adopted session above still spares them the password and still keeps
+        # later privileged calls from prompting mid-spinner (#1084).
+        prompt_for_system_clean "$sudo_cached"
     else
+        # No terminal to ask, so the #1084 contract stands unchanged:
+        # credentials the caller already established are reused for the run.
         echo ""
         echo "Running in non-interactive mode"
-        if adopt_sudo_session; then
+        if [[ "$sudo_cached" == "true" ]]; then
             SYSTEM_CLEAN=true
             echo "  ${ICON_LIST} System-level cleanup enabled, sudo session active"
         else
@@ -1950,6 +1975,12 @@ perform_cleanup() {
         summary_details+=("${GRAY}${ICON_WARNING}${NC} ${MOLE_CLEAN_REMOVAL_TIMEOUTS} item(s) exceeded the ${MOLE_TIMEOUT_DISK_VERIFY_SEC}s removal budget and may be only partly removed. Run clean again, or raise ${GRAY}MOLE_TIMEOUT_DISK_VERIFY_SEC${NC} for slower disks.")
     fi
 
+    # Trash mode never downgrades to a permanent delete, so a failed move
+    # leaves the item in place. Say so: silence here would read as "cleaned".
+    if [[ ${MOLE_CLEAN_TRASH_FAILURES:-0} -gt 0 ]]; then
+        summary_details+=("${GRAY}${ICON_WARNING}${NC} ${MOLE_CLEAN_TRASH_FAILURES} item(s) could not be moved to the Trash and were left in place. Run ${GRAY}mo clean${NC} without ${GRAY}--trash${NC} to remove them permanently.")
+    fi
+
     if [[ $had_errexit -eq 1 ]]; then
         set -e
     fi
@@ -1990,6 +2021,9 @@ main() {
             "--dry-run" | "-n")
                 DRY_RUN=true
                 export MOLE_DRY_RUN=1
+                ;;
+            "--trash")
+                export MOLE_CLEAN_TRASH=1
                 ;;
             "--external")
                 shift

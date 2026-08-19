@@ -844,6 +844,58 @@ _mole_record_clean_cancellation() {
     fi
 }
 
+# ============================================================================
+# Cache-clean Trash routing (mo clean --trash)
+# ============================================================================
+
+# Cache cleanup deletes permanently by default. `mo clean --trash` opts into a
+# recoverable sweep: every deletion that would have been an rm -rf becomes a
+# Trash move instead. The guarantee only means something if it holds for the
+# whole run, so the switch lives here at the shared sink rather than at the
+# ~40 call sites in lib/clean.
+_mole_clean_trash_mode() {
+    [[ "${MOLE_CLEAN_TRASH:-0}" == "1" ]]
+}
+
+# Route one already-validated path to the Trash on behalf of safe_remove and
+# safe_sudo_remove. Never falls back to a permanent delete: a trash-mode run
+# that silently deleted something outright would break the only promise the
+# flag makes. Timeouts (124) and signals (128+) propagate unchanged so callers
+# keep their existing cancellation semantics.
+_mole_clean_trash_sink() {
+    local path="$1"
+    local needs_sudo="$2"
+    local size_human="$3"
+    local expected_parent="${4:-}"
+    local expected_parent_id="${5:-}"
+    local expected_target_id="${6:-}"
+
+    local trash_rc=0
+    _mole_move_to_trash "$path" "$needs_sudo" \
+        "$expected_parent" "$expected_parent_id" "$expected_target_id" || trash_rc=$?
+
+    if [[ $trash_rc -eq 0 ]]; then
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "TRASHED" "$path" "$size_human"
+        return 0
+    fi
+
+    if [[ $trash_rc -eq 124 ]]; then
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "trash move timed out"
+        MOLE_CLEAN_REMOVAL_TIMEOUTS=$((${MOLE_CLEAN_REMOVAL_TIMEOUTS:-0} + 1))
+        return 124
+    fi
+    if [[ $trash_rc -ge 128 ]]; then
+        _mole_record_clean_cancellation "$trash_rc"
+        return "$trash_rc"
+    fi
+
+    debug_log "Trash move failed, refusing permanent delete: $path"
+    log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$path" "trash unavailable"
+    MOLE_CLEAN_TRASH_FAILURES=$((${MOLE_CLEAN_TRASH_FAILURES:-0} + 1))
+    export MOLE_CLEAN_TRASH_FAILURES
+    return 1
+}
+
 # Safe wrapper around rm -rf with validation
 safe_remove() {
     local path="$1"
@@ -1029,6 +1081,16 @@ safe_remove() {
             log_operation "${MOLE_CURRENT_COMMAND:-clean}" "SKIPPED" "$path" "sink guard denied"
             return 1
         fi
+    fi
+
+    # Trash mode short-circuit. Everything above this line (path validation,
+    # the final identity re-check, the sink guard) is mode-independent and has
+    # already run; only the last action differs.
+    if _mole_clean_trash_mode; then
+        local trash_sink_rc=0
+        _mole_clean_trash_sink "$path" false "$size_human" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || trash_sink_rc=$?
+        return "$trash_sink_rc"
     fi
 
     # Perform the deletion
@@ -1451,6 +1513,17 @@ safe_sudo_remove() {
         log_operation "${MOLE_CURRENT_COMMAND:-clean}" "SKIPPED" "$path" "identity changed"
         return 1
     fi
+    # Trash mode short-circuit, matching safe_remove. Root-owned cache paths
+    # are moved into the invoking user's Trash by the same privileged mover
+    # uninstall already uses, so a `--trash` run stays recoverable even for the
+    # sudo sections.
+    if _mole_clean_trash_mode; then
+        local trash_sink_rc=0
+        _mole_clean_trash_sink "$path" true "$size_human" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || trash_sink_rc=$?
+        return "$trash_sink_rc"
+    fi
+
     local remove_timeout=""
     local section_deadline_spent=0
     remove_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
@@ -2793,7 +2866,11 @@ safe_sudo_find_delete() {
         fi
         # -type f never emits symlinks; a path that is one now was swapped
         # after find saw it, and the single-file path refuses those.
-        if [[ "$type_filter" == "f" && "${MOLE_DRY_RUN:-0}" != "1" && ! -L "$match" ]]; then
+        # Trash mode also takes the single-file path: the batch deletes with a
+        # privileged xargs rm, which has no Trash equivalent, and routing each
+        # match through safe_sudo_remove is what keeps the run recoverable.
+        if [[ "$type_filter" == "f" && "${MOLE_DRY_RUN:-0}" != "1" && ! -L "$match" ]] &&
+            ! _mole_clean_trash_mode; then
             local identity_timeout=""
             local match_identity=""
             local identity_rc=0
