@@ -1404,3 +1404,91 @@ INNER
     [ "$status" -eq 0 ]
     [[ ! -e "$db" ]]
 }
+
+@test "clean_autodesk_fusion_old_bundles removes old versions, keeps current and staged" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    mkdir -p "$prod/hash-current" "$prod/hash-old" "$prod/hash-newer"
+    ln -s "$prod/hash-current" "$prod/Autodesk Fusion.app"
+
+    # Make hash-newer actually newer than current.
+    touch -t 202001010000 "$prod/hash-current"
+    touch -t 201901010000 "$prod/hash-old"
+    touch -t 202101010000 "$prod/hash-newer"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+get_path_size_kb() { echo "1024"; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+safe_remove() { echo "REMOVE:$1"; rm -rf "$1"; }
+note_activity() { :; }
+debug_log() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ]
+    [[ ! -d "$prod/hash-old" ]] || return 1
+    [[ -d "$prod/hash-current" ]]
+    [[ -d "$prod/hash-newer" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles skips when Autodesk is running" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    mkdir -p "$prod/hash-current" "$prod/hash-old"
+    ln -s "$prod/hash-current" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 0; }
+get_path_size_kb() { echo "1024"; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; }
+mole_defer_cleanup_family() { echo "DEFER:$1"; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"DEFER:Autodesk Fusion"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
+    [[ -d "$prod/hash-old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles skips when current alias is broken" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    mkdir -p "$prod/hash-old"
+    # Alias points to a directory that does not exist.
+    ln -s "$prod/hash-missing" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
+    [[ -d "$prod/hash-old" ]]
+}

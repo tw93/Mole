@@ -716,6 +716,172 @@ _autodesk_cache_delete_guard_allows() {
     mole_clean_process_guard autodesk_cache_process_state "Autodesk running"
 }
 
+# Autodesk Fusion's in-app updater keeps every previous app bundle under
+# ~/Library/Application Support/Autodesk/webdeploy/production. An alias named
+# "Autodesk Fusion.app" points at the currently installed version. Bundles
+# newer than that alias are staged for the next launch and must be kept (#1438).
+clean_autodesk_fusion_old_bundles() {
+    local production_dir="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    [[ -d "$production_dir" ]] || return 0
+
+    local current_alias="$production_dir/Autodesk Fusion.app"
+    if [[ ! -e "$current_alias" ]]; then
+        debug_log "Autodesk Fusion old bundles: no current alias at $current_alias"
+        return 0
+    fi
+
+    local current_target=""
+    if [[ -L "$current_alias" ]]; then
+        current_target=$(readlink "$current_alias" 2> /dev/null || true)
+    else
+        # Alias / Finder alias: resolve via AppleScript; fall back to pwd -P
+        # so a missing osascript still finds the real bundle.
+        if command -v osascript > /dev/null 2>&1; then
+            current_target=$(osascript -e "tell application \"Finder\" to POSIX path of (original item of (POSIX file \"$current_alias\" as alias))" 2> /dev/null || true)
+            current_target="${current_target%/}"
+        fi
+        if [[ -z "$current_target" ]]; then
+            current_target=$(cd "$current_alias" 2> /dev/null && pwd -P) || current_target=""
+        fi
+    fi
+    current_target="${current_target%/}"
+    if [[ -z "$current_target" ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (current alias unreadable)"
+        note_activity
+        return 0
+    fi
+
+    # The alias typically points at ".../<hash>/Autodesk Fusion.app"; keep the
+    # hash directory that owns it.
+    local current_dir=""
+    if [[ "$current_target" == "$production_dir"/* ]]; then
+        local rel="${current_target#"$production_dir"/}"
+        current_dir="${rel%%/*}"
+    else
+        current_dir=$(basename "$(dirname "$current_target")")
+    fi
+    if [[ -z "$current_dir" || ! -d "$production_dir/$current_dir" ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (current version missing)"
+        note_activity
+        return 0
+    fi
+
+    local current_mtime
+    current_mtime=$(stat -f%m "$production_dir/$current_dir" 2> /dev/null || echo "0")
+    [[ "$current_mtime" =~ ^[0-9]+$ ]] || current_mtime=0
+
+    # Keep a version newer than current: it is a staged auto-update that the
+    # alias will point at on next launch.
+    local newest_dir=""
+    local newest_mtime=0
+    local dir name mtime
+    for dir in "$production_dir"/*; do
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+        name=$(basename "$dir")
+        [[ "$name" == "Autodesk Fusion.app" ]] && continue
+        [[ "$name" == "$current_dir" ]] && continue
+        mtime=$(stat -f%m "$dir" 2> /dev/null || echo "0")
+        if [[ "$mtime" =~ ^[0-9]+$ ]] && [[ "$mtime" -gt "$newest_mtime" ]]; then
+            newest_mtime="$mtime"
+            newest_dir="$name"
+        fi
+    done
+    if [[ "$newest_mtime" -le "$current_mtime" ]]; then
+        newest_dir=""
+    elif [[ -n "$newest_dir" ]]; then
+        debug_log "Autodesk Fusion old versions: keeping $newest_dir (staged auto-update newer than $current_dir)"
+    fi
+
+    local -a old_dirs=()
+    for dir in "$production_dir"/*; do
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+        name=$(basename "$dir")
+        [[ "$name" == "Autodesk Fusion.app" ]] && continue
+        [[ "$name" == "$current_dir" ]] && continue
+        [[ -n "$newest_dir" && "$name" == "$newest_dir" ]] && continue
+        if should_protect_path "$dir" || is_path_whitelisted "$dir"; then
+            continue
+        fi
+        old_dirs+=("$dir")
+    done
+
+    if [[ ${#old_dirs[@]} -eq 0 ]]; then
+        debug_log "Autodesk Fusion old versions: nothing to remove (current=$current_dir)"
+        return 0
+    fi
+
+    local process_state=0
+    autodesk_cache_process_state || process_state=$?
+    if [[ $process_state -ne 1 ]]; then
+        if [[ $process_state -eq 2 ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (process state unknown)"
+            note_activity
+        else
+            mole_defer_cleanup_family "Autodesk Fusion"
+        fi
+        return 0
+    fi
+
+    local cleaned_count=0
+    local total_size=0
+    local stopped_reason=""
+    for dir in "${old_dirs[@]}"; do
+        process_state=0
+        autodesk_cache_process_state || process_state=$?
+        if [[ $process_state -ne 1 ]]; then
+            stopped_reason="Autodesk Fusion started"
+            [[ $process_state -eq 2 ]] && stopped_reason="process state unknown"
+            break
+        fi
+        local size_kb=""
+        local size_rc=0
+        size_kb=$(get_path_size_kb "$dir") || size_rc=$?
+        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
+        [[ $size_rc -eq 0 ]] || return "$size_rc"
+        size_kb="${size_kb:-0}"
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
+                record_dry_run_cleanup_target "$dir" "$size_kb" 1 true || continue
+            fi
+            total_size=$((total_size + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+            continue
+        fi
+
+        if safe_remove "$dir" true "$size_kb" > /dev/null 2>&1; then
+            total_size=$((total_size + size_kb))
+            cleaned_count=$((cleaned_count + 1))
+        else
+            debug_log "Autodesk Fusion old version removal failed: $dir"
+        fi
+    done
+
+    if [[ $cleaned_count -gt 0 ]]; then
+        local size_human
+        size_human=$(bytes_to_human "$((total_size * 1024))")
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Autodesk Fusion old versions${NC} · ${YELLOW}${cleaned_count} dirs, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
+        else
+            local line_color
+            line_color=$(cleanup_result_color_kb "$total_size")
+            echo -e "  ${line_color}${ICON_SUCCESS}${NC} Autodesk Fusion old versions${NC} · ${line_color}${cleaned_count} dirs, $size_human${NC}"
+        fi
+        files_cleaned=$((files_cleaned + cleaned_count))
+        total_size_cleaned=$((total_size_cleaned + total_size))
+        total_items=$((total_items + 1))
+        note_activity
+    fi
+    if [[ -n "$stopped_reason" ]]; then
+        if [[ "$stopped_reason" == "process state unknown" ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · stopped (${stopped_reason})"
+            note_activity
+        else
+            mole_defer_cleanup_family "Autodesk Fusion"
+        fi
+    fi
+}
+
 # 3D and CAD tools.
 clean_3d_tools() {
     safe_clean ~/Library/Caches/org.blenderfoundation.blender/* "Blender cache"
@@ -751,6 +917,12 @@ clean_3d_tools() {
     fi
 
     safe_clean ~/Library/Caches/com.sketchup.*/* "SketchUp cache"
+
+    # Remove old Autodesk Fusion app bundles left by the in-app updater.
+    # The updater keeps every version under webdeploy/production and leaves an
+    # alias named "Autodesk Fusion.app" pointing at the current one. Delete
+    # every older bundle, keep the current target and any newer staged update.
+    clean_autodesk_fusion_old_bundles
 }
 # Productivity apps.
 clean_productivity_apps() {
