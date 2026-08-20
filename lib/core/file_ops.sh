@@ -409,18 +409,20 @@ _mole_user_cache_owner_process_state() {
 }
 
 # Is the database family live? 0 = in use, 1 = idle, 2 = could not tell.
-# WAL-mode -shm only exists while at least one connection is open (PR #1391).
+# WAL-mode -shm only exists while at least one connection is open (PR #1391),
+# but a stale -shm can remain after an unclean exit. When -shm exists we must
+# still verify a process holds it open; otherwise the guard refuses forever on
+# orphaned caches (#1439).
 _mole_sqlite_database_in_use() {
     local path="$1"
     local base
     base=$(_mole_sqlite_family_base_path "$path")
 
-    if [[ -f "${base}-shm" ]]; then
-        return 0
-    fi
-
     command -v lsof > /dev/null 2>&1 || return 2
 
+    # Check every family member with lsof, including a stale -shm. If any
+    # process has a handle open the database is live; if none do, the -shm is
+    # orphaned and deletion is safe.
     local candidate
     for candidate in "$base" "${base}-wal" "${base}-shm"; do
         [[ -e "$candidate" ]] || continue

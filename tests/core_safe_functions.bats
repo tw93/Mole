@@ -238,7 +238,13 @@ teardown() {
     printf 'shm' > "$db-shm"
 
     for path in "$db" "$db-wal" "$db-shm"; do
-        run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '$path'"
+        run env PROJECT_ROOT="$PROJECT_ROOT" path="$path" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+lsof() { return 0; }
+run_with_timeout() { shift; "$@"; }
+validate_path_for_deletion "$path"
+EOF
         [ "$status" -eq 1 ] || return 1
     done
 }
@@ -273,6 +279,24 @@ validate_path_for_deletion "$db"
 EOF
 
     [ "$status" -eq 0 ]
+}
+
+@test "validate_path_for_deletion allows stale SQLite -shm files (#1439)" {
+    local db="$TEST_DIR/stale-sqlite/Cache.db"
+    mkdir -p "$(dirname "$db")"
+    printf 'db' > "$db"
+    printf 'shm' > "$db-shm"
+
+    for path in "$db" "$db-shm"; do
+        run env PROJECT_ROOT="$PROJECT_ROOT" path="$path" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+lsof() { return 1; }
+run_with_timeout() { shift; "$@"; }
+validate_path_for_deletion "$path"
+EOF
+        [ "$status" -eq 0 ] || return 1
+    done
 }
 
 @test "should_protect_path applies high-risk cleanup denylist" {
