@@ -1174,6 +1174,16 @@ clean_orphaned_system_services() {
         # is gone, the binary itself is orphaned, so this plist is too. See #1082.
         if [[ "$binary_exists" == "true" ]]; then
             if [[ "$binary" == /Library/PrivilegedHelperTools/* ]]; then
+                # Some services are installed as standalone helper apps with no
+                # parent under /Applications. Their existing nested executable
+                # is exact ownership evidence, so running the parent-app resolver
+                # would falsely orphan and unload them. Chrome Remote Desktop's
+                # broker is one such service. See #1447.
+                case "$binary" in
+                    /Library/PrivilegedHelperTools/*.app/Contents/MacOS/*)
+                        return 1
+                        ;;
+                esac
                 local helper_bundle_id
                 local helper_id_rc=0
                 helper_bundle_id=$(_privileged_helper_bundle_id_from_binary \

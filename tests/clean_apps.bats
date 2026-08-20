@@ -1970,6 +1970,81 @@ EOF
     [[ "$output" == *"launchctl-unload:"*"org.amnezia.awg.plist"* ]]
 }
 
+@test "clean_orphaned_system_services keeps a live helper app LaunchDaemon loaded (#1447)" {
+    # Chrome Remote Desktop installs its broker inside a standalone .app under
+    # PrivilegedHelperTools rather than inside a parent app in /Applications.
+    # The existing executable and enclosing helper app are exact ownership
+    # evidence: the plist must never reach launchctl unload or removal.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
+        DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { printf 'DEBUG:%s\n' "$*"; }
+should_protect_path() { return 1; }
+bundle_has_installed_app() {
+    printf 'UNEXPECTED_PARENT_RESOLVER:%s\n' "$1"
+    return 1
+}
+
+tmp_dir=$(mktemp -d)
+tmp_plist="$tmp_dir/org.chromium.chromoting.broker.plist"
+helper_binary="/Library/PrivilegedHelperTools/ChromeRemoteDesktopHost.app/Contents/MacOS/remoting_agent_process_broker"
+probe_trace="$tmp_dir/probe-trace"
+/usr/libexec/PlistBuddy -c "Add :Program string $helper_binary" "$tmp_plist" > /dev/null 2>&1 || true
+
+_mole_materialize_bounded_sudo_find() {
+    printf 'SCAN_RAN:%s\n' "$3" >&2
+    if [[ "$3" == "/Library/LaunchDaemons" ]]; then
+        printf '%s\0' "$tmp_plist" > "$1"
+    else
+        : > "$1"
+    fi
+}
+
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        test)
+            [[ "${2:-}" == "-e" && "${3:-}" == "$helper_binary" ]] || return 1
+            printf 'HELPER_BINARY_EXISTS\n' >> "$probe_trace"
+            return 0
+            ;;
+        /usr/libexec/PlistBuddy)
+            printf 'PLIST_PROGRAM_READ\n' >> "$probe_trace"
+            command "$@"
+            ;;
+        /usr/bin/stat) command "$@" ;;
+        du) printf '4\n' ;;
+        launchctl)
+            printf 'UNEXPECTED_LAUNCHCTL:%s\n' "$*"
+            return 0
+            ;;
+        *) return 0 ;;
+    esac
+}
+safe_sudo_remove() {
+    printf 'UNEXPECTED_REMOVE:%s\n' "$1"
+    return 0
+}
+
+clean_orphaned_system_services
+cat "$probe_trace"
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"SCAN_RAN:/Library/LaunchDaemons"* ]] || return 1
+    [[ "$output" == *"PLIST_PROGRAM_READ"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_PARENT_RESOLVER"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_LAUNCHCTL"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
+}
+
 @test "_privileged_helper_bundle_id_from_binary prefers Info.plist bundle ID over directory and executable names" {
     run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
