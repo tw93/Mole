@@ -49,6 +49,38 @@ EOF
     [[ -z "$(ls -A "$MOLE_TEST_TRASH_DIR" 2> /dev/null || true)" ]]
 }
 
+@test "safe_remove final sink guard preserves timeout and signal cancellation" {
+    local victim="$SANDBOX/final-guard-victim"
+    mkdir -p "$victim"
+    : > "$victim/keep.txt"
+
+    run /bin/bash --noprofile --norc <<EOF
+$(prelude)
+export MOLE_CURRENT_COMMAND=clean
+guard_rc=0
+final_guard() { return "\$guard_rc"; }
+_MOLE_SAFE_REMOVE_FINAL_GUARD=final_guard
+for guard_rc in 124 130; do
+    MOLE_CLEAN_CANCEL_STATUS=0
+    set +e
+    safe_remove "$victim" true 1
+    actual_rc=\$?
+    set -e
+    printf 'GUARD:%s ACTUAL:%s CANCEL:%s\n' \
+        "\$guard_rc" "\$actual_rc" "\$MOLE_CLEAN_CANCEL_STATUS"
+done
+[[ -d "$victim" ]]
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"GUARD:124 ACTUAL:124 CANCEL:124"* ]] || return 1
+    [[ "$output" == *"GUARD:130 ACTUAL:130 CANCEL:130"* ]] || return 1
+    [[ -d "$victim" ]]
+}
+
 @test "mole_delete trash mode moves the target instead of rm -rf" {
     local victim="$SANDBOX/victim_trash"
     mkdir -p "$victim"

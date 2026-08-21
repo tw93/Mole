@@ -26,6 +26,21 @@ teardown_file() {
     fi
 }
 
+make_fusion_version_dir() {
+    local version_dir="$1"
+    local version="$2"
+    local bundle_id="${3:-com.autodesk.fusion360}"
+    local app_name="${4:-Autodesk Fusion.app}"
+    local info_plist="$version_dir/$app_name/Contents/Info.plist"
+    mkdir -p "$(dirname "$info_plist")" "$version_dir/$app_name/Contents/MacOS"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $bundle_id" \
+        -c "Add :CFBundleVersion string $version" \
+        -c "Add :CFBundleExecutable string Autodesk Fusion" \
+        "$info_plist" > /dev/null
+    touch "$version_dir/$app_name/Contents/MacOS/Autodesk Fusion"
+    chmod +x "$version_dir/$app_name/Contents/MacOS/Autodesk Fusion"
+}
+
 @test "clean_xcode_tools skips derived data when Xcode running" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
@@ -1405,25 +1420,27 @@ INNER
     [[ ! -e "$db" ]]
 }
 
-@test "clean_autodesk_fusion_old_bundles removes old versions, keeps current and staged" {
+@test "clean_autodesk_fusion_old_bundles removes only strictly older versions and keeps every staged version" {
     local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
-    mkdir -p "$prod/hash-current" "$prod/hash-old" "$prod/hash-newer"
-    ln -s "$prod/hash-current" "$prod/Autodesk Fusion.app"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local staged_one="$prod/cccccccccccccccccccccccccccccccccccccccc"
+    local staged_two="$prod/dddddddddddddddddddddddddddddddddddddddd"
+    local equal="$prod/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    make_fusion_version_dir "$staged_one" "2.0.300"
+    make_fusion_version_dir "$staged_two" "3.0.1"
+    make_fusion_version_dir "$equal" "2.0.200"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
 
-    # Make hash-newer actually newer than current.
-    touch -t 202001010000 "$prod/hash-current"
-    touch -t 201901010000 "$prod/hash-old"
-    touch -t 202101010000 "$prod/hash-newer"
-
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=0 /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 pgrep() { return 1; }
 get_path_size_kb() { echo "1024"; }
-should_protect_path() { return 1; }
-is_path_whitelisted() { return 1; }
-safe_remove() { echo "REMOVE:$1"; rm -rf "$1"; }
 note_activity() { :; }
 debug_log() { :; }
 files_cleaned=0
@@ -1433,17 +1450,90 @@ DRY_RUN=false
 clean_autodesk_fusion_old_bundles
 INNER
 
-    [ "$status" -eq 0 ]
-    [[ ! -d "$prod/hash-old" ]] || return 1
-    [[ -d "$prod/hash-current" ]]
-    [[ -d "$prod/hash-newer" ]]
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ ! -d "$old" ]] || return 1
+    [[ -d "$current" && -d "$staged_one" && -d "$staged_two" && -d "$equal" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles preserves non-hash and unverified siblings" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local wrong_id="$prod/cccccccccccccccccccccccccccccccccccccccc"
+    local no_app="$prod/dddddddddddddddddddddddddddddddddddddddd"
+    local no_executable="$prod/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    local non_hash="$prod/cache"
+    local external="$HOME/fusion-external-version"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    make_fusion_version_dir "$wrong_id" "2.0.50" "com.example.not-fusion"
+    make_fusion_version_dir "$no_executable" "2.0.25"
+    rm "$no_executable/Autodesk Fusion.app/Contents/MacOS/Autodesk Fusion"
+    mkdir -p "$no_app/config" "$non_hash"
+    make_fusion_version_dir "$non_hash" "2.0.1"
+    make_fusion_version_dir "$external" "2.0.1"
+    ln -s "$external" "$prod/ffffffffffffffffffffffffffffffffffffffff"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=0 /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+get_path_size_kb() { echo "1"; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ ! -d "$old" ]] || return 1
+    [[ -d "$wrong_id" && -d "$no_app" && -d "$no_executable" && -d "$non_hash" && -L "$prod/ffffffffffffffffffffffffffffffffffffffff" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles refuses a symlinked production root" {
+    local autodesk="$HOME/Library/Application Support/Autodesk"
+    local external="$HOME/outside-fusion-production"
+    rm -rf "$autodesk" "$external"
+    mkdir -p "$autodesk/webdeploy" "$external"
+    local current="$external/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$external/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$external/Autodesk Fusion.app"
+    ln -s "$external" "$autodesk/webdeploy/production"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; return 0; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"production root not trusted"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
+    [[ -d "$old" ]]
 }
 
 @test "clean_autodesk_fusion_old_bundles skips when Autodesk is running" {
     local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
     rm -rf "$HOME/Library/Application Support/Autodesk"
-    mkdir -p "$prod/hash-current" "$prod/hash-old"
-    ln -s "$prod/hash-current" "$prod/Autodesk Fusion.app"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail
@@ -1451,9 +1541,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 pgrep() { return 0; }
 get_path_size_kb() { echo "1024"; }
-should_protect_path() { return 1; }
-is_path_whitelisted() { return 1; }
-safe_remove() { echo "UNEXPECTED_REMOVE:$1"; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; return 0; }
 mole_defer_cleanup_family() { echo "DEFER:$1"; }
 note_activity() { :; }
 debug_log() { :; }
@@ -1461,34 +1549,517 @@ DRY_RUN=false
 clean_autodesk_fusion_old_bundles
 INNER
 
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"DEFER:Autodesk Fusion"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
-    [[ -d "$prod/hash-old" ]]
+    [[ -d "$old" ]]
 }
 
-@test "clean_autodesk_fusion_old_bundles skips when current alias is broken" {
+@test "clean_autodesk_fusion_old_bundles skips while the Autodesk streamer updater is running" {
     local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
     rm -rf "$HOME/Library/Application Support/Autodesk"
-    mkdir -p "$prod/hash-old"
-    # Alias points to a directory that does not exist.
-    ln -s "$prod/hash-missing" "$prod/Autodesk Fusion.app"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
-pgrep() { return 1; }
-should_protect_path() { return 1; }
-is_path_whitelisted() { return 1; }
-safe_remove() { echo "UNEXPECTED_REMOVE:$1"; }
+pgrep() { [[ "$*" == *streamer* ]]; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; return 0; }
+mole_defer_cleanup_family() { echo "DEFER:$1"; }
 note_activity() { :; }
 debug_log() { :; }
 DRY_RUN=false
 clean_autodesk_fusion_old_bundles
 INNER
 
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"DEFER:Autodesk Fusion"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
-    [[ -d "$prod/hash-old" ]]
+    [[ -d "$old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles skips when Autodesk process state is unknown" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+autodesk_cache_process_state() { return 2; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; return 0; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"skipped (process state unknown)"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles skips when current alias is broken" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Autodesk Fusion.app" \
+        "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_remove() { echo "UNEXPECTED_REMOVE:$1"; return 0; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"current version unknown"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_REMOVE"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles stops when the current alias changes during sizing" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=0 /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+get_path_size_kb() {
+    local alias="$HOME/Library/Application Support/Autodesk/webdeploy/production/Autodesk Fusion.app"
+    rm "$alias"
+    ln -s "$1/Autodesk Fusion.app" "$alias"
+    echo "1"
+}
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"stopped (current version changed)"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles stops when Autodesk starts during sizing" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=0 /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+marker="$HOME/autodesk-started"
+pgrep() { [[ -e "$marker" ]]; }
+get_path_size_kb() { : > "$marker"; echo "1"; }
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"stopped (Autodesk started)"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles rejects a candidate replaced during sizing" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk" "$HOME/fusion-replacement"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local replacement="$HOME/fusion-replacement"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    make_fusion_version_dir "$replacement" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=0 /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+old="$HOME/Library/Application Support/Autodesk/webdeploy/production/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+pgrep() { return 1; }
+get_path_size_kb() {
+    mv "$old" "$HOME/original-old-fusion"
+    mv "$HOME/fusion-replacement" "$old"
+    echo "1"
+}
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"stopped (candidate replaced)"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles reports a failed removal and continues" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old_one="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    local old_two="$prod/cccccccccccccccccccccccccccccccccccccccc"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old_one" "2.0.100"
+    make_fusion_version_dir "$old_two" "2.0.150"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+old_one="$HOME/Library/Application Support/Autodesk/webdeploy/production/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+pgrep() { return 1; }
+get_path_size_kb() { echo "1"; }
+safe_remove() {
+    if [[ "$1" == "$old_one" ]]; then
+        return 1
+    fi
+    command rm -rf "$1"
+}
+note_activity() { :; }
+debug_log() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+DRY_RUN=false
+clean_autodesk_fusion_old_bundles
+printf 'COUNTS:%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"1 failed"* ]] || return 1
+    [[ "$output" == *"COUNTS:1:1:1"* ]] || return 1
+    [[ -d "$old_one" && ! -d "$old_two" ]]
+}
+
+@test "clean_autodesk_fusion_old_bundles propagates a final sink interrupt" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_CURRENT_COMMAND=clean /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+get_path_size_kb() { echo "1"; }
+guard_calls=0
+_autodesk_fusion_delete_guard_allows() {
+    guard_calls=$((guard_calls + 1))
+    [[ $guard_calls -lt 3 ]] && return 0
+    _MOLE_AUTODESK_FUSION_GUARD_REASON="interrupted"
+    return 130
+}
+note_activity() { :; }
+debug_log() { :; }
+DRY_RUN=false
+MOLE_CLEAN_CANCEL_STATUS=0
+set +e
+clean_autodesk_fusion_old_bundles
+cleanup_rc=$?
+set -e
+printf 'RC:%s CANCEL:%s CALLS:%s\n' \
+    "$cleanup_rc" "$MOLE_CLEAN_CANCEL_STATUS" "$guard_calls"
+[[ $cleanup_rc -eq 130 ]]
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC:130 CANCEL:130 CALLS:3"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "Autodesk Fusion final guard catches the streamer starting during metadata probes" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+marker="$HOME/streamer-started"
+autodesk_cache_process_state() { [[ -e "$marker" ]]; }
+_autodesk_fusion_resolve_current_version() {
+    _MOLE_AUTODESK_FUSION_RESOLVED_DIR="$current"
+    _MOLE_AUTODESK_FUSION_RESOLVED_VERSION="2.0.200"
+    : > "$marker"
+}
+_mole_snapshot_path_identity "$old"
+_MOLE_AUTODESK_FUSION_GUARD_ROOT="$prod"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR="$current"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION="2.0.200"
+_MOLE_AUTODESK_FUSION_GUARD_DEADLINE=$((SECONDS + 10))
+_MOLE_AUTODESK_FUSION_GUARD_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_AUTODESK_FUSION_GUARD_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_AUTODESK_FUSION_GUARD_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+set +e
+_autodesk_fusion_delete_guard_allows "$old"
+guard_rc=$?
+set -e
+printf 'RC:%s REASON:%s\n' "$guard_rc" "$_MOLE_AUTODESK_FUSION_GUARD_REASON"
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC:1 REASON:Autodesk started"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "Autodesk Fusion final guard catches the current alias switching during candidate probes" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+alias_path="$prod/Autodesk Fusion.app"
+pgrep() { return 1; }
+plutil_counter="$HOME/plutil-counter"
+: > "$plutil_counter"
+run_with_timeout() {
+    shift
+    if [[ "$1" == "/usr/bin/plutil" ]]; then
+        local plutil_calls
+        plutil_calls=$(wc -l < "$plutil_counter")
+        plutil_calls=$((plutil_calls + 1))
+        printf '%s\n' "$plutil_calls" >> "$plutil_counter"
+        if [[ $plutil_calls -eq 4 ]]; then
+            rm "$alias_path"
+            ln -s "$old/Autodesk Fusion.app" "$alias_path"
+        fi
+    fi
+    "$@"
+}
+_mole_snapshot_path_identity "$old"
+_MOLE_AUTODESK_FUSION_GUARD_ROOT="$prod"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR="$current"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION="2.0.200"
+_MOLE_AUTODESK_FUSION_GUARD_DEADLINE=$((SECONDS + 10))
+_MOLE_AUTODESK_FUSION_GUARD_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_AUTODESK_FUSION_GUARD_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_AUTODESK_FUSION_GUARD_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+set +e
+_autodesk_fusion_delete_guard_allows "$old"
+guard_rc=$?
+set -e
+plutil_calls=$(wc -l < "$plutil_counter" | tr -d '[:space:]')
+printf 'RC:%s REASON:%s PLUTIL:%s\n' \
+    "$guard_rc" "$_MOLE_AUTODESK_FUSION_GUARD_REASON" "$plutil_calls"
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC:1 REASON:current version changed"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "Autodesk Fusion final guard catches the current alias switching during its final process probe" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+alias_path="$prod/Autodesk Fusion.app"
+process_calls=0
+autodesk_cache_process_state() {
+    process_calls=$((process_calls + 1))
+    if [[ $process_calls -eq 2 ]]; then
+        rm "$alias_path"
+        ln -s "$old/Autodesk Fusion.app" "$alias_path"
+    fi
+    return 1
+}
+_mole_snapshot_path_identity "$old"
+_MOLE_AUTODESK_FUSION_GUARD_ROOT="$prod"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR="$current"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION="2.0.200"
+_MOLE_AUTODESK_FUSION_GUARD_DEADLINE=$((SECONDS + 10))
+_MOLE_AUTODESK_FUSION_GUARD_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_AUTODESK_FUSION_GUARD_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_AUTODESK_FUSION_GUARD_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+set +e
+_autodesk_fusion_delete_guard_allows "$old"
+guard_rc=$?
+set -e
+printf 'RC:%s REASON:%s PROCESS:%s\n' \
+    "$guard_rc" "$_MOLE_AUTODESK_FUSION_GUARD_REASON" "$process_calls"
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC:1 REASON:current version changed PROCESS:2"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "Autodesk Fusion final current resolver rebinds the alias after metadata probes" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    local old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    make_fusion_version_dir "$current" "2.0.200"
+    make_fusion_version_dir "$old" "2.0.100"
+    ln -s "$current/Autodesk Fusion.app" "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+old="$prod/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+alias_path="$prod/Autodesk Fusion.app"
+pgrep() { return 1; }
+plutil_counter="$HOME/final-resolver-plutil-counter"
+: > "$plutil_counter"
+run_with_timeout() {
+    shift
+    if [[ "$1" == "/usr/bin/plutil" ]]; then
+        local plutil_calls
+        plutil_calls=$(wc -l < "$plutil_counter")
+        plutil_calls=$((plutil_calls + 1))
+        printf '%s\n' "$plutil_calls" >> "$plutil_counter"
+        if [[ $plutil_calls -eq 7 ]]; then
+            rm "$alias_path"
+            ln -s "$old/Autodesk Fusion.app" "$alias_path"
+        fi
+    fi
+    "$@"
+}
+_mole_snapshot_path_identity "$old"
+_MOLE_AUTODESK_FUSION_GUARD_ROOT="$prod"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR="$current"
+_MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION="2.0.200"
+_MOLE_AUTODESK_FUSION_GUARD_DEADLINE=$((SECONDS + 10))
+_MOLE_AUTODESK_FUSION_GUARD_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_AUTODESK_FUSION_GUARD_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_AUTODESK_FUSION_GUARD_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+set +e
+_autodesk_fusion_delete_guard_allows "$old"
+guard_rc=$?
+set -e
+plutil_calls=$(wc -l < "$plutil_counter" | tr -d '[:space:]')
+printf 'RC:%s REASON:%s PLUTIL:%s\n' \
+    "$guard_rc" "$_MOLE_AUTODESK_FUSION_GUARD_REASON" "$plutil_calls"
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC:1 REASON:current version unknown PLUTIL:9"* ]] || return 1
+    [[ -d "$old" ]]
+}
+
+@test "Finder alias resolver passes the alias path as inert argv" {
+    local prod="$HOME/Library/Application Support/Autodesk/webdeploy/production"
+    rm -rf "$HOME/Library/Application Support/Autodesk"
+    local current="$prod/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    make_fusion_version_dir "$current" "2.0.200"
+    touch "$prod/Autodesk Fusion.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+alias_path="$HOME/Library/Application Support/Autodesk/webdeploy/production/Autodesk Fusion.app"
+target="$HOME/Library/Application Support/Autodesk/webdeploy/production/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Autodesk Fusion.app"
+run_with_timeout() {
+    shift
+    if [[ "$1" == "/usr/bin/osascript" ]]; then
+        [[ "${!#}" == "$alias_path" ]] || return 79
+        printf '%s\n' "$target"
+        return 0
+    fi
+    "$@"
+}
+_autodesk_fusion_resolve_current_version \
+    "$HOME/Library/Application Support/Autodesk/webdeploy/production" \
+    "$((SECONDS + 10))"
+printf 'CURRENT:%s|%s\n' \
+    "$_MOLE_AUTODESK_FUSION_RESOLVED_DIR" \
+    "$_MOLE_AUTODESK_FUSION_RESOLVED_VERSION"
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"CURRENT:$current|2.0.200"* ]]
 }

@@ -707,6 +707,10 @@ autodesk_cache_process_state() {
         -f "/AcCoreConsole" \
         -x "ADPClientService" \
         -f "/ADPClientService" \
+        -x "streamer" \
+        -f "/streamer" \
+        -x "Fusion Client Downloader" \
+        -x "Fusion 360 Client Downloader" \
         -f "Autodesk Fusion" \
         -f "Fusion 360" \
         -f "Fusion360"
@@ -716,99 +720,451 @@ _autodesk_cache_delete_guard_allows() {
     mole_clean_process_guard autodesk_cache_process_state "Autodesk running"
 }
 
-# Autodesk Fusion's in-app updater keeps every previous app bundle under
-# ~/Library/Application Support/Autodesk/webdeploy/production. An alias named
-# "Autodesk Fusion.app" points at the currently installed version. Bundles
-# newer than that alias are staged for the next launch and must be kept (#1438).
+# Autodesk Fusion's in-app updater can leave tens of gigabytes of old app
+# bundles under webdeploy/production (#1438 measured 60GB). This is not a
+# generic Autodesk tree cleanup: only direct 40-hex version directories that
+# contain one exact com.autodesk.fusion360 app bundle are eligible. Keep the
+# current, equal-version, newer staged, unrecognized, non-hash, and symlinked
+# entries. Version evidence is stronger than directory mtime, which an updater
+# can preserve or reorder.
+_MOLE_AUTODESK_FUSION_VERSION=""
+_MOLE_AUTODESK_FUSION_APP=""
+_MOLE_AUTODESK_FUSION_PRODUCTION_ROOT=""
+_MOLE_AUTODESK_FUSION_RESOLVED_DIR=""
+_MOLE_AUTODESK_FUSION_RESOLVED_VERSION=""
+_MOLE_AUTODESK_FUSION_CLEANUP_TARGETS=()
+_MOLE_AUTODESK_FUSION_CLEANUP_PARENTS=()
+_MOLE_AUTODESK_FUSION_CLEANUP_PARENT_IDS=()
+_MOLE_AUTODESK_FUSION_CLEANUP_TARGET_IDS=()
+_MOLE_AUTODESK_FUSION_GUARD_REASON=""
+
+_autodesk_fusion_trusted_production_root() {
+    local production_dir="$1"
+    _MOLE_AUTODESK_FUSION_PRODUCTION_ROOT=""
+    [[ -d "$production_dir" && ! -L "$production_dir" ]] || return 1
+
+    local physical_root=""
+    physical_root=$(cd -P "$production_dir" 2> /dev/null && pwd -P) || return 1
+    # Refuse every symlinked ancestor. A lexical path below Application Support
+    # is not containment when webdeploy or production redirects elsewhere.
+    [[ "$physical_root" == "$production_dir" ]] || return 1
+    _MOLE_AUTODESK_FUSION_PRODUCTION_ROOT="$physical_root"
+}
+
+_autodesk_fusion_version_dir_version() {
+    local version_dir="$1"
+    local deadline_seconds="$2"
+    _MOLE_AUTODESK_FUSION_VERSION=""
+    _MOLE_AUTODESK_FUSION_APP=""
+
+    [[ -d "$version_dir" && ! -L "$version_dir" ]] || return 1
+    local app_candidate=""
+    local app_count=0
+    local candidate
+    for candidate in \
+        "$version_dir/Autodesk Fusion.app" \
+        "$version_dir/Autodesk Fusion 360.app"; do
+        [[ -d "$candidate" && ! -L "$candidate" ]] || continue
+        app_candidate="$candidate"
+        app_count=$((app_count + 1))
+    done
+    [[ $app_count -eq 1 ]] || return 1
+
+    local contents_dir="$app_candidate/Contents"
+    local macos_dir="$contents_dir/MacOS"
+    [[ -d "$contents_dir" && ! -L "$contents_dir" ]] || return 1
+    [[ -d "$macos_dir" && ! -L "$macos_dir" ]] || return 1
+    local info_plist="$contents_dir/Info.plist"
+    [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
+
+    local probe_timeout=""
+    local probe_rc=0
+    probe_timeout=$(_mole_timeout_with_deadline \
+        "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline_seconds") || probe_rc=$?
+    [[ $probe_rc -eq 0 ]] || return "$probe_rc"
+
+    local bundle_id=""
+    bundle_id=$(run_with_timeout "$probe_timeout" /usr/bin/plutil \
+        -extract CFBundleIdentifier raw "$info_plist" < /dev/null 2> /dev/null) || probe_rc=$?
+    [[ $probe_rc -eq 124 || $probe_rc -ge 128 ]] && return "$probe_rc"
+    [[ $probe_rc -eq 0 && "$bundle_id" == "com.autodesk.fusion360" ]] || return 1
+
+    probe_timeout=$(_mole_timeout_with_deadline \
+        "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline_seconds") || probe_rc=$?
+    [[ $probe_rc -eq 0 ]] || return "$probe_rc"
+    local version=""
+    version=$(run_with_timeout "$probe_timeout" /usr/bin/plutil \
+        -extract CFBundleVersion raw "$info_plist" < /dev/null 2> /dev/null) || probe_rc=$?
+    [[ $probe_rc -eq 124 || $probe_rc -ge 128 ]] && return "$probe_rc"
+    [[ $probe_rc -eq 0 && "$version" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+
+    probe_timeout=$(_mole_timeout_with_deadline \
+        "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline_seconds") || probe_rc=$?
+    [[ $probe_rc -eq 0 ]] || return "$probe_rc"
+    local executable=""
+    executable=$(run_with_timeout "$probe_timeout" /usr/bin/plutil \
+        -extract CFBundleExecutable raw "$info_plist" < /dev/null 2> /dev/null) || probe_rc=$?
+    [[ $probe_rc -eq 124 || $probe_rc -ge 128 ]] && return "$probe_rc"
+    [[ $probe_rc -eq 0 &&
+        ("$executable" == "Autodesk Fusion" || "$executable" == "Autodesk Fusion 360") ]] || return 1
+    local executable_path="$macos_dir/$executable"
+    [[ -f "$executable_path" && -x "$executable_path" && ! -L "$executable_path" ]] || return 1
+
+    _MOLE_AUTODESK_FUSION_VERSION="$version"
+    _MOLE_AUTODESK_FUSION_APP="$app_candidate"
+}
+
+_autodesk_fusion_version_is_older() {
+    local candidate_version="$1"
+    local current_version="$2"
+    [[ "$candidate_version" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+    [[ "$current_version" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+
+    local saved_ifs="$IFS"
+    IFS='.'
+    # shellcheck disable=SC2206 # intentional numeric version split
+    local -a candidate_parts=($candidate_version)
+    # shellcheck disable=SC2206 # intentional numeric version split
+    local -a current_parts=($current_version)
+    IFS="$saved_ifs"
+
+    local count=${#candidate_parts[@]}
+    [[ ${#current_parts[@]} -gt $count ]] && count=${#current_parts[@]}
+    local index candidate_part current_part
+    for ((index = 0; index < count; index++)); do
+        candidate_part="${candidate_parts[$index]:-0}"
+        current_part="${current_parts[$index]:-0}"
+        # Avoid arithmetic overflow on corrupt metadata. Unknown is retained.
+        [[ ${#candidate_part} -le 9 && ${#current_part} -le 9 ]] || return 1
+        if ((10#$candidate_part < 10#$current_part)); then
+            return 0
+        elif ((10#$candidate_part > 10#$current_part)); then
+            return 1
+        fi
+    done
+    return 1
+}
+
+_autodesk_fusion_resolve_current_dir() {
+    local production_root="$1"
+    local deadline_seconds="$2"
+    _MOLE_AUTODESK_FUSION_RESOLVED_DIR=""
+
+    local current_alias="$production_root/Autodesk Fusion.app"
+    [[ -e "$current_alias" || -L "$current_alias" ]] || return 1
+
+    local resolved_target=""
+    local resolve_rc=0
+    if [[ -L "$current_alias" ]]; then
+        [[ -e "$current_alias" ]] || return 1
+        resolved_target=$(cd -P "$current_alias" 2> /dev/null && pwd -P) || return 1
+    else
+        # Resolve a Finder alias through Foundation, not Finder automation. The
+        # static JXA receives the path as argv, so quotes or AppleScript syntax
+        # in a user path cannot become code. Test/no-auth runs never launch it.
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ||
+            ! -x /usr/bin/osascript ]]; then
+            return 1
+        fi
+        local resolve_timeout=""
+        resolve_timeout=$(_mole_timeout_with_deadline \
+            "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline_seconds") || resolve_rc=$?
+        [[ $resolve_rc -eq 0 ]] || return "$resolve_rc"
+        # shellcheck disable=SC2016 # `$` belongs to the JXA bridge, not Bash
+        local jxa_script='ObjC.import("Foundation"); function run(argv) { var url = $.NSURL.fileURLWithPath($(argv[0])); var resolved = $.NSURL.URLByResolvingAliasFileAtURLOptionsError(url, 0, null); if (!resolved) throw new Error("unresolved alias"); return ObjC.unwrap(resolved.path); }'
+        resolved_target=$(run_with_timeout "$resolve_timeout" /usr/bin/osascript \
+            -l JavaScript -e "$jxa_script" "$current_alias" < /dev/null 2> /dev/null) || resolve_rc=$?
+        [[ $resolve_rc -eq 0 ]] || return "$resolve_rc"
+        resolved_target="${resolved_target%/}"
+        [[ -d "$resolved_target" ]] || return 1
+        resolved_target=$(cd -P "$resolved_target" 2> /dev/null && pwd -P) || return 1
+    fi
+
+    local version_dir=""
+    local target_name="${resolved_target##*/}"
+    if [[ "${resolved_target%/*}" == "$production_root" &&
+        "$target_name" =~ ^[0-9a-f]{40}$ ]]; then
+        version_dir="$resolved_target"
+    elif [[ "$target_name" == "Autodesk Fusion.app" ||
+        "$target_name" == "Autodesk Fusion 360.app" ]]; then
+        version_dir="${resolved_target%/*}"
+        local version_name="${version_dir##*/}"
+        [[ "${version_dir%/*}" == "$production_root" &&
+            "$version_name" =~ ^[0-9a-f]{40}$ ]] || return 1
+    else
+        return 1
+    fi
+    [[ -d "$version_dir" && ! -L "$version_dir" ]] || return 1
+
+    _MOLE_AUTODESK_FUSION_RESOLVED_DIR="$version_dir"
+}
+
+_autodesk_fusion_resolve_current_version() {
+    local production_root="$1"
+    local deadline_seconds="$2"
+    _MOLE_AUTODESK_FUSION_RESOLVED_DIR=""
+    _MOLE_AUTODESK_FUSION_RESOLVED_VERSION=""
+
+    local resolve_rc=0
+    _autodesk_fusion_resolve_current_dir \
+        "$production_root" "$deadline_seconds" || resolve_rc=$?
+    [[ $resolve_rc -eq 0 ]] || return "$resolve_rc"
+    local version_dir="$_MOLE_AUTODESK_FUSION_RESOLVED_DIR"
+
+    local version_rc=0
+    _autodesk_fusion_version_dir_version \
+        "$version_dir" "$deadline_seconds" || version_rc=$?
+    [[ $version_rc -eq 0 ]] || return "$version_rc"
+    local version="$_MOLE_AUTODESK_FUSION_VERSION"
+
+    # The updater can switch the alias while plist metadata is being read and
+    # exit before the caller's process recheck. End this resolver with an
+    # alias-only rebind, so its returned directory/version are one stable
+    # observation rather than metadata from an alias target that is no longer
+    # current.
+    resolve_rc=0
+    _autodesk_fusion_resolve_current_dir \
+        "$production_root" "$deadline_seconds" || resolve_rc=$?
+    [[ $resolve_rc -eq 0 ]] || return "$resolve_rc"
+    [[ "$_MOLE_AUTODESK_FUSION_RESOLVED_DIR" == "$version_dir" ]] || return 1
+
+    _MOLE_AUTODESK_FUSION_RESOLVED_DIR="$version_dir"
+    _MOLE_AUTODESK_FUSION_RESOLVED_VERSION="$version"
+}
+
+_autodesk_fusion_materialize_version_dirs() {
+    local production_root="$1"
+    local output_file="$2"
+    local deadline_seconds="$3"
+    : > "$output_file" || return 1
+
+    local scan_timeout=""
+    local scan_rc=0
+    scan_timeout=$(_mole_timeout_with_deadline \
+        "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" "$deadline_seconds") || scan_rc=$?
+    if [[ $scan_rc -eq 0 ]]; then
+        run_with_timeout "$scan_timeout" find "$production_root" \
+            -mindepth 1 -maxdepth 1 -type d -print0 \
+            < /dev/null > "$output_file" 2> /dev/null || scan_rc=$?
+    fi
+    if [[ $scan_rc -ne 0 ]]; then
+        : > "$output_file" || true
+        return "$scan_rc"
+    fi
+}
+
+_autodesk_fusion_plan_old_versions() {
+    local production_root="$1"
+    local current_dir="$2"
+    local current_version="$3"
+    local deadline_seconds="$4"
+    _MOLE_AUTODESK_FUSION_CLEANUP_TARGETS=()
+    _MOLE_AUTODESK_FUSION_CLEANUP_PARENTS=()
+    _MOLE_AUTODESK_FUSION_CLEANUP_PARENT_IDS=()
+    _MOLE_AUTODESK_FUSION_CLEANUP_TARGET_IDS=()
+
+    local inventory_file=""
+    inventory_file=$(create_temp_file) || return 1
+    local inventory_rc=0
+    _autodesk_fusion_materialize_version_dirs \
+        "$production_root" "$inventory_file" "$deadline_seconds" || inventory_rc=$?
+    if [[ $inventory_rc -ne 0 ]]; then
+        rm -f -- "$inventory_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
+        return "$inventory_rc"
+    fi
+
+    local dir name candidate_version version_rc
+    while IFS= read -r -d '' dir; do
+        if [[ $SECONDS -ge $deadline_seconds ]]; then
+            inventory_rc=124
+            break
+        fi
+        name="${dir##*/}"
+        [[ "$name" =~ ^[0-9a-f]{40}$ ]] || continue
+        [[ "$dir" != "$current_dir" && "${dir%/*}" == "$production_root" ]] || continue
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+
+        version_rc=0
+        _autodesk_fusion_version_dir_version \
+            "$dir" "$deadline_seconds" || version_rc=$?
+        if [[ $version_rc -eq 124 || $version_rc -ge 128 ]]; then
+            inventory_rc=$version_rc
+            break
+        elif [[ $version_rc -ne 0 ]]; then
+            debug_log "Autodesk Fusion old versions: keeping unverified directory $dir"
+            continue
+        fi
+        candidate_version="$_MOLE_AUTODESK_FUSION_VERSION"
+        _autodesk_fusion_version_is_older \
+            "$candidate_version" "$current_version" || continue
+        if should_protect_path "$dir" || is_path_whitelisted "$dir" ||
+            (declare -f holds_compiled_model_cache > /dev/null 2>&1 && holds_compiled_model_cache "$dir"); then
+            continue
+        fi
+
+        _mole_snapshot_path_identity "$dir" || continue
+        [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "$production_root" ]] || continue
+        _MOLE_AUTODESK_FUSION_CLEANUP_TARGETS+=("$dir")
+        _MOLE_AUTODESK_FUSION_CLEANUP_PARENTS+=("$_MOLE_PATH_SNAPSHOT_PARENT")
+        _MOLE_AUTODESK_FUSION_CLEANUP_PARENT_IDS+=("$_MOLE_PATH_SNAPSHOT_PARENT_ID")
+        _MOLE_AUTODESK_FUSION_CLEANUP_TARGET_IDS+=("$_MOLE_PATH_SNAPSHOT_TARGET_ID")
+    done < "$inventory_file"
+    rm -f -- "$inventory_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
+
+    if [[ $inventory_rc -ne 0 ]]; then
+        _MOLE_AUTODESK_FUSION_CLEANUP_TARGETS=()
+        _MOLE_AUTODESK_FUSION_CLEANUP_PARENTS=()
+        _MOLE_AUTODESK_FUSION_CLEANUP_PARENT_IDS=()
+        _MOLE_AUTODESK_FUSION_CLEANUP_TARGET_IDS=()
+        return "$inventory_rc"
+    fi
+}
+
+_autodesk_fusion_guard_current_is_unchanged() {
+    local _MOLE_AUTODESK_FUSION_RESOLVED_DIR=""
+    local _MOLE_AUTODESK_FUSION_RESOLVED_VERSION=""
+    local resolve_rc=0
+    _autodesk_fusion_resolve_current_version \
+        "$_MOLE_AUTODESK_FUSION_GUARD_ROOT" \
+        "$_MOLE_AUTODESK_FUSION_GUARD_DEADLINE" || resolve_rc=$?
+    if [[ $resolve_rc -ne 0 ]]; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="current version unknown"
+        [[ $resolve_rc -eq 124 || $resolve_rc -ge 128 ]] && return "$resolve_rc"
+        return 1
+    fi
+    if [[ "$_MOLE_AUTODESK_FUSION_RESOLVED_DIR" != "$_MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR" ||
+        "$_MOLE_AUTODESK_FUSION_RESOLVED_VERSION" != "$_MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION" ]]; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="current version changed"
+        return 1
+    fi
+}
+
+_autodesk_fusion_delete_guard_allows() {
+    local target="$1"
+    _MOLE_AUTODESK_FUSION_GUARD_REASON=""
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard \
+        autodesk_cache_process_state "Autodesk started"; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="$_MOLE_CLEAN_GUARD_REASON"
+        return 1
+    fi
+
+    local _MOLE_AUTODESK_FUSION_PRODUCTION_ROOT=""
+    if ! _autodesk_fusion_trusted_production_root \
+        "$_MOLE_AUTODESK_FUSION_GUARD_ROOT"; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="production root changed"
+        return 1
+    fi
+
+    local current_rc=0
+    _autodesk_fusion_guard_current_is_unchanged || current_rc=$?
+    [[ $current_rc -eq 0 ]] || return "$current_rc"
+
+    local name="${target##*/}"
+    if [[ ! "$name" =~ ^[0-9a-f]{40}$ || "${target%/*}" != "$_MOLE_AUTODESK_FUSION_GUARD_ROOT" ||
+        "$target" == "$_MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR" || ! -d "$target" || -L "$target" ]]; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="candidate changed"
+        return 1
+    fi
+
+    local version_rc=0
+    _autodesk_fusion_version_dir_version \
+        "$target" "$_MOLE_AUTODESK_FUSION_GUARD_DEADLINE" || version_rc=$?
+    if [[ $version_rc -ne 0 ]]; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="candidate identity changed"
+        [[ $version_rc -eq 124 || $version_rc -ge 128 ]] && return "$version_rc"
+        return 1
+    fi
+    if ! _autodesk_fusion_version_is_older \
+        "$_MOLE_AUTODESK_FUSION_VERSION" \
+        "$_MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION"; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="retention changed"
+        return 1
+    fi
+    if should_protect_path "$target" || is_path_whitelisted "$target" ||
+        (declare -f holds_compiled_model_cache > /dev/null 2>&1 && holds_compiled_model_cache "$target"); then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="policy changed"
+        return 1
+    fi
+
+    # Metadata probes above are bounded, but the updater can start during any
+    # one of them. Rebind its tri-state immediately before the final identity
+    # check; that identity remains the last operation before safe_remove's rm.
+    _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard \
+        autodesk_cache_process_state "Autodesk started"; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="$_MOLE_CLEAN_GUARD_REASON"
+        return 1
+    fi
+
+    # The updater may atomically switch the alias and exit during any earlier
+    # metadata, policy, or process probe. Make current resolution the last
+    # external-state check, immediately before the target identity binding.
+    current_rc=0
+    _autodesk_fusion_guard_current_is_unchanged || current_rc=$?
+    [[ $current_rc -eq 0 ]] || return "$current_rc"
+
+    # Make the object/parent identity check the last guard operation so a
+    # replacement during the metadata probes is rejected at the sink.
+    if ! _mole_path_matches_identity \
+        "$target" \
+        "$_MOLE_AUTODESK_FUSION_GUARD_PARENT" \
+        "$_MOLE_AUTODESK_FUSION_GUARD_PARENT_ID" \
+        "$_MOLE_AUTODESK_FUSION_GUARD_TARGET_ID"; then
+        _MOLE_AUTODESK_FUSION_GUARD_REASON="candidate replaced"
+        return 1
+    fi
+}
+
 clean_autodesk_fusion_old_bundles() {
     local production_dir="$HOME/Library/Application Support/Autodesk/webdeploy/production"
     [[ -d "$production_dir" ]] || return 0
+    local cleanup_deadline=$((SECONDS + 60))
 
-    local current_alias="$production_dir/Autodesk Fusion.app"
-    if [[ ! -e "$current_alias" ]]; then
-        debug_log "Autodesk Fusion old bundles: no current alias at $current_alias"
-        return 0
-    fi
-
-    local current_target=""
-    if [[ -L "$current_alias" ]]; then
-        current_target=$(readlink "$current_alias" 2> /dev/null || true)
-    else
-        # Alias / Finder alias: resolve via AppleScript; fall back to pwd -P
-        # so a missing osascript still finds the real bundle.
-        if command -v osascript > /dev/null 2>&1; then
-            current_target=$(osascript -e "tell application \"Finder\" to POSIX path of (original item of (POSIX file \"$current_alias\" as alias))" 2> /dev/null || true)
-            current_target="${current_target%/}"
-        fi
-        if [[ -z "$current_target" ]]; then
-            current_target=$(cd "$current_alias" 2> /dev/null && pwd -P) || current_target=""
-        fi
-    fi
-    current_target="${current_target%/}"
-    if [[ -z "$current_target" ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (current alias unreadable)"
+    local _MOLE_AUTODESK_FUSION_PRODUCTION_ROOT=""
+    if ! _autodesk_fusion_trusted_production_root "$production_dir"; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (production root not trusted)"
         note_activity
         return 0
     fi
+    local production_root="$_MOLE_AUTODESK_FUSION_PRODUCTION_ROOT"
 
-    # The alias typically points at ".../<hash>/Autodesk Fusion.app"; keep the
-    # hash directory that owns it.
-    local current_dir=""
-    if [[ "$current_target" == "$production_dir"/* ]]; then
-        local rel="${current_target#"$production_dir"/}"
-        current_dir="${rel%%/*}"
-    else
-        current_dir=$(basename "$(dirname "$current_target")")
-    fi
-    if [[ -z "$current_dir" || ! -d "$production_dir/$current_dir" ]]; then
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (current version missing)"
+    local _MOLE_AUTODESK_FUSION_RESOLVED_DIR=""
+    local _MOLE_AUTODESK_FUSION_RESOLVED_VERSION=""
+    local current_rc=0
+    _autodesk_fusion_resolve_current_version \
+        "$production_root" "$cleanup_deadline" || current_rc=$?
+    if [[ $current_rc -eq 124 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (current version probe timed out)"
+        note_activity
+        return 0
+    elif [[ $current_rc -ge 128 ]]; then
+        return "$current_rc"
+    elif [[ $current_rc -ne 0 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (current version unknown)"
         note_activity
         return 0
     fi
+    local current_dir="$_MOLE_AUTODESK_FUSION_RESOLVED_DIR"
+    local current_version="$_MOLE_AUTODESK_FUSION_RESOLVED_VERSION"
 
-    local current_mtime
-    current_mtime=$(stat -f%m "$production_dir/$current_dir" 2> /dev/null || echo "0")
-    [[ "$current_mtime" =~ ^[0-9]+$ ]] || current_mtime=0
-
-    # Keep a version newer than current: it is a staged auto-update that the
-    # alias will point at on next launch.
-    local newest_dir=""
-    local newest_mtime=0
-    local dir name mtime
-    for dir in "$production_dir"/*; do
-        [[ -d "$dir" && ! -L "$dir" ]] || continue
-        name=$(basename "$dir")
-        [[ "$name" == "Autodesk Fusion.app" ]] && continue
-        [[ "$name" == "$current_dir" ]] && continue
-        mtime=$(stat -f%m "$dir" 2> /dev/null || echo "0")
-        if [[ "$mtime" =~ ^[0-9]+$ ]] && [[ "$mtime" -gt "$newest_mtime" ]]; then
-            newest_mtime="$mtime"
-            newest_dir="$name"
-        fi
-    done
-    if [[ "$newest_mtime" -le "$current_mtime" ]]; then
-        newest_dir=""
-    elif [[ -n "$newest_dir" ]]; then
-        debug_log "Autodesk Fusion old versions: keeping $newest_dir (staged auto-update newer than $current_dir)"
-    fi
-
-    local -a old_dirs=()
-    for dir in "$production_dir"/*; do
-        [[ -d "$dir" && ! -L "$dir" ]] || continue
-        name=$(basename "$dir")
-        [[ "$name" == "Autodesk Fusion.app" ]] && continue
-        [[ "$name" == "$current_dir" ]] && continue
-        [[ -n "$newest_dir" && "$name" == "$newest_dir" ]] && continue
-        if should_protect_path "$dir" || is_path_whitelisted "$dir"; then
-            continue
-        fi
-        old_dirs+=("$dir")
-    done
-
-    if [[ ${#old_dirs[@]} -eq 0 ]]; then
-        debug_log "Autodesk Fusion old versions: nothing to remove (current=$current_dir)"
+    local plan_rc=0
+    _autodesk_fusion_plan_old_versions \
+        "$production_root" "$current_dir" "$current_version" \
+        "$cleanup_deadline" || plan_rc=$?
+    if [[ $plan_rc -eq 124 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (inventory timed out)"
+        note_activity
+        return 0
+    elif [[ $plan_rc -ge 128 ]]; then
+        return "$plan_rc"
+    elif [[ $plan_rc -ne 0 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · skipped (inventory incomplete)"
+        note_activity
         return 0
     fi
+    [[ ${#_MOLE_AUTODESK_FUSION_CLEANUP_TARGETS[@]} -gt 0 ]] || return 0
 
     local process_state=0
     autodesk_cache_process_state || process_state=$?
@@ -823,24 +1179,62 @@ clean_autodesk_fusion_old_bundles() {
     fi
 
     local cleaned_count=0
+    local failed_count=0
     local total_size=0
     local stopped_reason=""
-    for dir in "${old_dirs[@]}"; do
-        process_state=0
-        autodesk_cache_process_state || process_state=$?
-        if [[ $process_state -ne 1 ]]; then
-            stopped_reason="Autodesk Fusion started"
-            [[ $process_state -eq 2 ]] && stopped_reason="process state unknown"
+    local index dir size_kb size_rc size_timeout guard_rc remove_rc
+    for ((index = 0; index < ${#_MOLE_AUTODESK_FUSION_CLEANUP_TARGETS[@]}; index++)); do
+        dir="${_MOLE_AUTODESK_FUSION_CLEANUP_TARGETS[$index]}"
+        local _MOLE_AUTODESK_FUSION_GUARD_ROOT="$production_root"
+        local _MOLE_AUTODESK_FUSION_GUARD_CURRENT_DIR="$current_dir"
+        local _MOLE_AUTODESK_FUSION_GUARD_CURRENT_VERSION="$current_version"
+        local _MOLE_AUTODESK_FUSION_GUARD_DEADLINE="$cleanup_deadline"
+        local _MOLE_AUTODESK_FUSION_GUARD_PARENT="${_MOLE_AUTODESK_FUSION_CLEANUP_PARENTS[$index]}"
+        local _MOLE_AUTODESK_FUSION_GUARD_PARENT_ID="${_MOLE_AUTODESK_FUSION_CLEANUP_PARENT_IDS[$index]}"
+        local _MOLE_AUTODESK_FUSION_GUARD_TARGET_ID="${_MOLE_AUTODESK_FUSION_CLEANUP_TARGET_IDS[$index]}"
+
+        guard_rc=0
+        _autodesk_fusion_delete_guard_allows "$dir" || guard_rc=$?
+        if [[ $guard_rc -eq 124 ]]; then
+            stopped_reason="verification timed out"
+            break
+        elif [[ $guard_rc -ge 128 ]]; then
+            return "$guard_rc"
+        elif [[ $guard_rc -ne 0 ]]; then
+            stopped_reason="$_MOLE_AUTODESK_FUSION_GUARD_REASON"
             break
         fi
-        local size_kb=""
-        local size_rc=0
-        size_kb=$(get_path_size_kb "$dir") || size_rc=$?
-        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-        [[ $size_rc -eq 0 ]] || return "$size_rc"
-        size_kb="${size_kb:-0}"
 
-        if [[ "$DRY_RUN" == "true" ]]; then
+        size_timeout=""
+        size_rc=0
+        size_timeout=$(_mole_timeout_with_deadline \
+            "$MOLE_TIMEOUT_DISK_VERIFY_SEC" "$cleanup_deadline") || size_rc=$?
+        if [[ $size_rc -eq 0 ]]; then
+            size_kb=$(get_path_size_kb "$dir" "$size_timeout") || size_rc=$?
+        fi
+        if [[ $size_rc -eq 124 ]]; then
+            stopped_reason="size probe timed out"
+            break
+        elif [[ $size_rc -ge 128 ]]; then
+            return "$size_rc"
+        elif [[ $size_rc -ne 0 || ! "$size_kb" =~ ^[0-9]+$ ]]; then
+            failed_count=$((failed_count + 1))
+            continue
+        fi
+
+        guard_rc=0
+        _autodesk_fusion_delete_guard_allows "$dir" || guard_rc=$?
+        if [[ $guard_rc -eq 124 ]]; then
+            stopped_reason="verification timed out"
+            break
+        elif [[ $guard_rc -ge 128 ]]; then
+            return "$guard_rc"
+        elif [[ $guard_rc -ne 0 ]]; then
+            stopped_reason="$_MOLE_AUTODESK_FUSION_GUARD_REASON"
+            break
+        fi
+
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
                 record_dry_run_cleanup_target "$dir" "$size_kb" 1 true || continue
             fi
@@ -849,10 +1243,26 @@ clean_autodesk_fusion_old_bundles() {
             continue
         fi
 
-        if safe_remove "$dir" true "$size_kb" > /dev/null 2>&1; then
+        remove_rc=0
+        local _MOLE_SAFE_REMOVE_FINAL_GUARD="_autodesk_fusion_delete_guard_allows"
+        safe_remove "$dir" true "$size_kb" "$cleanup_deadline" \
+            "$_MOLE_AUTODESK_FUSION_GUARD_PARENT" \
+            "$_MOLE_AUTODESK_FUSION_GUARD_PARENT_ID" \
+            "$_MOLE_AUTODESK_FUSION_GUARD_TARGET_ID" \
+            > /dev/null 2>&1 || remove_rc=$?
+        if [[ $remove_rc -eq 0 ]]; then
             total_size=$((total_size + size_kb))
             cleaned_count=$((cleaned_count + 1))
+        elif [[ $remove_rc -eq 124 ]]; then
+            stopped_reason="removal timed out"
+            break
+        elif [[ $remove_rc -ge 128 ]]; then
+            return "$remove_rc"
+        elif [[ -n "$_MOLE_AUTODESK_FUSION_GUARD_REASON" ]]; then
+            stopped_reason="$_MOLE_AUTODESK_FUSION_GUARD_REASON"
+            break
         else
+            failed_count=$((failed_count + 1))
             debug_log "Autodesk Fusion old version removal failed: $dir"
         fi
     done
@@ -860,25 +1270,25 @@ clean_autodesk_fusion_old_bundles() {
     if [[ $cleaned_count -gt 0 ]]; then
         local size_human
         size_human=$(bytes_to_human "$((total_size * 1024))")
-        if [[ "$DRY_RUN" == "true" ]]; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Autodesk Fusion old versions${NC} · ${YELLOW}${cleaned_count} dirs, $(colorize_human_size "$size_human") ${YELLOW}dry${NC}"
         else
             local line_color
             line_color=$(cleanup_result_color_kb "$total_size")
             echo -e "  ${line_color}${ICON_SUCCESS}${NC} Autodesk Fusion old versions${NC} · ${line_color}${cleaned_count} dirs, $size_human${NC}"
         fi
-        files_cleaned=$((files_cleaned + cleaned_count))
-        total_size_cleaned=$((total_size_cleaned + total_size))
-        total_items=$((total_items + 1))
+        files_cleaned=$((${files_cleaned:-0} + cleaned_count))
+        total_size_cleaned=$((${total_size_cleaned:-0} + total_size))
+        total_items=$((${total_items:-0} + 1))
+        note_activity
+    fi
+    if [[ $failed_count -gt 0 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · ${failed_count} failed"
         note_activity
     fi
     if [[ -n "$stopped_reason" ]]; then
-        if [[ "$stopped_reason" == "process state unknown" ]]; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · stopped (${stopped_reason})"
-            note_activity
-        else
-            mole_defer_cleanup_family "Autodesk Fusion"
-        fi
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Autodesk Fusion old versions · stopped (${stopped_reason})"
+        note_activity
     fi
 }
 
