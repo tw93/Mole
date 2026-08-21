@@ -299,6 +299,109 @@ EOF
     done
 }
 
+@test "validate_path_for_deletion refuses a SQLite cache directory when lsof is inconclusive (#1439)" {
+    local cache_dir="$HOME/Library/Caches/com.example.UnknownSQLite"
+    local db="$cache_dir/Cache.db"
+    mkdir -p "$cache_dir"
+    printf 'db' > "$db"
+    printf 'shm' > "$db-shm"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" cache_dir="$cache_dir" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_user_cache_owner_process_state() { return 1; }
+lsof() { return 1; }
+run_with_timeout() { return 124; }
+validate_path_for_deletion "$cache_dir"
+EOF
+
+    [ "$status" -eq 1 ]
+}
+
+@test "validate_path_for_deletion checks every supported SQLite name inside a cache directory (#1439)" {
+    local filename=""
+    for filename in state.sqlite state.sqlite3 STATE.SQLITE .hidden.sqlite; do
+        local cache_dir="$HOME/Library/Caches/com.example.${filename//[^A-Za-z0-9]/_}"
+        mkdir -p "$cache_dir"
+        printf 'db' > "$cache_dir/$filename"
+
+        run env PROJECT_ROOT="$PROJECT_ROOT" cache_dir="$cache_dir" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_user_cache_owner_process_state() { return 1; }
+lsof() { return 0; }
+run_with_timeout() { shift; "$@"; }
+validate_path_for_deletion "$cache_dir"
+EOF
+
+        [ "$status" -eq 1 ] || return 1
+    done
+}
+
+@test "SQLite cache directory guard isolates caller nullglob and failglob on Bash 3.2 (#1439)" {
+    local cache_dir="$HOME/Library/Caches/com.example.EmptySQLite"
+    mkdir -p "$cache_dir"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" cache_dir="$cache_dir" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_user_cache_owner_process_state() { return 1; }
+shopt -s nullglob failglob
+validate_path_for_deletion "$cache_dir"
+shopt -q nullglob
+shopt -q failglob
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "SQLite cache directory guard ignores and restores caller GLOBIGNORE (#1439)" {
+    local cache_dir="$HOME/Library/Caches/com.example.GlobIgnoreSQLite"
+    mkdir -p "$cache_dir"
+    printf 'db' > "$cache_dir/state.db"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" cache_dir="$cache_dir" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_user_cache_owner_process_state() { return 1; }
+lsof() { return 0; }
+run_with_timeout() { shift; "$@"; }
+export GLOBIGNORE='*.db'
+validation_state=0
+validate_path_for_deletion "$cache_dir" || validation_state=$?
+[[ $validation_state -eq 1 ]]
+[[ "$GLOBIGNORE" == '*.db' ]]
+[[ "$(declare -p GLOBIGNORE)" == 'declare -x GLOBIGNORE='* ]]
+shopt -q dotglob
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "SQLite cache directory guard probes each database family once (#1439)" {
+    local cache_dir="$HOME/Library/Caches/com.example.OneSQLiteFamily"
+    local db="$cache_dir/Cache.db"
+    mkdir -p "$cache_dir"
+    printf 'db' > "$db"
+    printf 'wal' > "$db-wal"
+    printf 'shm' > "$db-shm"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" cache_dir="$cache_dir" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_user_cache_owner_process_state() { return 1; }
+lsof_calls=0
+lsof() { lsof_calls=$((lsof_calls + 1)); return 1; }
+run_with_timeout() { shift; "$@"; }
+guard_state=0
+_mole_should_refuse_live_user_cache_path "$cache_dir" || guard_state=$?
+[[ $guard_state -eq 1 ]]
+[[ $lsof_calls -eq 3 ]]
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "should_protect_path applies high-risk cleanup denylist" {
     run /bin/bash -c "
         source '$PROJECT_ROOT/lib/core/common.sh'

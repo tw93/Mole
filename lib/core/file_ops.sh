@@ -472,22 +472,90 @@ _mole_should_refuse_live_user_cache_path() {
     if _mole_is_user_cache_sqlite_family_path "$path"; then
         local open_state=0
         _mole_user_cache_sqlite_has_open_handle "$path" || open_state=$?
-        if [[ $open_state -eq 0 ]]; then
-            debug_log "Open SQLite user cache handle, keep: $path"
+        if [[ $open_state -eq 0 || $open_state -eq 2 ]]; then
+            debug_log "SQLite user cache handle not conclusively idle, keep: $path"
             return 0
         fi
-        # open_state 2 (lsof missing) with no -shm: process probe already idle.
     elif [[ -d "$path" ]]; then
-        local candidate open_state
-        for candidate in "$path/Cache.db" "$path"/*.db; do
-            [[ -f "$candidate" ]] || continue
-            open_state=0
-            _mole_user_cache_sqlite_has_open_handle "$candidate" || open_state=$?
-            if [[ $open_state -eq 0 ]]; then
-                debug_log "Open SQLite under user cache dir, keep: $path ($candidate)"
+        local candidate open_state family_base seen_base already_seen
+        local restore_dotglob=false
+        local restore_failglob=false
+        local restore_nullglob=false
+        local globignore_was_set=false
+        local globignore_was_exported=false
+        local globignore_value=""
+        local globignore_declaration=""
+        local -a sqlite_candidates=()
+        local -a sqlite_family_bases=()
+
+        if [[ ${GLOBIGNORE+x} == x ]]; then
+            globignore_was_set=true
+            globignore_value="$GLOBIGNORE"
+            globignore_declaration=$(declare -p GLOBIGNORE 2> /dev/null) || {
+                debug_log "Could not inspect cache glob policy, keep: $path"
                 return 0
-            fi
-        done
+            }
+            case "$globignore_declaration" in
+                "declare -- GLOBIGNORE="*) ;;
+                "declare -x GLOBIGNORE="*) globignore_was_exported=true ;;
+                *)
+                    debug_log "Unsupported cache glob policy attributes, keep: $path"
+                    return 0
+                    ;;
+            esac
+        fi
+        if shopt -q dotglob; then
+            restore_dotglob=true
+        fi
+        if shopt -q failglob; then
+            restore_failglob=true
+        fi
+        if shopt -q nullglob; then
+            restore_nullglob=true
+        fi
+        if ! unset GLOBIGNORE 2> /dev/null; then
+            debug_log "Could not isolate cache glob policy, keep: $path"
+            return 0
+        fi
+        shopt -s dotglob
+        shopt -u failglob nullglob
+        sqlite_candidates=("$path"/*)
+
+        if [[ "$globignore_was_set" == "true" ]]; then
+            GLOBIGNORE="$globignore_value"
+            [[ "$globignore_was_exported" == "true" ]] && export GLOBIGNORE
+        else
+            unset GLOBIGNORE
+        fi
+        if [[ "$restore_dotglob" == "true" ]]; then shopt -s dotglob; else shopt -u dotglob; fi
+        if [[ "$restore_failglob" == "true" ]]; then shopt -s failglob; else shopt -u failglob; fi
+        if [[ "$restore_nullglob" == "true" ]]; then shopt -s nullglob; else shopt -u nullglob; fi
+
+        if [[ ${#sqlite_candidates[@]} -gt 0 ]]; then
+            for candidate in "${sqlite_candidates[@]}"; do
+                [[ -f "$candidate" ]] || continue
+                _mole_is_user_cache_sqlite_family_path "$candidate" || continue
+                family_base=$(_mole_sqlite_family_base_path "$candidate")
+                already_seen=false
+                if [[ ${#sqlite_family_bases[@]} -gt 0 ]]; then
+                    for seen_base in "${sqlite_family_bases[@]}"; do
+                        if [[ "$seen_base" == "$family_base" ]]; then
+                            already_seen=true
+                            break
+                        fi
+                    done
+                fi
+                [[ "$already_seen" == "true" ]] && continue
+                sqlite_family_bases[${#sqlite_family_bases[@]}]="$family_base"
+
+                open_state=0
+                _mole_user_cache_sqlite_has_open_handle "$family_base" || open_state=$?
+                if [[ $open_state -eq 0 || $open_state -eq 2 ]]; then
+                    debug_log "SQLite under user cache dir not conclusively idle, keep: $path ($family_base)"
+                    return 0
+                fi
+            done
+        fi
     fi
 
     return 1
