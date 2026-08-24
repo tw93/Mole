@@ -659,6 +659,26 @@ EOF
     [[ "$output" != *"system preview included"* ]]
 }
 
+@test "system cleanup budget defaults safely and accepts a bounded override" {
+    run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+[[ "$(system_cleanup_budget_seconds)" == "120" ]] || exit 1
+MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC=600
+[[ "$(system_cleanup_budget_seconds)" == "600" ]] || exit 1
+MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC=601
+[[ "$(system_cleanup_budget_seconds)" == "120" ]] || exit 1
+MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC=invalid
+[[ "$(system_cleanup_budget_seconds)" == "120" ]] || exit 1
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+}
+
 @test "MOLE_DRY_RUN enables the complete clean preview without deleting Trash" {
     mkdir -p "$HOME/.Trash"
     printf 'keep\n' > "$HOME/.Trash/env-dry-run-sentinel"

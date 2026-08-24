@@ -117,6 +117,7 @@ Prefer a walkthrough? Watch the [Mole tutorial video](https://www.youtube.com/wa
 Mole can remove files, so it validates paths, protects shared and system-owned locations, and asks for confirmation when an action needs it. When Mole cannot prove an item is safe to change, it skips or refuses it.
 
 - `clean`, `uninstall`, `purge`, `installer`, and `remove` can delete files. Review them with `--dry-run` first, and add `--debug` when needed.
+- System cleanup is bounded to 120 seconds so it cannot appear stuck on a slow filesystem. For a one-off run on a healthy but slow disk, set `MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC` between 30 and 600 seconds, for example: `MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC=300 mo clean`.
 - `mo analyze` moves selected items to Trash after confirmation.
 - Cleanup activity is recorded in `~/Library/Logs/mole/operations.log`; review it with `mo history` or disable it with `MO_NO_OPLOG=1`.
 - Protect caches with `mo clean --whitelist`, or maintenance items with `mo optimize --whitelist`.

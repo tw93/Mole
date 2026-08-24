@@ -19,6 +19,7 @@
 #   PKG_LIST          Package manager listing (brew list, simctl list). ~10s.
 #   PKG_CLEANUP       Cache cleanup commands that walk disks. ~20s.
 #   DISK_VERIFY       Filesystem-level verify/repair operations. ~30s.
+#   SYSTEM_CLEANUP    Whole privileged system-cleanup pass. ~120s.
 #   HINT_SCAN         Non-destructive scan that walks an unbounded user
 #                     directory tree (project-artifact discovery, preference
 #                     plist lint). Per-listing finds are already capped; this is
@@ -64,6 +65,7 @@ readonly MOLE_TIMEOUT_MEDIUM_PROBE_SEC="${MOLE_TIMEOUT_MEDIUM_PROBE_SEC:-5}"
 readonly MOLE_TIMEOUT_PKG_LIST_SEC="${MOLE_TIMEOUT_PKG_LIST_SEC:-10}"
 readonly MOLE_TIMEOUT_PKG_CLEANUP_SEC="${MOLE_TIMEOUT_PKG_CLEANUP_SEC:-20}"
 readonly MOLE_TIMEOUT_DISK_VERIFY_SEC="${MOLE_TIMEOUT_DISK_VERIFY_SEC:-30}"
+readonly MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC="${MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC:-120}"
 readonly MOLE_TIMEOUT_HINT_SCAN_SEC="${MOLE_TIMEOUT_HINT_SCAN_SEC:-15}"
 
 # Clamp a per-command timeout to an overall wall-clock deadline. Kept beside

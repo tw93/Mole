@@ -119,6 +119,25 @@ system_cleanup_budget_reached() {
     [[ "$SECONDS" -ge "$deadline" ]]
 }
 
+system_cleanup_budget_seconds() {
+    local requested="${MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC:-120}"
+
+    # Keep this section bounded even when a user needs more time for a slow
+    # but healthy filesystem. The lower bound avoids a deadline that expires
+    # before a useful scan can start; the upper bound prevents a stalled
+    # privileged scan from making clean appear hung indefinitely.
+    if [[ "$requested" =~ ^[0-9]+$ ]] && \
+        (( 10#$requested >= 30 && 10#$requested <= 600 )); then
+        printf '%d\n' "$((10#$requested))"
+        return 0
+    fi
+
+    if declare -F debug_log > /dev/null 2>&1; then
+        debug_log "Ignoring invalid MOLE_TIMEOUT_SYSTEM_CLEANUP_SEC=$requested; using 120s"
+    fi
+    printf '%s\n' 120
+}
+
 report_system_cleanup_budget_reached() {
     echo -e "  ${YELLOW}${ICON_WARNING}${NC} System cleanup · ${GRAY}time limit reached, skipped remaining slow scans${NC}"
     if declare -F note_activity > /dev/null 2>&1; then
@@ -225,8 +244,10 @@ clean_deep_system() {
     stop_section_spinner
     # Keep the section bounded as a whole as well as at each inner scan. A
     # single slow filesystem may consume one inner timeout, but later families
-    # stop once the two-minute section budget is exhausted.
-    local system_cleanup_deadline=$((SECONDS + 120))
+    # stop once the bounded section budget is exhausted.
+    local system_cleanup_budget_sec=""
+    system_cleanup_budget_sec=$(system_cleanup_budget_seconds)
+    local system_cleanup_deadline=$((SECONDS + system_cleanup_budget_sec))
     local cache_cleaned=0
     local cache_status=0
     start_section_spinner "Cleaning system caches..."
