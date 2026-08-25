@@ -51,6 +51,12 @@ is_project_container() {
     [[ "$basename" == "Music" ]] && return 1
     [[ "$basename" == "Pictures" ]] && return 1
     [[ "$basename" == "Public" ]] && return 1
+    # Package-manager directories: they contain package.json/composer.json
+    # but are not project containers; deleting their children leaves
+    # packages half-installed and requires a network restore.
+    [[ "$basename" == "node_modules" ]] && return 1
+    [[ "$basename" == "vendor" ]] && return 1
+    [[ "$basename" == "Pods" ]] && return 1
 
     # Single find expression for indicators.
     local -a find_args=("$dir" "-maxdepth" "$max_depth" "(")
