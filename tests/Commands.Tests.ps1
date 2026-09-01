@@ -217,6 +217,107 @@ switch -Regex ($commandLine) {
                 $env:MOLE_INSTALL_CAPTURE = $originalCapture
             }
         }
+
+        It "Should refresh the source directory on the first update from v1.30.0" {
+            $fixtureRoot = Join-Path $TestDrive "legacy-update-fixture"
+            $fixtureBin = Join-Path $fixtureRoot "bin"
+            $fixtureCore = Join-Path $fixtureRoot "lib\core"
+            $fixtureUpdater = Join-Path $fixtureBin "update.ps1"
+            $fixtureInstaller = Join-Path $fixtureRoot "install.ps1"
+            $strayInstallDir = Join-Path $TestDrive "-InstallDir"
+
+            New-Item -ItemType Directory -Path $fixtureBin, $fixtureCore -Force | Out-Null
+            Copy-Item $script:InstallScript $fixtureInstaller
+            Set-Content (Join-Path $fixtureRoot "VERSION") "1.30.0"
+            New-Item -ItemType File -Path (Join-Path $fixtureBin "analyze.exe"), (Join-Path $fixtureBin "status.exe") -Force | Out-Null
+
+            @'
+function Get-MoleVersionString {
+    param([string]$RootDir)
+    return "1.30.0"
+}
+'@ | Set-Content (Join-Path $fixtureCore "version.ps1")
+
+            @'
+function Get-MoleVersionFromScriptFile {
+    param([string]$WindowsDir)
+    return "1.30.0"
+}
+
+function Ensure-TuiBinary {
+    param(
+        [string]$Name,
+        [string]$WindowsDir,
+        [string]$DestinationPath,
+        [string]$SourcePath,
+        [string]$Version
+    )
+    return $DestinationPath
+}
+'@ | Set-Content (Join-Path $fixtureCore "tui_binaries.ps1")
+
+            # Exact v1.30.0 updater call shape. The installer file beside this
+            # script represents the new file that git pull just wrote.
+            @'
+$windowsDir = Split-Path -Parent $PSScriptRoot
+$installScript = Join-Path $windowsDir "install.ps1"
+$installArgs = @("-InstallDir", $windowsDir)
+& $installScript @installArgs
+if (-not $?) { exit 1 }
+'@ | Set-Content $fixtureUpdater
+
+            Push-Location $TestDrive
+            try {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+            }
+            finally {
+                Pop-Location
+            }
+
+            (Join-Path $fixtureRoot "mole.cmd") | Should -Exist
+            $strayInstallDir | Should -Not -Exist
+        }
+
+        It "Should recover the legacy updater PATH intent without creating a shortcut" {
+            $probe = Join-Path $TestDrive "legacy-argument-probe.ps1"
+            @'
+. $env:MOLE_INSTALL_SCRIPT -ShowHelp | Out-Null
+
+$withoutPath = Resolve-InstallInvocation `
+    -SourceDir "C:\Mole" `
+    -RequestedInstallDir "-InstallDir" `
+    -RequestedAddToPath
+$withPath = Resolve-InstallInvocation `
+    -SourceDir "C:\Mole" `
+    -RequestedInstallDir "-InstallDir" `
+    -RequestedAddToPath `
+    -RequestedCreateShortcut
+
+[PSCustomObject]@{
+    WithoutPathInstallDir = $withoutPath.InstallDir
+    WithoutPathAddToPath = $withoutPath.AddToPath
+    WithPathInstallDir = $withPath.InstallDir
+    WithPathAddToPath = $withPath.AddToPath
+    WithPathCreateShortcut = $withPath.CreateShortcut
+} | ConvertTo-Json -Compress
+'@ | Set-Content $probe
+
+            $originalInstallScript = $env:MOLE_INSTALL_SCRIPT
+            try {
+                $env:MOLE_INSTALL_SCRIPT = $script:InstallScript
+                $result = & powershell -NoProfile -ExecutionPolicy Bypass -File $probe | ConvertFrom-Json
+            }
+            finally {
+                $env:MOLE_INSTALL_SCRIPT = $originalInstallScript
+            }
+
+            $result.WithoutPathInstallDir | Should -Be "C:\Mole"
+            $result.WithoutPathAddToPath | Should -BeFalse
+            $result.WithPathInstallDir | Should -Be "C:\Mole"
+            $result.WithPathAddToPath | Should -BeTrue
+            $result.WithPathCreateShortcut | Should -BeFalse
+        }
     }
 }
 
