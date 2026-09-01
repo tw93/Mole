@@ -282,7 +282,7 @@ if (-not $?) { exit 1 }
         It "Should recover the legacy updater PATH intent without creating a shortcut" {
             $probe = Join-Path $TestDrive "legacy-argument-probe.ps1"
             @'
-. $env:MOLE_INSTALL_SCRIPT -ShowHelp | Out-Null
+. $env:MOLE_INSTALL_SCRIPT -ShowHelp 6>$null
 
 $withoutPath = Resolve-InstallInvocation `
     -SourceDir "C:\Mole" `

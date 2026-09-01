@@ -32,7 +32,7 @@ function Resolve-InstallInvocation {
     # the path made AddToPath truthy and the optional marker became
     # CreateShortcut. Decode only that exact legacy shape for the first update
     # that pulls this installer while the old updater is still running.
-    if ($RequestedInstallDir -ceq "-InstallDir" -and $RequestedAddToPath.IsPresent) {
+    if ($RequestedInstallDir -ceq "-InstallDir") {
         return [PSCustomObject]@{
             InstallDir     = $SourceDir
             AddToPath      = $RequestedCreateShortcut.IsPresent
