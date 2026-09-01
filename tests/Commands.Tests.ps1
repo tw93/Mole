@@ -152,6 +152,72 @@ Describe "Update Command" {
             $result -join "`n" | Should -Match "source|origin/windows|git"
         }
     }
+
+    Context "Installation Refresh" {
+        It "Should pass the source directory to the installer by name" {
+            $fixtureRoot = Join-Path $TestDrive "update-fixture"
+            $fixtureBin = Join-Path $fixtureRoot "bin"
+            $fakeTools = Join-Path $fixtureRoot "fake-tools"
+            $capturePath = Join-Path $fixtureRoot "install-dir.txt"
+            $fixtureUpdater = Join-Path $fixtureBin "update.ps1"
+
+            New-Item -ItemType Directory -Path $fixtureBin, $fakeTools, (Join-Path $fixtureRoot ".git") -Force | Out-Null
+            Copy-Item (Join-Path $script:BinDir "update.ps1") $fixtureUpdater
+
+            @'
+param(
+    [string]$InstallDir,
+    [switch]$AddToPath,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [object[]]$RemainingArguments
+)
+
+Set-Content -LiteralPath $env:MOLE_INSTALL_CAPTURE -Value $InstallDir -NoNewline
+'@ | Set-Content (Join-Path $fixtureRoot "install.ps1")
+
+            @'
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$GitArgs
+)
+
+$commandArgs = @($GitArgs)
+if ($commandArgs.Count -ge 3 -and $commandArgs[0] -eq "-C") {
+    $commandArgs = @($commandArgs[2..($commandArgs.Count - 1)])
+}
+
+$commandLine = $commandArgs -join " "
+$global:LASTEXITCODE = 0
+switch -Regex ($commandLine) {
+    '^status --porcelain --untracked-files=no$' { break }
+    '^remote get-url origin$' { "https://github.com/tw93/Mole.git"; break }
+    '^branch --show-current$' { "windows"; break }
+    '^rev-parse --short HEAD$' { "abc123"; break }
+    '^pull --ff-only origin windows$' { break }
+    default {
+        Write-Error "Unexpected git command: $commandLine"
+        $global:LASTEXITCODE = 1
+    }
+}
+'@ | Set-Content (Join-Path $fakeTools "git.ps1")
+
+            $originalPath = $env:PATH
+            $originalCapture = $env:MOLE_INSTALL_CAPTURE
+            try {
+                $env:PATH = "$fakeTools;$originalPath"
+                $env:MOLE_INSTALL_CAPTURE = $capturePath
+
+                & $fixtureUpdater
+
+                $capturePath | Should -Exist
+                Get-Content $capturePath -Raw | Should -Be $fixtureRoot
+            }
+            finally {
+                $env:PATH = $originalPath
+                $env:MOLE_INSTALL_CAPTURE = $originalCapture
+            }
+        }
+    }
 }
 
 Describe "Remove Command" {
