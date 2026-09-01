@@ -218,13 +218,13 @@ else {
     Write-Host "Updated source: $before -> $after" -ForegroundColor Green
 }
 
-$installArgs = @(
-    "-InstallDir", $windowsDir
-)
+$installParams = @{
+    InstallDir = $windowsDir
+}
 
 if (Test-InstallDirOnUserPath -Path $windowsDir) {
-    $installArgs += "-AddToPath"
+    $installParams.AddToPath = $true
 }
 
 Write-Host "Refreshing local installation..." -ForegroundColor Cyan
-& $installScript @installArgs
+& $installScript @installParams

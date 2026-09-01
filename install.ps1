@@ -19,11 +19,47 @@ Set-StrictMode -Version Latest
 # Configuration
 # ============================================================================
 
+function Resolve-InstallInvocation {
+    param(
+        [string]$SourceDir,
+        [string]$RequestedInstallDir,
+        [switch]$RequestedAddToPath,
+        [switch]$RequestedCreateShortcut
+    )
+
+    # v1.30.0 passed @("-InstallDir", $sourceDir, optional "-AddToPath")
+    # through array splatting. PowerShell bound those values positionally, so
+    # the path made AddToPath truthy and the optional marker became
+    # CreateShortcut. Decode only that exact legacy shape for the first update
+    # that pulls this installer while the old updater is still running.
+    if ($RequestedInstallDir -ceq "-InstallDir") {
+        return [PSCustomObject]@{
+            InstallDir     = $SourceDir
+            AddToPath      = $RequestedCreateShortcut.IsPresent
+            CreateShortcut = $false
+        }
+    }
+
+    return [PSCustomObject]@{
+        InstallDir     = $RequestedInstallDir
+        AddToPath      = $RequestedAddToPath.IsPresent
+        CreateShortcut = $RequestedCreateShortcut.IsPresent
+    }
+}
+
 $script:SourceDir = if ($MyInvocation.MyCommand.Path) {
     Split-Path -Parent $MyInvocation.MyCommand.Path
 } else {
     $PSScriptRoot
 }
+$resolvedInvocation = Resolve-InstallInvocation `
+    -SourceDir $script:SourceDir `
+    -RequestedInstallDir $InstallDir `
+    -RequestedAddToPath:$AddToPath `
+    -RequestedCreateShortcut:$CreateShortcut
+$InstallDir = $resolvedInvocation.InstallDir
+$AddToPath = [switch]$resolvedInvocation.AddToPath
+$CreateShortcut = [switch]$resolvedInvocation.CreateShortcut
 $script:CoreDir = Join-Path $script:SourceDir "lib\core"
 $script:ShortcutName = "Mole"
 

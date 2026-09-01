@@ -152,6 +152,173 @@ Describe "Update Command" {
             $result -join "`n" | Should -Match "source|origin/windows|git"
         }
     }
+
+    Context "Installation Refresh" {
+        It "Should pass the source directory to the installer by name" {
+            $fixtureRoot = Join-Path $TestDrive "update-fixture"
+            $fixtureBin = Join-Path $fixtureRoot "bin"
+            $fakeTools = Join-Path $fixtureRoot "fake-tools"
+            $capturePath = Join-Path $fixtureRoot "install-dir.txt"
+            $fixtureUpdater = Join-Path $fixtureBin "update.ps1"
+
+            New-Item -ItemType Directory -Path $fixtureBin, $fakeTools, (Join-Path $fixtureRoot ".git") -Force | Out-Null
+            Copy-Item (Join-Path $script:BinDir "update.ps1") $fixtureUpdater
+
+            @'
+param(
+    [string]$InstallDir,
+    [switch]$AddToPath,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [object[]]$RemainingArguments
+)
+
+Set-Content -LiteralPath $env:MOLE_INSTALL_CAPTURE -Value $InstallDir -NoNewline
+'@ | Set-Content (Join-Path $fixtureRoot "install.ps1")
+
+            @'
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$GitArgs
+)
+
+$commandArgs = @($GitArgs)
+if ($commandArgs.Count -ge 3 -and $commandArgs[0] -eq "-C") {
+    $commandArgs = @($commandArgs[2..($commandArgs.Count - 1)])
+}
+
+$commandLine = $commandArgs -join " "
+$global:LASTEXITCODE = 0
+switch -Regex ($commandLine) {
+    '^status --porcelain --untracked-files=no$' { break }
+    '^remote get-url origin$' { "https://github.com/tw93/Mole.git"; break }
+    '^branch --show-current$' { "windows"; break }
+    '^rev-parse --short HEAD$' { "abc123"; break }
+    '^pull --ff-only origin windows$' { break }
+    default {
+        Write-Error "Unexpected git command: $commandLine"
+        $global:LASTEXITCODE = 1
+    }
+}
+'@ | Set-Content (Join-Path $fakeTools "git.ps1")
+
+            $originalPath = $env:PATH
+            $originalCapture = $env:MOLE_INSTALL_CAPTURE
+            try {
+                $env:PATH = "$fakeTools;$originalPath"
+                $env:MOLE_INSTALL_CAPTURE = $capturePath
+
+                & $fixtureUpdater
+
+                $capturePath | Should -Exist
+                Get-Content $capturePath -Raw | Should -Be $fixtureRoot
+            }
+            finally {
+                $env:PATH = $originalPath
+                $env:MOLE_INSTALL_CAPTURE = $originalCapture
+            }
+        }
+
+        It "Should refresh the source directory on the first update from v1.30.0" {
+            $fixtureRoot = Join-Path $TestDrive "legacy-update-fixture"
+            $fixtureBin = Join-Path $fixtureRoot "bin"
+            $fixtureCore = Join-Path $fixtureRoot "lib\core"
+            $fixtureUpdater = Join-Path $fixtureBin "update.ps1"
+            $fixtureInstaller = Join-Path $fixtureRoot "install.ps1"
+            $strayInstallDir = Join-Path $TestDrive "-InstallDir"
+
+            New-Item -ItemType Directory -Path $fixtureBin, $fixtureCore -Force | Out-Null
+            Copy-Item $script:InstallScript $fixtureInstaller
+            Set-Content (Join-Path $fixtureRoot "VERSION") "1.30.0"
+            New-Item -ItemType File -Path (Join-Path $fixtureBin "analyze.exe"), (Join-Path $fixtureBin "status.exe") -Force | Out-Null
+
+            @'
+function Get-MoleVersionString {
+    param([string]$RootDir)
+    return "1.30.0"
+}
+'@ | Set-Content (Join-Path $fixtureCore "version.ps1")
+
+            @'
+function Get-MoleVersionFromScriptFile {
+    param([string]$WindowsDir)
+    return "1.30.0"
+}
+
+function Ensure-TuiBinary {
+    param(
+        [string]$Name,
+        [string]$WindowsDir,
+        [string]$DestinationPath,
+        [string]$SourcePath,
+        [string]$Version
+    )
+    return $DestinationPath
+}
+'@ | Set-Content (Join-Path $fixtureCore "tui_binaries.ps1")
+
+            # Exact v1.30.0 updater call shape. The installer file beside this
+            # script represents the new file that git pull just wrote.
+            @'
+$windowsDir = Split-Path -Parent $PSScriptRoot
+$installScript = Join-Path $windowsDir "install.ps1"
+$installArgs = @("-InstallDir", $windowsDir)
+& $installScript @installArgs
+if (-not $?) { exit 1 }
+'@ | Set-Content $fixtureUpdater
+
+            Push-Location $TestDrive
+            try {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+            }
+            finally {
+                Pop-Location
+            }
+
+            (Join-Path $fixtureRoot "mole.cmd") | Should -Exist
+            $strayInstallDir | Should -Not -Exist
+        }
+
+        It "Should recover the legacy updater PATH intent without creating a shortcut" {
+            $probe = Join-Path $TestDrive "legacy-argument-probe.ps1"
+            @'
+. $env:MOLE_INSTALL_SCRIPT -ShowHelp 6>$null
+
+$withoutPath = Resolve-InstallInvocation `
+    -SourceDir "C:\Mole" `
+    -RequestedInstallDir "-InstallDir" `
+    -RequestedAddToPath
+$withPath = Resolve-InstallInvocation `
+    -SourceDir "C:\Mole" `
+    -RequestedInstallDir "-InstallDir" `
+    -RequestedAddToPath `
+    -RequestedCreateShortcut
+
+[PSCustomObject]@{
+    WithoutPathInstallDir = $withoutPath.InstallDir
+    WithoutPathAddToPath = $withoutPath.AddToPath
+    WithPathInstallDir = $withPath.InstallDir
+    WithPathAddToPath = $withPath.AddToPath
+    WithPathCreateShortcut = $withPath.CreateShortcut
+} | ConvertTo-Json -Compress
+'@ | Set-Content $probe
+
+            $originalInstallScript = $env:MOLE_INSTALL_SCRIPT
+            try {
+                $env:MOLE_INSTALL_SCRIPT = $script:InstallScript
+                $result = & powershell -NoProfile -ExecutionPolicy Bypass -File $probe | ConvertFrom-Json
+            }
+            finally {
+                $env:MOLE_INSTALL_SCRIPT = $originalInstallScript
+            }
+
+            $result.WithoutPathInstallDir | Should -Be "C:\Mole"
+            $result.WithoutPathAddToPath | Should -BeFalse
+            $result.WithPathInstallDir | Should -Be "C:\Mole"
+            $result.WithPathAddToPath | Should -BeTrue
+            $result.WithPathCreateShortcut | Should -BeFalse
+        }
+    }
 }
 
 Describe "Remove Command" {
