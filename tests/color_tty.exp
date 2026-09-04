@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+# Runs tests/color_tty_fixture.sh under a real pty so the terminal branch of the
+# color decision in lib/core/base.sh is reachable. Prints the fixture output for
+# the bats caller to assert on.
+#
+# Args: PROJECT_ROOT TERM_VALUE
+
+set timeout 8
+set project_root [lindex $argv 0]
+set term_value [lindex $argv 1]
+
+spawn /usr/bin/env -u NO_COLOR -u MOLE_TEST_MODE -u MOLE_TEST_NO_AUTH \
+    TERM=$term_value /bin/bash --noprofile --norc \
+    "$project_root/tests/color_tty_fixture.sh" "$project_root"
+
+expect {
+    -re {COLOR\[[^\]]*\]\r?\n} {}
+    timeout { exit 124 }
+    eof {}
+}
+
+expect eof
+set result [wait]
+exit [lindex $result 3]

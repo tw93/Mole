@@ -19,9 +19,27 @@ readonly MOLE_BASE_LOADED=1
 
 # ============================================================================
 # Color Definitions
-# Honor https://no-color.org: any non-empty NO_COLOR disables ANSI escapes.
+# ANSI escapes are emitted only when nothing rules them out, in this order:
+#   1. NO_COLOR non-empty disables them (https://no-color.org). It is checked
+#      before the test-mode force below because several tests set both.
+#   2. Test mode forces them on: the suite runs without a terminal and asserts
+#      deterministic escape output (scripts/test.sh).
+#   3. TERM=dumb cannot render them.
+#   4. stdout that is not a terminal would carry them into a pipe or a file,
+#      where they break grep and diff and stay in a log read back later.
+# The decision is made once here, not per write: the variables are readonly,
+# and re-probing would flip inside every command substitution.
 # ============================================================================
+mole_color=0
 if [[ -n "${NO_COLOR:-}" ]]; then
+    mole_color=0
+elif [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+    mole_color=1
+elif [[ "${TERM:-}" != "dumb" ]] && [[ -t 1 ]]; then
+    mole_color=1
+fi
+
+if [[ "$mole_color" == "0" ]]; then
     readonly ESC=""
     readonly GREEN=""
     readonly BLUE=""
@@ -44,6 +62,7 @@ else
     readonly GRAY="${ESC}[0;38;5;244m"
     readonly NC="${ESC}[0m"
 fi
+unset mole_color
 
 # Probe several process patterns without collapsing pgrep errors into "not
 # running". Arguments are selector/pattern pairs, for example:
