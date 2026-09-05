@@ -158,6 +158,15 @@ EOF
 	[[ "$output" == *"Unknown command: unknown-command"* ]]
 }
 
+@test "mole unknown command writes the diagnostic to stderr" {
+	local out="$BATS_TEST_TMPDIR/unknown.out"
+	local err="$BATS_TEST_TMPDIR/unknown.err"
+	run env HOME="$HOME" bash -c "'$PROJECT_ROOT/mole' unknown-command > '$out' 2> '$err'"
+	[ "$status" -ne 0 ]
+	[ ! -s "$out" ] || { cat "$out"; return 1; }
+	grep -q "Unknown command: unknown-command" "$err" || { cat "$err"; return 1; }
+}
+
 @test "mole --help does not list check command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
 	[ "$status" -eq 0 ]
