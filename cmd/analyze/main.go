@@ -53,11 +53,11 @@ func parseArgs(args []string, stdout, stderr io.Writer) (int, bool) {
 	err := flag.CommandLine.Parse(args)
 	switch {
 	case errors.Is(err, flag.ErrHelp):
-		fmt.Fprint(stdout, usageText)
+		_, _ = fmt.Fprint(stdout, usageText)
 		return 0, false
 	case err != nil:
-		fmt.Fprintln(stderr, err)
-		fmt.Fprintln(stderr, "Use 'mo analyze --help' for usage information")
+		_, _ = fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, "Use 'mo analyze --help' for usage information")
 		return 1, false
 	}
 	return 0, true
