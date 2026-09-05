@@ -106,6 +106,38 @@ setup_file() {
     [[ "$output" == *"2 containers running"* ]] || { echo "$output"; return 1; }
 }
 
+@test "idle VM keeps Docker timeout neutral" {
+    run /bin/bash -c "
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
+        ps() { printf '%s\n' '   RSS COMMAND' '8600000 Virtualization.framework/x/com.apple.Virtualization.VirtualMachine'; }
+        docker() { :; }
+        run_with_timeout() { return 124; }
+        opt_diag_idle_vm
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Virtual machine using 8.81GB"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"no running containers"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"likely Docker Desktop"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"quitting it reclaims"* ]] || { echo "$output"; return 1; }
+}
+
+@test "idle VM ignores partial output from a failed Docker probe" {
+    run /bin/bash -c "
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
+        ps() { printf '%s\n' '   RSS COMMAND' '8600000 Virtualization.framework/x/com.apple.Virtualization.VirtualMachine'; }
+        docker() { :; }
+        run_with_timeout() { printf '%s\n' partial-id; return 1; }
+        opt_diag_idle_vm
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Virtual machine using 8.81GB"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"containers running"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"no running containers"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"quitting it reclaims"* ]] || { echo "$output"; return 1; }
+}
+
 @test "idle VM silent when no VM is present" {
     run /bin/bash -c "
         source '$PROJECT_ROOT/lib/core/common.sh'

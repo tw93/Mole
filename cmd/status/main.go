@@ -3,8 +3,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -345,18 +347,70 @@ func parseWatchInterval(raw string) (time.Duration, error) {
 	return d, nil
 }
 
-func main() {
-	flag.Parse()
+// usageText is the help every other Mole subcommand prints by hand. The Go flag
+// package would otherwise render "Usage of /usr/local/bin/status-go:", naming a
+// bundled binary the user never typed, so the text is written out here instead.
+const usageText = `Usage: mo status [OPTIONS]
+
+Monitor system health. Without options it opens the interactive dashboard, and
+switches to a single JSON snapshot when stdout is not a terminal.
+
+Options:
+  --json                          Output one metrics snapshot as JSON
+  --watch                         Stream snapshots as newline-delimited JSON
+  --interval DURATION             With --watch, collection interval (default 1s)
+  --proc-cpu-alerts               Enable high-CPU process alerts (default true)
+  --proc-cpu-threshold PERCENT    Alert above this CPU percent (default 100)
+  --proc-cpu-window DURATION      Time above the threshold before alerting (default 5m)
+  -h, --help                      Show this help message
+
+Examples:
+  mo status                       Interactive dashboard
+  mo status --json                One machine-readable snapshot
+  mo status --watch --interval 2s Continuous NDJSON stream
+`
+
+// parseArgs applies Mole's CLI conventions to the flag package: help goes to
+// stdout and exits 0, and a bad invocation goes to stderr and exits 1 the way
+// every bash subcommand does, rather than the flag package's stderr-and-2.
+// It returns the exit code and whether main should keep running.
+func parseArgs(args []string, stdout, stderr io.Writer) (int, bool) {
+	flag.CommandLine.Init("mo status", flag.ContinueOnError)
+	// Parse must not print: this function decides which stream each message
+	// belongs on, and the default handler writes usage to stderr for both.
+	flag.CommandLine.SetOutput(io.Discard)
+	flag.CommandLine.Usage = func() {}
+
+	err := flag.CommandLine.Parse(args)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		_, _ = fmt.Fprint(stdout, usageText)
+		return 0, false
+	case err != nil:
+		_, _ = fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, "Use 'mo status --help' for usage information")
+		return 1, false
+	}
+
 	if err := validateFlags(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, "Use 'mo status --help' for usage information")
+		return 1, false
+	}
+	return 0, true
+}
+
+func main() {
+	if code, keepGoing := parseArgs(os.Args[1:], os.Stdout, os.Stderr); !keepGoing {
+		os.Exit(code)
 	}
 
 	if *watchMode {
 		interval, err := parseWatchInterval(*watchInterval)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(2)
+			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "Use 'mo status --help' for usage information")
+			os.Exit(1)
 		}
 		runWatchMode(interval)
 		return

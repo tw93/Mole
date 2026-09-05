@@ -582,6 +582,7 @@ EOF
 }
 
 @test "clean_trash removes input-method leftovers already in Trash (#1517)" {
+    rm -rf "$HOME/.Trash" # SAFE: reset this test's temporary HOME fixture before populating it
     mkdir -p "$HOME/.Trash/Input Methods"
     touch "$HOME/.Trash/com.sogou.inputmethod.sogou.plist"
     touch "$HOME/.Trash/com.tencent.inputmethod.QQInput.plist"

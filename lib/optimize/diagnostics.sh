@@ -630,9 +630,15 @@ opt_diag_idle_vm() {
 
     # Only claim it is idle if the owner agrees. A probe that cannot answer
     # must not produce a "safe to quit" recommendation.
-    local running=""
+    local running="" docker_output="" container_id
     if command -v docker > /dev/null 2>&1; then
-        running=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker ps -q 2> /dev/null | grep -c . || true)
+        if docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker ps -q 2> /dev/null); then
+            running=0
+            while IFS= read -r container_id; do
+                [[ -n "$container_id" ]] || continue
+                running=$((running + 1))
+            done <<< "$docker_output"
+        fi
     fi
 
     if [[ "$running" == "0" ]]; then

@@ -3974,17 +3974,56 @@ clean_claude_desktop_bundled_versions() {
 #
 # Chrome helper processes keep the main browser as their parent, so this
 # matches roots only and the tree follows them down.
-clean_dev_automation_browsers() {
-    local -a leaked_pids=()
-    local pid
-    while IFS= read -r pid; do
-        [[ -n "$pid" ]] && leaked_pids+=("$pid")
-    done < <(ps -Ao pid=,ppid=,etime=,command= 2> /dev/null | awk '
+_automation_browser_process_records() {
+    local wanted_pid="${1:-}"
+    awk -v wanted_pid="$wanted_pid" '
+        NF < 9 { next }
+        $1 !~ /^[0-9]+$/ { next }
+        wanted_pid != "" && $1 != wanted_pid { next }
         $2 != 1 { next }
         # ps prints mm:ss below an hour and hh:mm:ss or dd-hh:mm:ss above it.
         $3 !~ /-/ && $3 !~ /^[0-9]+:[0-9][0-9]:[0-9][0-9]$/ { next }
-        /playwright-core\/lib\/entry\/cliDaemon\.js/ { print $1; next }
-        /playwright_chromiumdev_profile/ { print $1 }' | sort -un)
+        {
+            command = $9
+            for (i = 10; i <= NF; i++) command = command " " $i
+        }
+        command ~ /playwright-core\/lib\/entry\/cliDaemon\.js/ ||
+            command ~ /playwright_chromiumdev_profile/ {
+            print $1 "|" $4 " " $5 " " $6 " " $7 " " $8
+        }'
+}
+
+_automation_browser_process_matches_record() {
+    local pid="$1"
+    local expected_start="$2"
+    [[ "$pid" =~ ^[0-9]+$ && -n "$expected_start" ]] || return 1
+
+    local process_row=""
+    local ps_rc=0
+    process_row=$(LC_ALL=C run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+        ps -p "$pid" -o pid=,ppid=,etime=,lstart=,command= -ww 2> /dev/null) || ps_rc=$?
+    [[ $ps_rc -eq 0 ]] || return "$ps_rc"
+
+    local current_record=""
+    current_record=$(printf '%s\n' "$process_row" |
+        _automation_browser_process_records "$pid") || return 1
+    [[ "$current_record" == "$pid|$expected_start" ]]
+}
+
+clean_dev_automation_browsers() {
+    local -a leaked_processes=()
+    local process_rows=""
+    local ps_rc=0
+    process_rows=$(LC_ALL=C run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+        ps -Ao pid=,ppid=,etime=,lstart=,command= -ww 2> /dev/null) || ps_rc=$?
+    if [[ $ps_rc -eq 124 || $ps_rc -ge 128 ]]; then
+        return "$ps_rc"
+    elif [[ $ps_rc -eq 0 ]]; then
+        local process_record
+        while IFS= read -r process_record; do
+            [[ -n "$process_record" ]] && leaked_processes+=("$process_record")
+        done < <(printf '%s\n' "$process_rows" | _automation_browser_process_records | sort -n)
+    fi
 
     # Ephemeral automation profiles: stale after 2h, and never one that a
     # live process still references.
@@ -4003,19 +4042,46 @@ clean_dev_automation_browsers() {
         done
     fi
 
-    if [[ ${#leaked_pids[@]} -gt 0 ]]; then
+    if [[ ${#leaked_processes[@]} -gt 0 ]]; then
         if [[ "$DRY_RUN" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Leaked automation browsers · would stop ${#leaked_pids[@]} processes ${YELLOW}dry${NC}"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Leaked automation browsers · would stop ${#leaked_processes[@]} processes ${YELLOW}dry${NC}"
         else
             local stopped=0
-            for pid in "${leaked_pids[@]}"; do
-                kill -TERM "$pid" 2> /dev/null && stopped=$((stopped + 1))
+            local -a term_processes=()
+            local pid expected_start match_rc
+            for process_record in "${leaked_processes[@]}"; do
+                pid="${process_record%%|*}"
+                expected_start="${process_record#*|}"
+                match_rc=0
+                _automation_browser_process_matches_record \
+                    "$pid" "$expected_start" || match_rc=$?
+                if [[ $match_rc -eq 124 || $match_rc -ge 128 ]]; then
+                    return "$match_rc"
+                elif [[ $match_rc -ne 0 ]]; then
+                    continue
+                fi
+                if kill -TERM "$pid" 2> /dev/null; then
+                    stopped=$((stopped + 1))
+                    term_processes+=("$process_record")
+                fi
             done
-            sleep 1
-            # Escalate for anything that ignored SIGTERM.
-            for pid in "${leaked_pids[@]}"; do
-                kill -0 "$pid" 2> /dev/null && kill -9 "$pid" 2> /dev/null || true
-            done
+            if [[ ${#term_processes[@]} -gt 0 ]]; then
+                sleep 1
+                # Escalate only when the same process still owns the PID and
+                # still has the orphaned automation-browser evidence.
+                for process_record in "${term_processes[@]}"; do
+                    pid="${process_record%%|*}"
+                    expected_start="${process_record#*|}"
+                    match_rc=0
+                    _automation_browser_process_matches_record \
+                        "$pid" "$expected_start" || match_rc=$?
+                    if [[ $match_rc -eq 124 || $match_rc -ge 128 ]]; then
+                        return "$match_rc"
+                    elif [[ $match_rc -eq 0 ]]; then
+                        kill -9 "$pid" 2> /dev/null || true
+                    fi
+                done
+            fi
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Leaked automation browsers · stopped ${stopped} processes"
         fi
         note_activity

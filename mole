@@ -308,8 +308,10 @@ main() {
             interactive_main_menu
             ;;
         *)
-            echo "Unknown command: ${args[0]}"
-            echo "Use 'mole --help' for usage information."
+            # Errors belong on stderr so `mo $cmd > out` leaves the diagnostic
+            # visible instead of burying it in the redirected file.
+            echo "Unknown command: ${args[0]}" >&2
+            echo "Use 'mole --help' for usage information." >&2
             exit 1
             ;;
     esac
