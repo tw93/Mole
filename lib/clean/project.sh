@@ -162,10 +162,9 @@ write_purge_config() {
     local tmp_file
     tmp_file=$(mktemp_file "mole-purge-paths") || return 1
 
-    if ! cat > "$tmp_file" << EOF
+    if ! cat > "$tmp_file" << EOF; then
 $header
 EOF
-    then
         rm -f "$tmp_file" 2> /dev/null || true
         return 1
     fi
