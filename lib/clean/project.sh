@@ -1064,18 +1064,47 @@ select_purge_categories() {
     local cursor_pos=0
     local top_index=0
 
-    # Initialize selection (all selected by default, except recent ones)
+    # Selection and group totals belong to the menu, keyed by canonical row index.
     local -a selected=() sizes=() recent_flags=() age_labels=()
+    local -a group_starts=() group_ends=() row_groups=() group_sizes=() group_selected=() group_unknown=()
+    local selected_size=0 selected_count=0 selected_unknown=0 group=-1
+    local previous_project_id="" project_id=""
     IFS=',' read -r -a sizes <<< "${PURGE_CATEGORY_SIZES:-}"
-    IFS=',' read -r -a age_labels <<< "${PURGE_AGE_LABELS:-}"
     IFS=',' read -r -a recent_flags <<< "${PURGE_RECENT_CATEGORIES:-}"
+    IFS=',' read -r -a age_labels <<< "${PURGE_AGE_LABELS:-}"
     for ((i = 0; i < total_items; i++)); do
-        # Default unselected if category has recent items
-        if [[ ${recent_flags[i]:-false} == "true" ]]; then
-            selected[i]=false
-        else
-            selected[i]=true
+        project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[i]:-}"
+        if [[ $i -eq 0 || -z "$project_id" || "$project_id" != "$previous_project_id" ]]; then
+            group=$((group + 1))
+            group_starts[group]=$i
+            group_sizes[group]=0
+            group_selected[group]=0
+            group_unknown[group]=false
         fi
+        previous_project_id="$project_id"
+        row_groups[i]=$group
+        group_ends[group]=$i
+        group_sizes[group]=$((group_sizes[group] + ${sizes[i]:-0}))
+        if [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[i]:-false}" == true ]]; then
+            group_unknown[group]=true
+        fi
+        selected[i]=false
+    done
+    set_selected() {
+        local index="$1" value="$2" delta=1
+        [[ "${selected[index]}" != "$value" ]] || return 0
+        [[ "$value" == true ]] || delta=-1
+        selected[index]="$value"
+        selected_count=$((selected_count + delta))
+        selected_size=$((selected_size + delta * ${sizes[index]:-0}))
+        local group_index="${row_groups[index]}"
+        group_selected[group_index]=$((group_selected[group_index] + delta))
+        if [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[index]:-false}" == true ]]; then
+            selected_unknown=$((selected_unknown + delta))
+        fi
+    }
+    for ((i = 0; i < total_items; i++)); do
+        [[ "${recent_flags[i]:-false}" == true ]] || set_selected "$i" true
     done
     local original_stty=""
     local previous_exit_trap=""
@@ -1147,19 +1176,10 @@ select_purge_categories() {
         [[ $visible_count -gt $items_per_page ]] && visible_count=$items_per_page
 
         printf "\033[H"
-        # Calculate total size of selected items for header
-        local selected_size=0
-        local selected_count=0
-        for ((i = 0; i < total_items; i++)); do
-            if [[ ${selected[i]} == true ]]; then
-                selected_size=$((selected_size + ${sizes[i]:-0}))
-                selected_count=$((selected_count + 1))
-            fi
-        done
-
         # Format selected size (stored in KB) using shared display rules.
         local selected_size_human
         selected_size_human=$(bytes_to_human_kb "$selected_size")
+        [[ $selected_unknown -eq 0 ]] || selected_size_human+=" + $selected_unknown unmeasured"
 
         # Show position indicator if scrolling is needed
         local scroll_indicator=""
@@ -1224,21 +1244,13 @@ select_purge_categories() {
         printf "%s\n" "$clear_line"
 
         local current_index=$((top_index + cursor_pos))
-        local current_project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[current_index]:-}"
         local current_project_path="${PURGE_CATEGORY_PROJECT_PATHS_ARRAY[current_index]:-}"
         if [[ -n "$current_project_path" ]]; then
-            local group_size=0
-            local group_item_count=0
-            local group_selected_count=0
-            local group_has_unknown_size=false
-            for ((i = 0; i < total_items; i++)); do
-                if { [[ -n "$current_project_id" ]] && [[ "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[i]:-}" == "$current_project_id" ]]; } || { [[ -z "$current_project_id" ]] && [[ $i -eq $current_index ]]; }; then
-                    group_item_count=$((group_item_count + 1))
-                    group_size=$((group_size + ${sizes[i]:-0}))
-                    [[ ${selected[i]} == true ]] && group_selected_count=$((group_selected_count + 1))
-                    [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[i]:-false}" == "true" ]] && group_has_unknown_size=true
-                fi
-            done
+            local current_group="${row_groups[current_index]}"
+            local group_size="${group_sizes[current_group]}"
+            local group_item_count=$((group_ends[current_group] - group_starts[current_group] + 1))
+            local group_selected_count="${group_selected[current_group]}"
+            local group_has_unknown_size="${group_unknown[current_group]}"
 
             local group_size_label
             group_size_label=$(bytes_to_human_kb "$group_size")
@@ -1317,26 +1329,16 @@ select_purge_categories() {
         cursor_pos=$((target - top_index))
     }
     move_project() {
-        local direction="$1" target=$((top_index + cursor_pos))
-        local project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target]:-}"
-        if [[ "$direction" == next ]]; then
-            target=$((target + 1))
-            while [[ $target -lt $total_items && -n "$project_id" && "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target]:-}" == "$project_id" ]]; do
-                target=$((target + 1))
-            done
-            [[ $target -lt $total_items ]] || return 0
+        local current_index=$((top_index + cursor_pos))
+        local target_group="${row_groups[current_index]}"
+        if [[ "$1" == next ]]; then
+            target_group=$((target_group + 1))
         else
-            while [[ $target -gt 0 && -n "$project_id" && "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target - 1]:-}" == "$project_id" ]]; do
-                target=$((target - 1))
-            done
-            [[ $target -gt 0 ]] || return 0
-            target=$((target - 1))
-            project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target]:-}"
-            while [[ $target -gt 0 && -n "$project_id" && "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target - 1]:-}" == "$project_id" ]]; do
-                target=$((target - 1))
-            done
+            target_group=$((target_group - 1))
         fi
-        focus_item "$target"
+        if [[ $target_group -ge 0 && $target_group -lt ${#group_starts[@]} ]]; then
+            focus_item "${group_starts[target_group]}"
+        fi
     }
     trap restore_terminal EXIT
     trap handle_interrupt INT TERM
@@ -1363,37 +1365,31 @@ select_purge_categories() {
             SPACE) # Space - toggle current item
                 local idx=$((top_index + cursor_pos))
                 if [[ ${selected[idx]} == true ]]; then
-                    selected[idx]=false
+                    set_selected "$idx" false
                 else
-                    selected[idx]=true
+                    set_selected "$idx" true
                 fi
                 ;;
             CHAR:a | CHAR:A) # Select all
                 for ((i = 0; i < total_items; i++)); do
-                    selected[i]=true
+                    set_selected "$i" true
                 done
                 ;;
             CHAR:i | CHAR:I) # Invert selection
                 for ((i = 0; i < total_items; i++)); do
                     if [[ ${selected[i]} == true ]]; then
-                        selected[i]=false
+                        set_selected "$i" false
                     else
-                        selected[i]=true
+                        set_selected "$i" true
                     fi
                 done
                 ;;
             CHAR:x | CHAR:X) # Deselect the current artifact's exact project
                 local current_index=$((top_index + cursor_pos))
-                local project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[current_index]:-}"
-                if [[ -n "$project_id" ]]; then
-                    for ((i = 0; i < total_items; i++)); do
-                        if [[ "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[i]:-}" == "$project_id" ]]; then
-                            selected[i]=false
-                        fi
-                    done
-                else
-                    selected[current_index]=false
-                fi
+                local current_group="${row_groups[current_index]}"
+                for ((i = group_starts[current_group]; i <= group_ends[current_group]; i++)); do
+                    set_selected "$i" false
+                done
                 move_project next
                 ;;
             QUIT) # Quit, Ctrl-C, or closed input
