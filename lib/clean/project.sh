@@ -2530,6 +2530,16 @@ clean_project_artifacts() {
                     cleaned_count=$((cleaned_count + 1))
                     removal_recorded=true
                 fi
+            else
+                local removal_status=$?
+                if [[ $removal_status -eq 124 || $removal_status -ge 128 ]]; then
+                    PURGE_RUN_OUTCOME="cancelled"
+                    echo "$cleaned_count" > "$stats_dir/purge_count"
+                    if [[ -t 1 ]]; then
+                        stop_inline_spinner
+                    fi
+                    return "$removal_status"
+                fi
             fi
         fi
         if [[ -t 1 ]]; then
