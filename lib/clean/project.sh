@@ -307,8 +307,30 @@ compact_purge_menu_path() {
         return
     fi
 
-    local suffix_len=$((max_width - 3))
-    echo "...${path: -$suffix_len}"
+    # A single long segment can contain wide characters. Build the suffix by
+    # display width so the fallback cannot overflow a narrow terminal.
+    local old_lc="${LC_ALL:-}"
+    export LC_ALL=en_US.UTF-8
+    local suffix=""
+    local suffix_width=0
+    local char char_width
+    local i=$((${#path} - 1))
+    while [[ $i -ge 0 ]]; do
+        char="${path:$i:1}"
+        char_width=$(get_display_width "$char")
+        if [[ $((suffix_width + char_width + prefix_width)) -gt $max_width ]]; then
+            break
+        fi
+        suffix="${char}${suffix}"
+        suffix_width=$((suffix_width + char_width))
+        i=$((i - 1))
+    done
+    if [[ -n "$old_lc" ]]; then
+        export LC_ALL="$old_lc"
+    else
+        unset LC_ALL
+    fi
+    echo "...${suffix}"
 }
 
 # Args: $1 - directory path
@@ -886,8 +908,10 @@ is_recently_modified() {
 # explicitly selected an already-recent row has already overridden that hint.
 purge_target_activity_still_safe() {
     local path="$1"
-    local was_recent="${2:-true}"
-    [[ "$was_recent" == "true" ]] && return 0
+    local reviewed_state="${2:-recent}"
+    # A known-recent row may be explicitly selected. Unknown probe state is
+    # never an override: it must be resolved successfully before deletion.
+    [[ "$reviewed_state" == "true" || "$reviewed_state" == "recent" ]] && return 0
 
     # Do not inherit the menu pass's expired shared deadline.
     local _PURGE_ACTIVITY_DEADLINE_EPOCH=""
@@ -908,7 +932,7 @@ _mole_purge_final_remove_guard() {
     local path="$1"
     is_safe_configured_purge_artifact "$path" || return 1
     is_protected_purge_artifact "$path" && return 1
-    purge_target_activity_still_safe "$path" "${_MOLE_PURGE_FINAL_WAS_RECENT:-true}" || return $?
+    purge_target_activity_still_safe "$path" "${_MOLE_PURGE_FINAL_ACTIVITY_STATE:-uncertain}" || return $?
 
     _mole_path_matches_identity \
         "${_MOLE_PURGE_FINAL_SCAN_ROOT:-}" \
@@ -1058,8 +1082,18 @@ format_purge_display() {
     local artifact_width=$(((width - 13) / 2))
     [[ $artifact_width -gt 24 ]] && artifact_width=24
     local path_width=$((width - artifact_width - 13))
+    local path_prefix=""
+    if [[ "$project_path" == "[cloud] "* ]]; then
+        path_prefix="[cloud] "
+        project_path="${project_path#"[cloud] "}"
+    fi
     local path
-    path=$(compact_purge_menu_path "$project_path" "$path_width")
+    local body_width=$((path_width - ${#path_prefix}))
+    if [[ -n "$path_prefix" && $body_width -lt 4 ]]; then
+        path=$(truncate_by_display_width "${path_prefix% }" "$path_width")
+    else
+        path="${path_prefix}$(compact_purge_menu_path "$project_path" "$body_width")"
+    fi
     local padding=$((path_width - $(get_display_width "$path")))
     printf '%s%*s %9s | %s' "$path" "$padding" "" "$size" "$(truncate_by_display_width "$artifact" "$artifact_width")"
 }
@@ -1203,12 +1237,22 @@ select_purge_categories() {
         restore_terminal
         exit 130
     }
+    _get_terminal_width() {
+        local term_width=""
+        if [[ -t 0 ]] || [[ -t 2 ]]; then
+            term_width=$(stty size < /dev/tty 2> /dev/null | awk '{print $2}')
+        fi
+        if [[ ! "$term_width" =~ ^[1-9][0-9]*$ ]]; then
+            term_width=$(tput cols 2> /dev/null || echo 80)
+        fi
+        [[ "$term_width" =~ ^[1-9][0-9]*$ ]] || term_width=80
+        echo "$term_width"
+    }
     draw_menu() {
         local focused_index=$((top_index + cursor_pos))
         items_per_page=$(_get_items_per_page)
         local _term_w
-        _term_w=$(tput cols 2> /dev/null || echo 80)
-        [[ "$_term_w" =~ ^[1-9][0-9]*$ ]] || _term_w=80
+        _term_w=$(_get_terminal_width)
         menu_ready=true
         if [[ $_term_w -lt 30 || $items_per_page -eq 0 ]]; then
             menu_ready=false
@@ -2127,6 +2171,7 @@ clean_project_artifacts() {
     local -a item_sizes=()
     local -a item_size_unknown_flags=()
     local -a item_recent_flags=()
+    local -a item_activity_states=()
     local -a item_age_labels=()
     local -a item_cloud_flags=()
     local -a item_expected_parents=()
@@ -2216,6 +2261,7 @@ clean_project_artifacts() {
         item_sizes+=("$size_kb")
         item_size_unknown_flags+=("$size_unknown")
         item_recent_flags+=("$is_recent")
+        item_activity_states+=("$activity_state")
         item_cloud_flags+=("$is_cloud")
         item_expected_parents+=("${safe_expected_parents[$item_index]}")
         item_expected_parent_ids+=("${safe_expected_parent_ids[$item_index]}")
@@ -2312,6 +2358,7 @@ clean_project_artifacts() {
         local -a sorted_item_sizes=()
         local -a sorted_item_size_unknown_flags=()
         local -a sorted_item_recent_flags=()
+        local -a sorted_item_activity_states=()
         local -a sorted_item_display_paths=()
         local -a sorted_item_project_identities=()
         local -a sorted_item_project_paths=()
@@ -2328,6 +2375,7 @@ clean_project_artifacts() {
             sorted_item_sizes+=("${item_sizes[idx]}")
             sorted_item_size_unknown_flags+=("${item_size_unknown_flags[idx]}")
             sorted_item_recent_flags+=("${item_recent_flags[idx]}")
+            sorted_item_activity_states+=("${item_activity_states[idx]}")
             sorted_item_display_paths+=("${item_display_paths[idx]}")
             sorted_item_project_identities+=("${item_project_identities[idx]}")
             sorted_item_project_paths+=("${item_project_paths[idx]}")
@@ -2345,6 +2393,7 @@ clean_project_artifacts() {
         item_sizes=("${sorted_item_sizes[@]}")
         item_size_unknown_flags=("${sorted_item_size_unknown_flags[@]}")
         item_recent_flags=("${sorted_item_recent_flags[@]}")
+        item_activity_states=("${sorted_item_activity_states[@]}")
         item_display_paths=("${sorted_item_display_paths[@]}")
         item_project_identities=("${sorted_item_project_identities[@]}")
         item_project_paths=("${sorted_item_project_paths[@]}")
@@ -2526,7 +2575,7 @@ clean_project_artifacts() {
             continue
         fi
         local activity_status=0
-        purge_target_activity_still_safe "$item_path" "${item_recent_flags[idx]:-true}" || activity_status=$?
+        purge_target_activity_still_safe "$item_path" "${item_activity_states[idx]:-uncertain}" || activity_status=$?
         if [[ $activity_status -eq 124 || $activity_status -ge 128 ]]; then
             PURGE_RUN_OUTCOME="cancelled"
             echo "$cleaned_count" > "$stats_dir/purge_count"
@@ -2541,7 +2590,7 @@ clean_project_artifacts() {
         fi
         local removal_recorded=false
         if [[ -e "$item_path" ]]; then
-            local _MOLE_PURGE_FINAL_WAS_RECENT="${item_recent_flags[idx]:-true}"
+            local _MOLE_PURGE_FINAL_ACTIVITY_STATE="${item_activity_states[idx]:-uncertain}"
             local _MOLE_PURGE_FINAL_SCAN_ROOT="$expected_scan_root"
             local _MOLE_PURGE_FINAL_SCAN_ROOT_PARENT="${scan_root_parents[$expected_scan_root_index]}"
             local _MOLE_PURGE_FINAL_SCAN_ROOT_PARENT_ID="${scan_root_parent_ids[$expected_scan_root_index]}"
@@ -2576,6 +2625,7 @@ clean_project_artifacts() {
                     fi
                     return "$removal_status"
                 fi
+                echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (final removal check failed; re-run mo purge to review it again)"
             fi
         fi
         if [[ -t 1 ]]; then

@@ -34,7 +34,9 @@ for ((n=0; n<80; n++)); do
     categories+=("artifact-$n")
     size_values+=(1024); recent_values+=(false); age_values+=(30d)
     PURGE_CATEGORY_PROJECT_IDS_ARRAY+=("exact-project-$((n/20))")
-    PURGE_CATEGORY_PROJECT_PATHS_ARRAY+=("$long_path/项目-$((n/20))")
+    project_path="$long_path/项目-$((n/20))"
+    [[ $n -lt 20 ]] && project_path="[cloud] $project_path"
+    PURGE_CATEGORY_PROJECT_PATHS_ARRAY+=("$project_path")
     PURGE_CATEGORY_FULL_PATHS_ARRAY+=("$long_path/项目-$((n/20))/artifact-$n")
     PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY+=(false)
 done
@@ -96,12 +98,16 @@ def receive(marker: bytes = b'\x1b[J') -> bytes:
     frame, pending = pending[:end], pending[end:]
     return frame
 try:
-    fits(receive(), 40, 120)
+    initial_frame = receive()
+    fits(initial_frame, 40, 120)
+    assert re.search(r'\[cloud\].*artifact-0', plain(initial_frame)), plain(initial_frame)
     os.write(master, b' ')
     assert '79 selected' in plain(receive())
     resize(10, 25)
     os.write(master, b'\n')
-    assert b'Resize' in receive()  # Enter cannot confirm an unreadable menu.
+    resize_frame = receive()
+    assert b'Resize' in resize_frame  # Enter cannot confirm an unreadable menu.
+    fits(resize_frame, 10, 25)
     resize(40, 120)
     os.write(master, b'~')
     fits(receive(), 40, 120)

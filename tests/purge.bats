@@ -226,6 +226,31 @@ EOF
 	[[ "$output" == ".../deep/component/node_modules" ]]
 }
 
+@test "compact_purge_menu_path respects display width for a long CJK segment" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+result=$(compact_purge_menu_path '/项目项目项目项目项目项目项目项目项目项目项目项目' 10)
+printf '%s\n' "$result"
+[[ $(get_display_width "$result") -le 10 ]]
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+}
+
+@test "format_purge_display preserves the cloud marker while compacting paths" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+result=$(format_purge_display '[cloud] ~/Library/CloudStorage/Provider/company/team/very/deep/project' node_modules 1GB 48)
+printf '%s\n' "$result"
+[[ "$result" == "[cloud] "* ]]
+[[ $(get_display_width "$result") -le 48 ]]
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+}
+
 @test "format_purge_target_path rewrites home with tilde" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -1618,6 +1643,23 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
+@test "purge_target_activity_still_safe rechecks an uncertain selection" {
+	mkdir -p "$HOME/www/uncertain-project/node_modules"
+	touch -t 202001010000 "$HOME/www/uncertain-project/node_modules"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+run_with_timeout() { return 124; }
+result=0
+purge_target_activity_still_safe "$HOME/www/uncertain-project/node_modules" uncertain || result=$?
+[[ "$result" -eq 124 ]]
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
 @test "purge size pass preserves a fractional timeout override" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2267,6 +2309,48 @@ EOF
 	done
 }
 
+@test "clean_project_artifacts: manually selected uncertain activity never reaches removal" {
+	local script_file
+	script_file=$(mktemp "$HOME/uncertain_selection.XXXXXX.sh")
+
+	cat > "$script_file" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+artifact="$HOME/www/uncertain-project/node_modules"
+mkdir -p "$artifact" "$HOME/.cache/mole"
+printf 'payload\n' > "$artifact/file"
+touch "$HOME/www/uncertain-project/package.json"
+touch -t 202001010101 "$artifact" "$artifact/file"
+PURGE_SEARCH_PATHS=("$HOME/www")
+get_dir_size_kb() { echo 1; }
+is_recently_modified() {
+    _PURGE_ACTIVITY_STATE=uncertain
+    return 124
+}
+select_purge_categories() {
+    PURGE_SELECTION_RESULT=0
+    return 0
+}
+confirm_purge_cleanup() { return 0; }
+safe_remove() {
+    printf 'UNEXPECTED_REMOVE:%s\n' "$1"
+    return 0
+}
+set +e
+clean_project_artifacts
+result=$?
+set -e
+printf 'RESULT=%s OUTCOME=%s\n' "$result" "$PURGE_RUN_OUTCOME"
+SCRIPT
+
+	run _run_in_pty "$script_file"
+	rm -f "$script_file"
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"RESULT=124 OUTCOME=cancelled"* ]] || return 1
+	[[ "$output" != *"UNEXPECTED_REMOVE:"* ]]
+}
+
 @test "clean_project_artifacts: dry-run does not count failed removals" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2302,6 +2386,7 @@ echo "SIZE=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo missing)"
 EOF
 
 	[ "$status" -eq 0 ]
+	[[ "$output" == *"Skipped ~/www/test-project/node_modules (final removal check failed; re-run mo purge to review it again)"* ]] || return 1
 	[[ "$output" == *"COUNT=0"* ]] || return 1
 	[[ "$output" == *"SIZE=0"* ]]
 }
