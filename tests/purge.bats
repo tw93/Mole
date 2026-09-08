@@ -1737,6 +1737,42 @@ EOF
 	[[ "$output" != *"REMOVE:$HOME/dev/failed-project/node_modules"* ]] || return 1
 }
 
+@test "purge refills free scan slots and keeps failure status on the correct root" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+for name in slow failed fast; do
+    mkdir -p "$HOME/$name/project/node_modules"
+    touch "$HOME/$name/project/package.json"
+done
+PURGE_SEARCH_PATHS=("$HOME/slow" "$HOME/failed" "$HOME/fast")
+get_optimal_parallel_jobs() { echo 2; }
+scan_purge_targets() {
+    printf '%s/project/node_modules\n' "$1" > "$2"
+    case "$1" in
+        */slow)
+            deadline=$((SECONDS + 3))
+            until [[ -e "$HOME/fast-started" ]]; do
+                [[ $SECONDS -lt $deadline ]] || return 8
+                sleep 0.05
+            done ;;
+        */failed) return 7 ;;
+        */fast) touch "$HOME/fast-started" ;;
+    esac
+}
+get_dir_size_kb() { echo 4; }
+is_recently_modified() { return 1; }
+purge_target_activity_still_safe() { return 0; }
+safe_remove() { printf 'REVIEW:%s\n' "$1"; }
+MOLE_DRY_RUN=1 clean_project_artifacts </dev/null
+EOF
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"REVIEW:$HOME/slow/project/node_modules"* ]] || return 1
+	[[ "$output" == *"REVIEW:$HOME/fast/project/node_modules"* ]] || return 1
+	[[ "$output" != *"REVIEW:$HOME/failed/project/node_modules"* ]] || return 1
+	[[ "$output" == *"~/failed"* && "$output" == *"(status 7)"* ]] || return 1
+}
+
 @test "clean_project_artifacts stops launching roots after an interrupted scan" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

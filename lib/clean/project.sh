@@ -1558,36 +1558,50 @@ clean_project_artifacts() {
         max_scan_jobs=4
     fi
 
-    _wait_for_purge_scan_batch() {
-        local scan_index pid
-        for ((scan_index = 0; scan_index < ${#scan_pids[@]}; scan_index++)); do
-            pid="${scan_pids[$scan_index]}"
-            local scan_status=0
-            if wait "$pid" 2> /dev/null; then
-                scan_status=0
-            else
-                scan_status=$?
-            fi
-            scan_statuses+=("$scan_status")
-            if [[ $scan_status -ge 128 ]]; then
-                local remaining_index
-                for ((remaining_index = scan_index + 1; remaining_index < ${#scan_pids[@]}; remaining_index++)); do
-                    kill "${scan_pids[$remaining_index]}" 2> /dev/null || true
-                done
-                for ((remaining_index = scan_index + 1; remaining_index < ${#scan_pids[@]}; remaining_index++)); do
-                    wait "${scan_pids[$remaining_index]}" 2> /dev/null || true
-                done
-                scan_pids=()
-                return "$scan_status"
-            fi
+    local -a active_scan_indexes=()
+    _reap_purge_scans() {
+        local wait_for_completion="${1:-true}"
+        local slot pid status finished root_index
+        while [[ ${#scan_pids[@]} -gt 0 ]]; do
+            local -a running_pids=() running_indexes=()
+            finished=false
+            for ((slot = 0; slot < ${#scan_pids[@]}; slot++)); do
+                pid="${scan_pids[slot]}"
+                if kill -0 "$pid" 2> /dev/null; then
+                    running_pids+=("$pid")
+                    running_indexes+=("${active_scan_indexes[slot]}")
+                    continue
+                fi
+                status=0
+                wait "$pid" 2> /dev/null || status=$?
+                root_index="${active_scan_indexes[slot]}"
+                scan_statuses[root_index]=$status
+                finished=true
+                if [[ $status -ge 128 ]]; then
+                    local peer
+                    for peer in "${scan_pids[@]}"; do
+                        kill "$peer" 2> /dev/null || true
+                    done
+                    for peer in "${scan_pids[@]}"; do
+                        wait "$peer" 2> /dev/null || true
+                    done
+                    scan_pids=()
+                    active_scan_indexes=()
+                    return "$status"
+                fi
+            done
+            scan_pids=("${running_pids[@]+"${running_pids[@]}"}")
+            active_scan_indexes=("${running_indexes[@]+"${running_indexes[@]}"}")
+            [[ "$finished" == true || "$wait_for_completion" == false ]] && return 0
+            sleep 0.05
         done
-        scan_pids=()
+        return 0
     }
 
-    # Scanning is started from purge.sh with start_inline_spinner
-    # Keep root-level concurrency bounded because each fd scan has its own
-    # worker pool. Batches preserve launch-order alignment with scan_statuses.
+    # Refill free slots as scans finish. Root indexes remain stable regardless
+    # of completion order, so incomplete output cannot acquire another root's status.
     for path in "${PURGE_SEARCH_PATHS[@]}"; do
+        _reap_purge_scans false || scan_interrupt_status=$?
         [[ $scan_interrupt_status -ge 128 ]] && break
         if [[ -d "$path" ]]; then
             if ! _mole_snapshot_path_identity "$path"; then
@@ -1630,15 +1644,16 @@ clean_project_artifacts() {
             scan_purge_targets "$path" "$scan_output" < /dev/null &
             local scan_pid=$!
             scan_pids+=("$scan_pid")
+            active_scan_indexes+=("$((${#scan_roots[@]} - 1))")
             if [[ ${#scan_pids[@]} -ge $max_scan_jobs ]]; then
-                _wait_for_purge_scan_batch || scan_interrupt_status=$?
+                _reap_purge_scans || scan_interrupt_status=$?
                 [[ $scan_interrupt_status -ge 128 ]] && break
             fi
         fi
     done
-    if [[ $scan_interrupt_status -lt 128 ]]; then
-        _wait_for_purge_scan_batch || scan_interrupt_status=$?
-    fi
+    while [[ $scan_interrupt_status -lt 128 && ${#scan_pids[@]} -gt 0 ]]; do
+        _reap_purge_scans || scan_interrupt_status=$?
+    done
 
     if [[ $scan_interrupt_status -ge 128 ]]; then
         local interrupted_stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
