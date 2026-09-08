@@ -1955,6 +1955,41 @@ EOF
 	[[ "$output" != *"UNEXPECTED_CONTINUATION"* ]] || return 1
 }
 
+@test "perform_purge: incomplete cleanup is a failed command, not an empty inventory" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SKIP_MAIN=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/purge.sh"
+clean_project_artifacts() {
+    PURGE_RUN_OUTCOME=incomplete
+    printf '0\n' > "$HOME/.cache/mole/purge_stats"
+    printf '0\n' > "$HOME/.cache/mole/purge_count"
+}
+perform_purge </dev/null
+EOF
+	[ "$status" -eq 1 ] || return 1
+	[[ "$output" == *"Purge incomplete"* ]] || return 1
+	[[ "$output" == *"Some artifacts were skipped or could not be processed"* ]] || return 1
+	[[ "$output" != *"No old project artifacts"* ]] || return 1
+}
+
+@test "perform_purge: unknown-size successes remain visible in the summary" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SKIP_MAIN=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/purge.sh"
+clean_project_artifacts() {
+    PURGE_RUN_OUTCOME=completed
+    PURGE_UNKNOWN_SIZE_COUNT=1
+    printf '0\n' > "$HOME/.cache/mole/purge_stats"
+    printf '1\n' > "$HOME/.cache/mole/purge_count"
+}
+perform_purge </dev/null
+EOF
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"1 unmeasured"* ]] || return 1
+	[[ "$output" == *"Items: 1"* ]] || return 1
+	[[ "$output" != *"No artifacts were removed"* ]] || return 1
+}
+
 @test "clean_project_artifacts: handles empty menu options under set -u" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2005,7 +2040,7 @@ EOF
 	[[ "$output" == *"SIZE=0"* ]]
 }
 
-@test "clean_project_artifacts: skips size calculation errors instead of showing 0B (#869)" {
+@test "clean_project_artifacts: reports size errors as incomplete instead of an empty inventory" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -2019,11 +2054,13 @@ PURGE_SEARCH_PATHS=("$HOME/www")
 get_dir_size_kb() { echo ERROR; }
 
 clean_project_artifacts </dev/null
+printf 'OUTCOME=%s\n' "$PURGE_RUN_OUTCOME"
 EOF
 
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"No artifacts found to purge"* ]] || return 1
-	[[ "$output" != *"0B"* ]]
+	[[ "$output" == *"Could not measure ~/www/test-project/node_modules; skipped"* ]] || return 1
+	[[ "$output" == *"OUTCOME=incomplete"* ]] || return 1
+	[[ "$output" != *"No artifacts found to purge"* ]] || return 1
 }
 
 @test "clean_project_artifacts: removal cancellation stops the next eligible artifact" {

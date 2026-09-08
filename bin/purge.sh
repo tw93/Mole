@@ -234,9 +234,15 @@ perform_purge() {
     trap - INT TERM
     cleanup_monitor
 
-    if [[ "$purge_outcome" != "completed" ]]; then
-        return 0
-    fi
+    case "$purge_outcome" in
+        no_candidates | cancelled) return 0 ;;
+        scan_failed) return 1 ;;
+        completed | incomplete) ;;
+        *)
+            log_error "Unknown purge outcome: $purge_outcome"
+            return 1
+            ;;
+    esac
 
     # Final summary (matching clean.sh format)
     echo ""
@@ -259,21 +265,31 @@ perform_purge() {
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         summary_heading="Dry run complete - no changes made"
     fi
+    if [[ "$purge_outcome" == "incomplete" ]]; then
+        summary_heading="Purge incomplete"
+        [[ "${MOLE_DRY_RUN:-0}" == "1" ]] && summary_heading="Dry run incomplete - no changes made"
+    fi
 
-    if [[ $total_size_cleaned -gt 0 ]]; then
+    if [[ $total_items_cleaned -gt 0 ]]; then
         local freed_size_human
         freed_size_human=$(bytes_to_human_kb "$total_size_cleaned")
 
-        local summary_line="Space freed: ${GREEN}${freed_size_human}${NC}"
+        local summary_line="Estimated space freed: ${GREEN}${freed_size_human}${NC}"
         if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
-            summary_line="Would free: ${GREEN}${freed_size_human}${NC}"
+            summary_line="Would free approximately: ${GREEN}${freed_size_human}${NC}"
+        fi
+        if [[ ${PURGE_UNKNOWN_SIZE_COUNT:-0} -gt 0 ]]; then
+            summary_line+=" + ${PURGE_UNKNOWN_SIZE_COUNT} unmeasured"
         fi
         [[ $total_items_cleaned -gt 0 ]] && summary_line+=" | Items: $total_items_cleaned"
         summary_line+=" | Free: $(get_free_space)"
         summary_details+=("$summary_line")
     else
-        summary_details+=("No old project artifacts to clean.")
+        summary_details+=("No artifacts were removed.")
         summary_details+=("Free space: $(get_free_space)")
+    fi
+    if [[ "$purge_outcome" == "incomplete" ]]; then
+        summary_details+=("Some artifacts were skipped or could not be processed.")
     fi
 
     # Log session end
@@ -281,6 +297,7 @@ perform_purge() {
 
     print_summary_block "$summary_heading" "${summary_details[@]}"
     printf '\n'
+    [[ "$purge_outcome" == "completed" ]]
 }
 
 # Show help message

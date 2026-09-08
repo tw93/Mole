@@ -1462,9 +1462,12 @@ confirm_purge_cleanup() {
 }
 
 # Main cleanup function - scans and prompts user to select artifacts to clean.
-# Sets PURGE_RUN_OUTCOME to completed, no_candidates, cancelled, or scan_failed.
+# Normal outcomes return zero; the command renders the outcome and maps incomplete
+# work to failure. Timeouts and signals return their status immediately.
+# PURGE_RUN_OUTCOME: completed, incomplete, no_candidates, cancelled, scan_failed.
 clean_project_artifacts() {
     PURGE_RUN_OUTCOME="completed"
+    PURGE_UNKNOWN_SIZE_COUNT=0
     local -a all_found_items=()
     local -a safe_to_clean=()
     local -a safe_recent_flags=()
@@ -1705,6 +1708,7 @@ clean_project_artifacts() {
     # Restore caller traps after this function completes.
     _restore_purge_scan_traps
     if [[ $failed_scan_count -gt 0 ]]; then
+        PURGE_RUN_OUTCOME="incomplete"
         local root_text="root"
         [[ $failed_scan_count -ne 1 ]] && root_text="roots"
         echo ""
@@ -1728,7 +1732,7 @@ clean_project_artifacts() {
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No old project artifacts to clean"
         fi
         printf '\n'
-        PURGE_RUN_OUTCOME="no_candidates"
+        [[ $failed_scan_count -eq 0 ]] && PURGE_RUN_OUTCOME="no_candidates"
         return 0
     fi
     # Mark recently modified items (for default selection state)
@@ -2093,6 +2097,7 @@ clean_project_artifacts() {
     local -a item_display_paths=()
     local -a item_project_identities=()
     local -a item_project_paths=()
+    local -a size_failed_paths=()
     local _sz_idx=0
     for item in "${safe_to_clean[@]}"; do
         local item_index=$_sz_idx
@@ -2110,9 +2115,6 @@ clean_project_artifacts() {
         if [[ "$size_raw" == "TIMEOUT" ]]; then
             size_unknown=true
             size_human="unknown"
-        elif [[ "$size_raw" == "ERROR" ]]; then
-            debug_log "Skipping purge target with unknown size: $item"
-            continue
         elif [[ "$size_raw" =~ ^[0-9]+$ ]]; then
             size_kb="$size_raw"
             if [[ $size_kb -eq 0 && "${MOLE_PURGE_INCLUDE_EMPTY:-0}" != "1" ]]; then
@@ -2120,7 +2122,9 @@ clean_project_artifacts() {
             fi
             size_human=$(bytes_to_human "$((size_kb * 1024))")
         else
-            debug_log "Skipping purge target with invalid size result '$size_raw': $item"
+            PURGE_RUN_OUTCOME="incomplete"
+            size_failed_paths+=("$item")
+            debug_log "Invalid size result '$size_raw' for $item"
             continue
         fi
 
@@ -2339,13 +2343,20 @@ clean_project_artifacts() {
     if [[ -t 1 ]]; then
         stop_inline_spinner
     fi
+    for item in "${size_failed_paths[@]+"${size_failed_paths[@]}"}"; do
+        echo -e "${YELLOW}${ICON_WARNING}${NC} Could not measure ${item/#$HOME/~}; skipped" >&2
+    done
     # Exit early if no artifacts were found to avoid unbound variable errors
     # when expanding empty arrays with set -u active.
     if [[ ${#menu_options[@]} -eq 0 ]]; then
         echo ""
-        echo -e "${GRAY}No artifacts found to purge${NC}"
+        if [[ "$PURGE_RUN_OUTCOME" == "incomplete" ]]; then
+            echo -e "${YELLOW}No artifacts could be prepared for review${NC}"
+        else
+            echo -e "${GRAY}No artifacts found to purge${NC}"
+            PURGE_RUN_OUTCOME="no_candidates"
+        fi
         printf '\n'
-        PURGE_RUN_OUTCOME="no_candidates"
         return 0
     fi
     # Set global vars for selector
@@ -2406,7 +2417,7 @@ clean_project_artifacts() {
         PURGE_CATEGORY_PROJECT_PATHS_ARRAY=()
         PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY=()
         unset PURGE_CATEGORY_SIZES PURGE_RECENT_CATEGORIES PURGE_AGE_LABELS PURGE_SELECTION_RESULT
-        PURGE_RUN_OUTCOME="cancelled"
+        [[ "$PURGE_RUN_OUTCOME" != "incomplete" ]] && PURGE_RUN_OUTCOME="cancelled"
         return 0
     fi
     IFS=',' read -r -a selected_indices <<< "$PURGE_SELECTION_RESULT"
@@ -2528,6 +2539,9 @@ clean_project_artifacts() {
                     current_total=$(cat "$stats_dir/purge_stats" 2> /dev/null || echo "0")
                     echo "$((current_total + size_kb))" > "$stats_dir/purge_stats"
                     cleaned_count=$((cleaned_count + 1))
+                    if [[ "$size_unknown" == "true" ]]; then
+                        PURGE_UNKNOWN_SIZE_COUNT=$((PURGE_UNKNOWN_SIZE_COUNT + 1))
+                    fi
                     removal_recorded=true
                 fi
             else
@@ -2555,5 +2569,8 @@ clean_project_artifacts() {
     done
     # Update count
     echo "$cleaned_count" > "$stats_dir/purge_count"
+    if [[ $cleaned_count -lt ${#selected_indices[@]} ]]; then
+        PURGE_RUN_OUTCOME="incomplete"
+    fi
     unset PURGE_CATEGORY_SIZES PURGE_RECENT_CATEGORIES PURGE_AGE_LABELS PURGE_SELECTION_RESULT
 }
