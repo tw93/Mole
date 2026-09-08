@@ -144,9 +144,10 @@ write_purge_config() {
     local tmp_file
     tmp_file=$(mktemp_file "mole-purge-paths") || return 1
 
-    if ! cat > "$tmp_file" << EOF; then
+    if ! cat > "$tmp_file" << EOF
 $header
 EOF
+    then
         rm -f "$tmp_file" 2> /dev/null || true
         return 1
     fi
@@ -2060,14 +2061,22 @@ clean_project_artifacts() {
     local -a project_roots=()
     local -a _cached_project_identities=()
     local _pre_idx
+    local project_parent=""
+    local project_root=""
+    local project_identity=""
     for _pre_idx in "${!safe_to_clean[@]}"; do
         local artifact_path="${safe_to_clean[$_pre_idx]}"
-        local project_root=""
-        if ! project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
-            project_root="${artifact_path%/*}"
+        # Adjacent siblings share report-only ownership. Deletion still rebinds
+        # every artifact to its original scan evidence at the final boundary.
+        if [[ "${artifact_path%/*}" != "$project_parent" ]]; then
+            project_parent="${artifact_path%/*}"
+            if ! project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
+                project_root="$project_parent"
+            fi
+            project_identity=$(mole_path_identity "$project_root")
         fi
         project_roots[_pre_idx]="$project_root"
-        _cached_project_identities[_pre_idx]=$(mole_path_identity "$project_root")
+        _cached_project_identities[_pre_idx]="$project_identity"
     done
 
     # Build menu options - one line per artifact
