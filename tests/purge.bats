@@ -2063,6 +2063,30 @@ EOF
 	[[ "$output" != *"No artifacts found to purge"* ]] || return 1
 }
 
+@test "clean_project_artifacts: preparation does not exhaust the activity evidence budget" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+artifact="$HOME/www/old-project/node_modules"
+mkdir -p "$artifact"
+printf 'payload\n' > "$artifact/file"
+touch "$HOME/www/old-project/package.json"
+touch -t 202001010101 "$artifact" "$artifact/file"
+PURGE_SEARCH_PATHS=("$HOME/www")
+fake_now=$(date +%s)
+get_epoch_seconds() { printf '%s\n' "$fake_now"; }
+eval "$(declare -f _mole_path_matches_identity | sed '1s/_mole_path_matches_identity/_original_path_matches_identity/')"
+_mole_path_matches_identity() {
+    fake_now=$((fake_now + 100))
+    _original_path_matches_identity "$@"
+}
+safe_remove() { printf 'DEFAULT_SELECTED:%s\n' "$1"; }
+MOLE_DRY_RUN=1 clean_project_artifacts </dev/null
+EOF
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"DEFAULT_SELECTED:$HOME/www/old-project/node_modules"* ]] || return 1
+}
+
 @test "clean_project_artifacts: removal cancellation stops the next eligible artifact" {
 	for cancellation_status in 124 130; do
 		run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CANCELLATION_STATUS="$cancellation_status" /bin/bash --noprofile --norc <<'EOF'

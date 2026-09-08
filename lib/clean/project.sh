@@ -1735,17 +1735,10 @@ clean_project_artifacts() {
         [[ $failed_scan_count -eq 0 ]] && PURGE_RUN_OUTCOME="no_candidates"
         return 0
     fi
-    # Mark recently modified items (for default selection state)
+    # Bind candidates before starting the activity evidence budget.
     if [[ -t 1 ]]; then
-        start_inline_spinner "Checking recent activity..."
+        start_inline_spinner "Preparing artifacts..."
     fi
-    local _now_epoch
-    _now_epoch=$(get_epoch_seconds)
-    local _activity_total_timeout="${MO_PURGE_ACTIVITY_TOTAL_TIMEOUT_SEC:-$MOLE_TIMEOUT_HINT_SCAN_SEC}"
-    if [[ ! "$_activity_total_timeout" =~ ^[1-9][0-9]*$ ]]; then
-        _activity_total_timeout="$MOLE_TIMEOUT_HINT_SCAN_SEC"
-    fi
-    local _PURGE_ACTIVITY_DEADLINE_EPOCH=$((_now_epoch + _activity_total_timeout))
     local candidate_index
     for ((candidate_index = 0; candidate_index < ${#all_found_items[@]}; candidate_index++)); do
         item="${all_found_items[$candidate_index]}"
@@ -1820,6 +1813,31 @@ clean_project_artifacts() {
             continue
         fi
 
+        safe_to_clean+=("$item")
+        safe_expected_parents+=("$candidate_parent")
+        safe_expected_parent_ids+=("$candidate_parent_id")
+        safe_expected_target_ids+=("$candidate_target_id")
+        safe_scan_root_indexes+=("$candidate_scan_root_index")
+    done
+    if [[ -t 1 ]]; then
+        stop_inline_spinner
+    fi
+    if [[ ${#safe_to_clean[@]} -eq 0 ]]; then
+        echo -e "${GRAY}No eligible project artifacts to purge${NC}"
+        [[ "$PURGE_RUN_OUTCOME" != "incomplete" ]] && PURGE_RUN_OUTCOME="no_candidates"
+        return 0
+    fi
+    if [[ -t 1 ]]; then
+        start_inline_spinner "Checking recent activity..."
+    fi
+    local _now_epoch
+    _now_epoch=$(get_epoch_seconds)
+    local _activity_total_timeout="${MO_PURGE_ACTIVITY_TOTAL_TIMEOUT_SEC:-$MOLE_TIMEOUT_HINT_SCAN_SEC}"
+    if [[ ! "$_activity_total_timeout" =~ ^[1-9][0-9]*$ ]]; then
+        _activity_total_timeout="$MOLE_TIMEOUT_HINT_SCAN_SEC"
+    fi
+    local _PURGE_ACTIVITY_DEADLINE_EPOCH=$((_now_epoch + _activity_total_timeout))
+    for item in "${safe_to_clean[@]}"; do
         local is_recent=false
         _PURGE_ACTIVITY_STATE="uncertain"
         if is_recently_modified "$item" "$_now_epoch"; then
@@ -1833,22 +1851,11 @@ clean_project_artifacts() {
             # a legacy override returning 1 means definitely old.
             activity_state="old"
         fi
-        # Add all items to safe_to_clean, let user choose
-        safe_to_clean+=("$item")
         safe_recent_flags+=("$is_recent")
         safe_activity_states+=("$activity_state")
-        safe_expected_parents+=("$candidate_parent")
-        safe_expected_parent_ids+=("$candidate_parent_id")
-        safe_expected_target_ids+=("$candidate_target_id")
-        safe_scan_root_indexes+=("$candidate_scan_root_index")
     done
     if [[ -t 1 ]]; then
         stop_inline_spinner
-    fi
-    if [[ ${#safe_to_clean[@]} -eq 0 ]]; then
-        echo -e "${GRAY}No eligible project artifacts to purge${NC}"
-        [[ "$PURGE_RUN_OUTCOME" != "incomplete" ]] && PURGE_RUN_OUTCOME="no_candidates"
-        return 0
     fi
     # Build menu options - one per artifact
     if [[ -t 1 ]]; then
