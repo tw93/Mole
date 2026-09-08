@@ -1090,6 +1090,7 @@ select_purge_categories() {
     local items_per_page=$(_get_items_per_page)
     local cursor_pos=0
     local top_index=0
+    local searching=false search_query="" search_message=""
 
     # Selection and group totals belong to the menu, keyed by canonical row index.
     local -a selected=() sizes=() recent_flags=() age_labels=()
@@ -1216,7 +1217,13 @@ select_purge_categories() {
         fi
 
         printf "%s${PURPLE_BOLD}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "Select Artifacts to Purge${scroll_indicator}" "$_term_w")"
-        printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "${selected_size_human}, ${selected_count} selected" "$_term_w")"
+        local subtitle="${selected_size_human}, ${selected_count} selected"
+        if [[ "$searching" == true ]]; then
+            subtitle="Find project/artifact: $search_query"
+        elif [[ -n "$search_message" ]]; then
+            subtitle="$subtitle · $search_message"
+        fi
+        printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "$subtitle" "$_term_w")"
 
         # Calculate visible range
         local end_index=$((top_index + visible_count))
@@ -1313,7 +1320,7 @@ select_purge_categories() {
 
         # Adaptive footer hints, mirrors menu_paginated.sh pattern
         local _sep=" ${GRAY}|${NC} "
-        local _nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN} [] Projects${NC}"
+        local _nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN} [] Projects / Find${NC}"
         local _space="${GRAY}Space Select${NC}"
         local _enter="${GRAY}Enter Confirm${NC}"
         local _all="${GRAY}A All${NC}"
@@ -1366,6 +1373,26 @@ select_purge_categories() {
             focus_item "${group_starts[target_group]}"
         fi
     }
+    find_next_match() {
+        [[ -n "$search_query" ]] || return 0
+        local start="$1" offset index match=-1 case_was_enabled=false
+        shopt -q nocasematch && case_was_enabled=true
+        shopt -s nocasematch
+        for ((offset = 0; offset < total_items; offset++)); do
+            index=$(((start + offset) % total_items))
+            if [[ "${PURGE_CATEGORY_PROJECT_PATHS_ARRAY[index]:-} ${categories[index]}" == *"$search_query"* ]]; then
+                match=$index
+                break
+            fi
+        done
+        [[ "$case_was_enabled" == true ]] || shopt -u nocasematch
+        if [[ $match -ge 0 ]]; then
+            focus_item "$match"
+            search_message="n: next match"
+        else
+            search_message="No match: $search_query"
+        fi
+    }
     trap restore_terminal EXIT
     trap handle_interrupt INT TERM
     # Preserve interrupt character for Ctrl-C
@@ -1378,8 +1405,29 @@ select_purge_categories() {
     while true; do
         draw_menu
         local key
+        if [[ "$searching" == true ]]; then
+            key=$(MOLE_READ_KEY_FORCE_CHAR=1 read_key)
+            case "$key" in
+                CHAR:*) search_query+="${key#CHAR:}" ;;
+                SPACE) search_query+=" " ;;
+                DELETE) search_query="${search_query%?}" ;;
+                CLEAR_LINE) search_query="" ;;
+                QUIT) searching=false ;;
+                ENTER)
+                    searching=false
+                    find_next_match 0
+                    ;;
+            esac
+            continue
+        fi
         key=$(read_key)
         case "$key" in
+            CHAR:/)
+                searching=true
+                search_query=""
+                search_message=""
+                ;;
+            CHAR:n | CHAR:N) find_next_match "$((top_index + cursor_pos + 1))" ;;
             UP) focus_item "$((top_index + cursor_pos - 1))" ;;
             DOWN) focus_item "$((top_index + cursor_pos + 1))" ;;
             LEFT) focus_item "$((top_index + cursor_pos - items_per_page))" ;;

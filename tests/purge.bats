@@ -707,6 +707,22 @@ EOF
 	[[ "$output" == *"RESULT=1"* ]] || return 1
 }
 
+@test "purge search jumps by exact project path without changing other selections" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+PURGE_CATEGORY_SIZES="1,2,3"
+PURGE_CATEGORY_PROJECT_IDS_ARRAY=("a" "b" "c")
+PURGE_CATEGORY_PROJECT_PATHS_ARRAY=("~/client-a/obelisk" "~/client-b/obelisk" "~/client-c/atlas")
+# Search is case-insensitive and accepts vim navigation letters as query text.
+select_purge_categories "node_modules" "dist" "target" <<< $'/CLIENT-B\n \n' >/dev/null
+[[ "$PURGE_SELECTION_RESULT" == "0,2" ]]
+# Searching must restore the caller's shell matching mode.
+if shopt -q nocasematch; then exit 1; fi
+EOF
+	[ "$status" -eq 0 ]
+}
+
 @test "purge selection and final confirmation cancel when input closes" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
