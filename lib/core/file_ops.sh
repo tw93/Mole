@@ -2786,8 +2786,11 @@ _mole_snapshot_path_identity() {
     physical_parent=$(cd -P "$lexical_parent" 2> /dev/null && pwd -P) || return 1
     local parent_id=""
     local target_id=""
-    parent_id=$($STAT_BSD -f '%d:%i' "$physical_parent" 2> /dev/null || true)
-    target_id=$($STAT_BSD -f '%d:%i' "$path" 2> /dev/null || true)
+    local identities=""
+    identities=$("$STAT_BSD" -f '%d:%i' "$physical_parent" "$path" 2> /dev/null) || return 1
+    [[ "$identities" == *$'\n'* ]] || return 1
+    parent_id="${identities%%$'\n'*}"
+    target_id="${identities#*$'\n'}"
     [[ "$parent_id" =~ ^[0-9]+:[0-9]+$ && "$target_id" =~ ^[0-9]+:[0-9]+$ ]] || return 1
 
     _MOLE_PATH_SNAPSHOT_PARENT="$physical_parent"

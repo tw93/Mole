@@ -1175,6 +1175,22 @@ EOF
     [[ "$output" != *"UNEXPECTED_RM"* ]]
 }
 
+@test "path identity rejects incomplete metadata without retaining a previous binding" {
+    run env PROJECT_ROOT="$PROJECT_ROOT" SANDBOX="$SANDBOX" /bin/bash <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+mkdir -p "$SANDBOX/artifact with spaces"
+_mole_snapshot_path_identity "$SANDBOX/artifact with spaces"
+[[ -n "$_MOLE_PATH_SNAPSHOT_TARGET_ID" ]] || exit 1
+function /usr/bin/stat { printf '1:2\n'; }
+if _mole_snapshot_path_identity "$SANDBOX/artifact with spaces"; then
+    exit 1
+fi
+[[ -z "$_MOLE_PATH_SNAPSHOT_PARENT" && -z "$_MOLE_PATH_SNAPSHOT_PARENT_ID" && -z "$_MOLE_PATH_SNAPSHOT_TARGET_ID" ]] || exit 1
+EOF
+    [ "$status" -eq 0 ]
+}
+
 @test "mole_delete never binds a replacement installed during identity snapshot" {
     local victim="$SANDBOX/snapshot-race.app"
     mkdir -p "$victim"
