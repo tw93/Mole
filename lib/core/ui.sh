@@ -173,6 +173,47 @@ read_key() {
         return 0
     }
 
+    # Decode terminal sequences once, in both navigation and text-input modes.
+    # Keep the established one-second ESC reads for Bash 3.2.
+    if [[ "$key" == $'\x1b' ]]; then
+        local sequence="" terminator=""
+        if ! IFS= read -r -s -n 1 -t 1 rest 2> /dev/null; then
+            echo "QUIT"
+        elif [[ "$rest" == "[" || "$rest" == "O" ]]; then
+            if ! IFS= read -r -s -n 1 -t 1 sequence 2> /dev/null; then
+                [[ "$rest" == "[" ]] && echo "QUIT" || echo "OTHER"
+            else
+                case "$sequence" in
+                    A) echo "UP" ;;
+                    B) echo "DOWN" ;;
+                    C) echo "RIGHT" ;;
+                    D) echo "LEFT" ;;
+                    H) echo "TOP" ;;
+                    F) echo "BOTTOM" ;;
+                    1 | 3 | 4 | 5 | 6 | 7 | 8)
+                        if [[ "$rest" == "[" ]] && IFS= read -r -s -n 1 -t 1 terminator 2> /dev/null && [[ "$terminator" == "~" ]]; then
+                            case "$sequence" in
+                                1 | 7) echo "TOP" ;;
+                                4 | 8) echo "BOTTOM" ;;
+                                5) echo "LEFT" ;;
+                                6) echo "RIGHT" ;;
+                                3) echo "DELETE" ;;
+                            esac
+                        else
+                            echo "OTHER"
+                        fi
+                        ;;
+                    *) echo "OTHER" ;;
+                esac
+            fi
+        elif [[ "${MOLE_READ_KEY_FORCE_CHAR:-}" == "1" ]]; then
+            echo "QUIT"
+        else
+            echo "OTHER"
+        fi
+        return 0
+    fi
+
     if [[ "${MOLE_READ_KEY_FORCE_CHAR:-}" == "1" ]]; then
         [[ -z "$key" ]] && {
             echo "ENTER"
@@ -182,41 +223,6 @@ read_key() {
             $'\n' | $'\r') echo "ENTER" ;;
             $'\x7f' | $'\x08') echo "DELETE" ;;
             $'\x15') echo "CLEAR_LINE" ;; # Ctrl+U (often mapped from Cmd+Delete in terminals)
-            $'\x1b')
-                if IFS= read -r -s -n 1 -t 1 rest 2> /dev/null; then
-                    if [[ "$rest" == "[" ]]; then
-                        if IFS= read -r -s -n 1 -t 1 rest2 2> /dev/null; then
-                            case "$rest2" in
-                                "A") echo "UP" ;;
-                                "B") echo "DOWN" ;;
-                                "C") echo "RIGHT" ;;
-                                "D") echo "LEFT" ;;
-                                "3")
-                                    IFS= read -r -s -n 1 -t 1 rest3 2> /dev/null
-                                    [[ "$rest3" == "~" ]] && echo "DELETE" || echo "OTHER"
-                                    ;;
-                                *) echo "OTHER" ;;
-                            esac
-                        else
-                            echo "QUIT"
-                        fi
-                    elif [[ "$rest" == "O" ]]; then
-                        if IFS= read -r -s -n 1 -t 1 rest2 2> /dev/null; then
-                            case "$rest2" in
-                                "A") echo "UP" ;;
-                                "B") echo "DOWN" ;;
-                                "C") echo "RIGHT" ;;
-                                "D") echo "LEFT" ;;
-                                *) echo "OTHER" ;;
-                            esac
-                        else echo "OTHER"; fi
-                    else
-                        echo "QUIT"
-                    fi
-                else
-                    echo "QUIT"
-                fi
-                ;;
             ' ') echo "SPACE" ;; # Allow space in filter mode for selection
             $'\x03') echo "QUIT" ;;
             [[:print:]]) echo "CHAR:$key" ;;
@@ -257,31 +263,6 @@ read_key() {
         $'\x03') echo "QUIT" ;;
         $'\x7f' | $'\x08') echo "DELETE" ;;
         $'\x15') echo "CLEAR_LINE" ;; # Ctrl+U
-        $'\x1b')
-            if IFS= read -r -s -n 1 -t 1 rest 2> /dev/null; then
-                if [[ "$rest" == "[" ]]; then
-                    if IFS= read -r -s -n 1 -t 1 rest2 2> /dev/null; then
-                        case "$rest2" in
-                            "A") echo "UP" ;; "B") echo "DOWN" ;;
-                            "C") echo "RIGHT" ;; "D") echo "LEFT" ;;
-                            "3")
-                                IFS= read -r -s -n 1 -t 1 rest3 2> /dev/null
-                                [[ "$rest3" == "~" ]] && echo "DELETE" || echo "OTHER"
-                                ;;
-                            *) echo "OTHER" ;;
-                        esac
-                    else echo "QUIT"; fi
-                elif [[ "$rest" == "O" ]]; then
-                    if IFS= read -r -s -n 1 -t 1 rest2 2> /dev/null; then
-                        case "$rest2" in
-                            "A") echo "UP" ;; "B") echo "DOWN" ;;
-                            "C") echo "RIGHT" ;; "D") echo "LEFT" ;;
-                            *) echo "OTHER" ;;
-                        esac
-                    else echo "OTHER"; fi
-                else echo "OTHER"; fi
-            else echo "QUIT"; fi
-            ;;
         [[:print:]]) echo "CHAR:$key" ;;
         *) echo "OTHER" ;;
     esac
