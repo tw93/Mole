@@ -563,6 +563,12 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
+@test "purge terminal preserves focus across resize and supports project navigation" {
+	command -v python3 >/dev/null 2>&1 || skip "python3 not available"
+	run python3 "$PROJECT_ROOT/tests/purge_menu_pty.py"
+	[ "$status" -eq 0 ]
+}
+
 @test "select_purge_categories returns failure on empty input" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
