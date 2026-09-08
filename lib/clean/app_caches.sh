@@ -512,7 +512,8 @@ clean_feishu_service_worker_caches() {
 # Measured on macOS 26.5.2 with WeChat 4.x and WeCom 4.x:
 #   ~/Library/Caches/com.tencent.xinWeChat        absent
 #   ~/Library/Caches/com.tencent.WeWorkMac        absent
-#   WeCom  cefcache/<profile>/Service Worker      482 MB
+#   WeCom  cefcache/<profile>/Service Worker      482 MB root measured;
+#          only its rebuildable CacheStorage descendants are targeted
 #   WeCom  cefcache/<profile>/Cache               424 MB
 #   WeCom  cefcache/<profile>/Code Cache           48 MB
 #   WeCom  Application Support/WXWork/Log          81 MB
@@ -526,23 +527,149 @@ clean_feishu_service_worker_caches() {
 #   WeCom  Documents/Profiles/*/Messages1   chat messages
 #   WeCom  Documents/cefcache/<profile>/    cookies, Account Web Data, login state
 #   WeCom  Documents/Profiles/*/Publishsys  distribution payloads, value unmeasured
-wechat_or_wecom_running() {
-    # WeCom's main executable is the localized string it ships as, so a
-    # romanized -x match never fires; probe the ASCII helper bundles and
-    # executable paths instead. None of these is a resident menu-bar agent:
-    # with both apps quit every probe below reports no match, so cleanup is
-    # not permanently skipped the way a tray helper would skip it.
+wechat_running() {
     mole_pgrep_any \
         -x "WeChat" \
         -x "WeChatAppEx" \
+        -f '/WeChat[.]app/Contents/MacOS/'
+}
+
+wecom_running() {
+    # The main executable shipped by current WeCom builds is localized. Keep
+    # both exact names and app-bundle paths so the guard also covers older or
+    # differently localized installs, plus the short-lived helper processes.
+    mole_pgrep_any \
+        -x "企业微信" \
+        -x "WeCom" \
+        -x "WXWork" \
         -x "WeComAgent" \
-        -f '/WeChat[.]app/Contents/MacOS/' \
+        -f '/企业微信[.]app/Contents/MacOS/' \
+        -f '/WeCom[.]app/Contents/MacOS/' \
         -f '/WeComAgent[.]app/Contents/MacOS/' \
         -f '/Contents/MacOS/wecom-agent'
 }
 
+_wechat_container_process_guard_allows() {
+    mole_clean_process_guard wechat_running "WeChat started"
+}
+
+_wecom_container_process_guard_allows() {
+    mole_clean_process_guard wecom_running "WeCom started"
+}
+
+_messaging_container_bind_candidate() {
+    local path="$1"
+    local cache_root="${2%/}"
+    local container_data="${3%/}"
+    local lexical_parent="${path%/*}"
+    [[ "$lexical_parent" == "$cache_root" ]] || return 1
+    [[ -d "$cache_root" && ! -L "$cache_root" ]] || return 1
+    [[ -e "$path" && ! -L "$path" ]] || return 1
+
+    local physical_home=""
+    local physical_container=""
+    local expected_container=""
+    local physical_root_parent=""
+    local expected_root=""
+    physical_home=$(cd -P "$HOME" 2> /dev/null && pwd -P) || return 1
+    physical_container=$(cd -P "$container_data" 2> /dev/null && pwd -P) || return 1
+    expected_container="${physical_home%/}/${container_data#"$HOME"/}"
+    [[ "$physical_container" == "$expected_container" ]] || return 1
+    physical_root_parent=$(cd -P "${cache_root%/*}" 2> /dev/null && pwd -P) || return 1
+    expected_root="${physical_root_parent%/}/${cache_root##*/}"
+    case "$expected_root" in
+        "$physical_container"/*) ;;
+        *) return 1 ;;
+    esac
+
+    _mole_snapshot_path_identity "$path" || return 1
+    [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "$expected_root" ]] || return 1
+    _MOLE_SAFE_CLEAN_BOUND_PATH="$path"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+    _MOLE_SAFE_CLEAN_EXPECTED_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+}
+
 _wechat_container_delete_guard_allows() {
-    mole_clean_process_guard wechat_or_wecom_running "WeChat or WeCom started"
+    local path="$1"
+    _wechat_container_process_guard_allows || return $?
+
+    local wechat_data="$HOME/Library/Containers/com.tencent.xinWeChat/Data"
+    local cache_root="${path%/*}"
+    case "$cache_root" in
+        "$wechat_data/Documents/app_data/log" | "$wechat_data/.wxapplet/WMPF") ;;
+        *) return 1 ;;
+    esac
+    _messaging_container_bind_candidate "$path" "$cache_root" "$wechat_data"
+}
+
+_wecom_container_delete_guard_allows() {
+    local path="$1"
+    _wecom_container_process_guard_allows || return $?
+
+    local wecom_data="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
+    local cache_root="${path%/*}"
+    local cef_root="$wecom_data/Documents/cefcache"
+    if [[ "$cache_root" != "$wecom_data/Library/Application Support/WXWork/Log" ]]; then
+        local relative="${cache_root#"$cef_root"/}"
+        local profile="${relative%%/*}"
+        local cache_kind="${relative#*/}"
+        [[ -n "$profile" && "$profile" != "$relative" ]] || return 1
+        [[ "$profile" == "Default" || "$profile" =~ ^wew_[0-9]+$ ]] || return 1
+        case "$cache_kind" in
+            "Cache" | "Code Cache" | "GPUCache" | "Service Worker/CacheStorage") ;;
+            *) return 1 ;;
+        esac
+    fi
+    _messaging_container_bind_candidate "$path" "$cache_root" "$wecom_data"
+}
+
+_clean_messaging_container_roots() {
+    local family="$1"
+    local process_guard="$2"
+    local delete_guard="$3"
+    shift 3
+    [[ $# -gt 0 ]] || return 0
+
+    local -a root_pairs=("$@")
+    local has_eligible_targets=false
+    local cache_root label
+    while [[ $# -ge 2 ]]; do
+        cache_root="$1"
+        label="$2"
+        shift 2
+        if [[ -d "$cache_root" && ! -L "$cache_root" ]] &&
+            mole_cleanup_targets_exist "$cache_root"/*; then
+            has_eligible_targets=true
+            break
+        fi
+    done
+    [[ "$has_eligible_targets" == "true" ]] || return 0
+    set -- "${root_pairs[@]}"
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! "$process_guard"; then
+        mole_report_guard_stop "$family container caches" \
+            mole_defer_cleanup_family "$family"
+        return 0
+    fi
+
+    local _MOLE_SAFE_REMOVE_FINAL_GUARD="$delete_guard"
+    local guarded_rc=0
+    while [[ $# -ge 2 ]]; do
+        cache_root="$1"
+        label="$2"
+        shift 2
+        [[ -d "$cache_root" && ! -L "$cache_root" ]] || continue
+        guarded_rc=0
+        safe_clean_guarded "$delete_guard" "$cache_root"/* "$label" || guarded_rc=$?
+        if [[ $guarded_rc -eq 75 ]]; then
+            mole_report_guard_stop "$family container caches" \
+                mole_defer_cleanup_family "$family"
+            return 0
+        fi
+        [[ $guarded_rc -eq 0 ]] || return "$guarded_rc"
+    done
 }
 
 clean_wechat_container_caches() {
@@ -550,64 +677,46 @@ clean_wechat_container_caches() {
     local wecom_data="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
     [[ -d "$wechat_data" || -d "$wecom_data" ]] || return 0
 
-    local -a targets=()
-    local -a labels=()
+    local -a wechat_targets=()
     if [[ -d "$wechat_data" ]]; then
-        targets+=("$wechat_data/Documents/app_data/log")
-        labels+=("WeChat logs")
-        targets+=("$wechat_data/.wxapplet/WMPF")
-        labels+=("WeChat mini program cache")
+        wechat_targets+=("$wechat_data/Documents/app_data/log" "WeChat logs")
+        wechat_targets+=("$wechat_data/.wxapplet/WMPF" "WeChat mini program cache")
+        _clean_messaging_container_roots "WeChat" \
+            _wechat_container_process_guard_allows \
+            _wechat_container_delete_guard_allows \
+            "${wechat_targets[@]}"
     fi
+
+    local -a wecom_targets=()
     if [[ -d "$wecom_data" ]]; then
-        targets+=("$wecom_data/Library/Application Support/WXWork/Log")
-        labels+=("WeCom logs")
+        wecom_targets+=("$wecom_data/Library/Application Support/WXWork/Log" "WeCom logs")
         # cefcache is a Chromium user-data-dir, so most of its children are
         # component-updater payloads (AutofillStates, CertificateRevocation,
         # ...) holding version directories, not per-account profiles. Select a
-        # profile structurally, by the Chromium cache directories it owns,
-        # instead of trusting the directory name. Refuse a profile reached
-        # through a symlink so the sink stays inside the container inspected.
+        # profile by the two observed profile name shapes and by the Chromium
+        # cache directories it owns. Refuse a profile reached through a
+        # symlink so the sink stays inside the container inspected.
         local profile physical_profile
         for profile in "$wecom_data/Documents/cefcache"/*/; do
             profile="${profile%/}"
             [[ -d "$profile" ]] || continue
-            [[ -d "$profile/Cache" || -d "$profile/Service Worker" ]] || continue
+            [[ "${profile##*/}" == "Default" || "${profile##*/}" =~ ^wew_[0-9]+$ ]] || continue
+            [[ -d "$profile/Cache" || -d "$profile/Service Worker/CacheStorage" ]] || continue
             physical_profile=$(cd -P "$profile" 2> /dev/null && pwd -P) || continue
             if [[ "$physical_profile" != "$profile" ]]; then
                 debug_log "Refusing symlinked WeCom cefcache profile: $profile -> $physical_profile"
                 continue
             fi
-            targets+=("$profile/Service Worker")
-            labels+=("WeCom service worker cache")
-            targets+=("$profile/Cache")
-            labels+=("WeCom web cache")
-            targets+=("$profile/Code Cache")
-            labels+=("WeCom code cache")
-            targets+=("$profile/GPUCache")
-            labels+=("WeCom GPU cache")
+            wecom_targets+=("$profile/Service Worker/CacheStorage" "WeCom service worker cache")
+            wecom_targets+=("$profile/Cache" "WeCom web cache")
+            wecom_targets+=("$profile/Code Cache" "WeCom code cache")
+            wecom_targets+=("$profile/GPUCache" "WeCom GPU cache")
         done
+        _clean_messaging_container_roots "WeCom" \
+            _wecom_container_process_guard_allows \
+            _wecom_container_delete_guard_allows \
+            "${wecom_targets[@]}"
     fi
-    [[ ${#targets[@]} -gt 0 ]] || return 0
-
-    local _MOLE_CLEAN_GUARD_REASON=""
-    if ! _wechat_container_delete_guard_allows; then
-        mole_report_guard_stop "WeChat/WeCom container caches" \
-            mole_defer_cleanup_family "WeChat/WeCom"
-        return 0
-    fi
-
-    local index guarded_rc=0
-    for ((index = 0; index < ${#targets[@]}; index++)); do
-        guarded_rc=0
-        safe_clean_guarded _wechat_container_delete_guard_allows \
-            "${targets[$index]}"/* "${labels[$index]}" || guarded_rc=$?
-        if [[ $guarded_rc -eq 75 ]]; then
-            mole_report_guard_stop "WeChat/WeCom container caches" \
-                mole_defer_cleanup_family "WeChat/WeCom"
-            return 0
-        fi
-        [[ $guarded_rc -eq 0 ]] || return "$guarded_rc"
-    done
 }
 
 # Communication apps.

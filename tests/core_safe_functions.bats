@@ -1181,6 +1181,22 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "should_protect_path allows only the measured WeChat container cache leaves" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+wechat="$HOME/Library/Containers/com.tencent.xinWeChat/Data"
+! should_protect_path "$wechat/Documents/app_data/log/wechat.log"
+! should_protect_path "$wechat/.wxapplet/WMPF/cache.bin"
+should_protect_path "$wechat/Documents/xwechat_files/account/db_storage/message.db"
+should_protect_path "$wechat/Documents/app_data/radium/users/account/state.db"
+should_protect_path "$wechat/Documents/app_data/log"
+should_protect_path "$wechat/.wxapplet/WMPF"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "is_endpoint_security_cache_path matches only EDR agent var/folders caches" {
     run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

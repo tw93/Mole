@@ -81,6 +81,41 @@ EOF
     [[ -d "$victim" ]]
 }
 
+@test "safe_remove rebinds identity after a final sink guard" {
+    local victim="$SANDBOX/final-guard-replaced"
+    local original="$SANDBOX/final-guard-original"
+    mkdir -p "$victim"
+    : > "$victim/old.txt"
+
+    run /bin/bash --noprofile --norc <<EOF
+$(prelude)
+_mole_snapshot_path_identity "$victim"
+expected_parent="\$_MOLE_PATH_SNAPSHOT_PARENT"
+expected_parent_id="\$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+expected_target_id="\$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+final_guard() {
+    mv "\$1" "$original"
+    mkdir -p "\$1"
+    : > "\$1/replacement.txt"
+}
+_MOLE_SAFE_REMOVE_FINAL_GUARD=final_guard
+set +e
+safe_remove "$victim" true 1 "" \
+    "\$expected_parent" "\$expected_parent_id" "\$expected_target_id"
+actual_rc=\$?
+set -e
+printf 'RC:%s ORIGINAL:%s REPLACEMENT:%s\n' \
+    "\$actual_rc" "\$(test -f "$original/old.txt" && echo kept || echo missing)" \
+    "\$(test -f "$victim/replacement.txt" && echo kept || echo missing)"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RC:1 ORIGINAL:kept REPLACEMENT:kept"* ]]
+}
+
 @test "mole_delete trash mode moves the target instead of rm -rf" {
     local victim="$SANDBOX/victim_trash"
     mkdir -p "$victim"

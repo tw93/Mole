@@ -1528,6 +1528,16 @@ safe_remove() {
         fi
     fi
 
+    # A caller-specific final guard may perform process or metadata probes.
+    # Rebind the original object once more after that work so a replacement
+    # during the guard cannot reach rm under the identity checked above.
+    if [[ -n "$expected_parent" ]] && ! _mole_path_matches_identity \
+        "$path" "$expected_parent" "$expected_parent_id" "$expected_target_id"; then
+        debug_log "Refusing removal after path identity changed during the final sink guard: $path"
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "SKIPPED" "$path" "identity changed"
+        return 1
+    fi
+
     if [[ -n "$container_probe_parent" ]] && ! _mole_path_matches_identity \
         "$path" "$container_probe_parent" "$container_probe_parent_id" \
         "$container_probe_target_id"; then
