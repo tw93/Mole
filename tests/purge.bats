@@ -2547,7 +2547,10 @@ PURGE_SEARCH_PATHS=("$HOME/www")
 scan_purge_targets() {
     printf '%s\n' "$protected" "$unprotected" > "$2"
 }
-get_dir_size_kb() { echo 1; }
+get_dir_size_kb() {
+    [[ "$1" == "$protected" ]] && touch "$HOME/unexpected-protected-size"
+    echo 1
+}
 get_file_mtime() { echo 1577836800; }
 is_recently_modified() { return 1; }
 purge_target_activity_still_safe() { return 0; }
@@ -2563,6 +2566,7 @@ for pattern in "${WHITELIST_PATTERNS[@]}"; do
     fi
 done
 [[ "$protected_loaded" == "true" ]] || exit 1
+[[ ! -e "$HOME/unexpected-protected-size" ]] || exit 1
 [[ -d "$protected" ]] || exit 1
 [[ ! -e "$unprotected" ]] || exit 1
 EOF

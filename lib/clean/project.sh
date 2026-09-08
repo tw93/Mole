@@ -1749,6 +1749,9 @@ clean_project_artifacts() {
     local candidate_index
     for ((candidate_index = 0; candidate_index < ${#all_found_items[@]}; candidate_index++)); do
         item="${all_found_items[$candidate_index]}"
+        if is_path_whitelisted "$item"; then
+            continue
+        fi
         local candidate_bound=false
         local candidate_parent=""
         local candidate_parent_id=""
@@ -1841,6 +1844,11 @@ clean_project_artifacts() {
     done
     if [[ -t 1 ]]; then
         stop_inline_spinner
+    fi
+    if [[ ${#safe_to_clean[@]} -eq 0 ]]; then
+        echo -e "${GRAY}No eligible project artifacts to purge${NC}"
+        [[ "$PURGE_RUN_OUTCOME" != "incomplete" ]] && PURGE_RUN_OUTCOME="no_candidates"
+        return 0
     fi
     # Build menu options - one per artifact
     if [[ -t 1 ]]; then
