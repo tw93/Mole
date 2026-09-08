@@ -1414,7 +1414,9 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/project.sh"
 run_with_timeout() { return 124; }
-is_recently_modified "$HOME/www/uncertain-project/node_modules"
+result=0
+is_recently_modified "$HOME/www/uncertain-project/node_modules" || result=$?
+[[ "$result" -eq 124 && "$_PURGE_ACTIVITY_STATE" == uncertain ]]
 EOF
 
 	[ "$status" -eq 0 ]
@@ -2128,6 +2130,41 @@ exit "$result"
 EOF
 		[ "$status" -eq "$cancellation_status" ] || return 1
 		[[ "$output" == *"REMOVE:$HOME/www/first/node_modules"* ]] || return 1
+		[[ "$output" == *"OUTCOME=cancelled"* ]] || return 1
+		[[ "$output" != *"UNEXPECTED_SECOND_REMOVAL"* ]] || return 1
+	done
+}
+
+@test "clean_project_artifacts: final activity cancellation stops before any removal" {
+	for cancellation_status in 124 130; do
+		run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CANCELLATION_STATUS="$cancellation_status" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+for project in first second; do
+    artifact="$HOME/www/$project/node_modules"
+    mkdir -p "$artifact"
+    printf 'payload\n' > "$artifact/file"
+    touch "$HOME/www/$project/package.json"
+    touch -t 202001010101 "$artifact" "$artifact/file"
+done
+PURGE_SEARCH_PATHS=("$HOME/www")
+export MOLE_DRY_RUN=1
+purge_target_activity_still_safe() { return "$CANCELLATION_STATUS"; }
+safe_remove() {
+    printf 'REMOVE:%s\n' "$1"
+    case "$1" in
+        */first/node_modules) return "$CANCELLATION_STATUS" ;;
+        *) printf 'UNEXPECTED_SECOND_REMOVAL\n'; return 0 ;;
+    esac
+}
+set +e
+clean_project_artifacts </dev/null
+result=$?
+printf 'OUTCOME=%s\n' "$PURGE_RUN_OUTCOME"
+exit "$result"
+EOF
+		[ "$status" -eq "$cancellation_status" ] || return 1
+		[[ "$output" != *"REMOVE:"* ]] || return 1
 		[[ "$output" == *"OUTCOME=cancelled"* ]] || return 1
 		[[ "$output" != *"UNEXPECTED_SECOND_REMOVAL"* ]] || return 1
 	done

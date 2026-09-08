@@ -823,6 +823,9 @@ classify_purge_activity() {
 
     if [[ $probe_status -ne 0 ]]; then
         debug_log "Purge activity scan failed closed (exit $probe_status): $path"
+        if [[ $probe_status -eq 124 || $probe_status -ge 128 ]]; then
+            return "$probe_status"
+        fi
         return 0
     fi
     if [[ -n "$recent_file" ]]; then
@@ -833,9 +836,9 @@ classify_purge_activity() {
 }
 
 # Args: $1 - path, $2 - optional current epoch
-# Check whether a path must be protected from default purge selection.
+# Return 0 for protected, 1 for old, or preserve timeout/signal status.
 is_recently_modified() {
-    classify_purge_activity "$@"
+    classify_purge_activity "$@" || return $?
     [[ "$_PURGE_ACTIVITY_STATE" != "old" ]]
 }
 
@@ -849,13 +852,13 @@ purge_target_activity_still_safe() {
 
     # Do not inherit the menu pass's expired shared deadline.
     local _PURGE_ACTIVITY_DEADLINE_EPOCH=""
-    local _PURGE_ACTIVITY_STATE="uncertain"
-    if is_recently_modified "$path" "$(get_epoch_seconds)"; then
-        return 1
+    local activity_status=0
+    is_recently_modified "$path" "$(get_epoch_seconds)" || activity_status=$?
+    [[ $activity_status -eq 1 ]] && return 0
+    if [[ $activity_status -eq 124 || $activity_status -ge 128 ]]; then
+        return "$activity_status"
     fi
-    # Preserve the established test/caller seam where an override returning 1
-    # means old without setting the newer classification detail.
-    [[ "$_PURGE_ACTIVITY_STATE" == "old" || "$_PURGE_ACTIVITY_STATE" == "uncertain" ]]
+    return 1
 }
 
 # Final safe_remove hook for purge. The caller supplies the exact scan-root and
@@ -866,7 +869,7 @@ _mole_purge_final_remove_guard() {
     local path="$1"
     is_safe_configured_purge_artifact "$path" || return 1
     is_protected_purge_artifact "$path" && return 1
-    purge_target_activity_still_safe "$path" "${_MOLE_PURGE_FINAL_WAS_RECENT:-true}" || return 1
+    purge_target_activity_still_safe "$path" "${_MOLE_PURGE_FINAL_WAS_RECENT:-true}" || return $?
 
     _mole_path_matches_identity \
         "${_MOLE_PURGE_FINAL_SCAN_ROOT:-}" \
@@ -1470,7 +1473,7 @@ confirm_purge_cleanup() {
 
 # Main cleanup function - scans and prompts user to select artifacts to clean.
 # Normal outcomes return zero; the command renders the outcome and maps incomplete
-# work to failure. Timeouts and signals return their status immediately.
+# work to failure. Signals and deletion-phase timeouts stop the run immediately.
 # PURGE_RUN_OUTCOME: completed, incomplete, no_candidates, cancelled, scan_failed.
 clean_project_artifacts() {
     PURGE_RUN_OUTCOME="completed"
@@ -1845,18 +1848,22 @@ clean_project_artifacts() {
     fi
     local _PURGE_ACTIVITY_DEADLINE_EPOCH=$((_now_epoch + _activity_total_timeout))
     for item in "${safe_to_clean[@]}"; do
-        local is_recent=false
+        local is_recent=true
+        local activity_status=0
         _PURGE_ACTIVITY_STATE="uncertain"
-        if is_recently_modified "$item" "$_now_epoch"; then
-            is_recent=true
+        is_recently_modified "$item" "$_now_epoch" || activity_status=$?
+        if [[ $activity_status -ge 128 ]]; then
+            PURGE_RUN_OUTCOME="cancelled"
+            [[ ! -t 1 ]] || stop_inline_spinner
+            return "$activity_status"
         fi
+        # A bounded menu probe may time out: retain that row, unchecked.
         local activity_state="${_PURGE_ACTIVITY_STATE:-uncertain}"
-        if [[ "$activity_state" != "recent" && "$activity_state" != "old" && "$activity_state" != "uncertain" ]]; then
-            activity_state="uncertain"
-        elif [[ "$activity_state" == "uncertain" && "$is_recent" == "false" ]]; then
-            # Preserve the long-standing is_recently_modified test/mocking seam:
-            # a legacy override returning 1 means definitely old.
+        if [[ $activity_status -eq 1 ]]; then
+            is_recent=false
             activity_state="old"
+        elif [[ "$activity_state" != "recent" ]]; then
+            activity_state="uncertain"
         fi
         safe_recent_flags+=("$is_recent")
         safe_activity_states+=("$activity_state")
@@ -2506,7 +2513,14 @@ clean_project_artifacts() {
             debug_log "Skipping purge target that became protected after review: $item_path"
             continue
         fi
-        if ! purge_target_activity_still_safe "$item_path" "${item_recent_flags[idx]:-true}"; then
+        local activity_status=0
+        purge_target_activity_still_safe "$item_path" "${item_recent_flags[idx]:-true}" || activity_status=$?
+        if [[ $activity_status -eq 124 || $activity_status -ge 128 ]]; then
+            PURGE_RUN_OUTCOME="cancelled"
+            echo "$cleaned_count" > "$stats_dir/purge_count"
+            return "$activity_status"
+        fi
+        if [[ $activity_status -ne 0 ]]; then
             echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (activity changed after review)"
             continue
         fi
