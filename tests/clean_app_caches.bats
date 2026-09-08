@@ -2400,3 +2400,131 @@ INNER
     }
     [[ "$output" == *"CURRENT:$current|2.0.200"* ]]
 }
+
+@test "clean_wechat_container_caches cleans sandboxed containers and spares chat data" {
+    local iso="$HOME/iso-wechat-targets"
+    run env HOME="$iso" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+wechat="$HOME/Library/Containers/com.tencent.xinWeChat/Data"
+wecom="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
+mkdir -p "$wechat/Documents/app_data/log" "$wechat/.wxapplet/WMPF"
+mkdir -p "$wecom/Library/Application Support/WXWork/Log"
+mkdir -p "$wecom/Documents/cefcache/wew_1/Service Worker"
+mkdir -p "$wecom/Documents/cefcache/wew_1/Cache"
+mkdir -p "$wecom/Documents/cefcache/wew_1/Code Cache"
+mkdir -p "$wecom/Documents/cefcache/wew_1/GPUCache"
+# User data siblings that must never be reached.
+mkdir -p "$wechat/Documents/xwechat_files/acct_1/db_storage"
+mkdir -p "$wechat/Documents/app_data/radium/users"
+mkdir -p "$wecom/Documents/Profiles/AAA/Messages1"
+mkdir -p "$wecom/Documents/Profiles/AAA/Publishsys/pkg"
+mkdir -p "$wecom/Documents/cefcache/wew_1/Local Storage"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+wechat_or_wecom_running() { return 1; }
+safe_clean_guarded() { shift; echo "SC|$*"; }
+clean_wechat_container_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"Documents/app_data/log/"*"WeChat logs"* ]] || return 1
+    [[ "$output" == *".wxapplet/WMPF/"*"WeChat mini program cache"* ]] || return 1
+    [[ "$output" == *"WXWork/Log/"*"WeCom logs"* ]] || return 1
+    [[ "$output" == *"cefcache/wew_1/Service Worker/"*"WeCom service worker cache"* ]] || return 1
+    [[ "$output" == *"cefcache/wew_1/Cache/"*"WeCom web cache"* ]] || return 1
+    [[ "$output" == *"cefcache/wew_1/Code Cache/"*"WeCom code cache"* ]] || return 1
+    [[ "$output" == *"cefcache/wew_1/GPUCache/"*"WeCom GPU cache"* ]] || return 1
+    # Chat databases, account state and unmeasured payloads stay untouched.
+    [[ "$output" != *"xwechat_files"* ]] || return 1
+    [[ "$output" != *"radium/users"* ]] || return 1
+    [[ "$output" != *"Messages1"* ]] || return 1
+    [[ "$output" != *"Publishsys"* ]] || return 1
+    [[ "$output" != *"Local Storage"* ]] || return 1
+}
+
+@test "clean_wechat_container_caches skips every target while an owner is running" {
+    local iso="$HOME/iso-wechat-running"
+    run env HOME="$iso" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+wecom="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
+mkdir -p "$wecom/Documents/cefcache/wew_1/Cache"
+mkdir -p "$wecom/Library/Application Support/WXWork/Log"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+wechat_or_wecom_running() { return 0; }
+safe_clean_guarded() { shift; echo "SC|$*"; }
+clean_wechat_container_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"SC|"* ]] || return 1
+}
+
+@test "clean_wechat_container_caches fails closed when process state is unknown" {
+    local iso="$HOME/iso-wechat-unknown"
+    run env HOME="$iso" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+wecom="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
+mkdir -p "$wecom/Documents/cefcache/wew_1/Cache"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+wechat_or_wecom_running() { return 2; }
+safe_clean_guarded() { shift; echo "SC|$*"; }
+clean_wechat_container_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"SC|"* ]] || return 1
+}
+
+@test "clean_wechat_container_caches refuses a symlinked WeCom profile" {
+    local iso="$HOME/iso-wechat-symlink"
+    run env HOME="$iso" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+wecom="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
+mkdir -p "$wecom/Documents/cefcache"
+mkdir -p "$HOME/elsewhere/Cache"
+ln -s "$HOME/elsewhere" "$wecom/Documents/cefcache/wew_evil"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+wechat_or_wecom_running() { return 1; }
+safe_clean_guarded() { shift; echo "SC|$*"; }
+clean_wechat_container_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"elsewhere"* ]] || return 1
+    [[ "$output" != *"wew_evil"* ]] || return 1
+}
+
+@test "clean_wechat_container_caches ignores WeCom component payloads under cefcache" {
+    local iso="$HOME/iso-wechat-components"
+    run env HOME="$iso" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cef="$HOME/Library/Containers/com.tencent.WeWorkMac/Data/Documents/cefcache"
+# A real profile owns Chromium cache directories.
+mkdir -p "$cef/Default/Cache" "$cef/Default/Service Worker"
+mkdir -p "$cef/wew_1688857906463120/Cache"
+# Component-updater payloads sit beside profiles and hold version directories.
+mkdir -p "$cef/AutofillStates/2024.11.26.0"
+mkdir -p "$cef/CertificateRevocation/2025.6.13.84507"
+mkdir -p "$cef/CookieReadinessList/2024.11.26.0"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+wechat_or_wecom_running() { return 1; }
+safe_clean_guarded() { shift; echo "SC|$*"; }
+clean_wechat_container_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"cefcache/Default/Cache/"* ]] || return 1
+    [[ "$output" == *"cefcache/wew_1688857906463120/Cache/"* ]] || return 1
+    [[ "$output" != *"AutofillStates"* ]] || return 1
+    [[ "$output" != *"CertificateRevocation"* ]] || return 1
+    [[ "$output" != *"CookieReadinessList"* ]] || return 1
+}

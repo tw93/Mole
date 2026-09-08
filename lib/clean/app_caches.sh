@@ -503,6 +503,113 @@ clean_feishu_service_worker_caches() {
         [[ $guarded_rc -eq 0 ]] || return "$guarded_rc"
     done
 }
+# WeChat and WeCom ship sandboxed, so their regenerable caches live under
+# ~/Library/Containers/<bundle id>/Data/ and the ~/Library/Caches/<bundle id>
+# entries above reach nothing on a current install. Same shape as JianyingPro
+# (#1277): the app keeps heavy caches outside ~/Library/Caches, so standard
+# cleanup never sees them.
+#
+# Measured on macOS 26.5.2 with WeChat 4.x and WeCom 4.x:
+#   ~/Library/Caches/com.tencent.xinWeChat        absent
+#   ~/Library/Caches/com.tencent.WeWorkMac        absent
+#   WeCom  cefcache/<profile>/Service Worker      482 MB
+#   WeCom  cefcache/<profile>/Cache               424 MB
+#   WeCom  cefcache/<profile>/Code Cache           48 MB
+#   WeCom  Application Support/WXWork/Log          81 MB
+#   WeChat Documents/app_data/log                 187 MB
+#   WeChat .wxapplet/WMPF                         161 MB
+#                                          total ~1.4 GB reclaimed
+#
+# Non-targets, never removed because they are user data or account state:
+#   WeChat Documents/xwechat_files/**       chat databases and received files
+#   WeChat Documents/app_data/radium/users  per-account webview state
+#   WeCom  Documents/Profiles/*/Messages1   chat messages
+#   WeCom  Documents/cefcache/<profile>/    cookies, Account Web Data, login state
+#   WeCom  Documents/Profiles/*/Publishsys  distribution payloads, value unmeasured
+wechat_or_wecom_running() {
+    # WeCom's main executable is the localized string it ships as, so a
+    # romanized -x match never fires; probe the ASCII helper bundles and
+    # executable paths instead. None of these is a resident menu-bar agent:
+    # with both apps quit every probe below reports no match, so cleanup is
+    # not permanently skipped the way a tray helper would skip it.
+    mole_pgrep_any \
+        -x "WeChat" \
+        -x "WeChatAppEx" \
+        -x "WeComAgent" \
+        -f '/WeChat[.]app/Contents/MacOS/' \
+        -f '/WeComAgent[.]app/Contents/MacOS/' \
+        -f '/Contents/MacOS/wecom-agent'
+}
+
+_wechat_container_delete_guard_allows() {
+    mole_clean_process_guard wechat_or_wecom_running "WeChat or WeCom started"
+}
+
+clean_wechat_container_caches() {
+    local wechat_data="$HOME/Library/Containers/com.tencent.xinWeChat/Data"
+    local wecom_data="$HOME/Library/Containers/com.tencent.WeWorkMac/Data"
+    [[ -d "$wechat_data" || -d "$wecom_data" ]] || return 0
+
+    local -a targets=()
+    local -a labels=()
+    if [[ -d "$wechat_data" ]]; then
+        targets+=("$wechat_data/Documents/app_data/log")
+        labels+=("WeChat logs")
+        targets+=("$wechat_data/.wxapplet/WMPF")
+        labels+=("WeChat mini program cache")
+    fi
+    if [[ -d "$wecom_data" ]]; then
+        targets+=("$wecom_data/Library/Application Support/WXWork/Log")
+        labels+=("WeCom logs")
+        # cefcache is a Chromium user-data-dir, so most of its children are
+        # component-updater payloads (AutofillStates, CertificateRevocation,
+        # ...) holding version directories, not per-account profiles. Select a
+        # profile structurally, by the Chromium cache directories it owns,
+        # instead of trusting the directory name. Refuse a profile reached
+        # through a symlink so the sink stays inside the container inspected.
+        local profile physical_profile
+        for profile in "$wecom_data/Documents/cefcache"/*/; do
+            profile="${profile%/}"
+            [[ -d "$profile" ]] || continue
+            [[ -d "$profile/Cache" || -d "$profile/Service Worker" ]] || continue
+            physical_profile=$(cd -P "$profile" 2> /dev/null && pwd -P) || continue
+            if [[ "$physical_profile" != "$profile" ]]; then
+                debug_log "Refusing symlinked WeCom cefcache profile: $profile -> $physical_profile"
+                continue
+            fi
+            targets+=("$profile/Service Worker")
+            labels+=("WeCom service worker cache")
+            targets+=("$profile/Cache")
+            labels+=("WeCom web cache")
+            targets+=("$profile/Code Cache")
+            labels+=("WeCom code cache")
+            targets+=("$profile/GPUCache")
+            labels+=("WeCom GPU cache")
+        done
+    fi
+    [[ ${#targets[@]} -gt 0 ]] || return 0
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! _wechat_container_delete_guard_allows; then
+        mole_report_guard_stop "WeChat/WeCom container caches" \
+            mole_defer_cleanup_family "WeChat/WeCom"
+        return 0
+    fi
+
+    local index guarded_rc=0
+    for ((index = 0; index < ${#targets[@]}; index++)); do
+        guarded_rc=0
+        safe_clean_guarded _wechat_container_delete_guard_allows \
+            "${targets[$index]}"/* "${labels[$index]}" || guarded_rc=$?
+        if [[ $guarded_rc -eq 75 ]]; then
+            mole_report_guard_stop "WeChat/WeCom container caches" \
+                mole_defer_cleanup_family "WeChat/WeCom"
+            return 0
+        fi
+        [[ $guarded_rc -eq 0 ]] || return "$guarded_rc"
+    done
+}
+
 # Communication apps.
 clean_communication_apps() {
     safe_clean ~/Library/Application\ Support/discord/Cache/* "Discord cache"
@@ -528,6 +635,7 @@ clean_communication_apps() {
         safe_clean ~/Library/Application\ Support/Microsoft/Teams/logs/* "Microsoft Teams legacy logs"
         safe_clean ~/Library/Application\ Support/Microsoft/Teams/tmp/* "Microsoft Teams legacy temp files"
     fi
+    clean_wechat_container_caches
 }
 # DingTalk.
 clean_dingtalk() {
