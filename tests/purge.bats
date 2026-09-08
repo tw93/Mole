@@ -654,11 +654,11 @@ printf 'RESULT=%s\n' "$PURGE_SELECTION_RESULT"
 EOF
 
 	[ "$status" -eq 0 ] || return 1
-	[[ "$output" == *"┌ A node_modules"* ]] || return 1
-	[[ "$output" == *"└ A dist"* ]] || return 1
-	[[ "$output" == *"─ B target"* ]] || return 1
+	[[ "$output" == *"┌ ~/work/obelisk"* ]] || return 1
+	[[ "$output" == *"└ ~/work/obelisk"* ]] || return 1
+	[[ "$output" == *"─ ~/work/atlas"* ]] || return 1
 	[[ "$output" == *"~/work/obelisk · 154KB · 2/2 selected"* ]] || return 1
-	[[ "$output" == *"~/work/obelisk · 154KB · 0/2 selected"* ]] || return 1
+	[[ "$output" == *"~/work/atlas · 26KB · 1/1 selected"* ]] || return 1
 	[[ "$output" == *"RESULT=2"* ]] || return 1
 }
 
@@ -3021,7 +3021,7 @@ PURGE_SEARCH_PATHS=("$HOME/www" "$HOME/Library/CloudStorage")
 
 select_purge_categories() {
 	local i=0
-	for option in "\$@"; do
+	for option in "\${PURGE_CATEGORY_PROJECT_PATHS_ARRAY[@]}"; do
 		echo "MENU[\$i]=\$option" >> "$capture_file"
 		i=\$((i + 1))
 	done

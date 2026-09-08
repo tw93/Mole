@@ -1008,6 +1008,23 @@ find_purge_project_root_for_artifact() {
     return 1
 }
 
+# Format one visible row from canonical menu data at the current terminal width.
+# Width excludes the selector prefix and activity suffix; inputs contain no ANSI.
+format_purge_display() {
+    local project_path="$1" artifact="$2" size="$3" width="$4"
+    if [[ $width -lt 30 ]]; then
+        truncate_by_display_width "$artifact $size" "$width"
+        return
+    fi
+    local artifact_width=$(((width - 13) / 2))
+    [[ $artifact_width -gt 24 ]] && artifact_width=24
+    local path_width=$((width - artifact_width - 13))
+    local path
+    path=$(compact_purge_menu_path "$project_path" "$path_width")
+    local padding=$((path_width - $(get_display_width "$path")))
+    printf '%s%*s %9s | %s' "$path" "$padding" "" "$size" "$(truncate_by_display_width "$artifact" "$artifact_width")"
+}
+
 # Purge category selector.
 select_purge_categories() {
     local -a categories=("$@")
@@ -1048,7 +1065,9 @@ select_purge_categories() {
     local top_index=0
 
     # Initialize selection (all selected by default, except recent ones)
-    local -a selected=()
+    local -a selected=() sizes=() recent_flags=() age_labels=()
+    IFS=',' read -r -a sizes <<< "${PURGE_CATEGORY_SIZES:-}"
+    IFS=',' read -r -a age_labels <<< "${PURGE_AGE_LABELS:-}"
     IFS=',' read -r -a recent_flags <<< "${PURGE_RECENT_CATEGORIES:-}"
     for ((i = 0; i < total_items; i++)); do
         # Default unselected if category has recent items
@@ -1107,35 +1126,30 @@ select_purge_categories() {
         exit 130
     }
     draw_menu() {
-        # Recalculate items_per_page dynamically to handle window resize
+        local focused_index=$((top_index + cursor_pos))
         items_per_page=$(_get_items_per_page)
+        local _term_w
+        _term_w=$(tput cols 2> /dev/null || echo 80)
+        [[ "$_term_w" =~ ^[1-9][0-9]*$ ]] || _term_w=80
 
-        # Clamp pagination state to avoid cursor drifting out of view
-        local max_top_index=0
-        if [[ $total_items -gt $items_per_page ]]; then
-            max_top_index=$((total_items - items_per_page))
+        # Keep the same absolute artifact focused when the viewport changes.
+        local max_top_index=$((total_items - items_per_page))
+        [[ $max_top_index -lt 0 ]] && max_top_index=0
+        [[ $top_index -gt $max_top_index ]] && top_index=$max_top_index
+        [[ $top_index -lt 0 ]] && top_index=0
+        if [[ $focused_index -lt $top_index ]]; then
+            top_index=$focused_index
+        elif [[ $focused_index -ge $((top_index + items_per_page)) ]]; then
+            top_index=$((focused_index - items_per_page + 1))
         fi
-        if [[ $top_index -gt $max_top_index ]]; then
-            top_index=$max_top_index
-        fi
-        if [[ $top_index -lt 0 ]]; then
-            top_index=0
-        fi
-
+        cursor_pos=$((focused_index - top_index))
         local visible_count=$((total_items - top_index))
         [[ $visible_count -gt $items_per_page ]] && visible_count=$items_per_page
-        if [[ $cursor_pos -gt $((visible_count - 1)) ]]; then
-            cursor_pos=$((visible_count - 1))
-        fi
-        if [[ $cursor_pos -lt 0 ]]; then
-            cursor_pos=0
-        fi
 
         printf "\033[H"
         # Calculate total size of selected items for header
         local selected_size=0
         local selected_count=0
-        IFS=',' read -r -a sizes <<< "${PURGE_CATEGORY_SIZES:-}"
         for ((i = 0; i < total_items; i++)); do
             if [[ ${selected[i]} == true ]]; then
                 selected_size=$((selected_size + ${sizes[i]:-0}))
@@ -1151,14 +1165,12 @@ select_purge_categories() {
         local scroll_indicator=""
         if [[ $total_items -gt $items_per_page ]]; then
             local current_pos=$((top_index + cursor_pos + 1))
-            scroll_indicator=" ${GRAY}[${current_pos}/${total_items}]${NC}"
+            scroll_indicator=" [${current_pos}/${total_items}]"
         fi
 
-        printf "%s${PURPLE_BOLD}Select Artifacts to Purge${NC}%s${GRAY}, ${selected_size_human}, ${selected_count} selected${NC}\n" "$clear_line" "$scroll_indicator"
-        printf "%s\n" "$clear_line"
+        printf "%s${PURPLE_BOLD}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "Select Artifacts to Purge${scroll_indicator}" "$_term_w")"
+        printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "${selected_size_human}, ${selected_count} selected" "$_term_w")"
 
-        IFS=',' read -r -a recent_flags <<< "${PURGE_RECENT_CATEGORIES:-}"
-        IFS=',' read -r -a age_labels <<< "${PURGE_AGE_LABELS:-}"
 
         # Calculate visible range
         local end_index=$((top_index + visible_count))
@@ -1189,20 +1201,27 @@ select_purge_categories() {
             local recent_marker=""
             local _age="${age_labels[i]:-}"
             [[ -n "$_age" ]] && recent_marker=" ${GRAY}| ${_age}${NC}"
+            local row_width=$((_term_w - 6))
+            if [[ -n "$_age" ]]; then
+                row_width=$((row_width - ${#_age} - 3))
+            fi
+            [[ $row_width -lt 1 ]] && row_width=1
+            local row_size="unknown"
+            if [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[i]:-false}" != "true" ]]; then
+                row_size=$(bytes_to_human_kb "${sizes[i]:-0}")
+            fi
+            local row
+            row=$(format_purge_display "${PURGE_CATEGORY_PROJECT_PATHS_ARRAY[i]:-}" "${categories[i]}" "$row_size" "$row_width")
             local rel_pos=$((i - top_index))
             if [[ $rel_pos -eq $cursor_pos ]]; then
-                printf "%s${CYAN}${ICON_ARROW} %s %s %s%s${NC}\n" "$clear_line" "$checkbox" "$group_marker" "${categories[i]}" "$recent_marker"
+                printf "%s${CYAN}${ICON_ARROW} %s %s %s%s${NC}\n" "$clear_line" "$checkbox" "$group_marker" "$row" "$recent_marker"
             else
-                printf "%s  %s %s %s%s\n" "$clear_line" "$checkbox" "$group_marker" "${categories[i]}" "$recent_marker"
+                printf "%s  %s %s %s%s\n" "$clear_line" "$checkbox" "$group_marker" "$row" "$recent_marker"
             fi
         done
 
         # Keep one blank line between the list and footer tips.
         printf "%s\n" "$clear_line"
-
-        local _term_w
-        _term_w=$(tput cols 2> /dev/null || echo 80)
-        [[ "$_term_w" =~ ^[0-9]+$ ]] || _term_w=80
 
         local current_index=$((top_index + cursor_pos))
         local current_project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[current_index]:-}"
@@ -1250,13 +1269,13 @@ select_purge_categories() {
             current_full_path="${PURGE_CATEGORY_FULL_PATHS_ARRAY[current_index]}"
         fi
         if [[ -n "$current_full_path" ]]; then
-            printf "%s${GRAY}Full path:${NC} %s\n" "$clear_line" "$current_full_path"
+            printf "%s${GRAY}Path:${NC} %s\n" "$clear_line" "$(compact_purge_menu_path "$current_full_path" "$((_term_w - 6))")"
             printf "%s\n" "$clear_line"
         fi
 
         # Adaptive footer hints, mirrors menu_paginated.sh pattern
         local _sep=" ${GRAY}|${NC} "
-        local _nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}${NC}"
+        local _nav="${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN} [] Projects${NC}"
         local _space="${GRAY}Space Select${NC}"
         local _enter="${GRAY}Enter Confirm${NC}"
         local _all="${GRAY}A All${NC}"
@@ -1283,7 +1302,7 @@ select_purge_categories() {
                     printf "%s${_l2}${NC}\n" "$clear_line"
                 else
                     # Level 3 (minimal): ↑↓ | Enter | X Skip | Q
-                    printf "%s${_nav}${_sep}${GRAY}Enter${NC}${_sep}${GRAY}X Skip${NC}${_sep}${GRAY}Q${NC}\n" "$clear_line"
+                    printf "%s${GRAY}${ICON_NAV_UP}${ICON_NAV_DOWN}${NC}${_sep}${GRAY}Enter${NC}${_sep}${GRAY}X Skip${NC}${_sep}${GRAY}Q${NC}\n" "$clear_line"
                 fi
             fi
         fi
@@ -1291,25 +1310,33 @@ select_purge_categories() {
         # Clear stale content below the footer when list height shrinks.
         printf '\033[J'
     }
-    move_cursor_up() {
-        if [[ $cursor_pos -gt 0 ]]; then
-            ((cursor_pos--))
-        elif [[ $top_index -gt 0 ]]; then
-            ((top_index--))
-        fi
+    focus_item() {
+        local target="$1"
+        [[ $target -lt 0 ]] && target=0
+        [[ $target -ge $total_items ]] && target=$((total_items - 1))
+        cursor_pos=$((target - top_index))
     }
-    move_cursor_down() {
-        local absolute_index=$((top_index + cursor_pos))
-        local last_index=$((total_items - 1))
-        if [[ $absolute_index -lt $last_index ]]; then
-            local visible_count=$((total_items - top_index))
-            [[ $visible_count -gt $items_per_page ]] && visible_count=$items_per_page
-            if [[ $cursor_pos -lt $((visible_count - 1)) ]]; then
-                cursor_pos=$((cursor_pos + 1))
-            elif [[ $((top_index + visible_count)) -lt $total_items ]]; then
-                top_index=$((top_index + 1))
-            fi
+    move_project() {
+        local direction="$1" target=$((top_index + cursor_pos))
+        local project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target]:-}"
+        if [[ "$direction" == next ]]; then
+            target=$((target + 1))
+            while [[ $target -lt $total_items && -n "$project_id" && "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target]:-}" == "$project_id" ]]; do
+                target=$((target + 1))
+            done
+            [[ $target -lt $total_items ]] || return 0
+        else
+            while [[ $target -gt 0 && -n "$project_id" && "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target - 1]:-}" == "$project_id" ]]; do
+                target=$((target - 1))
+            done
+            [[ $target -gt 0 ]] || return 0
+            target=$((target - 1))
+            project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target]:-}"
+            while [[ $target -gt 0 && -n "$project_id" && "${PURGE_CATEGORY_PROJECT_IDS_ARRAY[target - 1]:-}" == "$project_id" ]]; do
+                target=$((target - 1))
+            done
         fi
+        focus_item "$target"
     }
     trap restore_terminal EXIT
     trap handle_interrupt INT TERM
@@ -1322,39 +1349,18 @@ select_purge_categories() {
     # Main loop
     while true; do
         draw_menu
-        # Read key
-        if ! IFS= read -r -s -n1 key; then
-            restore_terminal
-            return 1
-        fi
+        local key
+        key=$(read_key)
         case "$key" in
-            $'\x1b')
-                # Arrow keys or ESC
-                # Read next 2 chars with timeout (bash 3.2 needs integer)
-                IFS= read -r -s -n1 -t 1 key2 || key2=""
-                if [[ "$key2" == "[" ]]; then
-                    IFS= read -r -s -n1 -t 1 key3 || key3=""
-                    case "$key3" in
-                        A) # Up arrow
-                            move_cursor_up
-                            ;;
-                        B) # Down arrow
-                            move_cursor_down
-                            ;;
-                    esac
-                else
-                    # ESC alone (no following chars)
-                    restore_terminal
-                    return 1
-                fi
-                ;;
-            "j" | "J") # Vim down
-                move_cursor_down
-                ;;
-            "k" | "K") # Vim up
-                move_cursor_up
-                ;;
-            " ") # Space - toggle current item
+            UP) focus_item "$((top_index + cursor_pos - 1))" ;;
+            DOWN) focus_item "$((top_index + cursor_pos + 1))" ;;
+            LEFT) focus_item "$((top_index + cursor_pos - items_per_page))" ;;
+            RIGHT) focus_item "$((top_index + cursor_pos + items_per_page))" ;;
+            TOP) focus_item 0 ;;
+            BOTTOM) focus_item "$((total_items - 1))" ;;
+            'CHAR:[') move_project previous ;;
+            'CHAR:]') move_project next ;;
+            SPACE) # Space - toggle current item
                 local idx=$((top_index + cursor_pos))
                 if [[ ${selected[idx]} == true ]]; then
                     selected[idx]=false
@@ -1362,12 +1368,12 @@ select_purge_categories() {
                     selected[idx]=true
                 fi
                 ;;
-            "a" | "A") # Select all
+            CHAR:a | CHAR:A) # Select all
                 for ((i = 0; i < total_items; i++)); do
                     selected[i]=true
                 done
                 ;;
-            "i" | "I") # Invert selection
+            CHAR:i | CHAR:I) # Invert selection
                 for ((i = 0; i < total_items; i++)); do
                     if [[ ${selected[i]} == true ]]; then
                         selected[i]=false
@@ -1376,7 +1382,7 @@ select_purge_categories() {
                     fi
                 done
                 ;;
-            "x" | "X") # Deselect the current artifact's exact project
+            CHAR:x | CHAR:X) # Deselect the current artifact's exact project
                 local current_index=$((top_index + cursor_pos))
                 local project_id="${PURGE_CATEGORY_PROJECT_IDS_ARRAY[current_index]:-}"
                 if [[ -n "$project_id" ]]; then
@@ -1388,12 +1394,13 @@ select_purge_categories() {
                 else
                     selected[current_index]=false
                 fi
+                move_project next
                 ;;
-            "q" | "Q" | $'\x03') # Quit or Ctrl-C
+            QUIT) # Quit, Ctrl-C, or closed input
                 restore_terminal
                 return 1
                 ;;
-            "" | $'\n' | $'\r') # Enter - confirm
+            ENTER) # Enter - confirm
                 # Build result
                 PURGE_SELECTION_RESULT=""
                 for ((i = 0; i < total_items; i++)); do
@@ -2007,66 +2014,6 @@ clean_project_artifacts() {
     local -a item_expected_parent_ids=()
     local -a item_expected_target_ids=()
     local -a item_scan_root_indexes=()
-    # Format display with alignment (mirrors app_selector.sh approach)
-    # Args: $1=project_path $2=artifact_type $3=size_str $4=terminal_width $5=max_path_width $6=artifact_col_width
-    format_purge_display() {
-        local project_path="$1"
-        local artifact_type="$2"
-        local size_str="$3"
-        local terminal_width="${4:-$(tput cols 2> /dev/null || echo 80)}"
-        local max_path_width="${5:-}"
-        local artifact_col="${6:-12}"
-        local available_width
-        local path_prefix=""
-
-        if [[ "$project_path" == "[cloud] "* ]]; then
-            path_prefix="[cloud] "
-            project_path="${project_path#"[cloud] "}"
-        fi
-
-        if [[ -n "$max_path_width" ]]; then
-            available_width="$max_path_width"
-        else
-            # Standalone fallback: include the two-column project-group marker.
-            local fixed_width=$((artifact_col + 28))
-            available_width=$((terminal_width - fixed_width))
-
-            local min_width=10
-            if [[ $terminal_width -ge 120 ]]; then
-                min_width=48
-            elif [[ $terminal_width -ge 100 ]]; then
-                min_width=38
-            elif [[ $terminal_width -ge 80 ]]; then
-                min_width=25
-            fi
-
-            [[ $available_width -lt $min_width ]] && available_width=$min_width
-        fi
-
-        # Truncate project path if needed
-        local truncated_path
-        local compact_width=$((available_width - ${#path_prefix}))
-        [[ $compact_width -lt 4 ]] && compact_width=4
-        truncated_path="${path_prefix}$(compact_purge_menu_path "$project_path" "$compact_width")"
-        local current_width
-        current_width=$(get_display_width "$truncated_path")
-
-        # Get byte count for printf width calculation
-        local old_lc="${LC_ALL:-}"
-        export LC_ALL=C
-        local byte_count=${#truncated_path}
-        if [[ -n "$old_lc" ]]; then
-            export LC_ALL="$old_lc"
-        else
-            unset LC_ALL
-        fi
-
-        local padding=$((available_width - current_width))
-        local printf_width=$((byte_count + padding))
-        artifact_type=$(truncate_by_display_width "$artifact_type" "$artifact_col")
-        # Format: "project_path  size | artifact_type"
-        printf "%-*s %9s | %-*s" "$printf_width" "$truncated_path" "$size_str" "$artifact_col" "$artifact_type"
-    }
     # Resolve project ownership once per artifact. An indicator-backed root is
     # preferred. Without one, the artifact's direct parent is the narrowest
     # exact ownership boundary we can prove without grouping unrelated paths.
@@ -2093,10 +2040,8 @@ clean_project_artifacts() {
     done
 
     # Build menu options - one line per artifact
-    # Pass 1: collect data into parallel arrays (needed for pre-scan of widths).
+    # Keep labels unformatted; the selector renders only visible rows.
     # Sizes are read from pre-computed results (parallel du calls launched above).
-    local -a raw_project_paths=()
-    local -a raw_artifact_types=()
     local -a item_display_paths=()
     local -a item_project_identities=()
     local -a item_project_paths=()
@@ -2144,8 +2089,7 @@ clean_project_artifacts() {
             display_project_path="[cloud] $display_project_path"
             display_item_path="[cloud] $display_item_path"
         fi
-        raw_project_paths+=("$display_project_path")
-        raw_artifact_types+=("$artifact_type")
+        menu_options+=("$artifact_type")
         item_paths+=("$item")
         item_display_paths+=("$display_item_path")
         item_project_identities+=("${_cached_project_identities[$item_index]}")
@@ -2176,57 +2120,6 @@ clean_project_artifacts() {
         else
             item_age_labels+=("$((_age_d / 365))y")
         fi
-    done
-
-    # Pre-scan: find max path and artifact display widths (mirrors app_selector.sh approach)
-    local terminal_width
-    terminal_width=$(tput cols 2> /dev/null || echo 80)
-    [[ "$terminal_width" =~ ^[0-9]+$ ]] || terminal_width=80
-
-    local max_path_display_width=0
-    local max_artifact_width=0
-    for pp in "${raw_project_paths[@]+"${raw_project_paths[@]}"}"; do
-        local w
-        w=$(get_display_width "$pp")
-        [[ $w -gt $max_path_display_width ]] && max_path_display_width=$w
-    done
-    for at in "${raw_artifact_types[@]+"${raw_artifact_types[@]}"}"; do
-        [[ ${#at} -gt $max_artifact_width ]] && max_artifact_width=${#at}
-    done
-
-    # Artifact column: cap at 17, floor at 6 (shortest typical names like "dist")
-    [[ $max_artifact_width -lt 6 ]] && max_artifact_width=6
-    [[ $max_artifact_width -gt 17 ]] && max_artifact_width=17
-
-    # Include the two-column project-group marker in the selector prefix.
-    local fixed_overhead=$((max_artifact_width + 28))
-    local available_for_path=$((terminal_width - fixed_overhead))
-
-    local min_path_width=10
-    if [[ $terminal_width -ge 120 ]]; then
-        min_path_width=48
-    elif [[ $terminal_width -ge 100 ]]; then
-        min_path_width=38
-    elif [[ $terminal_width -ge 80 ]]; then
-        min_path_width=25
-    fi
-
-    [[ $max_path_display_width -lt $min_path_width ]] && max_path_display_width=$min_path_width
-    [[ $available_for_path -lt $max_path_display_width ]] && max_path_display_width=$available_for_path
-    # Ensure path width is at least 5 on very narrow terminals
-    [[ $max_path_display_width -lt 5 ]] && max_path_display_width=5
-
-    # Pass 2: build menu_options using pre-computed widths
-    for ((idx = 0; idx < ${#raw_project_paths[@]}; idx++)); do
-        local size_kb_val="${item_sizes[idx]}"
-        local size_unknown_val="${item_size_unknown_flags[idx]}"
-        local size_human_val=""
-        if [[ "$size_unknown_val" == "true" ]]; then
-            size_human_val="unknown"
-        else
-            size_human_val=$(bytes_to_human "$((size_kb_val * 1024))")
-        fi
-        menu_options+=("$(format_purge_display "${raw_project_paths[idx]}" "${raw_artifact_types[idx]}" "$size_human_val" "$terminal_width" "$max_path_display_width" "$max_artifact_width")")
     done
 
     # Keep every exact project together. Project groups are ordered by their
