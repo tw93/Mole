@@ -1993,33 +1993,6 @@ clean_project_artifacts() {
     local -a item_expected_parent_ids=()
     local -a item_expected_target_ids=()
     local -a item_scan_root_indexes=()
-    # Helper to get artifact display name
-    # For duplicate artifact names within same project, include parent directory for context
-    get_artifact_display_name() {
-        local path="$1"
-        local item_index="$2"
-        local artifact_name="${path##*/}"
-        local parent_name="${path%/*}"
-        parent_name="${parent_name##*/}"
-        local project_name="${_cached_project_names[item_index]}"
-
-        # Check if there are other items with same artifact name AND same project
-        local has_duplicate=false
-        local other_index
-        for other_index in "${!safe_to_clean[@]}"; do
-            if [[ "$other_index" != "$item_index" && "${_cached_basenames[other_index]}" == "$artifact_name" && "${_cached_project_names[other_index]}" == "$project_name" ]]; then
-                has_duplicate=true
-                break
-            fi
-        done
-
-        # If duplicate exists in same project and parent is not the project itself, show parent/artifact
-        if [[ "$has_duplicate" == "true" && "$parent_name" != "$project_name" && "$parent_name" != "." && "$parent_name" != "/" ]]; then
-            echo "$parent_name/$artifact_name"
-        else
-            echo "$artifact_name"
-        fi
-    }
     # Format display with alignment (mirrors app_selector.sh approach)
     # Args: $1=project_path $2=artifact_type $3=size_str $4=terminal_width $5=max_path_width $6=artifact_col_width
     format_purge_display() {
@@ -2076,6 +2049,7 @@ clean_project_artifacts() {
 
         local padding=$((available_width - current_width))
         local printf_width=$((byte_count + padding))
+        artifact_type=$(truncate_by_display_width "$artifact_type" "$artifact_col")
         # Format: "project_path  size | artifact_type"
         printf "%-*s %9s | %-*s" "$printf_width" "$truncated_path" "$size_str" "$artifact_col" "$artifact_type"
     }
@@ -2083,25 +2057,17 @@ clean_project_artifacts() {
     # preferred. Without one, the artifact's direct parent is the narrowest
     # exact ownership boundary we can prove without grouping unrelated paths.
     # The physical identity is authoritative; display text is never a selector.
-    local -a _cached_basenames=()
-    local -a _cached_project_names=()
-    local -a _cached_project_paths=()
+    local -a project_roots=()
     local -a _cached_project_identities=()
     local _pre_idx
     for _pre_idx in "${!safe_to_clean[@]}"; do
         local artifact_path="${safe_to_clean[$_pre_idx]}"
         local project_root=""
-        _cached_basenames[_pre_idx]="${artifact_path##*/}"
-        if project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
-            _cached_project_names[_pre_idx]="${project_root##*/}"
-            _cached_project_paths[_pre_idx]="${project_root/#$HOME/~}"
-            _cached_project_identities[_pre_idx]=$(mole_path_identity "$project_root")
-        else
+        if ! project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
             project_root="${artifact_path%/*}"
-            _cached_project_names[_pre_idx]="${project_root##*/}"
-            _cached_project_paths[_pre_idx]="${project_root/#$HOME/~}"
-            _cached_project_identities[_pre_idx]=$(mole_path_identity "$project_root")
         fi
+        project_roots[_pre_idx]="$project_root"
+        _cached_project_identities[_pre_idx]=$(mole_path_identity "$project_root")
     done
 
     # Build menu options - one line per artifact
@@ -2116,9 +2082,9 @@ clean_project_artifacts() {
     local _sz_idx=0
     for item in "${safe_to_clean[@]}"; do
         local item_index=$_sz_idx
-        local project_path="${_cached_project_paths[$item_index]}"
-        local artifact_type
-        artifact_type=$(get_artifact_display_name "$item" "$item_index")
+        local project_root="${project_roots[$item_index]}"
+        local project_path="${project_root/#$HOME/~}"
+        local artifact_type="${item#"$project_root/"}"
         local size_raw
         size_raw=$(cat "${_size_tmpfiles[$item_index]}" 2> /dev/null || echo "0")
         rm -f "${_size_tmpfiles[$item_index]}" 2> /dev/null || true
