@@ -719,6 +719,9 @@ select_purge_categories "node_modules" "dist" "target" <<< $'/CLIENT-B\n \n' >/d
 [[ "$PURGE_SELECTION_RESULT" == "0,2" ]]
 # Searching must restore the caller's shell matching mode.
 if shopt -q nocasematch; then exit 1; fi
+PURGE_CATEGORY_PROJECT_PATHS_ARRAY[1]="~/client-b/项目"
+LC_ALL=C select_purge_categories "node_modules" "dist" "target" <<< $'/项目\n \n' >/dev/null
+[[ "$PURGE_SELECTION_RESULT" == "0,2" ]]
 EOF
 	[ "$status" -eq 0 ]
 }

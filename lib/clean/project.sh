@@ -1067,6 +1067,7 @@ format_purge_display() {
 
 # Purge category selector.
 select_purge_categories() {
+    local LC_ALL=en_US.UTF-8
     local -a categories=("$@")
     local total_items=${#categories[@]}
     local clear_line=$'\r\033[2K'
@@ -1092,7 +1093,7 @@ select_purge_categories() {
         local reserved=10
         local available=$((term_height - reserved))
         if [[ $available -lt 3 ]]; then
-            echo 3
+            echo 0
         elif [[ $available -gt 50 ]]; then
             echo 50
         else
@@ -1103,7 +1104,9 @@ select_purge_categories() {
     local items_per_page=$(_get_items_per_page)
     local cursor_pos=0
     local top_index=0
-    local searching=false search_query="" search_message=""
+    local search_query="" search_message=""
+    local -a rendered_rows=()
+    local rendered_width=0 menu_ready=true
 
     # Selection and group totals belong to the menu, keyed by canonical row index.
     local -a selected=() sizes=() recent_flags=() age_labels=()
@@ -1130,6 +1133,15 @@ select_purge_categories() {
             group_unknown[group]=true
         fi
         selected[i]=false
+        if [[ "${recent_flags[i]:-false}" != true ]]; then
+            selected[i]=true
+            selected_count=$((selected_count + 1))
+            selected_size=$((selected_size + ${sizes[i]:-0}))
+            group_selected[group]=$((group_selected[group] + 1))
+            if [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[i]:-false}" == true ]]; then
+                selected_unknown=$((selected_unknown + 1))
+            fi
+        fi
     done
     set_selected() {
         local index="$1" value="$2" delta=1
@@ -1144,9 +1156,6 @@ select_purge_categories() {
             selected_unknown=$((selected_unknown + delta))
         fi
     }
-    for ((i = 0; i < total_items; i++)); do
-        [[ "${recent_flags[i]:-false}" == true ]] || set_selected "$i" true
-    done
     local original_stty=""
     local previous_exit_trap=""
     local previous_int_trap=""
@@ -1201,6 +1210,18 @@ select_purge_categories() {
         local _term_w
         _term_w=$(tput cols 2> /dev/null || echo 80)
         [[ "$_term_w" =~ ^[1-9][0-9]*$ ]] || _term_w=80
+        menu_ready=true
+        if [[ $_term_w -lt 30 || $items_per_page -eq 0 ]]; then
+            menu_ready=false
+            printf '\033[H%s%s\n%s%s\n\033[J' "$clear_line" "$(truncate_by_display_width "Resize to 30 columns, 13 rows" "$_term_w")" "$clear_line" "$(truncate_by_display_width "Q Quit" "$_term_w")"
+            return 0
+        fi
+        if [[ $rendered_width -ne $_term_w ]]; then
+            # Cache presentation only. Measured metadata is immutable while
+            # this menu is open; every resize invalidates its rendered rows.
+            rendered_rows=()
+            rendered_width=$_term_w
+        fi
 
         # Keep the same absolute artifact focused when the viewport changes.
         local max_top_index=$((total_items - items_per_page))
@@ -1231,9 +1252,7 @@ select_purge_categories() {
 
         printf "%s${PURPLE_BOLD}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "Select Artifacts to Purge${scroll_indicator}" "$_term_w")"
         local subtitle="${selected_size_human}, ${selected_count} selected"
-        if [[ "$searching" == true ]]; then
-            subtitle="Find project/artifact: $search_query"
-        elif [[ -n "$search_message" ]]; then
+        if [[ -n "$search_message" ]]; then
             subtitle="$subtitle · $search_message"
         fi
         printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "$subtitle" "$_term_w")"
@@ -1267,17 +1286,19 @@ select_purge_categories() {
             local recent_marker=""
             local _age="${age_labels[i]:-}"
             [[ -n "$_age" ]] && recent_marker=" ${GRAY}| ${_age}${NC}"
-            local row_width=$((_term_w - 6))
-            if [[ -n "$_age" ]]; then
-                row_width=$((row_width - ${#_age} - 3))
+            if [[ -z "${rendered_rows[i]+set}" ]]; then
+                local row_width=$((_term_w - 6))
+                if [[ -n "$_age" ]]; then
+                    row_width=$((row_width - ${#_age} - 3))
+                fi
+                [[ $row_width -lt 1 ]] && row_width=1
+                local row_size="unknown"
+                if [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[i]:-false}" != "true" ]]; then
+                    row_size=$(bytes_to_human_kb "${sizes[i]:-0}")
+                fi
+                rendered_rows[i]=$(format_purge_display "${PURGE_CATEGORY_PROJECT_PATHS_ARRAY[i]:-}" "${categories[i]}" "$row_size" "$row_width")
             fi
-            [[ $row_width -lt 1 ]] && row_width=1
-            local row_size="unknown"
-            if [[ "${PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY[i]:-false}" != "true" ]]; then
-                row_size=$(bytes_to_human_kb "${sizes[i]:-0}")
-            fi
-            local row
-            row=$(format_purge_display "${PURGE_CATEGORY_PROJECT_PATHS_ARRAY[i]:-}" "${categories[i]}" "$row_size" "$row_width")
+            local row="${rendered_rows[i]}"
             local rel_pos=$((i - top_index))
             if [[ $rel_pos -eq $cursor_pos ]]; then
                 printf "%s${CYAN}${ICON_ARROW} %s %s %s%s${NC}\n" "$clear_line" "$checkbox" "$group_marker" "$row" "$recent_marker"
@@ -1317,7 +1338,7 @@ select_purge_categories() {
                 project_path_width=$((_term_w - ${#project_label}))
                 [[ $project_path_width -lt 4 ]] && project_path_width=4
                 printf "%s${GRAY}%s${NC}%s\n" "$clear_line" "$project_label" "$(compact_purge_menu_path "$current_project_path" "$project_path_width")"
-                printf "%s${GRAY}Group:${NC} %s · %s/%s selected\n" "$clear_line" "$group_size_label" "$group_selected_count" "$group_item_count"
+                printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "Group: $group_size_label · $group_selected_count/$group_item_count selected" "$_term_w")"
             fi
         fi
 
@@ -1418,27 +1439,19 @@ select_purge_categories() {
     while true; do
         draw_menu
         local key
-        if [[ "$searching" == true ]]; then
-            key=$(MOLE_READ_KEY_FORCE_CHAR=1 read_key)
-            case "$key" in
-                CHAR:*) search_query+="${key#CHAR:}" ;;
-                SPACE) search_query+=" " ;;
-                DELETE) search_query="${search_query%?}" ;;
-                CLEAR_LINE) search_query="" ;;
-                QUIT) searching=false ;;
-                ENTER)
-                    searching=false
-                    find_next_match 0
-                    ;;
-            esac
+        key=$(read_key)
+        if [[ "$menu_ready" != true && "$key" != QUIT ]]; then
             continue
         fi
-        key=$(read_key)
         case "$key" in
             CHAR:/)
-                searching=true
-                search_query=""
-                search_message=""
+                # Readline owns text editing and multibyte input. A byte-at-a-time
+                # key loop on Bash 3.2 cannot safely edit Unicode project names.
+                if ! IFS= read -e -r -p "Find project/artifact: " search_query; then
+                    restore_terminal
+                    return 1
+                fi
+                find_next_match 0
                 ;;
             CHAR:n | CHAR:N) find_next_match "$((top_index + cursor_pos + 1))" ;;
             UP) focus_item "$((top_index + cursor_pos - 1))" ;;
@@ -1484,6 +1497,14 @@ select_purge_categories() {
                 return 1
                 ;;
             ENTER) # Enter - confirm
+                # A resize can happen while read_key is waiting. Check again
+                # before accepting input from a now-unreadable viewport.
+                local confirm_width
+                confirm_width=$(tput cols 2> /dev/null || echo 80)
+                [[ "$confirm_width" =~ ^[1-9][0-9]*$ ]] || confirm_width=80
+                if [[ $confirm_width -lt 30 || $(_get_items_per_page) -eq 0 ]]; then
+                    continue
+                fi
                 # Build result
                 PURGE_SELECTION_RESULT=""
                 for ((i = 0; i < total_items; i++)); do
