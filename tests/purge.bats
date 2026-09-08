@@ -707,6 +707,18 @@ EOF
 	[[ "$output" == *"RESULT=1"* ]] || return 1
 }
 
+@test "purge selection and final confirmation cancel when input closes" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+PURGE_CATEGORY_SIZES="1"
+PURGE_RECENT_CATEGORIES="false"
+if select_purge_categories "node_modules" </dev/null; then exit 91; fi
+if confirm_purge_cleanup 1 1 0 0 </dev/null; then exit 92; fi
+EOF
+	[ "$status" -eq 0 ]
+}
+
 @test "confirm_purge_cleanup accepts Enter" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

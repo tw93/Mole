@@ -1320,7 +1320,10 @@ select_purge_categories() {
     while true; do
         draw_menu
         # Read key
-        IFS= read -r -s -n1 key || key=""
+        if ! IFS= read -r -s -n1 key; then
+            restore_terminal
+            return 1
+        fi
         case "$key" in
             $'\x1b')
                 # Arrow keys or ESC
@@ -1447,7 +1450,10 @@ confirm_purge_cleanup() {
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Remove ${item_count} ${item_text}, ${size_display}${unknown_hint}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
     drain_pending_input
     local key=""
-    IFS= read -r -s -n1 key || key=""
+    if ! IFS= read -r -s -n1 key; then
+        echo ""
+        return 1
+    fi
     drain_pending_input
 
     case "$key" in
