@@ -513,6 +513,7 @@ scan_purge_targets() {
     local target_output="${output_file}.targets"
     local tag_output="${output_file}.tags"
     local processed_output="${output_file}.processed"
+    local error_output="${output_file}.errors"
     local min_depth="$PURGE_MIN_DEPTH_DEFAULT"
     local max_depth="$PURGE_MAX_DEPTH_DEFAULT"
     if [[ ! "$min_depth" =~ ^[0-9]+$ ]]; then
@@ -532,7 +533,7 @@ scan_purge_targets() {
     # root completes. Keep the caller-visible file empty until that point so a
     # timeout or read failure cannot turn a partial prefix into delete candidates.
     : > "$output_file"
-    rm -f "$target_output" "$tag_output" "$processed_output" 2> /dev/null || true
+    rm -f "$target_output" "$tag_output" "$processed_output" "$error_output" 2> /dev/null || true
 
     local cachedir_tag_min_depth=$((min_depth + 1))
     local cachedir_tag_max_depth=$((max_depth + 1))
@@ -605,7 +606,7 @@ scan_purge_targets() {
     }
 
     cleanup_scan_outputs() {
-        rm -f "$target_output" "$tag_output" "$processed_output" 2> /dev/null || true
+        rm -f "$target_output" "$tag_output" "$processed_output" "$error_output" 2> /dev/null || true
     }
 
     local use_find=true
@@ -622,6 +623,7 @@ scan_purge_targets() {
         pattern="($(printf '%s\n' "$_escaped_lines" | sed -e 's/^/^/' -e 's/$/$/' | paste -sd '|' -))"
         local fd_args=(
             "--absolute-path"
+            "--show-errors"
             "--hidden"
             "--no-ignore"
             "--type" "d"
@@ -636,6 +638,7 @@ scan_purge_targets() {
         )
         local fd_tag_args=(
             "--absolute-path"
+            "--show-errors"
             "--hidden"
             "--no-ignore"
             "--type" "f"
@@ -652,21 +655,28 @@ scan_purge_targets() {
             fd_tag_args+=("--exclude" "$purge_target")
         done
 
-        # Trust fd when it exits successfully, including an empty result set.
+        # fd can return zero after unreadable directories. Require both a
+        # successful exit and no filesystem diagnostics before trusting output.
         # Empty scans are common in healthy project trees; falling back to find
         # doubles the scan cost and can make "nothing to clean" feel slow.
         local fd_status=0
         scan_stage_timeout=$(_mole_timeout_with_deadline "$scan_timeout" "$scan_deadline") || fd_status=$?
         if [[ $fd_status -eq 0 ]]; then
-            run_with_timeout "$scan_stage_timeout" fd "${fd_args[@]}" "$pattern" "$search_path" \
-                2> /dev/null > "$target_output" || fd_status=$?
+            # Only fd diagnostics may determine scan completeness; timeout
+            # wrapper tracing must not look like a filesystem error in debug mode.
+            MO_DEBUG=0 run_with_timeout "$scan_stage_timeout" fd "${fd_args[@]}" "$pattern" "$search_path" \
+                2> "$error_output" > "$target_output" || fd_status=$?
         fi
         if [[ $fd_status -eq 0 ]]; then
             scan_stage_timeout=$(_mole_timeout_with_deadline "$scan_timeout" "$scan_deadline") || fd_status=$?
         fi
         if [[ $fd_status -eq 0 ]]; then
-            run_with_timeout "$scan_stage_timeout" fd "${fd_tag_args[@]}" "^${MOLE_CACHEDIR_TAG_NAME}$" "$search_path" \
-                2> /dev/null > "$tag_output" || fd_status=$?
+            MO_DEBUG=0 run_with_timeout "$scan_stage_timeout" fd "${fd_tag_args[@]}" "^${MOLE_CACHEDIR_TAG_NAME}$" "$search_path" \
+                2>> "$error_output" > "$tag_output" || fd_status=$?
+        fi
+        if [[ $fd_status -eq 0 && -s "$error_output" ]]; then
+            fd_status=1
+            debug_log "fd reported filesystem errors; requiring a complete find scan"
         fi
         if [[ $fd_status -eq 0 ]]; then
             emit_valid_cachedir_tag_dirs "$scan_deadline" < "$tag_output" >> "$target_output" || fd_status=$?
@@ -678,6 +688,9 @@ scan_purge_targets() {
             debug_log "Using fd for scanning"
             cleanup_scan_outputs
             use_find=false
+        elif [[ $fd_status -ge 128 ]]; then
+            cleanup_scan_outputs
+            return "$fd_status"
         else
             debug_log "fd scan failed (status $fd_status), falling back to find"
             cleanup_scan_outputs
@@ -1587,7 +1600,7 @@ clean_project_artifacts() {
         scan_pids=()
         # Clean up temp files
         for temp in "${scan_temps[@]+"${scan_temps[@]}"}"; do
-            rm -f "$temp" "${temp}.targets" "${temp}.tags" "${temp}.processed" 2> /dev/null || true
+            rm -f "$temp" "${temp}.targets" "${temp}.tags" "${temp}.processed" "${temp}.errors" 2> /dev/null || true
         done
         # Clean up purge scanning file
         local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
@@ -1736,7 +1749,7 @@ clean_project_artifacts() {
         local interrupted_temp
         for interrupted_temp in "${scan_temps[@]+"${scan_temps[@]}"}"; do
             rm -f "$interrupted_temp" "${interrupted_temp}.targets" \
-                "${interrupted_temp}.tags" "${interrupted_temp}.processed" 2> /dev/null || true
+                "${interrupted_temp}.tags" "${interrupted_temp}.processed" "${interrupted_temp}.errors" 2> /dev/null || true
         done
         _restore_purge_scan_traps
         if [[ -t 1 ]]; then
@@ -1800,7 +1813,7 @@ clean_project_artifacts() {
             failed_scan_statuses+=("$scan_status")
             debug_log "Purge scan incomplete (status $scan_status): ${scan_roots[$scan_index]:-unknown root}"
         fi
-        rm -f "$scan_output" "${scan_output}.targets" "${scan_output}.tags" "${scan_output}.processed" 2> /dev/null || true
+        rm -f "$scan_output" "${scan_output}.targets" "${scan_output}.tags" "${scan_output}.processed" "${scan_output}.errors" 2> /dev/null || true
     done
     if [[ -s "$dedupe_output" ]]; then
         while IFS= read -r item; do
@@ -1829,7 +1842,7 @@ clean_project_artifacts() {
     fi
     if [[ ${#all_found_items[@]} -eq 0 ]]; then
         echo ""
-        if [[ $failed_scan_count -gt 0 ]]; then
+        if [[ "$PURGE_RUN_OUTCOME" == "incomplete" ]]; then
             echo -e "${GRAY}No artifacts found in the completed project scans${NC}"
         else
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No old project artifacts to clean"

@@ -1115,6 +1115,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
 scan_purge_targets "$HOME/www" "$scan_output"
+MO_DEBUG=1 scan_purge_targets "$HOME/www" "$scan_output"
 [[ ! -e "$HOME/find-called" ]] || exit 1
 [[ -f "$scan_output" ]] || exit 1
 [[ ! -s "$scan_output" ]] || exit 1
@@ -1571,6 +1572,41 @@ EOF
 
 	[ "$status" -eq 0 ] || return 1
 	[[ "$output" == "TIMEOUT" ]] || return 1
+}
+
+@test "purge preserves fd cancellation and rejects its partial filesystem-error output" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+mkdir -p "$HOME/probe/project/node_modules" "$HOME/.cache/mole"
+touch "$HOME/probe/project/package.json"
+fd() { :; }
+export MO_USE_FIND=0
+run_with_timeout() {
+    shift
+    case "$1" in
+        fd)
+            if [[ "$probe_mode" == cancelled ]]; then return 130; fi
+            printf '%s\n' "$HOME/probe/project/node_modules"
+            printf 'Permission denied\n' >&2
+            ;;
+        find)
+            echo find >> "$HOME/find-trace"
+            printf '%s\n' "$HOME/probe/project/node_modules"
+            return 1
+            ;;
+    esac
+}
+probe_mode=cancelled
+result=0
+scan_purge_targets "$HOME/probe" "$HOME/scan-result" || result=$?
+[[ $result -eq 130 && ! -e "$HOME/find-trace" && ! -s "$HOME/scan-result" ]]
+probe_mode=unreadable
+result=0
+scan_purge_targets "$HOME/probe" "$HOME/scan-result" || result=$?
+[[ $result -eq 1 && -e "$HOME/find-trace" && ! -s "$HOME/scan-result" ]]
+EOF
+	[ "$status" -eq 0 ]
 }
 
 @test "purge size pass preserves a fractional timeout override" {
