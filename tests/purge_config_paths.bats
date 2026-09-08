@@ -210,3 +210,26 @@ EOF
         [ "$workspace_count" -eq 1 ]
     fi
 }
+
+@test "incomplete discovery keeps completed roots without saving a partial scope" {
+    mkdir -p "$HOME/discovery"
+    run env HOME="$HOME/discovery" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+mkdir -p "$HOME/Alpha/app" "$HOME/Slow/app"
+touch "$HOME/Alpha/app/package.json"
+run_with_timeout() {
+    shift
+    case "$2" in
+        */Slow) return 124 ;;
+        *) "$@" ;;
+    esac
+}
+load_purge_config
+[[ $PURGE_DISCOVERY_STATUS -eq 124 ]]
+[[ "${PURGE_SEARCH_PATHS[*]}" == *"$HOME/Alpha"* ]]
+[[ ! -e "$PURGE_CONFIG_FILE" ]]
+EOF
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"discovery was incomplete"* ]] || return 1
+}

@@ -40,6 +40,7 @@ readonly PROJECT_INDICATORS=("${MOLE_PURGE_PROJECT_INDICATORS[@]}")
 is_project_container() {
     local dir="$1"
     local max_depth="${2:-2}"
+    local deadline="${3:-}"
 
     # Skip hidden/system directories.
     local basename
@@ -83,16 +84,21 @@ is_project_container() {
     done
     find_args+=(")" "-print" "-quit")
 
-    if find "${find_args[@]}" 2> /dev/null | grep -q .; then
-        return 0
+    local probe_timeout probe_output probe_status=0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" "$deadline") || return $?
+    probe_output=$(run_with_timeout "$probe_timeout" find "${find_args[@]}" 2> /dev/null) || probe_status=$?
+    if [[ $probe_status -ne 0 ]]; then
+        [[ $probe_status -eq 124 || $probe_status -ge 128 ]] && return "$probe_status"
+        return 2
     fi
-
-    return 1
+    [[ -n "$probe_output" ]]
 }
 
 # Discover project directories in $HOME.
 discover_project_dirs() {
     local -a discovered=()
+    local deadline=$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC))
+    local discovery_status=0
 
     for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
         if [[ -d "$path" ]]; then
@@ -105,6 +111,10 @@ discover_project_dirs() {
     # Scan $HOME for other containers (depth 1).
     local dir
     for dir in "$HOME"/*/; do
+        if [[ $SECONDS -ge $deadline ]]; then
+            discovery_status=124
+            break
+        fi
         [[ ! -d "$dir" ]] && continue
         dir="${dir%/}" # Remove trailing slash
         # Resolve casing so that ~/code and ~/Code compare equal.
@@ -119,12 +129,20 @@ discover_project_dirs() {
         done
         [[ "$already_found" == "true" ]] && continue
 
-        if is_project_container "$dir" 2; then
+        local probe_status=0
+        if is_project_container "$dir" 2 "$deadline"; then
             discovered+=("$dir")
+        else
+            probe_status=$?
+            if [[ $probe_status -ne 1 ]]; then
+                discovery_status=$probe_status
+                [[ $probe_status -lt 128 ]] || break
+            fi
         fi
     done
 
     printf '%s\n' "${discovered[@]+"${discovered[@]}"}" | sort -u
+    return "$discovery_status"
 }
 
 # Prepare purge config directory/file ownership when possible.
@@ -191,6 +209,7 @@ save_discovered_paths() {
 # Load purge paths from config or auto-discover
 load_purge_config() {
     PURGE_SEARCH_PATHS=()
+    PURGE_DISCOVERY_STATUS=0
 
     local line existing_path already_found
     while IFS= read -r line; do
@@ -216,13 +235,21 @@ load_purge_config() {
         fi
 
         local -a discovered=()
+        local discovery_output
+        discovery_output=$(discover_project_dirs) || PURGE_DISCOVERY_STATUS=$?
+        [[ $PURGE_DISCOVERY_STATUS -lt 128 ]] || return "$PURGE_DISCOVERY_STATUS"
         while IFS= read -r path; do
             [[ -n "$path" ]] && discovered+=("$path")
-        done < <(discover_project_dirs)
+        done <<< "$discovery_output"
+        if [[ $PURGE_DISCOVERY_STATUS -ne 0 && -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
+            echo -e "${YELLOW}${ICON_WARNING}${NC} Project discovery was incomplete; using completed roots without saving them. Run mo purge --paths to review search paths." >&2
+        fi
 
         if [[ ${#discovered[@]} -gt 0 ]]; then
             PURGE_SEARCH_PATHS=("${discovered[@]}")
-            if save_discovered_paths "${discovered[@]}"; then
+            if [[ $PURGE_DISCOVERY_STATUS -ne 0 ]]; then
+                : # A partial inventory must not become the next run's saved scope.
+            elif save_discovered_paths "${discovered[@]}"; then
                 if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
                     echo -e "${GRAY}Found ${#discovered[@]} project directories, saved to config${NC}" >&2
                 fi
@@ -1191,7 +1218,6 @@ select_purge_categories() {
         printf "%s${PURPLE_BOLD}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "Select Artifacts to Purge${scroll_indicator}" "$_term_w")"
         printf "%s${GRAY}%s${NC}\n" "$clear_line" "$(truncate_by_display_width "${selected_size_human}, ${selected_count} selected" "$_term_w")"
 
-
         # Calculate visible range
         local end_index=$((top_index + visible_count))
 
@@ -1480,6 +1506,7 @@ confirm_purge_cleanup() {
 # PURGE_RUN_OUTCOME: completed, incomplete, no_candidates, cancelled, scan_failed.
 clean_project_artifacts() {
     PURGE_RUN_OUTCOME="completed"
+    [[ ${PURGE_DISCOVERY_STATUS:-0} -eq 0 ]] || PURGE_RUN_OUTCOME="incomplete"
     PURGE_UNKNOWN_SIZE_COUNT=0
     local -a all_found_items=()
     local -a safe_to_clean=()
@@ -1760,7 +1787,7 @@ clean_project_artifacts() {
             echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No old project artifacts to clean"
         fi
         printf '\n'
-        [[ $failed_scan_count -eq 0 ]] && PURGE_RUN_OUTCOME="no_candidates"
+        [[ "$PURGE_RUN_OUTCOME" != "incomplete" ]] && PURGE_RUN_OUTCOME="no_candidates"
         return 0
     fi
     # Bind candidates before starting the activity evidence budget.

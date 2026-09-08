@@ -223,7 +223,7 @@ read_key() {
             $'\n' | $'\r') echo "ENTER" ;;
             $'\x7f' | $'\x08') echo "DELETE" ;;
             $'\x15') echo "CLEAR_LINE" ;; # Ctrl+U (often mapped from Cmd+Delete in terminals)
-            ' ') echo "SPACE" ;; # Allow space in filter mode for selection
+            ' ') echo "SPACE" ;;          # Allow space in filter mode for selection
             $'\x03') echo "QUIT" ;;
             [[:print:]]) echo "CHAR:$key" ;;
             *) echo "OTHER" ;;
