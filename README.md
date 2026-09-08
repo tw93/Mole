@@ -329,6 +329,8 @@ Status also supports read-only alerts for processes that stay above a CPU thresh
 
 `mo purge` finds rebuildable project artifacts such as `node_modules`, `target`, `.build`, `build`, and `dist`. It groups artifacts by project and permanently deletes only the items you confirm. Artifacts with file activity in the last 7 days, or activity Mole cannot verify, are unselected by default. Mole uses `fd` when available and falls back to `find`.
 
+Use Page Up/Down or `h`/`l` to move a page, `[`/`]` to jump between projects, and `X` to skip a project and advance. `/` searches project paths and artifact names; `n` finds the next match without changing selections. Enter opens the final path review. Reported space is an estimate; unmeasured artifacts and incomplete scans are identified explicitly.
+
 <details>
 <summary><strong>Purge example output</strong></summary>
 
@@ -337,7 +339,8 @@ $ mo purge
 
 Purge Project Artifacts
 
-Select Artifacts to Purge, 6.00GB, 2 selected
+Select Artifacts to Purge
+6.00GB, 2 selected
 
 ➤ ● ┌ ~/Projects/website        3.80GB | node_modules | 28d
   ○ └ ~/Projects/website         186MB | dist         | <1d
@@ -346,7 +349,7 @@ Select Artifacts to Purge, 6.00GB, 2 selected
 
 ======================================================================
 Purge complete
-Space freed: 6.00GB | Items: 2 | Free: 223.5GB
+Estimated space freed: 6.00GB | Items: 2 | Free: 223.5GB
 ======================================================================
 ```
 
@@ -363,7 +366,7 @@ Run `mo purge --paths` to configure scan directories, or edit `~/.config/mole/pu
 ~/Work/ClientB
 ```
 
-When custom paths are configured, Mole scans only those directories. Otherwise, it uses defaults like `~/Projects`, `~/GitHub`, and `~/dev`.
+When custom paths are configured, Mole scans only those directories. Otherwise, it uses defaults like `~/Projects`, `~/GitHub`, `~/dev`, and supported agent worktree containers. Discovery does not save an incomplete result. Artifact scans reach six levels below each configured root; add a nearer root for deeper projects. Purge removes rebuildable artifacts inside worktrees, never the worktrees themselves.
 
 </details>
 
