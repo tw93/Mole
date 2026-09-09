@@ -1948,17 +1948,19 @@ perform_cleanup() {
             done < <(emit_free_space_summary "$initial_free_space_kb")
         fi
     else
-        summary_status="info"
-        if [[ ${#DEFERRED_CLEANUP_FAMILIES[@]} -gt 0 ]]; then
-            if [[ "$DRY_RUN" == "true" ]]; then
-                summary_details+=("No additional reclaimable space detected.")
+        if [[ $cleanup_cancel_rc -eq 0 ]]; then
+            summary_status="info"
+            if [[ ${#DEFERRED_CLEANUP_FAMILIES[@]} -gt 0 ]]; then
+                if [[ "$DRY_RUN" == "true" ]]; then
+                    summary_details+=("No additional reclaimable space detected.")
+                else
+                    summary_details+=("No additional space freed.")
+                fi
+            elif [[ "$DRY_RUN" == "true" ]]; then
+                summary_details+=("No significant reclaimable space detected, system already clean.")
             else
-                summary_details+=("No additional space freed.")
+                summary_details+=("System was already clean; no additional space freed.")
             fi
-        elif [[ "$DRY_RUN" == "true" ]]; then
-            summary_details+=("No significant reclaimable space detected, system already clean.")
-        else
-            summary_details+=("System was already clean; no additional space freed.")
         fi
         local free_space_line
         while IFS= read -r free_space_line; do

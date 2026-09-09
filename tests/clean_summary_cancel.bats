@@ -104,6 +104,8 @@ EOF
     [[ "$output" == *"Cleanup incomplete"* ]] || return 1
     [[ "$output" == *"failed (exit 7)"* ]] || return 1
     [[ "$output" != *"Cleanup complete"* ]] || return 1
+    [[ "$output" != *"system already clean"* ]] || return 1
+    [[ "$output" != *"System was already clean"* ]] || return 1
 }
 
 @test "cloud safety cancellation crosses the timeout worker and stops later sections" {

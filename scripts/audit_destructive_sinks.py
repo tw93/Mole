@@ -11,8 +11,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SAFE_MARKER = re.compile(r"\s#\s*SAFE:\s+\S")
-RM_COMMAND = re.compile(r"(?<![A-Za-z0-9_])(?:/bin/)?rm(?=\s)")
-FIND_DELETE = re.compile(r"(?:^|\s)-delete(?:\s|$)")
+RM_COMMAND = re.compile(r"(?<![A-Za-z0-9_])(?:(?:/usr)?/bin/)?r\\?m(?=\s)")
+FIND_DELETE = re.compile(r"(?:^|\s)-delete(?=\s|[;&|)]|$)")
 OUTPUT_ONLY_PREFIXES = ("echo ", "echo\t", "printf ", "printf\t", "log_")
 
 
@@ -41,7 +41,7 @@ def is_output_only_reference(command: str, match_start: int) -> bool:
         return False
     # A command separator before the sink means the output helper finished and
     # the later rm/find is executable code, not prose inside its argument.
-    return re.search(r"(?:;|&&|\|\|)", prefix) is None
+    return re.search(r"(?:;|&&|\|\||\||\$\()", prefix) is None
 
 
 def has_recursive_force_rm(command: str) -> bool:
@@ -53,6 +53,12 @@ def has_recursive_force_rm(command: str) -> bool:
             if token in {";", "&&", "||", "|"}:
                 break
             if token == "--":
+                continue
+            if token == "--force":
+                flags.add("f")
+                continue
+            if token == "--recursive":
+                flags.add("r")
                 continue
             if token.startswith("-") and not token.startswith("--"):
                 flags.update(token[1:])
@@ -76,6 +82,33 @@ def has_find_delete(command: str) -> bool:
     )
 
 
+def has_unquoted_comment(line: str) -> bool:
+    single_quoted = False
+    double_quoted = False
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and not single_quoted:
+            escaped = True
+            continue
+        if char == "'" and not double_quoted:
+            single_quoted = not single_quoted
+            continue
+        if char == '"' and not single_quoted:
+            double_quoted = not double_quoted
+            continue
+        if (
+            char == "#"
+            and not single_quoted
+            and not double_quoted
+            and (index == 0 or line[index - 1].isspace())
+        ):
+            return True
+    return False
+
+
 def logical_blocks(lines: list[str]) -> list[tuple[int, str, list[str]]]:
     blocks: list[tuple[int, str, list[str]]] = []
     start = 1
@@ -86,7 +119,7 @@ def logical_blocks(lines: list[str]) -> list[tuple[int, str, list[str]]]:
             start = line_number
         physical.append(line)
         stripped = line.rstrip()
-        if stripped.endswith("\\"):
+        if stripped.endswith("\\") and not has_unquoted_comment(stripped):
             joined.append(stripped[:-1])
             continue
         joined.append(line)

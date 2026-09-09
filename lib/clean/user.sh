@@ -1500,10 +1500,36 @@ validate_external_volume_target() {
     printf '%s\n' "$resolved"
 }
 
+_mole_external_volume_final_guard() {
+    local target="$1"
+    local previous_guard="${_MOLE_EXTERNAL_VOLUME_PREVIOUS_FINAL_GUARD:-}"
+    if [[ -n "$previous_guard" && "$previous_guard" != "_mole_external_volume_final_guard" ]] &&
+        declare -f "$previous_guard" > /dev/null 2>&1; then
+        "$previous_guard" "$target" || return $?
+    fi
+    _mole_path_matches_identity \
+        "$_MOLE_EXTERNAL_VOLUME_GUARD_PATH" \
+        "$_MOLE_EXTERNAL_VOLUME_GUARD_PARENT" \
+        "$_MOLE_EXTERNAL_VOLUME_GUARD_PARENT_ID" \
+        "$_MOLE_EXTERNAL_VOLUME_GUARD_TARGET_ID"
+}
+
 clean_external_volume_target() {
     local volume="$1"
     [[ -d "$volume" ]] || return 1
     [[ -L "$volume" ]] && return 1
+
+    if ! _mole_snapshot_path_identity "$volume"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}could not bind mounted volume, no changes${NC}"
+        note_activity
+        return 1
+    fi
+    local _MOLE_EXTERNAL_VOLUME_GUARD_PATH="$volume"
+    local _MOLE_EXTERNAL_VOLUME_GUARD_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+    local _MOLE_EXTERNAL_VOLUME_GUARD_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+    local _MOLE_EXTERNAL_VOLUME_GUARD_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+    local _MOLE_EXTERNAL_VOLUME_PREVIOUS_FINAL_GUARD="${_MOLE_SAFE_REMOVE_FINAL_GUARD:-}"
+    local _MOLE_SAFE_REMOVE_FINAL_GUARD="_mole_external_volume_final_guard"
 
     local -a top_level_targets=(
         "$volume/.TemporaryItems"
@@ -1531,6 +1557,7 @@ clean_external_volume_target() {
     fi
     local metadata_scan_rc=0
     run_with_timeout "$metadata_scan_timeout" find -P "$volume" -xdev \
+        \( -path "$volume/.TemporaryItems" -o -path "$volume/.Trashes" \) -prune -o \
         -type f -name "._*" -print0 > "$metadata_scan_file" 2> /dev/null || metadata_scan_rc=$?
     if [[ $metadata_scan_rc -ne 0 ]]; then
         : > "$metadata_scan_file" || true
@@ -1551,6 +1578,12 @@ clean_external_volume_target() {
     for target_path in "${top_level_targets[@]}"; do
         [[ -e "$target_path" ]] || continue
         [[ -L "$target_path" ]] && continue
+        if ! _mole_snapshot_path_identity "$target_path"; then
+            continue
+        fi
+        local target_parent="$_MOLE_PATH_SNAPSHOT_PARENT"
+        local target_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+        local target_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
         if should_protect_path "$target_path" 2> /dev/null || is_path_whitelisted "$target_path" 2> /dev/null; then
             continue
         fi
@@ -1563,13 +1596,18 @@ clean_external_volume_target() {
         [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
 
         if [[ "$DRY_RUN" == "true" ]]; then
+            if ! _mole_path_matches_identity \
+                "$target_path" "$target_parent" "$target_parent_id" "$target_id"; then
+                continue
+            fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
                 record_dry_run_cleanup_target "$target_path" "$size_kb" 1 true || continue
             fi
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
-        elif safe_remove "$target_path" true > /dev/null 2>&1; then
+        elif safe_remove "$target_path" true "$size_kb" "" \
+            "$target_parent" "$target_parent_id" "$target_id" > /dev/null 2>&1; then
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
@@ -1582,6 +1620,13 @@ clean_external_volume_target() {
 
     while IFS= read -r -d '' metadata_file; do
         [[ -e "$metadata_file" ]] || continue
+        [[ -L "$metadata_file" ]] && continue
+        if ! _mole_snapshot_path_identity "$metadata_file"; then
+            continue
+        fi
+        local metadata_parent="$_MOLE_PATH_SNAPSHOT_PARENT"
+        local metadata_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+        local metadata_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
         if should_protect_path "$metadata_file" 2> /dev/null || is_path_whitelisted "$metadata_file" 2> /dev/null; then
             continue
         fi
@@ -1594,13 +1639,18 @@ clean_external_volume_target() {
         [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
 
         if [[ "$DRY_RUN" == "true" ]]; then
+            if ! _mole_path_matches_identity \
+                "$metadata_file" "$metadata_parent" "$metadata_parent_id" "$metadata_id"; then
+                continue
+            fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
                 record_dry_run_cleanup_target "$metadata_file" "$size_kb" 1 true || continue
             fi
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
-        elif safe_remove "$metadata_file" true > /dev/null 2>&1; then
+        elif safe_remove "$metadata_file" true "$size_kb" "" \
+            "$metadata_parent" "$metadata_parent_id" "$metadata_id" > /dev/null 2>&1; then
             found_any=true
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))

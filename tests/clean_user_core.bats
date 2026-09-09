@@ -2563,6 +2563,7 @@ mktemp_file() {
     printf '%s\n' "$HOME/external-scan.list"
 }
 run_with_timeout() {
+    printf '%s\n' "$*" > "$HOME/find.trace"
     printf '%s\0' "$METADATA_FILE"
     if [[ "$probe_mode" == complete ]]; then
         return 0
@@ -2603,6 +2604,9 @@ MOLE_CLEAN_CANCEL_STATUS=0
 clean_external_volume_target "$VOLUME" > "$HOME/complete.output" 2>&1
 grep -Fq "REMOVE:$METADATA_FILE" "$HOME/remove.trace" || exit 1
 [[ "$files_cleaned" -eq 1 ]] || exit 1
+grep -Fq "$VOLUME/.TemporaryItems" "$HOME/find.trace" || exit 1
+grep -Fq "$VOLUME/.Trashes" "$HOME/find.trace" || exit 1
+grep -Fq -- '-prune' "$HOME/find.trace" || exit 1
 EOF
 
     [ "$status" -eq 0 ] || {
@@ -2612,4 +2616,66 @@ EOF
     [[ "$output" == *"PARTIAL_RC=7 CANCEL=0 FILES=0"* ]] || return 1
     [[ "$output" == *"PARTIAL_RC=124 CANCEL=124 FILES=0"* ]] || return 1
     [[ "$output" == *"PARTIAL_RC=130 CANCEL=130 FILES=0"* ]] || return 1
+}
+
+@test "external volume cleanup refuses a replacement mounted during cleanup" {
+    local test_home="$HOME/external-volume-swap"
+    local volume="$test_home/External"
+    mkdir -p "$volume/.Trashes"
+    touch "$volume/.Trashes/cache.tmp"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" VOLUME="$volume" \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+DRY_RUN=false
+PROTECT_FINDER_METADATA=true
+MOLE_CURRENT_COMMAND=clean
+MOLE_CLEAN_CANCEL_STATUS=0
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+volume_generation=original
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+clean_ds_store_tree() { :; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { printf '1\n'; }
+mktemp_file() {
+    : > "$HOME/external-scan.list"
+    printf '%s\n' "$HOME/external-scan.list"
+}
+run_with_timeout() { return 0; }
+_mole_snapshot_path_identity() {
+    _MOLE_PATH_SNAPSHOT_PARENT="${1%/*}"
+    _MOLE_PATH_SNAPSHOT_PARENT_ID="1:1"
+    _MOLE_PATH_SNAPSHOT_TARGET_ID="2:2"
+}
+_mole_path_matches_identity() {
+    [[ "$1" != "$VOLUME" || "$volume_generation" == original ]]
+}
+safe_remove() {
+    volume_generation=swapped
+    local guard="${_MOLE_SAFE_REMOVE_FINAL_GUARD:-}"
+    [[ "$guard" == "_mole_external_volume_final_guard" ]] || exit 1
+    if "$guard" "$1"; then
+        printf 'REMOVE:%s\n' "$1" >> "$HOME/remove.trace"
+    fi
+    return 1
+}
+
+clean_external_volume_target "$VOLUME"
+[[ ! -e "$HOME/remove.trace" ]] || exit 1
+[[ "$files_cleaned" -eq 0 ]] || exit 1
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
 }

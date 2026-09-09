@@ -1699,11 +1699,16 @@ _login_item_name_matches() {
     [[ -z "$actual" ]] && return 1
 
     local actual_nospace="${actual// /}"
-    [[ "$actual" == "$expected" ]] && return 0
-    [[ "$actual_nospace" == "$expected_nospace" ]] && return 0
-    [[ -n "$expected_stripped" && "$actual_nospace" == "$expected_stripped" ]] && return 0
-
-    return 1
+    local nocasematch_state
+    nocasematch_state=$(shopt -p nocasematch || true)
+    shopt -s nocasematch
+    local matched=false
+    if [[ "$actual" == "$expected" || "$actual_nospace" == "$expected_nospace" ||
+        (-n "$expected_stripped" && "$actual_nospace" == "$expected_stripped") ]]; then
+        matched=true
+    fi
+    eval "$nocasematch_state"
+    [[ "$matched" == "true" ]]
 }
 
 _login_item_build_metadata_inventory() {
@@ -1904,6 +1909,10 @@ _login_item_app_exists() {
             ! IFS= read -r -d '' executable; then
             record_complete=false
             break
+        fi
+        if [[ ! -e "$app_path" && ! -L "$app_path" ]]; then
+            probe_uncertain=true
+            continue
         fi
         app_basename="${app_path##*/}"
         app_basename="${app_basename%.[aA][pP][pP]}"

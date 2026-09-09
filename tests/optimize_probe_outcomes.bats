@@ -220,6 +220,46 @@ EOF
 	[[ "$output" == *"/usr/bin/plutil"* ]] || return 1
 }
 
+@test "login item resolver rejects a disappeared shared-inventory app" {
+	run env HOME="$TEST_HOME/login-stale-inventory" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+mkdir -p "$HOME"
+printf '%s\0%s\0%s\0%s\0%s\0' \
+    "$HOME/Ghost.app" ready '' '' '' > "$HOME/apps.inventory"
+run_with_timeout() { return 0; }
+
+set +e
+_login_item_app_exists Ghost '' "$((SECONDS + 10))" "$HOME/apps.inventory"
+resolver_rc=$?
+set -e
+printf 'RC=%s\n' "$resolver_rc"
+[[ $resolver_rc -eq 2 ]] || exit 1
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"RC=2"* ]] || return 1
+}
+
+@test "login item resolver keeps case-insensitive filesystem matching" {
+	run env HOME="$TEST_HOME/login-case-inventory" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+mkdir -p "$HOME/example.app"
+printf '%s\0%s\0%s\0%s\0%s\0' \
+    "$HOME/example.app" ready '' '' '' > "$HOME/apps.inventory"
+run_with_timeout() { return 0; }
+
+_login_item_app_exists Example '' "$((SECONDS + 10))" "$HOME/apps.inventory"
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+}
+
 @test "login item audit does not publish partial broken-item conclusions" {
 	run env HOME="$TEST_HOME/login-partial" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

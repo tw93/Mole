@@ -45,9 +45,19 @@ clean_ds_store_tree() {
 
     local delete_rc=0
     while IFS= read -r -d '' ds_file; do
+        if ! _mole_snapshot_path_identity "$ds_file"; then
+            continue
+        fi
+        local ds_parent="$_MOLE_PATH_SNAPSHOT_PARENT"
+        local ds_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+        local ds_target_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
         local size
         size=$(get_file_size "$ds_file")
         if [[ "$DRY_RUN" == "true" ]] && declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
+            if ! _mole_path_matches_identity \
+                "$ds_file" "$ds_parent" "$ds_parent_id" "$ds_target_id"; then
+                continue
+            fi
             local preview_size_kb=$(((size + 1023) / 1024))
             local preview_rc=0
             record_dry_run_cleanup_target "$ds_file" "$preview_size_kb" 1 true || preview_rc=$?
@@ -60,7 +70,9 @@ clean_ds_store_tree() {
         fi
         if [[ "$DRY_RUN" != "true" ]]; then
             local remove_rc=0
-            safe_remove "$ds_file" true 2> /dev/null || remove_rc=$?
+            safe_remove "$ds_file" true "" "" \
+                "$ds_parent" "$ds_parent_id" "$ds_target_id" \
+                2> /dev/null || remove_rc=$?
             if [[ $remove_rc -eq 124 || $remove_rc -ge 128 ]]; then
                 delete_rc=$remove_rc
                 break
