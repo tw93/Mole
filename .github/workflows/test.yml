@@ -46,6 +46,8 @@ jobs:
 
   compatibility:
     name: macOS
+    # Hosted runtime coverage is macOS 14/15. Release builds separately enforce
+    # an LC_BUILD_VERSION minimum of macOS 12 in check_release_minos.sh.
     strategy:
       matrix:
         os: [macos-14, macos-15]
@@ -96,18 +98,7 @@ jobs:
         run: brew install bats-core coreutils
 
       - name: Check for unsafe rm usage
-        run: |
-          echo "Checking for unsafe rm patterns..."
-          # Filters in order:
-          #   safe_remove / validate_path: known safe wrapper helpers in file_ops.sh
-          #   # SAFE: explicit annotation that a direct rm is gated by narrow checks
-          #   ^path:line:[ws]#: pure comment lines that mention rm -rf in docs
-          #   echo : help text or messages that print rm -rf as documentation
-          if grep -rn "rm -rf" lib/ bin/ install.sh mole 2>/dev/null | grep -v -E "safe_remove|validate_path|# SAFE|^[^:]+:[0-9]+:[[:space:]]*#|echo "; then
-            echo "✗ Unsafe rm -rf usage found (annotate gated calls with '# SAFE: <reason>' or route through safe_remove)"
-            exit 1
-          fi
-          echo "✓ No unsafe rm usage found"
+        run: python3 scripts/audit_destructive_sinks.py
 
       - name: Verify app protection
         run: |

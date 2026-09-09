@@ -1560,13 +1560,13 @@ safe_remove() {
     local rm_exit=0
     local section_deadline_spent=0
     if declare -F rm > /dev/null 2>&1; then
-        error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # safe_remove
+        error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # SAFE: safe_remove validated and rebound this exact target above
     else
         local rm_timeout=""
         rm_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
             "$deadline_seconds") || rm_exit=$?
         if [[ $rm_exit -eq 0 ]]; then
-            error_msg=$(run_with_timeout "$rm_timeout" rm -rf "$path" < /dev/null 2>&1) || rm_exit=$? # safe_remove
+            error_msg=$(run_with_timeout "$rm_timeout" rm -rf "$path" < /dev/null 2>&1) || rm_exit=$? # SAFE: safe_remove validated and rebound this exact target above
         else
             # The section's own wall-clock budget ran out, so rm never started.
             section_deadline_spent=1
@@ -1981,7 +1981,7 @@ safe_sudo_remove() {
         "$deadline_seconds") || ret=$?
     if [[ $ret -eq 0 ]]; then
         output=$(_mole_bounded_sudo "$remove_timeout" \
-            -n rm -rf "$path" < /dev/null 2>&1) || ret=$? # safe_remove
+            -n rm -rf "$path" < /dev/null 2>&1) || ret=$? # SAFE: safe_sudo_remove validated the exact immutable-ancestor target above
     else
         # The section's own wall-clock budget ran out, so rm never started.
         section_deadline_spent=1

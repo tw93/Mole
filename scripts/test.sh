@@ -32,9 +32,9 @@ TEST_SYSTEM_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mole-test-stubs.XXXXXX")"
 TEST_GO_HELPER_DIR=""
 # shellcheck disable=SC2329  # Invoked by trap.
 cleanup_test_stubs() {
-    rm -rf "$TEST_SYSTEM_STUB_DIR"
+    rm -rf "$TEST_SYSTEM_STUB_DIR" # SAFE: exact mktemp-created test stub directory
     if [[ -n "$TEST_GO_HELPER_DIR" ]]; then
-        rm -rf "$TEST_GO_HELPER_DIR"
+        rm -rf "$TEST_GO_HELPER_DIR" # SAFE: exact mktemp-created Go helper directory
     fi
 }
 trap cleanup_test_stubs EXIT
@@ -143,7 +143,7 @@ prepare_go_test_helpers() {
         export MOLE_TEST_ANALYZE_BIN="$TEST_GO_HELPER_DIR/analyze-go"
         export MOLE_TEST_STATUS_BIN="$TEST_GO_HELPER_DIR/status-go"
     else
-        rm -rf "$TEST_GO_HELPER_DIR"
+        rm -rf "$TEST_GO_HELPER_DIR" # SAFE: exact mktemp-created Go helper directory
         TEST_GO_HELPER_DIR=""
     fi
 }

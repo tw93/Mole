@@ -53,7 +53,7 @@ If the answer is no or unclear, decline the feature, narrow it, or park it until
 - `lib/core/app_protection_data.sh` - readonly bundle ID and pattern arrays consumed by `app_protection.sh`. Data only, no logic.
 - `cmd/analyze/` - Go disk-analysis TUI. `main.go` is bootstrap only; `model.go` holds types and accessor methods; `update.go` holds the Bubble Tea Update chain.
 - `tests/fuzz_corpus/` holds property-test corpora consumed by `path_validation_fuzz.bats`.
-- `scripts/` - check, test, build, and release helpers. `audit_bundle_drift.sh` backs the monthly bundle audit; `audit_function_duplication.py` gates same-body-different-name shell functions and runs inside `check.sh` (`--list` shows every group); per-PR perf is covered by `tests/core_performance.bats`.
+- `scripts/` - check, test, build, and release helpers. `audit_bundle_drift.sh` backs the monthly bundle audit; `audit_function_duplication.py` gates same-body-different-name shell functions and runs inside `check.sh` (`--list` shows every group); `audit_destructive_sinks.py` enforces explicit safety annotations on raw recursive deletion commands; per-PR perf is covered by `tests/core_performance.bats`.
 - `docs/SECURITY_DESIGN.md` - design doc for the path validation / app protection / # SAFE annotation contract.
 - `SECURITY_AUDIT.md` - security review notes.
 
@@ -76,7 +76,7 @@ Public docs and examples should prefer the installed `mo` command. Use `./mole` 
 
 ## Critical Safety Rules
 
-- Route deletion through the safe helpers in `lib/core/file_ops.sh`. Raw `rm -rf` and `find -delete` are allowed only with a `# SAFE: <one-sentence reason>` annotation on the same line, which is the contract `docs/SECURITY_DESIGN.md` Layer 2 defines and `.github/workflows/test.yml` enforces. Self-created mktemp files use the same annotation for direct `rm -f`; do not route scratch paths through `mole_delete`, which would add Trash routing and an operation-log entry to temporary work.
+- Route deletion through the safe helpers in `lib/core/file_ops.sh`. Raw `rm -rf` and `find -delete` are allowed only with a `# SAFE: <one-sentence reason>` annotation on the same line, which is the contract `docs/SECURITY_DESIGN.md` Layer 2 defines and `scripts/audit_destructive_sinks.py` enforces from both `check.sh` and `.github/workflows/test.yml`. Self-created mktemp files use the same annotation for direct `rm -f`; do not route scratch paths through `mole_delete`, which would add Trash routing and an operation-log entry to temporary work.
 - Use `mole_delete` from `lib/core/file_ops.sh` for removals so Trash routing, operation logs, dry-run behavior, and path protection stay consistent.
 - Never modify protected paths such as `/System`, `/Library/Apple`, or `com.apple.*`.
 - Route user-facing cleanup through Trash where the project expects recoverability, especially for analyze-driven ad hoc cleanup.

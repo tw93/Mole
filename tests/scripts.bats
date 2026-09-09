@@ -109,6 +109,50 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "destructive sink audit catches recursive rm variants and find delete" {
+    local audit="$PROJECT_ROOT/scripts/audit_destructive_sinks.py"
+    [ -x "$audit" ]
+
+    local safe_fixture="$HOME/destructive-safe.sh"
+    local unsafe_fixture="$HOME/destructive-unsafe.sh"
+    cat > "$safe_fixture" <<'EOF'
+rm -rf "$scratch" # SAFE: exact test scratch directory
+/bin/rm -r -f "$scratch" # SAFE: exact test scratch directory
+find "$scratch" -delete # SAFE: exact test scratch directory
+echo "rm -rf appears only in guidance"
+printf '%s\n' 'find example -delete'
+EOF
+    cat > "$unsafe_fixture" <<'EOF'
+command rm -fr "$target"
+sudo -n /bin/rm -r -f "$target"
+find "$target" -depth -delete
+echo "starting"; rm -rf "$target"
+printf 'starting' && find "$target" -delete
+rm "$target" -Rf
+EOF
+
+    run python3 "$audit" "$safe_fixture"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"destructive-sink-audit-ok"* ]] || return 1
+
+    run python3 "$audit" "$unsafe_fixture"
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"$unsafe_fixture:1:"* ]] || return 1
+    [[ "$output" == *"$unsafe_fixture:2:"* ]] || return 1
+    [[ "$output" == *"$unsafe_fixture:3:"* ]] || return 1
+    [[ "$output" == *"$unsafe_fixture:4:"* ]] || return 1
+    [[ "$output" == *"$unsafe_fixture:5:"* ]] || return 1
+    [[ "$output" == *"$unsafe_fixture:6:"* ]] || return 1
+    [[ "$output" == *"# SAFE:"* ]] || return 1
+}
+
+@test "CI and local checks share the destructive sink audit" {
+    run grep -F 'audit_destructive_sinks.py' "$PROJECT_ROOT/scripts/check.sh"
+    [ "$status" -eq 0 ]
+    run grep -F 'scripts/audit_destructive_sinks.py' "$PROJECT_ROOT/.github/workflows/test.yml"
+    [ "$status" -eq 0 ]
+}
+
 @test "Makefile has build target for Go binaries" {
     run /bin/bash -c "grep -Eq '(^|[[:space:]])(go|\\$\\(GO\\))[[:space:]]+build' '$PROJECT_ROOT/Makefile'"
     [ "$status" -eq 0 ]
@@ -120,6 +164,50 @@ EOF
     run /bin/bash -c "grep -q 'scripts/check_release_minos.sh' '$PROJECT_ROOT/.github/workflows/release.yml'"
     [ "$status" -eq 0 ]
     [ -x "$PROJECT_ROOT/scripts/check_release_minos.sh" ]
+    run grep -F 'MAX_RELEASE_MINOS:-12.0' "$PROJECT_ROOT/scripts/check_release_minos.sh"
+    [ "$status" -eq 0 ]
+}
+
+@test "contributor requirements match the release and Go toolchains" {
+    local go_version
+    go_version=$(awk '$1 == "go" { print $2; exit }' "$PROJECT_ROOT/go.mod")
+    local go_major_minor="${go_version%.*}"
+    local release_minos
+    release_minos=$(sed -n 's/.*MAX_RELEASE_MINOS:-\([^}]*\).*/\1/p' \
+        "$PROJECT_ROOT/scripts/check_release_minos.sh" | head -1)
+    local macos_major="${release_minos%%.*}"
+
+    [[ "$go_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    [[ "$release_minos" =~ ^[0-9]+\.[0-9]+$ ]] || return 1
+    for requirements_doc in "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/CONTRIBUTING.md"; do
+        run grep -F "macOS $macos_major or newer" "$requirements_doc"
+        [ "$status" -eq 0 ]
+    done
+    run grep -F "Go $go_major_minor+" "$PROJECT_ROOT/CONTRIBUTING.md"
+    [ "$status" -eq 0 ]
+}
+
+@test "release minos gate accepts 12.0 and rejects a newer deployment target" {
+    local fake_bin="$HOME/minos-bin"
+    local fake_binary="$HOME/analyze-darwin-arm64"
+    mkdir -p "$fake_bin"
+    touch "$fake_binary"
+    cat > "$fake_bin/otool" <<'EOF'
+#!/bin/bash
+printf '      cmd LC_BUILD_VERSION\n'
+printf '    minos %s\n' "$FAKE_MINOS"
+EOF
+    chmod +x "$fake_bin/otool"
+
+    run env PATH="$fake_bin:$PATH" FAKE_MINOS=12.0 \
+        "$PROJECT_ROOT/scripts/check_release_minos.sh" "$fake_binary"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"minos 12.0 <= 12.0"* ]] || return 1
+
+    run env PATH="$fake_bin:$PATH" FAKE_MINOS=12.1 \
+        "$PROJECT_ROOT/scripts/check_release_minos.sh" "$fake_binary"
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"minos 12.1 exceeds allowed 12.0"* ]] || return 1
 }
 
 @test "release workflow rejects a tag that differs from the source version" {

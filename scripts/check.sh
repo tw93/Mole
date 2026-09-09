@@ -248,6 +248,14 @@ fi
 printf '%s\n' "$duplication_output"
 echo -e "${GREEN}${ICON_SUCCESS} Function duplication check passed${NC}\n"
 
+if ! destructive_output=$(python3 "$SCRIPT_DIR/audit_destructive_sinks.py" 2>&1); then
+    printf '%s\n' "$destructive_output"
+    echo -e "${RED}${ICON_ERROR} Destructive sink annotation check failed${NC}\n"
+    exit 1
+fi
+printf '%s\n' "$destructive_output"
+echo -e "${GREEN}${ICON_SUCCESS} Destructive sink annotation check passed${NC}\n"
+
 diagnostic_guidance_files=(AGENTS.md README.md .claude/skills/*/SKILL.md)
 if ! diagnostic_guidance_output=$(check_diagnostic_guidance "${diagnostic_guidance_files[@]}"); then
     [[ -n "$diagnostic_guidance_output" ]] && printf '%s\n' "$diagnostic_guidance_output"
