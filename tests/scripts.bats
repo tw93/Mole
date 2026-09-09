@@ -59,6 +59,15 @@ setup() {
 	[ "$status" -ne 0 ] || return 1
 }
 
+@test "check workflow pins goimports to the project Go toolchain" {
+	run grep -F 'golang.org/x/tools/cmd/goimports@v0.49.0' \
+		"$PROJECT_ROOT/.github/workflows/check.yml"
+	[ "$status" -eq 0 ]
+	run grep -F 'golang.org/x/tools/cmd/goimports@latest' \
+		"$PROJECT_ROOT/.github/workflows/check.yml"
+	[ "$status" -ne 0 ]
+}
+
 @test "diagnostic guidance check rejects equivalent pipe-to-shell spellings across lines" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
