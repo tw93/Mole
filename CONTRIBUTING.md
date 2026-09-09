@@ -130,10 +130,10 @@ Format: `[MODULE_NAME] message` output to stderr.
 
 ## Requirements
 
-- macOS 10.14 or newer, works on Intel and Apple Silicon
+- macOS 12 or newer, works on Intel and Apple Silicon
 - Default macOS Bash 3.2+ plus administrator privileges for cleanup tasks
 - Install Command Line Tools with `xcode-select --install` for curl, tar, and related utilities
-- Go 1.24+ is required to build the `mo status` or `mo analyze` TUI binaries locally.
+- Go 1.25+ is required to build the `mo status` or `mo analyze` TUI binaries locally.
 
 ## Go Components
 
@@ -141,13 +141,13 @@ Format: `[MODULE_NAME] message` output to stderr.
 
 **Code organization:**
 
-- Each module split into focused files by responsibility
-- `cmd/analyze/` - Disk analyzer with 7 files under 500 lines each
-- `cmd/status/` - System monitor with metrics split into 11 domain files
+- Each module is split into focused files by responsibility.
+- `cmd/analyze/` owns disk traversal, caching, deletion, navigation, and rendering.
+- `cmd/status/` keeps collection, automation output, preferences, and rendering separate.
 
 **Development workflow:**
 
-- Format code with `gofmt -w ./cmd/...`
+- Format code with `./scripts/check.sh --format`
 - Run `go vet ./cmd/...` to check for issues
 - Build with `go build ./...` to verify all packages compile
 

@@ -880,12 +880,12 @@ verify_release_attestation() {
         return 2
     fi
 
-    # --owner restricts the trusted signer identity to the upstream repo's
-    # GitHub Actions workflow. --deny-self-hosted-runners blocks attestations
-    # produced by self-hosted runners, which a repo compromise could otherwise
-    # introduce as a sidechannel.
+    # Bind provenance to this exact repository rather than accepting an
+    # attestation from any repository owned by tw93. --deny-self-hosted-runners
+    # also blocks attestations produced by self-hosted runners, which a repo
+    # compromise could otherwise introduce as a sidechannel.
     if gh attestation verify "$file" \
-        --owner tw93 \
+        --repo tw93/Mole \
         --deny-self-hosted-runners \
         > /dev/null 2>&1; then
         return 0
@@ -1147,6 +1147,25 @@ normalize_install_dir() {
 check_requirements() {
     if [[ "$OSTYPE" != "darwin"* ]]; then
         log_error "This tool is designed for macOS only"
+        exit 1
+    fi
+
+    local minimum_macos_major=12
+    local macos_version=""
+    local macos_version_rc=0
+    macos_version=$(run_install_probe_with_timeout 2 \
+        /usr/bin/sw_vers -productVersion 2> /dev/null) || macos_version_rc=$?
+    if [[ $macos_version_rc -ne 0 ||
+        ! "$macos_version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+        log_error "Could not determine a supported macOS version (probe exit $macos_version_rc)"
+        log_error "Verify sw_vers works, then retry the installation"
+        exit 1
+    fi
+    local macos_major="${macos_version%%.*}"
+    macos_major=$((10#$macos_major))
+    if [[ $macos_major -lt $minimum_macos_major ]]; then
+        log_error "Mole requires macOS $minimum_macos_major or newer; found $macos_version"
+        log_error "Upgrade macOS before installing this release"
         exit 1
     fi
 
@@ -1609,11 +1628,11 @@ homebrew_owns_mole() {
 
 # Main install/update flows
 perform_install() {
+    check_requirements
     resolve_source_dir
     local source_version
     source_version="$(get_source_version || true)"
 
-    check_requirements
     create_directories
     acquire_install_lock || {
         report_install_lock_failure

@@ -649,6 +649,48 @@ EOF
 	[[ "$output" != *"UNEXPECTED_HELP_PROBE_SUCCESS"* ]]
 }
 
+@test "installer rejects macOS older than the release minimum before setup" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+eval "$(sed -n '/^check_requirements()/,/^}/p' "$PROJECT_ROOT/install.sh")"
+log_error() { printf 'ERROR:%s\n' "$*"; }
+homebrew_owns_mole() { return 1; }
+run_install_probe_with_timeout() {
+    [[ "$1" == 2 && "$2" == "/usr/bin/sw_vers" && "$3" == "-productVersion" ]] || return 98
+    printf '%s\n' "$FAKE_MACOS_VERSION"
+}
+INSTALL_DIR="$HOME/bin"
+ACTION=install
+OSTYPE=darwin23
+
+set +e
+(FAKE_MACOS_VERSION=11.7.10 check_requirements)
+old_rc=$?
+set -e
+printf 'OLD_RC=%s\n' "$old_rc"
+[[ $old_rc -eq 1 ]] || exit 1
+
+FAKE_MACOS_VERSION=12.0 check_requirements
+printf 'SUPPORTED=yes\n'
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"OLD_RC=1"* ]] || return 1
+	[[ "$output" == *"requires macOS 12 or newer"* ]] || return 1
+	[[ "$output" == *"SUPPORTED=yes"* ]] || return 1
+}
+
+@test "fresh install checks platform support before resolving remote source" {
+	run awk '
+        /^perform_install\(\) \{/ { in_install = 1; next }
+        in_install && /^}/ { exit seen_check ? 0 : 1 }
+        in_install && /check_requirements/ { seen_check = 1; next }
+        in_install && /resolve_source_dir/ && !seen_check { exit 1 }
+    ' "$PROJECT_ROOT/install.sh"
+
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "installer shell fallback stops TERM-ignoring verification probes" {
 	local timeout_cmd="timeout"
 	command -v timeout > /dev/null 2>&1 || timeout_cmd="gtimeout"
@@ -1064,6 +1106,7 @@ eval "$(sed -n '/^verify_release_attestation()/,/^}/p' "$PROJECT_ROOT/install.sh
 stubdir="$(mktemp -d "${TMPDIR:-/tmp}/mole-gh-stub.XXXXXX")"
 cat > "$stubdir/gh" <<'STUB'
 #!/bin/bash
+printf '%s\n' "$*" >> "$GH_TRACE"
 case "$1 $2" in
 	"auth status") exit "${STUB_AUTH_RC:-0}" ;;
 	"attestation verify") exit "${STUB_VERIFY_RC:-0}" ;;
@@ -1072,6 +1115,8 @@ exit 0
 STUB
 chmod +x "$stubdir/gh"
 target="$(mktemp "${TMPDIR:-/tmp}/mole-att-file.XXXXXX")"
+GH_TRACE="$(mktemp "${TMPDIR:-/tmp}/mole-gh-trace.XXXXXX")"
+export GH_TRACE
 
 # gh missing -> cannot verify (2)
 ( PATH="/var/empty"; verify_release_attestation "$target" ) && rc=0 || rc=$?
@@ -1089,7 +1134,18 @@ target="$(mktemp "${TMPDIR:-/tmp}/mole-att-file.XXXXXX")"
 ( PATH="$stubdir:$PATH"; export STUB_AUTH_RC=0 STUB_VERIFY_RC=1; verify_release_attestation "$target" ) && rc=0 || rc=$?
 [ "$rc" -eq 1 ] || { echo "WRONG: verify-fail rc=$rc want 1"; exit 1; }
 
-rm -rf "$stubdir" "$target"
+grep -Fq "attestation verify $target --repo tw93/Mole --deny-self-hosted-runners" "$GH_TRACE" || {
+    echo "WRONG: attestation verification was not repository-scoped"
+    cat "$GH_TRACE"
+    exit 1
+}
+! grep -Fq -- '--owner tw93' "$GH_TRACE" || {
+    echo "WRONG: owner-wide attestation scope remained enabled"
+    cat "$GH_TRACE"
+    exit 1
+}
+
+rm -rf "$stubdir" "$target" "$GH_TRACE"
 EOF
 
 	[ "$status" -eq 0 ]

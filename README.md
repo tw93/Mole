@@ -28,6 +28,8 @@
 
 ## Quick Start
 
+Mole requires macOS 12 or newer and supports both Intel and Apple Silicon Macs.
+
 **Install via Homebrew**
 
 ```bash

@@ -289,7 +289,7 @@ Repository-level signals include:
 - curated changelog-driven release notes for user-visible changes
 - published SHA-256 checksums for release assets
 - GitHub artifact attestations for release assets
-- install-time verification of the GitHub Actions build-provenance attestation: `install.sh` runs `gh attestation verify` (with `--deny-self-hosted-runners`) on the downloaded asset when the GitHub CLI is available, and a mismatch is treated as fatal before checksums are read. This moves attestation from a release-side artifact to an install-side check.
+- install-time verification of the GitHub Actions build-provenance attestation: `install.sh` runs `gh attestation verify` scoped to the exact `tw93/Mole` repository (with `--deny-self-hosted-runners`) on the downloaded asset when the GitHub CLI is available, and a mismatch is treated as fatal before checksums are read. This moves attestation from a release-side artifact to an install-side check.
 
 These controls do not eliminate all supply-chain risk, but they make release changes easier to review and verify.
 

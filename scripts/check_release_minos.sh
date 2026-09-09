@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-MAX_MINOS="${MAX_RELEASE_MINOS:-13.0}"
+MAX_MINOS="${MAX_RELEASE_MINOS:-12.0}"
 
 if [[ "${1:-}" == "--max" ]]; then
     if [[ $# -lt 2 ]]; then
