@@ -1516,6 +1516,37 @@ clean_external_volume_target() {
 
     start_section_spinner "Scanning external volume..."
 
+    # Materialize the complete AppleDouble inventory before any external-volume
+    # mutation. A timed-out find can leave a valid-looking prefix on stdout;
+    # consuming that prefix from process substitution used to delete those rows
+    # and report success even though the scan itself returned 124.
+    local metadata_scan_timeout="${MOLE_EXTERNAL_VOLUME_SCAN_TIMEOUT:-15}"
+    [[ "$metadata_scan_timeout" =~ ^[0-9]+$ ]] || metadata_scan_timeout=15
+    local metadata_scan_file=""
+    if ! metadata_scan_file=$(mktemp_file "external-volume-metadata"); then
+        stop_section_spinner
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}could not prepare scan, no changes${NC}"
+        note_activity
+        return 1
+    fi
+    local metadata_scan_rc=0
+    run_with_timeout "$metadata_scan_timeout" find -P "$volume" -xdev \
+        -type f -name "._*" -print0 > "$metadata_scan_file" 2> /dev/null || metadata_scan_rc=$?
+    if [[ $metadata_scan_rc -ne 0 ]]; then
+        : > "$metadata_scan_file" || true
+        stop_section_spinner
+        if [[ $metadata_scan_rc -eq 124 ]]; then
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}scan timed out, no changes${NC}"
+        elif [[ $metadata_scan_rc -ge 128 ]]; then
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}scan interrupted, no changes${NC}"
+        else
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}scan failed, no changes${NC}"
+        fi
+        note_activity
+        _mole_record_clean_cancellation "$metadata_scan_rc"
+        return "$metadata_scan_rc"
+    fi
+
     local target_path
     for target_path in "${top_level_targets[@]}"; do
         [[ -e "$target_path" ]] || continue
@@ -1549,8 +1580,6 @@ clean_external_volume_target() {
         clean_ds_store_tree "$volume" "${volume_name} volume, .DS_Store"
     fi
 
-    local metadata_scan_timeout="${MOLE_EXTERNAL_VOLUME_SCAN_TIMEOUT:-15}"
-    [[ "$metadata_scan_timeout" =~ ^[0-9]+$ ]] || metadata_scan_timeout=15
     while IFS= read -r -d '' metadata_file; do
         [[ -e "$metadata_file" ]] || continue
         if should_protect_path "$metadata_file" 2> /dev/null || is_path_whitelisted "$metadata_file" 2> /dev/null; then
@@ -1576,7 +1605,7 @@ clean_external_volume_target() {
             cleaned_count=$((cleaned_count + 1))
             total_size=$((total_size + size_kb))
         fi
-    done < <(run_with_timeout "$metadata_scan_timeout" find -P "$volume" -xdev -type f -name "._*" -print0 2> /dev/null || true)
+    done < "$metadata_scan_file"
 
     stop_section_spinner
 

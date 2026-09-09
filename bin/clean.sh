@@ -1663,6 +1663,11 @@ perform_cleanup() {
     set +e
 
     _run_cleanup_step() {
+        local required=false
+        if [[ "${1:-}" == "--required" ]]; then
+            required=true
+            shift
+        fi
         local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
         if [[ $pending_clean_cancel -eq 124 || $pending_clean_cancel -ge 128 ]]; then
             return "$pending_clean_cancel"
@@ -1682,6 +1687,9 @@ perform_cleanup() {
         if [[ $pending_clean_cancel -eq 124 || $pending_clean_cancel -ge 128 ]]; then
             return "$pending_clean_cancel"
         fi
+        if [[ "$required" == "true" && $step_rc -ne 0 ]]; then
+            return "$step_rc"
+        fi
         return 0
     }
 
@@ -1692,7 +1700,8 @@ perform_cleanup() {
     run_clean_sections() {
         if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
             start_section "External volume"
-            _run_cleanup_step clean_external_volume_target "$EXTERNAL_VOLUME_TARGET" || return $?
+            _run_cleanup_step --required \
+                clean_external_volume_target "$EXTERNAL_VOLUME_TARGET" || return $?
             end_section
         else
             # ===== 1. System =====
@@ -1834,6 +1843,13 @@ perform_cleanup() {
             summary_heading="Cleanup interrupted"
         fi
         summary_status="warning"
+    elif [[ $cleanup_cancel_rc -ne 0 ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            summary_heading="Dry run incomplete"
+        else
+            summary_heading="Cleanup incomplete"
+        fi
+        summary_status="warning"
     elif [[ "$DRY_RUN" == "true" ]]; then
         summary_heading="Dry run complete - no changes made"
     else
@@ -1846,6 +1862,8 @@ perform_cleanup() {
             summary_details+=("${GRAY}${ICON_WARNING}${NC} Cancelled: a scan or size check timed out (exit 124). Remaining cleanup was skipped.")
         elif [[ $cleanup_cancel_rc -ge 128 ]]; then
             summary_details+=("${GRAY}${ICON_WARNING}${NC} Cancelled: a cleanup step was interrupted (exit $cleanup_cancel_rc). Remaining cleanup was skipped.")
+        else
+            summary_details+=("${GRAY}${ICON_WARNING}${NC} A required cleanup step failed (exit $cleanup_cancel_rc). Remaining cleanup was skipped.")
         fi
     fi
 

@@ -80,6 +80,32 @@ EOF
     [[ "$output" == *"was interrupted (exit 130)"* ]]
 }
 
+@test "external volume scan failure makes the command incomplete" {
+    mkdir -p "$HOME/External"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+EXTERNAL_VOLUME_TARGET="$HOME/External"
+clean_external_volume_target() {
+    echo "EXTERNAL_SCAN_FAILED"
+    return 7
+}
+set +e
+perform_cleanup
+cleanup_rc=$?
+set -e
+printf 'RC=%s\n' "$cleanup_rc"
+exit "$cleanup_rc"
+EOF
+
+    [ "$status" -eq 7 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"EXTERNAL_SCAN_FAILED"* ]] || return 1
+    [[ "$output" == *"Cleanup incomplete"* ]] || return 1
+    [[ "$output" == *"failed (exit 7)"* ]] || return 1
+    [[ "$output" != *"Cleanup complete"* ]] || return 1
+}
+
 @test "cloud safety cancellation crosses the timeout worker and stops later sections" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
         /bin/bash --noprofile --norc << 'EOF'
