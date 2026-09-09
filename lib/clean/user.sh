@@ -1615,7 +1615,13 @@ clean_external_volume_target() {
     done
 
     if [[ "$PROTECT_FINDER_METADATA" != "true" ]]; then
-        clean_ds_store_tree "$volume" "${volume_name} volume, .DS_Store"
+        local finder_rc=0
+        clean_ds_store_tree "$volume" "${volume_name} volume, .DS_Store" || finder_rc=$?
+        if [[ $finder_rc -ne 0 ]]; then
+            stop_section_spinner
+            _mole_record_clean_cancellation "$finder_rc"
+            return "$finder_rc"
+        fi
     fi
 
     while IFS= read -r -d '' metadata_file; do

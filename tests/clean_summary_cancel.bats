@@ -108,6 +108,110 @@ EOF
     [[ "$output" != *"System was already clean"* ]] || return 1
 }
 
+# Exercise the real external-volume and Finder-metadata helpers through the
+# command orchestrator. Only filesystem discovery and removal are mocked.
+run_external_finder_scan_with() {
+    local test_home="$HOME/finder-$1-$2-${3:-false}"
+    mkdir -p "$test_home/External"
+    touch "$test_home/External/.DS_Store" "$test_home/External/._later"
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" \
+        FINDER_SCAN_RC="$1" TEST_DRY_RUN="$2" TEST_PROTECT_FINDER="${3:-false}" \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+EXTERNAL_VOLUME_TARGET="$HOME/External"
+DRY_RUN="$TEST_DRY_RUN"
+PROTECT_FINDER_METADATA="$TEST_PROTECT_FINDER"
+start_section_spinner() { echo "SPINNER_START"; }
+stop_section_spinner() { echo "SPINNER_STOP"; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { printf '1\n'; }
+run_with_timeout() {
+    case "$*" in
+        *-name\ .DS_Store*)
+            echo "FINDER_SCAN" >&2
+            printf '%s\0' "$EXTERNAL_VOLUME_TARGET/.DS_Store"
+            return "$FINDER_SCAN_RC"
+            ;;
+        *-name\ ._*)
+            printf '%s\0' "$EXTERNAL_VOLUME_TARGET/._later"
+            return 0
+            ;;
+        *) echo "UNEXPECTED_PROBE:$*" >&2; return 99 ;;
+    esac
+}
+safe_remove() { echo "REMOVE:$1" >> "$HOME/sinks.trace"; }
+record_dry_run_cleanup_target() { echo "PREVIEW:$1" >> "$HOME/sinks.trace"; }
+set +e
+perform_cleanup
+cleanup_rc=$?
+set -e
+if [[ -f "$HOME/sinks.trace" ]]; then
+    cat "$HOME/sinks.trace"
+fi
+printf 'RC=%s CANCEL=%s FILES=%s\n' \
+    "$cleanup_rc" "${MOLE_CLEAN_CANCEL_STATUS:-0}" "$files_cleaned"
+exit "$cleanup_rc"
+EOF
+}
+
+@test "external Finder scan failure stops later cleanup and reports incomplete" {
+    run_external_finder_scan_with 7 false
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Cleanup incomplete"* ]] || return 1
+    [[ "$output" == *"RC=1 CANCEL=0 FILES=0"* ]] || return 1
+    [[ "$output" == *"SPINNER_STOP"* ]] || return 1
+    [[ "$output" != *"REMOVE:"* && "$output" != *"PREVIEW:"* ]] || return 1
+}
+
+@test "external Finder scan timeout stops later cleanup and reports cancellation" {
+    run_external_finder_scan_with 124 false
+    [ "$status" -eq 124 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Cleanup cancelled"* ]] || return 1
+    [[ "$output" == *"RC=124 CANCEL=124 FILES=0"* ]] || return 1
+    [[ "$output" == *"SPINNER_STOP"* ]] || return 1
+    [[ "$output" != *"REMOVE:"* && "$output" != *"PREVIEW:"* ]] || return 1
+}
+
+@test "external Finder scan interruption stops later cleanup and reports interruption" {
+    run_external_finder_scan_with 130 false
+    [ "$status" -eq 130 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Cleanup interrupted"* ]] || return 1
+    [[ "$output" == *"RC=130 CANCEL=130 FILES=0"* ]] || return 1
+    [[ "$output" != *"REMOVE:"* && "$output" != *"PREVIEW:"* ]] || return 1
+}
+
+@test "external Finder scan timeout also stops later dry-run previews" {
+    run_external_finder_scan_with 124 true
+    [ "$status" -eq 124 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=124 CANCEL=124 FILES=0"* ]] || return 1
+    [[ "$output" != *"REMOVE:"* && "$output" != *"PREVIEW:"* ]] || return 1
+}
+
+@test "complete external Finder scans allow the later eligible candidate" {
+    for dry_run in false true; do
+        run_external_finder_scan_with 0 "$dry_run"
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0 CANCEL=0"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"/External/.DS_Store"* ]] || return 1
+        [[ "$output" == *"/External/._later"* ]] || return 1
+        if [[ "$dry_run" == true ]]; then
+            [[ "$output" == *"PREVIEW:"* && "$output" != *"REMOVE:"* ]] || return 1
+        else
+            [[ "$output" == *"REMOVE:"* && "$output" != *"PREVIEW:"* ]] || return 1
+        fi
+    done
+}
+
+@test "protected Finder metadata skips its scan and preserves later cleanup" {
+    run_external_finder_scan_with 124 false true
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0 CANCEL=0 FILES=1"* ]] || return 1
+    [[ "$output" == *"REMOVE:"*"/External/._later"* ]] || return 1
+    [[ "$output" != *"/External/.DS_Store"* ]] || return 1
+}
+
 @test "cloud safety cancellation crosses the timeout worker and stops later sections" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
         /bin/bash --noprofile --norc << 'EOF'
