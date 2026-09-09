@@ -85,6 +85,224 @@ EOF
 	[[ "$output" == *"Failed to inspect login items"* ]] || return 1
 }
 
+@test "login item snapshot runs through the bounded command wrapper" {
+	run env HOME="$TEST_HOME/login-snapshot-timeout" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+
+run_with_timeout() {
+    printf 'BOUNDED:%s\n' "$2" >> "$HOME/probe.trace"
+    return 124
+}
+osascript() {
+    printf 'UNBOUNDED_OSASCRIPT\n' >> "$HOME/probe.trace"
+    return 0
+}
+
+set +e
+_login_items_snapshot > /dev/null
+snapshot_rc=$?
+set -e
+printf 'RC=%s TRACE=%s\n' "$snapshot_rc" "$(tr '\n' ',' < "$HOME/probe.trace")"
+[[ $snapshot_rc -eq 124 ]] || exit 1
+grep -Fq 'BOUNDED:osascript' "$HOME/probe.trace" || exit 1
+! grep -Fq 'UNBOUNDED_OSASCRIPT' "$HOME/probe.trace" || exit 1
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"RC=124"* ]] || return 1
+	[[ "$output" == *"BOUNDED:osascript"* ]] || return 1
+	[[ "$output" != *"UNBOUNDED_OSASCRIPT"* ]] || return 1
+}
+
+@test "login item resolver preserves a bounded Spotlight timeout" {
+	run env HOME="$TEST_HOME/login-resolver-timeout" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+mkdir -p "$HOME/bin"
+printf '#!/bin/bash\nexit 0\n' > "$HOME/bin/find"
+chmod +x "$HOME/bin/find"
+PATH="$HOME/bin:$PATH"
+
+run_with_timeout() {
+    printf 'BOUNDED:%s\n' "$2" >> "$HOME/probe.trace"
+    return 124
+}
+mdfind() {
+    printf 'UNBOUNDED_MDFIND\n' >> "$HOME/probe.trace"
+    return 1
+}
+sudo() { return 1; }
+
+set +e
+_login_item_app_exists "Definitely Missing" "" "$((SECONDS + 10))"
+resolver_rc=$?
+set -e
+printf 'RC=%s TRACE=%s\n' "$resolver_rc" "$(tr '\n' ',' < "$HOME/probe.trace")"
+[[ $resolver_rc -eq 124 ]] || exit 1
+grep -Fq 'BOUNDED:mdfind' "$HOME/probe.trace" || exit 1
+! grep -Fq 'UNBOUNDED_MDFIND' "$HOME/probe.trace" || exit 1
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"RC=124"* ]] || return 1
+	[[ "$output" == *"BOUNDED:mdfind"* ]] || return 1
+	[[ "$output" != *"UNBOUNDED_MDFIND"* ]] || return 1
+}
+
+@test "login item resolver discards a partial filesystem inventory" {
+	run env HOME="$TEST_HOME/login-find-timeout" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+mkdir -p "$HOME/Applications/Partial.app"
+
+run_with_timeout() {
+    printf 'BOUNDED:%s\n' "$2" >> "$HOME/probe.trace"
+    case "$2" in
+        mdfind) return 0 ;;
+        find)
+            printf '%s\0' "$HOME/Applications/Partial.app"
+            return 124
+            ;;
+        *) printf 'UNEXPECTED:%s\n' "$2" >> "$HOME/probe.trace"; return 0 ;;
+    esac
+}
+
+set +e
+_login_item_app_exists "Definitely Missing" "" "$((SECONDS + 10))"
+resolver_rc=$?
+set -e
+printf 'RC=%s TRACE=%s\n' "$resolver_rc" "$(tr '\n' ',' < "$HOME/probe.trace")"
+[[ $resolver_rc -eq 124 ]] || exit 1
+grep -Fq 'BOUNDED:find' "$HOME/probe.trace" || exit 1
+! grep -Fq 'UNEXPECTED:' "$HOME/probe.trace" || exit 1
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"RC=124"* ]] || return 1
+	[[ "$output" == *"BOUNDED:find"* ]] || return 1
+	[[ "$output" != *"UNEXPECTED:"* ]] || return 1
+}
+
+@test "login item metadata inventory preserves its batch timeout" {
+	run env HOME="$TEST_HOME/login-plist-timeout" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+app="$HOME/Applications/Example.app"
+mkdir -p "$app/Contents"
+printf '<plist><dict></dict></plist>\n' > "$app/Contents/Info.plist"
+printf '%s\0' "$app" > "$HOME/apps.list"
+
+run_with_timeout() {
+    printf 'BOUNDED:%s\n' "$*" >> "$HOME/probe.trace"
+    return 124
+}
+
+set +e
+_login_item_build_metadata_inventory \
+    "$HOME/apps.list" "$HOME/metadata.list" "$((SECONDS + 10))"
+metadata_rc=$?
+set -e
+printf 'RC=%s TRACE=%s\n' "$metadata_rc" "$(tr '\n' ',' < "$HOME/probe.trace")"
+[[ $metadata_rc -eq 124 ]] || exit 1
+grep -Fq 'BOUNDED:' "$HOME/probe.trace" || exit 1
+grep -Fq '/bin/bash' "$HOME/probe.trace" || exit 1
+grep -Fq '/usr/bin/plutil' "$HOME/probe.trace" || exit 1
+[[ ! -s "$HOME/metadata.list" ]] || exit 1
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"RC=124"* ]] || return 1
+	[[ "$output" == *"/usr/bin/plutil"* ]] || return 1
+}
+
+@test "login item audit does not publish partial broken-item conclusions" {
+	run env HOME="$TEST_HOME/login-partial" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+unset MOLE_TEST_NO_AUTH MOLE_TEST_MODE
+
+_login_items_snapshot() {
+    printf 'Confirmed Missing\t\nUnknown Item\t\n'
+}
+_login_item_app_exists() {
+    case "$1" in
+        "Confirmed Missing") return 1 ;;
+        *) return 124 ;;
+    esac
+}
+
+execute_optimization login_items_audit
+printf 'FAILED=%s ATTENTION=%s\n' \
+    "$(optimize_outcome_count failed)" "$(optimize_outcome_count attention)"
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"Login items audit incomplete"* ]] || return 1
+	[[ "$output" == *"FAILED=1 ATTENTION=0"* ]] || return 1
+	[[ "$output" != *"Broken login item"* ]] || return 1
+}
+
+@test "login item audit still reports conclusively absent items" {
+	run env HOME="$TEST_HOME/login-absent" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+unset MOLE_TEST_NO_AUTH MOLE_TEST_MODE
+
+_login_items_snapshot() { printf 'Confirmed Missing\t\n'; }
+_login_item_app_exists() { return 1; }
+
+execute_optimization login_items_audit
+printf 'FAILED=%s ATTENTION=%s\n' \
+    "$(optimize_outcome_count failed)" "$(optimize_outcome_count attention)"
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"Broken login item: Confirmed Missing"* ]] || return 1
+	[[ "$output" == *"FAILED=0 ATTENTION=1"* ]] || return 1
+}
+
+@test "login item audit reuses one fallback app inventory" {
+	run env HOME="$TEST_HOME/login-shared-inventory" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+unset MOLE_TEST_NO_AUTH MOLE_TEST_MODE
+
+_login_items_snapshot() {
+    printf 'Missing One\t\nMissing Two\t\nMissing Three\t\n'
+}
+_login_item_build_app_inventory() {
+    printf 'BUILD\n' >> "$HOME/build.trace"
+    : > "$1"
+    return 0
+}
+run_with_timeout() {
+    case "$2" in
+        mdfind) return 0 ;;
+        sudo) return 1 ;;
+        *) printf 'UNEXPECTED:%s\n' "$2" >> "$HOME/build.trace"; return 1 ;;
+    esac
+}
+
+execute_optimization login_items_audit
+printf 'BUILDS=%s FAILED=%s ATTENTION=%s\n' \
+    "$(grep -c '^BUILD$' "$HOME/build.trace")" \
+    "$(optimize_outcome_count failed)" "$(optimize_outcome_count attention)"
+EOF
+
+	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"BUILDS=1 FAILED=0 ATTENTION=1"* ]] || return 1
+	[[ "$output" == *"3 broken login item(s)"* ]] || return 1
+	[[ "$output" != *"UNEXPECTED:"* ]] || return 1
+}
+
 @test "notification cleanup reports a failed size probe" {
 	run env HOME="$TEST_HOME/notification" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -225,6 +443,10 @@ saved_body=$(sed -n '/^opt_saved_state_cleanup() {/,/^}/p' "$tasks_file")
 network_body=$(sed -n '/^opt_network_stack_optimize() {/,/^}/p' "$tasks_file")
 vpn_body=$(sed -n '/^has_active_vpn_interface() {/,/^}/p' "$tasks_file")
 shared_body=$(sed -n '/^opt_shared_file_list_repair() {/,/^}/p' "$tasks_file")
+login_snapshot_body=$(sed -n '/^_login_items_snapshot() {/,/^}/p' "$tasks_file")
+login_resolver_body=$(sed -n '/^_login_item_app_exists() {/,/^}/p' "$tasks_file")
+login_metadata_body=$(sed -n '/^_login_item_build_metadata_inventory() {/,/^}/p' "$tasks_file")
+login_inventory_body=$(sed -n '/^_login_item_build_app_inventory() {/,/^}/p' "$tasks_file")
 
 [[ "$system_body" == *'run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" mdutil -s /'* ]] || exit 1
 [[ "$saved_body" == *'run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" find'* ]] || exit 1
@@ -233,6 +455,12 @@ shared_body=$(sed -n '/^opt_shared_file_list_repair() {/,/^}/p' "$tasks_file")
 [[ "$vpn_body" == *'run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" scutil --nc list'* ]] || exit 1
 [[ "$vpn_body" == *'run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" route -n get default'* ]] || exit 1
 [[ "$shared_body" == *'run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" find'* ]] || exit 1
+[[ "$login_snapshot_body" == *'run_with_timeout'*"osascript"* ]] || exit 1
+[[ "$login_resolver_body" == *'run_with_timeout'*"mdfind"* ]] || exit 1
+[[ "$login_resolver_body" == *'run_with_timeout'*"sfltool"* ]] || exit 1
+[[ "$login_metadata_body" == *'run_with_timeout'*"/usr/bin/plutil"* ]] || exit 1
+[[ "$login_inventory_body" == *'run_with_timeout'*"find"* ]] || exit 1
+[[ "$login_inventory_body" == *'_login_item_build_metadata_inventory'* ]] || exit 1
 EOF
 
 	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
