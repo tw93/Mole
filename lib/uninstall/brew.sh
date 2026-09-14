@@ -183,8 +183,16 @@ _detect_cask_via_caskroom_search() {
         info_output=$(_mole_brew_probe "$MOLE_TIMEOUT_PKG_LIST_SEC" \
             info --cask "${uniq[0]}" 2> /dev/null) || info_rc=$?
         [[ $info_rc -eq 124 || $info_rc -ge 128 ]] && return "$info_rc"
-        [[ $info_rc -eq 0 ]] || return 2
-        if [[ -n "$app_path" ]]; then
+        if [[ $info_rc -ne 0 ]]; then
+            # The exact Caskroom bundle path plus an installed cask token is
+            # already sufficient ownership evidence here. `brew info` cannot
+            # resolve some third-party tap casks by their short token even
+            # though `brew list --cask` can report the installed token. Keep
+            # this optional verification from aborting the whole uninstall;
+            # brew_uninstall_cask remains the final operation and reports any
+            # inability to remove the recorded cask.
+            debug_log "Homebrew info unavailable for cask '${uniq[0]}'; using exact Caskroom match"
+        elif [[ -n "$app_path" ]]; then
             if grep -qF "$app_path" <<< "$info_output"; then
                 :
             elif [[ "$app_path" == "/Applications/$app_bundle_name" ]] && grep -qF "$app_bundle_name" <<< "$info_output"; then

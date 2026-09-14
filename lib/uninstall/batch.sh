@@ -2593,6 +2593,12 @@ batch_uninstall_applications() {
         return "$_scan_rc"
     elif [[ $_scan_rc -ne 0 ]]; then
         _abort_uninstall_batch
+        # Keep scan failures fail-closed, but do not let `set -e` turn an
+        # ordinary probe refusal into a silent return to the shell. This is
+        # especially important for the interactive path, where the caller
+        # cannot render a follow-up error after this function returns.
+        log_error "Could not complete the uninstall scan; nothing was removed"
+        debug_log "Uninstall scan stopped before preview with status $_scan_rc"
         return 1
     fi
 

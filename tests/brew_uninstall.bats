@@ -722,3 +722,45 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == "test-cask-app" ]]
 }
+
+@test "Caskroom detection tolerates unavailable info for third-party taps" {
+    mkdir -p "$BATS_TEST_TMPDIR/Rebased.app"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TEST_APP_PATH="$BATS_TEST_TMPDIR/Rebased.app" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/brew.sh"
+
+find() {
+    echo "/opt/homebrew/Caskroom/rebased/1.1.15/Rebased.app"
+}
+run_with_timeout() {
+    shift
+    "$@"
+}
+_mole_brew_probe() {
+    case "$2:$3:${4:-}" in
+        list:--cask:)
+            echo "rebased"
+            return 0
+            ;;
+        info:--cask:rebased)
+            return 1
+            ;;
+        *)
+            return 2
+            ;;
+    esac
+}
+
+result=$(_detect_cask_via_caskroom_search \
+    "Rebased.app" "$TEST_APP_PATH")
+[[ "$result" == "rebased" ]]
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == "rebased" ]]
+}

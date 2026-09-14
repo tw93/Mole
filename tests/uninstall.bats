@@ -3750,6 +3750,29 @@ INNER
     [[ "$output" != *"UNEXPECTED_SYSTEM"* ]] || return 1
 }
 
+@test "batch scan failure is visible instead of returning silently" {
+    run env HOME="$HOME/batch-scan-failure" PROJECT_ROOT="$PROJECT_ROOT" MO_DEBUG=1 \
+        /bin/bash --noprofile --norc <<'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+selected_apps=("0|$HOME/Applications/Rebased.app|Rebased|io.github.detachhead.rebased|0|Never")
+_batch_scan_app_details() { return 2; }
+rc=0
+batch_uninstall_applications || rc=$?
+printf 'RC=%s\n' "$rc"
+[[ $rc -eq 1 ]]
+INNER
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"Could not complete the uninstall scan; nothing was removed"* ]] || return 1
+    [[ "$output" == *"Uninstall scan stopped before preview with status 2"* ]]
+}
+
 # ---------------------------------------------------------------------------
 # #723: Trash routing default and --permanent flag
 # ---------------------------------------------------------------------------
