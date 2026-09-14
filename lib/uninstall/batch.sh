@@ -2578,6 +2578,7 @@ batch_uninstall_applications() {
     local -a app_details=()
 
     local _scan_rc=0
+    local _scan_stage="preflight scan"
     _batch_scan_app_details || _scan_rc=$?
     if [[ $_batch_interrupted -eq 1 ]]; then
         _abort_uninstall_batch
@@ -2597,8 +2598,9 @@ batch_uninstall_applications() {
         # ordinary probe refusal into a silent return to the shell. This is
         # especially important for the interactive path, where the caller
         # cannot render a follow-up error after this function returns.
-        log_error "Could not complete the uninstall scan; nothing was removed"
-        debug_log "Uninstall scan stopped before preview with status $_scan_rc"
+        log_error "Uninstall $_scan_stage failed (exit code $_scan_rc); nothing was removed"
+        log_error "Run 'mo --debug uninstall' again and inspect ~/Library/Logs/mole/mole_debug_session.log"
+        debug_log "Uninstall $_scan_stage stopped before preview with status $_scan_rc"
         return 1
     fi
 

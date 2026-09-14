@@ -3769,8 +3769,9 @@ INNER
         echo "$output"
         return 1
     }
-    [[ "$output" == *"Could not complete the uninstall scan; nothing was removed"* ]] || return 1
-    [[ "$output" == *"Uninstall scan stopped before preview with status 2"* ]]
+    [[ "$output" == *"Uninstall preflight scan failed (exit code 2); nothing was removed"* ]] || return 1
+    [[ "$output" == *"Run 'mo --debug uninstall' again and inspect ~/Library/Logs/mole/mole_debug_session.log"* ]] || return 1
+    [[ "$output" == *"Uninstall preflight scan stopped before preview with status 2"* ]]
 }
 
 # ---------------------------------------------------------------------------
