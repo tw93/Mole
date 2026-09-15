@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Mole</h1>
+  <h1>Molelosttalisman24</h1>
   <p><em>🐹 Clean, uninstall, analyze, optimize, and monitor your Mac. Free open-source CLI, plus a native Mac app.</em></p>
 </div>
 
