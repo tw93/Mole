@@ -2560,6 +2560,10 @@ _simctl_orphan_runtime_rows() {
         }'
 }
 
+# Review-only: prints a hint naming the owner command, never deletes. A
+# simctl timeout here (cold CoreSimulatorService) only costs this run its
+# hint, so it is a debug-logged skip rather than a run-wide cancellation.
+# Signals (>=128) still propagate so Ctrl-C stays sticky.
 check_orphaned_simulator_runtimes() {
     command -v xcrun > /dev/null 2>&1 || return 0
     [[ "${_MOLE_SIMCTL_RESOLUTION_STATUS:-}" == "ready" ]] || return 0
@@ -2567,16 +2571,16 @@ check_orphaned_simulator_runtimes() {
     local runtime_json="" device_json="" probe_status=0
     runtime_json=$(_run_simctl "$MOLE_TIMEOUT_PKG_LIST_SEC" runtime list -j 2> /dev/null) || probe_status=$?
     if [[ $probe_status -ne 0 ]]; then
-        [[ $probe_status -eq 124 || $probe_status -ge 128 ]] && return "$probe_status"
-        debug_log "Orphaned runtime probe failed (exit=$probe_status)"
+        [[ $probe_status -ge 128 ]] && return "$probe_status"
+        debug_log "Orphaned runtime review skipped: runtime probe failed (exit=$probe_status)"
         return 0
     fi
 
     probe_status=0
     device_json=$(_run_simctl "$MOLE_TIMEOUT_PKG_LIST_SEC" list devices -j 2> /dev/null) || probe_status=$?
     if [[ $probe_status -ne 0 ]]; then
-        [[ $probe_status -eq 124 || $probe_status -ge 128 ]] && return "$probe_status"
-        debug_log "Orphaned runtime device probe failed (exit=$probe_status)"
+        [[ $probe_status -ge 128 ]] && return "$probe_status"
+        debug_log "Orphaned runtime review skipped: device probe failed (exit=$probe_status)"
         return 0
     fi
     # Without a recognizable device payload there is no evidence of absence,
@@ -2801,11 +2805,17 @@ clean_dev_mobile() {
                     fi
                 fi # Close if ((unavailable_before == 0))
             fi     # End of simctl_available check
+            # The review reads the same service the listing above just failed
+            # to reach; two more bounded waits would not warm it any faster.
+            if [[ "$simctl_available" == "true" ]]; then
+                check_orphaned_simulator_runtimes || return $?
+            else
+                debug_log "Orphaned runtime review skipped: unavailable-simulator probe failed"
+            fi
         else
             echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode unavailable simulators · simctl could not be resolved"
             note_activity
         fi
-        check_orphaned_simulator_runtimes || return $?
     fi
     # Old iOS/watchOS/tvOS DeviceSupport versions (debug symbols for connected devices).
     # Each iOS version creates a 1-3 GB folder of debug symbols. Only the versions
