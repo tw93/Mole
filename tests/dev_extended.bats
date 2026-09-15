@@ -2087,6 +2087,66 @@ EOF
     [[ "$output" != *"UNEXPECTED_SLEEP"* ]] || return 1
 }
 
+@test "clean_dev_mobile skips the orphaned-runtime review after the unavailable probe times out twice" {
+    # Both listings talk to the same CoreSimulatorService. Once the
+    # unavailable-device probe has spent its warm-up retry and still timed
+    # out, the review's two further probes would wait on the same cold
+    # service and, before this guard, their 124 cancelled the whole run.
+    local tmp_bin
+    tmp_bin="$HOME/simctl-double-timeout-bin"
+    mkdir -p "$tmp_bin" "$HOME/Xcode.app/Contents/Developer"
+    cat > "$tmp_bin/xcrun" << 'XEOF'
+#!/bin/bash
+exit 0
+XEOF
+    chmod +x "$tmp_bin/xcrun"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$tmp_bin:$PATH" \
+        SIMCTL_CALL_LOG="$HOME/simctl-double-timeout.log" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+
+check_android_ndk() { :; }
+clean_xcode_documentation_cache() { :; }
+clean_xcode_system_coresimulator_caches() { :; }
+clean_xcode_xctest_devices() { :; }
+clean_xcode_device_support() { :; }
+safe_clean() { :; }
+note_activity() { :; }
+debug_log() { echo "DEBUG:$*"; }
+_resolve_simctl_developer_dir() {
+    _MOLE_SIMCTL_DEVELOPER_DIR="$HOME/Xcode.app/Contents/Developer"
+    _MOLE_SIMCTL_RESOLUTION_STATUS="ready"
+}
+
+_run_simctl() {
+    shift
+    printf '%s\n' "$*" >> "$SIMCTL_CALL_LOG"
+    return 124
+}
+
+clean_dev_mobile
+echo "AFTER_MOBILE"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Xcode unavailable simulators · simctl probe timed out"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"DEBUG:Orphaned runtime review skipped"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"AFTER_MOBILE"* ]] || { echo "$output"; return 1; }
+    # Probe plus one warm-up retry, then neither review listing runs. Later
+    # per-item guards still probe booted devices; that is their own budget.
+    [ "$(grep -c '^list devices unavailable$' "$HOME/simctl-double-timeout.log" | tr -d ' ')" -eq 2 ] || {
+        cat "$HOME/simctl-double-timeout.log"
+        return 1
+    }
+    ! grep -qE '^(runtime list -j|list devices -j)$' "$HOME/simctl-double-timeout.log" || {
+        cat "$HOME/simctl-double-timeout.log"
+        return 1
+    }
+}
+
 @test "clean_dev_mobile classifies simctl probe failures and sanitizes debug output (#1304)" {
     local tmp_bin
     tmp_bin="$HOME/simctl-classification-bin"

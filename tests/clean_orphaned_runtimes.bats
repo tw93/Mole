@@ -221,20 +221,34 @@ DEVICES='{
     [ -z "$output" ] || { echo "$output"; return 1; }
 }
 
-@test "a probe timeout propagates instead of reporting a false clean" {
-    run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+# $1 = exit status every simctl probe returns
+run_check_with_probe_status() {
+    run env PROJECT_ROOT="$PROJECT_ROOT" PROBE_STATUS="$1" /bin/bash --noprofile --norc <<'EOF'
 set -uo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 _MOLE_SIMCTL_RESOLUTION_STATUS=ready
 _MOLE_SIMCTL_DEVELOPER_DIR=/fake
 note_activity() { :; }
-run_with_timeout() { return 124; }
+debug_log() { echo "DEBUG:$*"; }
+run_with_timeout() { return "$PROBE_STATUS"; }
 check_orphaned_simulator_runtimes
 EOF
-    # A timed-out probe must reach the caller as a timeout, never as "no
-    # orphans found".
-    [ "$status" -eq 124 ] || { echo "status=$status $output"; return 1; }
+}
+
+@test "a probe timeout skips the review instead of cancelling the run" {
+    # The review only prints a hint. A cold CoreSimulatorService that
+    # outlives the probe budget must not end `mo clean` with exit 124 and
+    # skip every later section.
+    run_check_with_probe_status 124
+    [ "$status" -eq 0 ] || { echo "status=$status $output"; return 1; }
+    [[ "$output" == *"DEBUG:Orphaned runtime review skipped"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Orphaned simulator runtime"* ]] || { echo "$output"; return 1; }
+}
+
+@test "an interrupted probe still propagates the signal status" {
+    run_check_with_probe_status 130
+    [ "$status" -eq 130 ] || { echo "status=$status $output"; return 1; }
     [ -z "$output" ] || { echo "$output"; return 1; }
 }
 
