@@ -3171,6 +3171,49 @@ INNER
     [ "$status" -eq 0 ]
 }
 
+@test "select_apps_for_uninstall keeps menu line width within 80 columns for Yesterday items (#1573)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/app_selector.sh"
+
+long_app_name="Visual Studio Code - Insiders Edition Long Title For App"
+apps_data=("1700000000|/Applications/Test.app|$long_app_name|com.example.test|100MB|Yesterday|102400")
+selected_apps=()
+drain_pending_input() { :; }
+
+captured_option=""
+paginated_multi_select() {
+    captured_option="$2"
+    MOLE_SELECTION_RESULT=""
+    return 1
+}
+
+tput() { echo 80; }
+select_apps_for_uninstall || true
+
+normal_line="  ○ $captured_option"
+active_line="${ICON_ARROW} ○ $captured_option"
+
+# Standard 80-column terminal must not wrap or leave orphan 'ay' characters
+[[ ${#normal_line} -le 80 ]] || {
+    printf 'normal line length %d exceeds 80: %s\n' "${#normal_line}" "$normal_line" >&2
+    exit 1
+}
+[[ $(get_display_width "$normal_line") -le 80 ]] || {
+    printf 'normal line display width %d exceeds 80\n' "$(get_display_width "$normal_line")" >&2
+    exit 1
+}
+[[ $(get_display_width "$active_line") -le 80 ]] || {
+    printf 'active line display width %d exceeds 80\n' "$(get_display_width "$active_line")" >&2
+    exit 1
+}
+INNER
+
+    [ "$status" -eq 0 ]
+}
+
 @test "paginated menu can ignore one initial Enter for uninstall launch guard" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail

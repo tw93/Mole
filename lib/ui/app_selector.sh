@@ -15,6 +15,9 @@ format_app_display() {
     if [[ -z "$compact_last_used" || "$compact_last_used" == "Never" ]]; then
         compact_last_used="Unknown"
     fi
+    if [[ $(get_display_width "$compact_last_used") -gt 9 ]]; then
+        compact_last_used=$(truncate_by_display_width "$compact_last_used" 9)
+    fi
 
     # Format size
     local size_str="--"
@@ -31,8 +34,8 @@ format_app_display() {
         available_width=$max_name_width
     else
         # Fallback: calculate it (slower, but works for standalone calls)
-        # Fixed elements: "  ○ " (4) + " " (1) + size (9) + " | " (3) + max_last (7) = 24
-        local fixed_width=24
+        # Fixed elements: prefix (up to 6) + " " (1) + size (9) + " | " (3) + max_last (9) = 28
+        local fixed_width=28
         available_width=$((terminal_width - fixed_width))
 
         # Dynamic minimum for better spacing on wide terminals
@@ -45,8 +48,11 @@ format_app_display() {
             min_width=25
         fi
 
-        [[ $available_width -lt $min_width ]] && available_width=$min_width
         [[ $available_width -gt 60 ]] && available_width=60
+        [[ $available_width -lt $min_width ]] && available_width=$min_width
+        local max_available=$((terminal_width - fixed_width))
+        [[ $available_width -gt $max_available ]] && available_width=$max_available
+        ((available_width < 10)) && available_width=10
     fi
 
     # Truncate long names if needed (based on display width, not char count)
@@ -104,8 +110,8 @@ select_apps_for_uninstall() {
         local name_width=$(get_display_width "$display_name")
         [[ $name_width -gt $max_name_width ]] && max_name_width=$name_width
     done
-    # Constrain based on terminal width: fixed=24, min varies by terminal width, max=60
-    local fixed_width=24
+    # Constrain based on terminal width: fixed=28 (prefix 4-6 + space 1 + size 9 + sep 3 + max_last 9)
+    local fixed_width=28
     local available=$((terminal_width - fixed_width))
 
     # Dynamic minimum: wider terminals get larger minimum for better spacing
@@ -121,6 +127,7 @@ select_apps_for_uninstall() {
     [[ $max_name_width -lt $min_width ]] && max_name_width=$min_width
     [[ $available -lt $max_name_width ]] && max_name_width=$available
     [[ $max_name_width -gt 60 ]] && max_name_width=60
+    ((max_name_width < 10)) && max_name_width=10
 
     local -a menu_options=()
     local epochs_csv=""
