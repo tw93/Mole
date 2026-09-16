@@ -3171,6 +3171,27 @@ INNER
     [ "$status" -eq 0 ]
 }
 
+@test "uninstall selector rows stay within the terminal (#1573)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/app_selector.sh"
+fits() {
+    local w=$((5 + $(get_display_width "$2")))
+    [[ $w -le $1 && "$2" == *Yesterday* ]] || { echo "overflow cols=$1 total=$w" >&2; exit 1; }
+}
+name=$(printf 'A%.0s' {1..70})
+fits 40 "$(format_app_display "$name" "1023.5MB" "Yesterday" 40)"
+apps_data=("0|$HOME/X.app|$name|id|1023.5MB|Yesterday|1")
+tput() { echo 80; }
+drain_pending_input() { :; }
+paginated_multi_select() { shift; fits 80 "$1"; MOLE_SELECTION_RESULT="0"; }
+select_apps_for_uninstall
+INNER
+
+    [ "$status" -eq 0 ]
+}
+
 @test "paginated menu can ignore one initial Enter for uninstall launch guard" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail

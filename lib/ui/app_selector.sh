@@ -31,9 +31,12 @@ format_app_display() {
         available_width=$max_name_width
     else
         # Fallback: calculate it (slower, but works for standalone calls)
-        # Fixed elements: "  ○ " (4) + " " (1) + size (9) + " | " (3) + max_last (7) = 24
-        local fixed_width=24
-        available_width=$((terminal_width - fixed_width))
+        # Prefix "➤ ○ " is 4 columns, plus 1 when ○ is East Asian Ambiguous (CJK).
+        # Then " " (1) + size %9s (9) + " | " (3) + last-used max 9 ("Yesterday"/"This year").
+        # 5 + 1 + 9 + 3 + 9 = 27
+        local fixed_width=27
+        local available=$((terminal_width - fixed_width))
+        available_width=$available
 
         # Dynamic minimum for better spacing on wide terminals
         local min_width=18
@@ -46,6 +49,7 @@ format_app_display() {
         fi
 
         [[ $available_width -lt $min_width ]] && available_width=$min_width
+        [[ $available -lt $available_width ]] && available_width=$available
         [[ $available_width -gt 60 ]] && available_width=60
     fi
 
@@ -104,8 +108,8 @@ select_apps_for_uninstall() {
         local name_width=$(get_display_width "$display_name")
         [[ $name_width -gt $max_name_width ]] && max_name_width=$name_width
     done
-    # Constrain based on terminal width: fixed=24, min varies by terminal width, max=60
-    local fixed_width=24
+    # Constrain based on terminal width: fixed=27, min varies by terminal width, max=60
+    local fixed_width=27
     local available=$((terminal_width - fixed_width))
 
     # Dynamic minimum: wider terminals get larger minimum for better spacing
