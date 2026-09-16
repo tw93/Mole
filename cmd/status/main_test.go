@@ -442,13 +442,13 @@ func TestMetricsSnapshotFieldsHaveCollectionClassifications(t *testing.T) {
 	}
 
 	typ := reflect.TypeFor[MetricsSnapshot]()
-	for i := 0; i < typ.NumField(); i++ {
-		name := typ.Field(i).Name
-		if _, ok := classified[name]; !ok {
-			t.Fatalf("MetricsSnapshot.%s has no collection classification", name)
+	fields := reflect.VisibleFields(typ)
+	for _, field := range fields {
+		if _, ok := classified[field.Name]; !ok {
+			t.Fatalf("MetricsSnapshot.%s has no collection classification", field.Name)
 		}
 	}
-	if len(classified) != typ.NumField() {
-		t.Fatalf("field classification count = %d, want %d", len(classified), typ.NumField())
+	if len(classified) != len(fields) {
+		t.Fatalf("field classification count = %d, want %d", len(classified), len(fields))
 	}
 }
