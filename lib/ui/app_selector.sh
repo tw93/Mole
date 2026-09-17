@@ -19,9 +19,14 @@ format_app_display() {
         compact_last_used=$(truncate_by_display_width "$compact_last_used" 9)
     fi
 
-    # Format size
+    # Format size. The selector column is %9s; list/json keep the long
+    # Steam-managed label, but that 19-column string wraps the menu row.
     local size_str="--"
-    [[ "$size" != "0" && "$size" != "" && "$size" != "Unknown" && "$size" != "N/A" && "$size" != "--" ]] && size_str="$size"
+    if [[ "$size" == "N/A (Steam-managed)" ]]; then
+        size_str="Steam"
+    elif [[ "$size" != "0" && "$size" != "" && "$size" != "Unknown" && "$size" != "N/A" && "$size" != "--" ]]; then
+        size_str="$size"
+    fi
 
     # Calculate available width for app name based on terminal width
     # Accept pre-calculated max_name_width (5th param) to avoid recalculation in loops
@@ -36,7 +41,8 @@ format_app_display() {
         # Fallback: calculate it (slower, but works for standalone calls)
         # Fixed elements: prefix (up to 6) + " " (1) + size (9) + " | " (3) + max_last (9) = 28
         local fixed_width=28
-        available_width=$((terminal_width - fixed_width))
+        local max_available=$((terminal_width - fixed_width))
+        available_width=$max_available
 
         # Dynamic minimum for better spacing on wide terminals
         local min_width=18
@@ -48,11 +54,11 @@ format_app_display() {
             min_width=25
         fi
 
-        [[ $available_width -gt 60 ]] && available_width=60
         [[ $available_width -lt $min_width ]] && available_width=$min_width
-        local max_available=$((terminal_width - fixed_width))
+        # min_width must not push the row past the reserved budget.
         [[ $available_width -gt $max_available ]] && available_width=$max_available
-        ((available_width < 10)) && available_width=10
+        [[ $available_width -gt 60 ]] && available_width=60
+        ((available_width < 1)) && available_width=1
     fi
 
     # Truncate long names if needed (based on display width, not char count)
@@ -127,7 +133,7 @@ select_apps_for_uninstall() {
     [[ $max_name_width -lt $min_width ]] && max_name_width=$min_width
     [[ $available -lt $max_name_width ]] && max_name_width=$available
     [[ $max_name_width -gt 60 ]] && max_name_width=60
-    ((max_name_width < 10)) && max_name_width=10
+    ((max_name_width < 1)) && max_name_width=1
 
     local -a menu_options=()
     local epochs_csv=""

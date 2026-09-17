@@ -3214,6 +3214,74 @@ INNER
     [ "$status" -eq 0 ]
 }
 
+@test "select_apps_for_uninstall keeps Steam and Yesterday rows within 80 columns (#1573)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/app_selector.sh"
+
+long_app_name="Visual Studio Code - Insiders Edition Long Title For App"
+apps_data=("1700000000|/Applications/SteamGame.app|$long_app_name|com.example.steam|N/A (Steam-managed)|Yesterday|95")
+selected_apps=()
+drain_pending_input() { :; }
+
+captured_option=""
+paginated_multi_select() {
+    captured_option="$2"
+    MOLE_SELECTION_RESULT=""
+    return 1
+}
+
+tput() { echo 80; }
+select_apps_for_uninstall || true
+
+normal_line="  ○ $captured_option"
+active_line="${ICON_ARROW} ○ $captured_option"
+
+[[ "$captured_option" == *"    Steam |"* ]] || {
+    printf 'selector missing compact Steam label: %s\n' "$captured_option" >&2
+    exit 1
+}
+[[ "$captured_option" != *"N/A (Steam-managed)"* ]] || {
+    printf 'selector still used the 19-column Steam label: %s\n' "$captured_option" >&2
+    exit 1
+}
+[[ $(get_display_width "$normal_line") -le 80 ]] || {
+    printf 'normal line display width %d exceeds 80: %s\n' "$(get_display_width "$normal_line")" "$normal_line" >&2
+    exit 1
+}
+[[ $(get_display_width "$active_line") -le 80 ]] || {
+    printf 'active line display width %d exceeds 80: %s\n' "$(get_display_width "$active_line")" "$active_line" >&2
+    exit 1
+}
+INNER
+
+    [ "$status" -eq 0 ]
+}
+
+@test "format_app_display keeps Yesterday rows inside a 40-column terminal (#1573)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/app_selector.sh"
+
+name=$(printf 'A%.0s' {1..70})
+row=$(format_app_display "$name" "1023.5MB" "Yesterday" 40)
+normal_line="  ○ $row"
+[[ "$row" == *Yesterday* ]] || {
+    printf 'missing Yesterday: %s\n' "$row" >&2
+    exit 1
+}
+[[ $(get_display_width "$normal_line") -le 40 ]] || {
+    printf '40-col overflow width=%d: %s\n' "$(get_display_width "$normal_line")" "$normal_line" >&2
+    exit 1
+}
+INNER
+
+    [ "$status" -eq 0 ]
+}
+
 @test "paginated menu can ignore one initial Enter for uninstall launch guard" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail

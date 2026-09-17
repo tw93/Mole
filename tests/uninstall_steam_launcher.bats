@@ -215,8 +215,19 @@ select_apps_for_uninstall
 EOF
 
     [ "$status" -ne 0 ]
-    [[ "$output" == *"N/A (Steam-managed)"* ]]
-    [[ "$output" != *"93KB"* ]]
+    # Selector column is 9 wide; the list/json label is kept off this row.
+    [[ "$output" == *"    Steam |"* ]] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" != *"N/A (Steam-managed)"* ]] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" != *"93KB"* ]] || {
+        echo "$output"
+        return 1
+    }
 }
 
 @test "uninstall --list reports Steam launchers as Steam-managed" {
