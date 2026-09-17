@@ -14,7 +14,37 @@ setup_file() {
     MOLE_TEST_MODE=1
     export MOLE_TEST_MODE
 
+    # clean_browsers reaches the Chrome, Edge, and Brave old-version cleaners,
+    # which default to the real /Applications bundles. Cases that stub pgrep as
+    # "not running" would otherwise delete a staged browser version on the Mac
+    # running the suite, including the one a live browser is still using.
+    MOLE_CHROME_APP_PATHS="$HOME/Applications/Google Chrome.app"
+    MOLE_EDGE_APP_PATHS="$HOME/Applications/Microsoft Edge.app"
+    MOLE_BRAVE_APP_PATHS="$HOME/Applications/Brave Browser.app"
+    export MOLE_CHROME_APP_PATHS MOLE_EDGE_APP_PATHS MOLE_BRAVE_APP_PATHS
+
     mkdir -p "$HOME"
+}
+
+@test "browser old-version cleaners stay inside the fixture HOME" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+_clean_chromium_old_versions() {
+    shift 3
+    printf 'APP:%s\n' "$@"
+}
+clean_chrome_old_versions
+clean_edge_old_versions
+clean_brave_old_versions
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"APP:$HOME/Applications/Google Chrome.app"* ]] || return 1
+    [[ "$output" == *"APP:$HOME/Applications/Microsoft Edge.app"* ]] || return 1
+    [[ "$output" == *"APP:$HOME/Applications/Brave Browser.app"* ]] || return 1
+    [[ "$output" != *"APP:/Applications/"* ]]
 }
 
 teardown_file() {
