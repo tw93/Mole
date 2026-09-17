@@ -700,6 +700,343 @@ clean_chrome_old_versions() {
         is_google_chrome_running "${app_paths[@]}"
 }
 
+# Chrome installs every extension update as a new Extensions/<id>/<version>_<n>
+# directory. Only its garbage collector removes the superseded one, once, 30s
+# after a profile loads (extension_garbage_collector.cc), so a long session keeps
+# a full copy of every extension that updated. The keep-set here is a superset
+# of that collector's: prefs `path` (the loaded version) and
+# `idle_install_info.path` (an update waiting for the extension to go idle) from
+# both prefs files, plus every directory of the highest version. The highest
+# version alone is not enough: an update that is waiting for idle leaves prefs
+# pointing at the lower directory Chrome is still running. Anything the plan
+# cannot read or prove leaves that extension or profile alone.
+_MOLE_CHROME_EXT_ID_RE='^[a-p]{32}$'
+_MOLE_CHROME_EXT_VERSION_DIR_RE='^[0-9]{1,10}(\.[0-9]{1,10}){0,3}_[0-9]{1,2}$'
+_MOLE_CHROME_EXT_CANDIDATES=()
+_MOLE_CHROME_EXT_PROFILES=()
+_MOLE_CHROME_EXT_TARGETS=()
+_MOLE_CHROME_EXT_PROFILE_TARGETS=()
+_MOLE_CHROME_EXT_PROFILE_STAMPS=()
+_MOLE_CHROME_EXT_SETTINGS=()
+_MOLE_CHROME_EXT_VDIRS=()
+_MOLE_CHROME_EXT_BELOW=()
+_MOLE_CHROME_EXT_REF=""
+_MOLE_CHROME_EXT_KEY=""
+
+# SingletonLock ("<host>-<pid>") stays in the user-data dir for the whole session
+# of any Chromium build using it, so it counts as running even when pgrep finds
+# no Google Chrome. A crash leaves it behind: a local lock whose pid is gone is
+# reported as unknown, so the skip is visible instead of silently deferred.
+_chrome_extension_owner_state() {
+    local lock="$HOME/Library/Application Support/Google/Chrome/SingletonLock"
+    if [[ -e "$lock" || -L "$lock" ]]; then
+        local target=""
+        target=$(readlink "$lock" 2> /dev/null) || return 2
+        [[ "${target##*-}" =~ ^[0-9]+$ ]] || return 2
+        ! kill -0 "${target##*-}" 2> /dev/null || return 0
+        [[ "${target%-*}" == "${HOSTNAME:-}" ]] || return 0
+        return 2
+    fi
+    is_google_chrome_running
+}
+
+# Sortable key for a version directory name: four zero-padded components, with
+# missing components as 0 and the _<n> install counter ignored.
+_chrome_extension_version_key() {
+    local -a parts=()
+    IFS=. read -ra parts <<< "${1%_*}"
+    _MOLE_CHROME_EXT_KEY=""
+    local i part
+    for ((i = 0; i < 4; i++)); do
+        part="${parts[i]:-0}"
+        printf -v part '%010d' "$((10#$part))"
+        _MOLE_CHROME_EXT_KEY+="$part"
+    done
+}
+
+# Fill _MOLE_CHROME_EXT_VDIRS with one extension's version directory names.
+# Returns 1 for a symlink or a directory name Chrome does not create.
+_chrome_extension_version_dirs() {
+    local ext_dir="$1"
+    _MOLE_CHROME_EXT_VDIRS=()
+    local child name
+    for child in "$ext_dir"/*; do
+        [[ -e "$child" || -L "$child" ]] || continue
+        [[ ! -L "$child" ]] || return 1
+        [[ -d "$child" ]] || continue
+        name="${child##*/}"
+        [[ "$name" =~ $_MOLE_CHROME_EXT_VERSION_DIR_RE ]] || return 1
+        _MOLE_CHROME_EXT_VDIRS+=("$name")
+    done
+}
+
+# Fill _MOLE_CHROME_EXT_BELOW with the _MOLE_CHROME_EXT_VDIRS names that are
+# neither in the newline-delimited keep list nor of the highest version.
+_chrome_extension_below_highest() {
+    local keep="$1"
+    _MOLE_CHROME_EXT_BELOW=()
+    local name highest=""
+    for name in "${_MOLE_CHROME_EXT_VDIRS[@]}"; do
+        _chrome_extension_version_key "$name"
+        [[ ! "$_MOLE_CHROME_EXT_KEY" > "$highest" ]] || highest="$_MOLE_CHROME_EXT_KEY"
+    done
+    for name in "${_MOLE_CHROME_EXT_VDIRS[@]}"; do
+        [[ "$keep" != *$'\n'"$name"$'\n'* ]] || continue
+        _chrome_extension_version_key "$name"
+        [[ "$_MOLE_CHROME_EXT_KEY" != "$highest" ]] || continue
+        _MOLE_CHROME_EXT_BELOW+=("$name")
+    done
+    return 0
+}
+
+# Filesystem-only pass, before any prefs read: every version dir below its
+# extension's highest version, and the profiles holding one.
+_chrome_extension_collect_candidates() {
+    local chrome_root="$1"
+    _MOLE_CHROME_EXT_CANDIDATES=()
+    _MOLE_CHROME_EXT_PROFILES=()
+    local profile_dir ext_dir name found
+    for profile_dir in "$chrome_root"/*; do
+        [[ -d "$profile_dir/Extensions" && ! -L "$profile_dir" && ! -L "$profile_dir/Extensions" ]] || continue
+        found=false
+        for ext_dir in "$profile_dir/Extensions"/*; do
+            [[ "${ext_dir##*/}" =~ $_MOLE_CHROME_EXT_ID_RE && -d "$ext_dir" && ! -L "$ext_dir" ]] || continue
+            _chrome_extension_version_dirs "$ext_dir" || continue
+            [[ ${#_MOLE_CHROME_EXT_VDIRS[@]} -ge 2 ]] || continue
+            _chrome_extension_below_highest $'\n'
+            [[ ${#_MOLE_CHROME_EXT_BELOW[@]} -gt 0 ]] || continue
+            for name in "${_MOLE_CHROME_EXT_BELOW[@]}"; do
+                _MOLE_CHROME_EXT_CANDIDATES+=("$ext_dir/$name")
+            done
+            found=true
+        done
+        [[ "$found" != "true" ]] || _MOLE_CHROME_EXT_PROFILES+=("$profile_dir")
+    done
+}
+
+# dev:inode:size:mtime:ctime of both prefs files. Chrome replaces them atomically,
+# so any write, or a permission change, between planning and removal changes it.
+_chrome_extension_prefs_stamp() {
+    local profile_dir="$1"
+    local -a files=()
+    local stamp="" name ids=""
+    for name in "Preferences" "Secure Preferences"; do
+        [[ -e "$profile_dir/$name" || -L "$profile_dir/$name" ]] || continue
+        files+=("$profile_dir/$name")
+        stamp+="$name;"
+    done
+    if [[ ${#files[@]} -gt 0 ]]; then
+        ids=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+            "$STAT_BSD" -f '%d:%i:%z:%m:%c' "${files[@]}" < /dev/null 2> /dev/null) || return $?
+    fi
+    printf '%s\n' "$stamp${ids//$'\n'/;}"
+}
+
+# Load extensions.settings from each prefs file into _MOLE_CHROME_EXT_SETTINGS as
+# JSON (Secure Preferences in branded Chrome, Preferences in other Chromium
+# builds). Each file is read once, so a later read failure cannot pass for a
+# missing reference. Returns 1 when a file exists but does not read and parse.
+_chrome_extension_load_settings() {
+    local profile_dir="$1" deadline="$2"
+    _MOLE_CHROME_EXT_SETTINGS=()
+    local name file probe_timeout settings rc
+    for name in "Preferences" "Secure Preferences"; do
+        file="$profile_dir/$name"
+        [[ -e "$file" || -L "$file" ]] || continue
+        [[ -f "$file" && ! -L "$file" ]] || return 1
+        probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline") || return $?
+        rc=0
+        settings=$(run_with_timeout "$probe_timeout" plutil -extract extensions.settings json \
+            -o - "$file" < /dev/null 2> /dev/null) || rc=$?
+        if [[ $rc -eq 0 ]]; then
+            [[ "$settings" == "{"* ]] || return 1
+            _MOLE_CHROME_EXT_SETTINGS+=("$settings")
+            continue
+        fi
+        [[ $rc -eq 1 ]] || return "$rc"
+        # plutil exits 1 for both a missing key and an unreadable file; only a
+        # clean parse of the whole file proves the key is absent.
+        probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline") || return $?
+        run_with_timeout "$probe_timeout" plutil -convert json -o /dev/null \
+            "$file" < /dev/null > /dev/null 2>&1 || return $?
+    done
+    [[ ${#_MOLE_CHROME_EXT_SETTINGS[@]} -gt 0 ]]
+}
+
+# Read <id>.<key> from one loaded settings JSON into _MOLE_CHROME_EXT_REF as a
+# version dir name. Returns 0 present, 1 absent, 3 when the value is not
+# "<id>/<version dir>", or the timeout/signal status. plutil prints its "no value"
+# error on stdout, so only the exit status decides presence. The JSON is already
+# in memory, so there is no disk read to bound per call: the plan deadline is
+# checked instead, and run_with_timeout's ~0.1s floor per call would exhaust it.
+_chrome_extension_read_ref() {
+    local settings="$1" key="$2" id="$3" deadline="$4"
+    _MOLE_CHROME_EXT_REF=""
+    local value rc=0
+    _mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline" > /dev/null || return $?
+    value=$(printf '%s' "$settings" | plutil -extract "$id.$key" raw -o - - 2> /dev/null) || rc=$?
+    [[ $rc -eq 0 ]] || return "$rc"
+    [[ "$value" == "$id/"* ]] || return 3
+    value="${value#"$id"/}"
+    [[ "$value" =~ $_MOLE_CHROME_EXT_VERSION_DIR_RE ]] || return 3
+    _MOLE_CHROME_EXT_REF="$value"
+}
+
+# Append one extension's removable version dirs to
+# _MOLE_CHROME_EXT_PROFILE_TARGETS. An extension without a readable, existing
+# reference is left alone.
+_chrome_extension_plan_one() {
+    local ext_dir="$1" deadline="$2"
+    local id="${ext_dir##*/}"
+    _chrome_extension_version_dirs "$ext_dir" || return 0
+    [[ ${#_MOLE_CHROME_EXT_VDIRS[@]} -ge 2 ]] || return 0
+    _chrome_extension_below_highest $'\n'
+    [[ ${#_MOLE_CHROME_EXT_BELOW[@]} -gt 0 ]] || return 0
+
+    local keep=$'\n' settings key rc
+    for settings in "${_MOLE_CHROME_EXT_SETTINGS[@]}"; do
+        for key in path idle_install_info.path; do
+            rc=0
+            _chrome_extension_read_ref "$settings" "$key" "$id" "$deadline" || rc=$?
+            [[ $rc -ne 1 ]] || continue
+            [[ $rc -ne 3 ]] || return 0
+            [[ $rc -eq 0 ]] || return "$rc"
+            [[ -d "$ext_dir/$_MOLE_CHROME_EXT_REF" && ! -L "$ext_dir/$_MOLE_CHROME_EXT_REF" ]] || return 0
+            keep+="$_MOLE_CHROME_EXT_REF"$'\n'
+        done
+    done
+    [[ "$keep" != $'\n' ]] || return 0
+
+    _chrome_extension_below_highest "$keep"
+    local name
+    if [[ ${#_MOLE_CHROME_EXT_BELOW[@]} -gt 0 ]]; then
+        for name in "${_MOLE_CHROME_EXT_BELOW[@]}"; do
+            _MOLE_CHROME_EXT_PROFILE_TARGETS+=("$ext_dir/$name")
+        done
+    fi
+    return 0
+}
+
+# Plan one profile. Its targets count only when every extension was read and the
+# prefs did not change while reading; otherwise the whole profile is left alone.
+_chrome_extension_plan_profile() {
+    local profile_dir="$1" deadline="$2"
+    _MOLE_CHROME_EXT_PROFILE_TARGETS=()
+    local stamp=""
+    stamp=$(_chrome_extension_prefs_stamp "$profile_dir") || return $?
+    _chrome_extension_load_settings "$profile_dir" "$deadline" || return $?
+
+    local ext_dir
+    for ext_dir in "$profile_dir/Extensions"/*; do
+        [[ "${ext_dir##*/}" =~ $_MOLE_CHROME_EXT_ID_RE && -d "$ext_dir" && ! -L "$ext_dir" ]] || continue
+        _chrome_extension_plan_one "$ext_dir" "$deadline" || return $?
+    done
+
+    local current=""
+    current=$(_chrome_extension_prefs_stamp "$profile_dir") || return $?
+    [[ "$current" == "$stamp" ]] || return 1
+    [[ ${#_MOLE_CHROME_EXT_PROFILE_TARGETS[@]} -gt 0 ]] || return 0
+    _MOLE_CHROME_EXT_TARGETS+=("${_MOLE_CHROME_EXT_PROFILE_TARGETS[@]}")
+    _MOLE_CHROME_EXT_PROFILE_STAMPS+=("$profile_dir|$stamp")
+}
+
+# Plan every candidate profile under one budget. A timeout or signal discards
+# the whole plan rather than acting on part of it.
+_chrome_extension_plan_targets() {
+    local deadline=$((SECONDS + MOLE_TIMEOUT_DISK_VERIFY_SEC))
+    _MOLE_CHROME_EXT_TARGETS=()
+    _MOLE_CHROME_EXT_PROFILE_STAMPS=()
+    local profile_dir rc
+    for profile_dir in "${_MOLE_CHROME_EXT_PROFILES[@]}"; do
+        rc=0
+        _chrome_extension_plan_profile "$profile_dir" "$deadline" || rc=$?
+        if [[ $rc -eq 124 || $rc -ge 128 ]]; then
+            _MOLE_CHROME_EXT_TARGETS=()
+            _MOLE_CHROME_EXT_PROFILE_STAMPS=()
+            return "$rc"
+        fi
+        [[ $rc -eq 0 ]] || debug_log "Chrome extension versions: left $profile_dir alone (prefs unreadable or changed)"
+    done
+    return 0
+}
+
+# Final check per directory: Chrome still closed, the profile's prefs unchanged
+# since planning, and the removal bound to the directory that was planned.
+_chrome_extension_delete_guard_allows() {
+    local path="$1"
+    mole_clean_process_guard _chrome_extension_owner_state "Chrome started" || return 1
+
+    local profile_dir="${path%/Extensions/*}"
+    local planned="" entry
+    if [[ ${#_MOLE_CHROME_EXT_PROFILE_STAMPS[@]} -gt 0 ]]; then
+        for entry in "${_MOLE_CHROME_EXT_PROFILE_STAMPS[@]}"; do
+            [[ "${entry%%|*}" != "$profile_dir" ]] || planned="${entry#*|}"
+        done
+    fi
+    local current="" rc=0
+    current=$(_chrome_extension_prefs_stamp "$profile_dir") || rc=$?
+    [[ $rc -ne 124 && $rc -lt 128 ]] || return "$rc"
+    if [[ $rc -ne 0 || -z "$planned" || "$current" != "$planned" ]]; then
+        _MOLE_CLEAN_GUARD_REASON="preferences changed"
+        return 1
+    fi
+
+    if [[ -L "$path" || ! -d "$path" ]] || ! _mole_snapshot_path_identity "$path"; then
+        _MOLE_CLEAN_GUARD_REASON="target changed"
+        return 1
+    fi
+    _MOLE_SAFE_CLEAN_BOUND_PATH="$path"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+    _MOLE_SAFE_CLEAN_EXPECTED_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+    return 0
+}
+
+# Remove superseded Chrome extension version directories (see the note above).
+clean_chrome_extension_old_versions() {
+    local chrome_root="$HOME/Library/Application Support/Google/Chrome"
+    local label="Chrome old extension versions"
+    [[ -d "$chrome_root" && ! -L "$chrome_root" ]] || return 0
+    _chrome_extension_collect_candidates "$chrome_root"
+    [[ ${#_MOLE_CHROME_EXT_CANDIDATES[@]} -gt 0 ]] || return 0
+    mole_cleanup_targets_exist "${_MOLE_CHROME_EXT_CANDIDATES[@]}" || return 0
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard _chrome_extension_owner_state "Chrome started"; then
+        if [[ "$_MOLE_CLEAN_GUARD_REASON" == "process state unknown" ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} ${label} · skipped (process state unknown)"
+            note_activity
+        else
+            mole_defer_cleanup_family "Chrome"
+        fi
+        return 0
+    fi
+
+    local plan_rc=0
+    _chrome_extension_plan_targets || plan_rc=$?
+    if [[ $plan_rc -ge 128 ]]; then
+        _mole_record_clean_cancellation "$plan_rc"
+        return "$plan_rc"
+    elif [[ $plan_rc -eq 124 ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${label} · skipped (preferences read timed out)"
+        note_activity
+        return 0
+    fi
+    [[ ${#_MOLE_CHROME_EXT_TARGETS[@]} -gt 0 ]] || return 0
+
+    local guarded_rc=0
+    safe_clean_guarded _chrome_extension_delete_guard_allows \
+        "${_MOLE_CHROME_EXT_TARGETS[@]}" "$label" || guarded_rc=$?
+    [[ $guarded_rc -eq 75 ]] || return "$guarded_rc"
+    if [[ "$_MOLE_CLEAN_GUARD_REASON" == "Chrome started" ]]; then
+        mole_defer_cleanup_family "Chrome"
+    else
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${label} · stopped (${_MOLE_CLEAN_GUARD_REASON})"
+        note_activity
+    fi
+    return 0
+}
+
 # Remove old Microsoft Edge versions while keeping Current.
 clean_edge_old_versions() {
     local -a app_paths
@@ -1895,6 +2232,7 @@ clean_browsers() {
     safe_clean ~/Library/Caches/com.kagi.kagimacOS/* "Orion cache"
     safe_clean ~/Library/Caches/zen/* "Zen cache"
     clean_chrome_old_versions || return $?
+    clean_chrome_extension_old_versions || return $?
     clean_edge_old_versions || return $?
     clean_edge_updater_old_versions || return $?
     clean_brave_old_versions || return $?
