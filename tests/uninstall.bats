@@ -4337,7 +4337,11 @@ INNER
     [[ "$output" == *"RC=1"* ]] || return 1
     [[ "$output" == *"Homebrew ownership check"* ]] || return 1
     [[ "$output" == *"nothing was removed"* ]] || return 1
-    [[ "$output" == *"brew list --cask"* ]] || return 1
+    [[ "$output" == *"'TimedOut' matches a Homebrew cask brew cannot read"* ]] || return 1
+    [[ "$output" == *"brew info --cask"* ]] || return 1
+    # A cask brew cannot parse still lists cleanly, so pointing the user at
+    # `brew list --cask` diagnoses nothing.
+    [[ "$output" != *"brew list --cask"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_SIZE"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_DISCOVERY"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_TEARDOWN"* ]] || return 1

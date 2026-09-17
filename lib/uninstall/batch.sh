@@ -1480,6 +1480,10 @@ _batch_scan_app_details() {
             if [[ $cask_detect_rc -eq 124 || $cask_detect_rc -ge 128 ]]; then
                 return "$cask_detect_rc"
             elif [[ $cask_detect_rc -ne 0 && $cask_detect_rc -ne 1 ]]; then
+                # A cask brew cannot parse still lists cleanly under
+                # `brew list --cask`, so the app name is the only handle the
+                # abort message can give the user on which selection failed.
+                _batch_scan_app_name="$app_name"
                 return "$cask_detect_rc"
             fi
             if [[ -n "$detected_cask" ]]; then
@@ -2585,6 +2589,7 @@ batch_uninstall_applications() {
     local -a app_details=()
 
     local _batch_scan_stage="application inspection"
+    local _batch_scan_app_name=""
     local _scan_rc=0
     _batch_scan_app_details || _scan_rc=$?
     if [[ $_batch_interrupted -eq 1 ]]; then
@@ -2603,7 +2608,7 @@ batch_uninstall_applications() {
         _abort_uninstall_batch
         log_error "Could not finish the uninstall scan ($_batch_scan_stage, exit $_scan_rc); nothing was removed"
         if [[ "$_batch_scan_stage" == "Homebrew ownership check" ]]; then
-            log_info "Run brew list --cask to check Homebrew, then retry mo uninstall --debug"
+            log_info "'$_batch_scan_app_name' matches a Homebrew cask brew cannot read; run brew info --cask <cask>, fix or untap it, then retry mo uninstall --debug"
         else
             log_info "Run mo uninstall --debug to see which scan failed"
         fi
