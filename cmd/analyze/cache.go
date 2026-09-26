@@ -26,7 +26,8 @@ import (
 // stale on-disk cache entries are rejected instead of silently reused.
 // v2: analyze deduplicates hardlinked files to match `du`.
 // v3: ordinary Parallels VM storage is included instead of skipped by name.
-const cacheSchemaVersion = 3
+// v4: incomplete scans are no longer authoritative directory measurements.
+const cacheSchemaVersion = 4
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`
@@ -649,6 +650,9 @@ func saveCacheToDisk(path string, result scanResult) error {
 }
 
 func saveCacheToDiskWithOptions(publication *scanPublication, path string, result scanResult, needsRefresh bool) error {
+	if result.State != scanComplete {
+		return nil
+	}
 	if err := publication.ctx.Err(); err != nil {
 		return err
 	}

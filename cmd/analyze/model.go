@@ -10,7 +10,41 @@ import (
 	"time"
 )
 
+// scanState describes measurement coverage within Mole's scan filters, not an
+// atomic filesystem snapshot. The zero value represents a complete measurement.
+type scanState uint8
+
+const (
+	scanComplete scanState = iota
+	scanPartial
+	scanUnavailable
+)
+
+func (s scanState) String() string {
+	switch s {
+	case scanPartial:
+		return "partial"
+	case scanUnavailable:
+		return "unavailable"
+	default:
+		return "complete"
+	}
+}
+
+// measurementState preserves the distinction between a useful partial size and
+// a failed probe that measured nothing. Callers must retain the returned bytes.
+func measurementState(size int64, err error) scanState {
+	if err == nil {
+		return scanComplete
+	}
+	if size > 0 {
+		return scanPartial
+	}
+	return scanUnavailable
+}
+
 type dirEntry struct {
+	State      scanState
 	Name       string
 	Path       string
 	Size       int64
@@ -25,6 +59,7 @@ type fileEntry struct {
 }
 
 type scanResult struct {
+	State      scanState
 	Entries    []dirEntry
 	LargeFiles []fileEntry
 	TotalSize  int64

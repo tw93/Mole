@@ -3387,7 +3387,11 @@ func TestCalculateDirSizeFastHighFanoutCompletes(t *testing.T) {
 
 	done := make(chan int64, 1)
 	go func() {
-		done <- calculateDirSizeFast(context.Background(), root, &files, &dirs, &bytes, current)
+		size, err := calculateDirSizeFast(context.Background(), root, &files, &dirs, &bytes, current)
+		if err != nil {
+			t.Errorf("calculateDirSizeFast: %v", err)
+		}
+		done <- size
 	}()
 
 	select {

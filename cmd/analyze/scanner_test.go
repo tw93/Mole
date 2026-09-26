@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -133,5 +134,62 @@ func BenchmarkGetDirectorySizeFromDuWithExcludeHomeLibrary(b *testing.B) {
 		if size <= 0 {
 			b.Fatalf("expected non-zero size, got %d", size)
 		}
+	}
+}
+
+// A readable root must not turn an unreadable descendant into a measured zero.
+func TestScanUnreadableDescendantPreservesCoverageAndGoodCache(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	child := filepath.Join(root, "child")
+	locked := filepath.Join(child, "locked")
+	writeFileWithSize(t, filepath.Join(child, "readable"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	scan := func() scanResult {
+		t.Helper()
+		var files, dirs, bytes int64
+		current := &atomic.Value{}
+		current.Store("")
+		result, err := scanPathConcurrentAllEntries(context.Background(), root, &files, &dirs, &bytes, current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	good := scan()
+	if good.State != scanComplete {
+		t.Fatalf("initial scan state = %s", good.State)
+	}
+	if err := saveCacheToDisk(root, good); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	partial := scan()
+	if partial.State != scanPartial || partial.TotalSize != 4096 || partial.TotalFiles != 1 {
+		t.Fatalf("partial result lost coverage or readable bytes: %+v", partial)
+	}
+	if len(partial.Entries) != 1 || partial.Entries[0].State != scanPartial {
+		t.Fatalf("child coverage not propagated: %+v", partial.Entries)
+	}
+	if err := saveCacheToDisk(root, partial); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := loadCacheFromDisk(root)
+	if err != nil || cached.TotalSize != good.TotalSize {
+		t.Fatalf("partial scan replaced good cache: %+v, %v", cached, err)
+	}
+	if err := os.Chmod(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recovered := scan()
+	if recovered.State != scanComplete || recovered.TotalSize != good.TotalSize {
+		t.Fatalf("recovery: %+v", recovered)
 	}
 }
