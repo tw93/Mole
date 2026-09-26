@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -26,13 +27,18 @@ func (s scanState) String() string {
 		return "partial"
 	case scanUnavailable:
 		return "unavailable"
-	default:
+	case scanComplete:
 		return "complete"
+	default:
+		return "unknown"
 	}
 }
 
 // MarshalText gives the existing JSON boundary the same typed coverage state.
 func (s scanState) MarshalText() ([]byte, error) {
+	if s > scanUnavailable {
+		return nil, fmt.Errorf("invalid scan state: %d", s)
+	}
 	return []byte(s.String()), nil
 }
 
