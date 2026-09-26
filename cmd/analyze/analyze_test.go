@@ -3635,6 +3635,50 @@ func TestPartialScanCoverageSurvivesEntryLimit(t *testing.T) {
 	t.Fatal("JSON omitted unavailable entry")
 }
 
+func TestPartialNavigationRefreshRecoversCoverage(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	readable := filepath.Join(root, "readable")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(readable, "file"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	m := newModel(root, false)
+	updated, _ := m.Update(runScanResultCmd(t, m.scanFreshCmd(root)))
+	m = updated.(model)
+	if m.scanState != scanPartial || len(m.entries) != 2 {
+		t.Fatalf("initial scan did not exercise missing coverage: %+v", m.entries)
+	}
+	m.selectEntryPath(readable)
+	updated, cmd := m.enterSelectedDir()
+	m = updated.(model)
+	updated, _ = m.Update(runScanResultCmd(t, cmd))
+	m = updated.(model)
+	if m.path != readable || m.scanState != scanComplete {
+		t.Fatalf("drill-down retained parent coverage: path=%s state=%s", m.path, m.scanState)
+	}
+	if err := os.Chmod(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	updated, cmd = m.goBack()
+	m = updated.(model)
+	if m.path != root || m.scanState != scanPartial || !m.scanning || cmd == nil {
+		t.Fatalf("return lost partial history or omitted refresh: path=%s state=%s scanning=%t", m.path, m.scanState, m.scanning)
+	}
+	updated, _ = m.Update(runScanResultCmd(t, cmd))
+	m = updated.(model)
+	if m.scanState != scanComplete || m.scanning || m.totalSize != 4096+(1<<20) || m.cache[root].NeedsRefresh || strings.Contains(m.View(), "unknown") {
+		t.Fatalf("refresh did not recover authoritative coverage: state=%s total=%d scanning=%t\n%s", m.scanState, m.totalSize, m.scanning, m.View())
+	}
+}
+
 func TestOverviewPartialMeasurementKeepsBytesAndUnknownRows(t *testing.T) {
 	root := t.TempDir()
 	m := model{path: "/", isOverview: true, width: 80, height: 24, entries: []dirEntry{{Name: "Unavailable", Path: root, IsDir: true, Size: -1}}}
