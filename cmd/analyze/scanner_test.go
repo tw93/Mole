@@ -150,29 +150,32 @@ func TestScanUnreadableDescendantPreservesCoverageAndGoodCache(t *testing.T) {
 	locked := filepath.Join(child, "locked")
 	writeFileWithSize(t, filepath.Join(child, "readable"), 4096)
 	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
-	scan := func() scanResult {
+	scan := func(scanRoot string) scanResult {
 		t.Helper()
 		var files, dirs, bytes int64
 		current := &atomic.Value{}
 		current.Store("")
-		result, err := scanPathConcurrentAllEntries(context.Background(), root, &files, &dirs, &bytes, current)
+		result, err := scanPathConcurrentWithLimiter(context.Background(), scanRoot, &files, &dirs, &bytes, current, false, 0, nil, scanCacheBypass, newScanPublication(context.Background(), nil))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return result
 	}
-	good := scan()
+	good := scan(root)
 	if good.State != scanComplete {
 		t.Fatalf("initial scan state = %s", good.State)
 	}
 	if err := saveCacheToDisk(root, good); err != nil {
 		t.Fatal(err)
 	}
+	if err := saveCacheToDisk(child, scan(child)); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chmod(locked, 0); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
-	partial := scan()
+	partial := scan(root)
 	if partial.State != scanPartial || partial.TotalSize != 4096 || partial.TotalFiles != 1 {
 		t.Fatalf("partial result lost coverage or readable bytes: %+v", partial)
 	}
@@ -186,10 +189,14 @@ func TestScanUnreadableDescendantPreservesCoverageAndGoodCache(t *testing.T) {
 	if err != nil || cached.TotalSize != good.TotalSize {
 		t.Fatalf("partial scan replaced good cache: %+v, %v", cached, err)
 	}
+	childCache, err := loadCacheFromDisk(child)
+	if err != nil || childCache.TotalSize != good.TotalSize {
+		t.Fatalf("partial bypass erased complete child cache: %+v, %v", childCache, err)
+	}
 	if err := os.Chmod(locked, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	recovered := scan()
+	recovered := scan(root)
 	if recovered.State != scanComplete || recovered.TotalSize != good.TotalSize {
 		t.Fatalf("recovery: %+v", recovered)
 	}

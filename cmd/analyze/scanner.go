@@ -644,7 +644,7 @@ func scanSubdirWithCache(ctx context.Context, root string, largeFileChan chan<- 
 		// subtrees are not persisted at all: see shouldPersistSubdirCache.
 		if !result.dedupedHardlink && shouldPersistSubdirCache(result) {
 			_ = saveCacheToDiskWithOptions(publication, root, result, true)
-		} else if cachePolicy == scanCacheBypass {
+		} else if cachePolicy == scanCacheBypass && result.State == scanComplete {
 			_ = removeCacheEntryForScan(publication, root)
 		}
 		return result
