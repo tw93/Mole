@@ -430,18 +430,11 @@ func (m model) View() string {
 			}
 		} else if !m.showLargeFiles && len(m.multiSelected) > 0 {
 			deleteCount = len(m.multiSelected)
-			for path := range m.multiSelected {
-				for _, entry := range m.entries {
-					if entry.Path == path {
-						totalDeleteSize += max(entry.Size, 0)
-						if entry.State != scanComplete {
-							deleteState = scanPartial
-						}
-						if isAppBundleEntry(entry) {
-							hasAppBundle = true
-						}
-						break
-					}
+			totalDeleteSize, deleteState = m.selectedEntryMeasurement()
+			for _, entry := range m.entries {
+				if m.multiSelected[entry.Path] && isAppBundleEntry(entry) {
+					hasAppBundle = true
+					break
 				}
 			}
 		}

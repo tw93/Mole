@@ -3612,6 +3612,54 @@ func TestOverviewPartialMeasurementKeepsBytesAndUnknownRows(t *testing.T) {
 	}
 }
 
+func TestSelectionAndConfirmationPreserveMeasurementCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		size  int64
+		state scanState
+		label string
+	}{
+		{name: "unavailable", state: scanUnavailable, label: "unknown"},
+		{name: "partial", size: 2048, state: scanPartial, label: humanizeBytes(2048) + "+"},
+		{name: "complete", size: 2048, label: humanizeBytes(2048)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			m := model{path: root, width: 100, height: 24, entries: []dirEntry{
+				{Name: "target", Path: filepath.Join(root, "target"), Size: tc.size, State: tc.state},
+				{Name: "readable", Path: filepath.Join(root, "readable"), Size: 4096},
+			}}
+			updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeySpace})
+			m = updated.(model)
+			if m.status != "1 selected, "+tc.label {
+				t.Fatalf("selection lost coverage: %q", m.status)
+			}
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+			m = updated.(model)
+			if !strings.Contains(m.View(), "target, "+tc.label) {
+				t.Fatalf("confirmation disagrees with selection: %s", m.View())
+			}
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
+			m = updated.(model)
+			m.selected = 1
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeySpace})
+			m = updated.(model)
+			label := humanizeBytes(4096 + tc.size)
+			if tc.state != scanComplete {
+				label += "+"
+			}
+			if m.status != "2 selected, "+label {
+				t.Fatalf("mixed selection lost coverage: %q", m.status)
+			}
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+			m = updated.(model)
+			if !strings.Contains(m.View(), "2 items, "+label) {
+				t.Fatalf("mixed confirmation disagrees with selection: %s", m.View())
+			}
+		})
+	}
+}
+
 func TestAnalyzeJSONReportsPartialCoverageAndUnavailableSizes(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission fixture requires an unprivileged user")

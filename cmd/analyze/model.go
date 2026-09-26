@@ -248,6 +248,22 @@ func entryScanState(entries []dirEntry) scanState {
 	return scanComplete
 }
 
+// selectedEntryMeasurement is shared by selection feedback and confirmation.
+func (m model) selectedEntryMeasurement() (int64, scanState) {
+	var size int64
+	state := scanComplete
+	for _, entry := range m.entries {
+		if !m.multiSelected[entry.Path] {
+			continue
+		}
+		size += max(entry.Size, 0)
+		if entry.Size < 0 || entry.State != scanComplete {
+			state = scanPartial
+		}
+	}
+	return size, state
+}
+
 func (m *model) hydrateOverviewEntries() {
 	m.entries = createOverviewEntries()
 	if m.overviewSizeCache == nil {

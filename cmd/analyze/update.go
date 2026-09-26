@@ -900,16 +900,8 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			count := len(m.multiSelected)
 			if count > 0 {
-				var totalSize int64
-				for path := range m.multiSelected {
-					for _, entry := range m.entries {
-						if entry.Path == path {
-							totalSize += entry.Size
-							break
-						}
-					}
-				}
-				m.status = fmt.Sprintf("%d selected, %s", count, humanizeBytes(totalSize))
+				size, state := m.selectedEntryMeasurement()
+				m.status = fmt.Sprintf("%d selected, %s", count, measuredSizeLabel(size, state))
 			} else {
 				m.status = scanSummary(m.totalSize, m.scanState)
 			}
