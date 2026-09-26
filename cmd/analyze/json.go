@@ -14,6 +14,7 @@ import (
 )
 
 type jsonOutput struct {
+	ScanStatus scanState       `json:"scan_status"`
 	Path       string          `json:"path"`
 	Overview   bool            `json:"overview"`
 	Entries    []jsonEntry     `json:"entries"`
@@ -23,13 +24,14 @@ type jsonOutput struct {
 }
 
 type jsonEntry struct {
-	Name       string `json:"name"`
-	Path       string `json:"path"`
-	Size       int64  `json:"size"`
-	IsDir      bool   `json:"is_dir"`
-	Insight    bool   `json:"insight,omitempty"`
-	Cleanable  bool   `json:"cleanable,omitempty"`
-	LastAccess string `json:"last_access,omitempty"`
+	ScanStatus scanState `json:"scan_status"`
+	Name       string    `json:"name"`
+	Path       string    `json:"path"`
+	Size       int64     `json:"size"`
+	IsDir      bool      `json:"is_dir"`
+	Insight    bool      `json:"insight,omitempty"`
+	Cleanable  bool      `json:"cleanable,omitempty"`
+	LastAccess string    `json:"last_access,omitempty"`
 }
 
 type jsonFileEntry struct {
@@ -69,6 +71,7 @@ func performDirectoryScanForJSON(path string) jsonOutput {
 
 	return jsonOutput{
 		Path:       path,
+		ScanStatus: result.State,
 		Overview:   false,
 		Entries:    jsonEntriesFromDirEntries(result.Entries, false, nil),
 		LargeFiles: jsonFileEntriesFromFileEntries(result.LargeFiles),
@@ -93,10 +96,10 @@ func performOverviewScanForJSONWithEntries(path string, insightEntries, overview
 	entries := make([]dirEntry, 0, len(overviewEntries))
 	for _, entry := range measureOverviewEntriesForJSON(overviewEntries, insightPaths) {
 		// Match the TUI: omit scanned insight/tool entries that ended up empty.
-		if entry.Size == 0 {
+		if entry.Size == 0 && entry.State == scanComplete {
 			continue
 		}
-		totalSize += entry.Size
+		totalSize += max(entry.Size, 0)
 		entries = append(entries, entry)
 	}
 
@@ -105,10 +108,11 @@ func performOverviewScanForJSONWithEntries(path string, insightEntries, overview
 	})
 
 	return jsonOutput{
-		Path:      path,
-		Overview:  true,
-		Entries:   jsonEntriesFromDirEntries(entries, true, insightPaths),
-		TotalSize: totalSize,
+		Path:       path,
+		ScanStatus: entryScanState(entries),
+		Overview:   true,
+		Entries:    jsonEntriesFromDirEntries(entries, true, insightPaths),
+		TotalSize:  totalSize,
 	}
 }
 
@@ -140,14 +144,13 @@ func measureOverviewEntriesForJSON(overviewEntries []dirEntry, insightPaths map[
 			if cached, cacheErr := loadOverviewCachedSize(item.Path); cacheErr == nil && cached > 0 {
 				size = cached
 			} else if insightPaths[item.Path] {
-				size, err = measureInsightSize(item.Path)
+				size, err = measureInsightSize(context.Background(), item.Path)
 			} else {
-				size, err = measureOverviewSize(item.Path)
+				size, err = measureOverviewSize(context.Background(), item.Path)
 			}
 
-			if err == nil {
-				item.Size = size
-			}
+			item.Size = size
+			item.State = measurementState(size, err)
 			results <- measurement{index: index, entry: item}
 		})
 	}
@@ -165,11 +168,12 @@ func jsonEntriesFromDirEntries(entries []dirEntry, isOverview bool, insightPaths
 	output := make([]jsonEntry, 0, len(entries))
 	for _, entry := range entries {
 		item := jsonEntry{
-			Name:      entry.Name,
-			Path:      entry.Path,
-			Size:      entry.Size,
-			IsDir:     entry.IsDir,
-			Cleanable: entry.IsDir && isCleanableDir(entry.Path),
+			Name:       entry.Name,
+			ScanStatus: entry.State,
+			Path:       entry.Path,
+			Size:       entry.Size,
+			IsDir:      entry.IsDir,
+			Cleanable:  entry.IsDir && isCleanableDir(entry.Path),
 		}
 
 		if isOverview {

@@ -4,13 +4,58 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 )
 
+// scanState describes measurement coverage within Mole's scan filters, not an
+// atomic filesystem snapshot. The zero value represents a complete measurement.
+type scanState uint8
+
+const (
+	scanComplete scanState = iota
+	scanPartial
+	scanUnavailable
+)
+
+func (s scanState) String() string {
+	switch s {
+	case scanPartial:
+		return "partial"
+	case scanUnavailable:
+		return "unavailable"
+	case scanComplete:
+		return "complete"
+	default:
+		return "unknown"
+	}
+}
+
+// MarshalText gives the existing JSON boundary the same typed coverage state.
+func (s scanState) MarshalText() ([]byte, error) {
+	if s > scanUnavailable {
+		return nil, fmt.Errorf("invalid scan state: %d", s)
+	}
+	return []byte(s.String()), nil
+}
+
+// measurementState preserves the distinction between a useful partial size and
+// a failed probe that measured nothing. Callers must retain the returned bytes.
+func measurementState(size int64, err error) scanState {
+	if err == nil {
+		return scanComplete
+	}
+	if size > 0 {
+		return scanPartial
+	}
+	return scanUnavailable
+}
+
 type dirEntry struct {
+	State      scanState
 	Name       string
 	Path       string
 	Size       int64
@@ -25,6 +70,7 @@ type fileEntry struct {
 }
 
 type scanResult struct {
+	State      scanState
 	Entries    []dirEntry
 	LargeFiles []fileEntry
 	TotalSize  int64
@@ -51,6 +97,7 @@ type cacheEntry struct {
 }
 
 type historyEntry struct {
+	State         scanState
 	Path          string
 	Entries       []dirEntry
 	LargeFiles    []fileEntry
@@ -72,6 +119,7 @@ type scanResultMsg struct {
 }
 
 type liveScanStartMsg struct {
+	state         scanState
 	id            int64
 	path          string
 	entries       []dirEntry
@@ -127,6 +175,7 @@ type deleteProgressMsg struct {
 }
 
 type model struct {
+	scanState           scanState
 	path                string
 	history             []historyEntry
 	entries             []dirEntry
@@ -190,6 +239,31 @@ func (m model) inOverviewMode() bool {
 	return m.isOverview && m.path == "/"
 }
 
+func entryScanState(entries []dirEntry) scanState {
+	for _, entry := range entries {
+		if entry.Size < 0 || entry.State != scanComplete {
+			return scanPartial
+		}
+	}
+	return scanComplete
+}
+
+// selectedEntryMeasurement is shared by selection feedback and confirmation.
+func (m model) selectedEntryMeasurement() (int64, scanState) {
+	var size int64
+	state := scanComplete
+	for _, entry := range m.entries {
+		if !m.multiSelected[entry.Path] {
+			continue
+		}
+		size += max(entry.Size, 0)
+		if entry.Size < 0 || entry.State != scanComplete {
+			state = scanPartial
+		}
+	}
+	return size, state
+}
+
 func (m *model) hydrateOverviewEntries() {
 	m.entries = createOverviewEntries()
 	if m.overviewSizeCache == nil {
@@ -206,6 +280,7 @@ func (m *model) hydrateOverviewEntries() {
 		}
 	}
 	m.totalSize = sumKnownEntrySizes(m.entries)
+	m.scanState = entryScanState(m.entries)
 }
 
 func (m *model) sortOverviewEntriesBySize() {

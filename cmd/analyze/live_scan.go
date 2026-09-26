@@ -98,22 +98,22 @@ func startLiveScanCmdWithPolicy(path string, filesScanned, dirsScanned, bytesSca
 		ctx, cancelContext := context.WithCancel(context.Background())
 
 		limiter := newScanLimiter(0)
-		entries, targets, totalSize, totalFiles, largeFiles, err := readLiveScanInitialEntries(path, limiter)
+		initial, targets, err := readLiveScanInitialEntries(path, limiter)
 		if err != nil {
 			cancelContext()
 			return liveScanStartMsg{id: id, path: path, err: err}
 		}
 
-		if totalFiles > 0 {
-			atomic.AddInt64(filesScanned, totalFiles)
+		if initial.TotalFiles > 0 {
+			atomic.AddInt64(filesScanned, initial.TotalFiles)
 		}
-		if totalSize > 0 {
-			atomic.AddInt64(bytesScanned, totalSize)
+		if initial.TotalSize > 0 {
+			atomic.AddInt64(bytesScanned, initial.TotalSize)
 		}
 
 		publication := newScanPublication(ctx, cancelContext)
 		stream := newLiveScanEventStream(publication, len(targets))
-		go runLiveScan(ctx, id, path, entries, targets, totalSize, totalFiles, largeFiles, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, stream, cachePolicy)
+		go runLiveScan(ctx, id, path, initial, targets, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, stream, cachePolicy)
 
 		scanningPaths := make([]string, 0, len(targets))
 		for _, target := range targets {
@@ -121,12 +121,13 @@ func startLiveScanCmdWithPolicy(path string, filesScanned, dirsScanned, bytesSca
 		}
 
 		return liveScanStartMsg{
+			state:         initial.State,
 			id:            id,
 			path:          path,
-			entries:       entries,
-			totalSize:     totalSize,
-			totalFiles:    totalFiles,
-			largeFiles:    largeFiles,
+			entries:       initial.Entries,
+			totalSize:     initial.TotalSize,
+			totalFiles:    initial.TotalFiles,
+			largeFiles:    initial.LargeFiles,
 			scanningPaths: scanningPaths,
 			events:        stream.events,
 			cancel:        stream.cancel,
@@ -134,10 +135,10 @@ func startLiveScanCmdWithPolicy(path string, filesScanned, dirsScanned, bytesSca
 	}
 }
 
-func readLiveScanInitialEntries(root string, limiter *scanLimiter) ([]dirEntry, []liveScanTarget, int64, int64, []fileEntry, error) {
+func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, []liveScanTarget, error) {
 	children, err := os.ReadDir(root)
 	if err != nil {
-		return nil, nil, 0, 0, nil, err
+		return scanResult{}, nil, err
 	}
 	if limiter == nil {
 		limiter = newScanLimiter(len(children))
@@ -152,6 +153,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) ([]dirEntry, 
 	largeFiles := make([]fileEntry, 0)
 	var totalSize int64
 	var totalFiles int64
+	state := scanComplete
 
 	for _, child := range children {
 		fullPath := filepath.Join(root, child.Name())
@@ -164,6 +166,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) ([]dirEntry, 
 			}
 			info, err := child.Info()
 			if err != nil {
+				state = scanPartial
 				continue
 			}
 			size := getActualFileSize(fullPath, info)
@@ -209,6 +212,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) ([]dirEntry, 
 
 		info, err := child.Info()
 		if err != nil {
+			state = scanPartial
 			continue
 		}
 		size, _ := countableFileSize(info, &limiter.seen)
@@ -228,18 +232,15 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) ([]dirEntry, 
 
 	sortDirEntriesBySize(entries)
 	largeFiles = topLargeFiles(largeFiles)
-	return entries, targets, totalSize, totalFiles, largeFiles, nil
+	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state}, targets, nil
 }
 
 func runLiveScan(
 	ctx context.Context,
 	id int64,
 	root string,
-	initialEntries []dirEntry,
+	initial scanResult,
 	targets []liveScanTarget,
-	initialTotalSize int64,
-	initialTotalFiles int64,
-	initialLargeFiles []fileEntry,
 	limiter *scanLimiter,
 	filesScanned, dirsScanned, bytesScanned *int64,
 	currentPath *atomic.Value,
@@ -248,22 +249,24 @@ func runLiveScan(
 ) {
 	defer stream.close()
 
-	entriesByPath := make(map[string]dirEntry, len(initialEntries))
-	for _, entry := range initialEntries {
+	entriesByPath := make(map[string]dirEntry, len(initial.Entries))
+	for _, entry := range initial.Entries {
 		entriesByPath[entry.Path] = entry
 	}
 
 	var totalSize atomic.Int64
 	var totalFiles atomic.Int64
-	totalSize.Store(initialTotalSize)
-	totalFiles.Store(initialTotalFiles)
+	totalSize.Store(initial.TotalSize)
+	totalFiles.Store(initial.TotalFiles)
 
 	largeFileChan := make(chan fileEntry, maxLargeFiles*2)
 	largeFileMinSize := int64(largeFileWarmupMinSize)
 	largeFilesDone := make(chan []fileEntry, 1)
-	go collectLiveLargeFiles(initialLargeFiles, largeFileChan, &largeFileMinSize, largeFilesDone)
+	go collectLiveLargeFiles(initial.LargeFiles, largeFileChan, &largeFileMinSize, largeFilesDone)
 
 	var dedupedHardlink atomic.Bool
+	var incomplete atomic.Bool
+	incomplete.Store(initial.State != scanComplete)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -274,9 +277,13 @@ func runLiveScan(
 		target := target
 		scanTarget := func() {
 			defer wg.Done()
-			result, err := scanLiveTargetWithProgress(ctx, id, root, target, largeFileChan, &largeFileMinSize, limiter, currentPath, stream, cachePolicy)
+			result, err := scanLiveTargetWithProgress(ctx, id, root, target, largeFileChan, limiter, currentPath, stream, cachePolicy)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				stream.publish(liveScanEventMsg{id: id, path: root, kind: liveScanFailed, entry: dirEntry{Name: target.name, Path: target.path, IsDir: true}, err: err})
+				incomplete.Store(true)
+				mu.Lock()
+				entriesByPath[target.path] = dirEntry{Name: target.name, Path: target.path, IsDir: true, State: scanUnavailable}
+				mu.Unlock()
+				stream.publish(liveScanEventMsg{id: id, path: root, kind: liveScanFailed, entry: dirEntry{Name: target.name, Path: target.path, IsDir: true, State: scanUnavailable}, err: err})
 				return
 			}
 			if ctx.Err() != nil {
@@ -287,12 +294,16 @@ func runLiveScan(
 				Name:  target.name,
 				Path:  target.path,
 				Size:  result.TotalSize,
+				State: result.State,
 				IsDir: true,
 			}
 			mu.Lock()
 			entriesByPath[target.path] = entry
 			mu.Unlock()
 
+			if result.State != scanComplete {
+				incomplete.Store(true)
+			}
 			totalSize.Add(result.TotalSize)
 			if result.TotalFiles > 0 {
 				totalFiles.Add(result.TotalFiles)
@@ -347,7 +358,12 @@ func runLiveScan(
 		finalEntries = finalEntries[:maxEntries]
 	}
 
+	state := scanComplete
+	if incomplete.Load() {
+		state = scanPartial
+	}
 	result := scanResult{
+		State:           state,
 		Entries:         finalEntries,
 		LargeFiles:      largeFiles,
 		TotalSize:       totalSize.Load(),
@@ -358,7 +374,7 @@ func runLiveScan(
 	stream.publish(liveScanEventMsg{id: id, path: root, kind: liveScanComplete, result: result})
 }
 
-func scanLiveTargetWithProgress(ctx context.Context, id int64, root string, target liveScanTarget, largeFileChan chan<- fileEntry, largeFileMinSize *int64, limiter *scanLimiter, currentPath *atomic.Value, stream *liveScanEventStream, cachePolicy scanCachePolicy) (scanResult, error) {
+func scanLiveTargetWithProgress(ctx context.Context, id int64, root string, target liveScanTarget, largeFileChan chan<- fileEntry, limiter *scanLimiter, currentPath *atomic.Value, stream *liveScanEventStream, cachePolicy scanCachePolicy) (scanResult, error) {
 	var filesScanned int64
 	var dirsScanned int64
 	var bytesScanned int64
@@ -405,7 +421,7 @@ func scanLiveTargetWithProgress(ctx context.Context, id int64, root string, targ
 		}
 	}()
 
-	result, err := scanLiveTarget(ctx, target, largeFileChan, largeFileMinSize, limiter, &filesScanned, &dirsScanned, &bytesScanned, localCurrentPath, cachePolicy, stream.publication)
+	result, err := scanLiveTarget(ctx, target, largeFileChan, limiter, &filesScanned, &dirsScanned, &bytesScanned, localCurrentPath, cachePolicy, stream.publication)
 	close(done)
 	<-progressDone
 	if result.TotalFiles == 0 {
@@ -417,7 +433,7 @@ func scanLiveTargetWithProgress(ctx context.Context, id int64, root string, targ
 	return result, err
 }
 
-func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan chan<- fileEntry, largeFileMinSize *int64, limiter *scanLimiter, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, cachePolicy scanCachePolicy, publication *scanPublication) (scanResult, error) {
+func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan chan<- fileEntry, limiter *scanLimiter, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, cachePolicy scanCachePolicy, publication *scanPublication) (scanResult, error) {
 	if err := ctx.Err(); err != nil {
 		return scanResult{}, err
 	}
@@ -434,22 +450,22 @@ func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan ch
 		if ctx.Err() != nil {
 			return scanResult{}, ctx.Err()
 		}
-		if err != nil || size <= 0 {
-			size = calculateDirSizeFastWithLimiter(ctx, target.path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+		if size <= 0 && err != nil {
+			size, err = calculateDirSizeFastWithLimiter(ctx, target.path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 		} else {
 			atomic.AddInt64(bytesScanned, size)
 		}
 		if ctx.Err() != nil {
 			return scanResult{}, ctx.Err()
 		}
-		return scanResult{TotalSize: size}, nil
+		return scanResult{TotalSize: size, State: measurementState(size, err)}, nil
 	}
 
 	if err := ctx.Err(); err != nil {
 		return scanResult{}, err
 	}
 
-	result := scanSubdirWithCache(ctx, target.path, largeFileChan, largeFileMinSize, limiter, limiter.dirSem, limiter.duSem, limiter.duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
+	result := scanSubdirWithCache(ctx, target.path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
 	return result, ctx.Err()
 }
 

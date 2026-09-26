@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -94,7 +95,7 @@ func TestMeasureOldDownloads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	size, err := measureOldDownloads(dir, 90)
+	size, err := measureOldDownloads(context.Background(), dir, 90)
 	if err != nil {
 		t.Fatalf("measureOldDownloads: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestMeasureInsightSizeFallsBackToOverview(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	size, err := measureInsightSize(dir)
+	size, err := measureInsightSize(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("measureInsightSize: %v", err)
 	}

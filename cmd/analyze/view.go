@@ -60,7 +60,7 @@ func (m model) View() string {
 	} else {
 		fmt.Fprintf(&b, "%sAnalyze Disk%s  %s%s%s", colorPurpleBold, colorReset, colorGray, displayPath(m.path), colorReset)
 		if !m.scanning || m.totalSize > 0 {
-			fmt.Fprintf(&b, "  |  Total: %s", humanizeBytes(m.totalSize))
+			fmt.Fprintf(&b, "  |  Total: %s", measuredSizeLabel(m.totalSize, m.scanState))
 		}
 		fmt.Fprintf(&b, "\n\n")
 	}
@@ -233,7 +233,7 @@ func (m model) View() string {
 					sizeVal := entry.Size
 					// Hide entries that have been scanned and are empty (standard dirs
 					// are never 0 bytes; only insight dirs in unused tool paths are).
-					if sizeVal == 0 {
+					if sizeVal == 0 && entry.State == scanComplete {
 						continue
 					}
 					barValue := max(sizeVal, 0)
@@ -243,7 +243,7 @@ func (m model) View() string {
 					} else {
 						percent = 0
 					}
-					percentStr := formatPercent(percent, totalSize > 0 && sizeVal >= 0)
+					percentStr := formatPercent(percent, totalSize > 0 && sizeVal >= 0 && entry.State == scanComplete && m.scanState == scanComplete)
 					bar := coloredProgressBar(barValue, maxSize, percent)
 					// Pending rows reuse the list view's scanning idiom: the
 					// animated spinner keeps the row visibly alive, and the
@@ -252,7 +252,7 @@ func (m model) View() string {
 					sizeText := fmt.Sprintf("%s scanning", spinnerFrames[m.spinner])
 					sizeColor := colorCyan
 					if sizeVal >= 0 {
-						sizeText = humanizeBytes(sizeVal)
+						sizeText = measuredSizeLabel(sizeVal, entry.State)
 						sizeColor = colorGray
 						if totalSize > 0 {
 							sizeColor = sizeColorForPercent(percent)
@@ -313,12 +313,12 @@ func (m model) View() string {
 					if m.totalSize > 0 && entry.Size >= 0 {
 						percent = float64(entry.Size) / float64(m.totalSize) * 100
 					}
-					percentStr := formatPercent(percent, entry.Size >= 0 && m.totalSize > 0)
+					percentStr := formatPercent(percent, entry.Size >= 0 && m.totalSize > 0 && entry.State == scanComplete && m.scanState == scanComplete)
 
 					bar := coloredProgressBar(sizeValue, maxSize, percent)
 
 					sizeColor := sizeColorForPercent(percent)
-					size := humanizeBytes(entry.Size)
+					size := measuredSizeLabel(entry.Size, entry.State)
 					if entry.Size < 0 {
 						size = fmt.Sprintf("%s %s", spinnerFrames[m.spinner], "scanning")
 						sizeColor = colorCyan
@@ -416,6 +416,7 @@ func (m model) View() string {
 		fmt.Fprintln(&b)
 		var deleteCount int
 		var totalDeleteSize int64
+		deleteState := scanComplete
 		hasAppBundle := false
 		if m.showLargeFiles && len(m.largeMultiSelected) > 0 {
 			deleteCount = len(m.largeMultiSelected)
@@ -429,15 +430,11 @@ func (m model) View() string {
 			}
 		} else if !m.showLargeFiles && len(m.multiSelected) > 0 {
 			deleteCount = len(m.multiSelected)
-			for path := range m.multiSelected {
-				for _, entry := range m.entries {
-					if entry.Path == path {
-						totalDeleteSize += entry.Size
-						if isAppBundleEntry(entry) {
-							hasAppBundle = true
-						}
-						break
-					}
+			totalDeleteSize, deleteState = m.selectedEntryMeasurement()
+			for _, entry := range m.entries {
+				if m.multiSelected[entry.Path] && isAppBundleEntry(entry) {
+					hasAppBundle = true
+					break
 				}
 			}
 		}
@@ -445,12 +442,12 @@ func (m model) View() string {
 		if deleteCount > 1 {
 			fmt.Fprintf(&b, "%sDelete:%s %d items, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
 				colorRed, colorReset,
-				deleteCount, humanizeBytes(totalDeleteSize),
+				deleteCount, measuredSizeLabel(totalDeleteSize, deleteState),
 				colorGray, colorReset)
 		} else {
 			fmt.Fprintf(&b, "%sDelete:%s %s, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
 				colorRed, colorReset,
-				m.deleteTarget.Name, humanizeBytes(m.deleteTarget.Size),
+				m.deleteTarget.Name, measuredSizeLabel(m.deleteTarget.Size, m.deleteTarget.State),
 				colorGray, colorReset)
 		}
 		if deleteCount > 1 && hasAppBundle {

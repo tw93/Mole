@@ -1498,7 +1498,8 @@ func TestLiveScanIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *t
 		}
 	}
 
-	entries, targets, _, _, _, err := readLiveScanInitialEntries(root, nil)
+	initial, targets, err := readLiveScanInitialEntries(root, nil)
+	entries := initial.Entries
 	if err != nil {
 		t.Fatalf("read live scan entries: %v", err)
 	}
@@ -1880,7 +1881,6 @@ func TestLiveScanCancellationStopsFoldedDirectoryProbe(t *testing.T) {
 	publication := newScanPublication(ctx, cancelContext)
 	defer publication.cancel()
 	limiter := newScanLimiter(1)
-	largeFileMinSize := int64(largeFileWarmupMinSize)
 	var filesScanned, dirsScanned, bytesScanned int64
 	currentPath := &atomic.Value{}
 	currentPath.Store("")
@@ -1891,7 +1891,6 @@ func TestLiveScanCancellationStopsFoldedDirectoryProbe(t *testing.T) {
 			ctx,
 			liveScanTarget{name: "folded", path: target, kind: liveScanTargetFoldedDirectory},
 			make(chan fileEntry, maxLargeFiles*2),
-			&largeFileMinSize,
 			limiter,
 			&filesScanned,
 			&dirsScanned,
@@ -1928,7 +1927,6 @@ func TestLiveScanCancellationStopsNestedFoldedDirectoryProbe(t *testing.T) {
 	publication := newScanPublication(ctx, cancelContext)
 	defer publication.cancel()
 	limiter := newScanLimiter(1)
-	largeFileMinSize := int64(largeFileWarmupMinSize)
 	var filesScanned, dirsScanned, bytesScanned int64
 	currentPath := &atomic.Value{}
 	currentPath.Store("")
@@ -1939,7 +1937,6 @@ func TestLiveScanCancellationStopsNestedFoldedDirectoryProbe(t *testing.T) {
 			ctx,
 			liveScanTarget{name: "target", path: target, kind: liveScanTargetDirectory},
 			make(chan fileEntry, maxLargeFiles*2),
-			&largeFileMinSize,
 			limiter,
 			&filesScanned,
 			&dirsScanned,
@@ -2315,12 +2312,10 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 		current := &atomic.Value{}
 		current.Store("")
 		limiter := newScanLimiter(1)
-		largeFileMinSize := int64(largeFileWarmupMinSize)
 		result, err := scanLiveTarget(
 			ctx,
 			liveScanTarget{name: "Library", path: library, kind: liveScanTargetHomeLibrary},
 			make(chan fileEntry, maxLargeFiles*2),
-			&largeFileMinSize,
 			limiter,
 			&filesScanned,
 			&dirsScanned,
@@ -2935,7 +2930,7 @@ func TestMeasureOverviewSize(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	size, err := measureOverviewSize(target)
+	size, err := measureOverviewSize(context.Background(), target)
 	if err != nil {
 		t.Fatalf("measureOverviewSize: %v", err)
 	}
@@ -2958,7 +2953,7 @@ func TestMeasureOverviewSize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(target, "data2.bin"), content, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	size2, err := measureOverviewSize(target)
+	size2, err := measureOverviewSize(context.Background(), target)
 	if err != nil {
 		t.Fatalf("measureOverviewSize: %v", err)
 	}
@@ -3387,7 +3382,11 @@ func TestCalculateDirSizeFastHighFanoutCompletes(t *testing.T) {
 
 	done := make(chan int64, 1)
 	go func() {
-		done <- calculateDirSizeFast(context.Background(), root, &files, &dirs, &bytes, current)
+		size, err := calculateDirSizeFast(context.Background(), root, &files, &dirs, &bytes, current)
+		if err != nil {
+			t.Errorf("calculateDirSizeFast: %v", err)
+		}
+		done <- size
 	}()
 
 	select {
@@ -3533,4 +3532,266 @@ func mustAbs(t *testing.T, path string) string {
 		t.Fatalf("filepath.Abs(%q): %v", path, err)
 	}
 	return abs
+}
+
+func TestLiveScanKeepsUnavailableDirectoryAndPartialTotal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(root, "readable"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	var files, dirs, bytes int64
+	current := &atomic.Value{}
+	current.Store("")
+	msg := runScanResultCmd(t, startLiveScanCmd(root, &files, &dirs, &bytes, current))
+	if msg.err != nil || msg.result.State != scanPartial || msg.result.TotalSize != 4096 {
+		t.Fatalf("live scan lost partial result: %+v", msg)
+	}
+	for _, entry := range msg.result.Entries {
+		if entry.Path == locked {
+			if entry.State != scanUnavailable || entry.Size != 0 {
+				t.Fatalf("unavailable entry: %+v", entry)
+			}
+			return
+		}
+	}
+	t.Fatal("live scan omitted unreadable directory")
+}
+
+func TestPartialScanViewRetainsUnavailableEntries(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "root")
+	locked := filepath.Join(root, "locked")
+	result := scanResult{
+		State: scanPartial, TotalSize: 4096, TotalFiles: 1,
+		Entries: []dirEntry{
+			{Name: "readable", Path: filepath.Join(root, "readable"), Size: 4096},
+			{Name: "locked", Path: locked, IsDir: true, State: scanUnavailable},
+		},
+	}
+	m := model{path: root, width: 80, height: 24, cache: make(map[string]historyEntry), overviewSizeCache: map[string]int64{root: 1 << 20}}
+	m.finishLiveScan(result)
+	if len(m.entries) != 2 || m.scanState != scanPartial || m.overviewSizeCache[root] != 1<<20 {
+		t.Fatalf("completion lost partial state or published incomplete snapshot: %+v", m)
+	}
+	view := m.View()
+	if !strings.Contains(view, "locked") || !strings.Contains(view, "unknown") || !strings.Contains(view, humanizeBytes(4096)+"+") {
+		t.Fatalf("partial view must retain unknown row and mark total: %s", view)
+	}
+	saved := snapshotFromModel(m)
+	if saved.State != scanPartial || !saved.NeedsRefresh || m.cache[root].State != scanPartial || !m.cache[root].NeedsRefresh {
+		t.Fatalf("navigation discarded coverage: %+v", saved)
+	}
+	m.multiSelected = map[string]bool{locked: true}
+	m.deleteTarget = &m.entries[1]
+	m.deleteConfirm = true
+	if !strings.Contains(m.View(), "locked, unknown") {
+		t.Fatalf("confirmation pretended size was zero: %s", m.View())
+	}
+}
+
+func TestPartialScanCoverageSurvivesEntryLimit(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	for i := range maxEntries {
+		writeFileWithSize(t, filepath.Join(root, fmt.Sprintf("readable-%02d", i)), 4096)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	m := newModel(root, false)
+	msg := runScanResultCmd(t, m.scanFreshCmd(root))
+	if msg.err != nil || msg.result.State != scanPartial || msg.result.TotalSize != int64(maxEntries*4096) || len(msg.result.Entries) != maxEntries {
+		t.Fatalf("limited view lost aggregate coverage: %+v", msg)
+	}
+	for _, entry := range msg.result.Entries {
+		if entry.Path == locked {
+			t.Fatal("unknown entry displaced a larger measured entry")
+		}
+	}
+	document := performDirectoryScanForJSON(root)
+	if document.ScanStatus != scanPartial || document.TotalSize != msg.result.TotalSize || len(document.Entries) != maxEntries+1 {
+		t.Fatalf("JSON lost complete listing or aggregate coverage: %+v", document)
+	}
+	for _, entry := range document.Entries {
+		if entry.Path == locked && entry.ScanStatus == scanUnavailable {
+			return
+		}
+	}
+	t.Fatal("JSON omitted unavailable entry")
+}
+
+func TestPartialNavigationRefreshRecoversCoverage(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	readable := filepath.Join(root, "readable")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(readable, "file"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	m := newModel(root, false)
+	updated, _ := m.Update(runScanResultCmd(t, m.scanFreshCmd(root)))
+	m = updated.(model)
+	if m.scanState != scanPartial || len(m.entries) != 2 {
+		t.Fatalf("initial scan did not exercise missing coverage: %+v", m.entries)
+	}
+	m.selectEntryPath(readable)
+	updated, cmd := m.enterSelectedDir()
+	m = updated.(model)
+	updated, _ = m.Update(runScanResultCmd(t, cmd))
+	m = updated.(model)
+	if m.path != readable || m.scanState != scanComplete {
+		t.Fatalf("drill-down retained parent coverage: path=%s state=%s", m.path, m.scanState)
+	}
+	if err := os.Chmod(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	updated, cmd = m.goBack()
+	m = updated.(model)
+	if m.path != root || m.scanState != scanPartial || !m.scanning || cmd == nil {
+		t.Fatalf("return lost partial history or omitted refresh: path=%s state=%s scanning=%t", m.path, m.scanState, m.scanning)
+	}
+	updated, _ = m.Update(runScanResultCmd(t, cmd))
+	m = updated.(model)
+	if m.scanState != scanComplete || m.scanning || m.totalSize != 4096+(1<<20) || m.cache[root].NeedsRefresh || strings.Contains(m.View(), "unknown") {
+		t.Fatalf("refresh did not recover authoritative coverage: state=%s total=%d scanning=%t\n%s", m.scanState, m.totalSize, m.scanning, m.View())
+	}
+}
+
+func TestOverviewPartialMeasurementKeepsBytesAndUnknownRows(t *testing.T) {
+	root := t.TempDir()
+	m := model{path: "/", isOverview: true, width: 80, height: 24, entries: []dirEntry{{Name: "Unavailable", Path: root, IsDir: true, Size: -1}}}
+	updated, _ := m.Update(overviewSizeMsg{Path: root, Err: os.ErrPermission})
+	m = updated.(model)
+	if m.entries[0].State != scanUnavailable || !strings.Contains(m.View(), "unknown") {
+		t.Fatalf("overview hid failed measurement: %+v\n%s", m.entries, m.View())
+	}
+	updated, _ = m.Update(overviewSizeMsg{Path: root, Size: 4096, Err: os.ErrPermission})
+	m = updated.(model)
+	if m.totalSize != 4096 || m.entries[0].State != scanPartial || !strings.Contains(m.View(), humanizeBytes(4096)+"+") {
+		t.Fatalf("overview discarded partial bytes: %+v\n%s", m.entries, m.View())
+	}
+}
+
+func TestSelectionAndConfirmationPreserveMeasurementCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		size  int64
+		state scanState
+		label string
+	}{
+		{name: "unavailable", state: scanUnavailable, label: "unknown"},
+		{name: "partial", size: 2048, state: scanPartial, label: humanizeBytes(2048) + "+"},
+		{name: "complete", size: 2048, label: humanizeBytes(2048)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			m := model{path: root, width: 100, height: 24, entries: []dirEntry{
+				{Name: "target", Path: filepath.Join(root, "target"), Size: tc.size, State: tc.state},
+				{Name: "readable", Path: filepath.Join(root, "readable"), Size: 4096},
+			}}
+			updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeySpace})
+			m = updated.(model)
+			if m.status != "1 selected, "+tc.label {
+				t.Fatalf("selection lost coverage: %q", m.status)
+			}
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+			m = updated.(model)
+			if !strings.Contains(m.View(), "target, "+tc.label) {
+				t.Fatalf("confirmation disagrees with selection: %s", m.View())
+			}
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyEsc})
+			m = updated.(model)
+			m.selected = 1
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeySpace})
+			m = updated.(model)
+			label := humanizeBytes(4096 + tc.size)
+			if tc.state != scanComplete {
+				label += "+"
+			}
+			if m.status != "2 selected, "+label {
+				t.Fatalf("mixed selection lost coverage: %q", m.status)
+			}
+			updated, _ = m.updateKey(tea.KeyMsg{Type: tea.KeyBackspace})
+			m = updated.(model)
+			if !strings.Contains(m.View(), "2 items, "+label) {
+				t.Fatalf("mixed confirmation disagrees with selection: %s", m.View())
+			}
+		})
+	}
+}
+
+func TestAnalyzeJSONReportsPartialCoverageAndUnavailableSizes(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(root, "readable"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	for _, overview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("overview=%t", overview), func(t *testing.T) {
+			var result jsonOutput
+			if overview {
+				result = performOverviewScanForJSONWithEntries(root, nil, []dirEntry{{Name: "locked", Path: locked, IsDir: true, Size: -1}, {Name: "root", Path: root, IsDir: true, Size: -1}})
+			} else {
+				result = performDirectoryScanForJSON(root)
+			}
+			data, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document struct {
+				ScanStatus string `json:"scan_status"`
+				TotalSize  int64  `json:"total_size"`
+				Entries    []struct {
+					Path       string `json:"path"`
+					Size       int64  `json:"size"`
+					ScanStatus string `json:"scan_status"`
+				} `json:"entries"`
+			}
+			if err := json.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			if document.ScanStatus != "partial" || document.TotalSize < 4096 {
+				t.Fatalf("JSON lost coverage or bytes: %s", data)
+			}
+			for _, entry := range document.Entries {
+				if entry.Path == locked {
+					if entry.ScanStatus != "unavailable" || entry.Size != 0 {
+						t.Fatalf("JSON fabricated unknown size: %s", data)
+					}
+					return
+				}
+			}
+			t.Fatalf("JSON omitted unavailable entry: %s", data)
+		})
+	}
 }

@@ -269,3 +269,23 @@ func formatUnusedTime(lastAccess time.Time) string {
 
 	return ""
 }
+
+// Partial sizes are measured bytes, so '+' marks that additional bytes may be
+// missing. An unavailable measurement must never look like a measured zero.
+func measuredSizeLabel(size int64, state scanState) string {
+	if state == scanUnavailable || (state == scanPartial && size == 0) {
+		return "unknown"
+	}
+	label := humanizeBytes(size)
+	if state == scanPartial {
+		label += "+"
+	}
+	return label
+}
+
+func scanSummary(size int64, state scanState) string {
+	if state != scanComplete {
+		return "Partial scan · " + measuredSizeLabel(size, state)
+	}
+	return "Scanned " + humanizeBytes(size)
+}
