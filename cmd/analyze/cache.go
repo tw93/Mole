@@ -44,6 +44,7 @@ var (
 func snapshotFromModel(m model) historyEntry {
 	return historyEntry{
 		Path:          m.path,
+		State:         m.scanState,
 		Entries:       slices.Clone(m.entries),
 		LargeFiles:    slices.Clone(m.largeFiles),
 		TotalSize:     m.totalSize,
@@ -52,7 +53,7 @@ func snapshotFromModel(m model) historyEntry {
 		EntryOffset:   m.offset,
 		LargeSelected: m.largeSelected,
 		LargeOffset:   m.largeOffset,
-		NeedsRefresh:  m.viewNeedsRefresh || m.scanning,
+		NeedsRefresh:  m.viewNeedsRefresh || m.scanning || m.scanState != scanComplete,
 		IsOverview:    m.isOverview,
 	}
 }
@@ -60,7 +61,7 @@ func snapshotFromModel(m model) historyEntry {
 func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 	filtered := make([]dirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Size > 0 {
+		if entry.Size > 0 || entry.State != scanComplete {
 			filtered = append(filtered, entry)
 		}
 	}
@@ -70,6 +71,7 @@ func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 func historyEntryFromScanResult(path string, result scanResult, previous historyEntry, needsRefresh bool) historyEntry {
 	entry := historyEntry{
 		Path:          path,
+		State:         result.State,
 		Entries:       slices.Clone(result.Entries),
 		LargeFiles:    slices.Clone(result.LargeFiles),
 		TotalSize:     result.TotalSize,
@@ -78,7 +80,7 @@ func historyEntryFromScanResult(path string, result scanResult, previous history
 		EntryOffset:   previous.EntryOffset,
 		LargeSelected: previous.LargeSelected,
 		LargeOffset:   previous.LargeOffset,
-		NeedsRefresh:  needsRefresh,
+		NeedsRefresh:  needsRefresh || result.State != scanComplete,
 		IsOverview:    previous.IsOverview,
 	}
 	return entry

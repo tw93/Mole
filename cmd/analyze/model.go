@@ -86,6 +86,7 @@ type cacheEntry struct {
 }
 
 type historyEntry struct {
+	State         scanState
 	Path          string
 	Entries       []dirEntry
 	LargeFiles    []fileEntry
@@ -163,6 +164,7 @@ type deleteProgressMsg struct {
 }
 
 type model struct {
+	scanState           scanState
 	path                string
 	history             []historyEntry
 	entries             []dirEntry
@@ -226,6 +228,15 @@ func (m model) inOverviewMode() bool {
 	return m.isOverview && m.path == "/"
 }
 
+func entryScanState(entries []dirEntry) scanState {
+	for _, entry := range entries {
+		if entry.Size < 0 || entry.State != scanComplete {
+			return scanPartial
+		}
+	}
+	return scanComplete
+}
+
 func (m *model) hydrateOverviewEntries() {
 	m.entries = createOverviewEntries()
 	if m.overviewSizeCache == nil {
@@ -242,6 +253,7 @@ func (m *model) hydrateOverviewEntries() {
 		}
 	}
 	m.totalSize = sumKnownEntrySizes(m.entries)
+	m.scanState = entryScanState(m.entries)
 }
 
 func (m *model) sortOverviewEntriesBySize() {

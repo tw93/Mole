@@ -3565,3 +3565,49 @@ func TestLiveScanKeepsUnavailableDirectoryAndPartialTotal(t *testing.T) {
 	}
 	t.Fatal("live scan omitted unreadable directory")
 }
+
+func TestPartialScanViewAndNavigationRetainUnavailableEntries(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "root")
+	locked := filepath.Join(root, "locked")
+	result := scanResult{
+		State: scanPartial, TotalSize: 4096, TotalFiles: 1,
+		Entries: []dirEntry{
+			{Name: "readable", Path: filepath.Join(root, "readable"), Size: 4096},
+			{Name: "locked", Path: locked, IsDir: true, State: scanUnavailable},
+		},
+	}
+	m := model{path: root, width: 80, height: 24, cache: make(map[string]historyEntry), overviewSizeCache: map[string]int64{root: 1 << 20}}
+	m.finishLiveScan(result)
+	if len(m.entries) != 2 || m.scanState != scanPartial || m.overviewSizeCache[root] != 1<<20 {
+		t.Fatalf("completion lost partial state or published incomplete snapshot: %+v", m)
+	}
+	view := m.View()
+	if !strings.Contains(view, "locked") || !strings.Contains(view, "unknown") || !strings.Contains(view, humanizeBytes(4096)+"+") {
+		t.Fatalf("partial view must retain unknown row and mark total: %s", view)
+	}
+	saved := snapshotFromModel(m)
+	if saved.State != scanPartial || !saved.NeedsRefresh || m.cache[root].State != scanPartial || !m.cache[root].NeedsRefresh {
+		t.Fatalf("navigation discarded coverage: %+v", saved)
+	}
+	m.multiSelected = map[string]bool{locked: true}
+	m.deleteTarget = &m.entries[1]
+	m.deleteConfirm = true
+	if !strings.Contains(m.View(), "locked, unknown") {
+		t.Fatalf("confirmation pretended size was zero: %s", m.View())
+	}
+}
+
+func TestOverviewPartialMeasurementKeepsBytesAndUnknownRows(t *testing.T) {
+	root := t.TempDir()
+	m := model{path: "/", isOverview: true, width: 80, height: 24, entries: []dirEntry{{Name: "Unavailable", Path: root, IsDir: true, Size: -1}}}
+	updated, _ := m.Update(overviewSizeMsg{Path: root, Err: os.ErrPermission})
+	m = updated.(model)
+	if m.entries[0].State != scanUnavailable || !strings.Contains(m.View(), "unknown") {
+		t.Fatalf("overview hid failed measurement: %+v\n%s", m.entries, m.View())
+	}
+	updated, _ = m.Update(overviewSizeMsg{Path: root, Size: 4096, Err: os.ErrPermission})
+	m = updated.(model)
+	if m.totalSize != 4096 || m.entries[0].State != scanPartial || !strings.Contains(m.View(), humanizeBytes(4096)+"+") {
+		t.Fatalf("overview discarded partial bytes: %+v\n%s", m.entries, m.View())
+	}
+}

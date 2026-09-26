@@ -156,6 +156,9 @@ func (m *model) ensureLiveEntryBacking() {
 }
 
 func (m *model) applyLiveChildSize(entry dirEntry, complete bool, result scanResult) {
+	if complete && entry.State != scanComplete {
+		m.scanState = scanPartial
+	}
 	if complete && m.liveScanningPaths != nil {
 		delete(m.liveScanningPaths, entry.Path)
 	}
@@ -175,13 +178,8 @@ func (m *model) applyLiveChildSize(entry dirEntry, complete bool, result scanRes
 		m.entriesAll = append(m.entriesAll, entry)
 	}
 
-	if entry.Size > 0 {
-		if previousSize > 0 {
-			m.totalSize += entry.Size - previousSize
-		} else {
-			m.totalSize += entry.Size
-		}
-	}
+	m.totalSize += max(entry.Size, 0) - max(previousSize, 0)
+
 	if complete && result.TotalFiles > 0 {
 		m.totalFiles += result.TotalFiles
 	}
@@ -214,6 +212,7 @@ func (m *model) finishLiveScan(result scanResult) {
 	m.entriesAll = filteredEntries
 	m.largeFilesAll = result.LargeFiles
 	m.totalSize = result.TotalSize
+	m.scanState = result.State
 	m.totalFiles = result.TotalFiles
 	m.viewNeedsRefresh = false
 	m.applyEntryFilter()
@@ -225,7 +224,7 @@ func (m *model) finishLiveScan(result scanResult) {
 		m.selectEntryPath(selectedPath)
 	}
 	m.cache[m.path] = historyEntryFromScanResult(m.path, result, m.cache[m.path], false)
-	if m.totalSize > 0 {
+	if m.scanState == scanComplete && m.totalSize > 0 {
 		if m.overviewSizeCache == nil {
 			m.overviewSizeCache = make(map[string]int64)
 		}
@@ -237,7 +236,7 @@ func (m *model) finishLiveScan(result scanResult) {
 	go func(path string, scan scanResult) {
 		_ = saveCacheToDisk(path, scan)
 	}(m.path, result)
-	m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+	m.status = scanSummary(m.totalSize, m.scanState)
 }
 
 func (m *model) sortLiveEntriesForActiveMode() {
@@ -364,6 +363,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.largeFilesAll = msg.result.LargeFiles
 		m.largeFiles = msg.result.LargeFiles
 		m.totalSize = msg.result.TotalSize
+		m.scanState = msg.result.State
 		m.totalFiles = msg.result.TotalFiles
 		m.viewNeedsRefresh = msg.stale
 		// Re-narrow to the active query if a background refresh landed while a
@@ -372,7 +372,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyEntryFilter()
 		m.applyLargeFilter()
 		m.cache[m.path] = historyEntryFromScanResult(m.path, result, m.cache[m.path], msg.stale)
-		if m.totalSize > 0 {
+		if !msg.stale && m.scanState == scanComplete && m.totalSize > 0 {
 			if m.overviewSizeCache == nil {
 				m.overviewSizeCache = make(map[string]int64)
 			}
@@ -397,7 +397,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.scanFreshCmd(m.path), tickCmd())
 		}
 
-		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		m.status = scanSummary(m.totalSize, m.scanState)
 		return m, nil
 	case liveScanStartMsg:
 		if msg.path != m.path {
@@ -427,6 +427,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.entriesAll = slices.Clone(msg.entries)
 		m.largeFilesAll = slices.Clone(msg.largeFiles)
 		m.totalSize = msg.totalSize
+		m.scanState = msg.state
 		m.totalFiles = msg.totalFiles
 		m.viewNeedsRefresh = false
 		m.scanning = true
@@ -453,6 +454,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.finishLiveScan(msg.result)
 			return m, nil
 		case liveScanFailed:
+			m.applyLiveChildUpdate(msg.entry, scanResult{State: scanUnavailable})
 			m.status = fmt.Sprintf("Scan failed: %v", msg.err)
 			return m, waitLiveScanEventCmd(m.liveScanEvents)
 		default:
@@ -471,15 +473,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.inOverviewMode() {
 			for i := range m.entries {
 				if m.entries[i].Path == msg.Path {
-					if msg.Err == nil {
-						m.entries[i].Size = msg.Size
-					} else {
-						m.entries[i].Size = 0
-					}
+					m.entries[i].Size = msg.Size
+					m.entries[i].State = measurementState(msg.Size, msg.Err)
 					break
 				}
 			}
 			m.totalSize = sumKnownEntrySizes(m.entries)
+			m.scanState = entryScanState(m.entries)
 
 			if msg.Err != nil {
 				m.status = fmt.Sprintf("Unable to measure %s: %v", displayPath(msg.Path), msg.Err)
@@ -598,7 +598,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.largeFilter != "" {
 				m.resetLargeFilter()
 				m.clampLargeSelection()
-				m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+				m.status = scanSummary(m.totalSize, m.scanState)
 				return m, nil
 			}
 			m.showLargeFiles = false
@@ -607,7 +607,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.entryFilter != "" {
 			m.resetEntryFilter()
 			m.clampEntrySelection()
-			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+			m.status = scanSummary(m.totalSize, m.scanState)
 			return m, nil
 		}
 		return m.goBack()
@@ -720,7 +720,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.multiSelected = make(map[string]bool)
 			}
-			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+			m.status = scanSummary(m.totalSize, m.scanState)
 		}
 	case "/":
 		if m.inOverviewMode() {
@@ -885,7 +885,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 					m.status = fmt.Sprintf("%d selected, %s", count, humanizeBytes(totalSize))
 				} else {
-					m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+					m.status = scanSummary(m.totalSize, m.scanState)
 				}
 			}
 		} else if len(m.entries) > 0 && !m.inOverviewMode() && m.selected < len(m.entries) {
@@ -911,7 +911,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.status = fmt.Sprintf("%d selected, %s", count, humanizeBytes(totalSize))
 			} else {
-				m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+				m.status = scanSummary(m.totalSize, m.scanState)
 			}
 		}
 	case "delete", "backspace":
@@ -984,12 +984,12 @@ func (m model) updateLargeFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.resetLargeFilter()
 		m.clampLargeSelection()
-		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		m.status = scanSummary(m.totalSize, m.scanState)
 		return m, nil
 	case tea.KeyEnter:
 		m.largeFiltering = false
 		if m.largeFilter == "" {
-			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+			m.status = scanSummary(m.totalSize, m.scanState)
 		} else {
 			m.status = fmt.Sprintf("Filter %q, %d matches", m.largeFilter, len(m.largeFiles))
 		}
@@ -1027,12 +1027,12 @@ func (m model) updateEntryFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		m.resetEntryFilter()
 		m.clampEntrySelection()
-		m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+		m.status = scanSummary(m.totalSize, m.scanState)
 		return m, nil
 	case tea.KeyEnter:
 		m.entryFiltering = false
 		if m.entryFilter == "" {
-			m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+			m.status = scanSummary(m.totalSize, m.scanState)
 		} else {
 			m.status = fmt.Sprintf("Filter %q, %d matches", m.entryFilter, len(m.entries))
 		}
@@ -1083,6 +1083,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 	m.largeFilesAll = last.LargeFiles
 	m.largeFiles = last.LargeFiles
 	m.totalSize = last.TotalSize
+	m.scanState = last.State
 	m.totalFiles = last.TotalFiles
 	m.viewNeedsRefresh = last.NeedsRefresh
 	m.clampEntrySelection()
@@ -1109,7 +1110,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.scanFreshCmd(m.path), tickCmd())
 	}
-	m.status = fmt.Sprintf("Scanned %s", humanizeBytes(m.totalSize))
+	m.status = scanSummary(m.totalSize, m.scanState)
 	m.scanning = false
 	return m, nil
 }
@@ -1189,6 +1190,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 			m.largeFilesAll = slices.Clone(cached.LargeFiles)
 			m.largeFiles = m.largeFilesAll
 			m.totalSize = cached.TotalSize
+			m.scanState = cached.State
 			m.totalFiles = cached.TotalFiles
 			m.viewNeedsRefresh = cached.NeedsRefresh
 			m.selected = cached.Selected
