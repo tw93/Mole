@@ -96,7 +96,7 @@ func (p *scanPublication) finish(action func()) {
 
 // scanLimiter bundles the concurrency budgets used by a single scan pass.
 //
-// There are five separate semaphores on purpose: each protects a different
+// There are four separate semaphores on purpose: each protects a different
 // scarce resource. Collapsing two of them changes scaling behavior in ways
 // that are easy to get wrong; see the per-field notes before adjusting.
 type scanLimiter struct {
@@ -104,11 +104,6 @@ type scanLimiter struct {
 	// child of the root being scanned). Acquired with tryAcquireEntry so the
 	// caller can fall back to inline scanning when the budget is saturated.
 	entrySem chan struct{}
-
-	// dirSem caps the number of concurrent recursive directory walkers
-	// inside calculateDirSizeConcurrent. Independent of entrySem because a
-	// single entry can fan out into many directory walkers.
-	dirSem chan struct{}
 
 	// duSem caps how many `du` subprocesses execute concurrently. Tuned
 	// low (NumCPU capped at 4) because each du process is itself heavily
@@ -140,7 +135,6 @@ func newScanLimiter(childCount int) *scanLimiter {
 	numWorkers := max(min(max(runtime.NumCPU()*cpuMultiplier, minWorkers), maxWorkers, childCount), 1)
 	return &scanLimiter{
 		entrySem:   make(chan struct{}, numWorkers),
-		dirSem:     make(chan struct{}, min(runtime.NumCPU()*2, maxDirWorkers)),
 		duSem:      make(chan struct{}, min(4, runtime.NumCPU())),
 		duQueueSem: make(chan struct{}, min(4, runtime.NumCPU())*2),
 		fastSem:    make(chan struct{}, min(runtime.NumCPU()*cpuMultiplier, maxWorkers)),
@@ -273,7 +267,6 @@ func scanPathConcurrentWithLimiter(ctx context.Context, root string, filesScanne
 	heap.Init(largeFilesHeap)
 	largeFileMinSize := int64(largeFileWarmupMinSize)
 
-	dirSem := limiter.dirSem
 	duSem := limiter.duSem
 	duQueueSem := limiter.duQueueSem
 	var wg sync.WaitGroup
@@ -377,7 +370,7 @@ scanChildren:
 						}
 					}
 					if result.TotalSize <= 0 {
-						result = scanSubdirWithCache(ctx, path, largeFileChan, &largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
+						result = scanSubdirWithCache(ctx, path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
 					}
 					if ctx.Err() != nil {
 						return
@@ -463,7 +456,7 @@ scanChildren:
 				if ctx.Err() != nil {
 					return
 				}
-				result := scanSubdirWithCache(ctx, path, largeFileChan, &largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
+				result := scanSubdirWithCache(ctx, path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
 				if ctx.Err() != nil {
 					return
 				}
@@ -618,7 +611,7 @@ func loadCachedSubdirResult(ctx context.Context, path string, largeFileChan chan
 	return result, true
 }
 
-func scanSubdirWithCache(ctx context.Context, root string, largeFileChan chan<- fileEntry, largeFileMinSize *int64, limiter *scanLimiter, dirSem, duSem, duQueueSem chan struct{}, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, cachePolicy scanCachePolicy, publication *scanPublication) scanResult {
+func scanSubdirWithCache(ctx context.Context, root string, largeFileChan chan<- fileEntry, limiter *scanLimiter, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, cachePolicy scanCachePolicy, publication *scanPublication) scanResult {
 	if ctx.Err() != nil {
 		return scanResult{}
 	}
@@ -660,8 +653,9 @@ func scanSubdirWithCache(ctx context.Context, root string, largeFileChan chan<- 
 		return scanResult{}
 	}
 
-	size, err := calculateDirSizeConcurrent(ctx, root, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath)
-	return scanResult{TotalSize: size, State: measurementState(size, err)}
+	// Only the requested subtree failed; accessible siblings are scanned by
+	// their own workers. Retrying the same ReadDir cannot recover its coverage.
+	return scanResult{State: scanUnavailable}
 }
 
 func shouldFoldDirWithPath(name, path string) bool {
@@ -860,143 +854,6 @@ func isInFoldedDir(path string) bool {
 		}
 	}
 	return false
-}
-
-func calculateDirSizeConcurrent(ctx context.Context, root string, largeFileChan chan<- fileEntry, largeFileMinSize *int64, limiter *scanLimiter, dirSem, duSem, duQueueSem chan struct{}, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (int64, error) {
-	if ctx.Err() != nil {
-		return 0, ctx.Err()
-	}
-	children, err := os.ReadDir(root)
-	if err != nil {
-		return 0, err
-	}
-
-	var total atomic.Int64
-	var localTotal int64
-	var localFilesScanned int64
-	var localDirsScanned int64
-	var localBytesScanned int64
-	var wg sync.WaitGroup
-	var failures scanFailures
-
-scanChildren:
-	for _, child := range children {
-		if ctx.Err() != nil {
-			break
-		}
-		fullPath := filepath.Join(root, child.Name())
-
-		if child.Type()&fs.ModeSymlink != 0 {
-			info, err := child.Info()
-			if err != nil {
-				failures.record(err)
-				continue
-			}
-			size := getActualFileSize(fullPath, info)
-			localTotal += size
-			localFilesScanned++
-			localBytesScanned += size
-			continue
-		}
-
-		if child.IsDir() {
-			localDirsScanned++
-
-			if shouldFoldDirWithPath(child.Name(), fullPath) {
-				if acquireScanPermit(ctx, duQueueSem) != nil {
-					break scanChildren
-				}
-				wg.Go(func() {
-					defer func() { <-duQueueSem }()
-					if ctx.Err() != nil {
-						return
-					}
-
-					size, err := func() (int64, error) {
-						if err := acquireScanPermit(ctx, duSem); err != nil {
-							return 0, err
-						}
-						defer func() { <-duSem }()
-						return getDirectorySizeFromDu(ctx, fullPath)
-					}()
-					if ctx.Err() != nil {
-						return
-					}
-					if size <= 0 && err != nil {
-						size, err = calculateDirSizeFastWithLimiter(ctx, fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
-					} else {
-						atomic.AddInt64(bytesScanned, size)
-					}
-					if ctx.Err() != nil {
-						return
-					}
-					failures.record(err)
-					total.Add(size)
-				})
-				continue
-			}
-
-			select {
-			case dirSem <- struct{}{}:
-				wg.Go(func() {
-					defer func() { <-dirSem }()
-
-					size, err := calculateDirSizeConcurrent(ctx, fullPath, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath)
-					failures.record(err)
-					total.Add(size)
-				})
-			case <-ctx.Done():
-				break scanChildren
-			default:
-				size, err := calculateDirSizeConcurrent(ctx, fullPath, largeFileChan, largeFileMinSize, limiter, dirSem, duSem, duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath)
-				failures.record(err)
-				localTotal += size
-			}
-			continue
-		}
-
-		info, err := child.Info()
-		if err != nil {
-			failures.record(err)
-			continue
-		}
-
-		size := getActualFileSize(fullPath, info)
-		localTotal += size
-		localFilesScanned++
-		localBytesScanned += size
-
-		if !shouldSkipFileForLargeTracking(fullPath) && largeFileMinSize != nil {
-			minSize := atomic.LoadInt64(largeFileMinSize)
-			if size >= minSize {
-				trySend(ctx, largeFileChan, fileEntry{Name: child.Name(), Path: fullPath, Size: size}, scanSendTimeout)
-			}
-		}
-
-		// Update current path occasionally to prevent UI jitter.
-		if currentPath != nil && localFilesScanned%int64(batchUpdateSize) == 0 {
-			currentPath.Store(fullPath)
-		}
-	}
-
-	if localTotal > 0 {
-		total.Add(localTotal)
-	}
-
-	wg.Wait()
-
-	if localFilesScanned > 0 {
-		atomic.AddInt64(filesScanned, localFilesScanned)
-	}
-	if localBytesScanned > 0 {
-		atomic.AddInt64(bytesScanned, localBytesScanned)
-	}
-	if localDirsScanned > 0 {
-		atomic.AddInt64(dirsScanned, localDirsScanned)
-	}
-
-	failures.record(ctx.Err())
-	return total.Load(), failures.first
 }
 
 // measureOverviewSize calculates the size of a directory using multiple strategies.

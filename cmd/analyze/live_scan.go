@@ -449,7 +449,7 @@ func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan ch
 		return scanResult{}, err
 	}
 
-	result := scanSubdirWithCache(ctx, target.path, largeFileChan, largeFileMinSize, limiter, limiter.dirSem, limiter.duSem, limiter.duQueueSem, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
+	result := scanSubdirWithCache(ctx, target.path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, cachePolicy, publication)
 	return result, ctx.Err()
 }
 

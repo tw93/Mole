@@ -61,7 +61,6 @@ const (
 	minWorkers         = 2
 	maxWorkers         = 12
 	cpuMultiplier      = 1
-	maxDirWorkers      = 6
 	openCommandTimeout = 10 * time.Second
 	scanSendTimeout    = 100 * time.Millisecond
 	uiTickInterval     = 100 * time.Millisecond
