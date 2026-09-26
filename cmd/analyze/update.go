@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -1220,7 +1221,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 
 func scanOverviewPathCmd(path string, index int) tea.Cmd {
 	return func() tea.Msg {
-		size, err := measureInsightSize(path)
+		size, err := measureInsightSize(context.Background(), path)
 		return overviewSizeMsg{
 			Path:  path,
 			Index: index,

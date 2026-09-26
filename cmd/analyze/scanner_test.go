@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func TestGetDirectoryLogicalSizeWithExclude(t *testing.T) {
 	writeFileWithSize(t, libFile, 200)
 	writeFileWithSize(t, projectLibFile, 300)
 
-	total, err := getDirectoryLogicalSizeWithExclude(base, "")
+	total, err := getDirectoryLogicalSizeWithExclude(context.Background(), base, "", nil)
 	if err != nil {
 		t.Fatalf("getDirectoryLogicalSizeWithExclude (no exclude) error: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestGetDirectoryLogicalSizeWithExclude(t *testing.T) {
 		t.Fatalf("expected total 600 bytes, got %d", total)
 	}
 
-	excluding, err := getDirectoryLogicalSizeWithExclude(base, filepath.Join(base, "Library"))
+	excluding, err := getDirectoryLogicalSizeWithExclude(context.Background(), base, filepath.Join(base, "Library"), nil)
 	if err != nil {
 		t.Fatalf("getDirectoryLogicalSizeWithExclude (exclude Library) error: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestGetDirectorySizeFromDuSkippingImmediateChildDoesNotMeasureExcludedPath(
 	}
 
 	var measured []string
-	size, err := getDirectorySizeFromDuSkippingImmediateChild(base, excluded, func(path string) (int64, error) {
+	size, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), base, excluded, func(path string) (int64, error) {
 		measured = append(measured, path)
 		return 100, nil
 	})
@@ -219,5 +220,43 @@ func TestFoldedDirectoryRetainsPartialDuOutput(t *testing.T) {
 	}
 	if result.State != scanPartial || result.TotalSize != 8192 || len(result.Entries) != 1 || result.Entries[0].State != scanPartial {
 		t.Fatalf("partial du result was lost or replaced by fallback walk: %+v", result)
+	}
+}
+
+func TestOverviewMeasurementFailureDoesNotReplaceCompleteSnapshot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(root, "readable"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	good, err := measureOverviewSize(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	partial, err := measureOverviewSize(context.Background(), root)
+	if err == nil || partial < 4096 || partial >= good {
+		t.Fatalf("overview must retain partial bytes and error: good=%d partial=%d err=%v", good, partial, err)
+	}
+	cached, err := loadStoredOverviewSize(root)
+	if err != nil || cached != good {
+		t.Fatalf("failed refresh replaced complete snapshot: %d, %v", cached, err)
+	}
+	logical, err := getDirectoryLogicalSizeWithExclude(context.Background(), root, "", nil)
+	if err == nil || logical != 4096 {
+		t.Fatalf("fallback erased failure: %d, %v", logical, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = measureOverviewSize(ctx, root)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
 	}
 }

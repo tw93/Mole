@@ -2935,7 +2935,7 @@ func TestMeasureOverviewSize(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	size, err := measureOverviewSize(target)
+	size, err := measureOverviewSize(context.Background(), target)
 	if err != nil {
 		t.Fatalf("measureOverviewSize: %v", err)
 	}
@@ -2958,7 +2958,7 @@ func TestMeasureOverviewSize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(target, "data2.bin"), content, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	size2, err := measureOverviewSize(target)
+	size2, err := measureOverviewSize(context.Background(), target)
 	if err != nil {
 		t.Fatalf("measureOverviewSize: %v", err)
 	}

@@ -814,7 +814,7 @@ func prefetchOverviewCache(ctx context.Context) {
 				return
 			}
 
-			size, err := measureOverviewSize(path)
+			size, err := measureOverviewSize(ctx, path)
 			if err == nil && size > 0 {
 				_ = storeOverviewSize(path, size)
 			}

@@ -858,7 +858,7 @@ func isInFoldedDir(path string) bool {
 
 // measureOverviewSize calculates the size of a directory using multiple strategies.
 // When scanning Home, it excludes ~/Library to avoid duplicate counting.
-func measureOverviewSize(path string) (int64, error) {
+func measureOverviewSize(ctx context.Context, path string) (int64, error) {
 	if path == "" {
 		return 0, fmt.Errorf("empty path")
 	}
@@ -879,22 +879,17 @@ func measureOverviewSize(path string) (int64, error) {
 		excludePath = filepath.Join(home, "Library")
 	}
 
-	if duSize, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), path, excludePath, overviewIgnoreNamesForPath(path)); err == nil {
-		_ = storeOverviewSize(path, duSize)
-		return duSize, nil
+	ctx, cancel := context.WithTimeout(ctx, duTimeout)
+	defer cancel()
+	ignoreNames := overviewIgnoreNamesForPath(path)
+	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(ctx, path, excludePath, ignoreNames)
+	if err != nil && size == 0 && ctx.Err() == nil {
+		size, err = getDirectoryLogicalSizeWithExclude(ctx, path, excludePath, ignoreNames)
 	}
-
-	if logicalSize, err := getDirectoryLogicalSizeWithExclude(path, excludePath); err == nil {
-		_ = storeOverviewSize(path, logicalSize)
-		return logicalSize, nil
+	if err == nil {
+		_ = storeOverviewSize(path, size)
 	}
-
-	if cached, err := loadCacheFromDisk(path); err == nil {
-		_ = storeOverviewSize(path, cached.TotalSize)
-		return cached.TotalSize, nil
-	}
-
-	return 0, fmt.Errorf("unable to measure directory size with fast methods")
+	return size, err
 }
 
 func getDirectorySizeFromDu(ctx context.Context, path string) (int64, error) {
@@ -967,7 +962,7 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 	// When excluding a path (e.g., ~/Library), subtract only that exact directory instead of ignoring every "Library"
 	if excludePath != "" {
 		if filepath.Dir(filepath.Clean(excludePath)) == filepath.Clean(path) {
-			return getDirectorySizeFromDuSkippingImmediateChild(path, excludePath, runDuSize)
+			return getDirectorySizeFromDuSkippingImmediateChild(ctx, path, excludePath, runDuSize)
 		}
 
 		totalSize, err := runDuSize(path)
@@ -1019,7 +1014,7 @@ func overviewIgnoreNamesForPath(path string) []string {
 	return ignoreNames
 }
 
-func getDirectorySizeFromDuSkippingImmediateChild(path string, excludePath string, runDuSize func(string) (int64, error)) (int64, error) {
+func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path string, excludePath string, runDuSize func(string) (int64, error)) (int64, error) {
 	path = filepath.Clean(path)
 	excludePath = filepath.Clean(excludePath)
 
@@ -1052,6 +1047,10 @@ func getDirectorySizeFromDuSkippingImmediateChild(path string, excludePath strin
 	sem := make(chan struct{}, workerCount)
 
 	for _, entry := range entries {
+		if ctx.Err() != nil {
+			failures.record(ctx.Err())
+			break
+		}
 		fullPath := filepath.Join(path, entry.Name())
 		if filepath.Clean(fullPath) == excludePath {
 			continue
@@ -1067,7 +1066,10 @@ func getDirectorySizeFromDuSkippingImmediateChild(path string, excludePath strin
 			continue
 		}
 
-		sem <- struct{}{}
+		if err := acquireScanPermit(ctx, sem); err != nil {
+			failures.record(err)
+			break
+		}
 		wg.Go(func() {
 			defer func() { <-sem }()
 
@@ -1082,17 +1084,22 @@ func getDirectorySizeFromDuSkippingImmediateChild(path string, excludePath strin
 	return total, failures.first
 }
 
-func getDirectoryLogicalSizeWithExclude(path string, excludePath string) (int64, error) {
+func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, excludePath string, ignoreNames []string) (int64, error) {
 	var total int64
+	var failures scanFailures
 	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
-			if os.IsPermission(err) {
+			failures.record(err)
+			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		// Skip excluded path
-		if excludePath != "" && p == excludePath {
+		if p == excludePath || (p != path && d.IsDir() && slices.Contains(ignoreNames, d.Name())) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() {
@@ -1100,15 +1107,14 @@ func getDirectoryLogicalSizeWithExclude(path string, excludePath string) (int64,
 		}
 		info, err := d.Info()
 		if err != nil {
+			failures.record(err)
 			return nil
 		}
 		total += getActualFileSize(p, info)
 		return nil
 	})
-	if err != nil && err != filepath.SkipDir {
-		return 0, err
-	}
-	return total, nil
+	failures.record(err)
+	return total, failures.first
 }
 
 // countableFileSize returns the on-disk size to attribute to a regular file.
