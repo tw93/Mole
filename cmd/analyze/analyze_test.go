@@ -3611,3 +3611,57 @@ func TestOverviewPartialMeasurementKeepsBytesAndUnknownRows(t *testing.T) {
 		t.Fatalf("overview discarded partial bytes: %+v\n%s", m.entries, m.View())
 	}
 }
+
+func TestAnalyzeJSONReportsPartialCoverageAndUnavailableSizes(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(root, "readable"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	for _, overview := range []bool{false, true} {
+		t.Run(fmt.Sprintf("overview=%t", overview), func(t *testing.T) {
+			var result jsonOutput
+			if overview {
+				result = performOverviewScanForJSONWithEntries(root, nil, []dirEntry{{Name: "locked", Path: locked, IsDir: true, Size: -1}, {Name: "root", Path: root, IsDir: true, Size: -1}})
+			} else {
+				result = performDirectoryScanForJSON(root)
+			}
+			data, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document struct {
+				ScanStatus string `json:"scan_status"`
+				TotalSize  int64  `json:"total_size"`
+				Entries    []struct {
+					Path       string `json:"path"`
+					Size       int64  `json:"size"`
+					ScanStatus string `json:"scan_status"`
+				} `json:"entries"`
+			}
+			if err := json.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			if document.ScanStatus != "partial" || document.TotalSize < 4096 {
+				t.Fatalf("JSON lost coverage or bytes: %s", data)
+			}
+			for _, entry := range document.Entries {
+				if entry.Path == locked {
+					if entry.ScanStatus != "unavailable" || entry.Size != 0 {
+						t.Fatalf("JSON fabricated unknown size: %s", data)
+					}
+					return
+				}
+			}
+			t.Fatalf("JSON omitted unavailable entry: %s", data)
+		})
+	}
+}

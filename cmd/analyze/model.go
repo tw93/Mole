@@ -31,6 +31,11 @@ func (s scanState) String() string {
 	}
 }
 
+// MarshalText gives the existing JSON boundary the same typed coverage state.
+func (s scanState) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
 // measurementState preserves the distinction between a useful partial size and
 // a failed probe that measured nothing. Callers must retain the returned bytes.
 func measurementState(size int64, err error) scanState {
