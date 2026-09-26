@@ -193,3 +193,31 @@ func TestScanUnreadableDescendantPreservesCoverageAndGoodCache(t *testing.T) {
 		t.Fatalf("recovery: %+v", recovered)
 	}
 }
+
+func TestFoldedDirectoryRetainsPartialDuOutput(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	folded := filepath.Join(root, "node_modules")
+	writeFileWithSize(t, filepath.Join(folded, "file"), 1)
+	stubDir := t.TempDir()
+	// The real external-command boundary returns a subtotal and fails.
+	if err := os.WriteFile(filepath.Join(stubDir, "du"), []byte("#!/bin/sh\nprintf '8\tpartial\n'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stubDir)
+	size, err := getDirectorySizeFromDu(context.Background(), folded)
+	if size != 8192 || err == nil {
+		t.Fatalf("du lost partial bytes or failure: %d, %v", size, err)
+	}
+	var files, dirs, bytes int64
+	current := &atomic.Value{}
+	current.Store("")
+	result, err := scanPathConcurrentWithOptions(context.Background(), root, &files, &dirs, &bytes, current, false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != scanPartial || result.TotalSize != 8192 || len(result.Entries) != 1 || result.Entries[0].State != scanPartial {
+		t.Fatalf("partial du result was lost or replaced by fallback walk: %+v", result)
+	}
+}
