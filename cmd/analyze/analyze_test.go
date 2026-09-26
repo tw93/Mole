@@ -3566,7 +3566,7 @@ func TestLiveScanKeepsUnavailableDirectoryAndPartialTotal(t *testing.T) {
 	t.Fatal("live scan omitted unreadable directory")
 }
 
-func TestPartialScanViewAndNavigationRetainUnavailableEntries(t *testing.T) {
+func TestPartialScanViewRetainsUnavailableEntries(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "root")
 	locked := filepath.Join(root, "locked")
 	result := scanResult{
@@ -3595,6 +3595,44 @@ func TestPartialScanViewAndNavigationRetainUnavailableEntries(t *testing.T) {
 	if !strings.Contains(m.View(), "locked, unknown") {
 		t.Fatalf("confirmation pretended size was zero: %s", m.View())
 	}
+}
+
+func TestPartialScanCoverageSurvivesEntryLimit(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	for i := range maxEntries {
+		writeFileWithSize(t, filepath.Join(root, fmt.Sprintf("readable-%02d", i)), 4096)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	m := newModel(root, false)
+	msg := runScanResultCmd(t, m.scanFreshCmd(root))
+	if msg.err != nil || msg.result.State != scanPartial || msg.result.TotalSize != int64(maxEntries*4096) || len(msg.result.Entries) != maxEntries {
+		t.Fatalf("limited view lost aggregate coverage: %+v", msg)
+	}
+	for _, entry := range msg.result.Entries {
+		if entry.Path == locked {
+			t.Fatal("unknown entry displaced a larger measured entry")
+		}
+	}
+	document := performDirectoryScanForJSON(root)
+	if document.ScanStatus != scanPartial || document.TotalSize != msg.result.TotalSize || len(document.Entries) != maxEntries+1 {
+		t.Fatalf("JSON lost complete listing or aggregate coverage: %+v", document)
+	}
+	for _, entry := range document.Entries {
+		if entry.Path == locked && entry.ScanStatus == scanUnavailable {
+			return
+		}
+	}
+	t.Fatal("JSON omitted unavailable entry")
 }
 
 func TestOverviewPartialMeasurementKeepsBytesAndUnknownRows(t *testing.T) {
