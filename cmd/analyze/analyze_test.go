@@ -1498,7 +1498,8 @@ func TestLiveScanIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *t
 		}
 	}
 
-	entries, targets, _, _, _, err := readLiveScanInitialEntries(root, nil)
+	initial, targets, err := readLiveScanInitialEntries(root, nil)
+	entries := initial.Entries
 	if err != nil {
 		t.Fatalf("read live scan entries: %v", err)
 	}
@@ -1880,7 +1881,6 @@ func TestLiveScanCancellationStopsFoldedDirectoryProbe(t *testing.T) {
 	publication := newScanPublication(ctx, cancelContext)
 	defer publication.cancel()
 	limiter := newScanLimiter(1)
-	largeFileMinSize := int64(largeFileWarmupMinSize)
 	var filesScanned, dirsScanned, bytesScanned int64
 	currentPath := &atomic.Value{}
 	currentPath.Store("")
@@ -1891,7 +1891,6 @@ func TestLiveScanCancellationStopsFoldedDirectoryProbe(t *testing.T) {
 			ctx,
 			liveScanTarget{name: "folded", path: target, kind: liveScanTargetFoldedDirectory},
 			make(chan fileEntry, maxLargeFiles*2),
-			&largeFileMinSize,
 			limiter,
 			&filesScanned,
 			&dirsScanned,
@@ -1928,7 +1927,6 @@ func TestLiveScanCancellationStopsNestedFoldedDirectoryProbe(t *testing.T) {
 	publication := newScanPublication(ctx, cancelContext)
 	defer publication.cancel()
 	limiter := newScanLimiter(1)
-	largeFileMinSize := int64(largeFileWarmupMinSize)
 	var filesScanned, dirsScanned, bytesScanned int64
 	currentPath := &atomic.Value{}
 	currentPath.Store("")
@@ -1939,7 +1937,6 @@ func TestLiveScanCancellationStopsNestedFoldedDirectoryProbe(t *testing.T) {
 			ctx,
 			liveScanTarget{name: "target", path: target, kind: liveScanTargetDirectory},
 			make(chan fileEntry, maxLargeFiles*2),
-			&largeFileMinSize,
 			limiter,
 			&filesScanned,
 			&dirsScanned,
@@ -2315,12 +2312,10 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 		current := &atomic.Value{}
 		current.Store("")
 		limiter := newScanLimiter(1)
-		largeFileMinSize := int64(largeFileWarmupMinSize)
 		result, err := scanLiveTarget(
 			ctx,
 			liveScanTarget{name: "Library", path: library, kind: liveScanTargetHomeLibrary},
 			make(chan fileEntry, maxLargeFiles*2),
-			&largeFileMinSize,
 			limiter,
 			&filesScanned,
 			&dirsScanned,
@@ -3537,4 +3532,36 @@ func mustAbs(t *testing.T, path string) string {
 		t.Fatalf("filepath.Abs(%q): %v", path, err)
 	}
 	return abs
+}
+
+func TestLiveScanKeepsUnavailableDirectoryAndPartialTotal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, "root")
+	locked := filepath.Join(root, "locked")
+	writeFileWithSize(t, filepath.Join(root, "readable"), 4096)
+	writeFileWithSize(t, filepath.Join(locked, "hidden"), 1<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	var files, dirs, bytes int64
+	current := &atomic.Value{}
+	current.Store("")
+	msg := runScanResultCmd(t, startLiveScanCmd(root, &files, &dirs, &bytes, current))
+	if msg.err != nil || msg.result.State != scanPartial || msg.result.TotalSize != 4096 {
+		t.Fatalf("live scan lost partial result: %+v", msg)
+	}
+	for _, entry := range msg.result.Entries {
+		if entry.Path == locked {
+			if entry.State != scanUnavailable || entry.Size != 0 {
+				t.Fatalf("unavailable entry: %+v", entry)
+			}
+			return
+		}
+	}
+	t.Fatal("live scan omitted unreadable directory")
 }

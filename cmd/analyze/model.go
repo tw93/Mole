@@ -107,6 +107,7 @@ type scanResultMsg struct {
 }
 
 type liveScanStartMsg struct {
+	state         scanState
 	id            int64
 	path          string
 	entries       []dirEntry
