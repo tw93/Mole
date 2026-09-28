@@ -30,6 +30,7 @@ declare -a HISTORY_SESSION_REBUILT=()
 declare -a HISTORY_SESSION_OTHER=()
 declare -a HISTORY_SESSION_OPERATIONS=()
 declare -a HISTORY_SESSION_FAILED_TASKS=()
+declare -a HISTORY_SESSION_START_SEQ=()
 
 declare -a HISTORY_DELETE_TIMESTAMPS=()
 declare -a HISTORY_DELETE_MODES=()
@@ -50,6 +51,9 @@ HISTORY_ACTIVE_REBUILT=0
 HISTORY_ACTIVE_OTHER=0
 HISTORY_ACTIVE_OPERATIONS=0
 HISTORY_ACTIVE_FAILED_TASKS=0
+HISTORY_ACTIVE_MARKED=0
+HISTORY_ACTIVE_START_SEQ=0
+HISTORY_START_SEQ_COUNTER=0
 
 history_operations_log_file() {
     printf '%s\n' "${MOLE_OPERATIONS_LOG:-${OPERATIONS_LOG_FILE:-$HOME/Library/Logs/mole/operations.log}}"
@@ -119,19 +123,159 @@ history_reset_active_session() {
     HISTORY_ACTIVE_OTHER=0
     HISTORY_ACTIVE_OPERATIONS=0
     HISTORY_ACTIVE_FAILED_TASKS=0
+    HISTORY_ACTIVE_MARKED=0
+    HISTORY_ACTIVE_START_SEQ=0
+}
+
+# Sessions of different commands can overlap in one log: a `mo purge` started
+# while `mo clean` still runs writes its markers between clean's operation
+# lines. Every operation line names its command, so keep at most one open
+# session per command and route each line to that command's session instead
+# of whichever marker came last. Open sessions of other commands wait here,
+# one record per session, fields separated by \x1f. Only sessions opened by a
+# start marker are kept open this way: commands that log without markers
+# (installer) still end at the next marker, as before.
+declare -a HISTORY_PARKED_SESSIONS=()
+
+history_park_active_session() {
+    [[ -n "$HISTORY_ACTIVE_COMMAND" ]] || return 0
+    local sep=$'\x1f'
+    HISTORY_PARKED_SESSIONS+=("${HISTORY_ACTIVE_COMMAND}${sep}${HISTORY_ACTIVE_STARTED_AT}${sep}${HISTORY_ACTIVE_ENDED_AT}${sep}${HISTORY_ACTIVE_ITEMS}${sep}${HISTORY_ACTIVE_SIZE}${sep}${HISTORY_ACTIVE_REMOVED}${sep}${HISTORY_ACTIVE_TRASHED}${sep}${HISTORY_ACTIVE_SKIPPED}${sep}${HISTORY_ACTIVE_FAILED}${sep}${HISTORY_ACTIVE_REBUILT}${sep}${HISTORY_ACTIVE_OTHER}${sep}${HISTORY_ACTIVE_OPERATIONS}${sep}${HISTORY_ACTIVE_FAILED_TASKS}${sep}${HISTORY_ACTIVE_START_SEQ}${sep}${HISTORY_ACTIVE_MARKED}")
+    history_reset_active_session
+}
+
+# Make the open session of <command> the active one. Returns 1 when that
+# command has no open session; the previously active session stays parked.
+history_activate_command_session() {
+    local command="$1"
+    [[ "$HISTORY_ACTIVE_COMMAND" == "$command" ]] && return 0
+
+    history_park_active_session
+
+    local -a remaining=()
+    local record found=""
+    for record in "${HISTORY_PARKED_SESSIONS[@]+"${HISTORY_PARKED_SESSIONS[@]}"}"; do
+        if [[ -z "$found" && "${record%%$'\x1f'*}" == "$command" ]]; then
+            found="$record"
+        else
+            remaining+=("$record")
+        fi
+    done
+    HISTORY_PARKED_SESSIONS=("${remaining[@]+"${remaining[@]}"}")
+    [[ -n "$found" ]] || return 1
+
+    IFS=$'\x1f' read -r HISTORY_ACTIVE_COMMAND HISTORY_ACTIVE_STARTED_AT \
+        HISTORY_ACTIVE_ENDED_AT HISTORY_ACTIVE_ITEMS HISTORY_ACTIVE_SIZE \
+        HISTORY_ACTIVE_REMOVED HISTORY_ACTIVE_TRASHED HISTORY_ACTIVE_SKIPPED \
+        HISTORY_ACTIVE_FAILED HISTORY_ACTIVE_REBUILT HISTORY_ACTIVE_OTHER \
+        HISTORY_ACTIVE_OPERATIONS HISTORY_ACTIVE_FAILED_TASKS \
+        HISTORY_ACTIVE_START_SEQ HISTORY_ACTIVE_MARKED <<< "$found"
+    return 0
+}
+
+# Close sessions that no start marker opened, except the one of <command>.
+history_finish_unmarked_sessions() {
+    local keep_command="${1:-}"
+    if [[ -n "$HISTORY_ACTIVE_COMMAND" && "$HISTORY_ACTIVE_MARKED" != "1" &&
+        "$HISTORY_ACTIVE_COMMAND" != "$keep_command" ]]; then
+        history_finish_session
+    fi
+    local -a unmarked=()
+    local record command
+    for record in "${HISTORY_PARKED_SESSIONS[@]+"${HISTORY_PARKED_SESSIONS[@]}"}"; do
+        [[ "${record##*$'\x1f'}" == "1" ]] && continue
+        [[ "${record%%$'\x1f'*}" == "$keep_command" ]] && continue
+        unmarked+=("${record%%$'\x1f'*}")
+    done
+    for command in "${unmarked[@]+"${unmarked[@]}"}"; do
+        history_activate_command_session "$command" && history_finish_session
+    done
+    return 0
+}
+
+# Close every session still open at the end of the log, then order all
+# sessions by start time. An open session of one command no longer closes
+# when another command starts, so without the sort a session that never
+# wrote an end marker would be listed as the newest one.
+history_finish_all_sessions() {
+    history_finish_session
+    while [[ ${#HISTORY_PARKED_SESSIONS[@]} -gt 0 ]]; do
+        history_activate_command_session "${HISTORY_PARKED_SESSIONS[0]%%$'\x1f'*}" || break
+        history_finish_session
+    done
+
+    local count=${#HISTORY_SESSION_COMMANDS[@]}
+    [[ $count -gt 1 ]] || return 0
+    local -a order=()
+    local idx _started
+    # Index first: tab is IFS whitespace, so an empty leading start time
+    # would shift the index into the wrong variable. A malformed start marker
+    # sorts by its end time instead. Timestamps have one-second resolution, so
+    # sessions started in the same second keep the order of their markers.
+    local _start_seq
+    while IFS=$'\t' read -r idx _started _start_seq; do
+        order+=("$idx")
+    done < <(
+        for ((idx = 0; idx < count; idx++)); do
+            printf '%s\t%s\t%s\n' "$idx" \
+                "${HISTORY_SESSION_STARTED_AT[$idx]:-${HISTORY_SESSION_ENDED_AT[$idx]}}" \
+                "${HISTORY_SESSION_START_SEQ[$idx]:-0}"
+        done | LC_ALL=C sort -t $'\t' -k2,2 -k3,3n
+    )
+    [[ ${#order[@]} -eq $count ]] || return 0
+
+    local -a sorted_commands=() sorted_started=() sorted_ended=() sorted_items=() sorted_size=() sorted_removed=() sorted_trashed=()
+    local -a sorted_skipped=() sorted_failed=() sorted_rebuilt=() sorted_other=() sorted_operations=() sorted_failed_tasks=()
+    local -a sorted_start_seq=()
+    for idx in "${order[@]}"; do
+        sorted_commands+=("${HISTORY_SESSION_COMMANDS[$idx]}")
+        sorted_started+=("${HISTORY_SESSION_STARTED_AT[$idx]}")
+        sorted_ended+=("${HISTORY_SESSION_ENDED_AT[$idx]}")
+        sorted_items+=("${HISTORY_SESSION_ITEMS[$idx]}")
+        sorted_size+=("${HISTORY_SESSION_SIZE[$idx]}")
+        sorted_removed+=("${HISTORY_SESSION_REMOVED[$idx]}")
+        sorted_trashed+=("${HISTORY_SESSION_TRASHED[$idx]}")
+        sorted_skipped+=("${HISTORY_SESSION_SKIPPED[$idx]}")
+        sorted_failed+=("${HISTORY_SESSION_FAILED[$idx]}")
+        sorted_rebuilt+=("${HISTORY_SESSION_REBUILT[$idx]}")
+        sorted_other+=("${HISTORY_SESSION_OTHER[$idx]}")
+        sorted_operations+=("${HISTORY_SESSION_OPERATIONS[$idx]}")
+        sorted_failed_tasks+=("${HISTORY_SESSION_FAILED_TASKS[$idx]}")
+        sorted_start_seq+=("${HISTORY_SESSION_START_SEQ[$idx]}")
+    done
+    HISTORY_SESSION_COMMANDS=("${sorted_commands[@]}")
+    HISTORY_SESSION_STARTED_AT=("${sorted_started[@]}")
+    HISTORY_SESSION_ENDED_AT=("${sorted_ended[@]}")
+    HISTORY_SESSION_ITEMS=("${sorted_items[@]}")
+    HISTORY_SESSION_SIZE=("${sorted_size[@]}")
+    HISTORY_SESSION_REMOVED=("${sorted_removed[@]}")
+    HISTORY_SESSION_TRASHED=("${sorted_trashed[@]}")
+    HISTORY_SESSION_SKIPPED=("${sorted_skipped[@]}")
+    HISTORY_SESSION_FAILED=("${sorted_failed[@]}")
+    HISTORY_SESSION_REBUILT=("${sorted_rebuilt[@]}")
+    HISTORY_SESSION_OTHER=("${sorted_other[@]}")
+    HISTORY_SESSION_OPERATIONS=("${sorted_operations[@]}")
+    HISTORY_SESSION_FAILED_TASKS=("${sorted_failed_tasks[@]}")
+    HISTORY_SESSION_START_SEQ=("${sorted_start_seq[@]}")
 }
 
 history_start_session() {
     local command="$1"
     local started_at="$2"
+    local marked="${3:-0}"
 
-    if [[ -n "$HISTORY_ACTIVE_COMMAND" ]]; then
+    # A new start of the same command closes that command's previous
+    # session (it never wrote an end marker). Other commands stay open.
+    if history_activate_command_session "$command"; then
         history_finish_session
     fi
 
     history_reset_active_session
     HISTORY_ACTIVE_COMMAND="$command"
     HISTORY_ACTIVE_STARTED_AT="$started_at"
+    HISTORY_ACTIVE_MARKED="$marked"
+    HISTORY_START_SEQ_COUNTER=$((HISTORY_START_SEQ_COUNTER + 1))
+    HISTORY_ACTIVE_START_SEQ=$HISTORY_START_SEQ_COUNTER
 }
 
 history_finish_session() {
@@ -150,6 +294,7 @@ history_finish_session() {
     HISTORY_SESSION_OTHER+=("$HISTORY_ACTIVE_OTHER")
     HISTORY_SESSION_OPERATIONS+=("$HISTORY_ACTIVE_OPERATIONS")
     HISTORY_SESSION_FAILED_TASKS+=("$HISTORY_ACTIVE_FAILED_TASKS")
+    HISTORY_SESSION_START_SEQ+=("$HISTORY_ACTIVE_START_SEQ")
 
     history_reset_active_session
 }
@@ -159,7 +304,7 @@ history_record_operation() {
     local action="$2"
     local timestamp="$3"
 
-    if [[ -z "$HISTORY_ACTIVE_COMMAND" ]]; then
+    if ! history_activate_command_session "$command"; then
         history_start_session "$command" "$timestamp"
     fi
 
@@ -187,7 +332,8 @@ history_parse_session_start() {
     command="${inner%% session started at *}"
     started_at="${inner#* session started at }"
     started_at="${started_at%" =========="}"
-    history_start_session "$command" "$started_at"
+    history_finish_unmarked_sessions
+    history_start_session "$command" "$started_at" 1
     return 0
 }
 
@@ -215,7 +361,8 @@ history_parse_session_end() {
         fi
     fi
 
-    if [[ -z "$HISTORY_ACTIVE_COMMAND" ]]; then
+    history_finish_unmarked_sessions "$command"
+    if ! history_activate_command_session "$command"; then
         history_start_session "$command" "$ended_at"
     fi
 
@@ -247,6 +394,7 @@ history_parse_operation_line() {
 
 history_reset_sessions() {
     history_reset_active_session
+    HISTORY_PARKED_SESSIONS=()
     HISTORY_SESSION_COMMANDS=()
     HISTORY_SESSION_STARTED_AT=()
     HISTORY_SESSION_ENDED_AT=()
@@ -260,6 +408,8 @@ history_reset_sessions() {
     HISTORY_SESSION_OTHER=()
     HISTORY_SESSION_OPERATIONS=()
     HISTORY_SESSION_FAILED_TASKS=()
+    HISTORY_SESSION_START_SEQ=()
+    HISTORY_START_SEQ_COUNTER=0
 }
 
 history_reset_deletions() {
@@ -284,9 +434,7 @@ history_load_operations() {
         history_parse_operation_line "$line" && continue
     done < "$log_file"
 
-    if [[ -n "$HISTORY_ACTIVE_COMMAND" ]]; then
-        history_finish_session
-    fi
+    history_finish_all_sessions
 }
 
 history_load_deletions() {

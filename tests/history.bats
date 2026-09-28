@@ -170,6 +170,86 @@ EOF
     [[ "$output" != *"malformed summary items"* ]]
 }
 
+@test "mo history attributes interleaved sessions of different commands by command" {
+    # A dry-run purge started while a real clean was still running.
+    cat > "$HOME/Library/Logs/mole/operations.log" <<'EOF'
+# ========== clean session started at 2026-05-24 10:00:00 ==========
+[2026-05-24 10:00:01] [clean] REMOVED /tmp/one (1KB)
+# ========== purge session started at 2026-05-24 10:01:00 ==========
+[2026-05-24 10:01:01] [clean] REMOVED /tmp/two (1KB)
+[2026-05-24 10:01:02] [clean] REMOVED /tmp/three (1KB)
+# ========== purge session ended at 2026-05-24 10:02:00, 4 items, 8KB ==========
+[2026-05-24 10:03:00] [clean] REMOVED /tmp/four (1KB)
+# ========== clean session ended at 2026-05-24 10:04:00, 4 items, 4KB ==========
+# ========== uninstall session started at 2026-05-24 11:00:00 ==========
+[2026-05-24 11:00:01] [uninstall] TRASHED /tmp/Old.app (1KB)
+EOF
+
+    run env HOME="$HOME" "$PROJECT_ROOT/mole" history --json
+    [ "$status" -eq 0 ] || return 1
+
+    printf '%s\n' "$output" | python3 -c '
+import json
+import sys
+
+sessions = json.load(sys.stdin)["sessions"]
+assert [s["command"] for s in sessions] == ["uninstall", "purge", "clean"], sessions
+uninstall, purge, clean = sessions
+assert purge["actions"]["removed"] == 0, purge
+assert clean["actions"]["removed"] == 4, clean
+assert uninstall["actions"]["trashed"] == 1, uninstall
+'
+}
+
+@test "mo history orders sessions started in the same second by their markers" {
+    cat > "$HOME/Library/Logs/mole/operations.log" <<'EOF'
+# ========== clean session started at 2026-05-24 10:00:00 ==========
+# ========== purge session started at 2026-05-24 10:00:00 ==========
+[2026-05-24 10:00:01] [purge] REMOVED /tmp/build (1KB)
+# ========== purge session ended at 2026-05-24 10:00:02, 1 items, 1KB ==========
+[2026-05-24 10:00:03] [clean] REMOVED /tmp/cache (1KB)
+# ========== clean session ended at 2026-05-24 10:00:04, 1 items, 1KB ==========
+EOF
+
+    run env HOME="$HOME" "$PROJECT_ROOT/mole" history --json
+    [ "$status" -eq 0 ] || return 1
+
+    printf '%s\n' "$output" | python3 -c '
+import json
+import sys
+
+sessions = json.load(sys.stdin)["sessions"]
+assert [s["command"] for s in sessions] == ["purge", "clean"], sessions
+assert sessions[0]["actions"]["removed"] == 1, sessions[0]
+assert sessions[1]["actions"]["removed"] == 1, sessions[1]
+'
+}
+
+@test "mo history still ends marker-less installer runs at the next session marker" {
+    # mo installer logs operation lines but writes no session markers.
+    cat > "$HOME/Library/Logs/mole/operations.log" <<'EOF'
+[2026-05-02 10:00:01] [installer] TRASHED /tmp/first.dmg (1KB)
+# ========== clean session started at 2026-05-05 10:00:00 ==========
+[2026-05-05 10:00:01] [clean] REMOVED /tmp/cache (1KB)
+# ========== clean session ended at 2026-05-05 10:01:00, 1 items, 1KB ==========
+[2026-05-10 10:00:01] [installer] TRASHED /tmp/second.dmg (1KB)
+EOF
+
+    run env HOME="$HOME" "$PROJECT_ROOT/mole" history --json
+    [ "$status" -eq 0 ] || return 1
+
+    printf '%s\n' "$output" | python3 -c '
+import json
+import sys
+
+sessions = json.load(sys.stdin)["sessions"]
+assert [s["command"] for s in sessions] == ["installer", "clean", "installer"], sessions
+assert sessions[0]["started_at"] == "2026-05-10 10:00:01", sessions[0]
+assert sessions[0]["actions"]["trashed"] == 1, sessions[0]
+assert sessions[2]["actions"]["trashed"] == 1, sessions[2]
+'
+}
+
 @test "mo history does not create logs when none exist" {
     rm -rf "$HOME/Library"
 
