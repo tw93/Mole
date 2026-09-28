@@ -197,12 +197,18 @@ declare -a SAFETY_WHITELIST_PATTERNS=(
     # moment a user saves one custom entry. Removing them breaks macOS search,
     # font rendering and iCloud sync rather than costing a rebuild, and
     # pypoetry/virtualenvs holds live interpreters every Poetry project points
-    # at, not cached downloads. Hard safety, so they merge unconditionally.
+    # at, not cached downloads. The renv cache is the same shape: renv
+    # installs packages there and, by default, symlinks them into project
+    # libraries, so removing it leaves those libraries dangling. Its entry is
+    # spelled exactly like the old default row so saved files that still
+    # carry that line read it as this mandatory rule. Hard safety, so they
+    # merge unconditionally.
     "$HOME/Library/Caches/com.apple.FontRegistry*"
     "$HOME/Library/Caches/com.apple.spotlight*"
     "$HOME/Library/Caches/com.apple.Spotlight*"
     "$HOME/Library/Caches/CloudKit*"
     "$HOME/Library/Caches/pypoetry/virtualenvs*"
+    "$HOME/Library/Caches/org.R-project.R/R/renv/*"
 )
 
 # Resolve the cache root used by GitHub CLI without following filesystem

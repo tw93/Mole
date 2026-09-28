@@ -489,7 +489,7 @@ EOF
     rm -rf "$test_home"
 }
 
-@test "a custom whitelist still protects system caches and Poetry virtualenvs" {
+@test "a custom whitelist still protects system caches, Poetry virtualenvs and the renv cache" {
     # clean_user_essentials sweeps every child of ~/Library/Caches, and
     # load_mole_whitelist replaces DEFAULT_WHITELIST_PATTERNS wholesale once a
     # user saves one entry of their own. Anything that breaks macOS search,
@@ -500,7 +500,9 @@ EOF
         "$test_home/Library/Caches/com.apple.spotlight" \
         "$test_home/Library/Caches/com.apple.FontRegistry" \
         "$test_home/Library/Caches/CloudKit" \
-        "$test_home/Library/Caches/pypoetry/virtualenvs/proj-abc123"
+        "$test_home/Library/Caches/pypoetry/virtualenvs/proj-abc123" \
+        "$test_home/Library/Caches/org.R-project.R/R/renv/cache/v5/pkg" \
+        "$test_home/Library/Caches/com.example.unprotected"
     printf '%s\n' "$test_home/.cache/keep-my-own-thing/*" > "$test_home/.config/mole/whitelist"
 
     run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" \
@@ -512,7 +514,10 @@ for probe in \
     "$HOME/Library/Caches/com.apple.spotlight" \
     "$HOME/Library/Caches/com.apple.FontRegistry" \
     "$HOME/Library/Caches/CloudKit" \
-    "$HOME/Library/Caches/pypoetry/virtualenvs/proj-abc123"; do
+    "$HOME/Library/Caches/pypoetry/virtualenvs/proj-abc123" \
+    "$HOME/Library/Caches/org.R-project.R/R/renv/cache/v5/pkg" \
+    "$HOME/Library/Caches/org.R-project.R" \
+    "$HOME/Library/Caches/com.example.unprotected"; do
     if is_path_whitelisted "$probe"; then
         printf 'PROTECTED=%s\n' "${probe#"$HOME"/}"
     else
@@ -524,12 +529,22 @@ is_path_whitelisted "$HOME/.cache/keep-my-own-thing/x" && printf 'CUSTOM_KEPT\n'
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$output" != *"EXPOSED="* ]] || {
+    # The one ordinary cache is the positive control: the sweep must still
+    # reach it, or the probes above prove nothing.
+    [[ "$output" == *"EXPOSED=Library/Caches/com.example.unprotected"* ]] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$(grep -c "EXPOSED=" <<< "$output")" -eq 1 ]] || {
         echo "$output"
         return 1
     }
     [[ "$output" == *"PROTECTED=Library/Caches/com.apple.spotlight"* ]] || return 1
     [[ "$output" == *"PROTECTED=Library/Caches/pypoetry/virtualenvs/proj-abc123"* ]] || return 1
+    [[ "$output" == *"PROTECTED=Library/Caches/org.R-project.R/R/renv/cache/v5/pkg"* ]] || return 1
+    # The sweep removes top-level children of ~/Library/Caches, so the parent
+    # is the path that actually has to hold.
+    [[ "$output" == *"PROTECTED=Library/Caches/org.R-project.R"$'\n'* ]] || return 1
     [[ "$output" == *"CUSTOM_KEPT"* ]] || return 1
     rm -rf "$test_home"
 }

@@ -411,6 +411,57 @@ EOF
     [ "$status" -eq 1 ]
 }
 
+@test "a saved renv line stays protected after the whitelist menu saves" {
+    # The renv cache is hard safety now and has no menu row. Files saved
+    # before that still carry its old default line, spelled with ~ or $HOME.
+    # Saving through the menu must keep unrelated custom rules, and the renv
+    # cache must stay protected whether or not the old line survives.
+    local variant test_home whitelist_file
+    for variant in tilde absolute; do
+        test_home="$HOME/renv-menu-$variant"
+        whitelist_file="$test_home/.config/mole/whitelist"
+        mkdir -p "$(dirname "$whitelist_file")"
+        if [[ "$variant" == "tilde" ]]; then
+            printf '%s\n' '~/Library/Caches/org.R-project.R/R/renv/*' > "$whitelist_file"
+        else
+            printf '%s\n' "$test_home/Library/Caches/org.R-project.R/R/renv/*" > "$whitelist_file"
+        fi
+        printf '%s\n' "$test_home/.cache/custom-keep/*" >> "$whitelist_file"
+
+        run /bin/bash --noprofile --norc -c "cd '$PROJECT_ROOT'; printf \$'\\n' | HOME='$test_home' ./mo clean --whitelist"
+        [ "$status" -eq 0 ] || { echo "$variant: $output"; return 1; }
+        grep -Fxq "$test_home/.cache/custom-keep/*" "$whitelist_file" || {
+            echo "$variant: custom rule lost"
+            cat "$whitelist_file"
+            return 1
+        }
+
+        run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+# Capture first: under pipefail an early `grep -q` exit fails the pipe.
+menu_items=$(get_all_cache_items)
+if grep -q "R renv" <<< "$menu_items"; then
+    echo "MENU_ROW_PRESENT"
+fi
+load_mole_whitelist "$HOME"
+for probe in \
+    "$HOME/Library/Caches/org.R-project.R" \
+    "$HOME/Library/Caches/org.R-project.R/R/renv/cache/v5/pkg" \
+    "$HOME/.cache/custom-keep/x"; do
+    if is_path_whitelisted "$probe"; then
+        printf 'PROTECTED=%s\n' "${probe#"$HOME"/}"
+    else
+        printf 'EXPOSED=%s\n' "${probe#"$HOME"/}"
+    fi
+done
+EOF
+        [ "$status" -eq 0 ] || { echo "$variant: $output"; return 1; }
+        [[ "$output" != *"MENU_ROW_PRESENT"* ]] || { echo "$variant: $output"; return 1; }
+        [[ "$output" != *"EXPOSED="* ]] || { echo "$variant: $output"; return 1; }
+    done
+}
+
 @test "mo clean --whitelist cancel preserves existing file (#807)" {
     whitelist_file="$HOME/.config/mole/whitelist"
     mkdir -p "$(dirname "$whitelist_file")"
