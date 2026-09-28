@@ -3197,6 +3197,88 @@ EOF
     [ -z "$output" ]
 }
 
+# Each case below gets its own HOME: they assert exact row counts, and the
+# shared file HOME already holds other worktree fixtures.
+_worktree_hint_run() {
+    run env HOME="$1" PROJECT_ROOT="$PROJECT_ROOT" MOLE_CURRENT_COMMAND=clean \
+        SIZE_STUB_RC="${2:-0}" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+get_path_size_kb() {
+    [[ "$SIZE_STUB_RC" == "0" ]] || return "$SIZE_STUB_RC"
+    echo "2097152"
+}
+rc=0
+report_agent_worktree_candidates || rc=$?
+printf 'RC=%s CANCEL=%s\n' "$rc" "${MOLE_CLEAN_CANCEL_STATUS:-none}"
+EOF
+}
+
+@test "report_agent_worktree_candidates reports a case-variant root once" {
+    local test_home="$HOME/wt-case-home"
+    mkdir -p "$test_home/code/proj/.claude/worktrees/wt-one"
+    # ~/Code only aliases ~/code on a case-insensitive volume.
+    [[ -d "$test_home/Code" ]] || skip "case-sensitive filesystem"
+
+    _worktree_hint_run "$test_home"
+
+    [ "$status" -eq 0 ] || return 1
+    local rows
+    rows=$(grep -c "AI agent worktrees" <<< "$output" || true)
+    [ "$rows" -eq 1 ]
+}
+
+@test "report_agent_worktree_candidates reports a container once when one root links into another" {
+    local test_home="$HOME/wt-link-home"
+    mkdir -p "$test_home/code/sub/proj/.claude/worktrees/wt-one"
+    ln -s "$test_home/code/sub" "$test_home/dev"
+
+    _worktree_hint_run "$test_home"
+
+    [ "$status" -eq 0 ] || return 1
+    local rows
+    rows=$(grep -c "AI agent worktrees" <<< "$output" || true)
+    [ "$rows" -eq 1 ]
+}
+
+@test "report_agent_worktree_candidates reports the Codex worktree container" {
+    local test_home="$HOME/wt-codex-home"
+    mkdir -p "$test_home/.codex/worktrees/topic/repo"
+    echo "data" > "$test_home/.codex/worktrees/topic/repo/file"
+
+    _worktree_hint_run "$test_home"
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"AI agent worktrees"*".codex/worktrees"* ]] || return 1
+    # Report only: the worktree must still exist afterwards.
+    [ -f "$test_home/.codex/worktrees/topic/repo/file" ]
+}
+
+@test "report_agent_worktree_candidates skips a row on a size timeout without cancelling clean" {
+    local test_home="$HOME/wt-timeout-home"
+    mkdir -p "$test_home/code/proj/.claude/worktrees/wt-one"
+
+    _worktree_hint_run "$test_home" 124
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"AI agent worktrees"* ]] || return 1
+    [[ "$output" == *"RC=0 CANCEL=none"* ]]
+}
+
+@test "report_agent_worktree_candidates keeps a size signal sticky" {
+    local test_home="$HOME/wt-signal-home"
+    mkdir -p "$test_home/code/proj/.claude/worktrees/wt-one"
+
+    _worktree_hint_run "$test_home" 130
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"AI agent worktrees"* ]] || return 1
+    [[ "$output" == *"RC=130 CANCEL=130"* ]]
+}
+
 _codex_version_plist() {
 	mkdir -p "$(dirname "$1")"
 	local bundle_id="${3:-com.openai.codex}"

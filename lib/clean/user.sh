@@ -2,6 +2,10 @@
 # User Data Cleanup Module
 set -euo pipefail
 
+_mole_user_module_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1090
+source "$_mole_user_module_dir/purge_shared.sh"
+
 _user_process_delete_guard_allows() {
     mole_clean_process_guard "$_MOLE_USER_PROCESS_GUARD_PROBE" "$_MOLE_USER_PROCESS_GUARD_FAMILY started"
 }
@@ -2583,9 +2587,9 @@ jetbrains_stale_version_dirs() {
         '
 }
 
-# AI coding agents (Claude Code and similar) create full checkouts under
-# <project>/.claude/worktrees/ that accumulate silently across repos. Report
-# only, same 1GB bar as other large candidates; removal stays a manual
+# AI coding agents create full checkouts that accumulate silently: Claude Code
+# under <project>/.claude/worktrees/, the Codex app under ~/.codex/worktrees/.
+# Report only, same 1GB bar as other large candidates; removal stays a manual
 # `git worktree remove` decision because a worktree may hold agent work.
 report_agent_worktree_candidates() {
     local threshold_kb=$((1024 * 1024)) # 1GB
@@ -2594,21 +2598,73 @@ report_agent_worktree_candidates() {
         "$HOME/GitHub" "$HOME/Workspace" "$HOME/Repos"
         "$HOME/Development" "$HOME/www" "$HOME/src"
     )
-    local root container size_kb size_rc
+
+    _report_agent_worktree_container() {
+        local container="$1"
+        local size_kb size_rc=0
+        size_kb=$(get_path_size_kb "$container" 2> /dev/null) || size_rc=$?
+        # Review rows never cancel the rest of clean on a size timeout (#1576):
+        # a container holding many full checkouts can outlast the size budget.
+        # Signals still stop the run so Ctrl-C stays sticky.
+        if [[ $size_rc -ge 128 ]]; then
+            _mole_record_clean_cancellation "$size_rc"
+            return "$size_rc"
+        fi
+        [[ $size_rc -eq 0 ]] || return 0
+        [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        [[ "$size_kb" -ge "$threshold_kb" ]] || return 0
+        # The caller's "Scanning large files..." spinner is still running;
+        # printing over it glues the row onto the spinner frame.
+        stop_section_spinner
+        echo -e "  ${YELLOW}${ICON_REVIEW}${NC} AI agent worktrees · ${GREEN}$(bytes_to_human "$((size_kb * 1024))")${NC} · ${GRAY}$(format_path_link "$container")${NC}"
+        note_activity
+        start_section_spinner "Scanning large files..."
+    }
+
+    local container rc=0
+    # The Codex app keeps every worktree under one fixed container outside
+    # any project root, so the find below never reaches it.
+    container="$HOME/.codex/worktrees"
+    if [[ -d "$container" && ! -L "$container" ]]; then
+        _report_agent_worktree_container "$container" || rc=$?
+    fi
+
+    # ~/code and ~/Code are one directory on case-insensitive APFS, and a root
+    # may be a symlink to another. Scan each physical root once, or every
+    # container is reported twice (same class as #590 and #1416). A root can
+    # also sit inside another one, so containers are deduplicated as well.
+    local -a scanned_roots=() reported_containers=()
+    local root physical_root scanned already_scanned
     for root in "${roots[@]}"; do
+        [[ $rc -eq 0 ]] || break
         [[ -d "$root" ]] || continue
+        physical_root=$(mole_purge_resolve_path_case "$root")
+        already_scanned=false
+        for scanned in "${scanned_roots[@]+"${scanned_roots[@]}"}"; do
+            if [[ "$scanned" == "$physical_root" ]]; then
+                already_scanned=true
+                break
+            fi
+        done
+        [[ "$already_scanned" == "false" ]] || continue
+        scanned_roots+=("$physical_root")
         while IFS= read -r -d '' container; do
-            size_rc=0
-            size_kb=$(get_path_size_kb "$container" 2> /dev/null) || size_rc=$?
-            [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-            [[ $size_rc -eq 0 ]] || return "$size_rc"
-            [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
-            [[ "$size_kb" -ge "$threshold_kb" ]] || continue
-            echo -e "  ${YELLOW}${ICON_REVIEW}${NC} AI agent worktrees · ${GREEN}$(bytes_to_human "$((size_kb * 1024))")${NC} · ${GRAY}$(format_path_link "$container")${NC}"
-            note_activity
-        done < <(run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" command find "$root" -maxdepth 6 -type d -path "*/.claude/worktrees" -prune -print0 2> /dev/null)
+            already_scanned=false
+            for scanned in "${reported_containers[@]+"${reported_containers[@]}"}"; do
+                if [[ "$scanned" == "$container" ]]; then
+                    already_scanned=true
+                    break
+                fi
+            done
+            [[ "$already_scanned" == "false" ]] || continue
+            reported_containers+=("$container")
+            _report_agent_worktree_container "$container" || rc=$?
+            [[ $rc -eq 0 ]] || break
+        done < <(run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" command find "$physical_root" -maxdepth 6 -type d -path "*/.claude/worktrees" -prune -print0 2> /dev/null)
     done
-    return 0
+
+    unset -f _report_agent_worktree_container
+    return "$rc"
 }
 
 # One `docker system df` row for the Large files Docker line. Docker's
