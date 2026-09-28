@@ -3592,3 +3592,86 @@ EOF
     }
     [[ "$output" == *"PROTECTION_SHAPE_OK"* ]]
 }
+
+@test "clean_tool_cache names a failed or timed-out owner command instead of dropping the row" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+DRY_RUN=false
+clean_tool_cache "ok cache" "" true
+clean_tool_cache "failing cache" "" false
+clean_tool_cache "slow cache" "" run_with_timeout 1 sleep 5
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"ok cache"* ]] || return 1
+    [[ "$output" == *"failing cache · failed"* ]] || return 1
+    [[ "$output" == *"slow cache · timed out"* ]]
+}
+
+@test "an interrupted owner command stops the next pnpm store before its probe or prune" {
+    # Ctrl-C while `pnpm store prune` holds the terminal reaches only the
+    # child. Whichever store runs first is interrupted; the other one must
+    # not even be probed.
+    local test_home="$HOME/pnpm-cancel-home"
+    mkdir -p "$test_home/bin" "$test_home/.local/share/mise/installs/pnpm/10.34.5"
+    local bin
+    for bin in "$test_home/bin/pnpm" "$test_home/.local/share/mise/installs/pnpm/10.34.5/pnpm"; do
+        cat > "$bin" <<'SCRIPT'
+#!/bin/bash
+marker="$HOME/first-prune-interrupted"
+case "${1:-}" in
+    --version)
+        [[ -e "$marker" ]] && echo "SECOND-PROBE-RAN" >> "$HOME/trace"
+        echo "10.34.5"
+        exit 0
+        ;;
+    store)
+        if [[ "${2:-}" == "path" ]]; then
+            echo "$HOME/store-$(basename "$(dirname "$0")")"
+            exit 0
+        fi
+        if [[ "${2:-}" == "prune" ]]; then
+            if [[ -e "$marker" ]]; then
+                echo "SECOND-OWNER-RAN" >> "$HOME/trace"
+                exit 0
+            fi
+            touch "$marker"
+            exit 130
+        fi
+        ;;
+esac
+exit 2
+SCRIPT
+        chmod +x "$bin"
+    done
+
+    run env HOME="$test_home" PATH="$test_home/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_CURRENT_COMMAND=clean /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+run_with_timeout() { shift; "$@"; }
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+is_safe_pnpm_store_path() { [[ -n "$1" ]]; }
+export -f pgrep
+DRY_RUN=false
+rc=0
+clean_pnpm_stores || rc=$?
+printf 'RC=%s CANCEL=%s\n' "$rc" "${MOLE_CLEAN_CANCEL_STATUS:-none}"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [ -e "$test_home/first-prune-interrupted" ] || return 1
+    [[ "$output" == *"RC=130 CANCEL=130"* ]] || return 1
+    [ ! -e "$test_home/trace" ]
+}

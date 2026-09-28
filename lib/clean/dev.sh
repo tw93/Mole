@@ -7,10 +7,17 @@ set -euo pipefail
 #   $1 = description (display name)
 #   $2 = cache path to check against whitelist (empty string to skip check)
 #   $3+ = command to run
+# Returns the signal status when the owner command was interrupted, or the
+# pending clean cancellation without running anything; callers propagate it.
 clean_tool_cache() {
     local description="$1"
     local cache_path="$2"
     shift 2
+
+    local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
+    if mole_rc_timeout_or_signal "$pending_clean_cancel"; then
+        return "$pending_clean_cancel"
+    fi
 
     if [[ -n "$cache_path" ]] && is_path_whitelisted "$cache_path"; then
         if [[ "$DRY_RUN" == "true" ]]; then
@@ -24,19 +31,34 @@ clean_tool_cache() {
     fi
 
     if [[ "$DRY_RUN" != "true" ]]; then
-        local command_succeeded=false
+        local command_rc=0
         if [[ -t 1 ]]; then
             start_section_spinner "Cleaning $description..."
         fi
-        if "$@" > /dev/null 2>&1; then
-            command_succeeded=true
-        fi
+        "$@" > /dev/null 2>&1 || command_rc=$?
         if [[ -t 1 ]]; then
             stop_section_spinner
         fi
-        if [[ "$command_succeeded" == "true" ]]; then
+        if [[ $command_rc -eq 0 ]]; then
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $description"
             note_activity
+        elif ! mole_rc_timeout_or_signal "$command_rc" || mole_rc_timeout "$command_rc"; then
+            # The dry run promised this row; dropping it on failure reads as
+            # success. `uv cache prune`, for one, waits on uv's cache lock for
+            # as long as any `uvx` child (an agent's MCP server, say) is alive
+            # and is then killed by the timeout. One result row, no retry
+            # advice; the exit status stays in --debug.
+            local result="failed"
+            mole_rc_timeout "$command_rc" && result="timed out"
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} $description · $result"
+            debug_log "$description: owner command exited $command_rc: $*"
+            note_activity
+        else
+            # Ctrl-C while the owner command holds the terminal reaches only
+            # the child. Record it and hand it back so no later owner command
+            # starts.
+            _mole_record_clean_cancellation "$command_rc"
+            return "$command_rc"
         fi
     else
         echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $description · would clean"
@@ -61,7 +83,7 @@ clean_corepack_cache() {
     # where corepack is installed; machines without corepack take the else
     # branch and never hit this).
     if command -v corepack > /dev/null 2>&1 && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" corepack --version > /dev/null 2>&1; then
-        COREPACK_ENABLE_DOWNLOAD_PROMPT=0 clean_tool_cache "Corepack cache" "$corepack_home" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" corepack cache clean
+        COREPACK_ENABLE_DOWNLOAD_PROMPT=0 clean_tool_cache "Corepack cache" "$corepack_home" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" corepack cache clean || return $?
     else
         safe_clean "$corepack_home"/* "Corepack cache"
     fi
@@ -75,7 +97,7 @@ clean_uv_cache() {
         if [[ -n "$detected_cache" && "$detected_cache" == /* ]]; then
             uv_cache_path="$detected_cache"
         fi
-        clean_tool_cache "uv cache" "$uv_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" uv cache prune
+        clean_tool_cache "uv cache" "$uv_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" uv cache prune || return $?
     else
         safe_clean "$uv_cache_path"/* "uv cache"
     fi
@@ -170,7 +192,7 @@ clean_github_cli_cache() {
         whitelist_path="$physical_cache_path"
     fi
     if [[ -n "$whitelist_path" ]]; then
-        clean_tool_cache "GitHub CLI cache" "$whitelist_path" :
+        clean_tool_cache "GitHub CLI cache" "$whitelist_path" : || return $?
         return 0
     fi
     if should_protect_path "$cache_path" 2> /dev/null || should_protect_path "$physical_cache_path" 2> /dev/null; then
@@ -270,7 +292,7 @@ clean_conda_metadata_caches() {
     local conda_cache_hint="$HOME/.conda/pkgs"
     if command -v conda > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" conda --version > /dev/null 2>&1; then
         clean_tool_cache "conda index/tarball/log caches" "$conda_cache_hint" \
-            run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" conda clean --yes --index-cache --tarballs --logfiles
+            run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" conda clean --yes --index-cache --tarballs --logfiles || return $?
         note_activity
         return 0
     fi
@@ -417,7 +439,7 @@ clean_pnpm_stores() {
 
         COREPACK_ENABLE_DOWNLOAD_PROMPT=0 clean_tool_cache "pnpm cache" "$store_path" \
             run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" \
-            env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$pnpm_bin" store prune
+            env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$pnpm_bin" store prune || return $?
         pruned_any=true
     done
 
@@ -440,7 +462,7 @@ clean_dev_npm() {
             npm_cache_path="$npm_default_cache"
         fi
 
-        clean_tool_cache "npm cache" "$npm_cache_path" npm cache clean --force
+        clean_tool_cache "npm cache" "$npm_cache_path" npm cache clean --force || return $?
         note_activity
     fi
 
@@ -471,8 +493,8 @@ clean_dev_npm() {
         done
     fi
 
-    clean_pnpm_stores
-    clean_corepack_cache
+    clean_pnpm_stores || return $?
+    clean_corepack_cache || return $?
     local bun_default_cache="$HOME/.bun/install/cache"
     local bun_cache_path="$bun_default_cache"
     local bun_cache_cleaned=false
@@ -773,7 +795,7 @@ clean_dev_python() {
         if [[ -z "$pip_cache_path" || "$pip_cache_path" != /* ]]; then
             pip_cache_path="$HOME/Library/Caches/pip"
         fi
-        clean_tool_cache "pip cache" "$pip_cache_path" bash -c 'pip3 cache purge > /dev/null 2>&1 || true'
+        clean_tool_cache "pip cache" "$pip_cache_path" bash -c 'pip3 cache purge > /dev/null 2>&1 || true' || return $?
         note_activity
     fi
     safe_clean ~/.pyenv/cache/* "pyenv cache"
@@ -787,7 +809,7 @@ clean_dev_python() {
     # downloads, both of which Poetry refetches, while virtualenvs stays.
     safe_clean ~/Library/Caches/pypoetry/artifacts/* "Poetry artifacts cache"
     safe_clean ~/Library/Caches/pypoetry/cache/* "Poetry package cache"
-    clean_uv_cache
+    clean_uv_cache || return $?
     safe_clean ~/.cache/ruff/* "Ruff cache"
     safe_clean ~/.cache/mypy/* "MyPy cache"
     safe_clean ~/.pytest_cache/* "Pytest cache"
@@ -926,7 +948,7 @@ clean_go_cache_root() {
         whitelist_path="$physical_root"
     fi
     if [[ -n "$whitelist_path" ]]; then
-        clean_tool_cache "$display_name" "$whitelist_path" :
+        clean_tool_cache "$display_name" "$whitelist_path" : || return $?
         return 0
     fi
 
@@ -1051,7 +1073,7 @@ clean_dev_mise() {
 
     if command -v mise > /dev/null 2>&1; then
         if [[ "${DRY_RUN:-false}" != "true" ]]; then
-            clean_tool_cache "mise cache" "$mise_cache_path" bash -c 'mise cache clear > /dev/null 2>&1 || true'
+            clean_tool_cache "mise cache" "$mise_cache_path" bash -c 'mise cache clear > /dev/null 2>&1 || true' || return $?
             note_activity
         elif is_path_whitelisted "$mise_cache_path"; then
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} mise cache · would skip (whitelist)"
@@ -1308,7 +1330,7 @@ clean_dev_docker() {
 clean_dev_nix() {
     if command -v nix-collect-garbage > /dev/null 2>&1; then
         if [[ "$DRY_RUN" != "true" ]]; then
-            clean_tool_cache "Nix garbage collection" "/nix/store" nix-collect-garbage --delete-older-than 30d
+            clean_tool_cache "Nix garbage collection" "/nix/store" nix-collect-garbage --delete-older-than 30d || return $?
         elif is_path_whitelisted "/nix/store"; then
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Nix garbage collection · would skip (whitelist)"
             note_activity
