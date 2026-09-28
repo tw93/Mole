@@ -2589,6 +2589,72 @@ EOF
         [ -d "$review_home/.gradle/caches/modules-2" ]
 }
 
+@test "large files reviews installed FVM Flutter SDKs without deleting" {
+    local review_home="$HOME/large-review-fvm"
+    mkdir -p "$review_home/fvm/versions/3.47.5" "$review_home/custom-fvm/versions/3.44.0"
+
+    local fvm_env
+    for fvm_env in default custom; do
+        if [[ "$fvm_env" == "default" ]]; then
+            run env -u FVM_CACHE_PATH HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" \
+                /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+docker() { return 1; }
+defaults() { return 1; }
+du() { printf '2097152 %s\n' "${2:-/tmp}"; }
+format_path_link() { printf '%s' "$1"; }
+run_with_timeout() {
+    shift
+    "$@"
+}
+check_large_file_candidates
+EOF
+        else
+            run env FVM_CACHE_PATH="$review_home/custom-fvm" HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" \
+                /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+docker() { return 1; }
+defaults() { return 1; }
+du() { printf '2097152 %s\n' "${2:-/tmp}"; }
+format_path_link() { printf '%s' "$1"; }
+run_with_timeout() {
+    shift
+    "$@"
+}
+check_large_file_candidates
+EOF
+        fi
+        [ "$status" -eq 0 ] || {
+            echo "$fvm_env: $output"
+            return 1
+        }
+        if [[ "$fvm_env" == "default" ]]; then
+            [[ "$output" == *"FVM Flutter SDKs"*"$review_home/fvm/versions"* ]] || {
+                echo "$fvm_env: $output"
+                return 1
+            }
+        else
+            [[ "$output" == *"FVM Flutter SDKs"*"$review_home/custom-fvm/versions"* ]] || {
+                echo "$fvm_env: $output"
+                return 1
+            }
+        fi
+    done
+    # Report only: both SDK folders must still exist afterwards.
+    [ -d "$review_home/fvm/versions/3.47.5" ] &&
+        [ -d "$review_home/custom-fvm/versions/3.44.0" ]
+}
+
 @test "large files dates the irreplaceable rows and leaves caches undated" {
     local review_home="$HOME/large-review-dates"
     mkdir -p \

@@ -2849,7 +2849,7 @@ check_large_file_candidates() {
 
     # Emulator images, SDK system images, downloaded models, and installed
     # runtimes are user-chosen payloads, not caches. Size is shown so the
-    # owner tool (Device Manager, SDK Manager, huggingface-cli, mise) can
+    # owner tool (Device Manager, SDK Manager, huggingface-cli, mise, fvm) can
     # remove what is unused; Mole never deletes them.
     local android_avd_root="$HOME/.android/avd"
     [[ "${ANDROID_AVD_HOME:-}" == /* ]] && android_avd_root="$ANDROID_AVD_HOME"
@@ -2871,6 +2871,11 @@ check_large_file_candidates() {
         [[ -d "$mise_tool_dir" && ! -L "$mise_tool_dir" ]] || continue
         _report_large_or_stop "mise ${mise_tool_dir##*/} installs" "$mise_tool_dir" || return $?
     done
+    # FVM keeps one full Flutter SDK per installed version; `fvm list` shows
+    # which ones projects still pin and `fvm remove` owns removal.
+    local fvm_versions="$HOME/fvm/versions"
+    [[ "${FVM_CACHE_PATH:-}" == /* ]] && fvm_versions="$FVM_CACHE_PATH/versions"
+    _report_large_or_stop "FVM Flutter SDKs" "$fvm_versions" || return $?
 
     # JetBrains keeps one data dir per IDE version (GoLand2025.1, ...). After
     # an upgrade the previous version's dir lingers forever with plugins and
