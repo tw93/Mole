@@ -422,6 +422,7 @@ EOF
         whitelist_file="$test_home/.config/mole/whitelist"
         mkdir -p "$(dirname "$whitelist_file")"
         if [[ "$variant" == "tilde" ]]; then
+            # shellcheck disable=SC2088 # Exercise a saved literal tilde pattern.
             printf '%s\n' '~/Library/Caches/org.R-project.R/R/renv/*' > "$whitelist_file"
         else
             printf '%s\n' "$test_home/Library/Caches/org.R-project.R/R/renv/*" > "$whitelist_file"
