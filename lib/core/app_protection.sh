@@ -751,6 +751,61 @@ _mole_uninstall_materialize_find0() {
     return 0
 }
 
+# Exact bundle-ID filenames identify the app's own agent. Other labels need a
+# readable plist whose launchd program resolves inside the selected bundle;
+# name matches and text mentions do not establish that ownership. Callers
+# recheck before teardown and removal. Returns 0 for owned, 1 for unproven,
+# or the timeout/signal status of a bounded plist probe.
+mole_uninstall_launch_agent_owned_by_app() {
+    local plist="$1"
+    local bundle_id="$2"
+    local app_path="$3"
+
+    case "${plist%/*}" in
+        "$HOME"/Library/LaunchAgents | /Library/LaunchAgents | /Library/LaunchDaemons) ;;
+        *) return 1 ;;
+    esac
+    [[ "$plist" == *.plist ]] || return 1
+    [[ -f "$plist" && ! -L "$plist" ]] || return 1
+    [[ "${plist##*/}" != com.apple.* ]] || return 1
+    if mole_is_reverse_dns_bundle_id "$bundle_id" &&
+        [[ "${plist##*/}" == "$bundle_id.plist" ]]; then
+        return 0
+    fi
+    [[ "$app_path" == /* && "$app_path" != / ]] || return 1
+
+    local deadline="${_MOLE_UNINSTALL_DISCOVERY_DEADLINE:-$((SECONDS + MOLE_TIMEOUT_QUICK_DETECT_SEC))}"
+    local timeout=""
+    timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+        "$deadline") || return $?
+    local program="" probe_rc=0
+    program=$(run_with_timeout "$timeout" plutil -extract Program raw \
+        "$plist" 2> /dev/null) || probe_rc=$?
+    mole_rc_timeout_or_signal "$probe_rc" && return "$probe_rc"
+    if [[ $probe_rc -ne 0 ]]; then
+        timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+            "$deadline") || return $?
+        probe_rc=0
+        program=$(run_with_timeout "$timeout" plutil -extract \
+            ProgramArguments.0 raw "$plist" 2> /dev/null) || probe_rc=$?
+        mole_rc_timeout_or_signal "$probe_rc" && return "$probe_rc"
+        [[ $probe_rc -eq 0 ]] || return 1
+    fi
+
+    [[ "$program" == "$app_path"/* &&
+        ! "$program" =~ (^|/)\.\.(\/|$) &&
+        ! "$program" =~ [[:cntrl:]] ]] || return 1
+    if [[ -d "$app_path" ]]; then
+        [[ -f "$program" && ! -L "$program" ]] || return 1
+        local app_root="" program_parent=""
+        app_root=$(cd -P "$app_path" 2> /dev/null && pwd -P) || return 1
+        program_parent=$(cd -P "${program%/*}" 2> /dev/null && pwd -P) || return 1
+        [[ "$program_parent" == "$app_root" ||
+            "$program_parent" == "$app_root"/* ]] || return 1
+    fi
+    return 0
+}
+
 find_vendor_nested_app_paths() {
     local bundle_id="$1"
     local app_name="$2"
@@ -1256,22 +1311,6 @@ find_app_files() {
             done < "$discovery_scan_file"
         fi
 
-        # User LaunchAgents: wildcard scan for helper plists (e.g., com.example.app.helper.plist)
-        if [[ -d ~/Library/LaunchAgents ]]; then
-            discovery_scan_rc=0
-            _mole_uninstall_materialize_find0 "$discovery_scan_file" \
-                "$HOME/Library/LaunchAgents" -maxdepth 1 \
-                \( -name "${bundle_id}.plist" -o -name "${bundle_id}.*.plist" \) \
-                -print0 || discovery_scan_rc=$?
-            if [[ $discovery_scan_rc -ne 0 ]]; then
-                rm -f -- "$discovery_scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
-                return "$discovery_scan_rc"
-            fi
-            while IFS= read -r -d '' plist; do
-                files_to_clean+=("$plist")
-            done < "$discovery_scan_file"
-        fi
-
         # NSURLSession download caches
         local nsurlsession_dl="$HOME/Library/Caches/com.apple.nsurlsessiond/Downloads/$bundle_id"
         [[ -d "$nsurlsession_dl" ]] && files_to_clean+=("$nsurlsession_dl")
@@ -1392,34 +1431,55 @@ find_app_files() {
         done <<< "$embedded_ids_output"
     fi
 
-    # Launch Agents by name (special handling)
-    # Note: LaunchDaemons are system-level and handled in find_app_system_files()
-    # Minimum 5-char threshold prevents false positives (e.g., "Time" matching system agents)
-    # Short-name apps (e.g., Zoom, Arc) are still cleaned via bundle_id matching above
-    # Security: Common words are excluded to prevent matching unrelated plist files
-    if [[ ${#app_name} -ge 5 ]] && [[ -d ~/Library/LaunchAgents ]]; then
-        # Skip generic words that collide with many unrelated LaunchAgents.
-        # Shared with the system-level scan in find_app_system_files();
-        # defined in app_protection_data.sh.
-        if [[ "$app_name" =~ ^(${LAUNCH_AGENT_NAME_COMMON_WORDS})$ ]]; then
-            debug_log "Skipping LaunchAgent name search for common word: $app_name"
-        else
-            discovery_scan_rc=0
-            _mole_uninstall_materialize_find0 "$discovery_scan_file" \
-                "$HOME/Library/LaunchAgents" -maxdepth 1 \
-                -name "*$app_name*.plist" -print0 || discovery_scan_rc=$?
-            if [[ $discovery_scan_rc -ne 0 ]]; then
-                rm -f -- "$discovery_scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
-                return "$discovery_scan_rc"
-            fi
+    # Exact app-path ownership also covers agents with unrelated labels. Scan
+    # once, but probe familiar labels first so a crowded directory cannot use
+    # the shared deadline before the likely candidates are checked.
+    if [[ -d ~/Library/LaunchAgents ]]; then
+        local search_agent_name=false
+        if [[ ${#app_name} -ge 5 ]] &&
+            ! [[ "$app_name" =~ ^(${LAUNCH_AGENT_NAME_COMMON_WORDS})$ ]]; then
+            search_agent_name=true
+        fi
+        discovery_scan_rc=0
+        _mole_uninstall_materialize_find0 "$discovery_scan_file" \
+            "$HOME/Library/LaunchAgents" -maxdepth 1 -type f \
+            -name '*.plist' -print0 || discovery_scan_rc=$?
+        if [[ $discovery_scan_rc -ne 0 ]]; then
+            rm -f -- "$discovery_scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
+            return "$discovery_scan_rc"
+        fi
+        local -a agent_phases=(named)
+        [[ "$app_path" == /* && "$app_path" != / ]] && agent_phases+=(other)
+        local agent_phase agent_scan_rc=0
+        for agent_phase in "${agent_phases[@]}"; do
             while IFS= read -r -d '' plist; do
-                local plist_name=$(basename "$plist")
-                # Skip Apple's LaunchAgents
-                if [[ "$plist_name" =~ ^com\.apple\. ]]; then
-                    continue
+                local plist_name="${plist##*/}"
+                local named_candidate=false
+                if [[ "$bundle_id_valid" == true &&
+                    ("$plist_name" == "$bundle_id.plist" ||
+                    "$plist_name" == "$bundle_id."*.plist) ]]; then
+                    named_candidate=true
                 fi
-                files_to_clean+=("$plist")
+                if [[ "$search_agent_name" == true &&
+                    "$plist_name" == *"$app_name"* ]]; then
+                    named_candidate=true
+                fi
+                [[ "$agent_phase" == named && "$named_candidate" != true ]] && continue
+                [[ "$agent_phase" == other && "$named_candidate" == true ]] && continue
+                local agent_rc=0
+                mole_uninstall_launch_agent_owned_by_app "$plist" \
+                    "$bundle_id" "$app_path" || agent_rc=$?
+                if mole_rc_timeout_or_signal "$agent_rc"; then
+                    agent_scan_rc=$agent_rc
+                    break
+                fi
+                [[ $agent_rc -eq 0 ]] && files_to_clean+=("$plist")
             done < "$discovery_scan_file"
+            [[ $agent_scan_rc -ne 0 ]] && break
+        done
+        if [[ $agent_scan_rc -ne 0 ]]; then
+            rm -f -- "$discovery_scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
+            return "$agent_scan_rc"
         fi
     fi
 

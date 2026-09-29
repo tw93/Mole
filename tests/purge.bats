@@ -633,6 +633,37 @@ EOF
     [[ "$output" == *"PASS"* ]]
 }
 
+@test "select_purge_categories keeps the caller's handle_interrupt for later signals" {
+    # bin/purge.sh arms `trap handle_interrupt INT TERM` before the menu and
+    # relies on it through the removal phase that follows the menu.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+handle_interrupt() {
+    echo OUTER_INTERRUPT_MARKER
+    exit 130
+}
+trap handle_interrupt INT TERM
+original_interrupt=$(declare -f handle_interrupt)
+
+PURGE_CATEGORY_SIZES="1"
+PURGE_RECENT_CATEGORIES="false"
+select_purge_categories "demo" <<< $'\n' > /dev/null 2>&1 || true
+
+current_interrupt=$(declare -f handle_interrupt)
+[[ "$current_interrupt" == "$original_interrupt" ]] || {
+    printf 'caller handle_interrupt function was replaced:\n%s\n' "$current_interrupt" >&2
+    exit 1
+}
+kill -TERM $$
+echo AFTER_SIGNAL
+EOF
+
+    [ "$status" -eq 130 ] || { echo "status=$status $output"; return 1; }
+    [[ "$output" == *OUTER_INTERRUPT_MARKER* ]] || return 1
+    [[ "$output" != *AFTER_SIGNAL* ]] || return 1
+}
+
 @test "select_purge_categories names the destructive choice and keeps project skip visible when narrow" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

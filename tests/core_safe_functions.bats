@@ -1303,8 +1303,8 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 wechat="$HOME/Library/Containers/com.tencent.xinWeChat/Data"
-! should_protect_path "$wechat/Documents/app_data/log/wechat.log"
-! should_protect_path "$wechat/.wxapplet/WMPF/cache.bin"
+! should_protect_path "$wechat/Documents/app_data/log/wechat.log" || exit 1
+! should_protect_path "$wechat/.wxapplet/WMPF/cache.bin" || exit 1
 should_protect_path "$wechat/Documents/xwechat_files/account/db_storage/message.db"
 should_protect_path "$wechat/Documents/app_data/radium/users/account/state.db"
 should_protect_path "$wechat/Documents/app_data/log"
@@ -1337,11 +1337,11 @@ is_endpoint_security_cache_path "/private/var/folders/aa/bb/C/com.jamfsoftware.s
 is_endpoint_security_cache_path "/private/var/folders/aa/bb/X/com.cisco.anyconnect.gui.code_sign_clone"
 is_endpoint_security_cache_path "/private/var/folders/aa/bb/X/com.cisco.secureclient.gui.code_sign_clone"
 # A normal third-party app's cache is not an EDR cache.
-! is_endpoint_security_cache_path "/private/var/folders/aa/bb/C/com.example.App/com.apple.metalfe"
+! is_endpoint_security_cache_path "/private/var/folders/aa/bb/C/com.example.App/com.apple.metalfe" || exit 1
 # Non-security Cisco products (e.g. Webex) are not matched; only the secure-access clients are.
-! is_endpoint_security_cache_path "/private/var/folders/aa/bb/X/com.cisco.webex.code_sign_clone"
+! is_endpoint_security_cache_path "/private/var/folders/aa/bb/X/com.cisco.webex.code_sign_clone" || exit 1
 # Paths outside var/folders are out of scope for this predicate.
-! is_endpoint_security_cache_path "/Applications/Falcon.app"
+! is_endpoint_security_cache_path "/Applications/Falcon.app" || exit 1
 # A non-Darwin path that merely contains "var/folders" must NOT match (anchored).
 ! is_endpoint_security_cache_path "/Users/me/project/var/folders/com.crowdstrike.fixture/cache"
 EOF

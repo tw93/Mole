@@ -43,16 +43,9 @@ clean_tool_cache() {
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $description"
             note_activity
         elif ! mole_rc_timeout_or_signal "$command_rc" || mole_rc_timeout "$command_rc"; then
-            # The dry run promised this row; dropping it on failure reads as
-            # success. `uv cache prune`, for one, waits on uv's cache lock for
-            # as long as any `uvx` child (an agent's MCP server, say) is alive
-            # and is then killed by the timeout. One result row, no retry
-            # advice; the exit status stays in --debug.
-            local result="failed"
-            mole_rc_timeout "$command_rc" && result="timed out"
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} $description · $result"
+            # Routine owner failures stay in diagnostics, without a success
+            # row or activity marker. A timeout here skips this one tool.
             debug_log "$description: owner command exited $command_rc: $*"
-            note_activity
         else
             # Ctrl-C while the owner command holds the terminal reaches only
             # the child. Record it and hand it back so no later owner command
@@ -293,7 +286,6 @@ clean_conda_metadata_caches() {
     if command -v conda > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" conda --version > /dev/null 2>&1; then
         clean_tool_cache "conda index/tarball/log caches" "$conda_cache_hint" \
             run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" conda clean --yes --index-cache --tarballs --logfiles || return $?
-        note_activity
         return 0
     fi
 
@@ -463,7 +455,6 @@ clean_dev_npm() {
         fi
 
         clean_tool_cache "npm cache" "$npm_cache_path" npm cache clean --force || return $?
-        note_activity
     fi
 
     # These residual directories are not removed by `npm cache clean --force`
@@ -795,8 +786,7 @@ clean_dev_python() {
         if [[ -z "$pip_cache_path" || "$pip_cache_path" != /* ]]; then
             pip_cache_path="$HOME/Library/Caches/pip"
         fi
-        clean_tool_cache "pip cache" "$pip_cache_path" bash -c 'pip3 cache purge > /dev/null 2>&1 || true' || return $?
-        note_activity
+        clean_tool_cache "pip cache" "$pip_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" pip3 cache purge || return $?
     fi
     safe_clean ~/.pyenv/cache/* "pyenv cache"
     safe_clean ~/.cache/poetry/* "Poetry cache"
@@ -1073,8 +1063,7 @@ clean_dev_mise() {
 
     if command -v mise > /dev/null 2>&1; then
         if [[ "${DRY_RUN:-false}" != "true" ]]; then
-            clean_tool_cache "mise cache" "$mise_cache_path" bash -c 'mise cache clear > /dev/null 2>&1 || true' || return $?
-            note_activity
+            clean_tool_cache "mise cache" "$mise_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" mise cache clear || return $?
         elif is_path_whitelisted "$mise_cache_path"; then
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} mise cache · would skip (whitelist)"
             note_activity
@@ -1082,6 +1071,9 @@ clean_dev_mise() {
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} mise cache · would clean"
             note_activity
         fi
+        # The owner command is authoritative, including failure and timeout.
+        # Do not bypass its result with direct deletion of the same root.
+        return 0
     fi
 
     safe_clean "$mise_cache_path"/* "mise cache"

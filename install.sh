@@ -47,7 +47,7 @@ start_line_spinner() {
     (while true; do
         c="${chars:$((i % ${#chars})):1}"
         printf "\r${BLUE}%s${NC} %s" "$c" "$msg"
-        ((i++))
+        i=$((i + 1))
         sleep 0.12
     done) &
     _SPINNER_PID=$!

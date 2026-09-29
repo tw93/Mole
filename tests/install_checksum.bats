@@ -885,15 +885,15 @@ fi
 unlink "$lock_path"
 acquire_install_lock
 release_install_lock
-! compgen -G "$INSTALL_DIR/.mole-update.lock/control.*" > /dev/null
+! compgen -G "$INSTALL_DIR/.mole-update.lock/control.*" > /dev/null || exit 1
 
 declare -f acquire_install_lock | grep -q '/usr/bin/lockf'
-! grep -q 'trap cleanup_tmp EXIT' "$PROJECT_ROOT/install.sh"
+! grep -q 'trap cleanup_tmp EXIT' "$PROJECT_ROOT/install.sh" || exit 1
 grep -q "trap 'cleanup_installer' EXIT" "$PROJECT_ROOT/install.sh"
-! grep -qF 'Another Mole installation or update is already writing' "$PROJECT_ROOT/install.sh"
+! grep -qF 'Another Mole installation or update is already writing' "$PROJECT_ROOT/install.sh" || exit 1
 # Both call sites route through the reporter, and each cause keeps its own
 # remedy. A single catch-all lock message is the regression being pinned.
-! grep -qF 'Could not acquire the Mole installation lock for' "$PROJECT_ROOT/install.sh"
+! grep -qF 'Could not acquire the Mole installation lock for' "$PROJECT_ROOT/install.sh" || exit 1
 [[ "$(grep -c 'report_install_lock_failure$' "$PROJECT_ROOT/install.sh")" -eq 2 ]] || exit 1
 # Pin the reason codes, not the wording. Pinning a sentence is what let the
 # first fix swap one vague message for another and lock it in as a
@@ -1306,4 +1306,54 @@ EOF_INNER
 	# The gate must run at top level, before any install work starts.
 	run grep -Fn "refuse_root_invocation \"\${EUID:-0}\" || exit 1" "$PROJECT_ROOT/install.sh"
 	[ "$status" -eq 0 ]
+}
+
+@test "the install spinner keeps animating under errexit on a TTY" {
+	# main runs as the last command of the dispatch list, so errexit is live in
+	# it and in the backgrounded spinner loop. A post-increment from zero
+	# returns status 1 there, which ended the loop after its first frame and
+	# left a frozen spinner through the whole source download.
+	local marker="$HOME/spinner.state"
+	local raw="$HOME/spinner.raw"
+	local inner="$HOME/spinner.sh"
+	# Source directly: util-linux script runs the command through $SHELL -c,
+	# and a non-bash sh drops the exported mole_source_installer.
+	cat > "$inner" << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/install.sh"
+trap 'stop_line_spinner' EXIT
+start_line_spinner "Fetching Mole source..."
+[[ -n "$_SPINNER_PID" ]] || { echo "NO_SPINNER" > "$SPINNER_MARKER"; exit 1; }
+sleep 1
+if kill -0 "$_SPINNER_PID" 2> /dev/null; then
+    echo "ALIVE" > "$SPINNER_MARKER"
+else
+    echo "DEAD" > "$SPINNER_MARKER"
+fi
+EOF
+
+	# The spinner only draws on a TTY. BSD script (macOS) takes the command as
+	# trailing arguments; util-linux script takes it as a -c string.
+	if /usr/bin/script -q /dev/null /usr/bin/true < /dev/null > /dev/null 2>&1; then
+		env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" SPINNER_MARKER="$marker" \
+			/usr/bin/script -q "$raw" /bin/bash --noprofile --norc "$inner" \
+			< /dev/null > /dev/null 2>&1 || true
+	elif script -qec /usr/bin/true /dev/null < /dev/null > /dev/null 2>&1; then
+		env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" SPINNER_MARKER="$marker" \
+			script -qec "/bin/bash --noprofile --norc $(printf '%q' "$inner")" "$raw" \
+			< /dev/null > /dev/null 2>&1 || true
+	else
+		skip "script cannot allocate a TTY in this environment"
+	fi
+
+	[[ "$(cat "$marker")" == "ALIVE" ]] || {
+		cat "$marker" "$raw"
+		return 1
+	}
+	local frames
+	frames=$(grep -o "Fetching Mole source" "$raw" | wc -l | tr -d ' ')
+	[[ "$frames" -ge 2 ]] || {
+		echo "frames=$frames"
+		return 1
+	}
 }

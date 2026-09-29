@@ -112,9 +112,9 @@ export -f brew
 
 owned=$(_detect_cask_via_brew_list "$HOME/Applications/Owned.app" "Owned.app")
 [[ "$owned" == "owned" ]] || exit 1
-! _detect_cask_via_brew_list "$HOME/Applications/Other.app" "Other.app"
-! _detect_cask_via_brew_list "$HOME/Applications/SameName.app" "SameName.app"
-! get_brew_cask_name "$HOME/Applications/SameName.app"
+! _detect_cask_via_brew_list "$HOME/Applications/Other.app" "Other.app" || exit 1
+! _detect_cask_via_brew_list "$HOME/Applications/SameName.app" "SameName.app" || exit 1
+! get_brew_cask_name "$HOME/Applications/SameName.app" || exit 1
 standard=$(_detect_cask_via_brew_list "/Applications/Standard.app" "Standard.app")
 [[ "$standard" == "standard" ]] || exit 1
 mixed=$(_detect_cask_via_brew_list "/Applications/Mixed.APP" "Mixed.APP")
@@ -194,7 +194,7 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/uninstall/brew.sh"
 resolve_path() { printf '%s\n' "/opt/homebrew/Caskroom/real-cask/1.0/Real.app"; }
-! _detect_cask_via_resolved_path "$HOME/Applications/Fake.app"
+! _detect_cask_via_resolved_path "$HOME/Applications/Fake.app" || exit 1
 ! _detect_cask_via_symlink_check "$HOME/Applications/Fake.app"
 EOF
 

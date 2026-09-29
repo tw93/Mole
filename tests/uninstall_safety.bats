@@ -44,6 +44,43 @@ EOF
 	[[ "$result" == *"$HOME/Library/Application Support/Local"* ]] || { echo "missed Local app state"; exit 1; }
 }
 
+@test "uninstall discovers only LaunchAgents owned by the selected app" {
+	local app="$HOME/Applications/Target.app"
+	local agents="$HOME/Library/LaunchAgents"
+	mkdir -p "$app/Contents/MacOS" "$agents"
+	touch "$app/Contents/MacOS/Target"
+	ln -s /bin/true "$app/Contents/MacOS/Outside"
+	cat > "$agents/com.thirdparty.Target-daily.plist" <<'PLIST'
+<?xml version="1.0"?><plist version="1.0"><dict><key>ProgramArguments</key><array><string>/bin/true</string></array></dict></plist>
+PLIST
+	cat > "$agents/com.example.Target.helper.plist" <<PLIST
+<?xml version="1.0"?><plist version="1.0"><dict><key>ProgramArguments</key><array><string>$app/Contents/MacOS/Target</string></array></dict></plist>
+PLIST
+	cat > "$agents/com.thirdparty.Target-owned.plist" <<PLIST
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>$app/Contents/MacOS/Target</string></dict></plist>
+PLIST
+	cat > "$agents/com.example.Target.outside.plist" <<PLIST
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>$app/Contents/MacOS/Outside</string></dict></plist>
+PLIST
+	: > "$agents/com.example.Target.plist"
+	: > "$agents/com.example.Target.other.plist"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+find_app_files "com.example.Target" "Target" "$HOME/Applications/Target.app"
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[[ "$output" == *"$agents/com.example.Target.plist"* ]] || return 1
+	[[ "$output" == *"$agents/com.example.Target.helper.plist"* ]] || return 1
+	[[ "$output" == *"$agents/com.thirdparty.Target-owned.plist"* ]] || return 1
+	[[ "$output" != *"$agents/com.thirdparty.Target-daily.plist"* ]] || return 1
+	[[ "$output" != *"$agents/com.example.Target.other.plist"* ]] || return 1
+	[[ "$output" != *"$agents/com.example.Target.outside.plist"* ]] || return 1
+}
+
 @test "find_app_files preserves Android Studio project source and credentials" {
 	mkdir -p "$HOME/AndroidStudioProjects/my-app"
 	mkdir -p "$HOME/.android/avd/Pixel_5.avd"
@@ -116,8 +153,8 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 
 receipt_payload_path_is_allowlisted "/Library/LaunchAgents/com.example.foo.helper.plist" "com.example.foo"
 receipt_payload_path_is_allowlisted "/Library/PrivilegedHelperTools/com.example.foo.helper" "com.example.foo"
-! receipt_payload_path_is_allowlisted "/Library/Application Support/Foo" "com.example.foo"
-! receipt_payload_path_is_allowlisted "/Applications/Foo.app" "com.example.foo"
+! receipt_payload_path_is_allowlisted "/Library/Application Support/Foo" "com.example.foo" || exit 1
+! receipt_payload_path_is_allowlisted "/Applications/Foo.app" "com.example.foo" || exit 1
 ! receipt_payload_path_is_allowlisted "/usr/local/bin/foo" "com.example.foo"
 EOF
 
@@ -127,6 +164,7 @@ EOF
 @test "launch plist unload validates path and uses timeout" {
 	mkdir -p "$HOME/Library/LaunchAgents"
 	touch "$HOME/Library/LaunchAgents/com.example.foo.plist"
+	touch "$HOME/Library/LaunchAgents/com.example.foo.helper.plist"
 
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -134,15 +172,164 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/uninstall/batch.sh"
 
 run_with_timeout() {
-	printf '%s\n' "$*" > "$HOME/launchctl-call.log"
+	if [[ "$2" == shasum ]]; then
+		shift 2
+		shasum "$@"
+		return $?
+	fi
+	printf '%s\n' "$*" >> "$HOME/launchctl-call.log"
 	return 0
 }
 
-unload_launch_plist "$HOME/Library/LaunchAgents/com.example.foo.plist" "false"
+unload_launch_plist "$HOME/Library/LaunchAgents/com.example.foo.plist" \
+    "false" "" "com.example.foo"
+unload_launch_plist "$HOME/Library/LaunchAgents/com.example.foo.helper.plist" \
+    "false" "" "com.example.foo"
 grep -q "5 launchctl unload $HOME/Library/LaunchAgents/com.example.foo.plist" "$HOME/launchctl-call.log"
+[[ "$(grep -c 'launchctl unload' "$HOME/launchctl-call.log")" -eq 1 ]] || exit 1
 EOF
 
 	[ "$status" -eq 0 ]
+}
+
+@test "launch plist unload keeps an agent replaced during its owner probe" {
+	local app="$HOME/Applications/Target.app"
+	local agent="$HOME/Library/LaunchAgents/com.example.Target.helper.plist"
+	local fake_bin="$HOME/bin"
+	mkdir -p "$app/Contents/MacOS" "${agent%/*}" "$fake_bin"
+	touch "$app/Contents/MacOS/Target"
+	cat > "$agent" <<PLIST
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>$app/Contents/MacOS/Target</string></dict></plist>
+PLIST
+	cat > "$fake_bin/plutil" <<'SH'
+#!/bin/bash
+output=$(/usr/bin/plutil "$@") || exit $?
+plist=""
+for arg in "$@"; do plist="$arg"; done
+printf 'probed\n' > "$HOME/plutil-call.log"
+mv "$plist" "$HOME/original-agent.plist"
+cat > "$plist" <<'PLIST'
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>/bin/true</string></dict></plist>
+PLIST
+printf '%s\n' "$output"
+SH
+	cat > "$fake_bin/launchctl" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$HOME/unload-call.log"
+SH
+	chmod +x "$fake_bin/plutil" "$fake_bin/launchctl"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		PATH="$fake_bin:$PATH" MOLE_TEST_NO_AUTH=1 \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+app="$HOME/Applications/Target.app"
+agent="$HOME/Library/LaunchAgents/com.example.Target.helper.plist"
+unload_launch_plist "$agent" false "" com.example.Target "$app"
+[[ -f "$HOME/plutil-call.log" && -f "$HOME/original-agent.plist" ]] || exit 1
+[[ -f "$agent" && ! -e "$HOME/unload-call.log" ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+}
+
+@test "launch plist unload rebinds identity after its final content check" {
+	local app="$HOME/Applications/Target.app"
+	local agent="$HOME/Library/LaunchAgents/com.example.Target.helper.plist"
+	local fake_bin="$HOME/bin"
+	mkdir -p "$app/Contents/MacOS" "${agent%/*}" "$fake_bin"
+	touch "$app/Contents/MacOS/Target"
+	cat > "$agent" <<PLIST
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>$app/Contents/MacOS/Target</string></dict></plist>
+PLIST
+	cat > "$fake_bin/launchctl" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$HOME/unload-call.log"
+SH
+	chmod +x "$fake_bin/launchctl"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		PATH="$fake_bin:$PATH" MOLE_TEST_NO_AUTH=1 \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+app="$HOME/Applications/Target.app"
+agent="$HOME/Library/LaunchAgents/com.example.Target.helper.plist"
+mole_file_sha256() {
+    local digest calls=0
+    digest=$(shasum -a 256 -- "$1") || return $?
+    [[ -f "$HOME/hash-calls" ]] && read -r calls < "$HOME/hash-calls"
+    calls=$((calls + 1))
+    printf '%s\n' "$calls" > "$HOME/hash-calls"
+    if [[ $calls -eq 2 ]]; then
+        mv "$1" "$HOME/original-agent.plist"
+        cat > "$1" <<'PLIST'
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>/bin/true</string></dict></plist>
+PLIST
+    fi
+    printf '%s\n' "${digest:0:64}"
+}
+unload_launch_plist "$agent" false "" com.example.Target "$app"
+[[ "$(cat "$HOME/hash-calls")" -eq 2 ]] || exit 1
+[[ -f "$agent" && -f "$HOME/original-agent.plist" ]] || exit 1
+[[ ! -e "$HOME/unload-call.log" ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+}
+
+@test "launch plist unload binds ownership after calculating its timeout" {
+	local app="$HOME/Applications/Target.app"
+	local agent="$HOME/Library/LaunchAgents/com.example.Target.helper.plist"
+	local fake_bin="$HOME/bin"
+	mkdir -p "$app/Contents/MacOS" "${agent%/*}" "$fake_bin"
+	touch "$app/Contents/MacOS/Target"
+	cat > "$agent" <<PLIST
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>$app/Contents/MacOS/Target</string></dict></plist>
+PLIST
+	cat > "$fake_bin/launchctl" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$HOME/unload-call.log"
+SH
+	chmod +x "$fake_bin/launchctl"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		PATH="$fake_bin:$PATH" MOLE_TEST_NO_AUTH=1 \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+app="$HOME/Applications/Target.app"
+agent="$HOME/Library/LaunchAgents/com.example.Target.helper.plist"
+_mole_timeout_with_deadline() {
+    if [[ "$1" == "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" ]]; then
+        mv "$agent" "$HOME/original-agent.plist"
+        cat > "$agent" <<'PLIST'
+<?xml version="1.0"?><plist version="1.0"><dict><key>Program</key><string>/bin/true</string></dict></plist>
+PLIST
+        printf '5\n'
+    else
+        printf '2\n'
+    fi
+}
+unload_launch_plist "$agent" false "$((SECONDS + 30))" com.example.Target "$app"
+[[ -f "$agent" && -f "$HOME/original-agent.plist" ]] || exit 1
+[[ ! -e "$HOME/unload-call.log" ]] || exit 1
+EOF
+
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
 }
 
 @test "login item helper discovery reads embedded helper bundle ids" {

@@ -203,6 +203,54 @@ EOF
     [ "$status_col" = "ok" ]
 }
 
+@test "sudo Trash ownership refusal keeps the item and clears its empty stage" {
+    local victim="$SANDBOX/owned-agent.plist"
+    local stage="$SANDBOX/stage-refused-agent"
+    local fake_bin="$SANDBOX/bin"
+    mkdir -p "$fake_bin" "$SANDBOX/home"
+    printf 'original\n' > "$victim"
+    cat > "$fake_bin/sudo" <<'SH'
+#!/bin/bash
+[[ "${1:-}" == "-n" ]] && shift
+"$@"
+SH
+    chmod +x "$fake_bin/sudo"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" SANDBOX="$SANDBOX" \
+        MOLE_DELETE_LOG="$MOLE_DELETE_LOG" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+unset MOLE_TEST_TRASH_DIR MOLE_TEST_NO_AUTH
+export MOLE_DELETE_MODE=trash
+export HOME="$SANDBOX/home"
+export PATH="$SANDBOX/bin:$PATH"
+victim="$SANDBOX/owned-agent.plist"
+stage="$SANDBOX/stage-refused-agent"
+identity=$(mole_deletion_identity "$victim")
+digest=$(mole_file_sha256 "$victim")
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+_mole_create_privileged_trash_stage() {
+    mkdir -p "$stage"
+    printf '%s\n' "$stage"
+}
+_mole_trash_target_still_safe() {
+    printf 'new owner\n' > "$victim"
+    return 0
+}
+rc=0
+mole_delete "$victim" true "$identity" "$digest" || rc=$?
+[[ $rc -ne 0 && -f "$victim" && ! -e "$stage" ]] || exit 1
+grep -q $'\townership-unverified\t' "$MOLE_DELETE_LOG"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"agent file changed or could not be inspected"* ]] || return 1
+    [[ "$output" != *"Trash unavailable"* ]]
+}
+
 @test "mole_delete refuses symlinked invoking user Trash for sudo-required paths" {
     local victim="$SANDBOX/victim_sudo_symlink_trash"
     local fake_bin="$SANDBOX/bin"
@@ -368,8 +416,8 @@ osascript() {
     return 98
 }
 _mole_path_requires_direct_trash "/Applications/Microsoft Word.app"
-! _mole_path_requires_direct_trash "/Applications/Utilities/Microsoft Word.app"
-! _mole_path_requires_direct_trash "/Applications/Microsoft Word.app/Contents"
+! _mole_path_requires_direct_trash "/Applications/Utilities/Microsoft Word.app" || exit 1
+! _mole_path_requires_direct_trash "/Applications/Microsoft Word.app/Contents" || exit 1
 _mole_move_to_trash "/Applications/Microsoft Word.app" false
 EOF
 

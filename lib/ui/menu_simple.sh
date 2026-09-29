@@ -109,8 +109,8 @@ paginated_multi_select() {
     _menu_saved_exit=$(trap -p EXIT)
     _menu_saved_int=$(trap -p INT)
     _menu_saved_term=$(trap -p TERM)
-    # Uses :- defaults: cleanup() is the EXIT trap and may fire once more at
-    # shell exit after this function returned and the saved-trap locals are
+    # Uses :- defaults: _ms_cleanup() is the EXIT trap and may fire once more
+    # at shell exit after this function returned and the saved-trap locals are
     # gone. See menu_paginated.sh.
     # shellcheck disable=SC2329
     _menu_restore_traps() {
@@ -119,21 +119,24 @@ paginated_multi_select() {
         if [[ -n "${_menu_saved_term:-}" ]]; then eval "${_menu_saved_term}"; else trap - TERM; fi
     }
 
-    # Cleanup function
-    cleanup() {
+    # Cleanup function. Nested functions are global once defined, so these
+    # handlers carry a file prefix: a bare cleanup() or handle_interrupt()
+    # would replace the caller's handler of that name, and bin/clean.sh's
+    # restored `cleanup EXIT` trap would then run this one instead.
+    _ms_cleanup() {
         _menu_restore_traps
         restore_terminal
     }
 
     # Interrupt handler
     # shellcheck disable=SC2329
-    handle_interrupt() {
-        cleanup
+    _ms_handle_interrupt() {
+        _ms_cleanup
         exit 130 # Standard exit code for Ctrl+C
     }
 
-    trap cleanup EXIT
-    trap handle_interrupt INT TERM
+    trap _ms_cleanup EXIT
+    trap _ms_handle_interrupt INT TERM
 
     # Setup terminal - preserve interrupt character
     stty -echo -icanon intr ^C 2> /dev/null || true
@@ -242,7 +245,7 @@ paginated_multi_select() {
 
         case "$key" in
             "QUIT")
-                cleanup
+                _ms_cleanup
                 return 1
                 ;;
             "UP")

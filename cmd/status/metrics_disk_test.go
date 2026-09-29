@@ -368,6 +368,9 @@ func TestCorrectAPFSDiskUsageReportsFinderPurgeable(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("APFS Finder corrections are macOS-only")
 	}
+	// scripts/test.sh exports MOLE_TEST_NO_AUTH=1, which skips the Finder tier.
+	t.Setenv("MOLE_TEST_MODE", "")
+	t.Setenv("MOLE_TEST_NO_AUTH", "")
 
 	origRunCmd := runCmd
 	origCommandExists := commandExists
@@ -410,6 +413,9 @@ func TestCorrectAPFSDiskUsageClampsPurgeableToZero(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("APFS Finder corrections are macOS-only")
 	}
+	// scripts/test.sh exports MOLE_TEST_NO_AUTH=1, which skips the Finder tier.
+	t.Setenv("MOLE_TEST_MODE", "")
+	t.Setenv("MOLE_TEST_NO_AUTH", "")
 
 	origRunCmd := runCmd
 	origCommandExists := commandExists
@@ -437,6 +443,58 @@ func TestCorrectAPFSDiskUsageClampsPurgeableToZero(t *testing.T) {
 	_, _, purgeable := correctAPFSDiskUsage("/", total, rawUsed, rawFree)
 	if purgeable != 0 {
 		t.Fatalf("purgeable = %d, want 0", purgeable)
+	}
+}
+
+func TestCorrectAPFSDiskUsageSkipsFinderUnderTestMode(t *testing.T) {
+	for _, env := range []string{"MOLE_TEST_MODE", "MOLE_TEST_NO_AUTH"} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv("MOLE_TEST_MODE", "")
+			t.Setenv("MOLE_TEST_NO_AUTH", "")
+			t.Setenv(env, "1")
+
+			origRunCmd := runCmd
+			origCommandExists := commandExists
+			origCachedAt := finderDiskCachedAt
+			origFree := finderDiskFree
+			origTotal := finderDiskTotal
+			t.Cleanup(func() {
+				runCmd = origRunCmd
+				commandExists = origCommandExists
+				finderDiskCachedAt = origCachedAt
+				finderDiskFree = origFree
+				finderDiskTotal = origTotal
+			})
+			finderDiskCachedAt = time.Time{}
+
+			commandExists = func(name string) bool { return name == "osascript" || name == "diskutil" }
+			var ran []string
+			runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
+				ran = append(ran, name)
+				switch name {
+				case "osascript":
+					return "663700000000, 1889700000000", nil
+				case "diskutil":
+					return "<dict><key>APFSContainerFree</key><integer>600000000000</integer></dict>", nil
+				}
+				return "", errors.New("unexpected command")
+			}
+
+			total := uint64(1889700000000)
+			rawFree := uint64(522700000000)
+			rawUsed := total - rawFree
+			used, _, purgeable := correctAPFSDiskUsage("/", total, rawUsed, rawFree)
+
+			for _, name := range ran {
+				if name == "osascript" {
+					t.Fatalf("%s=1 must not send Apple events to Finder, ran %v", env, ran)
+				}
+			}
+			// Positive trace: the diskutil tier answered instead.
+			if want := total - uint64(600000000000); used != want || purgeable != 0 {
+				t.Fatalf("used = %d purgeable = %d, want diskutil fallback %d and 0 (ran %v)", used, purgeable, want, ran)
+			}
+		})
 	}
 }
 

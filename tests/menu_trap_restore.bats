@@ -99,6 +99,45 @@ EOF
     [[ "$output" == *OUTER_CLEANUP_MARKER* ]] || return 1
 }
 
+@test "simple paginated_multi_select keeps the caller's cleanup and interrupt handlers" {
+    # lib/ui/menu_simple.sh backs `mo clean --whitelist`, where bin/clean.sh
+    # has already armed `trap 'cleanup EXIT $?' EXIT` with its own cleanup().
+    run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/menu_simple.sh"
+
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+stty() { :; }
+tput() { :; }
+export MOLE_MANAGED_ALT_SCREEN=1
+
+cleanup() { echo "OUTER_CLEANUP_MARKER $1"; }
+handle_interrupt() { echo OUTER_INTERRUPT_MARKER; }
+trap 'cleanup EXIT' EXIT
+trap handle_interrupt INT TERM
+original_cleanup=$(declare -f cleanup)
+original_interrupt=$(declare -f handle_interrupt)
+
+paginated_multi_select "Pick" "alpha" "beta" < <(printf 'q') > /dev/null 2>&1 || true
+
+current_cleanup=$(declare -f cleanup)
+[[ "$current_cleanup" == "$original_cleanup" ]] || {
+    printf 'caller cleanup function was replaced:\n%s\n' "$current_cleanup" >&2
+    exit 1
+}
+current_interrupt=$(declare -f handle_interrupt)
+[[ "$current_interrupt" == "$original_interrupt" ]] || {
+    printf 'caller handle_interrupt function was replaced:\n%s\n' "$current_interrupt" >&2
+    exit 1
+}
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OUTER_CLEANUP_MARKER EXIT"* ]] || return 1
+}
+
 @test "footer never drops the Space Select hint before secondary controls (#1382)" {
 	run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

@@ -149,6 +149,56 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "bats assertion audit catches negated assertions that cannot fail" {
+    local audit="$PROJECT_ROOT/scripts/audit_bats_assertions.py"
+    local live_fixture="$HOME/negation-live.bats"
+    local vacuous_fixture="$HOME/negation-vacuous.bats"
+    # Bats would read a literal test header here as a test of this file.
+    sed 's/^TEST /@test /' > "$live_fixture" <<'BATS'
+TEST "negations that can still fail" {
+    ! grep -q gone "$trace" || return 1
+    run /bin/bash -c "
+        source lib.sh
+        ! is_protected /tmp/x
+    "
+    cat > "$HOME/mock" <<'EOF'
+! grep -q data "$file"
+echo done
+EOF
+    run env HOME="$HOME" /bin/bash --noprofile --norc <<'EOF'
+stub() {
+    ! true
+    :
+}
+! grep -q gone "$trace" || exit 1
+! grep -q gone "$trace"
+EOF
+    ! grep -q gone "$trace"
+}
+BATS
+    sed 's/^TEST /@test /' > "$vacuous_fixture" <<'BATS'
+TEST "negations that never fail" {
+    ! grep -q gone "$trace"
+    run env HOME="$HOME" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+! grep -q gone "$trace"
+[[ -f "$trace" ]]
+EOF
+    [ "$status" -eq 0 ]
+}
+BATS
+
+    run python3 "$audit" "$live_fixture"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"bats-assertion-audit-ok"* ]] || return 1
+
+    run python3 "$audit" "$vacuous_fixture"
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"$vacuous_fixture:2:"* ]] || return 1
+    [[ "$output" == *"$vacuous_fixture:5:"* ]] || return 1
+    [[ "$(grep -c "bare '! cmd'" <<< "$output")" -eq 2 ]] || { echo "$output"; return 1; }
+}
+
 @test "Makefile has build target for Go binaries" {
     run /bin/bash -c "grep -Eq '(^|[[:space:]])(go|\\$\\(GO\\))[[:space:]]+build' '$PROJECT_ROOT/Makefile'"
     [ "$status" -eq 0 ]

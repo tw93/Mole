@@ -2041,4 +2041,68 @@ EOF
         echo "$open_coded"
         return 1
     }
+
+    # The same fold without a named guard: `pgrep -x App && running=true` or
+    # `if pgrep ...; then skip; fi` reads a pgrep error (exit 2/3, or no pgrep
+    # at all) as "not running" and cleans a live app's caches. A raw pgrep in
+    # cleanup code must capture its own status, either `|| rc=$?` or an
+    # `else` whose first line is `rc=$?`; anything else goes through
+    # mole_pgrep_any and mole_clean_process_guard.
+    local raw_pgrep
+    raw_pgrep=$(
+        command awk '
+            FNR == 1 { cont = 0; in_if = 0; want_capture = 0 }
+            /^[ \t]*#/ { next }
+            cont {
+                buf = buf " " $0
+                if ($0 ~ /\\[ \t]*$/) next
+                cont = 0
+                if (buf !~ /\|\|[ \t]*[A-Za-z_][A-Za-z0-9_]*=\$\?/) print FILENAME ":" start ": " first
+                next
+            }
+            want_capture {
+                want_capture = 0
+                if ($0 !~ /^[ \t]*[A-Za-z_][A-Za-z0-9_]*=\$\?/) print FILENAME ":" start ": " first
+                next
+            }
+            in_if {
+                if ($0 ~ /^[ \t]*if[ \t]/) depth++
+                else if ($0 ~ /^[ \t]*fi([ \t;]|$)/) {
+                    depth--
+                    if (depth == 0) { in_if = 0; print FILENAME ":" start ": " first }
+                } else if (depth == 1 && $0 ~ /^[ \t]*elif[ \t]/) { in_if = 0; print FILENAME ":" start ": " first }
+                else if (depth == 1 && $0 ~ /^[ \t]*else[ \t]*$/) { in_if = 0; want_capture = 1 }
+                next
+            }
+            {
+                line = $0
+                gsub(/command -v pgrep/, "", line)
+                if (line !~ /(^|[^A-Za-z0-9_])pgrep[ \t]/) next
+                seen++
+                start = FNR
+                first = $0
+                if (line ~ /\\[ \t]*$/) { cont = 1; buf = line; next }
+                if (line ~ /\|\|[ \t]*[A-Za-z_][A-Za-z0-9_]*=\$\?/) next
+                if (line ~ /^[ \t]*if[ \t]+pgrep[ \t].*;[ \t]*then[ \t]*$/) { in_if = 1; depth = 1; next }
+                print FILENAME ":" FNR ": " $0
+            }
+            END { print "RAW_PGREP_SITES=" seen + 0 }
+        ' "$PROJECT_ROOT"/lib/clean/*.sh "$PROJECT_ROOT"/lib/optimize/*.sh
+    )
+    local raw_sites
+    raw_sites=$(printf '%s\n' "$raw_pgrep" | command sed -n 's/^RAW_PGREP_SITES=//p')
+    # Zero raw sites means the scan went blind (renamed files, a broken
+    # pattern), not that the tree is clean: the status-capturing probes in
+    # dev.sh, app_caches.sh, and optimize/tasks.sh must be seen.
+    [[ "$raw_sites" =~ ^[0-9]+$ && "$raw_sites" -gt 0 ]] || {
+        echo "raw pgrep scan matched no code lines; fix the scan before trusting it"
+        return 1
+    }
+    local folded
+    folded=$(printf '%s\n' "$raw_pgrep" | command grep -v '^RAW_PGREP_SITES=' || true)
+    [ -z "$folded" ] || {
+        echo "these pgrep calls fold a probe error into \"not running\"; use mole_pgrep_any with mole_clean_process_guard:"
+        echo "$folded"
+        return 1
+    }
 }

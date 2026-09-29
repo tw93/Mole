@@ -32,6 +32,8 @@ EOF
 }
 
 @test "clean_virtualization_tools hits cache paths" {
+    mkdir -p "$HOME/Library/Caches/com.utmapp.UTM"
+    printf cache > "$HOME/Library/Caches/com.utmapp.UTM/blob"
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -42,6 +44,7 @@ safe_clean() { echo "$2|$1"; }
 clean_virtualization_tools
 EOF
 
+    rm -rf "$HOME/Library/Caches/com.utmapp.UTM"
     [ "$status" -eq 0 ]
     [[ "$output" == *"VMware Fusion cache"* ]] || return 1
     [[ "$output" == *"Parallels cache"* ]] || return 1
@@ -51,6 +54,8 @@ EOF
 }
 
 @test "clean_virtualization_tools skips UTM caches while UTM is running" {
+    mkdir -p "$HOME/Library/Caches/com.utmapp.UTM"
+    printf cache > "$HOME/Library/Caches/com.utmapp.UTM/blob"
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -64,6 +69,7 @@ safe_clean() { echo "$2"; }
 clean_virtualization_tools
 EOF
 
+    rm -rf "$HOME/Library/Caches/com.utmapp.UTM"
     [ "$status" -eq 0 ]
     [[ "$output" == *"VMware Fusion cache"* ]] || return 1
     [[ "$output" == *"Parallels cache"* ]] || return 1

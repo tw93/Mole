@@ -17,6 +17,8 @@ readonly MOLE_ERR_READONLY_FS=12
 readonly MOLE_ERR_PROTECTED_PATH=13
 readonly MOLE_ERR_PRIVACY_DENIED=14
 readonly MOLE_ERR_MUTABLE_PARENT=15
+readonly MOLE_ERR_OWNER_UNVERIFIED=16
+readonly MOLE_ERR_APP_REAPPEARED=17
 
 # Ensure dependencies are loaded
 _MOLE_CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1409,6 +1411,8 @@ safe_remove() {
     local expected_parent="${5:-}"
     local expected_parent_id="${6:-}"
     local expected_target_id="${7:-}"
+    local expected_file_sha256="${8:-}"
+    local expected_absent_path="${9:-}"
     local _MOLE_DEFER_CONTAINER_HANDLE_PROBE=false
     local container_probe_parent=""
     local container_probe_parent_id=""
@@ -1710,22 +1714,29 @@ safe_remove() {
         return 1
     fi
 
-    # Perform the deletion
-    # Use || to capture the exit code so set -e won't abort on rm failures
+    # Resolve the removal budget before the last ownership check so a
+    # replacement during that work cannot inherit the earlier approval.
     local error_msg
     local rm_exit=0
     local section_deadline_spent=0
+    local rm_timeout=""
+    local shell_rm=false
     if declare -F rm > /dev/null 2>&1; then
-        error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # SAFE: safe_remove validated and rebound this exact target above
+        shell_rm=true
     else
-        local rm_timeout=""
         rm_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
             "$deadline_seconds") || rm_exit=$?
-        if [[ $rm_exit -eq 0 ]]; then
-            error_msg=$(run_with_timeout "$rm_timeout" rm -rf "$path" < /dev/null 2>&1) || rm_exit=$? # SAFE: safe_remove validated and rebound this exact target above
+        [[ $rm_exit -eq 0 ]] || section_deadline_spent=1
+    fi
+    if [[ $rm_exit -eq 0 ]]; then
+        _mole_owned_path_still_valid "$path" \
+            "$expected_file_sha256" "$expected_absent_path" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
+        # Use || so set -e does not abort before the failure is classified.
+        if [[ "$shell_rm" == true ]]; then
+            error_msg=$(rm -rf "$path" 2>&1) || rm_exit=$? # SAFE: safe_remove validated and rebound this exact target above
         else
-            # The section's own wall-clock budget ran out, so rm never started.
-            section_deadline_spent=1
+            error_msg=$(run_with_timeout "$rm_timeout" rm -rf "$path" < /dev/null 2>&1) || rm_exit=$? # SAFE: safe_remove validated and rebound this exact target above
         fi
     fi
 
@@ -1780,6 +1791,8 @@ safe_remove_symlink() {
     local expected_parent="${3:-}"
     local expected_parent_id="${4:-}"
     local expected_target_id="${5:-}"
+    local expected_file_sha256="${6:-}"
+    local expected_absent_path="${7:-}"
 
     local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" ]] && mole_rc_timeout_or_signal "$pending_clean_cancel"; then
@@ -1825,6 +1838,10 @@ safe_remove_symlink() {
         debug_log "Refusing symlink removal after final path identity changed: $path"
         return 1
     fi
+
+    _mole_owned_path_still_valid "$path" \
+        "$expected_file_sha256" "$expected_absent_path" \
+        "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
 
     local rm_exit=0
     if [[ "$use_sudo" == "true" ]]; then
@@ -1917,6 +1934,8 @@ safe_sudo_remove() {
     local expected_parent="${4:-}"
     local expected_parent_id="${5:-}"
     local expected_target_id="${6:-}"
+    local expected_file_sha256="${7:-}"
+    local expected_absent_path="${8:-}"
 
     local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" ]] && mole_rc_timeout_or_signal "$pending_clean_cancel"; then
@@ -1960,7 +1979,8 @@ safe_sudo_remove() {
         if [[ ${EUID:-0} -ne 0 ]]; then
             debug_log "Downgrading sudo remove below mutable parent: $path"
             safe_remove "$path" true "" "$deadline_seconds" \
-                "$expected_parent" "$expected_parent_id" "$expected_target_id"
+                "$expected_parent" "$expected_parent_id" "$expected_target_id" \
+                "$expected_file_sha256" "$expected_absent_path"
             return $?
         fi
         debug_log "Refusing sudo remove below mutable parent: $path"
@@ -2134,6 +2154,9 @@ safe_sudo_remove() {
     remove_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
         "$deadline_seconds") || ret=$?
     if [[ $ret -eq 0 ]]; then
+        _mole_owned_path_still_valid "$path" \
+            "$expected_file_sha256" "$expected_absent_path" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
         output=$(_mole_bounded_sudo "$remove_timeout" \
             -n rm -rf "$path" < /dev/null 2>&1) || ret=$? # SAFE: safe_sudo_remove validated the exact immutable-ancestor target above
     else
@@ -2204,11 +2227,69 @@ mole_deletion_identity() {
     printf '%s\n' "$identity"
 }
 
+# Bind owner decisions to file contents across slow probes. The caller also
+# supplies path identity so an atomic replacement cannot inherit approval.
+mole_file_sha256() {
+    local timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
+    if [[ -n "${2:-}" ]]; then
+        timeout=$(_mole_timeout_with_deadline "$timeout" "$2") || return $?
+    fi
+    local output=""
+    output=$(run_with_timeout "$timeout" \
+        shasum -a 256 -- "$1" < /dev/null 2> /dev/null) || return $?
+    [[ "$output" =~ ^[0-9a-f]{64}[[:space:]] ]] || return 1
+    printf '%s\n' "${output:0:64}"
+}
+
+_mole_expected_path_absent() {
+    local path="${1:-}"
+    [[ -z "$path" || (! -e "$path" && ! -L "$path") ]]
+}
+
+_mole_owned_path_still_valid() {
+    local path="$1"
+    local expected_file_sha256="${2:-}"
+    local expected_absent_path="${3:-}"
+    local expected_parent="${4:-}"
+    local expected_parent_id="${5:-}"
+    local expected_target_id="${6:-}"
+    local deadline="${7:-}"
+    if [[ -n "$expected_file_sha256" ]]; then
+        local current_sha256="" hash_rc=0
+        current_sha256=$(mole_file_sha256 "$path" "$deadline") || hash_rc=$?
+        mole_rc_timeout_or_signal "$hash_rc" && return "$hash_rc"
+        [[ $hash_rc -eq 0 && "$current_sha256" == "$expected_file_sha256" ]] || return "$MOLE_ERR_OWNER_UNVERIFIED"
+    fi
+    # Hashing reads a file descriptor while the sink acts on a pathname. A
+    # replacement installed during the hash must not inherit its approval.
+    if [[ -n "$expected_parent" ]] && ! _mole_path_matches_identity \
+        "$path" "$expected_parent" "$expected_parent_id" "$expected_target_id"; then
+        return "$MOLE_ERR_OWNER_UNVERIFIED"
+    fi
+    _mole_expected_path_absent "$expected_absent_path" || return "$MOLE_ERR_APP_REAPPEARED"
+}
+
+_mole_report_unverified_delete() {
+    local path="$1"
+    local mode="$2"
+    local size_kb="$3"
+    local reason="${4:-$MOLE_ERR_OWNER_UNVERIFIED}"
+    if [[ $reason -eq $MOLE_ERR_APP_REAPPEARED ]]; then
+        _mole_delete_log "$mode" "$size_kb" "app-reappeared" "$path"
+        log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "SKIPPED" "$path" "selected app path reappeared"
+        printf 'Kept %s: the selected app path exists again. Select the app and review its removal plan.\n' "$path" >&2
+    else
+        _mole_delete_log "$mode" "$size_kb" "ownership-unverified" "$path"
+        log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "SKIPPED" "$path" "agent ownership unverified"
+        printf 'Kept %s: the agent file changed or could not be inspected. Review the plist before retrying.\n' "$path" >&2
+    fi
+}
+
 # Route a deletion through either macOS Trash or permanent rm, while logging
 # every call for forensic review. Designed for destructive paths where undo
 # matters (e.g. uninstall). Not used by cache-clean paths.
 #
-# Usage: mole_delete <path> [needs_sudo=false] [expected_dev_inode_mtime]
+# Usage: mole_delete <path> [needs_sudo=false] [expected_dev_inode_mtime] [expected_file_sha256] [expected_absent_path]
 #
 # Environment:
 #   MOLE_DELETE_MODE      "permanent" (default) or "trash"; other values fail
@@ -2227,6 +2308,8 @@ mole_delete() {
     local path="$1"
     local needs_sudo="${2:-false}"
     local expected_identity="${3:-}"
+    local expected_file_sha256="${4:-}"
+    local expected_absent_path="${5:-}"
     local mode="${MOLE_DELETE_MODE:-permanent}"
 
     [[ -z "$path" ]] && return 1
@@ -2326,10 +2409,40 @@ mole_delete() {
         if [[ $identity_rc -ne 0 || "$current_identity" != "$expected_identity" ||
             "$expected_target_id" != "${expected_identity%:*}" ||
             "$expected_target_id" != "${current_identity%:*}" ]]; then
-            _mole_delete_log "$mode" "$size_kb" "identity-changed" "$path"
-            debug_log "Refusing deletion after selected path identity changed: $path"
+            if [[ -n "$expected_file_sha256" ]]; then
+                _mole_report_unverified_delete "$path" "$mode" "$size_kb"
+            else
+                _mole_delete_log "$mode" "$size_kb" "identity-changed" "$path"
+                debug_log "Refusing deletion after selected path identity changed: $path"
+            fi
             return 1
         fi
+    fi
+
+    if [[ -n "$expected_file_sha256" ]]; then
+        [[ -n "$expected_identity" ]] || return 1
+        local current_sha256="" hash_rc=0
+        current_sha256=$(mole_file_sha256 "$path") || hash_rc=$?
+        if mole_rc_timeout_or_signal "$hash_rc"; then
+            local hash_status="interrupted"
+            mole_rc_timeout "$hash_rc" && hash_status="timed-out"
+            _mole_delete_log "$mode" "$size_kb" "$hash_status" "$path"
+            return "$hash_rc"
+        fi
+        if [[ $hash_rc -ne 0 || "$current_sha256" != "$expected_file_sha256" ]]; then
+            _mole_report_unverified_delete "$path" "$mode" "$size_kb"
+            return 1
+        fi
+        if ! _mole_path_matches_identity "$path" "$expected_parent" \
+            "$expected_parent_id" "$expected_target_id"; then
+            _mole_report_unverified_delete "$path" "$mode" "$size_kb"
+            return 1
+        fi
+    fi
+
+    if ! _mole_expected_path_absent "$expected_absent_path"; then
+        _mole_report_unverified_delete "$path" "$mode" "$size_kb" "$MOLE_ERR_APP_REAPPEARED"
+        return 1
     fi
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
@@ -2363,7 +2476,8 @@ mole_delete() {
         local trash_rc=0
         _mole_move_to_trash "$path" "$needs_sudo" \
             "$expected_parent" "$expected_parent_id" \
-            "$expected_target_id" || trash_rc=$?
+            "$expected_target_id" "$expected_file_sha256" \
+            "$expected_absent_path" || trash_rc=$?
         if [[ $trash_rc -eq 0 ]]; then
             _mole_delete_log "trash" "$size_kb" "ok" "$path"
             log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "TRASHED" "$path" "${size_kb}KB"
@@ -2385,6 +2499,11 @@ mole_delete() {
             log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "SKIPPED" "$path" "mutable-parent"
             debug_log "Trash move stopped because a mutable parent was detected: $path"
             return "$MOLE_ERR_MUTABLE_PARENT"
+        fi
+        if [[ $trash_rc -eq $MOLE_ERR_OWNER_UNVERIFIED ||
+            $trash_rc -eq $MOLE_ERR_APP_REAPPEARED ]]; then
+            _mole_report_unverified_delete "$path" "$mode" "$size_kb" "$trash_rc"
+            return 1
         fi
         if mole_rc_timeout_or_signal "$trash_rc"; then
             local trash_status="interrupted"
@@ -2415,18 +2534,26 @@ mole_delete() {
     elif [[ -L "$path" ]]; then
         safe_remove_symlink "$path" "$needs_sudo" \
             "$expected_parent" "$expected_parent_id" \
-            "$expected_target_id" || rc=$?
+            "$expected_target_id" "$expected_file_sha256" \
+            "$expected_absent_path" || rc=$?
     elif [[ "$needs_sudo" == "true" ]]; then
         safe_sudo_remove "$path" "$size_kb" "" \
             "$expected_parent" "$expected_parent_id" \
-            "$expected_target_id" || rc=$?
+            "$expected_target_id" "$expected_file_sha256" \
+            "$expected_absent_path" || rc=$?
     else
         safe_remove "$path" "true" "$size_kb" "" \
             "$expected_parent" "$expected_parent_id" \
-            "$expected_target_id" || rc=$?
+            "$expected_target_id" "$expected_file_sha256" \
+            "$expected_absent_path" || rc=$?
     fi
 
     local status_label="ok"
+    if [[ $rc -eq $MOLE_ERR_OWNER_UNVERIFIED ||
+        $rc -eq $MOLE_ERR_APP_REAPPEARED ]]; then
+        _mole_report_unverified_delete "$path" "$mode" "$size_kb" "$rc"
+        return 1
+    fi
     if [[ $rc -eq $MOLE_ERR_MUTABLE_PARENT ]]; then
         status_label="mutable-parent"
     elif mole_rc_timeout "$rc"; then
@@ -2497,6 +2624,7 @@ _mole_trash_target_still_safe() {
     local expected_parent="${2:-}"
     local expected_parent_id="${3:-}"
     local expected_target_id="${4:-}"
+    local expected_file_sha256="${5:-}"
 
     _mole_reset_process_snapshot
     local live_cache_guard_rc=0
@@ -2512,9 +2640,12 @@ _mole_trash_target_still_safe() {
     fi
 
     if [[ -n "$expected_parent" ]]; then
-        _mole_bound_path_matches "$path" "$expected_parent" \
-            "$expected_parent_id" "$expected_target_id"
-        return $?
+        if ! _mole_bound_path_matches "$path" "$expected_parent" \
+            "$expected_parent_id" "$expected_target_id"; then
+            [[ -n "$expected_file_sha256" ]] && return "$MOLE_ERR_OWNER_UNVERIFIED"
+            return 1
+        fi
+        return 0
     fi
     _mole_bound_path_matches "$path" "$_MOLE_CONTAINER_CACHE_PROBE_PARENT" \
         "$_MOLE_CONTAINER_CACHE_PROBE_PARENT_ID" \
@@ -2529,11 +2660,16 @@ _mole_move_app_to_trash_via_finder() {
     local expected_parent="${2:-}"
     local expected_parent_id="${3:-}"
     local expected_target_id="${4:-}"
+    local expected_file_sha256="${5:-}"
+    local expected_absent_path="${6:-}"
     local finder_rc=0
 
     _mole_path_is_application_bundle "$path" || return 1
     _mole_trash_target_still_safe "$path" "$expected_parent" \
-        "$expected_parent_id" "$expected_target_id" || return 1
+        "$expected_parent_id" "$expected_target_id" "$expected_file_sha256" || return $?
+    _mole_owned_path_still_valid "$path" \
+        "$expected_file_sha256" "$expected_absent_path" \
+        "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
 
     run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" osascript - "$path" > /dev/null 2>&1 << 'APPLESCRIPT' || finder_rc=$?
 on run argv
@@ -2563,12 +2699,17 @@ _mole_move_to_trash() {
     local expected_parent="${3:-}"
     local expected_parent_id="${4:-}"
     local expected_target_id="${5:-}"
+    local expected_file_sha256="${6:-}"
+    local expected_absent_path="${7:-}"
 
     if [[ -n "${MOLE_TEST_TRASH_DIR:-}" ]]; then
         mkdir -p "$MOLE_TEST_TRASH_DIR" 2> /dev/null || return 1
         local dest="$MOLE_TEST_TRASH_DIR/$(basename "$path").$$.$(date +%s 2> /dev/null || echo 0)"
         _mole_trash_target_still_safe "$path" "$expected_parent" \
-            "$expected_parent_id" "$expected_target_id" || return 1
+            "$expected_parent_id" "$expected_target_id" "$expected_file_sha256" || return $?
+        _mole_owned_path_still_valid "$path" \
+            "$expected_file_sha256" "$expected_absent_path" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
         mv "$path" "$dest" 2> /dev/null
         return $?
     fi
@@ -2580,7 +2721,8 @@ _mole_move_to_trash() {
 
     if [[ "$needs_sudo" == "true" ]]; then
         _mole_move_path_to_user_trash "$path" "$needs_sudo" \
-            "$expected_parent" "$expected_parent_id" "$expected_target_id"
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" \
+            "$expected_file_sha256" "$expected_absent_path"
         return $?
     fi
 
@@ -2588,14 +2730,16 @@ _mole_move_to_trash() {
         local direct_rc=0
         _mole_move_path_to_user_trash "$path" false \
             "$expected_parent" "$expected_parent_id" \
-            "$expected_target_id" || direct_rc=$?
+            "$expected_target_id" "$expected_file_sha256" \
+            "$expected_absent_path" || direct_rc=$?
         if [[ $direct_rc -eq $MOLE_ERR_PRIVACY_DENIED ]] &&
             _mole_path_is_application_bundle "$path"; then
             debug_log "Direct Trash move was denied; retrying application through Finder: $path"
             local finder_rc=0
             _mole_move_app_to_trash_via_finder "$path" \
                 "$expected_parent" "$expected_parent_id" \
-                "$expected_target_id" || finder_rc=$?
+                "$expected_target_id" "$expected_file_sha256" \
+                "$expected_absent_path" || finder_rc=$?
             [[ $finder_rc -eq 0 ]] && return 0
             mole_rc_timeout_or_signal "$finder_rc" && return "$finder_rc"
         fi
@@ -2606,7 +2750,10 @@ _mole_move_to_trash() {
     if command -v trash > /dev/null 2>&1; then
         local trash_rc=0
         _mole_trash_target_still_safe "$path" "$expected_parent" \
-            "$expected_parent_id" "$expected_target_id" || return 1
+            "$expected_parent_id" "$expected_target_id" "$expected_file_sha256" || return $?
+        _mole_owned_path_still_valid "$path" \
+            "$expected_file_sha256" "$expected_absent_path" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
         run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
             trash "$path" > /dev/null 2>&1 || trash_rc=$?
         [[ $trash_rc -eq 0 ]] && return 0
@@ -2616,7 +2763,10 @@ _mole_move_to_trash() {
     # AppleScript fallback. Pass the path via argv so special chars (quotes,
     # backslashes) cannot break out of the quoted string.
     _mole_trash_target_still_safe "$path" "$expected_parent" \
-        "$expected_parent_id" "$expected_target_id" || return 1
+        "$expected_parent_id" "$expected_target_id" "$expected_file_sha256" || return $?
+    _mole_owned_path_still_valid "$path" \
+        "$expected_file_sha256" "$expected_absent_path" \
+        "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
     run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
         osascript - "$path" > /dev/null 2>&1 << 'APPLESCRIPT'
 on run argv
@@ -2695,6 +2845,8 @@ _mole_move_path_to_user_trash() {
     local expected_parent="${3:-}"
     local expected_parent_id="${4:-}"
     local expected_target_id="${5:-}"
+    local expected_file_sha256="${6:-}"
+    local expected_absent_path="${7:-}"
 
     if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
         return 1
@@ -2835,8 +2987,19 @@ _mole_move_path_to_user_trash() {
         fi
 
         local stage_move_rc=0
+        local stage_guard_rc=0
         _mole_trash_target_still_safe "$path" "$expected_parent" \
-            "$expected_parent_id" "$expected_target_id" || return 1
+            "$expected_parent_id" "$expected_target_id" \
+            "$expected_file_sha256" || stage_guard_rc=$?
+        if [[ $stage_guard_rc -eq 0 ]]; then
+            _mole_owned_path_still_valid "$path" \
+                "$expected_file_sha256" "$expected_absent_path" \
+                "$expected_parent" "$expected_parent_id" "$expected_target_id" || stage_guard_rc=$?
+        fi
+        if [[ $stage_guard_rc -ne 0 ]]; then
+            sudo -n /bin/rm -rf "$stage_dir" 2> /dev/null || true # SAFE: exact empty root-owned stage created for this item above
+            return "$stage_guard_rc"
+        fi
         sudo -n /bin/mv "$path" "$stage_path" 2> /dev/null || stage_move_rc=$?
         if [[ $stage_move_rc -ne 0 ]]; then
             if mole_rc_timeout_or_signal "$stage_move_rc"; then
@@ -2905,7 +3068,10 @@ _mole_move_path_to_user_trash() {
         fi
     else
         _mole_trash_target_still_safe "$path" "$expected_parent" \
-            "$expected_parent_id" "$expected_target_id" || return 1
+            "$expected_parent_id" "$expected_target_id" "$expected_file_sha256" || return $?
+        _mole_owned_path_still_valid "$path" \
+            "$expected_file_sha256" "$expected_absent_path" \
+            "$expected_parent" "$expected_parent_id" "$expected_target_id" || return $?
         move_output=$(mv -n "$path" "$dest" 2>&1) || move_rc=$?
     fi
     if [[ $move_rc -ne 0 ]]; then

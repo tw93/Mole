@@ -530,10 +530,11 @@ is_claude_vm_bundle_orphaned() {
 
     [[ -d "$vm_bundle_path" ]] || return 1
 
-    # Extra guard in case the running-app scan missed Claude Desktop.
-    if pgrep -x "Claude" > /dev/null 2>&1; then
-        return 1
-    fi
+    # Extra guard in case the running-app scan missed Claude Desktop. A probe
+    # that cannot tell keeps the bundle here too, not only at the final sink.
+    local claude_state=0
+    mole_pgrep_any -x "Claude" || claude_state=$?
+    [[ $claude_state -eq 1 ]] || return 1
 
     if grep -Fxq "$claude_bundle_id" "$installed_bundles" 2> /dev/null; then
         return 1

@@ -325,15 +325,19 @@ _clean_mail_downloads() {
         mail_age_days=30
     fi
 
-    if pgrep -x "Mail" > /dev/null 2>&1; then
-        debug_log "Mail is running, skipping Mail Downloads cleanup"
-        return 0
-    fi
-
     local -a mail_dirs=(
         "$HOME/Library/Mail Downloads"
         "$HOME/Library/Containers/com.apple.mail/Data/Library/Mail Downloads"
     )
+    # Probe Mail only when there is something to clean, so an unknown process
+    # state never prints a stop line for a directory that does not exist.
+    [[ -d "${mail_dirs[0]}" || -d "${mail_dirs[1]}" ]] || return 0
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard _mail_process_state "Mail started"; then
+        mole_report_guard_stop "Mail Downloads" debug_log "Mail is running, skipping Mail Downloads cleanup"
+        return 0
+    fi
     local count=0
     local cleaned_kb=0
     local spinner_active=false
@@ -635,6 +639,26 @@ _google_drive_process_state() {
 
 _onedrive_process_state() {
     mole_pgrep_any -x "OneDrive"
+}
+
+_mail_process_state() {
+    mole_pgrep_any -x "Mail"
+}
+
+_arc_process_state() {
+    mole_pgrep_any -x "Arc"
+}
+
+_vivaldi_process_state() {
+    mole_pgrep_any -x "Vivaldi"
+}
+
+_qqbrowser_process_state() {
+    mole_pgrep_any -x "QQBrowser3"
+}
+
+_utm_process_state() {
+    mole_pgrep_any -x "UTM"
 }
 
 _clean_chrome_profile_caches_guarded() {
@@ -1680,6 +1704,8 @@ clean_external_volume_target() {
 
 # Browser caches (Safari/Chrome/Edge/Firefox).
 clean_browsers() {
+    # Refusal reason for the Arc, Brave, Vivaldi, and QQ Browser process guards.
+    local _MOLE_CLEAN_GUARD_REASON=""
     safe_clean ~/Library/Caches/com.apple.Safari/* "Safari cache"
     # Chrome/Chromium.
     safe_clean ~/Library/Caches/Google/Chrome/* "Chrome cache"
@@ -1731,9 +1757,7 @@ clean_browsers() {
     if [[ -d ~/Library/Application\ Support/Arc ]]; then
         safe_clean ~/Library/Caches/company.thebrowser.Browser/* "Arc cache"
         local _arc_profile
-        local _arc_running=false
-        pgrep -x "Arc" > /dev/null 2>&1 && _arc_running=true
-        if [[ "$_arc_running" != "true" ]]; then
+        if mole_clean_process_guard _arc_process_state "Arc started"; then
             safe_clean ~/Library/Application\ Support/Arc/*/Code\ Cache/* "Arc code cache"
             safe_clean ~/Library/Application\ Support/Arc/*/GPUCache/* "Arc GPU cache"
             safe_clean ~/Library/Application\ Support/Arc/*/DawnCache/* "Arc Dawn cache"
@@ -1754,6 +1778,8 @@ clean_browsers() {
             safe_clean ~/Library/Application\ Support/Arc/User\ Data/component_crx_cache/* "Arc component CRX cache"
             safe_clean ~/Library/Application\ Support/Arc/User\ Data/extensions_crx_cache/* "Arc extensions CRX cache"
             safe_clean ~/Library/Application\ Support/Arc/User\ Data/Crashpad/completed/* "Arc crash reports"
+        else
+            mole_report_guard_stop "Arc profile caches" debug_log "Arc is running, skipping Arc profile caches"
         fi
         for _arc_profile in "$HOME/Library/Application Support/Arc"/*/; do
             clean_service_worker_cache "Arc" "${_arc_profile%/}/Service Worker/CacheStorage"
@@ -1803,9 +1829,7 @@ clean_browsers() {
     if [[ -d ~/Library/Application\ Support/BraveSoftware ]]; then
         safe_clean ~/Library/Caches/BraveSoftware/Brave-Browser/* "Brave cache"
         local _brave_profile
-        local _brave_running=false
-        pgrep -x "Brave Browser" > /dev/null 2>&1 && _brave_running=true
-        if [[ "$_brave_running" != "true" ]]; then
+        if mole_clean_process_guard is_brave_browser_running "Brave started"; then
             safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/*/Application\ Cache/* "Brave app cache"
             safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/*/Code\ Cache/* "Brave code cache"
             safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/*/GPUCache/* "Brave GPU cache"
@@ -1817,6 +1841,8 @@ clean_browsers() {
             safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/GrShaderCache/* "Brave GR shader cache"
             safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/GraphiteDawnCache/* "Brave Dawn cache"
             safe_clean ~/Library/Application\ Support/BraveSoftware/Brave-Browser/Crashpad/completed/* "Brave crash reports"
+        else
+            mole_report_guard_stop "Brave profile caches" debug_log "Brave is running, skipping Brave profile caches"
         fi
         for _brave_profile in "$HOME/Library/Application Support/BraveSoftware/Brave-Browser"/*/; do
             clean_service_worker_cache "Brave" "${_brave_profile%/}/Service Worker/CacheStorage"
@@ -1862,9 +1888,7 @@ clean_browsers() {
     if [[ -d ~/Library/Application\ Support/Vivaldi ]]; then
         safe_clean ~/Library/Caches/com.vivaldi.Vivaldi/* "Vivaldi cache"
         local _vivaldi_profile
-        local _vivaldi_running=false
-        pgrep -x "Vivaldi" > /dev/null 2>&1 && _vivaldi_running=true
-        if [[ "$_vivaldi_running" != "true" ]]; then
+        if mole_clean_process_guard _vivaldi_process_state "Vivaldi started"; then
             safe_clean ~/Library/Application\ Support/Vivaldi/*/Code\ Cache/* "Vivaldi code cache"
             safe_clean ~/Library/Application\ Support/Vivaldi/*/GPUCache/* "Vivaldi GPU cache"
             safe_clean ~/Library/Application\ Support/Vivaldi/*/DawnCache/* "Vivaldi Dawn cache"
@@ -1874,6 +1898,8 @@ clean_browsers() {
             safe_clean ~/Library/Application\ Support/Vivaldi/GrShaderCache/* "Vivaldi GR shader cache"
             safe_clean ~/Library/Application\ Support/Vivaldi/GraphiteDawnCache/* "Vivaldi Dawn cache"
             safe_clean ~/Library/Application\ Support/Vivaldi/Crashpad/completed/* "Vivaldi crash reports"
+        else
+            mole_report_guard_stop "Vivaldi profile caches" debug_log "Vivaldi is running, skipping Vivaldi profile caches"
         fi
         for _vivaldi_profile in "$HOME/Library/Application Support/Vivaldi"/*/; do
             clean_service_worker_cache "Vivaldi" "${_vivaldi_profile%/}/Service Worker/CacheStorage"
@@ -1889,9 +1915,7 @@ clean_browsers() {
     # QQ Browser 3 (Chromium-based).
     if [[ -d ~/Library/Application\ Support/QQBrowser3 ]]; then
         safe_clean ~/Library/Caches/com.tencent.QQBrowser3/* "QQ Browser cache"
-        local _qqbrowser_running=false
-        pgrep -x "QQBrowser3" > /dev/null 2>&1 && _qqbrowser_running=true
-        if [[ "$_qqbrowser_running" != "true" ]]; then
+        if mole_clean_process_guard _qqbrowser_process_state "QQ Browser started"; then
             safe_clean ~/Library/Application\ Support/QQBrowser3/*/Code\ Cache/* "QQ Browser code cache"
             safe_clean ~/Library/Application\ Support/QQBrowser3/*/GPUCache/* "QQ Browser GPU cache"
             safe_clean ~/Library/Application\ Support/QQBrowser3/ShaderCache/* "QQ Browser shader cache"
@@ -1899,6 +1923,8 @@ clean_browsers() {
             safe_clean ~/Library/Application\ Support/QQBrowser3/GraphiteDawnCache/* "QQ Browser Dawn cache"
             safe_clean ~/Library/Application\ Support/QQBrowser3/component_crx_cache/* "QQ Browser component cache"
             safe_clean ~/Library/Application\ Support/QQBrowser3/Crashpad/completed/* "QQ Browser crash reports"
+        else
+            mole_report_guard_stop "QQ Browser profile caches" debug_log "QQ Browser is running, skipping QQ Browser profile caches"
         fi
     fi
 }
@@ -1995,8 +2021,14 @@ clean_office_applications() {
 # Virtualization caches.
 clean_utm_caches() {
     local _MOLE_CONTAINER_CACHE_PROBE_DEADLINE=""
-    if pgrep -x "UTM" > /dev/null 2>&1; then
-        debug_log "Skipping UTM caches while UTM is running"
+    # Same reason as Mail Downloads: no UTM targets, no process question.
+    mole_cleanup_targets_exist \
+        "$HOME/Library/Caches/com.utmapp.UTM"/* \
+        "$HOME/Library/Containers/com.utmapp.UTM/Data/Library/Caches"/* \
+        "$HOME/Library/Containers/com.utmapp.UTM/Data/tmp"/* || return 0
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard _utm_process_state "UTM started"; then
+        mole_report_guard_stop "UTM caches" debug_log "Skipping UTM caches while UTM is running"
         return 0
     fi
 

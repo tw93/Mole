@@ -1481,7 +1481,7 @@ unlink "$lock_path"
 	_update_release_lock "$lock_path" false "$UPDATE_LOCK_CONTROL" "$UPDATE_LOCK_HOLDER_PID" "$UPDATE_LOCK_ACQUIRED"
 )
 
-! compgen -G "$HOME/install/bin/.mole-update.lock/control.*" > /dev/null
+! compgen -G "$HOME/install/bin/.mole-update.lock/control.*" > /dev/null || exit 1
 
 declare -f _update_acquire_lock | grep -q '/usr/bin/lockf'
 declare -f update_mole | grep -q 'local UPDATE_LOCK_CONTROL=""'

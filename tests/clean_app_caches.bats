@@ -752,7 +752,7 @@ mkdir -p "$library/Event/Original Media/Render Files/High Quality Media"
 mkdir -p "$library/Event/Transcoded Media/High Quality Media"
 
 is_final_cut_pro_generated_cache_target "$library" "$library/Event/Render Files/High Quality Media"
-! is_final_cut_pro_generated_cache_target "$library" "$library/Event/Original Media/Render Files/High Quality Media"
+! is_final_cut_pro_generated_cache_target "$library" "$library/Event/Original Media/Render Files/High Quality Media" || exit 1
 ! is_final_cut_pro_generated_cache_target "$library" "$library/Event/Transcoded Media/High Quality Media"
 EOF
 

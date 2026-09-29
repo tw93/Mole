@@ -395,10 +395,22 @@ func getAPFSContainerFreeBytes(mountpoint string) (uint64, error) {
 	return extractPlistUint(out, "APFSContainerFree")
 }
 
+// authPromptsDisabled mirrors the shell test-mode guard: MOLE_TEST_MODE or
+// MOLE_TEST_NO_AUTH set to 1 means nothing may raise an authorization prompt.
+func authPromptsDisabled() bool {
+	return os.Getenv("MOLE_TEST_MODE") == "1" || os.Getenv("MOLE_TEST_NO_AUTH") == "1"
+}
+
 // getFinderStartupDiskFreeBytes queries Finder via osascript for the startup
 // disk free space. Finder's value includes purgeable caches and APFS snapshots,
 // matching the "X GB of Y GB used" display. Results are cached for 2 minutes.
 func getFinderStartupDiskFreeBytes() (free, total uint64, err error) {
+	// An Apple event to Finder can raise a TCC Automation prompt, so test and
+	// no-auth runs fall through to the diskutil and statfs tiers instead.
+	if authPromptsDisabled() {
+		return 0, 0, errors.New("finder query disabled in test mode")
+	}
+
 	finderDiskCacheMu.Lock()
 	defer finderDiskCacheMu.Unlock()
 

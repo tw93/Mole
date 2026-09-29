@@ -1281,8 +1281,11 @@ select_purge_categories() {
         [[ -n "$_prev_term" ]] && eval "$_prev_term"
         return 0
     }
+    # Prefixed because nested functions are global: a bare handle_interrupt()
+    # would replace bin/purge.sh's handler, which its restored INT/TERM trap
+    # calls by name for the rest of the purge run.
     # shellcheck disable=SC2329
-    handle_interrupt() {
+    _purge_menu_handle_interrupt() {
         restore_terminal
         exit 130
     }
@@ -1520,7 +1523,7 @@ select_purge_categories() {
         fi
     }
     trap restore_terminal EXIT
-    trap handle_interrupt INT TERM
+    trap _purge_menu_handle_interrupt INT TERM
     # Preserve interrupt character for Ctrl-C
     stty -echo -icanon intr ^C 2> /dev/null || true
     hide_cursor

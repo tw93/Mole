@@ -1326,6 +1326,37 @@ EOF
     [[ "$output" == *"PASS: Recent Claude VM kept"* ]]
 }
 
+@test "is_claude_vm_bundle_orphaned keeps the bundle when the Claude probe cannot tell" {
+    # Discovery used `if pgrep -x Claude; then keep`, so a pgrep error fell
+    # through to "orphan" and only the final-sink recheck kept the bundle.
+    # pgrep=1 is the positive control that the fixture reaches "orphan".
+    local pgrep_rc expected
+    for pgrep_rc in 1 2; do
+        expected=1
+        [[ $pgrep_rc -eq 1 ]] && expected=0
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PGREP_RC="$pgrep_rc" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+pgrep() { return "$PGREP_RC"; }
+get_file_mtime() { echo 0; }
+_mdfind_cache_check() { return 1; }
+fixture="$HOME/claude-vm-probe-$PGREP_RC"
+mkdir -p "$fixture/claudevm.bundle"
+: > "$fixture/installed"
+rc=0
+is_claude_vm_bundle_orphaned "$fixture/claudevm.bundle" "$fixture/installed" || rc=$?
+rm -rf "$fixture"
+echo "RC=$rc"
+EOF
+        [ "$status" -eq 0 ] || return 1
+        [[ "$output" == *"RC=$expected"* ]] || {
+            echo "pgrep=$pgrep_rc expected RC=$expected: $output"
+            return 1
+        }
+    done
+}
+
 @test "clean_orphaned_app_data keeps Claude VM bundle when Claude is installed" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

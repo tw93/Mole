@@ -9,6 +9,7 @@ Several Mole regressions were "covered" by assertions that passed on the pre-fix
 ### Assertion and branch traps
 
 - A non-final bare `[[ ... ]]` can be swallowed when a later command succeeds. End every meaningful assertion with `|| return 1`; inside an inner script use `|| exit 1`.
+- A non-final bare `! cmd` asserts nothing in any bash, because a negated pipeline never trips errexit. Write `! cmd || return 1`, or `|| exit 1` inside an inner script. `scripts/audit_bats_assertions.py` flags it in test bodies and in `run bash <<'EOF'` script bodies.
 - `MOLE_TEST_MODE=1` can make the function under test return early. A final negative assertion over empty output then passes. Override the mode and mock authorization when the body must run.
 - A function mock can choose a different branch from a PATH executable. `run_with_timeout` execs binaries, so timeout and external-command paths require a PATH stub.
 - A timeout test that accepts status 0 does not prove timeout propagation. Assert the exact status, discarded partial output, and a positive trace from the production branch.

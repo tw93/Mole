@@ -312,12 +312,39 @@ unload_launch_plist() {
     local plist="$1"
     local needs_sudo="${2:-false}"
     local deadline="${3:-}"
+    local bundle_id="${4:-}"
+    local app_path="${5:-}"
+    local _MOLE_UNINSTALL_DISCOVERY_DEADLINE="${deadline:-${_MOLE_UNINSTALL_DISCOVERY_DEADLINE:-}}"
     can_unload_launch_plist "$plist" || return 0
+    [[ -f "$plist" && ! -L "$plist" ]] || return 0
+    _mole_snapshot_path_identity "$plist" || return 0
+    local expected_parent="$_MOLE_PATH_SNAPSHOT_PARENT"
+    local expected_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+    local expected_target_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+    local expected_sha256="" hash_rc=0
+    expected_sha256=$(mole_file_sha256 "$plist" "$deadline") || hash_rc=$?
+    mole_rc_timeout_or_signal "$hash_rc" && return "$hash_rc"
+    [[ $hash_rc -eq 0 ]] || return 0
+    local owner_rc=0
+    mole_uninstall_launch_agent_owned_by_app "$plist" \
+        "$bundle_id" "$app_path" || owner_rc=$?
+    mole_rc_timeout_or_signal "$owner_rc" && return "$owner_rc"
+    [[ $owner_rc -eq 0 ]] || return 0
+
     local unload_timeout="$MOLE_TIMEOUT_MEDIUM_PROBE_SEC"
     if [[ -n "$deadline" ]]; then
         unload_timeout=$(_mole_timeout_with_deadline "$unload_timeout" \
             "$deadline") || return $?
     fi
+
+    # plutil reads a file descriptor, while launchctl later opens this path.
+    # Rebind both content and identity after the owner probe.
+    local bound_rc=0
+    _mole_owned_path_still_valid "$plist" "$expected_sha256" "" \
+        "$expected_parent" "$expected_parent_id" "$expected_target_id" \
+        "$deadline" || bound_rc=$?
+    mole_rc_timeout_or_signal "$bound_rc" && return "$bound_rc"
+    [[ $bound_rc -eq 0 ]] || return 0
     if [[ "$needs_sudo" == "true" ]]; then
         local unload_rc=0
         run_with_timeout "$unload_timeout" sudo launchctl \
@@ -342,54 +369,52 @@ _uninstall_unload_launch_plists() {
     local scan_file=""
     scan_file=$(create_temp_file) || return 1
     local scan_rc=0
-    if [[ -n "$bundle_id" ]]; then
+    if [[ -n "$app_path" ]]; then
+        _mole_uninstall_materialize_find0 "$scan_file" "$root" \
+            -maxdepth 1 -name '*.plist' -print0 || scan_rc=$?
+    elif [[ -n "$bundle_id" ]]; then
         _mole_uninstall_materialize_find0 "$scan_file" "$root" \
             -maxdepth 1 \( -name "${bundle_id}.plist" -o \
             -name "${bundle_id}.*.plist" \) -print0 || scan_rc=$?
     else
-        _mole_uninstall_materialize_find0 "$scan_file" "$root" \
-            -maxdepth 1 -name '*.plist' -print0 || scan_rc=$?
+        rm -f -- "$scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
+        return 0
     fi
     if [[ $scan_rc -ne 0 ]]; then
         rm -f -- "$scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
         return "$scan_rc"
     fi
 
-    local plist
+    # Give bundle-ID candidates the first share of the common deadline. The
+    # path-owned pass then visits all other labels without unloading twice.
+    local -a phases=(path)
+    [[ -n "$bundle_id" ]] && phases=(bundle path)
+    [[ -z "$app_path" ]] && phases=(bundle)
+    local phase plist plist_name bundle_candidate
     local result_rc=0
-    while IFS= read -r -d '' plist; do
-        if [[ -n "$app_path" ]]; then
-            local grep_rc=0
-            local grep_timeout=""
-            grep_timeout=$(_mole_timeout_with_deadline \
-                "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
-                "$_MOLE_UNINSTALL_DISCOVERY_DEADLINE") || grep_rc=$?
-            if [[ $grep_rc -eq 0 ]]; then
-                run_with_timeout "$grep_timeout" grep -qF -- \
-                    "$app_path" "$plist" 2> /dev/null || grep_rc=$?
+    for phase in "${phases[@]}"; do
+        while IFS= read -r -d '' plist; do
+            plist_name="${plist##*/}"
+            bundle_candidate=false
+            if [[ -n "$bundle_id" &&
+                ("$plist_name" == "$bundle_id.plist" ||
+                "$plist_name" == "$bundle_id."*.plist) ]]; then
+                bundle_candidate=true
             fi
-            # A timeout skips this plist but still tries the rest; only a
-            # signal stops the walk. Later probes share the deadline, so a
-            # spent budget fails fast instead of stalling per plist.
-            if [[ $grep_rc -ge 128 ]]; then
-                result_rc=$grep_rc
+            [[ "$phase" == bundle && "$bundle_candidate" != true ]] && continue
+            [[ "$phase" == path && "$bundle_candidate" == true ]] && continue
+            local unload_rc=0
+            unload_launch_plist "$plist" "$needs_sudo" \
+                "$_MOLE_UNINSTALL_DISCOVERY_DEADLINE" \
+                "$bundle_id" "$app_path" || unload_rc=$?
+            if [[ $unload_rc -ge 128 ]]; then
+                result_rc=$unload_rc
                 break
             fi
-            if mole_rc_timeout "$grep_rc"; then
-                result_rc=$grep_rc
-                continue
-            fi
-            [[ $grep_rc -eq 0 ]] || continue
-        fi
-        local unload_rc=0
-        unload_launch_plist "$plist" "$needs_sudo" \
-            "$_MOLE_UNINSTALL_DISCOVERY_DEADLINE" || unload_rc=$?
-        if [[ $unload_rc -ge 128 ]]; then
-            result_rc=$unload_rc
-            break
-        fi
-        mole_rc_timeout "$unload_rc" && result_rc=$unload_rc
-    done < "$scan_file"
+            mole_rc_timeout "$unload_rc" && result_rc=$unload_rc
+        done < "$scan_file"
+        [[ $result_rc -ge 128 ]] && break
+    done
     rm -f -- "$scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
     if [[ $result_rc -ne 0 ]]; then
         return "$result_rc"
@@ -422,11 +447,8 @@ stop_launch_services() {
         return 0
     fi
 
-    # The bundle-id-keyed unloads below need a valid reverse-DNS id, but the
-    # app-path scan further down does not, and it must still run when the
-    # sibling guard demoted the bundle id to "unknown": name-globbed agent
-    # plists are deleted by remove_file_list, and skipping the unload here
-    # would leave their jobs loaded in launchd until logout.
+    # An exact bundle-ID label or a program inside the selected bundle can
+    # authorize teardown. A demoted ID still permits the app-path check.
     local bundle_id_usable=true
     if [[ -z "$bundle_id" || "$bundle_id" == "unknown" ]]; then
         bundle_id_usable=false
@@ -442,42 +464,25 @@ stop_launch_services() {
     # one slow plist cannot leave another root's jobs loaded. Signals stop.
     local unload_timeout_rc=0
 
-    if [[ "$bundle_id_usable" == "true" ]] && [[ -d ~/Library/LaunchAgents ]]; then
-        _stop_launch_services_root \
-            "$HOME/Library/LaunchAgents" false "$bundle_id" || return $?
+    local launch_bundle_id=""
+    [[ "$bundle_id_usable" == "true" ]] && launch_bundle_id="$bundle_id"
+    if [[ -z "$launch_bundle_id" && -z "$app_path" ]]; then
+        return 0
     fi
 
-    if [[ "$bundle_id_usable" == "true" && "$has_system_files" == "true" && "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
+    if [[ -d ~/Library/LaunchAgents ]]; then
+        _stop_launch_services_root \
+            "$HOME/Library/LaunchAgents" false "$launch_bundle_id" "$app_path" || return $?
+    fi
+
+    if [[ "$has_system_files" == "true" && "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
         if [[ -d /Library/LaunchAgents ]]; then
             _stop_launch_services_root \
-                /Library/LaunchAgents true "$bundle_id" || return $?
+                /Library/LaunchAgents true "$launch_bundle_id" "$app_path" || return $?
         fi
         if [[ -d /Library/LaunchDaemons ]]; then
             _stop_launch_services_root \
-                /Library/LaunchDaemons true "$bundle_id" || return $?
-        fi
-    fi
-
-    # Scan for LaunchAgents whose ProgramArguments reference the app path.
-    # Catches agents with bundle IDs that don't match the app's bundle ID.
-    # Enumerate with find -print0 and probe each plist with grep -qF:
-    # "grep -rlZ" is not portable on macOS (BSD grep treats -Z as
-    # --decompress and prints newline-separated names), which left this scan
-    # silently dead inside a NUL-delimited read loop.
-    if [[ -n "$app_path" ]]; then
-        if [[ -d ~/Library/LaunchAgents ]]; then
-            _stop_launch_services_root \
-                "$HOME/Library/LaunchAgents" false "" "$app_path" || return $?
-        fi
-        if [[ "$has_system_files" == "true" && "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
-            if [[ -d /Library/LaunchAgents ]]; then
-                _stop_launch_services_root \
-                    /Library/LaunchAgents true "" "$app_path" || return $?
-            fi
-            if [[ -d /Library/LaunchDaemons ]]; then
-                _stop_launch_services_root \
-                    /Library/LaunchDaemons true "" "$app_path" || return $?
-            fi
+                /Library/LaunchDaemons true "$launch_bundle_id" "$app_path" || return $?
         fi
     fi
     return "$unload_timeout_rc"
@@ -576,6 +581,8 @@ remove_login_item() {
 remove_file_list() {
     local file_list="$1"
     local use_sudo="${2:-false}"
+    local bundle_id="${3:-}"
+    local app_path="${4:-}"
     local count=0
     local mode="${MOLE_DELETE_MODE:-permanent}"
 
@@ -593,9 +600,63 @@ remove_file_list() {
             continue
         fi
 
+        local launch_agent=false
+        local launch_agent_identity=""
+        local launch_agent_sha256=""
+        local launch_absent_path=""
+        case "${file%/*}" in
+            "$HOME"/Library/LaunchAgents | /Library/LaunchAgents | /Library/LaunchDaemons)
+                launch_agent=true
+                # A replacement app at the selected path is a new owner. The
+                # original bundle has already moved before leftover removal.
+                if [[ -n "$app_path" && (-e "$app_path" || -L "$app_path") ]] &&
+                    ! is_uninstall_dry_run; then
+                    _mole_report_unverified_delete "$file" "$mode" "unknown" \
+                        "$MOLE_ERR_APP_REAPPEARED"
+                    continue
+                fi
+                if ! is_uninstall_dry_run; then
+                    launch_absent_path="$app_path"
+                fi
+                local identity_rc=0
+                launch_agent_identity=$(mole_deletion_identity "$file") || identity_rc=$?
+                mole_rc_timeout_or_signal "$identity_rc" && return "$identity_rc"
+                if [[ $identity_rc -ne 0 ]]; then
+                    _mole_report_unverified_delete "$file" "$mode" "unknown"
+                    continue
+                fi
+                local hash_rc=0
+                launch_agent_sha256=$(mole_file_sha256 "$file") || hash_rc=$?
+                mole_rc_timeout_or_signal "$hash_rc" && return "$hash_rc"
+                if [[ $hash_rc -ne 0 ]]; then
+                    _mole_report_unverified_delete "$file" "$mode" "unknown"
+                    continue
+                fi
+                local owner_rc=0
+                mole_uninstall_launch_agent_owned_by_app "$file" \
+                    "$bundle_id" "$app_path" || owner_rc=$?
+                mole_rc_timeout_or_signal "$owner_rc" && return "$owner_rc"
+                if [[ $owner_rc -ne 0 ]]; then
+                    _mole_report_unverified_delete "$file" "$mode" "unknown"
+                    continue
+                fi
+                ;;
+        esac
+
         if [[ "$use_sudo" == "true" ]] && is_uninstall_dry_run; then
             debug_log "[DRY RUN] Would sudo remove: $file"
             ((++count))
+            continue
+        fi
+
+        # Agent ownership is checked immediately before its own sink. Do not
+        # queue it behind unrelated Trash batch work after that check.
+        if [[ "$launch_agent" == true ]]; then
+            local delete_rc=0
+            mole_delete "$file" "$use_sudo" "$launch_agent_identity" \
+                "$launch_agent_sha256" "$launch_absent_path" || delete_rc=$?
+            mole_rc_timeout_or_signal "$delete_rc" && return "$delete_rc"
+            [[ $delete_rc -eq 0 ]] && count=$((count + 1))
             continue
         fi
 
@@ -2210,7 +2271,8 @@ _batch_execute_removals() {
                 start_inline_spinner "${_phase_prefix}Cleaning files for ${app_name}..."
             fi
             local related_remove_rc=0
-            remove_file_list "$related_files" "false" > /dev/null || related_remove_rc=$?
+            remove_file_list "$related_files" "false" \
+                "$bundle_id" "$app_path" > /dev/null || related_remove_rc=$?
             mole_rc_timeout_or_signal "$related_remove_rc" && return "$related_remove_rc"
 
             # Identify leftovers (silent rm failures, e.g. container directories
@@ -2250,7 +2312,8 @@ _batch_execute_removals() {
             fi
             if [[ "$used_brew_successfully" == "true" ]]; then
                 local system_remove_rc=0
-                remove_file_list "$diag_system" "true" > /dev/null || system_remove_rc=$?
+                remove_file_list "$diag_system" "true" \
+                    "$bundle_id" "$app_path" > /dev/null || system_remove_rc=$?
                 mole_rc_timeout_or_signal "$system_remove_rc" && return "$system_remove_rc"
             else
                 local system_all="$system_files"
@@ -2261,7 +2324,8 @@ _batch_execute_removals() {
                     system_all+="$diag_system"
                 fi
                 local system_remove_rc=0
-                remove_file_list "$system_all" "true" > /dev/null || system_remove_rc=$?
+                remove_file_list "$system_all" "true" \
+                    "$bundle_id" "$app_path" > /dev/null || system_remove_rc=$?
                 mole_rc_timeout_or_signal "$system_remove_rc" && return "$system_remove_rc"
             fi
 
