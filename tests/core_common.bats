@@ -310,20 +310,134 @@ EOF
     [[ "$result" == "1" ]]
 }
 
-@test "drain_pending_input clears stdin buffer" {
-    result=$(
-        (echo -e "test\ninput" | HOME="$HOME" /bin/bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; drain_pending_input; echo done") &
-        pid=$!
-        sleep 2
-        if kill -0 "$pid" 2> /dev/null; then
-            kill "$pid" 2> /dev/null || true
-            wait "$pid" 2> /dev/null || true
-            echo "timeout"
-        else
-            wait "$pid" 2> /dev/null || true
-        fi
-    )
-    [[ "$result" == "done" ]]
+@test "drain_pending_input clears stdin buffer under the system Bash" {
+    run /bin/bash --noprofile --norc <<'EOF'
+export MOLE_BASE_LOADED=1
+source "$PROJECT_ROOT/lib/core/ui.sh"
+printf 'test\ninput' | {
+    drain_pending_input
+    if IFS= read -r -s -n 1 -t 1 remaining; then
+        printf 'LEAK:%s\n' "$remaining"
+    else
+        printf 'DRAINED\n'
+    fi
+}
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = "DRAINED" ]
+}
+
+@test "drain_pending_input still drains when the optional Perl helper fails" {
+    run /bin/bash --noprofile --norc <<'EOF'
+export MOLE_BASE_LOADED=1
+source "$PROJECT_ROOT/lib/core/ui.sh"
+perl() { return 127; }
+printf 'pending\n' | {
+    drain_pending_input
+    if IFS= read -r -s -n 1 -t 1 remaining; then
+        printf 'LEAK:%s\n' "$remaining"
+    else
+        printf 'DRAINED\n'
+    fi
+}
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = "DRAINED" ]
+}
+
+@test "drain_pending_input retains the byte bound under the system Bash" {
+    run /bin/bash --noprofile --norc <<'EOF'
+export MOLE_BASE_LOADED=1
+source "$PROJECT_ROOT/lib/core/ui.sh"
+printf '%0101dZ' 0 | {
+    drain_pending_input
+    IFS= read -r -s -n 1 -t 1 remaining || exit 1
+    printf 'REMAINING:%s\n' "$remaining"
+}
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = "REMAINING:Z" ]
+}
+
+@test "drain_pending_input does not wait a second for each idle pipe" {
+    run python3 - <<'PY'
+import subprocess
+
+script = '''
+export MOLE_BASE_LOADED=1
+source "$PROJECT_ROOT/lib/core/ui.sh"
+for ((i=0; i<10; i++)); do drain_pending_input; done
+printf 'DONE\\n'
+'''
+process = subprocess.Popen(
+    ["/bin/bash", "--noprofile", "--norc", "-c", script],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+)
+try:
+    # Keep the writer open and empty: EOF would make even a long read timeout
+    # return immediately and would not test the idle wait.
+    process.wait(timeout=3)
+    assert process.returncode == 0
+    assert process.stdout.read() == b"DONE\n"
+finally:
+    if process.poll() is None:
+        process.kill()
+        process.wait()
+    process.stdin.close()
+    process.stdout.close()
+    process.stderr.close()
+PY
+    [ "$status" -eq 0 ]
+}
+
+@test "drain_pending_input clears terminal input and preserves terminal settings" {
+    run python3 - <<'PY'
+import os
+import pty
+import subprocess
+import termios
+
+script = '''
+export MOLE_BASE_LOADED=1
+source "$PROJECT_ROOT/lib/core/ui.sh"
+drain_pending_input 0.1
+printf 'DONE\\n'
+'''
+for pending in [b"\n", b"\x1b[A"]:
+    master, slave = pty.openpty()
+    process = None
+    try:
+        original = termios.tcgetattr(slave)
+        os.write(master, pending)
+        process = subprocess.Popen(
+            ["/bin/bash", "--noprofile", "--norc", "-c", script],
+            stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0, (stdout, stderr)
+        assert stdout == b"DONE\n", (pending, stdout, stderr)
+        restored = termios.tcgetattr(slave)
+        # Darwin's transient input-reprocessing bit is not a mode change.
+        original[3] &= ~getattr(termios, "PENDIN", 0)
+        restored[3] &= ~getattr(termios, "PENDIN", 0)
+        assert restored == original, (original, restored)
+        # Read the remaining kernel queue directly. A second Bash read can
+        # flush queued input while setting its own modes and mask a failed drain.
+        probe = termios.tcgetattr(slave)
+        probe[3] &= ~(termios.ICANON | termios.ECHO)
+        probe[6][termios.VMIN] = 0
+        probe[6][termios.VTIME] = 0
+        termios.tcsetattr(slave, termios.TCSANOW, probe)
+        remaining = os.read(slave, 1024)
+        assert remaining == b"", (pending, remaining)
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        os.close(master)
+        os.close(slave)
+PY
+    [ "$status" -eq 0 ]
 }
 
 @test "bytes_to_human converts byte counts into readable units" {

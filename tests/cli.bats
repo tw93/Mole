@@ -364,7 +364,9 @@ fake_root="$HOME/fake-mole"
 mkdir -p "$fake_root/bin"
 cat > "$fake_root/bin/uninstall.sh" <<'SCRIPT'
 #!/usr/bin/env bash
-if IFS= read -r -s -n1 -t 0.1 key; then
+# Use an integer timeout: macOS Bash 3.2 rejects fractional values, which
+# would report NO_LEAK without checking whether Enter remained on stdin.
+if IFS= read -r -s -n1 -t 1 key; then
     if [[ -z "$key" ]]; then
         echo "LEAK:ENTER"
     else

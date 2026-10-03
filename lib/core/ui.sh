@@ -270,11 +270,36 @@ read_key() {
 
 drain_pending_input() {
     local idle_timeout="${1:-0.01}"
+    local between_timeout="0.01"
+    # Bash 3.2 rejects fractional read timeouts, and read -t 0 never consumes
+    # input. Use macOS's Perl for the short idle wait without changing TTY modes.
+    if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+        if command -v perl > /dev/null 2>&1 && perl -MPOSIX=tcflush,TCIFLUSH -e '
+            my $timeout = shift;
+            if (-t STDIN) {
+                select undef, undef, undef, $timeout;
+                exit(defined(tcflush(fileno(STDIN), TCIFLUSH)) ? 0 : 1);
+            }
+            my $input = "";
+            vec($input, fileno(STDIN), 1) = 1;
+            for (1..101) {
+                my $ready = $input;
+                last unless select($ready, undef, undef, $timeout) > 0;
+                last unless sysread(STDIN, my $byte, 1);
+                $timeout = 0.01;
+            }
+        ' "$idle_timeout" 2> /dev/null; then
+            return 0
+        fi
+        # Best effort on hosts without Perl; integer reads still drain input.
+        idle_timeout="1"
+        between_timeout="1"
+    fi
     local drained=0
     while IFS= read -r -s -n 1 -t "$idle_timeout" _ 2> /dev/null; do
         drained=$((drained + 1))
         [[ $drained -gt 100 ]] && break
-        idle_timeout="0.01"
+        idle_timeout="$between_timeout"
     done
     return 0
 }
