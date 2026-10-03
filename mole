@@ -172,6 +172,10 @@ show_main_menu() {
 }
 
 interactive_main_menu() {
+    local original_stty=""
+    if [[ -t 0 ]]; then
+        original_stty=$(stty -g 2> /dev/null || true)
+    fi
     local current_option=1
     local first_draw=true
     local brand_banner=""
@@ -186,6 +190,10 @@ interactive_main_menu() {
     MAIN_MENU_SHOW_UPDATE="$([[ -n "$update_message" ]] && echo true || echo false)"
 
     cleanup_and_exit() {
+        # An interrupted read_key subshell can leave echo and canonical input off.
+        if [[ -n "$original_stty" ]]; then
+            stty "$original_stty" 2> /dev/null || true
+        fi
         show_cursor
         exit 0
     }
