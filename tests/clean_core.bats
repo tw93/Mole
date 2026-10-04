@@ -1649,11 +1649,8 @@ EOF
     touch "$HOME/Library/Mail Downloads/old.pdf"
     touch -t 202301010000 "$HOME/Library/Mail Downloads/old.pdf"
 
-    if command -v mkfile > /dev/null 2>&1; then
-        mkfile -n 6000k "$HOME/Library/Mail Downloads/dummy.dat"
-    else
-        truncate -s 6000k "$HOME/Library/Mail Downloads/dummy.dat"
-    fi
+    # The cleanup threshold uses allocated blocks; a sparse file stays below it.
+    dd if=/dev/zero of="$HOME/Library/Mail Downloads/dummy.dat" bs=1024 count=6000 2> /dev/null
 
     [ -f "$HOME/Library/Mail Downloads/old.pdf" ]
 
@@ -1661,6 +1658,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
+pgrep() { return 1; }
 _clean_mail_downloads
 EOF
 
@@ -1673,14 +1671,8 @@ EOF
     touch "$HOME/Library/Mail Downloads/old.pdf"
     touch -t 202301010000 "$HOME/Library/Mail Downloads/old.pdf"
 
-    # MOLE_MAIL_DOWNLOADS_MIN_KB is readonly in base.sh, so an env override is
-    # discarded and the sweep stays below threshold. Grow the directory instead,
-    # the same way the non-dry-run case above does.
-    if command -v mkfile > /dev/null 2>&1; then
-        mkfile -n 6000k "$HOME/Library/Mail Downloads/dummy.dat"
-    else
-        truncate -s 6000k "$HOME/Library/Mail Downloads/dummy.dat"
-    fi
+    # The cleanup threshold uses allocated blocks; a sparse file stays below it.
+    dd if=/dev/zero of="$HOME/Library/Mail Downloads/dummy.dat" bs=1024 count=6000 2> /dev/null
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

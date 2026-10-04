@@ -11,11 +11,18 @@ import (
 )
 
 func TestCreateInsightEntries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if entries := createInsightEntries(); len(entries) != 0 {
+		t.Fatalf("empty home returned %d insight entries", len(entries))
+	}
+	downloads := filepath.Join(home, "Downloads")
+	if err := os.Mkdir(downloads, 0755); err != nil {
+		t.Fatal(err)
+	}
 	entries := createInsightEntries()
-	// Should return at least some entries on a real Mac.
-	// iOS Backups may not exist, but Old Downloads and Mail Data likely do.
-	if len(entries) == 0 {
-		t.Log("No insight entries found (some paths may not exist on this machine)")
+	if len(entries) != 1 || entries[0].Name != "Old Downloads (90d+)" || entries[0].Path != downloads {
+		t.Fatalf("expected only the fixture Downloads insight, got %+v", entries)
 	}
 
 	// Verify all entries have required fields.

@@ -3458,7 +3458,14 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
-run_with_timeout() { shift; "$@"; }
+run_with_timeout() {
+    shift
+    # Only the synthetic HOME install belongs to this fixture.
+    if [[ "$1" == "/usr/libexec/PlistBuddy" && "${4:-}" == "/Applications/Codex.app/Contents/Info.plist" ]]; then
+        return 1
+    fi
+    "$@"
+}
 mkdir -p "$HOME/Applications/Codex.app/Contents"
 cat > "$HOME/Applications/Codex.app/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
