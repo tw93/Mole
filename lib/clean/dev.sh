@@ -997,6 +997,15 @@ clean_go_cache_root() {
         note_activity
         return 0
     fi
+    if mole_rc_timeout "$command_status"; then
+        # Like every other owner command (clean_tool_cache), a timed-out `go
+        # clean` skips this one cache instead of cancelling unrelated cleanup.
+        # Go may already have removed part of the root, so say it stopped.
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} ${display_name} · stopped (timed out)"
+        note_activity
+        log_warning_to_file "$display_name timed out after ${MOLE_TIMEOUT_PKG_CLEANUP_SEC}s and was skipped: go clean $clean_flag $physical_root"
+        return 0
+    fi
     if mole_rc_timeout_or_signal "$command_status"; then
         _mole_record_clean_cancellation "$command_status" "$display_name"
         return "$command_status"

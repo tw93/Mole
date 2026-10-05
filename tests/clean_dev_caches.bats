@@ -2995,7 +2995,61 @@ EOF
     [[ "$output" == *"build=1 module=0"* ]]
 }
 
-@test "clean_dev_go propagates owner cleanup cancellation" {
+@test "clean_dev_go skips a timed-out owner cleanup without cancelling" {
+    # A timed-out `go clean` is an owner command timeout, so like every
+    # clean_tool_cache owner it skips this cache instead of stopping all later
+    # cleanup. The build cache still runs and mole.log names what timed out.
+    local module_root="$HOME/go-module-timeout"
+    local build_root="$HOME/go-build-timeout"
+    local trace="$HOME/go-clean-timeout.trace"
+    mkdir -p "$module_root" "$build_root"
+    rm -f "$trace" "$HOME/Library/Logs/mole/mole.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        GO_MODULE_ROOT="$module_root" GO_BUILD_ROOT="$build_root" GO_TRACE="$trace" \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+MOLE_CURRENT_COMMAND=clean
+MOLE_CLEAN_CANCEL_STATUS=0
+go() { :; }
+run_with_timeout() {
+    shift
+    if [[ "$1" == "go" && "$2" == "env" ]]; then
+        if [[ "$3" == "GOMODCACHE" ]]; then
+            printf '%s\n' "$GO_MODULE_ROOT"
+        else
+            printf '%s\n' "$GO_BUILD_ROOT"
+        fi
+        return 0
+    fi
+    printf '%s\n' "$*" >> "$GO_TRACE"
+    [[ "$*" == *"-modcache"* ]] && return 124
+    return 0
+}
+is_path_whitelisted() { return 1; }
+should_protect_path() { return 1; }
+go_cache_process_state() { return 1; }
+note_activity() { :; }
+clean_rc=0
+clean_dev_go || clean_rc=$?
+printf 'rc=%s\n' "$clean_rc"
+printf 'CANCEL=%s\n' "${MOLE_CLEAN_CANCEL_STATUS:-0}"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"rc=0"* ]] || return 1
+    [[ "$output" == *"CANCEL=0"* ]] || return 1
+    [[ "$output" == *"Go module cache · stopped (timed out)"* ]] || return 1
+    grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
+    grep -qF "Go module cache timed out after" "$HOME/Library/Logs/mole/mole.log" || return 1
+    rm -f "$trace"
+    rm -rf "$module_root" "$build_root"
+}
+
+@test "clean_dev_go propagates an interrupted owner cleanup" {
     local module_root="$HOME/go-module-cancel"
     mkdir -p "$module_root"
 
@@ -3005,6 +3059,8 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
 DRY_RUN=false
+MOLE_CURRENT_COMMAND=clean
+MOLE_CLEAN_CANCEL_STATUS=0
 go() { :; }
 run_with_timeout() {
     shift
@@ -3012,7 +3068,7 @@ run_with_timeout() {
         [[ "$3" == "GOMODCACHE" ]] && printf '%s\n' "$GO_MODULE_ROOT" || return 1
         return 0
     fi
-    return 124
+    return 130
 }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
@@ -3021,10 +3077,14 @@ note_activity() { :; }
 clean_rc=0
 clean_dev_go || clean_rc=$?
 printf 'rc=%s\n' "$clean_rc"
+printf 'CANCEL=%s\n' "${MOLE_CLEAN_CANCEL_STATUS:-0}"
+printf 'SOURCE=%s\n' "${MOLE_CLEAN_CANCEL_SOURCE:-}"
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$output" == *"rc=124"* ]] || return 1
+    [[ "$output" == *"rc=130"* ]] || return 1
+    [[ "$output" == *"CANCEL=130"* ]] || return 1
+    [[ "$output" == *"SOURCE=Go module cache"* ]] || return 1
     rm -rf "$module_root"
 }
 
