@@ -451,14 +451,187 @@ project_cache_group_root() {
 
 # Project caches are found by name only. Keep any that Git tracks, such as a
 # committed test fixture under .dart_tool or bytecode checked in by mistake,
-# and keep them when the probe cannot finish.
+# and keep them when Git could not answer.
+#
+# process_project_cache_matches asks Git once per repository and records each
+# candidate as T (tracked), U (unknown) or C (clear), one per line, held here
+# with a leading and trailing newline so a lookup needs no extra process. One
+# bounded probe per cache cost about 120 ms each, which a repository with
+# hundreds of __pycache__ folders turned into minutes.
+_project_cache_git_index=""
+
+# Printable ASCII only, judged bytewise whatever the caller's locale.
+_project_cache_path_is_ascii() {
+    local LC_ALL=C
+    [[ "$1" != *[![:print:]]* ]]
+}
+
+# Build the index for every candidate a matches file will reach. All Git
+# listings share one deadline; a repository that cannot be listed in time, or
+# whose listing fails, marks its candidates unknown. Signals propagate.
+project_cache_build_git_index() {
+    local matches_file="$1"
+    local index_file="$2"
+    local deadline="$3"
+    local work_dir=""
+    : > "$index_file" || return 1
+    work_dir=$(create_temp_dir) || return 1
+
+    local -a logical_roots=() physical_roots=()
+    local record_root="" cache_dir="" candidate="" physical="" repo="" i
+    local candidates_file="$work_dir/candidates"
+    : > "$candidates_file"
+    while IFS=$'\t' read -r record_root cache_dir; do
+        [[ -n "$record_root" && -n "$cache_dir" ]] || continue
+        # find -P never follows links below its root, so only the record root
+        # can carry an alias; resolve it once and keep each suffix as found.
+        local root_physical=""
+        for ((i = 0; i < ${#logical_roots[@]}; i++)); do
+            if [[ "${logical_roots[$i]}" == "$record_root" ]]; then
+                root_physical="${physical_roots[$i]}"
+                break
+            fi
+        done
+        if [[ -z "$root_physical" ]]; then
+            root_physical=$(cd "$record_root" 2> /dev/null && /bin/pwd -P) || root_physical="?"
+            logical_roots+=("$record_root")
+            physical_roots+=("$root_physical")
+        fi
+        local -a candidates=()
+        case "${cache_dir##*/}" in
+            ".next")
+                # A linked cache folder puts its children in another tree that
+                # this repository cannot answer for; keep all of them.
+                if [[ -L "$cache_dir/cache" ]]; then
+                    for candidate in "$cache_dir/cache"/*; do
+                        printf 'U%s\n' "$candidate" >> "$index_file"
+                    done
+                    continue
+                fi
+                for candidate in "$cache_dir/cache"/*; do
+                    [[ -e "$candidate" || -L "$candidate" ]] && candidates+=("$candidate")
+                done
+                ;;
+            "__pycache__") candidates=("$cache_dir") ;;
+            ".dart_tool")
+                candidates=("$cache_dir")
+                if [[ -L "$(dirname "$cache_dir")/build" ]]; then
+                    printf 'U%s\n' "$(dirname "$cache_dir")/build" >> "$index_file"
+                elif [[ -d "$(dirname "$cache_dir")/build" ]]; then
+                    candidates+=("$(dirname "$cache_dir")/build")
+                fi
+                ;;
+        esac
+        for candidate in "${candidates[@]+"${candidates[@]}"}"; do
+            if [[ "$root_physical" == "?" || "$candidate" != "$record_root"/* ]]; then
+                printf 'U%s\n' "$candidate" >> "$index_file"
+                continue
+            fi
+            physical="$root_physical/${candidate#"$record_root"/}"
+            if mole_find_git_repo_root "$physical"; then
+                repo="$MOLE_GIT_REPO_ROOT"
+                if [[ "$repo" == "$physical" ]]; then
+                    # A cache folder that is its own repository is not a cache.
+                    printf 'U%s\n' "$candidate" >> "$index_file"
+                    continue
+                fi
+                local rel="${physical#"$repo"/}"
+                if ! _project_cache_path_is_ascii "$rel"; then
+                    # Git lists macOS names precomposed while the disk may keep
+                    # them decomposed, so bytes cannot be compared. Let Git
+                    # normalize this one directory; a file stays unknown.
+                    local probe_rc=2
+                    if [[ -d "$candidate" && ! -L "$candidate" ]]; then
+                        probe_rc=0
+                        mole_path_has_git_tracked_files "$candidate" "$deadline" || probe_rc=$?
+                    fi
+                    case "$probe_rc" in
+                        0) printf 'T%s\n' "$candidate" >> "$index_file" ;;
+                        1) printf 'C%s\n' "$candidate" >> "$index_file" ;;
+                        *) printf 'U%s\n' "$candidate" >> "$index_file" ;;
+                    esac
+                    continue
+                fi
+                printf '%s\t%s\t%s\n' "$repo" "$rel" "$candidate" >> "$candidates_file"
+            else
+                printf 'C%s\n' "$candidate" >> "$index_file"
+            fi
+        done
+    done < <(LC_ALL=C sort -u "$matches_file" 2> /dev/null)
+
+    local current_repo="" listing_rc=0
+    local group_file="$work_dir/group" listing_file="$work_dir/listing"
+    _project_cache_index_flush_group() {
+        [[ -n "$current_repo" && -s "$group_file" ]] || return 0
+        listing_rc=0
+        mole_git_ls_files "$current_repo" "$deadline" "$current_repo" -z -- . \
+            > "$listing_file" || listing_rc=$?
+        # git exits 128 for its own fatal errors (a dangling worktree link,
+        # an unsafe repository); only 129 and above come from a signal.
+        if [[ $listing_rc -gt 128 ]]; then
+            return "$listing_rc"
+        fi
+        if [[ $listing_rc -ne 0 ]]; then
+            debug_log "Git listing incomplete for $current_repo (status $listing_rc); its project caches are kept"
+            awk -F '\t' '{ print "U" $3 }' "$group_file" >> "$index_file"
+            return 0
+        fi
+        # A candidate is tracked when a listed path equals it or lies below it.
+        tr '\0' '\n' < "$listing_file" | awk -F '\t' '
+            FNR == NR { want[$1] = $2; next }
+            {
+                n = split($0, part, "/")
+                prefix = ""
+                for (i = 1; i <= n; i++) {
+                    prefix = (i == 1) ? part[1] : prefix "/" part[i]
+                    if (prefix in want) { print "T" want[prefix]; delete want[prefix] }
+                }
+            }
+            END { for (rel in want) print "C" want[rel] }
+        ' <(cut -f2,3 "$group_file") - >> "$index_file"
+    }
+    local group_rc=0
+    while IFS=$'\t' read -r repo physical candidate; do
+        if [[ "$repo" != "$current_repo" ]]; then
+            _project_cache_index_flush_group || group_rc=$?
+            [[ $group_rc -eq 0 ]] || break
+            current_repo="$repo"
+            : > "$group_file"
+        fi
+        printf '%s\t%s\t%s\n' "$repo" "$physical" "$candidate" >> "$group_file"
+    done < <(LC_ALL=C sort "$candidates_file")
+    [[ $group_rc -eq 0 ]] && { _project_cache_index_flush_group || group_rc=$?; }
+    unset -f _project_cache_index_flush_group
+    rm -rf "$work_dir" # SAFE: exact mktemp-created project cache index scratch directory
+    return "$group_rc"
+}
+
+# 0 when Git tracks files in the path, 1 when it is clear, 2 when unknown.
+# Without an index, as for a direct call, ask Git about this one path.
+project_cache_git_status() {
+    local path="$1"
+    if [[ -z "$_project_cache_git_index" ]]; then
+        local probe_rc=0
+        mole_path_has_git_tracked_files "$path" || probe_rc=$?
+        return "$probe_rc"
+    fi
+    local nl=$'\n'
+    [[ "$_project_cache_git_index" == *"${nl}T$path$nl"* ]] && return 0
+    [[ "$_project_cache_git_index" == *"${nl}C$path$nl"* ]] && return 1
+    # Unknown, or a path the index never saw, such as a file created after it
+    # was built: no free pass.
+    return 2
+}
+
 project_cache_has_tracked_files() {
     local cache_path="$1"
     local tracked_rc=0
-    mole_path_has_git_tracked_files "$cache_path" || tracked_rc=$?
+    project_cache_git_status "$cache_path" || tracked_rc=$?
     [[ $tracked_rc -eq 1 ]] && return 1
-    debug_log "Keeping project cache tracked by Git: $cache_path"
-    log_operation "clean" "SKIPPED" "$cache_path" "tracked by git"
+    local reason="tracked by git"
+    [[ $tracked_rc -eq 0 ]] || reason="git status unknown"
+    debug_log "Keeping project cache, $reason: $cache_path"
+    log_operation "clean" "SKIPPED" "$cache_path" "$reason"
     return 0
 }
 
@@ -471,7 +644,8 @@ clean_project_cache_target() {
     local -a target_paths=()
     local target_path=""
     for target_path in "${@:1:$#-1}"; do
-        if [[ -d "$target_path" ]] && project_cache_has_tracked_files "$target_path"; then
+        # Files count too: .next/cache hands over each child, directory or not.
+        if [[ -e "$target_path" || -L "$target_path" ]] && project_cache_has_tracked_files "$target_path"; then
             continue
         fi
         target_paths+=("$target_path")
@@ -519,6 +693,31 @@ process_project_cache_matches() {
     local matches_file="$1"
     [[ -f "$matches_file" ]] || return 0
 
+    # Keep the index local so a later direct call never reads a stale one.
+    local _project_cache_git_index=""
+    local index_file="" index_rc=0
+    index_file=$(create_temp_file) || return 0
+    project_cache_build_git_index "$matches_file" "$index_file" \
+        "${_project_cache_git_deadline:-$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC))}" || index_rc=$?
+    if [[ $index_rc -ne 0 ]]; then
+        rm -f "$index_file" # SAFE: exact scratch file created by create_temp_file above
+        [[ $index_rc -gt 128 ]] && return "$index_rc"
+        # Without the index nothing proves a cache untracked: keep them all.
+        debug_log "Project cache Git index failed (status $index_rc); project caches kept"
+        return 0
+    fi
+    # Unknown entries are left out: absent already means keep, and every
+    # lookup scans this string, so it holds only what can change a decision.
+    _project_cache_git_index=$'\n'"$(grep -E '^[TC]' "$index_file" || true)"$'\n'
+    local process_rc=0
+    _process_project_cache_matches_indexed "$matches_file" || process_rc=$?
+    rm -f "$index_file" # SAFE: exact scratch file created by create_temp_file above
+    return "$process_rc"
+}
+
+_process_project_cache_matches_indexed() {
+    local matches_file="$1"
+
     local current_python_root=""
     local -a current_python_dirs=()
     local record_root=""
@@ -547,6 +746,9 @@ process_project_cache_matches() {
                 current_python_root=""
                 current_python_dirs=()
                 if [[ -d "$cache_dir" ]]; then
+                    # build/ counts as Flutter output only beside a disposable
+                    # .dart_tool; a kept one leaves no evidence for it.
+                    project_cache_has_tracked_files "$cache_dir" && continue
                     clean_project_cache_target "$cache_dir" "Flutter build cache (.dart_tool)" || return $?
                     local build_dir="$(dirname "$cache_dir")/build"
                     if [[ -d "$build_dir" ]]; then
@@ -806,6 +1008,8 @@ clean_project_caches() {
         fi
     done
 
+    # One Git budget for every root's tracked-file index.
+    local _project_cache_git_deadline=$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC))
     for ((scan_index = 0; scan_index < ${#root_matches_files[@]}; scan_index++)); do
         root_matches_file="${root_matches_files[$scan_index]}"
         local scan_rc="${scan_statuses[$scan_index]:-1}"

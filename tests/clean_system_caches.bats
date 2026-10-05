@@ -560,7 +560,7 @@ EOF
     rm -rf "$HOME/Projects"
 }
 
-@test "clean_project_caches keeps a project cache whose Git probe cannot finish" {
+@test "clean_project_caches keeps a project cache whose Git listing cannot finish" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -568,15 +568,182 @@ source "$PROJECT_ROOT/lib/clean/caches.sh"
 mkdir -p "$HOME/Projects/app/.dart_tool" "$HOME/Projects/py/pkg/__pycache__"
 touch "$HOME/Projects/app/pubspec.yaml" "$HOME/Projects/py/pyproject.toml"
 touch "$HOME/Projects/py/pkg/__pycache__/module.pyc"
-mole_path_has_git_tracked_files() { return 2; }
+git init -q "$HOME/Projects"
+mole_git_ls_files() { return 124; }
+log_operation() { printf 'LOG:%s|%s\n' "$3" "$4" >> "$HOME/oplog"; }
 DRY_RUN=false
 clean_project_caches
 [[ -d "$HOME/Projects/app/.dart_tool" ]] || exit 11
 [[ -f "$HOME/Projects/py/pkg/__pycache__/module.pyc" ]] || exit 12
+grep -q 'git status unknown' "$HOME/oplog" || exit 13
+! grep -q 'tracked by git' "$HOME/oplog" || exit 14
 EOF
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 
     rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches asks Git once per repository" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+repo="$HOME/Projects/mono"
+for pkg in a b c d e f; do
+    mkdir -p "$repo/svc/$pkg/__pycache__"
+    touch "$repo/svc/$pkg/__pycache__/m.pyc"
+done
+touch "$repo/svc/pyproject.toml"
+git init -q "$repo"
+git -C "$repo" add -f svc/c/__pycache__/m.pyc
+eval "real_$(declare -f mole_git_ls_files)"
+mole_git_ls_files() { printf 'call\n' >> "$HOME/ls-files.calls"; real_mole_git_ls_files "$@"; }
+DRY_RUN=false
+clean_project_caches
+[[ "$(wc -l < "$HOME/ls-files.calls" | tr -d ' ')" == 1 ]] || { cat "$HOME/ls-files.calls"; exit 11; }
+[[ -f "$repo/svc/c/__pycache__/m.pyc" ]] || exit 12
+for pkg in a b d e f; do
+    [[ ! -e "$repo/svc/$pkg/__pycache__" ]] || exit 13
+done
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches keeps tracked Next.js cache files and Flutter build beside a kept .dart_tool" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+repo="$HOME/Projects/site"
+mkdir -p "$repo/web/.next/cache/images" "$repo/flutter/.dart_tool" "$repo/flutter/build"
+touch "$repo/web/package.json" "$repo/flutter/pubspec.yaml"
+printf 'pinned' > "$repo/web/.next/cache/fixture.json"
+touch "$repo/web/.next/cache/images/a.webp" "$repo/flutter/build/out.bin"
+printf '{}' > "$repo/flutter/.dart_tool/package_config.json"
+git init -q "$repo"
+git -C "$repo" add -f web/.next/cache/fixture.json flutter/.dart_tool/package_config.json
+DRY_RUN=false
+clean_project_caches
+# A tracked file directly under .next/cache stays; its untracked sibling goes.
+[[ -f "$repo/web/.next/cache/fixture.json" ]] || exit 11
+[[ ! -e "$repo/web/.next/cache/images" ]] || exit 12
+# build/ is Flutter output only beside a disposable .dart_tool.
+[[ -f "$repo/flutter/.dart_tool/package_config.json" ]] || exit 13
+[[ -f "$repo/flutter/build/out.bin" ]] || exit 14
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches stops on a signal during the Git listing" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+mkdir -p "$HOME/Projects/py/pkg/__pycache__"
+touch "$HOME/Projects/py/pyproject.toml" "$HOME/Projects/py/pkg/__pycache__/m.pyc"
+git init -q "$HOME/Projects/py"
+mole_git_ls_files() { return 130; }
+DRY_RUN=false
+rc=0
+clean_project_caches || rc=$?
+printf 'RC=%s\n' "$rc"
+[[ -f "$HOME/Projects/py/pkg/__pycache__/m.pyc" ]] || exit 11
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130"* ]] || { echo "$output"; return 1; }
+
+    rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches treats a Git fatal error as unknown, not as a cancellation" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+# A linked worktree whose main repository is gone: git exits 128 here.
+mkdir -p "$HOME/Projects/stale/pkg/__pycache__" "$HOME/Projects/good/pkg/__pycache__"
+printf 'gitdir: /nonexistent/repo/.git/worktrees/stale\n' > "$HOME/Projects/stale/.git"
+touch "$HOME/Projects/stale/pyproject.toml" "$HOME/Projects/stale/pkg/__pycache__/a.pyc"
+touch "$HOME/Projects/good/pyproject.toml" "$HOME/Projects/good/pkg/__pycache__/b.pyc"
+git init -q "$HOME/Projects/good"
+DRY_RUN=false
+rc=0
+clean_project_caches || rc=$?
+printf 'RC=%s\n' "$rc"
+[[ -f "$HOME/Projects/stale/pkg/__pycache__/a.pyc" ]] || exit 11
+[[ ! -e "$HOME/Projects/good/pkg/__pycache__" ]] || exit 12
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+
+    rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches keeps a tracked cache under a decomposed folder name" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+repo="$HOME/Projects/repo"
+# "Cafe" plus U+0301: the decomposed spelling a disk can keep while Git lists
+# the precomposed one.
+dir="$repo/Cafe"$'\xcc\x81'
+mkdir -p "$dir/__pycache__"
+touch "$repo/pyproject.toml" "$dir/__pycache__/committed.pyc"
+git init -q "$repo"
+git -C "$repo" config core.precomposeunicode true
+git -C "$repo" add -f .
+DRY_RUN=false
+clean_project_caches
+[[ -f "$dir/__pycache__/committed.pyc" ]] || exit 11
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches keeps the target of a linked .next/cache" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+other="$HOME/Other/data"
+mkdir -p "$other" "$HOME/Projects/web/.next"
+printf 'tracked elsewhere' > "$other/fixture.json"
+git init -q "$HOME/Other"
+git -C "$HOME/Other" add -f data/fixture.json
+touch "$HOME/Projects/web/package.json"
+ln -s "$other" "$HOME/Projects/web/.next/cache"
+git init -q "$HOME/Projects/web"
+DRY_RUN=false
+clean_project_caches
+[[ -f "$other/fixture.json" ]] || exit 11
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    rm -rf "$HOME/Projects" "$HOME/Other"
+}
+
+@test "project cache index gives no free pass to a path it never saw" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+index="$HOME/index"
+printf 'C/p/clear\nT/p/tracked\nU/p/unknown\n' > "$index"
+_project_cache_git_index=$'\n'"$(cat "$index")"$'\n'
+rc=0; project_cache_git_status /p/clear || rc=$?; [[ $rc -eq 1 ]] || exit 11
+rc=0; project_cache_git_status /p/tracked || rc=$?; [[ $rc -eq 0 ]] || exit 12
+rc=0; project_cache_git_status /p/unknown || rc=$?; [[ $rc -eq 2 ]] || exit 13
+rc=0; project_cache_git_status /p/new || rc=$?; [[ $rc -eq 2 ]] || exit 14
+# A prefix of an indexed path is not that path.
+rc=0; project_cache_git_status /p/clea || rc=$?; [[ $rc -eq 2 ]] || exit 15
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "clean_project_caches scans configured roots instead of HOME" {
