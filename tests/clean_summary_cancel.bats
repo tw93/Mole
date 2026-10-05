@@ -96,6 +96,46 @@ EOF
     [[ "$output" == *"Remaining cleanup was skipped"* ]]
 }
 
+@test "a timeout names the cancelled step in the summary and mole.log" {
+    run_perform_cleanup_with 124
+
+    [ "$status" -eq 124 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Cancelled: clean_user_essentials timed out (exit 124)."* ]] || return 1
+    grep -qF "WARNING: Cancelled: clean_user_essentials timed out (exit 124). Section: User essentials." \
+        "$HOME/Library/Logs/mole/mole.log"
+}
+
+@test "the innermost cancellation label wins over the step name" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+for fn in clean_user_essentials clean_finder_metadata clean_app_caches \
+    clean_browsers run_cloud_and_office_cleanup clean_developer_tools \
+    clean_user_gui_applications clean_virtualization_tools \
+    clean_application_support_logs clean_orphaned_app_data \
+    clean_orphaned_system_services clean_orphaned_container_stubs \
+    show_user_launch_agent_hint_notice \
+    clean_apple_silicon_caches clean_cached_device_firmware \
+    clean_time_machine_failed_backups check_large_file_candidates \
+    show_project_artifact_hint_notice; do
+    eval "$fn() { return 0; }"
+done
+clean_app_caches() {
+    MOLE_CURRENT_COMMAND=clean
+    _mole_record_clean_cancellation 124 "Slow owner cache"
+    return 124
+}
+perform_cleanup
+EOF
+
+    [ "$status" -eq 124 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Cancelled: Slow owner cache timed out (exit 124)."* ]] || return 1
+    [[ "$output" != *"clean_app_caches timed out"* ]] || return 1
+    grep -qF "WARNING: Cancelled: Slow owner cache timed out (exit 124). Section: App caches." \
+        "$HOME/Library/Logs/mole/mole.log"
+}
+
 @test "interrupted section (>=128) prints an interrupted summary" {
     run_perform_cleanup_with 130
 

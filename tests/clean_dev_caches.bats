@@ -3894,7 +3894,9 @@ EOF
     [[ "$output" != *"failing cache"* ]] || return 1
     [[ "$output" != *"slow cache"* ]] || return 1
     [[ "$output" == *"ACTIVITIES=1"* ]] || return 1
-    [[ "$output" == *"CANCEL=0"* ]]
+    [[ "$output" == *"CANCEL=0"* ]] || return 1
+    grep -qF "WARNING: slow cache timed out and was skipped: owner_timeout" \
+        "$HOME/Library/Logs/mole/mole.log"
 }
 
 @test "an interrupted owner command stops the next pnpm store before its probe or prune" {

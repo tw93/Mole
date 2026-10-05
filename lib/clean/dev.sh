@@ -44,13 +44,17 @@ clean_tool_cache() {
             note_activity
         elif ! mole_rc_timeout_or_signal "$command_rc" || mole_rc_timeout "$command_rc"; then
             # Routine owner failures stay in diagnostics, without a success
-            # row or activity marker. A timeout here skips this one tool.
+            # row or activity marker. A timeout here skips this one tool, and
+            # mole.log names it so a slow tool is not left to guesswork.
             debug_log "$description: owner command exited $command_rc: $*"
+            if mole_rc_timeout "$command_rc"; then
+                log_warning_to_file "$description timed out and was skipped: $*"
+            fi
         else
             # Ctrl-C while the owner command holds the terminal reaches only
             # the child. Record it and hand it back so no later owner command
             # starts.
-            _mole_record_clean_cancellation "$command_rc"
+            _mole_record_clean_cancellation "$command_rc" "$description"
             return "$command_rc"
         fi
     else
@@ -994,6 +998,7 @@ clean_go_cache_root() {
         return 0
     fi
     if mole_rc_timeout_or_signal "$command_status"; then
+        _mole_record_clean_cancellation "$command_status" "$display_name"
         return "$command_status"
     fi
 
@@ -5386,12 +5391,13 @@ _run_developer_cleanup_step() {
     "$@" || step_rc=$?
     debug_timer_end "developer cleanup step: $step_name" _perf_step_start
     if mole_rc_timeout_or_signal "$step_rc"; then
-        _mole_record_clean_cancellation "$step_rc"
+        _mole_record_clean_cancellation "$step_rc" "$step_name"
         return "$step_rc"
     fi
 
     pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
     if mole_rc_timeout_or_signal "$pending_clean_cancel"; then
+        _mole_note_clean_cancel_source "$step_name"
         return "$pending_clean_cancel"
     fi
     [[ "$strict" == "true" && $step_rc -ne 0 ]] && return "$step_rc"

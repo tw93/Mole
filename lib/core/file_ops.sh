@@ -1404,16 +1404,30 @@ _record_file_ops_dry_run_target() {
 # Preserve the first timeout or signal observed by a clean deletion sink. Some
 # older cleanup families intentionally treat ordinary item failures as
 # best-effort; this sticky status prevents those `|| true` paths from turning a
-# user interrupt into permission to continue deleting later targets.
+# user interrupt into permission to continue deleting later targets. An
+# optional label names what was running; see _mole_note_clean_cancel_source.
 _mole_record_clean_cancellation() {
     local status="$1"
+    local source="${2:-}"
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" ]] && mole_rc_timeout_or_signal "$status"; then
         local existing="${MOLE_CLEAN_CANCEL_STATUS:-0}"
         if ! mole_rc_timeout_or_signal "$existing"; then
             MOLE_CLEAN_CANCEL_STATUS=$status
             export MOLE_CLEAN_CANCEL_STATUS
         fi
+        _mole_note_clean_cancel_source "$source"
     fi
+}
+
+# Name what a clean cancellation came from, so the summary and mole.log can say
+# what timed out instead of only the exit status. A cancellation unwinds from
+# the innermost caller outward, so the first label wins and the step runners
+# only fill the gap when nothing deeper knew a better name.
+_mole_note_clean_cancel_source() {
+    local source="${1:-}"
+    [[ -n "$source" && -z "${MOLE_CLEAN_CANCEL_SOURCE:-}" ]] || return 0
+    MOLE_CLEAN_CANCEL_SOURCE="$source"
+    export MOLE_CLEAN_CANCEL_SOURCE
 }
 
 # Safe wrapper around rm -rf with validation

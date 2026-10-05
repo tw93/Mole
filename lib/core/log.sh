@@ -150,6 +150,17 @@ log_warning() {
     fi
 }
 
+# Record a warning in mole.log without printing it, for diagnostics the
+# terminal deliberately stays quiet about, such as a skipped owner timeout.
+log_warning_to_file() {
+    local timestamp
+    timestamp=$(get_timestamp)
+    append_log_line "$LOG_FILE" "[$timestamp] WARNING: $1"
+    if [[ "${MO_DEBUG:-}" == "1" ]]; then
+        append_log_line "$DEBUG_LOG_FILE" "[$timestamp] WARNING: $1"
+    fi
+}
+
 # shellcheck disable=SC2329
 log_error() {
     echo -e "${YELLOW}${ICON_ERROR}${NC} $1" >&2

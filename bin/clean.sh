@@ -1148,6 +1148,7 @@ _safe_clean_impl() {
             fi
             MOLE_CLEAN_CANCEL_STATUS=$cleanup_interrupt_rc
             export MOLE_CLEAN_CANCEL_STATUS
+            _mole_note_clean_cancel_source "$description"
             return "$cleanup_interrupt_rc"
         fi
 
@@ -1370,6 +1371,7 @@ _safe_clean_impl() {
     if [[ $cleanup_interrupt_rc -ne 0 ]]; then
         MOLE_CLEAN_CANCEL_STATUS=$cleanup_interrupt_rc
         export MOLE_CLEAN_CANCEL_STATUS
+        _mole_note_clean_cancel_source "$description"
         return "$cleanup_interrupt_rc"
     fi
 
@@ -1439,6 +1441,8 @@ start_cleanup() {
     export MOLE_CURRENT_COMMAND="clean"
     MOLE_CLEAN_CANCEL_STATUS=0
     export MOLE_CLEAN_CANCEL_STATUS
+    MOLE_CLEAN_CANCEL_SOURCE=""
+    export MOLE_CLEAN_CANCEL_SOURCE
     MOLE_CLEAN_SIZING_TIMEOUTS=0
     export MOLE_CLEAN_SIZING_TIMEOUTS
     MOLE_CLEAN_REMOVAL_TIMEOUTS=0
@@ -1672,9 +1676,11 @@ perform_cleanup() {
         if mole_rc_timeout_or_signal "$step_rc"; then
             MOLE_CLEAN_CANCEL_STATUS=$step_rc
             export MOLE_CLEAN_CANCEL_STATUS
+            _mole_note_clean_cancel_source "$step_name"
             return "$step_rc"
         fi
         if mole_rc_timeout_or_signal "$pending_clean_cancel"; then
+            _mole_note_clean_cancel_source "$step_name"
             return "$pending_clean_cancel"
         fi
         if [[ "$required" == "true" && $step_rc -ne 0 ]]; then
@@ -1846,13 +1852,26 @@ perform_cleanup() {
 
     local -a summary_details=()
     if [[ $cleanup_cancel_rc -ne 0 ]]; then
+        local cancel_source=""
+        cancel_source=$(mole_terminal_safe_text "${MOLE_CLEAN_CANCEL_SOURCE:-}")
+        local cancel_reason=""
         if mole_rc_timeout "$cleanup_cancel_rc"; then
-            summary_details+=("${GRAY}${ICON_WARNING}${NC} Cancelled: a scan or size check timed out (exit 124). Remaining cleanup was skipped.")
+            if [[ -n "$cancel_source" ]]; then
+                cancel_reason="Cancelled: $cancel_source timed out (exit $cleanup_cancel_rc)."
+            else
+                cancel_reason="Cancelled: a scan or size check timed out (exit $cleanup_cancel_rc)."
+            fi
         elif [[ $cleanup_cancel_rc -ge 128 ]]; then
-            summary_details+=("${GRAY}${ICON_WARNING}${NC} Cancelled: a cleanup step was interrupted (exit $cleanup_cancel_rc). Remaining cleanup was skipped.")
+            if [[ -n "$cancel_source" ]]; then
+                cancel_reason="Cancelled: $cancel_source was interrupted (exit $cleanup_cancel_rc)."
+            else
+                cancel_reason="Cancelled: a cleanup step was interrupted (exit $cleanup_cancel_rc)."
+            fi
         else
-            summary_details+=("${GRAY}${ICON_WARNING}${NC} A required cleanup step failed (exit $cleanup_cancel_rc). Remaining cleanup was skipped.")
+            cancel_reason="A required cleanup step failed (exit $cleanup_cancel_rc)."
         fi
+        summary_details+=("${GRAY}${ICON_WARNING}${NC} $cancel_reason Remaining cleanup was skipped.")
+        log_warning_to_file "$cancel_reason Section: ${CURRENT_SECTION:-unknown}."
     fi
 
     # Emit one "Free space" line, with the measured delta in parentheses when
