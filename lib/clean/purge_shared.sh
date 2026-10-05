@@ -164,6 +164,39 @@ mole_purge_is_project_root() {
     return 1
 }
 
+# Whether Git tracks files below a directory, asked of the repository that owns
+# it. Names do not prove a directory is disposable: build/ can hold tracked
+# source and a cache-named folder a committed fixture. Shared by purge's
+# authored-content probe and clean's project caches. Returns 0 when Git tracks
+# files there, 1 when no repository owns the path or it tracks nothing there,
+# and 2 when the probe timed out or failed.
+mole_path_has_git_tracked_files() {
+    local path="${1%/}"
+    local deadline="${2:-}"
+    local probe_timeout=""
+    local evidence=""
+    [[ -d "$path" ]] || return 1
+    # A configured root can cross a symlink before reaching the candidate.
+    # Git ancestry must follow the actual repository, not the alias spelling.
+    path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
+
+    local ancestor="$path"
+    while [[ "$ancestor" != "/" && -n "$ancestor" ]]; do
+        if [[ -e "$ancestor/.git" || -L "$ancestor/.git" ]]; then
+            # Ignore inherited Git routing; inspect this directory's own repo.
+            probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+            evidence=$(run_with_timeout "$probe_timeout" \
+                env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR \
+                GIT_OPTIONAL_LOCKS=0 GIT_LITERAL_PATHSPECS=1 \
+                git -c core.fsmonitor=false --git-dir="$ancestor/.git" --work-tree="$ancestor" -C "$path" ls-files -- . 2> /dev/null) || return 2
+            [[ -n "$evidence" ]] && return 0
+            return 1
+        fi
+        ancestor="${ancestor%/*}"
+    done
+    return 1
+}
+
 mole_dir_has_cachedir_tag() {
     local dir="$1"
     local tag="$dir/$MOLE_CACHEDIR_TAG_NAME"

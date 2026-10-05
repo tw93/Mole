@@ -533,6 +533,52 @@ EOF
     rm -rf "$HOME/Projects" "$HOME/export.txt"
 }
 
+@test "clean_project_caches keeps project caches that Git tracks" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+repo="$HOME/Projects/repo"
+mkdir -p "$repo/py/pkg/__pycache__" "$repo/py/committed/__pycache__" \
+    "$repo/app/.dart_tool" "$repo/app/build" "$repo/app/test/fixtures/.dart_tool"
+touch "$repo/py/pyproject.toml" "$repo/app/pubspec.yaml"
+touch "$repo/py/pkg/__pycache__/local.pyc" "$repo/py/committed/__pycache__/committed.pyc"
+touch "$repo/app/.dart_tool/state" "$repo/app/build/output"
+printf '{}' > "$repo/app/test/fixtures/.dart_tool/package_config.json"
+git init -q "$repo"
+git -C "$repo" add -f py/committed/__pycache__/committed.pyc app/test/fixtures/.dart_tool/package_config.json
+DRY_RUN=false
+clean_project_caches
+[[ ! -e "$repo/py/pkg/__pycache__" ]] || exit 11
+[[ -f "$repo/py/committed/__pycache__/committed.pyc" ]] || exit 12
+[[ ! -e "$repo/app/.dart_tool" ]] || exit 13
+[[ ! -e "$repo/app/build" ]] || exit 14
+[[ -f "$repo/app/test/fixtures/.dart_tool/package_config.json" ]] || exit 15
+EOF
+    [ "$status" -eq 0 ]
+
+    rm -rf "$HOME/Projects"
+}
+
+@test "clean_project_caches keeps a project cache whose Git probe cannot finish" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+mkdir -p "$HOME/Projects/app/.dart_tool" "$HOME/Projects/py/pkg/__pycache__"
+touch "$HOME/Projects/app/pubspec.yaml" "$HOME/Projects/py/pyproject.toml"
+touch "$HOME/Projects/py/pkg/__pycache__/module.pyc"
+mole_path_has_git_tracked_files() { return 2; }
+DRY_RUN=false
+clean_project_caches
+[[ -d "$HOME/Projects/app/.dart_tool" ]] || exit 11
+[[ -f "$HOME/Projects/py/pkg/__pycache__/module.pyc" ]] || exit 12
+EOF
+    [ "$status" -eq 0 ]
+
+    rm -rf "$HOME/Projects"
+}
+
 @test "clean_project_caches scans configured roots instead of HOME" {
     mkdir -p "$HOME/.config/mole"
     mkdir -p "$HOME/CustomProjects/app/.next/cache"

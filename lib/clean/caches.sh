@@ -449,13 +449,34 @@ project_cache_group_root() {
     printf '%s\n' "$scan_root"
 }
 
+# Project caches are found by name only. Keep any that Git tracks, such as a
+# committed test fixture under .dart_tool or bytecode checked in by mistake,
+# and keep them when the probe cannot finish.
+project_cache_has_tracked_files() {
+    local cache_path="$1"
+    local tracked_rc=0
+    mole_path_has_git_tracked_files "$cache_path" || tracked_rc=$?
+    [[ $tracked_rc -eq 1 ]] && return 1
+    debug_log "Keeping project cache tracked by Git: $cache_path"
+    log_operation "clean" "SKIPPED" "$cache_path" "tracked by git"
+    return 0
+}
+
 clean_project_cache_target() {
     if [[ $# -lt 2 ]]; then
         return 0
     fi
 
     local description="${*: -1}"
-    local -a target_paths=("${@:1:$#-1}")
+    local -a target_paths=()
+    local target_path=""
+    for target_path in "${@:1:$#-1}"; do
+        if [[ -d "$target_path" ]] && project_cache_has_tracked_files "$target_path"; then
+            continue
+        fi
+        target_paths+=("$target_path")
+    done
+    [[ ${#target_paths[@]} -gt 0 ]] || return 0
 
     if declare -f safe_clean > /dev/null 2>&1; then
         local clean_rc=0
@@ -470,7 +491,6 @@ clean_project_cache_target() {
         return 0
     fi
 
-    local target_path=""
     for target_path in "${target_paths[@]}"; do
         [[ -e "$target_path" ]] || continue
         local remove_rc=0
@@ -572,6 +592,8 @@ clean_python_bytecode_cache_group() {
             log_operation "clean" "SKIPPED" "$cache_dir" "whitelist"
             continue
         fi
+
+        project_cache_has_tracked_files "$cache_dir" && continue
 
         local size_kb=""
         local size_rc=0

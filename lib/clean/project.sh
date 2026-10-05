@@ -509,7 +509,6 @@ purge_artifact_has_authored_content() {
     local probe_timeout=""
     [[ -d "$path" ]] || return 1
     # A configured root can cross a symlink before reaching the candidate.
-    # Git ancestry must follow the actual repository, not the alias spelling.
     path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
     local evidence=""
     # Do not follow links or read key contents. This walks the whole artifact
@@ -520,21 +519,9 @@ purge_artifact_has_authored_content() {
         \( -name .git -o -name '*-keypair.json' \) -print -quit 2> /dev/null) || return 2
     [[ -z "$evidence" ]] || return 0
 
-    local ancestor="$path"
-    while [[ "$ancestor" != "/" && -n "$ancestor" ]]; do
-        if [[ -e "$ancestor/.git" || -L "$ancestor/.git" ]]; then
-            # Ignore inherited Git routing; inspect this directory's own repo.
-            probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-            evidence=$(run_with_timeout "$probe_timeout" \
-                env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR \
-                GIT_OPTIONAL_LOCKS=0 GIT_LITERAL_PATHSPECS=1 \
-                git -c core.fsmonitor=false --git-dir="$ancestor/.git" --work-tree="$ancestor" -C "$path" ls-files -- . 2> /dev/null) || return 2
-            [[ -n "$evidence" ]]
-            return $?
-        fi
-        ancestor="${ancestor%/*}"
-    done
-    return 1
+    local tracked_rc=0
+    mole_path_has_git_tracked_files "$path" "$deadline" || tracked_rc=$?
+    return "$tracked_rc"
 }
 
 # Set by is_protected_purge_artifact: true when the verdict came from an
