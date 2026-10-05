@@ -534,6 +534,20 @@ EOF
     [ "$output" = "~"'/Library/Application Support/MobileSync/Backup' ]
 }
 
+@test "format_path_link keeps the full path in plain text despite a short label" {
+    output="$(
+        HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+format_path_link "$HOME/Library/Application Support/MobileSync/Backup" "…/MobileSync/Backup"
+printf '\n'
+EOF
+    )"
+
+    # Without a link nothing carries the full path, so the label is ignored.
+    # shellcheck disable=SC2088  # literal tilde is the expected display form
+    [ "$output" = "~"'/Library/Application Support/MobileSync/Backup' ]
+}
+
 @test "colorize_human_size colors dry-run size units by suffix" {
     output="$(
         env -u NO_COLOR HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'

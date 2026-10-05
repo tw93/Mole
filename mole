@@ -15,9 +15,19 @@ fi
 # Refuse an unknown working directory before path resolution or user state.
 # Keep valid cwd unchanged: analyze and other commands accept relative paths.
 # Bash may print its own startup diagnostic before this script can run.
+# install.sh and mo update verify a new install with --version and --help
+# from the caller's cwd, so those two answer from / when Mole was invoked by
+# an absolute path; refusing them reported a completed update as failed.
 if ! /bin/pwd -P > /dev/null 2>&1; then
-    printf '%s\n' 'Cannot access the current directory. Run cd ~, then retry Mole.' >&2
-    exit 1
+    case "${1:-}" in
+        --version | -V | version | --help | -h | help)
+            [[ "${BASH_SOURCE[0]}" == /* ]] && cd /
+            ;;
+    esac
+    if ! /bin/pwd -P > /dev/null 2>&1; then
+        printf '%s\n' 'Cannot access the current directory. Run cd ~, then retry Mole.' >&2
+        exit 1
+    fi
 fi
 
 # Resolve where lib/ lives. bash 3.2 BASH_SOURCE[0] names the invoked path,
@@ -102,7 +112,7 @@ source "$SCRIPT_DIR/lib/core/commands.sh"
 trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
-VERSION="1.57.0"
+VERSION="1.58.0"
 MOLE_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {

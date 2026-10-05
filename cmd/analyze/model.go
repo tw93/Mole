@@ -192,6 +192,8 @@ type overviewSizeMsg struct {
 	Err         error
 }
 
+type initializeMsg struct{}
+
 type tickMsg time.Time
 
 type deleteProgressMsg struct {
@@ -215,6 +217,7 @@ type model struct {
 	totalSize           int64
 	scanning            bool
 	spinner             int
+	tickRunning         bool // one tickCmd loop is already re-arming itself
 	filesScanned        *int64
 	dirsScanned         *int64
 	bytesScanned        *int64

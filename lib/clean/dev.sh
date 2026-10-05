@@ -3672,9 +3672,10 @@ clean_claude_desktop_bundled_versions() {
 
     local sdk_version=""
     sdk_version=$(claude_desktop_sdk_version "$claude_support" || true)
+    # Unknown active version keeps every bundled version. That is a routine
+    # skip with nothing for the user to do, so it stays out of the summary.
     if [[ -z "$sdk_version" ]]; then
-        note_activity
-        echo -e "  ${GRAY}${ICON_WARNING}${NC} Claude Desktop bundled Claude Code · skipped (active version unknown)"
+        debug_log "Claude Desktop bundled Claude Code kept: active version unknown"
         return 0
     fi
 
@@ -3685,8 +3686,7 @@ clean_claude_desktop_bundled_versions() {
 
         local active_entry="$versions_root/$sdk_version"
         if [[ -L "$active_entry" || (! -f "$active_entry" && ! -d "$active_entry") ]]; then
-            note_activity
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} $label · skipped (active version unknown)"
+            debug_log "$label kept: active version $sdk_version not found in $versions_root"
             return 0
         fi
     done
@@ -3949,18 +3949,18 @@ clean_dev_ai_agents() {
             _resolve_versioned_agent_active_path "$versions_root" "$active_symlink" || active_status=$?
             if [[ $active_status -ne 0 ]]; then
                 mole_rc_timeout_or_signal "$active_status" && return "$active_status"
+                # Without the active version every entry is kept; the reason
+                # belongs in --debug, not in the summary.
                 if [[ ! -e "$active_symlink" ]]; then
-                    echo -e "  ${GRAY}${ICON_WARNING}${NC} $label · skipped (active symlink broken)"
+                    debug_log "$label kept: active symlink broken"
                 else
-                    echo -e "  ${GRAY}${ICON_WARNING}${NC} $label · skipped (active version unknown)"
+                    debug_log "$label kept: active version unknown"
                 fi
-                note_activity
                 continue
             fi
             active_path="$_MOLE_VERSIONED_AGENT_ACTIVE_PATH"
             if [[ -z "$active_path" ]]; then
-                echo -e "  ${GRAY}${ICON_WARNING}${NC} $label · skipped (active symlink broken)"
-                note_activity
+                debug_log "$label kept: active symlink broken"
                 continue
             fi
         fi

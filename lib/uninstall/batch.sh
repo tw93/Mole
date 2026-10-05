@@ -878,7 +878,8 @@ _uninstall_materialize_complete_find0() {
                 esac
                 [[ -z "$scan_error_detail" ]] || break
             done < "$scan_errors"
-            debug_log "Sibling application listing failed (exit $scan_rc): $(mole_terminal_safe_text "$1"): $(mole_terminal_safe_text "${scan_error_detail:0:512}")"
+            # A caller that passes several start points names them as one.
+            debug_log "Sibling application listing failed (exit $scan_rc): $(mole_terminal_safe_text "${_mole_find0_label:-$1}"): $(mole_terminal_safe_text "${scan_error_detail:0:512}")"
         fi
         if [[ $scan_rc -eq 1 && -s "$scan_errors" ]]; then
             # Partial view: the listing is real but not exhaustive, so it can
@@ -1117,6 +1118,33 @@ _uninstall_collect_live_sibling_candidate() {
     return 0
 }
 
+# Return 0 only for a network share whose server is gone: the mount table
+# lists the entry as smbfs, nfs, afpfs or webdav, and a bounded lstat of its
+# mount point fails with ENOENT. A share that is slow, reconnecting, or fails
+# with any other error stays in scope, and signals propagate.
+_uninstall_volume_is_unreachable_share() {
+    local entry="$1"
+    local network_mounts="$2"
+    local deadline_seconds="$3"
+    local fs_type listed=false
+    [[ -n "$network_mounts" ]] || return 1
+    for fs_type in smbfs nfs afpfs webdav; do
+        if [[ "$network_mounts" == *" on $entry ($fs_type,"* || "$network_mounts" == *" on $entry ($fs_type)"* ]]; then
+            listed=true
+            break
+        fi
+    done
+    [[ "$listed" == true ]] || return 1
+    local probe_timeout="" probe_rc=0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" "$deadline_seconds") || return 1
+    # shellcheck disable=SC2016 # Perl expands $ARGV and $! itself.
+    run_with_timeout "$probe_timeout" /usr/bin/perl -e \
+        'lstat($ARGV[0]) and exit 1; exit($!{ENOENT} ? 0 : 1)' "$entry" \
+        < /dev/null > /dev/null 2>&1 || probe_rc=$?
+    [[ $probe_rc -ge 128 ]] && return "$probe_rc"
+    [[ $probe_rc -eq 0 ]]
+}
+
 # Return 0 for one or more other live installs, 1 only for a complete
 # proof of absence, 2 for incomplete/unknown state, and preserve signals.
 # A deadline timeout degrades to MOLE_UNINSTALL_SCAN_PARTIAL: out of budget
@@ -1173,7 +1201,7 @@ uninstall_live_bundle_has_other_install() {
         }
         local volume_scan_rc=0
         local snapshot_root="$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT/com.apple.TimeMachine.localsnapshots"
-        local -a volume_exclusion=()
+        local skip_snapshot_root=false
         if [[ -d "$snapshot_root" && ! -L "$snapshot_root" && ! -L "$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT" ]]; then
             # Only exclude Apple's internal snapshot namespace, not a mounted
             # disk with the same name. Unknown metadata keeps the normal scan.
@@ -1192,19 +1220,68 @@ uninstall_live_bundle_has_other_install() {
                 local volume_identity="${snapshot_metadata#*$'\n'}"
                 if [[ "$snapshot_identity" == 0:* && "$volume_identity" == "$snapshot_identity" &&
                     "${snapshot_identity#0:}" =~ ^[0-9]+$ ]]; then
-                    volume_exclusion=(-name com.apple.TimeMachine.localsnapshots -prune -o)
+                    skip_snapshot_root=true
                 fi
             fi
         fi
-        # mindepth suppresses prune at depth one. Filter the completed output
-        # below instead, retaining the original depth-two candidate scope.
-        _uninstall_materialize_complete_find0 "$volume_roots_file" \
-            "$deadline_seconds" "$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT" \
-            -maxdepth 2 "${volume_exclusion[@]+"${volume_exclusion[@]}"}" \
-            \( \
-            \( -type d -name Applications \) -o \
-            \( \( -type d -o -type l \) -iname '*.app' \) \
-            \) || volume_scan_rc=$?
+        # A network share whose server is gone stays in the mount table, but
+        # its mount point reports "No such file or directory", and find fails
+        # on it before -prune is evaluated. Nothing on an unreachable share can
+        # be a live install, so it is left out; any other unreadable volume
+        # still makes the scan incomplete. An unknown mount table excludes
+        # nothing.
+        local network_mounts="" mount_rc=0 mount_timeout
+        mount_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" "$deadline_seconds") || mount_rc=$?
+        if [[ $mount_rc -eq 0 ]]; then
+            network_mounts=$(run_with_timeout "$mount_timeout" /sbin/mount -t smbfs,nfs,afpfs,webdav \
+                < /dev/null 2> /dev/null) || mount_rc=$?
+        fi
+        if [[ $mount_rc -ge 128 ]]; then
+            rm -f -- "$volume_roots_file" "$scan_file" "$pkg_paths_file" 2> /dev/null || true # SAFE: exact tracked temp files created above
+            return "$mount_rc"
+        fi
+        [[ $mount_rc -eq 0 ]] || network_mounts=""
+        # Scan each volume one level down: the same depth-two candidates as a
+        # single two-level walk of the volumes root, without its excluded
+        # entries ever being visited.
+        local -a volume_starts=()
+        local volume_entry restore_glob_options="" share_rc=0
+        if [[ ! -r "$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT" || ! -x "$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT" ]]; then
+            # An empty glob here would read as "no volumes" and prove absence.
+            debug_log "Sibling volumes root cannot be listed: $(mole_terminal_safe_text "$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT")"
+            scan_indeterminate=true
+        else
+            restore_glob_options=$(shopt -p dotglob nullglob || true)
+            shopt -s dotglob nullglob
+            for volume_entry in "$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT"/*; do
+                if [[ "$skip_snapshot_root" == true && "$volume_entry" == "$snapshot_root" ]]; then
+                    continue
+                fi
+                share_rc=0
+                _uninstall_volume_is_unreachable_share "$volume_entry" "$network_mounts" \
+                    "$deadline_seconds" || share_rc=$?
+                if [[ $share_rc -eq 0 ]]; then
+                    debug_log "Skipping unreachable network share: $(mole_terminal_safe_text "$volume_entry")"
+                    continue
+                elif [[ $share_rc -ge 128 ]]; then
+                    eval "$restore_glob_options"
+                    rm -f -- "$volume_roots_file" "$scan_file" "$pkg_paths_file" 2> /dev/null || true # SAFE: exact tracked temp files created above
+                    return "$share_rc"
+                fi
+                volume_starts+=("$volume_entry")
+            done
+            eval "$restore_glob_options"
+        fi
+        if [[ ${#volume_starts[@]} -gt 0 ]]; then
+            local _mole_find0_label="$_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT"
+            _uninstall_materialize_complete_find0 "$volume_roots_file" \
+                "$deadline_seconds" "${volume_starts[@]}" \
+                -mindepth 1 -maxdepth 1 \
+                \( \
+                \( -type d -name Applications \) -o \
+                \( \( -type d -o -type l \) -iname '*.app' \) \
+                \) || volume_scan_rc=$?
+        fi
         if [[ $volume_scan_rc -eq $MOLE_UNINSTALL_SCAN_PARTIAL ]] || mole_rc_timeout "$volume_scan_rc"; then
             debug_log "Sibling volume discovery incomplete (exit $volume_scan_rc)"
             # Some volume was unreadable, or the budget ran out before every
@@ -1465,7 +1542,7 @@ uninstall_strip_version_suffix() {
 # a manual Finder removal.
 # Reads:  selected_apps
 # Writes: running_apps, sudo_apps, brew_cask_apps, blocked_apps,
-#         manual_removal_apps, app_details, total_estimated_size
+#         manual_removal_apps, leftover_notes, app_details, total_estimated_size
 _batch_refresh_selected_app_bundle_id() {
     local app_path="$1"
     local fallback_bundle_id="$2"
@@ -1632,7 +1709,10 @@ _batch_scan_app_details_impl() {
             # 1 with a debug-only line for apps whose scan touched anything TCC
             # protects (#1339, #1340).
             live_sibling_present=true
-            log_warning "$(printf "%s: some paths could not be read, so shared leftovers are left in place" "$app_name")"
+            # Printed with this app's preview, not here: the scan spinner owns
+            # this line, and the note belongs next to the plan it explains.
+            leftover_notes+=("$app_path|Shared leftovers kept (some paths unreadable)")
+            debug_log "Same-bundle scan for $app_name could not read every path; shared leftovers kept"
         elif [[ $live_sibling_rc -ge 128 ]]; then
             return "$live_sibling_rc"
         else
@@ -1643,7 +1723,7 @@ _batch_scan_app_details_impl() {
             # identity-bound bundle. Refusing here blocked every uninstall
             # on managed Macs (#1624).
             live_sibling_present=true
-            log_warning "$(printf "%s: could not check for other copies, so shared leftovers are left in place" "$app_name")"
+            leftover_notes+=("$app_path|Shared leftovers kept (other copies unchecked)")
             debug_log "Could not complete the live same-bundle scan for $app_name (exit $live_sibling_rc)"
         fi
         local preview_live_sibling_fingerprint="$_MOLE_UNINSTALL_LIVE_SIBLING_FINGERPRINT"
@@ -1807,7 +1887,8 @@ _batch_scan_app_details_impl() {
                 # the selected app removable and leave leftovers alone rather
                 # than aborting the whole batch with "nothing was removed".
                 related_files=""
-                log_warning "$(printf "%s: leftover scan timed out; only the app bundle will be removed" "$app_name")"
+                leftover_notes+=("$app_path|Leftovers kept (scan timed out)")
+                debug_log "Leftover scan for $app_name timed out; only the app bundle will be removed"
             elif [[ $discovery_rc -ne 0 ]]; then
                 return "$discovery_rc"
             fi
@@ -1957,7 +2038,7 @@ _batch_scan_app_details_impl() {
 #   2 - user cancelled (ESC / 'q' / unknown key)
 #   1 - sudo authorization denied
 # Reads:  app_details, brew_cask_apps, running_apps, sudo_apps,
-#         total_estimated_size
+#         leftover_notes, total_estimated_size
 _batch_preview_and_confirm() {
     local size_display=$(bytes_to_human "$((total_estimated_size * 1024))")
 
@@ -2010,6 +2091,11 @@ _batch_preview_and_confirm() {
         if [[ "$steam_managed" == "true" ]]; then
             echo -e "  ${YELLOW}${ICON_WARNING}${NC} Steam launcher only; game files managed by Steam are not included"
         fi
+        local leftover_note
+        for leftover_note in ${leftover_notes[@]+"${leftover_notes[@]}"}; do
+            [[ "${leftover_note%%|*}" == "$app_path" ]] || continue
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${leftover_note#*|}"
+        done
 
         local preview_path=""
         preview_path=$(format_uninstall_preview_path "$app_path") || return $?
@@ -2877,6 +2963,7 @@ batch_uninstall_applications() {
     local -a brew_cask_apps=()
     local -a blocked_apps=()
     local -a manual_removal_apps=()
+    local -a leftover_notes=()
     local total_estimated_size=0
     local -a app_details=()
 

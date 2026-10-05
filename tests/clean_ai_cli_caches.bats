@@ -601,6 +601,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { echo "DEBUG:$*"; }
 note_activity() { :; }
 safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 pgrep() { return 1; }
@@ -608,7 +609,10 @@ clean_dev_ai_agents
 EOF
 
     assert_run_success
-    assert_output_contains "· skipped (active version unknown)"
+    # The keep reason is debug-only; the default summary stays silent.
+    assert_output_contains "DEBUG:Claude Desktop bundled Claude Code"
+    assert_output_contains "kept: active version"
+    assert_output_not_contains "skipped ("
     assert_output_not_contains "SAFE_CLEAN:"
 }
 
@@ -622,6 +626,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { echo "DEBUG:$*"; }
 note_activity() { :; }
 pgrep() { return 0; }
 defer_cleanup_family() { echo "UNEXPECTED_DEFER:$1"; }
@@ -630,7 +635,8 @@ clean_claude_desktop_bundled_versions 1
 EOF
 
     assert_run_success
-    assert_output_contains "skipped (active version unknown)"
+    assert_output_contains "kept: active version unknown"
+    assert_output_not_contains "skipped ("
     assert_output_not_contains "UNEXPECTED_DEFER"
     assert_output_not_contains "UNEXPECTED_CLEAN"
 }
@@ -1048,6 +1054,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { echo "DEBUG:$*"; }
 note_activity() { :; }
 safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 pgrep() { return 1; }
@@ -1055,7 +1062,10 @@ clean_dev_ai_agents
 EOF
 
     assert_run_success
-    assert_output_contains "· skipped (active version unknown)"
+    # The keep reason is debug-only; the default summary stays silent.
+    assert_output_contains "DEBUG:Claude Desktop bundled Claude Code"
+    assert_output_contains "kept: active version"
+    assert_output_not_contains "skipped ("
     assert_output_not_contains "SAFE_CLEAN:"
 }
 
@@ -1069,6 +1079,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { echo "DEBUG:$*"; }
 note_activity() { :; }
 safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 pgrep() { return 1; }
@@ -1076,7 +1087,10 @@ clean_dev_ai_agents
 EOF
 
     assert_run_success
-    assert_output_contains "· skipped (active version unknown)"
+    # The keep reason is debug-only; the default summary stays silent.
+    assert_output_contains "DEBUG:Claude Desktop bundled Claude Code"
+    assert_output_contains "kept: active version"
+    assert_output_not_contains "skipped ("
     assert_output_not_contains "SAFE_CLEAN:"
 }
 
@@ -1088,6 +1102,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { echo "DEBUG:$*"; }
 note_activity() { :; }
 safe_clean() { echo "SAFE_CLEAN:$2|$1"; }
 pgrep() { return 1; }
@@ -1095,7 +1110,10 @@ clean_dev_ai_agents
 EOF
 
     assert_run_success
-    assert_output_contains "· skipped (active version unknown)"
+    # The keep reason is debug-only; the default summary stays silent.
+    assert_output_contains "DEBUG:Claude Desktop bundled Claude Code"
+    assert_output_contains "kept: active version"
+    assert_output_not_contains "skipped ("
     assert_output_not_contains "SAFE_CLEAN:"
 }
 

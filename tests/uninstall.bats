@@ -115,7 +115,9 @@ pkg_receipt_nonstandard_app_paths() { :; }
 mkdir -p "$HOME/Volumes/com.apple.TimeMachine.localsnapshots" "$HOME/Selected.app"
 volumes="$HOME/Volumes"
 snapshots="$volumes/com.apple.TimeMachine.localsnapshots"
-trap 'chmod 700 "$snapshots" "$volumes/Ordinary" 2>/dev/null || true' EXIT
+# Restore the volumes root in its own chmod first: BSD chmod stats every
+# operand up front, so a child listed beside a still-closed parent stays 000.
+trap 'chmod 700 "$volumes" 2>/dev/null; chmod 700 "$snapshots" "$volumes/Ordinary" "$volumes/Share" 2>/dev/null || true' EXIT
 # Simulate system ownership without creating root-owned fixtures or mounting disks.
 stat() {
     if [[ "$1" == -f && "$2" == '%u:%d' ]]; then
@@ -134,6 +136,8 @@ case "$SCAN_CASE" in
     mounted) survivor="$snapshots/Survivor.app" ;;
     lookalike) survivor="$volumes/com.apple.TimeMachine.localsnapshots-copy/Survivor.app" ;;
     sibling) survivor="$volumes/External/Applications/Survivor.app" ;;
+    # Sorts after the skipped share, so the scan must continue past it.
+    stale-share-sibling) survivor="$volumes/Zeta/Applications/Survivor.app" ;;
     first-level) survivor="$volumes/Survivor.app" ;;
     *) survivor="" ;;
 esac
@@ -143,6 +147,40 @@ if [[ -n "$survivor" ]]; then
 fi
 if [[ "$SCAN_CASE" != mounted ]]; then chmod 000 "$snapshots"; fi
 if [[ "$SCAN_CASE" == ordinary ]]; then mkdir -p "$volumes/Ordinary"; chmod 000 "$volumes/Ordinary"; fi
+case "$SCAN_CASE" in
+    stale-share | stale-share-sibling | reachable-share | mount-timeout | mount-failed | mount-interrupted | probe-timeout | probe-interrupted)
+        mkdir -p "$volumes/Share"
+        chmod 000 "$volumes/Share"
+        # The fixture cannot drop a live server, so only the system answers are
+        # modeled: the mount table line and the errno of the mount point lstat.
+        run_with_timeout() {
+            shift
+            if [[ "$1" == /sbin/mount ]]; then
+                printf '//GUEST:@host/share on %s (smbfs, nodev, nosuid, nobrowse)\n' "$volumes/Share"
+                case "$SCAN_CASE" in
+                    mount-timeout) return 124 ;;
+                    mount-failed) return 1 ;;
+                    mount-interrupted) return 130 ;;
+                esac
+                return 0
+            fi
+            if [[ "$1" == /usr/bin/perl && "${!#}" == "$volumes/Share" ]]; then
+                case "$SCAN_CASE" in
+                    reachable-share) "$@"; return ;;
+                    probe-timeout) return 124 ;;
+                    probe-interrupted) return 130 ;;
+                esac
+                return 0
+            fi
+            "$@"
+        }
+        ;;
+    unlistable-root)
+        mkdir -p "$volumes/External/Applications/Survivor.app/Contents"
+        printf '%s\n' '<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.snapshot</string></dict></plist>' > "$volumes/External/Applications/Survivor.app/Contents/Info.plist"
+        chmod 000 "$volumes"
+        ;;
+esac
 _MOLE_UNINSTALL_LIVE_APP_ROOTS=()
 _MOLE_UNINSTALL_LIVE_VOLUMES_ROOT="$volumes"
 selected_apps=("0|$HOME/Selected.app|Selected|com.example.snapshot|0|Never")
@@ -155,6 +193,11 @@ if [[ "$EXPECTED_RC" -eq 0 ]]; then
 fi
 EOF_TM
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # A fixture left at mode 000 breaks every later setup on runners whose rm
+    # cannot remove it; local macOS can, so check the permissions directly.
+    local locked
+    locked=$(find "$HOME/time-machine" -perm 000 2> /dev/null || true)
+    [[ -z "$locked" ]] || { echo "locked fixture left behind: $locked"; return 1; }
 }
 
 assert_time_machine_batch_plan() {
@@ -752,7 +795,65 @@ EOF
         echo "$output"
         return 1
     }
-    [[ "$output" == *"could not check for other copies"* ]] || return 1
+    [[ "$output" == *"Shared leftovers kept (other copies unchecked)"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_"* ]] || return 1
+    [[ "$(grep -c "^DELETE:$HOME/Applications/Managed.app$" "$trace" 2> /dev/null || true)" -eq 1 ]] || return 1
+    [[ "$(grep -c "Preferences" "$trace" 2> /dev/null || true)" -eq 0 ]]
+}
+
+@test "batch uninstall shows a partial same-bundle scan in the preview, not on the scan spinner" {
+    mkdir -p "$HOME/Applications/Managed.app" "$HOME/Library/Preferences"
+    local pref="$HOME/Library/Preferences/com.example.Managed.plist"
+    printf 'pref' > "$pref"
+    local trace="$HOME/managed-deletes.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+brew() { :; }
+
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+pgrep() { return 1; }
+find_app_files() { printf '%s\n' "$HOME/Library/Preferences/com.example.Managed.plist"; }
+find_app_system_files() { return 0; }
+ensure_sudo_session() { return 1; }
+# TCC hides one directory from the same-bundle scan, as on macOS 26.
+uninstall_live_bundle_has_other_install() {
+	_MOLE_UNINSTALL_LIVE_SIBLING_FINGERPRINT=""
+	_MOLE_UNINSTALL_LIVE_SIBLING_PATHS=()
+	return "$MOLE_UNINSTALL_SCAN_PARTIAL"
+}
+stop_launch_services() { :; }
+unregister_app_bundle() { :; }
+remove_login_item() { echo "UNEXPECTED_LOGIN_ITEM"; }
+force_kill_app() { echo "UNEXPECTED_KILL"; return 0; }
+mole_delete() {
+	printf 'DELETE:%s\n' "$1" >> "$HOME/managed-deletes.log"
+	return 0
+}
+
+selected_apps=("0|$HOME/Applications/Managed.app|Managed|com.example.Managed|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications 2>&1
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    # The note belongs to this app's preview block. Printed during the scan,
+    # it landed on the scan spinner line, before the preview header.
+    local header_line app_line note_line
+    header_line=$(printf '%s\n' "$output" | grep -n 'Files to be removed' | head -1 | cut -d: -f1)
+    app_line=$(printf '%s\n' "$output" | grep -n ' Managed .*0B' | head -1 | cut -d: -f1)
+    note_line=$(printf '%s\n' "$output" | grep -n 'Shared leftovers kept (some paths unreadable)' | head -1 | cut -d: -f1)
+    [[ -n "$header_line" && -n "$app_line" && -n "$note_line" ]] || { echo "$output"; return 1; }
+    [[ $app_line -gt $header_line && $note_line -eq $((app_line + 1)) ]] || { echo "$output"; return 1; }
     [[ "$output" != *"UNEXPECTED_"* ]] || return 1
     [[ "$(grep -c "^DELETE:$HOME/Applications/Managed.app$" "$trace" 2> /dev/null || true)" -eq 1 ]] || return 1
     [[ "$(grep -c "Preferences" "$trace" 2> /dev/null || true)" -eq 0 ]]
@@ -1270,6 +1371,66 @@ EOF
 
 @test "ordinary unreadable volumes still make sibling discovery incomplete" {
     assert_time_machine_volume_scan ordinary 3
+}
+
+@test "an unreachable network share does not make sibling discovery incomplete" {
+    assert_time_machine_volume_scan stale-share 1
+}
+
+@test "skipping an unreachable share still finds a sibling on another volume" {
+    assert_time_machine_volume_scan stale-share-sibling 0
+}
+
+@test "a reachable but unreadable network share still makes sibling discovery incomplete" {
+    assert_time_machine_volume_scan reachable-share 3
+}
+
+@test "an unknown mount table keeps every share in sibling discovery" {
+    assert_time_machine_volume_scan mount-timeout 3
+    assert_time_machine_volume_scan mount-failed 3
+}
+
+@test "an unfinished share probe keeps the share in sibling discovery" {
+    assert_time_machine_volume_scan probe-timeout 3
+}
+
+@test "share discovery interruptions cancel sibling discovery" {
+    assert_time_machine_volume_scan mount-interrupted 130
+    assert_time_machine_volume_scan probe-interrupted 130
+}
+
+@test "an unlistable volumes root keeps sibling discovery unknown" {
+    assert_time_machine_volume_scan unlistable-root 3
+}
+
+@test "unreachable share detection needs a network mount whose mount point is gone" {
+    run /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+deadline=$((SECONDS + 30))
+gone="$HOME/no-such-volumes/[C] Windows 11.hidden"
+mkdir -p "$HOME/live-share"
+: > "$HOME/plain-file"
+not_dir="$HOME/plain-file/share"
+table="//GUEST:@Windows%2011._smb._tcp.local/%5BC%5D on $gone (smbfs, nodev, noexec, nosuid, nobrowse, mounted by me)
+nas:/export on $HOME/live-share (nfs, nodev)
+//host/x on $not_dir (smbfs, nodev)"
+_uninstall_volume_is_unreachable_share "$gone" "$table" "$deadline" || { echo "MISSED_STALE"; exit 1; }
+# Brackets in the name match literally: as a pattern, "[C]" would match the
+# plain "C" share listed here.
+bare_table="//host/c on $HOME/no-such-volumes/C Windows 11.hidden (smbfs, nodev)"
+! _uninstall_volume_is_unreachable_share "$gone" "$bare_table" "$deadline" || { echo "PATTERN_MATCH"; exit 1; }
+! _uninstall_volume_is_unreachable_share "$gone-2" "$table" "$deadline" || { echo "PREFIX_MATCH"; exit 1; }
+! _uninstall_volume_is_unreachable_share "$HOME/live-share" "$table" "$deadline" || { echo "REACHABLE_SKIPPED"; exit 1; }
+# Only ENOENT counts as gone; any other lstat error keeps the share in scope.
+! _uninstall_volume_is_unreachable_share "$not_dir" "$table" "$deadline" || { echo "OTHER_ERRNO_SKIPPED"; exit 1; }
+! _uninstall_volume_is_unreachable_share "$gone" "" "$deadline" || { echo "EMPTY_TABLE_SKIPPED"; exit 1; }
+! _uninstall_volume_is_unreachable_share "$gone" "/dev/disk4s1 on $gone (apfs, local)" "$deadline" || { echo "LOCAL_DISK_SKIPPED"; exit 1; }
+echo OK
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = OK ]
 }
 
 @test "Time Machine exclusion preserves depth-two volume discovery" {
@@ -4562,11 +4723,14 @@ sudo_apps=()
 brew_cask_apps=()
 blocked_apps=()
 manual_removal_apps=()
+leftover_notes=()
 app_details=()
 total_estimated_size=0
 rc=0
 _batch_scan_app_details || rc=$?
 printf 'RC=%s DETAILS=%s\n' "$rc" "${#app_details[@]}"
+# The note waits for the preview instead of printing over the scan spinner.
+printf 'NOTES=%s\n' "${leftover_notes[*]-}"
 # Plan must exist: one detail row, app-only (no leftover encoding of UNEXPECTED_*)
 [[ $rc -eq 0 && ${#app_details[@]} -eq 1 ]]
 printf 'DETAIL=%s\n' "${app_details[0]}"
@@ -4574,7 +4738,7 @@ INNER
 
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"RC=0 DETAILS=1"* ]] || return 1
-    [[ "$output" == *"leftover scan timed out; only the app bundle will be removed"* ]] || return 1
+    [[ "$output" == *"NOTES="*"|Leftovers kept (scan timed out)"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_DIAG"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_SYSTEM"* ]] || return 1
 }

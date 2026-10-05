@@ -133,6 +133,26 @@ EOF
 	[[ "$output" != *"Debug logging enabled"* ]]
 }
 
+@test "mole still answers version and help probes from a deleted cwd (#1679)" {
+	local vanished
+	vanished=$(mktemp -d "$HOME/cwd-probe.XXXXXX")
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" VANISHED="$vanished" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+cd "$VANISHED"
+rmdir "$VANISHED"
+# install.sh and mo update verify a fresh install with these two probes.
+"$PROJECT_ROOT/mole" --version > "$HOME/probe-version.out" 2>&1; echo "VERSION_RC=$?"
+"$PROJECT_ROOT/mole" --help > "$HOME/probe-help.out" 2>&1; echo "HELP_RC=$?"
+"$PROJECT_ROOT/mole" clean --dry-run > /dev/null 2>&1; echo "CLEAN_RC=$?"
+EOF
+	[[ "$output" == *"VERSION_RC=0"* ]] || { echo "$output"; cat "$HOME/probe-version.out"; return 1; }
+	[[ "$output" == *"HELP_RC=0"* ]] || { echo "$output"; cat "$HOME/probe-help.out"; return 1; }
+	# Every other command keeps refusing an unknown working directory.
+	[[ "$output" == *"CLEAN_RC=1"* ]] || { echo "$output"; return 1; }
+	grep -q 'Mole version' "$HOME/probe-version.out" || return 1
+	! grep -q 'Cannot access the current directory' "$HOME/probe-version.out" || return 1
+}
+
 @test "mole --version reports script version" {
 	expected_version="$(grep '^VERSION=' "$PROJECT_ROOT/mole" | head -1 | sed 's/VERSION=\"\(.*\)\"/\1/')"
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --version

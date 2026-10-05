@@ -1732,6 +1732,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
+debug_log() { echo "DEBUG:$*"; }
 note_activity() { :; }
 safe_clean() { echo "$1|$2"; }
 clean_dev_ai_agents
@@ -1739,7 +1740,8 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" != *"|Claude Code old version"* ]] || return 1
-    [[ "$output" == *"Claude Code old version · skipped (active symlink broken)"* ]] || return 1
+    [[ "$output" == *"DEBUG:Claude Code old version kept: active symlink broken"* ]] || return 1
+    [[ "$output" != *"skipped ("* ]] || return 1
 
     rm -f "$bin_dir/claude"
 }

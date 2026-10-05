@@ -2986,6 +2986,34 @@ EOF
         [ -d "$review_home/custom-fvm/versions/3.44.0" ]
 }
 
+@test "large files links the full path behind a two-segment label" {
+    local review_home="$HOME/large-review-short-path"
+    mkdir -p "$review_home/Library/Application Support/MobileSync/Backup/00008150-DEVICE" "$review_home/.gradle/caches"
+
+    run env HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+docker() { return 1; }
+defaults() { return 1; }
+format_path_link() { printf 'LINK<%s>TEXT<%s>' "$1" "${2:-}"; }
+du() { printf '2097152 %s\n' "${2:-/tmp}"; }
+run_with_timeout() {
+    shift
+    "$@"
+}
+check_large_file_candidates
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"LINK<$review_home/Library/Application Support/MobileSync/Backup>TEXT<…/MobileSync/Backup>"* ]] || { echo "$output"; return 1; }
+    # A path that is already short keeps its full form.
+    [[ "$output" == *"TEXT<~/.gradle/caches>"* ]] || { echo "$output"; return 1; }
+}
+
 @test "large files dates the irreplaceable rows and leaves caches undated" {
     local review_home="$HOME/large-review-dates"
     mkdir -p \

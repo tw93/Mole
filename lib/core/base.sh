@@ -960,12 +960,17 @@ percent_encode_path() {
 # Print a path as an OSC 8 file:// hyperlink so terminals keep it clickable
 # even when it contains spaces (auto-detection breaks on whitespace). Shows
 # the ~-abbreviated path; piped output and non-ANSI terminals get plain text.
+# An optional $2 replaces the visible text inside the link only: without a
+# link to carry the full path, plain text always shows the whole path.
 format_path_link() {
     local path="$1"
     local display="${path/#$HOME/~}"
     if ! is_ansi_supported 2> /dev/null; then
         printf '%s' "$display"
         return 0
+    fi
+    if [[ -n "${2:-}" ]]; then
+        display="$2"
     fi
     # ESC-backslash is the OSC 8 string terminator; kept in a variable since
     # a single-quoted printf format ending in \\ trips ShellCheck SC1003.

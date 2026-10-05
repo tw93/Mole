@@ -2778,7 +2778,9 @@ check_large_file_candidates() {
     # short size field, so it lands in a stable column and reads as a date on
     # its own. The review icon carries the review-only semantics;
     # format_path_link keeps the path clickable even with spaces (OSC 8 link,
-    # not terminal auto-linking).
+    # not terminal auto-linking). The label already names the location, so
+    # the link shows only the last two segments; the full path stays one
+    # click away, and plain-text output keeps it whole.
     _report_large_review_row() {
         local label="$1"
         local size_human="$2"
@@ -2786,8 +2788,15 @@ check_large_file_candidates() {
         local newest_date="${4:-}"
         local date_part=""
         [[ -n "$newest_date" ]] && date_part=" · ${GRAY}${newest_date}${NC}"
+        local shown="${path/#$HOME/~}"
+        local tail="${shown%/*}"
+        tail="${tail##*/}/${shown##*/}"
+        # shellcheck disable=SC2088 # compares the ~-abbreviated display text, not a path
+        if [[ "$shown" != "~/$tail" && "$shown" != "/$tail" && "$shown" != "$tail" ]]; then
+            shown="…/$tail"
+        fi
         stop_section_spinner
-        echo -e "  ${YELLOW}${ICON_REVIEW}${NC} ${label} · ${GREEN}${size_human}${NC}${date_part} · ${GRAY}$(format_path_link "$path")${NC}"
+        echo -e "  ${YELLOW}${ICON_REVIEW}${NC} ${label} · ${GREEN}${size_human}${NC}${date_part} · ${GRAY}$(format_path_link "$path" "$shown")${NC}"
         found_any=true
         start_section_spinner "Scanning large files..."
     }
