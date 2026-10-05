@@ -216,7 +216,15 @@ clean_user_essentials() {
     fi
     stop_section_spinner
 
-    safe_clean ~/Library/Logs/* "User app logs"
+    # Keep the DiagnosticReports directory itself: macOS cannot recreate it
+    # under the sandbox, so removing it silently disables crash reporting (#1689).
+    local -a user_log_targets=()
+    local log_entry
+    for log_entry in ~/Library/Logs/* ~/Library/Logs/DiagnosticReports/*; do
+        [[ "$log_entry" == "$HOME/Library/Logs/DiagnosticReports" ]] && continue
+        user_log_targets+=("$log_entry")
+    done
+    safe_clean "${user_log_targets[@]}" "User app logs"
 
     if [[ "${MOLE_SKIP_TRASH_CLEANUP:-0}" != "1" ]]; then
         clean_trash

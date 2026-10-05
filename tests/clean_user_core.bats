@@ -164,7 +164,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
-safe_clean() { echo "SAFE:$2"; }
+safe_clean() { echo "SAFE:${!#}"; }
 clean_trash() { echo "TRASH"; }
 _clean_recent_items() { :; }
 _clean_mail_downloads() { :; }
@@ -486,6 +486,30 @@ EOF
         echo "the ordinary candidate before the retarget was not cleaned"
         return 1
     }
+    rm -rf "$test_home"
+}
+
+@test "clean_user_essentials keeps the DiagnosticReports directory (#1689)" {
+    local test_home="$HOME/diag-home"
+    mkdir -p "$test_home/Library/Logs/DiagnosticReports"
+    touch "$test_home/Library/Logs/DiagnosticReports/App.ips"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=false
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ -d "$test_home/Library/Logs/DiagnosticReports" ]] || return 1
+    [[ ! -e "$test_home/Library/Logs/DiagnosticReports/App.ips" ]] || return 1
     rm -rf "$test_home"
 }
 
