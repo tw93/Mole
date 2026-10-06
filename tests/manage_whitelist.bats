@@ -621,3 +621,122 @@ EOF
     fi
     [ "$status" -eq 0 ]
 }
+
+# Drive the real clean whitelist menu with a stubbed selector. The stub returns
+# the preselected rows, minus the Gradle build cache row when GRADLE_ACTION is
+# "uncheck". Prints the preselected state, then the real cleanup-side verdict.
+run_gradle_menu() {
+    local action="$1"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" GRADLE_ACTION="$action" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+paginated_multi_select() {
+    shift
+    local -a opts=("$@")
+    local -a keep=()
+    local idx
+    local -a pre=()
+    IFS=',' read -ra pre <<< "${MOLE_PRESELECTED_INDICES:-}"
+    for idx in "${pre[@]}"; do
+        if [[ "${opts[$idx]}" == "Gradle build cache"* ]]; then
+            echo "GRADLE_PRESELECTED" >&2
+            [[ "$GRADLE_ACTION" == "uncheck" ]] && continue
+        fi
+        keep+=("$idx")
+    done
+    local IFS=','
+    MOLE_SELECTION_RESULT="${keep[*]:-}"
+    return 0
+}
+manage_whitelist clean > /dev/null
+echo "MENU_DONE"
+load_mole_whitelist "$HOME"
+probe="$HOME/.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"
+if is_path_whitelisted "$probe"; then
+    printf 'PROTECTED=%s\n' "${probe#"$HOME"/}"
+else
+    printf 'EXPOSED=%s\n' "${probe#"$HOME"/}"
+fi
+EOF
+}
+
+@test "Gradle menu row spelling matches the default protection (#458)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+row=$(get_all_cache_items | grep '^Gradle build cache')
+pattern="${row#*|}"
+pattern="${pattern%%|*}"
+pattern="${pattern/\$HOME/$HOME}"
+echo "ROW=$pattern"
+for default in "${DEFAULT_WHITELIST_PATTERNS[@]}"; do
+    [[ "$default" == "$pattern" ]] && echo "MATCHES_DEFAULT"
+done
+exit 0
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ROW=$HOME/.gradle/caches/*"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"MATCHES_DEFAULT"* ]] || { echo "$output"; return 1; }
+}
+
+@test "Gradle row starts checked and unchecking it exposes the build cache (#458)" {
+    rm -f "$WHITELIST_PATH"
+    run_gradle_menu uncheck
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"MENU_DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"GRADLE_PRESELECTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"EXPOSED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
+    [[ -f "$WHITELIST_PATH" ]] || return 1
+    ! grep -q '\.gradle/caches' "$WHITELIST_PATH" || { cat "$WHITELIST_PATH"; return 1; }
+
+    rm -f "$WHITELIST_PATH"
+    run_gradle_menu keep
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GRADLE_PRESELECTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
+}
+
+@test "a caches/* line kept as custom by an older menu shows checked and unchecking removes it" {
+    # Before the row matched the default, saving the menu wrote the unmatched
+    # default back as an absolute custom line that no row could clear.
+    mkdir -p "$(dirname "$WHITELIST_PATH")"
+    printf '%s\n' "$HOME/.gradle/caches/*" > "$WHITELIST_PATH"
+    run_gradle_menu uncheck
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"MENU_DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"GRADLE_PRESELECTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"EXPOSED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
+    ! grep -q '\.gradle/caches' "$WHITELIST_PATH" || { cat "$WHITELIST_PATH"; return 1; }
+}
+
+@test "legacy build-cache-*/* line shows checked, and unchecking removes both spellings" {
+    mkdir -p "$(dirname "$WHITELIST_PATH")"
+    # shellcheck disable=SC2088 # Exercise a saved literal tilde pattern.
+    printf '%s\n' '~/.gradle/caches/build-cache-*/*' > "$WHITELIST_PATH"
+    run_gradle_menu uncheck
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"MENU_DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"GRADLE_PRESELECTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"EXPOSED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
+    ! grep -q 'build-cache-\*' "$WHITELIST_PATH" || { cat "$WHITELIST_PATH"; return 1; }
+    ! grep -q '\.gradle/caches' "$WHITELIST_PATH" || { cat "$WHITELIST_PATH"; return 1; }
+
+    # A file saved with the row checked after #845 holds both lines: the row
+    # and the default the menu kept as custom. Unchecking must clear both.
+    # shellcheck disable=SC2088 # Exercise a saved literal tilde pattern.
+    printf '%s\n' '~/.gradle/caches/build-cache-*/*' "$HOME/.gradle/caches/*" > "$WHITELIST_PATH"
+    run_gradle_menu uncheck
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GRADLE_PRESELECTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"EXPOSED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
+    ! grep -q '\.gradle/caches' "$WHITELIST_PATH" || { cat "$WHITELIST_PATH"; return 1; }
+
+    # shellcheck disable=SC2088 # Exercise a saved literal tilde pattern.
+    printf '%s\n' '~/.gradle/caches/build-cache-*/*' > "$WHITELIST_PATH"
+    run_gradle_menu keep
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GRADLE_PRESELECTED"* ]] || { echo "$output"; return 1; }
+    # shellcheck disable=SC2088 # Exercise a saved literal tilde pattern.
+    grep -Fxq '~/.gradle/caches/*' "$WHITELIST_PATH" || { cat "$WHITELIST_PATH"; return 1; }
+    [[ "$output" == *"PROTECTED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
+}

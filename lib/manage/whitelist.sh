@@ -90,9 +90,13 @@ save_whitelist_patterns() {
 # Get all cache items with their patterns
 get_all_cache_items() {
     # Format: "display_name|pattern|category"
+    # The Gradle build cache row stands for the default ~/.gradle/caches/*
+    # protection, so it keeps that exact spelling: a narrower row never matches
+    # the default and unchecking it changes nothing (#458). clean_dev_jvm only
+    # lists the build-cache-* entries under this root.
     cat << 'EOF'
 Apple Mail cache|$HOME/Library/Caches/com.apple.mail/*|system_cache
-Gradle build cache (Android Studio, Gradle projects)|$HOME/.gradle/caches/build-cache-*/*|ide_cache
+Gradle build cache (Android Studio, Gradle projects)|$HOME/.gradle/caches/*|ide_cache
 Gradle daemon processes cache|$HOME/.gradle/daemon/*|ide_cache
 Gradle worker cache|$HOME/.gradle/workers/*|ide_cache
 Xcode DerivedData (build outputs, indexes)|$HOME/Library/Developer/Xcode/DerivedData/*|ide_cache
@@ -251,6 +255,12 @@ load_whitelist() {
             # task IDs are migrated away.
             if [[ "$mode" == "optimize" ]] && optimize_whitelist_pattern_is_retired "$pattern"; then
                 continue
+            fi
+            # The menu saved the Gradle build cache row as build-cache-*/*
+            # after #845. Read that line as the row so it shows checked and
+            # unchecking clears it; keeping it saves the wider default instead.
+            if [[ "$mode" == "clean" ]] && patterns_equivalent "$pattern" "$HOME/.gradle/caches/build-cache-*/*"; then
+                pattern="$HOME/.gradle/caches/*"
             fi
             local duplicate="false"
             if [[ ${#unique_patterns[@]} -gt 0 ]]; then
