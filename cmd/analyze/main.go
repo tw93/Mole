@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -19,13 +18,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Scanning limits to prevent infinite scanning
-const (
-	dirSizeTimeout   = 500 * time.Millisecond // Max time to calculate a single directory size
-	maxFilesPerDir   = 10000                  // Max files to scan per directory
-	maxScanDepth     = 10                     // Max recursion depth (shallow scan)
-	shallowScanDepth = 3                      // Depth for quick size estimation
-)
+// dirWalkSem bounds the extra goroutines used to walk directory trees.
+// Walkers fall back to walking inline when no slot is free.
+var dirWalkSem = make(chan struct{}, runtime.NumCPU()*4)
 
 // ANSI color codes
 const (
@@ -77,7 +72,7 @@ var cleanablePatterns = map[string]bool{
 	".vs":           true,
 }
 
-// Skip patterns for scanning
+// System directories: still sized and listed, but never deletable at drive root
 var skipPatterns = map[string]bool{
 	"$Recycle.Bin":              true,
 	"System Volume Information": true,
@@ -558,11 +553,6 @@ func scanDirectory(path string) ([]dirEntry, []fileEntry, int64, error) {
 		name := entry.Name()
 		entryPath := filepath.Join(path, name)
 
-		// Skip system directories
-		if skipPatterns[name] {
-			continue
-		}
-
 		wg.Add(1)
 		sem <- struct{}{}
 
@@ -626,84 +616,47 @@ func scanDirectory(path string) ([]dirEntry, []fileEntry, int64, error) {
 	return dirEntries, largeFiles, totalSize, nil
 }
 
-// calculateDirSize calculates the size of a directory with timeout and limits
-// Uses shallow scanning for speed - estimates based on first few levels
+// calculateDirSize returns the total size of all files under path.
+// The whole tree is walked (hidden directories included) so the result is
+// exact; symlinks and junctions are not followed, so nothing is counted twice.
 func calculateDirSize(path string) int64 {
-	ctx, cancel := context.WithTimeout(context.Background(), dirSizeTimeout)
-	defer cancel()
-
 	var size int64
-	var fileCount int64
-
-	// Use a channel to signal completion
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		quickScanDir(ctx, path, 0, &size, &fileCount)
-	}()
-
-	select {
-	case <-done:
-		// Completed normally
-	case <-ctx.Done():
-		// Timeout - return partial size (already accumulated)
-	}
-
+	var wg sync.WaitGroup
+	walkDirSize(path, &size, &wg)
+	wg.Wait()
 	return size
 }
 
-// quickScanDir does a fast shallow scan for size estimation
-func quickScanDir(ctx context.Context, path string, depth int, size *int64, fileCount *int64) {
-	// Check context cancellation
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-
-	// Limit depth for speed
-	if depth > shallowScanDepth {
-		return
-	}
-
-	// Limit total files scanned
-	if atomic.LoadInt64(fileCount) > maxFilesPerDir {
-		return
-	}
-
+// walkDirSize adds the sizes of files under path to size, handing
+// subdirectories to new goroutines while dirWalkSem has free slots.
+func walkDirSize(path string, size *int64, wg *sync.WaitGroup) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return
 	}
 
 	for _, entry := range entries {
-		// Check cancellation
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		if atomic.LoadInt64(fileCount) > maxFilesPerDir {
-			return
-		}
-
 		entryPath := filepath.Join(path, entry.Name())
 
+		// Junctions and symlinks report IsDir() == false, so they are not followed
 		if entry.IsDir() {
-			name := entry.Name()
-			// Skip hidden and system directories
-			if skipPatterns[name] || (strings.HasPrefix(name, ".") && len(name) > 1) {
-				continue
+			select {
+			case dirWalkSem <- struct{}{}:
+				wg.Add(1)
+				go func(p string) {
+					defer wg.Done()
+					defer func() { <-dirWalkSem }()
+					walkDirSize(p, size, wg)
+				}(entryPath)
+			default:
+				walkDirSize(entryPath, size, wg)
 			}
-			quickScanDir(ctx, entryPath, depth+1, size, fileCount)
-		} else {
-			info, err := entry.Info()
-			if err == nil {
-				atomic.AddInt64(size, info.Size())
-				atomic.AddInt64(fileCount, 1)
-			}
+			continue
+		}
+
+		info, err := entry.Info()
+		if err == nil {
+			atomic.AddInt64(size, info.Size())
 		}
 	}
 }

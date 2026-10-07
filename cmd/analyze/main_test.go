@@ -106,6 +106,32 @@ func TestCalculateDirSize(t *testing.T) {
 	}
 }
 
+func TestCalculateDirSizeCountsDeepAndHiddenDirs(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "mole_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Deeper than the old shallow-scan depth, inside a hidden directory
+	deepDir := filepath.Join(tmpDir, ".venv", "a", "b", "c", "d", "e")
+	if err := os.MkdirAll(deepDir, 0755); err != nil {
+		t.Fatalf("Failed to create dirs: %v", err)
+	}
+	content := []byte("deep file")
+	if err := os.WriteFile(filepath.Join(deepDir, "deep.txt"), content, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "top.txt"), content, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	size := calculateDirSize(tmpDir)
+	if size != int64(2*len(content)) {
+		t.Errorf("calculateDirSize() = %d, expected %d", size, 2*len(content))
+	}
+}
+
 func TestNewModel(t *testing.T) {
 	model := newModel("C:\\")
 
