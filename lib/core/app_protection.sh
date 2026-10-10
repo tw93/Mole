@@ -1054,29 +1054,44 @@ mole_is_playcover_app() {
 }
 
 # Prints the installed bundle a PlayCover launcher alias points at. Only a real
-# directory directly in ~/Applications/PlayCover qualifies, and every entry in
-# it must be a symlink to the same-named entry of one installed bundle; a
-# Finder .DS_Store is the one regular file tolerated.
+# directory directly in ~/Applications/PlayCover qualifies, and every link in it
+# must point at the same-named entry of one installed bundle. Info.plist is a
+# link in older aliases and a copy since PlayCover's macOS 27 change
+# (LaunchServices refuses to open the alias while it is a link); a copy must
+# carry the bundle's id. A Finder .DS_Store is the other regular file tolerated.
 mole_playcover_alias_target() {
     local alias_path="$1"
     [[ "${alias_path%/*}" == "$HOME/Applications/PlayCover" ]] || return 1
-    [[ -d "$alias_path" && ! -L "$alias_path" && -L "$alias_path/Info.plist" ]] || return 1
+    [[ -d "$alias_path" && ! -L "$alias_path" && -e "$alias_path/Info.plist" ]] || return 1
 
-    local plist_link=""
-    plist_link=$(readlink "$alias_path/Info.plist" 2> /dev/null) || return 1
-    local target="${plist_link%/Info.plist}"
-    [[ "$target/Info.plist" == "$plist_link" ]] || return 1
-    mole_is_playcover_app "$target" || return 1
-
-    local entry link
+    local target="" entry link name
     for entry in "$alias_path"/* "$alias_path"/.[!.]* "$alias_path"/..?*; do
-        [[ -e "$entry" || -L "$entry" ]] || continue
-        if [[ ! -L "$entry" ]]; then
-            [[ "${entry##*/}" == ".DS_Store" && -f "$entry" ]] && continue
+        [[ -L "$entry" ]] || continue
+        link=$(readlink "$entry" 2> /dev/null) || return 1
+        name="${entry##*/}"
+        [[ "$link" == /*"/$name" ]] || return 1
+        if [[ -z "$target" ]]; then
+            target="${link%/"$name"}"
+        elif [[ "$link" != "$target/$name" ]]; then
             return 1
         fi
-        link=$(readlink "$entry" 2> /dev/null) || return 1
-        [[ "$link" == "$target/${entry##*/}" ]] || return 1
+    done
+    [[ -n "$target" ]] && mole_is_playcover_app "$target" || return 1
+
+    local alias_id="" bundle_id=""
+    for entry in "$alias_path"/* "$alias_path"/.[!.]* "$alias_path"/..?*; do
+        [[ -e "$entry" && ! -L "$entry" ]] || continue
+        case "${entry##*/}" in
+            .DS_Store) [[ -f "$entry" ]] && continue ;;
+            Info.plist)
+                if [[ -f "$entry" ]]; then
+                    alias_id=$(plutil -extract CFBundleIdentifier raw "$entry" 2> /dev/null || echo "")
+                    bundle_id=$(plutil -extract CFBundleIdentifier raw "$target/Info.plist" 2> /dev/null || echo "")
+                    [[ -n "$alias_id" && "$alias_id" == "$bundle_id" ]] && continue
+                fi
+                ;;
+        esac
+        return 1
     done
     printf '%s\n' "$target"
 }
@@ -1782,6 +1797,10 @@ find_app_files() {
             "$playcover_root/Entitlements/$bundle_id.plist"; do
             [[ -f "$playcover_file" && ! -L "$playcover_file" ]] && files_to_clean+=("$playcover_file")
         done
+        # Current PlayCover keeps each app's key maps in a folder of that name;
+        # the .plist above is the older single-file layout.
+        [[ -d "$playcover_root/Keymapping/$bundle_id" && ! -L "$playcover_root/Keymapping/$bundle_id" ]] &&
+            files_to_clean+=("$playcover_root/Keymapping/$bundle_id")
         local playcover_alias
         for playcover_alias in "$HOME/Applications/PlayCover"/*.[aA][pP][pP]; do
             [[ -d "$playcover_alias" ]] || continue

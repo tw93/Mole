@@ -424,8 +424,23 @@ find_app_files 'invalid_bundle' ''"
         : > "$root/$f"
     done
 
+    mkdir -p "$root/Keymapping/fit.mole.probe" "$root/Keymapping/fit.mole.probex"
+    : > "$root/Keymapping/fit.mole.probe/default.plist"
+    # Since PlayCover's macOS 27 change the alias holds a copy of Info.plist.
+    mkdir -p "$HOME/Applications/PlayCover/Mole Probe Copy.app" "$HOME/Applications/PlayCover/Forged.app"
+    cp "$bundle/Info.plist" "$HOME/Applications/PlayCover/Mole Probe Copy.app/Info.plist"
+    ln -s "$bundle/MoleProbe" "$HOME/Applications/PlayCover/Mole Probe Copy.app/MoleProbe"
+    # A copied plist naming another app is not this bundle's alias.
+    printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.other</string></dict></plist>' \
+        > "$HOME/Applications/PlayCover/Forged.app/Info.plist"
+    ln -s "$bundle/MoleProbe" "$HOME/Applications/PlayCover/Forged.app/MoleProbe"
+
     result=$(find_app_files "fit.mole.probe" "Mole Probe" "$bundle")
 
+    [[ "$result" == *"$root/Keymapping/fit.mole.probe"$'\n'* || "$result" == *"$root/Keymapping/fit.mole.probe" ]] || return 1
+    [[ "$result" != *"fit.mole.probex"* ]] || return 1
+    [[ "$result" == *"$HOME/Applications/PlayCover/Mole Probe Copy.app"* ]] || return 1
+    [[ "$result" != *"Forged.app"* ]] || return 1
     [[ "$result" == *"$root/App Settings/fit.mole.probe.plist"* ]] || return 1
     [[ "$result" == *"$root/Keymapping/fit.mole.probe.plist"* ]] || return 1
     [[ "$result" == *"$root/Entitlements/fit.mole.probe.plist"* ]] || return 1
