@@ -1228,3 +1228,226 @@ INNER
     [[ "$output" != *"UNEXPECTED:"* ]] || return 1
     [[ -f "$staging/marketplace-upgrade-old/payload" ]]
 }
+
+# Codex app-server daemon releases (#1704). The stub reports each removal the
+# real guard approves, and SKIP for a release the guard refused on its own.
+codex_daemon_fixture() {
+    local root="$HOME/.codex/packages/app-server-daemon"
+    mkdir -p "$root/releases" "$root/standalone/0.150.0"
+    local name
+    for name in 0.157.0-aarch64-apple-darwin 0.158.0-aarch64-apple-darwin \
+        0.159.0-aarch64-apple-darwin 0.160.1-aarch64-apple-darwin \
+        0.161.0-aarch64-apple-darwin local-0a1b2c3d4e5f-aarch64-apple-darwin; do
+        mkdir -p "$root/releases/$name/bin"
+        touch "$root/releases/$name/bin/codex"
+    done
+    mkdir -p "$root/releases/.unpack-tmp"
+    ln -s "$root/releases/0.161.0-aarch64-apple-darwin" "$root/current"
+    printf '%s' "0.160.1-aarch64-apple-darwin" > "$root/auto-update-version"
+    : > "$root/install.lock"
+}
+
+codex_daemon_run() {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN="${1:-false}" \
+        BUSY_RELEASE="${2:-}" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+_MOLE_COMPLETE_LSOF_MODE=direct
+run_with_timeout() { shift; "$@"; }
+lsof() {
+    if [[ -n "$BUSY_RELEASE" && "$*" == *"/releases/$BUSY_RELEASE"* ]]; then
+        printf 'p1\nn%s/bin/codex\n' "$HOME/.codex/packages/app-server-daemon/releases/$BUSY_RELEASE"
+        return 0
+    fi
+    return 1
+}
+is_path_whitelisted() { return 1; }
+note_activity() { :; }
+safe_clean_guarded() {
+    local guard="$1"
+    shift
+    local label="${*: -1}" path rc
+    for path in "${@:1:$#-1}"; do
+        rc=0
+        "$guard" "$path" || rc=$?
+        if [[ $rc -eq 0 ]]; then
+            echo "REMOVE:$label|${path##*/}"
+            [[ "$DRY_RUN" == "true" ]] || rm -rf "$path" # SAFE: test fixture under the temp HOME.
+        elif [[ "$_MOLE_SAFE_CLEAN_SKIP_PATH" == "$path" ]]; then
+            echo "SKIP:${path##*/}"
+        else
+            return 75
+        fi
+    done
+}
+clean_codex_daemon_releases
+if /usr/bin/python3 -c 'import fcntl, sys
+f = open(sys.argv[1], "r+")
+fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)' "$HOME/.codex/packages/app-server-daemon/install.lock" 2> /dev/null; then
+    echo "LOCK_RELEASED"
+fi
+INNER
+}
+
+@test "clean_codex_daemon_releases removes only superseded releases (#1704)" {
+    codex_daemon_fixture
+    local releases="$HOME/.codex/packages/app-server-daemon/releases"
+
+    codex_daemon_run false 0.158.0-aarch64-apple-darwin
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"REMOVE:Codex daemon old releases|0.157.0-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" == *"REMOVE:Codex daemon old releases|0.159.0-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" == *"REMOVE:Codex daemon old releases|local-0a1b2c3d4e5f-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" == *"LOCK_RELEASED"* ]] || return 1
+    [[ ! -d "$releases/0.157.0-aarch64-apple-darwin" ]] || return 1
+    [[ ! -d "$releases/0.159.0-aarch64-apple-darwin" ]] || return 1
+    # current, the auto-update-version release, an open release, a name that
+    # is not a release, and the legacy standalone layout all stay.
+    [[ -f "$releases/0.161.0-aarch64-apple-darwin/bin/codex" ]] || return 1
+    [[ -f "$releases/0.160.1-aarch64-apple-darwin/bin/codex" ]] || return 1
+    [[ -f "$releases/0.158.0-aarch64-apple-darwin/bin/codex" ]] || return 1
+    [[ -d "$releases/.unpack-tmp" ]] || return 1
+    [[ -d "$HOME/.codex/packages/app-server-daemon/standalone/0.150.0" ]]
+}
+
+@test "clean_codex_daemon_releases skips while an install holds the lockf lock (#1704)" {
+    codex_daemon_fixture
+    local lock="$HOME/.codex/packages/app-server-daemon/install.lock"
+    local ready="$HOME/lock-ready"
+    rm -f "$ready"
+    /usr/bin/python3 -c 'import fcntl, sys, time
+f = open(sys.argv[1], "r+")
+fcntl.lockf(f, fcntl.LOCK_EX)
+open(sys.argv[2], "w").close()
+time.sleep(20)' "$lock" "$ready" &
+    local holder=$!
+    local waited=0
+    while [[ ! -f "$ready" && $waited -lt 50 ]]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    [[ -f "$ready" ]] || {
+        kill "$holder" 2> /dev/null || true
+        return 1
+    }
+
+    codex_daemon_run false
+
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"REMOVE:"* ]] || return 1
+    [[ -d "$HOME/.codex/packages/app-server-daemon/releases/0.157.0-aarch64-apple-darwin" ]]
+}
+
+@test "clean_codex_daemon_releases fails closed on a dangling current or unreadable marker (#1704)" {
+    codex_daemon_fixture
+    local root="$HOME/.codex/packages/app-server-daemon"
+    rm "$root/current"
+    ln -s "$root/releases/0.999.0-aarch64-apple-darwin" "$root/current"
+
+    codex_daemon_run false
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"REMOVE:"* ]] || return 1
+
+    rm "$root/current"
+    ln -s "$root/releases/0.161.0-aarch64-apple-darwin" "$root/current"
+    printf 'not a release\n' > "$root/auto-update-version"
+
+    codex_daemon_run false
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"REMOVE:"* ]] || return 1
+    [[ -d "$root/releases/0.157.0-aarch64-apple-darwin" ]]
+}
+
+@test "clean_codex_daemon_releases dry run lists the same plan and deletes nothing (#1704)" {
+    codex_daemon_fixture
+    local releases="$HOME/.codex/packages/app-server-daemon/releases"
+
+    codex_daemon_run true
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"REMOVE:Codex daemon old releases|0.157.0-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" == *"REMOVE:Codex daemon old releases|0.158.0-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" == *"REMOVE:Codex daemon old releases|0.159.0-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" != *"0.160.1-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" != *"REMOVE:Codex daemon old releases|0.161.0"* ]] || return 1
+    [[ -d "$releases/0.157.0-aarch64-apple-darwin" ]]
+}
+
+@test "clean_codex_daemon_releases skips an install.lock.d protocol and a symlinked releases root (#1704)" {
+    codex_daemon_fixture
+    local root="$HOME/.codex/packages/app-server-daemon"
+    mkdir "$root/install.lock.d"
+
+    codex_daemon_run false
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"REMOVE:"* ]] || return 1
+
+    rmdir "$root/install.lock.d"
+    mv "$root/releases" "$HOME/elsewhere-releases"
+    ln -s "$HOME/elsewhere-releases" "$root/releases"
+
+    codex_daemon_run false
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"REMOVE:"* ]] || return 1
+    [[ -d "$HOME/elsewhere-releases/0.157.0-aarch64-apple-darwin" ]] || return 1
+    rm "$root/releases"
+    rm -rf "$HOME/elsewhere-releases"
+}
+
+@test "clean_codex_daemon_releases says so when open files cannot be checked (#1704)" {
+    codex_daemon_fixture
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+_MOLE_COMPLETE_LSOF_MODE=unknown
+_mole_complete_lsof_mode() { return 2; }
+is_path_whitelisted() { return 1; }
+note_activity() { :; }
+safe_clean_guarded() { echo "UNEXPECTED:$*"; }
+clean_codex_daemon_releases
+INNER
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"Codex daemon old releases · skipped (open-file check unavailable)"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED:"* ]]
+}
+
+@test "clean_codex_daemon_releases removes through the real safe_clean_guarded sink (#1704)" {
+    codex_daemon_fixture
+    local releases="$HOME/.codex/packages/app-server-daemon/releases"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+_MOLE_COMPLETE_LSOF_MODE=direct
+run_with_timeout() { shift; "$@"; }
+lsof() { return 1; }
+clean_codex_daemon_releases
+INNER
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Codex daemon old releases"* ]] || return 1
+    [[ ! -d "$releases/0.157.0-aarch64-apple-darwin" ]] || return 1
+    [[ ! -d "$releases/local-0a1b2c3d4e5f-aarch64-apple-darwin" ]] || return 1
+    [[ -d "$releases/0.161.0-aarch64-apple-darwin" ]] || return 1
+    [[ -d "$releases/0.160.1-aarch64-apple-darwin" ]] || return 1
+    [[ -d "$releases/.unpack-tmp" ]]
+}

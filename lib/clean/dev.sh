@@ -4640,6 +4640,234 @@ clean_codex_desktop_staging() {
     done
 }
 
+# --- Codex app-server daemon releases (#1704) ---------------------------------
+# Codex unpacks every daemon update into releases/<version>-<target>, moves
+# `current` to it, and never removes the earlier releases (about 320 MB each).
+# The installer holds install.lock with POSIX lockf while it unpacks a release
+# and switches current/auto-update-version. macOS keeps flock and lockf in one
+# lock table, so the pruner holds that lock from the keep-set read through the
+# last removal and skips the step while an install holds it. Non-targets: the
+# release `current` resolves to, the release named in auto-update-version, any
+# release with an open file, install.lock, the marker, `current` itself and the
+# legacy standalone/ layout beside releases/.
+_MOLE_CODEX_DAEMON_ROOT=""
+_MOLE_CODEX_DAEMON_RELEASES=""
+_MOLE_CODEX_DAEMON_RELEASES_PHYSICAL=""
+_MOLE_CODEX_DAEMON_KEEP=""
+
+# Stable installs are <version>-<target>; every other install Codex prepares is
+# local-<package digest>-<target>.
+_codex_daemon_release_name_ok() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+[-A-Za-z0-9._]*$ || "$1" =~ ^local-[0-9a-f]{8,}-[A-Za-z0-9._-]+$ ]]
+}
+
+# Sets _MOLE_CODEX_DAEMON_KEEP to "|current|marker|". Fails closed when
+# `current` is missing, dangling or points outside releases/, or when the
+# marker exists but does not name a release.
+_codex_daemon_resolve_keep() {
+    local root="$1"
+    local releases_physical="$2"
+    _MOLE_CODEX_DAEMON_KEEP=""
+
+    [[ -L "$root/current" ]] || return 1
+    local current_physical=""
+    current_physical=$(cd -P "$root/current" 2> /dev/null && pwd -P) || return 1
+    [[ "${current_physical%/*}" == "$releases_physical" ]] || return 1
+    local current_name="${current_physical##*/}"
+    _codex_daemon_release_name_ok "$current_name" || return 1
+    local keep="|${current_name}|"
+
+    local marker="$root/auto-update-version"
+    if [[ -e "$marker" || -L "$marker" ]]; then
+        [[ -f "$marker" && ! -L "$marker" ]] || return 1
+        local marker_name=""
+        # Codex writes the name without a trailing newline.
+        IFS= read -r marker_name < "$marker" || true
+        marker_name="${marker_name%$'\r'}"
+        _codex_daemon_release_name_ok "$marker_name" || return 1
+        keep="${keep}${marker_name}|"
+    fi
+    _MOLE_CODEX_DAEMON_KEEP="$keep"
+}
+
+# Takes install.lock on fd 9 without blocking. 0 = held until
+# _codex_daemon_lock_release, 1 = an install holds it, 2 = could not tell;
+# a signal status passes through.
+# The lock lives on bash's open file description, so it outlasts the short
+# perl call that takes it.
+_codex_daemon_lock_acquire() {
+    local lock_file="$1"
+    [[ -f "$lock_file" && ! -L "$lock_file" && -x /usr/bin/perl ]] || return 2
+    { exec 9<> "$lock_file"; } 2> /dev/null || return 2
+    local lock_rc=0
+    /usr/bin/perl -e 'use Fcntl qw(:flock); open(my $fh, "+<&=9") or exit 2;
+        exit(flock($fh, LOCK_EX | LOCK_NB) ? 0 : ($!{EWOULDBLOCK} ? 1 : 2))' 2> /dev/null || lock_rc=$?
+    if [[ $lock_rc -ne 0 ]]; then
+        exec 9>&-
+        if [[ $lock_rc -eq 1 ]] || mole_rc_signal "$lock_rc"; then
+            return "$lock_rc"
+        fi
+        return 2
+    fi
+    return 0
+}
+
+_codex_daemon_lock_release() {
+    exec 9>&-
+}
+
+# 0 = a process has a file in the release open, 1 = idle, 2 = could not tell;
+# signal statuses pass through.
+_codex_daemon_release_open_state() {
+    local rc=0
+    codex_sparkle_staging_has_open_files "$1" || rc=$?
+    if [[ $rc -eq 0 || $rc -eq 1 ]] || mole_rc_signal "$rc"; then
+        return "$rc"
+    fi
+    return 2
+}
+
+# safe_clean_guarded callback, run with install.lock still held: reread the
+# keep set, recheck the path and open files, then bind the approved directory
+# for safe_remove. A refusal skips only this release unless `current` broke.
+_codex_daemon_release_delete_guard() {
+    local path="$1"
+    _MOLE_SAFE_CLEAN_SKIP_PATH=""
+    _MOLE_CLEAN_GUARD_REASON="daemon pointer changed"
+    _codex_daemon_resolve_keep "$_MOLE_CODEX_DAEMON_ROOT" "$_MOLE_CODEX_DAEMON_RELEASES_PHYSICAL" || return 1
+
+    _MOLE_SAFE_CLEAN_SKIP_PATH="$path"
+    [[ "$_MOLE_CODEX_DAEMON_KEEP" != *"|${path##*/}|"* ]] || return 1
+    codex_staging_physical_path "$path" "$_MOLE_CODEX_DAEMON_RELEASES" > /dev/null || return 1
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        _MOLE_SAFE_CLEAN_SKIP_PATH=""
+        return 0
+    fi
+
+    _mole_snapshot_path_identity "$path" || return 1
+    [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "$_MOLE_CODEX_DAEMON_RELEASES_PHYSICAL" ]] || return 1
+    local expected_parent="$_MOLE_PATH_SNAPSHOT_PARENT"
+    local expected_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+    local expected_target_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+    local open_rc=0
+    _codex_daemon_release_open_state "$path" || open_rc=$?
+    if mole_rc_signal "$open_rc"; then
+        return "$open_rc"
+    fi
+    [[ $open_rc -eq 1 ]] || return 1
+    _mole_path_matches_identity "$path" "$expected_parent" \
+        "$expected_parent_id" "$expected_target_id" || return 1
+
+    _MOLE_SAFE_CLEAN_BOUND_PATH="$path"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT="$expected_parent"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT_ID="$expected_parent_id"
+    _MOLE_SAFE_CLEAN_EXPECTED_TARGET_ID="$expected_target_id"
+    _MOLE_SAFE_CLEAN_SKIP_PATH=""
+    return 0
+}
+
+_clean_codex_daemon_releases_locked() {
+    local root="$1"
+    local releases_dir="$2"
+    local releases_physical="$3"
+
+    if ! _codex_daemon_resolve_keep "$root" "$releases_physical"; then
+        debug_log "Codex daemon releases skipped: current or auto-update-version unreadable"
+        return 0
+    fi
+
+    local -a candidates=()
+    local entry open_rc open_unknown=false
+    while IFS= read -r -d '' entry; do
+        _codex_daemon_release_name_ok "${entry##*/}" || continue
+        [[ "$_MOLE_CODEX_DAEMON_KEEP" != *"|${entry##*/}|"* ]] || continue
+        codex_staging_physical_path "$entry" "$releases_dir" > /dev/null || continue
+        mole_cleanup_targets_exist "$entry" || continue
+        open_rc=0
+        _codex_daemon_release_open_state "$entry" || open_rc=$?
+        if mole_rc_signal "$open_rc"; then
+            _mole_record_clean_cancellation "$open_rc"
+            return "$open_rc"
+        fi
+        if [[ $open_rc -ne 1 ]]; then
+            [[ $open_rc -eq 0 ]] || open_unknown=true
+            debug_log "Codex daemon release kept (in use or unknown): $entry"
+            continue
+        fi
+        candidates+=("$entry")
+    done < <(command find -P "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+    # Without a complete lsof view (no sudo yet) nothing can be called idle;
+    # say so instead of letting the preview look like there is nothing to do.
+    if [[ "$open_unknown" == "true" ]]; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Codex daemon old releases · skipped (open-file check unavailable)"
+        note_activity
+    fi
+    [[ ${#candidates[@]} -gt 0 ]] || return 0
+
+    _MOLE_CODEX_DAEMON_ROOT="$root"
+    _MOLE_CODEX_DAEMON_RELEASES="$releases_dir"
+    _MOLE_CODEX_DAEMON_RELEASES_PHYSICAL="$releases_physical"
+    local clean_rc=0
+    safe_clean_guarded _codex_daemon_release_delete_guard \
+        "${candidates[@]}" "Codex daemon old releases" || clean_rc=$?
+    if mole_rc_signal "$clean_rc"; then
+        return "$clean_rc"
+    fi
+    [[ $clean_rc -eq 75 ]] && debug_log "Codex daemon releases stopped: ${_MOLE_CLEAN_GUARD_REASON:-guard refused}"
+    return 0
+}
+
+clean_codex_daemon_releases() {
+    local root="$HOME/.codex/packages/app-server-daemon"
+    local releases_dir="$root/releases"
+    [[ -d "$releases_dir" ]] || return 0
+
+    local releases_physical=""
+    if ! releases_physical=$(codex_staging_physical_path "$releases_dir" "$releases_dir"); then
+        debug_log "Codex daemon releases skipped: unsafe releases root"
+        return 0
+    fi
+
+    # Only the current release on disk is the common case; skip the lock and
+    # lsof work when no other release directory exists.
+    local entry release_count=0
+    while IFS= read -r -d '' entry; do
+        _codex_daemon_release_name_ok "${entry##*/}" && release_count=$((release_count + 1))
+    done < <(command find -P "$releases_dir" -mindepth 1 -maxdepth 1 -type d -print0 2> /dev/null)
+    [[ $release_count -gt 1 ]] || return 0
+
+    if is_path_whitelisted "$releases_dir"; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Codex daemon old releases · would skip (whitelist)"
+        else
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Codex daemon old releases · skipped (whitelist)"
+        fi
+        note_activity
+        return 0
+    fi
+
+    # Platforms without lockf or flock use an install.lock.d ownership
+    # protocol instead; never guess at it.
+    if [[ -e "$root/install.lock.d" || -L "$root/install.lock.d" ]]; then
+        debug_log "Codex daemon releases skipped: install.lock.d present"
+        return 0
+    fi
+    local lock_rc=0
+    _codex_daemon_lock_acquire "$root/install.lock" || lock_rc=$?
+    if mole_rc_signal "$lock_rc"; then
+        _mole_record_clean_cancellation "$lock_rc"
+        return "$lock_rc"
+    fi
+    if [[ $lock_rc -ne 0 ]]; then
+        debug_log "Codex daemon releases skipped: install lock busy or unavailable ($lock_rc)"
+        return 0
+    fi
+    local rc=0
+    _clean_codex_daemon_releases_locked "$root" "$releases_dir" "$releases_physical" || rc=$?
+    _codex_daemon_lock_release
+    return "$rc"
+}
+
 # --- Codex Crashpad pending crash reports (#1490) -----------------------------
 # Crash reports parked in Crashpad's pending queue are disposable diagnostics,
 # and a wedged uploader can grow the queue pathologically (measured on a real
@@ -5357,6 +5585,8 @@ clean_dev_misc() {
     clean_codex_runtimes
     # Sparkle uses random first-level directories for each update installation.
     clean_codex_desktop_staging
+    # Superseded app-server daemon releases (#1704), under the installer lock.
+    clean_codex_daemon_releases
     # Stale Crashpad pending crash reports (#1490); age, process, crash-handler,
     # and open-file gated, direct children of the pending queue only.
     clean_codex_crashpad_pending
