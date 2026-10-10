@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -19,13 +18,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Scanning limits to prevent infinite scanning
-const (
-	dirSizeTimeout   = 500 * time.Millisecond // Max time to calculate a single directory size
-	maxFilesPerDir   = 10000                  // Max files to scan per directory
-	maxScanDepth     = 10                     // Max recursion depth (shallow scan)
-	shallowScanDepth = 3                      // Depth for quick size estimation
-)
+// dirWalkSem bounds the extra goroutines used to walk directory trees.
+// Walkers fall back to walking inline when no slot is free.
+var dirWalkSem = make(chan struct{}, runtime.NumCPU()*4)
 
 // ANSI color codes
 const (
@@ -77,7 +72,7 @@ var cleanablePatterns = map[string]bool{
 	".vs":           true,
 }
 
-// Skip patterns for scanning
+// System directories: still sized and listed, but never deletable at drive root
 var skipPatterns = map[string]bool{
 	"$Recycle.Bin":              true,
 	"System Volume Information": true,
@@ -109,23 +104,29 @@ func isProtectedPath(path string) bool {
 	}
 	absPath = strings.ToLower(absPath)
 
-	// Check against protected paths
+	// A GLOBALROOT device path reaches a volume through the object namespace, so
+	// the components after it are not folders on that volume. Refuse it.
+	if strings.HasSuffix(filepath.VolumeName(absPath), `\globalroot`) {
+		return true
+	}
+
+	// Match on the path inside its volume, so C:\, \\server\share\, \\?\C:\ and
+	// \\?\Volume{GUID}\ spellings of the same location are protected alike.
+	rel := volumeRelativePath(absPath)
+
+	// Check against protected paths, on every volume
 	for _, protected := range protectedPaths {
-		protectedLower := strings.ToLower(protected)
-		if absPath == protectedLower || strings.HasPrefix(absPath, protectedLower+`\`) {
+		protectedRel := volumeRelativePath(strings.ToLower(protected))
+		if rel == protectedRel || strings.HasPrefix(rel, protectedRel+`\`) {
 			return true
 		}
 	}
 
-	// Check against skip patterns (system directories)
-	baseName := strings.ToLower(filepath.Base(absPath))
+	// Check against skip patterns (system directories) directly under a volume root,
+	// e.g. D:\Windows, not C:\Projects\Windows
 	for pattern := range skipPatterns {
-		if strings.ToLower(pattern) == baseName {
-			// Only protect if it's at a root level (e.g., C:\Windows, not C:\Projects\Windows)
-			parent := filepath.Dir(absPath)
-			if len(parent) <= 3 { // e.g., "C:\"
-				return true
-			}
+		if rel == `\`+strings.ToLower(pattern) {
+			return true
 		}
 	}
 
@@ -140,6 +141,25 @@ func isProtectedPath(path string) bool {
 	}
 
 	return false
+}
+
+// volumeRelativePath returns an absolute, lowercased path without its volume
+// (`c:`, `\\server\share`, `\\?\c:`, `\\?\volume{guid}`), starting with a separator.
+func volumeRelativePath(absPath string) string {
+	p := absPath
+	// Before Go 1.27, VolumeName counts host and share only for \\.\UNC\, so
+	// \\?\UNC\host\share\x would yield \host\share\x. Spell it as plain UNC.
+	for _, prefix := range []string{`\\?\unc\`, `\\.\unc\`, `\??\unc\`} {
+		if strings.HasPrefix(p, prefix) {
+			p = `\\` + p[len(prefix):]
+			break
+		}
+	}
+	rel := strings.TrimRight(p[len(filepath.VolumeName(p)):], `\`)
+	if !strings.HasPrefix(rel, `\`) {
+		rel = `\` + rel
+	}
+	return rel
 }
 
 // Entry types
@@ -189,6 +209,7 @@ type model struct {
 
 // Messages
 type scanCompleteMsg struct {
+	path       string
 	entries    []dirEntry
 	largeFiles []fileEntry
 	totalSize  int64
@@ -200,7 +221,8 @@ type scanProgressMsg struct {
 }
 
 type scanErrorMsg struct {
-	err error
+	path string
+	err  error
 }
 
 type deleteCompleteMsg struct {
@@ -234,24 +256,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case scanCompleteMsg:
+		// Cache result under the path that was scanned
+		m.cache[msg.path] = historyEntry{
+			Path:       msg.path,
+			Entries:    msg.entries,
+			LargeFiles: msg.largeFiles,
+			TotalSize:  msg.totalSize,
+		}
+		// A scan that finishes after the user navigated away belongs to another view
+		if msg.path != m.path {
+			return m, nil
+		}
 		m.entries = msg.entries
 		m.largeFiles = msg.largeFiles
 		m.totalSize = msg.totalSize
 		m.scanning = false
 		m.selected = 0
-		// Cache result
-		m.cache[m.path] = historyEntry{
-			Path:       m.path,
-			Entries:    msg.entries,
-			LargeFiles: msg.largeFiles,
-			TotalSize:  msg.totalSize,
-		}
 		return m, nil
 	case scanProgressMsg:
 		m.scanProgress = msg.current
 		m.scanTotal = msg.total
 		return m, nil
 	case scanErrorMsg:
+		if msg.path != m.path {
+			return m, nil
+		}
+		// Entering a directory keeps the previous rows until its scan returns;
+		// drop them so a failed scan cannot leave them deletable here.
+		m.entries = nil
+		m.largeFiles = nil
+		m.totalSize = 0
+		m.selected = 0
 		m.err = msg.err
 		m.scanning = false
 		return m, nil
@@ -348,14 +383,15 @@ func (m model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "d", "delete":
-		if len(m.entries) > 0 {
+		// While scanning, m.entries may still list the previous directory
+		if !m.scanning && len(m.entries) > 0 {
 			entry := m.entries[m.selected]
 			m.deleteConfirm = true
 			m.deleteTarget = entry.Path
 		}
 	case "D":
 		// Delete all selected
-		if len(m.multiSelected) > 0 {
+		if !m.scanning && len(m.multiSelected) > 0 {
 			m.deleteConfirm = true
 			m.deleteTarget = fmt.Sprintf("%d items", len(m.multiSelected))
 		}
@@ -505,9 +541,10 @@ func (m model) scanPath(path string) tea.Cmd {
 	return func() tea.Msg {
 		entries, largeFiles, totalSize, err := scanDirectory(path)
 		if err != nil {
-			return scanErrorMsg{err: err}
+			return scanErrorMsg{path: path, err: err}
 		}
 		return scanCompleteMsg{
+			path:       path,
 			entries:    entries,
 			largeFiles: largeFiles,
 			totalSize:  totalSize,
@@ -557,11 +594,6 @@ func scanDirectory(path string) ([]dirEntry, []fileEntry, int64, error) {
 	for _, entry := range entries {
 		name := entry.Name()
 		entryPath := filepath.Join(path, name)
-
-		// Skip system directories
-		if skipPatterns[name] {
-			continue
-		}
 
 		wg.Add(1)
 		sem <- struct{}{}
@@ -626,84 +658,48 @@ func scanDirectory(path string) ([]dirEntry, []fileEntry, int64, error) {
 	return dirEntries, largeFiles, totalSize, nil
 }
 
-// calculateDirSize calculates the size of a directory with timeout and limits
-// Uses shallow scanning for speed - estimates based on first few levels
+// calculateDirSize returns the total size of all files under path.
+// The whole tree is walked (hidden directories included) so the result is
+// exact; symlinks and junctions are not followed, so they are not counted
+// twice. Hard links are still counted once per link.
 func calculateDirSize(path string) int64 {
-	ctx, cancel := context.WithTimeout(context.Background(), dirSizeTimeout)
-	defer cancel()
-
 	var size int64
-	var fileCount int64
-
-	// Use a channel to signal completion
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		quickScanDir(ctx, path, 0, &size, &fileCount)
-	}()
-
-	select {
-	case <-done:
-		// Completed normally
-	case <-ctx.Done():
-		// Timeout - return partial size (already accumulated)
-	}
-
+	var wg sync.WaitGroup
+	walkDirSize(path, &size, &wg)
+	wg.Wait()
 	return size
 }
 
-// quickScanDir does a fast shallow scan for size estimation
-func quickScanDir(ctx context.Context, path string, depth int, size *int64, fileCount *int64) {
-	// Check context cancellation
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-
-	// Limit depth for speed
-	if depth > shallowScanDepth {
-		return
-	}
-
-	// Limit total files scanned
-	if atomic.LoadInt64(fileCount) > maxFilesPerDir {
-		return
-	}
-
+// walkDirSize adds the sizes of files under path to size, handing
+// subdirectories to new goroutines while dirWalkSem has free slots.
+func walkDirSize(path string, size *int64, wg *sync.WaitGroup) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return
 	}
 
 	for _, entry := range entries {
-		// Check cancellation
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		if atomic.LoadInt64(fileCount) > maxFilesPerDir {
-			return
-		}
-
 		entryPath := filepath.Join(path, entry.Name())
 
+		// Junctions and symlinks report IsDir() == false, so they are not followed
 		if entry.IsDir() {
-			name := entry.Name()
-			// Skip hidden and system directories
-			if skipPatterns[name] || (strings.HasPrefix(name, ".") && len(name) > 1) {
-				continue
+			select {
+			case dirWalkSem <- struct{}{}:
+				wg.Add(1)
+				go func(p string) {
+					defer wg.Done()
+					defer func() { <-dirWalkSem }()
+					walkDirSize(p, size, wg)
+				}(entryPath)
+			default:
+				walkDirSize(entryPath, size, wg)
 			}
-			quickScanDir(ctx, entryPath, depth+1, size, fileCount)
-		} else {
-			info, err := entry.Info()
-			if err == nil {
-				atomic.AddInt64(size, info.Size())
-				atomic.AddInt64(fileCount, 1)
-			}
+			continue
+		}
+
+		info, err := entry.Info()
+		if err == nil {
+			atomic.AddInt64(size, info.Size())
 		}
 	}
 }
