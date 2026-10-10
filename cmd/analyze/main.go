@@ -146,7 +146,16 @@ func isProtectedPath(path string) bool {
 // volumeRelativePath returns an absolute, lowercased path without its volume
 // (`c:`, `\\server\share`, `\\?\c:`, `\\?\volume{guid}`), starting with a separator.
 func volumeRelativePath(absPath string) string {
-	rel := strings.TrimRight(absPath[len(filepath.VolumeName(absPath)):], `\`)
+	p := absPath
+	// Before Go 1.27, VolumeName counts host and share only for \\.\UNC\, so
+	// \\?\UNC\host\share\x would yield \host\share\x. Spell it as plain UNC.
+	for _, prefix := range []string{`\\?\unc\`, `\\.\unc\`, `\??\unc\`} {
+		if strings.HasPrefix(p, prefix) {
+			p = `\\` + p[len(prefix):]
+			break
+		}
+	}
+	rel := strings.TrimRight(p[len(filepath.VolumeName(p)):], `\`)
 	if !strings.HasPrefix(rel, `\`) {
 		rel = `\` + rel
 	}

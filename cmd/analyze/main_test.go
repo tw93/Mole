@@ -202,6 +202,7 @@ func TestIsProtectedPathAcrossVolumeSpellings(t *testing.T) {
 		`\\localhost\c$\Windows\System32`,
 		`\\?\C:\Program Files`,
 		`\\?\UNC\localhost\c$\ProgramData`,
+		`\\.\UNC\localhost\c$\Windows\System32`,
 		`\\.\C:\Program Files (x86)`,
 		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\Windows`,
 		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\Program Files\App`,

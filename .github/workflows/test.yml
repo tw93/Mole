@@ -37,8 +37,10 @@ jobs:
         run: |
           cd cmd/analyze
           go test -v ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd ../status
           go test -v ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         shell: pwsh
 
   build:
