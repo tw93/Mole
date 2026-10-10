@@ -202,6 +202,11 @@ func TestIsProtectedPathAcrossVolumeSpellings(t *testing.T) {
 		`\\localhost\c$\Windows\System32`,
 		`\\?\C:\Program Files`,
 		`\\?\UNC\localhost\c$\ProgramData`,
+		`\\.\C:\Program Files (x86)`,
+		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\Windows`,
+		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\Program Files\App`,
+		`\\?\HarddiskVolume3\ProgramData`,
+		`\\?\GLOBALROOT\Device\HarddiskVolume3\Users\me\Downloads`,
 		`E:\$Recycle.Bin`,
 	}
 	for _, path := range protected {
@@ -214,6 +219,7 @@ func TestIsProtectedPathAcrossVolumeSpellings(t *testing.T) {
 		`C:\Projects\Windows`,
 		`D:\data\Program Files`,
 		`\\localhost\share\work`,
+		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\data\work`,
 		`C:\Users\me\Downloads\node_modules`,
 	}
 	for _, path := range allowed {
@@ -262,5 +268,20 @@ func TestDeleteKeysIgnoredWhileScanning(t *testing.T) {
 		if got := updated.(model); got.deleteConfirm {
 			t.Errorf("%q opened a delete confirmation while scanning", key)
 		}
+	}
+}
+
+func TestFailedScanDropsPreviousRows(t *testing.T) {
+	m := newModel(`C:\b`)
+	m.entries = []dirEntry{{Name: "parent row", Path: `C:\parent row`, IsDir: true}}
+
+	updated, _ := m.Update(scanErrorMsg{path: `C:\b`, err: os.ErrPermission})
+	got := updated.(model)
+	if len(got.entries) != 0 || got.scanning || got.err == nil {
+		t.Fatalf("after a failed scan: entries=%+v scanning=%v err=%v", got.entries, got.scanning, got.err)
+	}
+	updated, _ = got.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if updated.(model).deleteConfirm {
+		t.Error("d opened a delete confirmation for a row from the previous directory")
 	}
 }

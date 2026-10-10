@@ -104,8 +104,14 @@ func isProtectedPath(path string) bool {
 	}
 	absPath = strings.ToLower(absPath)
 
-	// Match on the path inside its volume, so C:\, \\server\share\ and \\?\
-	// spellings of the same location are protected alike.
+	// A GLOBALROOT device path reaches a volume through the object namespace, so
+	// the components after it are not folders on that volume. Refuse it.
+	if strings.HasSuffix(filepath.VolumeName(absPath), `\globalroot`) {
+		return true
+	}
+
+	// Match on the path inside its volume, so C:\, \\server\share\, \\?\C:\ and
+	// \\?\Volume{GUID}\ spellings of the same location are protected alike.
 	rel := volumeRelativePath(absPath)
 
 	// Check against protected paths, on every volume
@@ -138,15 +144,9 @@ func isProtectedPath(path string) bool {
 }
 
 // volumeRelativePath returns an absolute, lowercased path without its volume
-// ("c:", `\\server\share`) or a \\?\ prefix, starting with a separator.
+// (`c:`, `\\server\share`, `\\?\c:`, `\\?\volume{guid}`), starting with a separator.
 func volumeRelativePath(absPath string) string {
-	p := absPath
-	if strings.HasPrefix(p, `\\?\unc\`) {
-		p = `\\` + p[len(`\\?\unc\`):]
-	} else if strings.HasPrefix(p, `\\?\`) {
-		p = p[len(`\\?\`):]
-	}
-	rel := strings.TrimRight(p[len(filepath.VolumeName(p)):], `\`)
+	rel := strings.TrimRight(absPath[len(filepath.VolumeName(absPath)):], `\`)
 	if !strings.HasPrefix(rel, `\`) {
 		rel = `\` + rel
 	}
@@ -272,6 +272,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.path != m.path {
 			return m, nil
 		}
+		// Entering a directory keeps the previous rows until its scan returns;
+		// drop them so a failed scan cannot leave them deletable here.
+		m.entries = nil
+		m.largeFiles = nil
+		m.totalSize = 0
+		m.selected = 0
 		m.err = msg.err
 		m.scanning = false
 		return m, nil
