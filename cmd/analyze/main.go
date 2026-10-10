@@ -104,23 +104,23 @@ func isProtectedPath(path string) bool {
 	}
 	absPath = strings.ToLower(absPath)
 
-	// Check against protected paths
+	// Match on the path inside its volume, so C:\, \\server\share\ and \\?\
+	// spellings of the same location are protected alike.
+	rel := volumeRelativePath(absPath)
+
+	// Check against protected paths, on every volume
 	for _, protected := range protectedPaths {
-		protectedLower := strings.ToLower(protected)
-		if absPath == protectedLower || strings.HasPrefix(absPath, protectedLower+`\`) {
+		protectedRel := volumeRelativePath(strings.ToLower(protected))
+		if rel == protectedRel || strings.HasPrefix(rel, protectedRel+`\`) {
 			return true
 		}
 	}
 
-	// Check against skip patterns (system directories)
-	baseName := strings.ToLower(filepath.Base(absPath))
+	// Check against skip patterns (system directories) directly under a volume root,
+	// e.g. D:\Windows, not C:\Projects\Windows
 	for pattern := range skipPatterns {
-		if strings.ToLower(pattern) == baseName {
-			// Only protect if it's at a root level (e.g., C:\Windows, not C:\Projects\Windows)
-			parent := filepath.Dir(absPath)
-			if len(parent) <= 3 { // e.g., "C:\"
-				return true
-			}
+		if rel == `\`+strings.ToLower(pattern) {
+			return true
 		}
 	}
 
@@ -135,6 +135,22 @@ func isProtectedPath(path string) bool {
 	}
 
 	return false
+}
+
+// volumeRelativePath returns an absolute, lowercased path without its volume
+// ("c:", `\\server\share`) or a \\?\ prefix, starting with a separator.
+func volumeRelativePath(absPath string) string {
+	p := absPath
+	if strings.HasPrefix(p, `\\?\unc\`) {
+		p = `\\` + p[len(`\\?\unc\`):]
+	} else if strings.HasPrefix(p, `\\?\`) {
+		p = p[len(`\\?\`):]
+	}
+	rel := strings.TrimRight(p[len(filepath.VolumeName(p)):], `\`)
+	if !strings.HasPrefix(rel, `\`) {
+		rel = `\` + rel
+	}
+	return rel
 }
 
 // Entry types
@@ -184,6 +200,7 @@ type model struct {
 
 // Messages
 type scanCompleteMsg struct {
+	path       string
 	entries    []dirEntry
 	largeFiles []fileEntry
 	totalSize  int64
@@ -195,7 +212,8 @@ type scanProgressMsg struct {
 }
 
 type scanErrorMsg struct {
-	err error
+	path string
+	err  error
 }
 
 type deleteCompleteMsg struct {
@@ -229,24 +247,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case scanCompleteMsg:
+		// Cache result under the path that was scanned
+		m.cache[msg.path] = historyEntry{
+			Path:       msg.path,
+			Entries:    msg.entries,
+			LargeFiles: msg.largeFiles,
+			TotalSize:  msg.totalSize,
+		}
+		// A scan that finishes after the user navigated away belongs to another view
+		if msg.path != m.path {
+			return m, nil
+		}
 		m.entries = msg.entries
 		m.largeFiles = msg.largeFiles
 		m.totalSize = msg.totalSize
 		m.scanning = false
 		m.selected = 0
-		// Cache result
-		m.cache[m.path] = historyEntry{
-			Path:       m.path,
-			Entries:    msg.entries,
-			LargeFiles: msg.largeFiles,
-			TotalSize:  msg.totalSize,
-		}
 		return m, nil
 	case scanProgressMsg:
 		m.scanProgress = msg.current
 		m.scanTotal = msg.total
 		return m, nil
 	case scanErrorMsg:
+		if msg.path != m.path {
+			return m, nil
+		}
 		m.err = msg.err
 		m.scanning = false
 		return m, nil
@@ -343,14 +368,15 @@ func (m model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "d", "delete":
-		if len(m.entries) > 0 {
+		// While scanning, m.entries may still list the previous directory
+		if !m.scanning && len(m.entries) > 0 {
 			entry := m.entries[m.selected]
 			m.deleteConfirm = true
 			m.deleteTarget = entry.Path
 		}
 	case "D":
 		// Delete all selected
-		if len(m.multiSelected) > 0 {
+		if !m.scanning && len(m.multiSelected) > 0 {
 			m.deleteConfirm = true
 			m.deleteTarget = fmt.Sprintf("%d items", len(m.multiSelected))
 		}
@@ -500,9 +526,10 @@ func (m model) scanPath(path string) tea.Cmd {
 	return func() tea.Msg {
 		entries, largeFiles, totalSize, err := scanDirectory(path)
 		if err != nil {
-			return scanErrorMsg{err: err}
+			return scanErrorMsg{path: path, err: err}
 		}
 		return scanCompleteMsg{
+			path:       path,
 			entries:    entries,
 			largeFiles: largeFiles,
 			totalSize:  totalSize,
@@ -618,7 +645,8 @@ func scanDirectory(path string) ([]dirEntry, []fileEntry, int64, error) {
 
 // calculateDirSize returns the total size of all files under path.
 // The whole tree is walked (hidden directories included) so the result is
-// exact; symlinks and junctions are not followed, so nothing is counted twice.
+// exact; symlinks and junctions are not followed, so they are not counted
+// twice. Hard links are still counted once per link.
 func calculateDirSize(path string) int64 {
 	var size int64
 	var wg sync.WaitGroup

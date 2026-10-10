@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestFormatBytes(t *testing.T) {
@@ -187,4 +189,78 @@ func TestScanDirectory(t *testing.T) {
 
 	// No large files in this test
 	_ = largeFiles
+}
+
+func TestIsProtectedPathAcrossVolumeSpellings(t *testing.T) {
+	protected := []string{
+		`C:\Program Files`,
+		`C:\Program Files\App`,
+		`D:\Program Files`,
+		`D:\ProgramData\Vendor`,
+		`\\localhost\c$\Program Files`,
+		`\\localhost\c$\Program Files (x86)\Steam`,
+		`\\localhost\c$\Windows\System32`,
+		`\\?\C:\Program Files`,
+		`\\?\UNC\localhost\c$\ProgramData`,
+		`E:\$Recycle.Bin`,
+	}
+	for _, path := range protected {
+		if !isProtectedPath(path) {
+			t.Errorf("isProtectedPath(%q) = false, expected true", path)
+		}
+	}
+
+	allowed := []string{
+		`C:\Projects\Windows`,
+		`D:\data\Program Files`,
+		`\\localhost\share\work`,
+		`C:\Users\me\Downloads\node_modules`,
+	}
+	for _, path := range allowed {
+		if isProtectedPath(path) {
+			t.Errorf("isProtectedPath(%q) = true, expected false", path)
+		}
+	}
+}
+
+func TestScanResultForAnotherPathDoesNotReplaceView(t *testing.T) {
+	m := newModel(`C:\b`)
+	m.entries = []dirEntry{{Name: "kept", Path: `C:\b\kept`}}
+
+	updated, _ := m.Update(scanCompleteMsg{
+		path:    `C:\a`,
+		entries: []dirEntry{{Name: "stale", Path: `C:\a\stale`}},
+	})
+	got := updated.(model)
+	if len(got.entries) != 1 || got.entries[0].Name != "kept" {
+		t.Errorf("entries = %+v, expected the current view to stay", got.entries)
+	}
+	if !got.scanning {
+		t.Error("scanning cleared by a result for another path")
+	}
+	if cached, ok := got.cache[`C:\a`]; !ok || cached.Entries[0].Name != "stale" {
+		t.Errorf("cache[C:\\a] = %+v, expected the scanned result", cached)
+	}
+
+	updated, _ = got.Update(scanCompleteMsg{
+		path:    `C:\b`,
+		entries: []dirEntry{{Name: "fresh", Path: `C:\b\fresh`}},
+	})
+	got = updated.(model)
+	if got.scanning || len(got.entries) != 1 || got.entries[0].Name != "fresh" {
+		t.Errorf("result for the current path not applied: scanning=%v entries=%+v", got.scanning, got.entries)
+	}
+}
+
+func TestDeleteKeysIgnoredWhileScanning(t *testing.T) {
+	m := newModel(`C:\b`)
+	m.entries = []dirEntry{{Name: "a", Path: `C:\a\top`, IsDir: true}}
+	m.multiSelected[`C:\a\top`] = true
+
+	for _, key := range []string{"d", "D"} {
+		updated, _ := m.handleKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		if got := updated.(model); got.deleteConfirm {
+			t.Errorf("%q opened a delete confirmation while scanning", key)
+		}
+	}
 }
