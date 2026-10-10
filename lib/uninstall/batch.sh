@@ -902,6 +902,7 @@ _MOLE_UNINSTALL_LIVE_APP_ROOTS=(
     "/Library/Input Methods"
     "$HOME/Library/Input Methods"
     "$HOME/Library/Application Support/Setapp/Applications"
+    "$HOME/Library/Containers/io.playcover.PlayCover/Applications"
     "/opt/homebrew/Caskroom"
     "/usr/local/Caskroom"
 )
@@ -1111,6 +1112,8 @@ _uninstall_collect_live_sibling_candidate() {
 
     _uninstall_live_candidate_is_selected "$app" "$selected_path" && return 1
     local info="$app/Contents/Info.plist"
+    # PlayCover bundles are flat, with the plist at the bundle root (#1715).
+    mole_is_playcover_app "$app" && info="$app/Info.plist"
     if [[ ! -f "$info" ]]; then
         # iOS and iPadOS apps installed on Apple Silicon have no Contents/ at
         # all: the real plist sits at Wrapper/<name>.app/Info.plist. Reading
@@ -1652,6 +1655,7 @@ _batch_selected_app_identity() {
 _batch_selected_app_info_identity() {
     local app_path="$1"
     local info="$app_path/Contents/Info.plist"
+    mole_is_playcover_app "$app_path" && info="$app_path/Info.plist"
     if [[ ! -e "$info" && ! -L "$info" ]]; then
         printf '%s\n' "missing"
         return 0
@@ -1875,6 +1879,7 @@ _batch_scan_app_details_impl() {
         # Check running app by bundle executable if available
         local exec_name=""
         local info_plist="$app_path/Contents/Info.plist"
+        mole_is_playcover_app "$app_path" && info_plist="$app_path/Info.plist"
         if [[ -e "$info_plist" ]]; then
             exec_name=$(plutil -extract CFBundleExecutable raw "$info_plist" 2> /dev/null || echo "")
         fi
@@ -2390,13 +2395,16 @@ _batch_execute_removals() {
         # name collision: login items are matched by display name only, and
         # deleting "Xcode" by name would take out the surviving install's
         # login item along with the beta's.
-        if [[ -z "$reason" && "${sibling_guard:-none}" != "guard_login" ]]; then
+        # PlayCover apps never register login items, and their display name
+        # may belong to a native app.
+        if [[ -z "$reason" && "${sibling_guard:-none}" != "guard_login" ]] &&
+            [[ "${app_path%/*}" != "$(mole_playcover_apps_dir)" ]]; then
             local login_remove_rc=0
             remove_login_item "$app_name" "$bundle_id" || login_remove_rc=$?
             [[ $login_remove_rc -ge 128 ]] && return "$login_remove_rc"
             mole_rc_timeout "$login_remove_rc" &&
                 debug_log "Login item removal timed out for $app_name; continuing"
-        elif [[ -z "$reason" ]]; then
+        elif [[ -z "$reason" && "${sibling_guard:-none}" == "guard_login" ]]; then
             debug_log "Skipping login item removal for $app_name: name is shared with a surviving install"
         fi
 
@@ -2828,6 +2836,7 @@ _batch_execute_removals() {
             files_cleaned=$((files_cleaned + 1))
             total_items=$((total_items + 1))
             success_items+=("$app_path")
+            success_names+=("$app_name")
             success_dock_targets+=("$app_path|$bundle_id")
             # Check for orphaned system extensions (camera, network, endpoint security, etc.)
             if mole_is_reverse_dns_bundle_id "$bundle_id" && [[ -d /Library/SystemExtensions ]]; then
@@ -2904,6 +2913,10 @@ _batch_render_summary() {
                 local display_name
                 display_name=$(basename "$success_path")
                 display_name="${display_name%.[aA][pP][pP]}"
+                # PlayCover bundles are named after their bundle id (#1715).
+                if [[ "${success_path%/*}" == "$(mole_playcover_apps_dir)" && -n "${success_names[$idx]:-}" ]]; then
+                    display_name="${success_names[$idx]}"
+                fi
                 local display_item="${GREEN}${display_name}${NC}"
 
                 if ((idx % 3 == 0)); then
@@ -3161,6 +3174,7 @@ batch_uninstall_applications() {
     local brew_apps_removed=0 # Track successful brew uninstalls for silent autoremove
     local -a failed_items=()
     local -a success_items=()
+    local -a success_names=()
     local -a success_dock_targets=()
     local -a system_extension_warning_apps=()
     local -a review_only_system_leftovers=()

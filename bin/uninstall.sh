@@ -40,7 +40,7 @@ files_cleaned=0
 total_size_cleaned=0
 
 readonly MOLE_UNINSTALL_META_CACHE_DIR="$HOME/.cache/mole"
-readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v3"
+readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v4"
 readonly MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
 readonly MOLE_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
 readonly MOLE_UNINSTALL_EPOCH_FLOOR=978307200
@@ -222,7 +222,15 @@ uninstall_resolve_display_name() {
     local app_name="$2"
     local display_name="$app_name"
 
-    if [[ -f "$app_path/Contents/Info.plist" ]]; then
+    if mole_is_playcover_app "$app_path"; then
+        # Flat iOS bundle named after its bundle id; the plist holds the name.
+        local playcover_name=""
+        playcover_name=$(plutil -extract CFBundleDisplayName raw "$app_path/Info.plist" 2> /dev/null || echo "")
+        if [[ -z "$playcover_name" || "$playcover_name" == "(null)" ]]; then
+            playcover_name=$(plutil -extract CFBundleName raw "$app_path/Info.plist" 2> /dev/null || echo "")
+        fi
+        [[ -n "$playcover_name" && "$playcover_name" != "(null)" ]] && display_name="$playcover_name"
+    elif [[ -f "$app_path/Contents/Info.plist" ]]; then
         # The bundle's own localized name is what Finder shows, so it wins and
         # spares the mdls fork. mdls only ever reports the on-disk file name for
         # an app bundle, which is exactly the unrecognizable string this avoids.
@@ -517,6 +525,9 @@ uninstall_print_app_search_dirs() {
         "/Library/Input Methods"
         "$HOME/Library/Input Methods"
     )
+    local playcover_apps_dir
+    playcover_apps_dir=$(mole_playcover_apps_dir)
+    [[ -d "$playcover_apps_dir" ]] && app_dirs+=("$playcover_apps_dir")
 
     local vol_app_dir
     local nullglob_was_set=0
@@ -550,6 +561,12 @@ uninstall_should_skip_app_path() {
         return 0
     fi
 
+    # A PlayCover launcher alias is listed through the bundle it points at.
+    if [[ "$parent_dir" == "$HOME/Applications/PlayCover" ]] &&
+        mole_playcover_alias_target "$app_path" > /dev/null 2>&1; then
+        return 0
+    fi
+
     if [[ -L "$app_path" ]]; then
         local link_target
         link_target=$(readlink "$app_path" 2> /dev/null)
@@ -577,6 +594,7 @@ uninstall_resolve_bundle_id() {
     local fallback_bundle_id="${2:-}"
     local bundle_id=""
     local plist="$app_path/Contents/Info.plist"
+    mole_is_playcover_app "$app_path" && plist="$app_path/Info.plist"
 
     fallback_bundle_id="${fallback_bundle_id//|/-}"
     fallback_bundle_id="${fallback_bundle_id//[$'\t\r\n']/}"

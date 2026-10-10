@@ -1036,6 +1036,51 @@ _mole_uninstall_embedded_bundle_ids() {
 }
 
 # Locate files associated with an application
+# PlayCover installs each iOS app as a flat bundle named <bundle-id>.app inside
+# its own container, and links a launcher alias into ~/Applications/PlayCover
+# whose every entry is a symlink back into that bundle (#1715).
+mole_playcover_apps_dir() {
+    printf '%s\n' "$HOME/Library/Containers/io.playcover.PlayCover/Applications"
+}
+
+# 0 when app_path is an installed PlayCover bundle: a real directory directly
+# in PlayCover's Applications dir with a root Info.plist and no Contents/.
+mole_is_playcover_app() {
+    local app_path="$1"
+    [[ "${app_path%/*}" == "$HOME/Library/Containers/io.playcover.PlayCover/Applications" ]] || return 1
+    [[ -d "$app_path" && ! -L "$app_path" ]] || return 1
+    [[ -f "$app_path/Info.plist" && ! -L "$app_path/Info.plist" ]] || return 1
+    [[ ! -e "$app_path/Contents" && ! -L "$app_path/Contents" ]]
+}
+
+# Prints the installed bundle a PlayCover launcher alias points at. Only a real
+# directory directly in ~/Applications/PlayCover qualifies, and every entry in
+# it must be a symlink to the same-named entry of one installed bundle; a
+# Finder .DS_Store is the one regular file tolerated.
+mole_playcover_alias_target() {
+    local alias_path="$1"
+    [[ "${alias_path%/*}" == "$HOME/Applications/PlayCover" ]] || return 1
+    [[ -d "$alias_path" && ! -L "$alias_path" && -L "$alias_path/Info.plist" ]] || return 1
+
+    local plist_link=""
+    plist_link=$(readlink "$alias_path/Info.plist" 2> /dev/null) || return 1
+    local target="${plist_link%/Info.plist}"
+    [[ "$target/Info.plist" == "$plist_link" ]] || return 1
+    mole_is_playcover_app "$target" || return 1
+
+    local entry link
+    for entry in "$alias_path"/* "$alias_path"/.[!.]* "$alias_path"/..?*; do
+        [[ -e "$entry" || -L "$entry" ]] || continue
+        if [[ ! -L "$entry" ]]; then
+            [[ "${entry##*/}" == ".DS_Store" && -f "$entry" ]] && continue
+            return 1
+        fi
+        link=$(readlink "$entry" 2> /dev/null) || return 1
+        [[ "$link" == "$target/${entry##*/}" ]] || return 1
+    done
+    printf '%s\n' "$target"
+}
+
 find_app_files() {
     local bundle_id="$1"
     local app_name="$2"
@@ -1724,6 +1769,27 @@ find_app_files() {
         done < "$discovery_scan_file"
     fi
 
+    # PlayCover keeps per-app settings beside the installed bundle under exact
+    # <bundle-id> names, plus the launcher alias (#1715). PlayChain is the
+    # app's emulated keychain and stays, like every other keychain store.
+    if [[ "$bundle_id_valid" == "true" ]] && mole_is_playcover_app "$app_path" &&
+        [[ "${app_path##*/}" == "$bundle_id.app" ]]; then
+        local playcover_root="${app_path%/Applications/*}"
+        local playcover_file
+        for playcover_file in \
+            "$playcover_root/App Settings/$bundle_id.plist" \
+            "$playcover_root/Keymapping/$bundle_id.plist" \
+            "$playcover_root/Entitlements/$bundle_id.plist"; do
+            [[ -f "$playcover_file" && ! -L "$playcover_file" ]] && files_to_clean+=("$playcover_file")
+        done
+        local playcover_alias
+        for playcover_alias in "$HOME/Applications/PlayCover"/*.[aA][pP][pP]; do
+            [[ -d "$playcover_alias" ]] || continue
+            [[ "$(mole_playcover_alias_target "$playcover_alias" 2> /dev/null)" == "$app_path" ]] &&
+                files_to_clean+=("$playcover_alias")
+        done
+    fi
+
     # Preserve discovery order while collapsing exact duplicates. A leftover
     # can be found first through a bundle-id prefix and again through an
     # embedded extension id; it should be previewed and removed only once.
@@ -2258,11 +2324,15 @@ force_kill_app() {
     # precise than the display name (which may be localized).
     local exec_name=""
     local bundle_id=""
-    if [[ -n "$app_path" && -e "$app_path/Contents/Info.plist" ]]; then
+    local info_plist="$app_path/Contents/Info.plist"
+    # A flat PlayCover bundle keeps its plist at the root; falling back to the
+    # display name there could match a different app with the same name.
+    [[ -n "$app_path" ]] && mole_is_playcover_app "$app_path" && info_plist="$app_path/Info.plist"
+    if [[ -n "$app_path" && -e "$info_plist" ]]; then
         # Targeted key reads (see the CFBundleExecutable note above): defaults
         # read parses the entire plist for one value.
-        exec_name=$(plutil -extract CFBundleExecutable raw "$app_path/Contents/Info.plist" 2> /dev/null || echo "")
-        bundle_id=$(plutil -extract CFBundleIdentifier raw "$app_path/Contents/Info.plist" 2> /dev/null || echo "")
+        exec_name=$(plutil -extract CFBundleExecutable raw "$info_plist" 2> /dev/null || echo "")
+        bundle_id=$(plutil -extract CFBundleIdentifier raw "$info_plist" 2> /dev/null || echo "")
     fi
 
     # Use executable name for precise matching, fallback to app name

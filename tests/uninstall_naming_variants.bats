@@ -403,3 +403,60 @@ find_app_files 'invalid_bundle' ''"
     result=$(find_app_files "one.ayugram.AyuGramDesktop" "AyuGram")
     [[ "$result" =~ "Application Support/AyuGram Desktop" ]] || return 1
 }
+
+@test "find_app_files adds PlayCover's exact per-app files and alias, never PlayChain (#1715)" {
+    local root="$HOME/Library/Containers/io.playcover.PlayCover"
+    local bundle="$root/Applications/fit.mole.probe.app"
+    mkdir -p "$bundle" "$root/App Settings" "$root/Keymapping" "$root/Entitlements" \
+        "$root/PlayChain" "$HOME/Applications/PlayCover/Mole Probe.app" \
+        "$HOME/Applications/PlayCover/Other.app"
+    printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.probe</string></dict></plist>' > "$bundle/Info.plist"
+    : > "$bundle/MoleProbe"
+    ln -s "$bundle/Info.plist" "$HOME/Applications/PlayCover/Mole Probe.app/Info.plist"
+    ln -s "$bundle/MoleProbe" "$HOME/Applications/PlayCover/Mole Probe.app/MoleProbe"
+    # Points at the bundle, but holds a real file too: not a PlayCover alias.
+    ln -s "$bundle/Info.plist" "$HOME/Applications/PlayCover/Other.app/Info.plist"
+    : > "$HOME/Applications/PlayCover/Other.app/Notes.txt"
+    local f
+    for f in "App Settings/fit.mole.probe.plist" "Keymapping/fit.mole.probe.plist" \
+        "Entitlements/fit.mole.probe.plist" "PlayChain/fit.mole.probe" \
+        "PlayChain/fit.mole.probe.keyCover" "App Settings/fit.mole.probe.other.plist"; do
+        : > "$root/$f"
+    done
+
+    result=$(find_app_files "fit.mole.probe" "Mole Probe" "$bundle")
+
+    [[ "$result" == *"$root/App Settings/fit.mole.probe.plist"* ]] || return 1
+    [[ "$result" == *"$root/Keymapping/fit.mole.probe.plist"* ]] || return 1
+    [[ "$result" == *"$root/Entitlements/fit.mole.probe.plist"* ]] || return 1
+    [[ "$result" == *"$HOME/Applications/PlayCover/Mole Probe.app"* ]] || return 1
+    [[ "$result" != *"PlayChain"* ]] || return 1
+    [[ "$result" != *"fit.mole.probe.other.plist"* ]] || return 1
+    [[ "$result" != *"Other.app"* ]] || return 1
+
+    # The same bundle id from any other app path gets none of these.
+    result=$(find_app_files "fit.mole.probe" "Mole Probe" "$HOME/Applications/Mole Probe.app")
+    [[ "$result" != *"io.playcover.PlayCover"* ]] || return 1
+    [[ "$result" != *"Applications/PlayCover"* ]]
+}
+
+@test "force_kill_app matches a PlayCover bundle by its executable, not its display name (#1715)" {
+    local bundle="$HOME/Library/Containers/io.playcover.PlayCover/Applications/fit.mole.probe.app"
+    mkdir -p "$bundle"
+    printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.probe</string><key>CFBundleExecutable</key><string>MoleProbe</string></dict></plist>' > "$bundle/Info.plist"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/log.sh"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
+# force_kill_app silences pgrep, so the stub records its arguments in a file.
+pgrep() { echo "PGREP:$*" >> "$HOME/pgrep.log"; return 1; }
+force_kill_app "Mole Probe" "$HOME/Library/Containers/io.playcover.PlayCover/Applications/fit.mole.probe.app"
+cat "$HOME/pgrep.log"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"PGREP:-x MoleProbe"* ]] || return 1
+    [[ "$output" != *"PGREP:-x Mole Probe"* ]]
+}

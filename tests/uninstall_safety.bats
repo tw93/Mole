@@ -1333,3 +1333,56 @@ EOF
         [[ "$output" == *"FREED_KB=1000"* ]] || { echo "$scenario: $output"; return 1; }
     done
 }
+
+@test "live uninstall inventory counts a PlayCover bundle as a sibling install (#1715)" {
+    # shellcheck disable=SC2016  # matches the literal source line, unexpanded
+    grep -qF '"$HOME/Library/Containers/io.playcover.PlayCover/Applications"' \
+        "$PROJECT_ROOT/lib/uninstall/batch.sh" || return 1
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+run_with_timeout() { shift; "$@"; }
+pkg_receipt_nonstandard_app_paths() { :; }
+playcover="$HOME/Library/Containers/io.playcover.PlayCover/Applications"
+_MOLE_UNINSTALL_LIVE_APP_ROOTS=("$HOME/Applications" "$playcover")
+_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT="$HOME/no-volumes"
+selected="$HOME/Applications/Mole Probe.app"
+mkdir -p "$selected/Contents" "$playcover/fit.mole.probe.app"
+printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.probe</string></dict></plist>' > "$selected/Contents/Info.plist"
+printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.probe</string></dict></plist>' > "$playcover/fit.mole.probe.app/Info.plist"
+rc=0
+uninstall_live_bundle_has_other_install fit.mole.probe "$selected" || rc=$?
+printf 'PLAYCOVER_SIBLING_RC=%s\n' "$rc"
+[[ $rc -eq 0 ]] || exit 1
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "live uninstall inventory keeps shared data when a PlayCover bundle is selected beside a native copy (#1715)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+run_with_timeout() { shift; "$@"; }
+pkg_receipt_nonstandard_app_paths() { :; }
+playcover="$HOME/Library/Containers/io.playcover.PlayCover/Applications"
+_MOLE_UNINSTALL_LIVE_APP_ROOTS=("$HOME/Applications" "$playcover")
+_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT="$HOME/no-volumes"
+selected="$playcover/fit.mole.probe.app"
+mkdir -p "$selected" "$HOME/Applications/PlayCover/Mole Probe.app"
+printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.probe</string></dict></plist>' > "$selected/Info.plist"
+ln -s "$selected/Info.plist" "$HOME/Applications/PlayCover/Mole Probe.app/Info.plist"
+# The launcher alias alone is not another install.
+rc=0
+uninstall_live_bundle_has_other_install fit.mole.probe "$selected" || rc=$?
+printf 'ALIAS_ONLY_RC=%s\n' "$rc"
+[[ $rc -eq 1 ]] || exit 1
+native="$HOME/Applications/Mole Probe.app"
+mkdir -p "$native/Contents"
+printf '%s\n' '<plist><dict><key>CFBundleIdentifier</key><string>fit.mole.probe</string></dict></plist>' > "$native/Contents/Info.plist"
+rc=0
+uninstall_live_bundle_has_other_install fit.mole.probe "$selected" || rc=$?
+printf 'NATIVE_SIBLING_RC=%s\n' "$rc"
+[[ $rc -eq 0 ]] || exit 1
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
