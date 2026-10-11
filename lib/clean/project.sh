@@ -683,6 +683,9 @@ scan_purge_targets() {
     if [[ "${MO_USE_FIND:-0}" == "1" ]]; then
         debug_log "MO_USE_FIND=1: Forcing find instead of fd"
         use_find=true
+    elif mole_purge_is_cloud_synced_path "$search_path"; then
+        # Only find can skip online-only (dataless) directories, see below.
+        use_find=true
     elif command -v fd > /dev/null 2>&1; then
         # Escape regex special characters in target names for fd patterns (single sed pass)
         local _escaped_lines
@@ -785,6 +788,11 @@ scan_purge_targets() {
             prune_expr+=(-name "${prune_dirs[$i]}")
             [[ $i -lt $((${#prune_dirs[@]} - 1)) ]] && prune_expr+=(-o)
         done
+        # An online-only (dataless) directory in a cloud drive holds nothing on
+        # this disk, and listing it makes the File Provider fetch it from the
+        # network, which is how a Google Drive root used up the scan budget
+        # (#1679). Skip it without descending.
+        prune_expr+=(-o -flags +dataless)
 
         local target_expr=()
         for i in "${!purge_targets[@]}"; do

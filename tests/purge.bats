@@ -4472,3 +4472,50 @@ EOF
     done
     [ "$failures" -eq 0 ]
 }
+
+@test "scan_purge_targets skips online-only cloud folders and never uses fd for a cloud root (#1679)" {
+	local cloud="$HOME/Library/CloudStorage/GoogleDrive-test"
+	mkdir -p "$cloud/Local/app/node_modules" "$cloud/OnlineOnly/app/node_modules"
+	touch "$cloud/Local/app/package.json" "$cloud/OnlineOnly/app/package.json"
+
+	local scan_output
+	scan_output="$(mktemp)"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CLOUD="$cloud" SCAN_OUTPUT="$scan_output" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+run_with_timeout() { shift; "$@"; }
+fd() { echo "FD_USED" >> "$HOME/walk.log"; return 1; }
+# A real dataless flag needs a File Provider, so the stub stands in for it with
+# a name match and records that every walk asked for the flag.
+find() {
+	local -a args=()
+	local saw_flag=false
+	while [[ $# -gt 0 ]]; do
+		if [[ "$1" == "-flags" && "${2:-}" == "+dataless" ]]; then
+			args+=(-name OnlineOnly)
+			saw_flag=true
+			shift 2
+			continue
+		fi
+		args+=("$1")
+		shift
+	done
+	[[ "${args[0]}" != "$CLOUD" ]] || echo "WALK_DATALESS=$saw_flag" >> "$HOME/walk.log"
+	/usr/bin/find "${args[@]}"
+}
+scan_purge_targets "$CLOUD" "$SCAN_OUTPUT"
+cat "$SCAN_OUTPUT"
+cat "$HOME/walk.log"
+EOF
+
+	rm -f "$scan_output" "$HOME/walk.log"
+	rm -rf "$HOME/Library/CloudStorage"
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"$cloud/Local/app/node_modules"* ]] || return 1
+	[[ "$output" != *"OnlineOnly/app/node_modules"* ]] || return 1
+	[[ "$output" == *"WALK_DATALESS=true"* ]] || return 1
+	[[ "$output" != *"WALK_DATALESS=false"* ]] || return 1
+	[[ "$output" != *"FD_USED"* ]]
+}
