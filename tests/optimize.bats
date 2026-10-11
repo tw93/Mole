@@ -1217,6 +1217,43 @@ EOF
 	[[ "$output" != *"Cleaned"* ]]
 }
 
+@test "opt_launch_agents_cleanup prioritizes Program over ProgramArguments" {
+	local stub_dir="$HOME/launchctl-stub-bin"
+	local trace="$HOME/launchctl.trace"
+	mkdir -p "$stub_dir"
+	rm -f "$trace"
+	printf '#!/bin/bash\necho "$*" >> "%s"\n' "$trace" > "$stub_dir/launchctl"
+	chmod +x "$stub_dir/launchctl"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="$stub_dir:$PATH" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+mkdir -p "$HOME/Library/LaunchAgents"
+cat > "$HOME/Library/LaunchAgents/com.test.program.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.test.program</string>
+    <key>Program</key>
+    <string>/nonexistent/program_binary</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>program_binary</string>
+    </array>
+</dict>
+</plist>
+PLIST
+execute_optimization launch_agents_cleanup
+EOF
+
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"Launch Agent com.test.program: program missing at /nonexistent/program_binary"* ]] || return 1
+	[[ "$output" == *"left in ~/Library/LaunchAgents"* ]] || return 1
+}
+
 @test "opt_launch_agents_cleanup skips healthy agents" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

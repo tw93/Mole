@@ -1263,13 +1263,13 @@ opt_launch_agents_cleanup() {
         local binary=""
         local plist_rc=0
         binary=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
-            /usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" \
+            /usr/libexec/PlistBuddy -c "Print :Program" \
             "$plist" 2> /dev/null) || plist_rc=$?
         mole_rc_timeout_or_signal "$plist_rc" && return "$plist_rc"
         if [[ -z "$binary" ]]; then
             plist_rc=0
             binary=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
-                /usr/libexec/PlistBuddy -c "Print :Program" \
+                /usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" \
                 "$plist" 2> /dev/null) || plist_rc=$?
             mole_rc_timeout_or_signal "$plist_rc" && return "$plist_rc"
         fi
