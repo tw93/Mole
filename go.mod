@@ -2,6 +2,8 @@ module github.com/tw93/mole/windows
 
 go 1.24.0
 
+toolchain go1.24.6
+
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0

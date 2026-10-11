@@ -7,7 +7,7 @@ on:
     branches: [windows]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   format:
@@ -16,37 +16,32 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref) || github.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24.6'
+          go-version-file: go.mod
 
-      - name: Install Go tools
+      # Formatting is checked, never committed back from CI.
+      - name: Check Go formatting
         run: |
-          go install golang.org/x/tools/cmd/goimports@latest
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-      - name: Format Go code
-        run: |
-          $env:PATH = "$(go env GOPATH)\bin;$env:PATH"
-          Get-ChildItem -Path cmd -Recurse -Filter "*.go" | ForEach-Object {
-            goimports -w $_.FullName
+          $unformatted = gofmt -l cmd
+          if ($unformatted) {
+            Write-Host "Run gofmt -w on:" -ForegroundColor Red
+            $unformatted | ForEach-Object { Write-Host "  $_" }
+            exit 1
           }
+          Write-Host "Go code is formatted" -ForegroundColor Green
         shell: pwsh
 
+      # Advisory until the existing findings are fixed; the version is pinned so
+      # a new linter release cannot change the result on its own.
       - name: Run golangci-lint
-        run: |
-          $env:PATH = "$(go env GOPATH)\bin;$env:PATH"
-          cd cmd/analyze
-          golangci-lint run --timeout 5m
-          cd ../status
-          golangci-lint run --timeout 5m
-        shell: pwsh
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.12.2
+          args: --timeout 5m ./cmd/...
         continue-on-error: true
 
       - name: Check PowerShell syntax
@@ -64,20 +59,4 @@ jobs:
           }
           if ($hasErrors) { exit 1 }
           Write-Host "All PowerShell scripts have valid syntax" -ForegroundColor Green
-        shell: pwsh
-
-      - name: Commit formatting changes
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          $changes = git status --porcelain
-          if ($changes) {
-            git add .
-            git commit -m "chore: auto format code"
-            git push
-            Write-Host "Formatting changes committed"
-          } else {
-            Write-Host "No formatting changes needed"
-          }
         shell: pwsh

@@ -8,32 +8,39 @@ on:
 
 jobs:
   tests:
-    name: Unit & Integration Tests
+    # Mole targets Windows PowerShell 5.1; pwsh 7 is what most contributors run.
+    name: Tests (${{ matrix.shell }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.24.6"
+          go-version-file: go.mod
 
       - name: Install Pester
         run: |
-          Install-Module -Name Pester -Force -SkipPublisherCheck -Scope CurrentUser
-        shell: pwsh
+          Install-Module -Name Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
+        shell: ${{ matrix.shell }}
 
       - name: Run PowerShell tests
         run: |
-          Import-Module Pester
+          Write-Host "PowerShell $($PSVersionTable.PSVersion)"
+          Import-Module Pester -MinimumVersion 5.0.0
           $config = New-PesterConfiguration
           $config.Run.Path = "./tests"
           $config.Output.Verbosity = "Detailed"
           $config.Run.Exit = $true
           Invoke-Pester -Configuration $config
-        shell: pwsh
+        shell: ${{ matrix.shell }}
 
       - name: Run Go tests
+        if: matrix.shell == 'pwsh'
         run: |
           cd cmd/analyze
           go test -v ./...
@@ -47,12 +54,12 @@ jobs:
     name: Build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.24.6"
+          go-version-file: go.mod
 
       - name: Build Go binaries
         run: |
@@ -80,7 +87,7 @@ jobs:
     name: Security Checks
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Load core modules
         run: |

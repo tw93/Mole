@@ -1,4 +1,4 @@
-name: Build Windows Prerelease
+name: Windows Release
 
 on:
   push:
@@ -12,24 +12,29 @@ on:
         required: true
         type: string
 
+# A stable Windows release must never become the repository's "latest"
+# release: the macOS installer and `mo update` resolve stable versions through
+# releases/latest, so every release below sets make_latest to false.
 permissions:
   contents: write  # Required for creating releases
+  id-token: write  # Required for build provenance attestations
+  attestations: write
 
 jobs:
   build-windows:
-    name: Build Windows Prerelease Artifacts
+    name: Build Windows Release Artifacts
     runs-on: windows-latest
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24.6'
+          go-version-file: go.mod
       
       - name: Setup PowerShell
         shell: pwsh
@@ -53,8 +58,11 @@ jobs:
             Write-Error "Could not detect version"
             exit 1
           }
-          Write-Host "Version: $version"
+          # 1.31.0 is a stable release; 1.31.0-beta.1 stays a prerelease.
+          $prerelease = if ($version -match '-') { "true" } else { "false" }
+          Write-Host "Version: $version (prerelease: $prerelease)"
           "VERSION=$version" >> $env:GITHUB_OUTPUT
+          "PRERELEASE=$prerelease" >> $env:GITHUB_OUTPUT
       
       - name: Run tests
         shell: pwsh
@@ -100,7 +108,7 @@ jobs:
           }
       
       - name: Upload ZIP artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mole-${{ steps.version.outputs.VERSION }}-x64-zip
           path: release/mole-${{ steps.version.outputs.VERSION }}-x64.zip
@@ -108,21 +116,21 @@ jobs:
       
 
       - name: Upload EXE artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mole-${{ steps.version.outputs.VERSION }}-x64-exe
           path: release/mole-${{ steps.version.outputs.VERSION }}-x64.exe
           if-no-files-found: ignore
       
       - name: Upload checksums
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: checksums
           path: release/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Upload TUI binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tui-binaries
           path: |
@@ -148,20 +156,28 @@ jobs:
           $files | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       
-      - name: Create GitHub Prerelease
+      - name: Generate artifact attestation
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
+          subject-path: ${{ steps.release_files.outputs.files }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          name: ${{ github.ref_name }}
           files: ${{ steps.release_files.outputs.files }}
           draft: false
-          prerelease: true
-          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.PRERELEASE }}
+          make_latest: false
+          generate_release_notes: false
           body: |
-            ## Windows System Maintenance Toolkit (Prerelease)
-            
+            ## Mole for Windows (CLI) ${{ steps.version.outputs.VERSION }}
+
             **Download:** `mole-${{ steps.version.outputs.VERSION }}-x64.zip` (portable) or `.exe` (launcher)
             **TUI assets:** `analyze-windows-x64.exe` and `status-windows-x64.exe`
-            
+
             **Install:**
             ```powershell
             Expand-Archive mole-${{ steps.version.outputs.VERSION }}-x64.zip -DestinationPath C:\mole
@@ -169,8 +185,8 @@ jobs:
             .\install.ps1
             ```
 
-            These assets are prerelease-only and do not affect the macOS stable release channel.
+            This release does not change the macOS release channel.
 
-            **Verify:** Check SHA256SUMS.txt for file integrity.
+            **Verify:** check `SHA256SUMS.txt`, or `gh attestation verify <file> --repo tw93/Mole`.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
