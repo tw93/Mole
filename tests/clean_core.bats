@@ -1677,6 +1677,8 @@ SCRIPT
     mkdir -p "$shared_dir"
     touch "$shared_dir/com.apple.LSSharedFileList.RecentApplications.sfl2"
     touch "$shared_dir/com.apple.LSSharedFileList.RecentDocuments.sfl2"
+    touch "$shared_dir/com.apple.LSSharedFileList.RecentApplications.sfl3"
+    touch "$shared_dir/com.apple.LSSharedFileList.RecentDocuments.sfl4"
 
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
@@ -1689,7 +1691,10 @@ _clean_recent_items
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Recent"* ]]
+    [[ "$output" == *"RecentApplications.sfl2"* ]]
+    [[ "$output" == *"RecentDocuments.sfl2"* ]]
+    [[ "$output" == *"RecentApplications.sfl3"* ]]
+    [[ "$output" == *"RecentDocuments.sfl4"* ]]
 }
 
 @test "_clean_recent_items handles missing shared directory" {

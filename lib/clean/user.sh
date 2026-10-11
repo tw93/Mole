@@ -324,6 +324,14 @@ clean_user_essentials() {
 _clean_recent_items() {
     local shared_dir="$HOME/Library/Application Support/com.apple.sharedfilelist"
     local -a recent_lists=(
+        "$shared_dir/com.apple.LSSharedFileList.RecentApplications.sfl4"
+        "$shared_dir/com.apple.LSSharedFileList.RecentDocuments.sfl4"
+        "$shared_dir/com.apple.LSSharedFileList.RecentServers.sfl4"
+        "$shared_dir/com.apple.LSSharedFileList.RecentHosts.sfl4"
+        "$shared_dir/com.apple.LSSharedFileList.RecentApplications.sfl3"
+        "$shared_dir/com.apple.LSSharedFileList.RecentDocuments.sfl3"
+        "$shared_dir/com.apple.LSSharedFileList.RecentServers.sfl3"
+        "$shared_dir/com.apple.LSSharedFileList.RecentHosts.sfl3"
         "$shared_dir/com.apple.LSSharedFileList.RecentApplications.sfl2"
         "$shared_dir/com.apple.LSSharedFileList.RecentDocuments.sfl2"
         "$shared_dir/com.apple.LSSharedFileList.RecentServers.sfl2"
