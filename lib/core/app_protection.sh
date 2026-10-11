@@ -1635,6 +1635,7 @@ find_app_files() {
             "$HOME/Library/Developer/Xcode/watchOS DeviceSupport" \
             "$HOME/Library/Developer/Xcode/tvOS DeviceSupport" \
             "$HOME/Library/Developer/Xcode/xrOS DeviceSupport" \
+            "$HOME/Library/Developer/Xcode/visionOS DeviceSupport" \
             "$HOME/Library/Developer/CoreSimulator/Caches"; do
             [[ -d "$d" ]] && files_to_clean+=("$d")
         done

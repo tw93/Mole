@@ -398,6 +398,7 @@ EOF
 @test "find_app_files preserves Xcode user data and only collects regenerable caches" {
 	mkdir -p "$HOME/Library/Developer/Xcode/DerivedData/MyApp-abc/Build"
 	mkdir -p "$HOME/Library/Developer/Xcode/iOS DeviceSupport/17.0"
+	mkdir -p "$HOME/Library/Developer/Xcode/visionOS DeviceSupport/1.0"
 	mkdir -p "$HOME/Library/Developer/Xcode/Archives/2026/03/MyApp.xcarchive"
 	mkdir -p "$HOME/Library/Developer/Xcode/UserData"
 	mkdir -p "$HOME/Library/Developer/Toolchains/swift-6.0.xctoolchain"
@@ -425,6 +426,7 @@ EOF
 
 	[[ "$result" == *"/Library/Developer/Xcode/DerivedData"* ]] || { echo "missed DerivedData cache"; exit 1; }
 	[[ "$result" == *"/Library/Developer/Xcode/iOS DeviceSupport"* ]] || { echo "missed iOS DeviceSupport"; exit 1; }
+	[[ "$result" == *"/Library/Developer/Xcode/visionOS DeviceSupport"* ]] || { echo "missed visionOS DeviceSupport"; exit 1; }
 	[[ "$result" == *"/Library/Developer/CoreSimulator/Caches"* ]] || { echo "missed simulator caches"; exit 1; }
 }
 
