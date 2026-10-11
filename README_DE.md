@@ -91,7 +91,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
-`main` installiert unveröffentlichten Code direkt aus dem Standard-Branch. `latest` ist ein Alias für `main` und installiert nicht das neueste stabile Release.
+`main` installiert unveröffentlichten Code direkt aus dem Standard-Branch, rechne also mit Ecken und Kanten. `latest` ist ein älterer Alias für `main` und installiert nicht das neueste stabile Release.
 
 Das Skript installiert standardmäßig nach `/usr/local/bin`, was Administratorrechte erfordern kann. Für passwortlose Updates mit `mo update` kannst du in ein Benutzerverzeichnis installieren:
 
@@ -125,13 +125,13 @@ Mole kann Dateien löschen. Deshalb prüft es Pfade, schützt gemeinsam genutzte
 - Führe Mole **ohne `sudo`** aus; Administratorrechte werden nur bei Bedarf für Systembereinigungen angefordert
 - `mo analyze` verschiebt ausgewählte Objekte nach Bestätigung in den macOS-Papierkorb
 - Bereinigungsaktivitäten werden in `~/Library/Logs/mole/operations.log` protokolliert; überprüfe sie mit `mo history` oder deaktiviere das Logging mit `MO_NO_OPLOG=1`
-- Schütze Verzeichnisse mit `mo clean --whitelist` oder Wartungsaufgaben mit `mo optimize --whitelist`
+- Schütze Caches mit `mo clean --whitelist` oder Wartungsaufgaben mit `mo optimize --whitelist`
 
 Hinweise zum Melden von Schwachstellen, Sicherheitsgrenzen und aktuelle Einschränkungen findest du in [SECURITY.md](SECURITY.md) und [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 
 ## Funktionsdetails
 
-Die folgenden Beispiele sind gekürzt. Die genauen Einträge und Größen hängen von deinem Mac ab.
+Die folgenden Beispiele sind gekürzt. Die genauen Einträge, Größen und Gründe für übersprungene Elemente hängen von deinem Mac ab.
 
 ### Bereinigung (Clean)
 
@@ -230,7 +230,7 @@ Applied 3 optimizations
 
 ### Speicheranalyse (Analyze)
 
-`mo analyze` öffnet einen interaktiven Festplatten-Explorer im Terminal. Unterstützt Pfeiltasten und Vim-Steuerung, Filterung, Mehrfachauswahl, Finder-Vorschau und sicheres Verschieben in den Papierkorb. Externe Laufwerke werden in der Standardübersicht ausgespart; prüfe sie mit `mo analyze /Volumes`. Verwende `mo analyze /private/tmp`, um temporäre Benutzerdateien zu prüfen, ohne sie automatisch zu löschen.
+`mo analyze` öffnet einen interaktiven Festplatten-Explorer im Terminal. Unterstützt Pfeiltasten und Vim-Steuerung, Filterung, Mehrfachauswahl, Finder-Vorschau und sicheres Verschieben in den Papierkorb. Externe Laufwerke werden in der Standardübersicht ausgespart; prüfe sie mit `mo analyze /Volumes` oder einem bestimmten Mount-Pfad. Verwende `mo analyze /private/tmp`, um temporäre Benutzerdateien zu prüfen, ohne sie automatisch zu löschen.
 
 Ein `+` am Ende einer Größenangabe zeigt einen Teilscan an; `unknown` bedeutet, dass die Größe nicht berechnet werden konnte. Durch Timeouts unterbrochene Ergebnisse überschreiben keinen vollständigen Cache; spätere Scans ergänzen fehlende Daten. Ordner, die macOS das Terminal nicht lesen lässt, bleiben als Teilscan markiert, bis sich die Zugriffsrechte ändern. Die Terminal-Liste zeigt nur die 30 größten Einträge, daher kann ein nicht lesbarer Eintrag außerhalb der Liste liegen; die Summe zeigt trotzdem einen Teilscan an. Die JSON-Ausgabe für Verzeichnisse enthält alle gescannten Einträge.
 
@@ -290,6 +290,20 @@ Der Zustandswert fasst CPU, RAM, Festplattenkapazität, SMART-Status, I/O, Tempe
 - `mo history --json`: Gibt die Bereinigungshistorie als JSON aus. Sitzungen enthalten `run_id` (ein undurchsichtiger String, leer, wenn keine Identität protokolliert wurde) und `attribution`: `run` für erkannte Läufe, `command` für die alte Gruppierung nach Befehl oder `ambiguous`, wenn alte Markierungen eine Unterbrechung nicht von überlappenden Läufen unterscheiden können. Aufgezeichnete Aktionen bleiben verfügbar; mehrdeutige Zählungen lassen sich einzelnen Läufen nicht zuverlässig zuordnen. Ein leeres `ended_at` bedeutet, dass keine Endmarkierung aufgezeichnet wurde.
 
 ```text
+$ mo analyze --json ~/Documents
+{
+  "path": "/Users/you/Documents",
+  "overview": false,
+  "entries": [
+    { "name": "Library", "path": "...", "size": 80939438080, "is_dir": true }
+  ],
+  "large_files": [
+    { "name": "backup.zip", "path": "...", "size": 8796093022 }
+  ],
+  "total_size": 168393441280,
+  "total_files": 42187
+}
+
 $ mo status --json
 {
   "host": "MacBook-Pro",
@@ -363,7 +377,7 @@ Sind eigene Pfade hinterlegt, scannt Mole ausschließlich diese Verzeichnisse. A
 
 ### Installationsdateien (Installer)
 
-`mo installer` findet DMG-, PKG-, MPKG-, ISO-, XIP- und Installer-ZIP-Dateien in Downloads, Schreibtisch, Homebrew-Caches, iCloud, Mail, Telegram und weiteren unterstützten Orten. Vor dem Löschen werden Größe und Pfad angezeigt. Scans verfügen über einen globalen Timeout-Schutz; schlägt ein Scan oder eine Metadatenabfrage fehl oder läuft ab, verwirft Mole die Liste und wählt keine Dateien aus. Beschädigte und nicht lesbare ZIP-Archive werden übersprungen, Symlinks als Scan-Wurzel werden unterstützt, Symlinks darunter aber nicht verfolgt. Vor dem endgültigen Löschen werden Dateien erneut überprüft, um sicherzustellen, dass sie sich nicht verändert haben.
+`mo installer` findet DMG-, PKG-, MPKG-, ISO-, XIP- und Installer-ZIP-Dateien in Downloads, Schreibtisch, Homebrew-Caches, iCloud, Mail, Telegram und weiteren unterstützten Orten. Vor dem Löschen werden Größe und Quelle angezeigt. Scans verfügen über einen globalen Timeout-Schutz; schlägt ein Scan oder eine Metadatenabfrage fehl oder läuft ab, verwirft Mole die Liste und wählt keine Dateien aus. Beschädigte und nicht lesbare ZIP-Archive werden übersprungen, Symlinks als Scan-Wurzel werden unterstützt, Symlinks darunter aber nicht verfolgt. Vor dem endgültigen Löschen werden Dateien erneut überprüft, um sicherzustellen, dass sie sich nicht verändert haben.
 
 <details>
 <summary><strong>Installer Beispielausgabe</strong></summary>

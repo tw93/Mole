@@ -6,8 +6,8 @@
   <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/tag/tw93/mole?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter"></a>
-  <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram"></a>
+  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
 <p align="center">
@@ -22,7 +22,7 @@
 - **深度清理**：清除系統快取、應用程式日誌與解除安裝殘留，釋放磁碟空間
 - **應用程式解除安裝**：移除應用程式，同步清理偏好設定與自啟動項目
 - **磁碟分析**：終端機互動式瀏覽目錄層級，定位佔用空間的大檔案
-- **系統最佳化**：重新整理系統服務、重建快取並最佳化核心資料庫
+- **系統最佳化**：重新整理 DNS、QuickLook 與圖示快取，最佳化系統資料庫
 - **即時監控**：在終端機儀表板中即時查看 CPU、記憶體、磁碟讀寫、網路流量與行程
 
 ## 快速開始
@@ -84,7 +84,7 @@ mo analyze /private/tmp      # 僅檢視暫存目錄（不自動清理）
 <details>
 <summary><strong>其他安裝選項</strong></summary>
 
-如需安裝特定版本，可傳入 [Releases 頁面](https://github.com/tw93/mole/releases) 中的任意 Tag（帶或不帶前導 `V` 均可）。如需追蹤開發分支，可傳入 `main`：
+想裝特定版本就傳入 [Releases 頁面](https://github.com/tw93/mole/releases) 裡的任意 Tag，帶不帶開頭的 `V` 都行，想跟開發分支就傳 `main`：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
@@ -93,7 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s
 
 `main` 會安裝預設分支上還沒釋出的程式碼，可能不穩定，`latest` 只是 `main` 的舊別名，並不會安裝最新穩定版。
 
-安裝指令碼預設安裝至 `/usr/local/bin`，可能需要輸入管理員密碼。如果你希望未來的 `mo update` 無需密碼，可以安裝至使用者目錄：
+安裝指令碼預設裝到 `/usr/local/bin`，可能需要輸入管理員密碼。希望以後的 `mo update` 不用輸密碼，可以裝到使用者目錄：
 
 ```bash
 mkdir -p "$HOME/.local/bin"
@@ -101,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-記得將 `export PATH` 加入 `~/.zshrc` 或對應的 shell 設定檔中。Mole 更新的是你執行的那份安裝，之後會一直用這個目錄，需要改系統檔案的指令仍可能要管理員權限。
+記得把 `export PATH` 加到 `~/.zshrc` 或對應的 shell 設定檔中。Mole 更新的是你執行的那份安裝，之後會一直用這個目錄，需要改系統檔案的指令仍可能要管理員權限。
 
 **Nix**
 
@@ -113,7 +113,7 @@ nix profile upgrade mole
 nix profile remove mole
 ```
 
-宣告式配置可將 `github:tw93/mole/main` 新增為 flake input，使用其 `packages.${system}.mole` 套件。Nix 管理的安裝要透過 Nix 升級和移除，`mo update` 和 `mo remove` 不會改動它。
+宣告式配置可以把 `github:tw93/mole/main` 加為 flake input，用它的 `packages.${system}.mole` 套件。Nix 管理的安裝要透過 Nix 升級和移除，`mo update` 和 `mo remove` 不會改動它。
 
 </details>
 
@@ -195,7 +195,7 @@ Removed 1 app, freed 12.80GB: Photoshop 2024
 
 ### 系統最佳化（Optimize）
 
-`mo optimize` 對支援的 Finder、網路、資料庫與 macOS 服務執行範圍明確的維護，非必要、目前執行不安全或無法使用的任務會略過並說明原因。可用 `mo optimize --whitelist` 排除任務或路徑模式，例如常駐掛載的 `/Volumes/mail`，避免它被識別為卸載目標。
+`mo optimize` 對支援的 Finder、網路、資料庫與 macOS 服務執行範圍明確的維護，非必要、目前執行不安全或無法使用的任務會略過並說明原因。可用 `mo optimize --whitelist` 排除任務或路徑模式，例如常駐掛載的 `/Volumes/mail`，避免它出現在退出列表裡。
 
 ```text
 $ mo optimize
@@ -287,9 +287,23 @@ Proxy   HTTP · 192.168.1.100             Chrome     ▮▮▮▯▯  28.3%
 - `mo status --json`：單次輸出系統狀態快照 JSON
 - `mo status | jq '.health_score'`：當輸出被管線重定向時自動切換為 JSON 模式
 - `mo status --watch --interval 2s`：持續串流輸出 NDJSON（換行分隔的 JSON）
-- `mo history --json`：以 JSON 格式輸出歷史清理日誌。每個工作階段帶有 `run_id`（不透明字串，沒有記錄身分時為空）和 `attribution`，能識別的執行是 `run`，舊版按指令分組的是 `command`，舊標記分不清中斷和重疊執行時是 `ambiguous`。記錄下來的操作仍然都能看到，但 `ambiguous` 的計數沒辦法可靠地分到單次執行上。`ended_at` 為空表示沒有記錄到結束標記。
+- `mo history --json`：以 JSON 格式輸出歷史清理日誌。每個工作階段帶有 `run_id`（不透明字串，沒有記錄身分時為空）和 `attribution`，能識別的執行是 `run`，舊版按指令分組的是 `command`，舊標記分不清中斷和重疊執行時是 `ambiguous`。記錄下來的操作仍然都能看到，但 `ambiguous` 的計數沒辦法可靠地分到單次執行上。`ended_at` 為空表示沒有記錄到結束標記
 
 ```text
+$ mo analyze --json ~/Documents
+{
+  "path": "/Users/you/Documents",
+  "overview": false,
+  "entries": [
+    { "name": "Library", "path": "...", "size": 80939438080, "is_dir": true }
+  ],
+  "large_files": [
+    { "name": "backup.zip", "path": "...", "size": 8796093022 }
+  ],
+  "total_size": 168393441280,
+  "total_files": 42187
+}
+
 $ mo status --json
 {
   "host": "MacBook-Pro",
@@ -312,7 +326,7 @@ $ mo status --json
 
 如果某個指標收集出錯，`mo status --json` 仍會輸出其他可用指標，將錯誤記錄在 stderr 中並以結束碼 0 結束，`--watch` 也是這樣繼續輸出，只有 CPU、記憶體、磁碟和行程指標全都拿不到，或者 JSON 輸出失敗時才以結束碼 1 結束。
 
-支援對持續高 CPU 佔用的行程進行提示，可透過 `--proc-cpu-threshold`、`--proc-cpu-window` 或 `--proc-cpu-alerts=false` 進行調整或關閉。
+持續高 CPU 的行程會有提示，用 `--proc-cpu-threshold`、`--proc-cpu-window` 或 `--proc-cpu-alerts=false` 調整或關閉。
 
 </details>
 
@@ -399,9 +413,9 @@ Removed 5 installers, freed 3.83GB
 curl -fsSL https://raw.githubusercontent.com/tw93/Mole/main/scripts/setup-quick-launchers.sh | bash
 ```
 
-該指令碼會自動新增 Raycast 指令；若偵測到 Alfred 設定，還會同步新增帶有 `clean`、`uninstall`、`optimize`、`analyze` 與 `status` 關鍵字的 Alfred Workflow。
+指令碼會新增 Raycast 指令，偵測到 Alfred 設定時還會新增帶有 `clean`、`uninstall`、`optimize`、`analyze` 與 `status` 關鍵字的 Alfred Workflow。
 
-Raycast 安裝後需一次性手動設定：
+Raycast 裝好後要手動設定一次：
 
 1. 開啟 **Raycast 設定 > Extensions > Script Commands**。
 2. 新增 `~/Library/Application Support/Raycast/script-commands` 目錄。
