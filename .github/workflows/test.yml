@@ -15,6 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -26,7 +29,6 @@ jobs:
       - name: Install Pester
         run: |
           Install-Module -Name Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
-        shell: ${{ matrix.shell }}
 
       - name: Run PowerShell tests
         run: |
@@ -37,7 +39,6 @@ jobs:
           $config.Output.Verbosity = "Detailed"
           $config.Run.Exit = $true
           Invoke-Pester -Configuration $config
-        shell: ${{ matrix.shell }}
 
       - name: Run Go tests
         if: matrix.shell == 'pwsh'
