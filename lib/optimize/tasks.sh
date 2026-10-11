@@ -1380,7 +1380,7 @@ opt_shared_file_list_repair() {
     local scan_err_file=""
     scan_err_file=$(mktemp_file "optimize-shared-file-lists-errors" 2> /dev/null) || scan_err_file=""
     run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" find "$sfl_dir" \
-        \( -name "*.sfl2" -o -name "*.sfl3" \) -type f \
+        \( -name "*.sfl2" -o -name "*.sfl3" -o -name "*.sfl4" \) -type f \
         ! -path "*ApplicationRecentDocuments*" -print0 \
         > "$scan_file" 2> "${scan_err_file:-/dev/null}" || scan_rc=$?
     if [[ $scan_rc -ne 0 ]]; then
