@@ -35,7 +35,9 @@ func collectBatteries() (batts []BatteryStatus, err error) {
 
 	// macOS: pmset for real-time percentage/status.
 	if runtime.GOOS == "darwin" && commandExists("pmset") {
-		if out, err := runCmd(context.Background(), "pmset", "-g", "batt"); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if out, err := runCmd(ctx, "pmset", "-g", "batt"); err == nil {
 			// Health/cycles/capacity from AppleSmartBattery and cached system_profiler.
 			health, cycles, capacity := getCachedPowerData()
 			if batts := parsePMSet(out, health, cycles, capacity); len(batts) > 0 {

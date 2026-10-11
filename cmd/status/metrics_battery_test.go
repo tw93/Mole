@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"math"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func TestParseSystemPowerJSON(t *testing.T) {
@@ -240,5 +244,46 @@ func TestParseAppleSmartBatteryThermalIgnoresRawAdapterWatts(t *testing.T) {
 
 	if thermal.AdapterPower != 96 {
 		t.Fatalf("expected normalized adapter power 96W, got %v", thermal.AdapterPower)
+	}
+}
+
+func TestCollectBatteriesEnforcesTimeoutOnPMSet(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("pmset collection is darwin-only")
+	}
+
+	origRunCmd, origCommandExists := runCmd, commandExists
+	t.Cleanup(func() {
+		runCmd, commandExists = origRunCmd, origCommandExists
+	})
+
+	commandExists = func(name string) bool {
+		return name == "pmset"
+	}
+
+	var observedDeadline time.Time
+	runCmd = func(ctx context.Context, name string, _ ...string) (string, error) {
+		if name == "pmset" {
+			if dl, ok := ctx.Deadline(); ok {
+				observedDeadline = dl
+			}
+			return "-InternalBattery-0 (id=1234567)\t85%; discharging; 4:30 remaining present: true\n", nil
+		}
+		return "", errors.New("command not mocked")
+	}
+
+	batts, err := collectBatteries()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(batts) == 0 {
+		t.Fatal("expected battery status to be collected")
+	}
+	if observedDeadline.IsZero() {
+		t.Fatal("expected pmset runCmd context to have a deadline")
+	}
+	remaining := time.Until(observedDeadline)
+	if remaining <= 0 || remaining > time.Second {
+		t.Fatalf("expected deadline <= 1s in the future, got %v", remaining)
 	}
 }
