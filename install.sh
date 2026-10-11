@@ -829,7 +829,7 @@ get_latest_release_tag() {
     tag=$(curl -fsSL --connect-timeout 2 --max-time 3 \
         "https://api.github.com/repos/tw93/mole/releases/latest" 2> /dev/null |
         sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
-    if [[ -z "$tag" ]]; then
+    if [[ -z "$tag" || ! "$tag" =~ ^V[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         return 1
     fi
     printf '%s\n' "$tag"

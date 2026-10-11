@@ -1428,3 +1428,32 @@ EOF
 	[ "$status" -eq 0 ] || return 1
 	[ "$output" = "V1.60.0" ]
 }
+
+@test "get_latest_release_tag rejects non-macOS release tags" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+mole_source_installer
+curl() {
+	printf '{"tag_name": "V1.60.0-windows"}\n'
+}
+if get_latest_release_tag; then
+	exit 1
+fi
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "get_latest_release_tag accepts plain macOS release tags" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+mole_source_installer
+curl() {
+	printf '{"tag_name": "V1.60.0"}\n'
+}
+get_latest_release_tag
+EOF
+
+	[ "$status" -eq 0 ] || return 1
+	[ "$output" = "V1.60.0" ]
+}
