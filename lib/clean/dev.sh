@@ -2878,12 +2878,13 @@ clean_dev_mobile() {
             note_activity
         fi
     fi
-    # Old iOS/watchOS/tvOS DeviceSupport versions (debug symbols for connected devices).
+    # Old iOS/watchOS/tvOS/visionOS DeviceSupport versions (debug symbols for connected devices).
     # Each iOS version creates a 1-3 GB folder of debug symbols. Only the versions
     # matching currently used devices are needed; older ones regenerate on device connect.
     clean_xcode_device_support ~/Library/Developer/Xcode/iOS\ DeviceSupport "iOS DeviceSupport" || return $?
     clean_xcode_device_support ~/Library/Developer/Xcode/watchOS\ DeviceSupport "watchOS DeviceSupport" || return $?
     clean_xcode_device_support ~/Library/Developer/Xcode/tvOS\ DeviceSupport "tvOS DeviceSupport" || return $?
+    clean_xcode_device_support ~/Library/Developer/Xcode/visionOS\ DeviceSupport "visionOS DeviceSupport" || return $?
     # Simulator runtime caches.
     _xcode_safe_clean_guarded \
         _coresimulator_delete_guard_allows \

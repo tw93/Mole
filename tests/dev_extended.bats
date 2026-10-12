@@ -2010,6 +2010,7 @@ EOF
     [[ "$output" != *"ACTIVITY"* ]] || return 1
     [[ ! -e "$HOME/simctl-unavailable.log" ]] || return 1
     [[ "$output" == *"DEVICE_SUPPORT:iOS DeviceSupport"* ]] || return 1
+    [[ "$output" == *"DEVICE_SUPPORT:visionOS DeviceSupport"* ]] || return 1
     [[ "$output" == *"SAFE_CLEAN_GUARDED:_coresimulator_delete_guard_allows:Simulator runtime cache"* ]] || return 1
     [[ "$output" == *"SAFE_CLEAN_GUARDED:_xcode_delete_guard_allows:Xcode Interface Builder cache"* ]] || return 1
     [[ "$output" == *"SAFE_CLEAN:Android SDK cache"* ]] || return 1
