@@ -249,3 +249,36 @@ EOF
     [[ "$output" == *"PRESENT"* ]] || return 1
     [[ "$output" != *"Cached device firmware"* ]]
 }
+
+@test "clean_cached_device_firmware reports .ipsw files from Apple TV Software Updates" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+TV_DIR="$HOME/Library/iTunes/Apple TV Software Updates"
+mkdir -p "$TV_DIR"
+touch "$TV_DIR/AppleTV5,3_16.0_20J373_Restore.ipsw"
+
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { echo "2097152"; }  # 2GB
+bytes_to_human() { echo "2.0G"; }
+note_activity() { :; }
+export -f is_path_whitelisted get_path_size_kb bytes_to_human note_activity
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+clean_cached_device_firmware
+echo "Files: $files_cleaned Items: $total_items"
+
+[[ -f "$TV_DIR/AppleTV5,3_16.0_20J373_Restore.ipsw" ]] || exit 11
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Cached device firmware"* ]] || return 1
+    [[ "$output" == *"1 files"* ]] || return 1
+    [[ "$output" == *"dry"* ]] || return 1
+    [[ "$output" == *"Files: 1 Items: 1"* ]]
+}

@@ -2617,6 +2617,7 @@ clean_cached_device_firmware() {
         "$HOME/Library/iTunes/iPhone Software Updates"
         "$HOME/Library/iTunes/iPad Software Updates"
         "$HOME/Library/iTunes/iPod Software Updates"
+        "$HOME/Library/iTunes/Apple TV Software Updates"
     )
 
     # Apple Configurator 2 nests firmware under per-team-id group containers.
