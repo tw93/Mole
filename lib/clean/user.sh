@@ -2609,9 +2609,30 @@ clean_application_support_logs() {
         note_activity
     fi
 }
+# Bind each firmware file to its physical location and require a complete,
+# idle handle probe. Used before sizing, after preview sizing, and at the sink.
+_cached_device_firmware_delete_guard() {
+    local path="$1" ancestor="$1" probe_rc=0
+    [[ -f "$path" && ! -L "$path" ]] || return 1
+    while [[ "$ancestor" != "$HOME" ]]; do
+        [[ "$ancestor" == "$HOME/"* && ! -L "$ancestor" ]] || return 1
+        ancestor="${ancestor%/*}"
+    done
+    _mole_path_matches_identity "$path" "$_MOLE_FIRMWARE_PARENT" \
+        "$_MOLE_FIRMWARE_PARENT_ID" "$_MOLE_FIRMWARE_TARGET_ID" || return 1
+    _mole_paths_have_open_handle "$path" || probe_rc=$?
+    if mole_rc_signal "$probe_rc"; then
+        return "$probe_rc"
+    fi
+    # A read-only timeout is unknown, not cancellation of later cleanup.
+    [[ $probe_rc -eq 1 ]] || return 1
+    _mole_path_matches_identity "$path" "$_MOLE_FIRMWARE_PARENT" \
+        "$_MOLE_FIRMWARE_PARENT_ID" "$_MOLE_FIRMWARE_TARGET_ID"
+}
+
 # Remove cached device firmware (.ipsw) from iTunes, Finder, and Apple Configurator 2.
-# These are installers for firmware already applied (or superseded); macOS will
-# re-download them on demand. Typical size: 5-8GB per file. Never touches backups.
+# Cached restore installers can be downloaded again. Keep open or unverified
+# files, and never scan device backups or partial downloads.
 clean_cached_device_firmware() {
     local -a shallow_dirs=(
         "$HOME/Library/iTunes/iPhone Software Updates"
@@ -2634,10 +2655,21 @@ clean_cached_device_firmware() {
 
     _process_ipsw_file() {
         local ipsw="$1"
-        [[ -f "$ipsw" ]] || return 0
-        if is_path_whitelisted "$ipsw"; then
+        [[ -f "$ipsw" && ! -L "$ipsw" ]] || return 0
+        if is_path_whitelisted "$ipsw" || should_protect_path "$ipsw"; then
             return 0
         fi
+        _mole_snapshot_path_identity "$ipsw" || return 0
+        local _MOLE_FIRMWARE_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+        local _MOLE_FIRMWARE_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+        local _MOLE_FIRMWARE_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+        local guard_rc=0
+        _cached_device_firmware_delete_guard "$ipsw" || guard_rc=$?
+        if mole_rc_signal "$guard_rc"; then
+            _mole_record_clean_cancellation "$guard_rc"
+            return "$guard_rc"
+        fi
+        [[ $guard_rc -eq 0 ]] || return 0
         local size_kb=""
         local size_rc=0
         size_kb=$(get_path_size_kb "$ipsw") || size_rc=$?
@@ -2645,8 +2677,21 @@ clean_cached_device_firmware() {
         [[ $size_rc -eq 0 ]] || return "$size_rc"
         size_kb="${size_kb:-0}"
         if [[ "$DRY_RUN" == "true" ]]; then
+            guard_rc=0
+            _cached_device_firmware_delete_guard "$ipsw" || guard_rc=$?
+            if mole_rc_signal "$guard_rc"; then
+                _mole_record_clean_cancellation "$guard_rc"
+                return "$guard_rc"
+            fi
+            [[ $guard_rc -eq 0 ]] || return 0
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$ipsw" "$size_kb" 1 true || return 0
+                local record_rc=0
+                record_dry_run_cleanup_target "$ipsw" "$size_kb" 1 true || record_rc=$?
+                if mole_rc_timeout_or_signal "$record_rc"; then
+                    _mole_record_clean_cancellation "$record_rc"
+                    return "$record_rc"
+                fi
+                [[ $record_rc -eq 0 ]] || return 0
             fi
             total_size_kb=$((total_size_kb + size_kb))
             cleaned_count=$((cleaned_count + 1))
@@ -2654,7 +2699,16 @@ clean_cached_device_firmware() {
             return 0
         fi
 
-        if safe_remove "$ipsw" true > /dev/null 2>&1; then
+        local _MOLE_SAFE_REMOVE_FINAL_GUARD=_cached_device_firmware_delete_guard
+        local remove_rc=0
+        safe_remove "$ipsw" true "$size_kb" "" \
+            "$_MOLE_FIRMWARE_PARENT" "$_MOLE_FIRMWARE_PARENT_ID" \
+            "$_MOLE_FIRMWARE_TARGET_ID" > /dev/null 2>&1 || remove_rc=$?
+        if mole_rc_timeout_or_signal "$remove_rc"; then
+            _mole_record_clean_cancellation "$remove_rc"
+            return "$remove_rc"
+        fi
+        if [[ $remove_rc -eq 0 ]]; then
             total_size_kb=$((total_size_kb + size_kb))
             cleaned_count=$((cleaned_count + 1))
             cleaned_any=true
