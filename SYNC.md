@@ -14,7 +14,7 @@ This is the synchronization entry point for **Mole CLI (macOS)**, branch `main` 
 | Topic | Status | Source and next check |
 | --- | --- | --- |
 | Log-root traversal and late Git ownership | Implemented | `8811fcbd` and follow-ups `61756c27`, `f5b5a335`, `a5ba6e79`, `1c323dba`; `lib/clean/user.sh` and `lib/clean/caches.sh` recheck roots/ownership. The app-owned comparison must no longer call these unfixed. This record does not re-certify the full test suite. |
-| Offline and generated media | Implemented | `b364d17d`, `lib/clean/app_caches.sh`; preserve data that a user cannot regenerate from the cache alone. Windows paths require their own policy review, tracked by CLI-SYNC-01 on `windows`. |
+| Offline and generated media | Implemented | `b364d17d`, `lib/clean/app_caches.sh`; preserve data that a user cannot regenerate from the cache alone. Windows paths require their own policy review, tracked by CLI-SYNC-01 (Spotify, implemented) and CLI-SYNC-09 (recordings, pending) on `windows`. |
 | Uninstall review and configuration references | Implemented | `eb21fff1`, `lib/uninstall/config_refs.sh`; Windows adaptation remains pending, not an instruction to copy macOS paths. |
 | Process CPU denominator | Intentional difference | `cmd/status/metrics_process.go` consumes macOS `ps` process CPU; both CLIs use one logical CPU as 100%. Do not divide by machine CPU count just to match a GUI. |
 | GUI-only capabilities | Not applicable | Menu/tray, app bulk updates and private leftover catalogs are not CLI parity requirements. |

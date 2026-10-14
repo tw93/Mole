@@ -802,6 +802,36 @@ EOF
     [[ "$(grep -c "Preferences" "$trace" 2> /dev/null || true)" -eq 0 ]]
 }
 
+@test "same-bundle scan names the first unreadable path and keeps the generic wording when none is known (#1735)" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+root="$HOME/vols-1735"
+rm -rf "$root"; mkdir -p "$root/Readable/Good.app" "$root/Backups of mole-test"
+chmod 000 "$root/Backups of mole-test"
+out="$HOME/scan-1735.out"
+_MOLE_UNINSTALL_SCAN_UNREADABLE=""
+rc=0
+_uninstall_materialize_complete_find0 "$out" "$((SECONDS + 30))" "$root" -mindepth 1 -maxdepth 2 -iname '*.app' || rc=$?
+chmod 755 "$root/Backups of mole-test"
+echo "RC=$rc"
+echo "UNREADABLE=${_MOLE_UNINSTALL_SCAN_UNREADABLE}"
+tr '\0' '\n' < "$out"
+# A fully readable tree leaves it empty.
+rm -rf "$root/Backups of mole-test"
+_MOLE_UNINSTALL_SCAN_UNREADABLE=""
+rc=0
+_uninstall_materialize_complete_find0 "$out" "$((SECONDS + 30))" "$root" -mindepth 1 -maxdepth 2 -iname '*.app' || rc=$?
+echo "CLEAN_RC=$rc CLEAN_UNREADABLE=[${_MOLE_UNINSTALL_SCAN_UNREADABLE}]"
+EOF
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"RC=$MOLE_UNINSTALL_SCAN_PARTIAL"* || "$output" == *"RC=3"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"UNREADABLE=$HOME/vols-1735/Backups of mole-test"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"Good.app"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"CLEAN_RC=0 CLEAN_UNREADABLE=[]"* ]] || { echo "$output"; return 1; }
+}
+
 @test "batch uninstall shows a partial same-bundle scan in the preview, not on the scan spinner" {
     mkdir -p "$HOME/Applications/Managed.app" "$HOME/Library/Preferences"
     local pref="$HOME/Library/Preferences/com.example.Managed.plist"
@@ -853,6 +883,65 @@ EOF
     header_line=$(printf '%s\n' "$output" | grep -n 'Files to be removed' | head -1 | cut -d: -f1)
     app_line=$(printf '%s\n' "$output" | grep -n ' Managed .*0B' | head -1 | cut -d: -f1)
     note_line=$(printf '%s\n' "$output" | grep -n 'Shared leftovers kept (some paths unreadable)' | head -1 | cut -d: -f1)
+    [[ -n "$header_line" && -n "$app_line" && -n "$note_line" ]] || { echo "$output"; return 1; }
+    [[ $app_line -gt $header_line && $note_line -eq $((app_line + 1)) ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"UNEXPECTED_"* ]] || return 1
+    [[ "$(grep -c "^DELETE:$HOME/Applications/Managed.app$" "$trace" 2> /dev/null || true)" -eq 1 ]] || return 1
+    [[ "$(grep -c "Preferences" "$trace" 2> /dev/null || true)" -eq 0 ]]
+}
+
+@test "batch uninstall names the unreadable path of a partial same-bundle scan in the preview (#1735)" {
+    mkdir -p "$HOME/Applications/Managed.app" "$HOME/Library/Preferences"
+    local pref="$HOME/Library/Preferences/com.example.Managed.plist"
+    printf 'pref' > "$pref"
+    local trace="$HOME/managed-deletes.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+brew() { :; }
+
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+pgrep() { return 1; }
+find_app_files() { printf '%s\n' "$HOME/Library/Preferences/com.example.Managed.plist"; }
+find_app_system_files() { return 0; }
+ensure_sudo_session() { return 1; }
+# TCC hides one directory from the same-bundle scan, as on macOS 26.
+uninstall_live_bundle_has_other_install() {
+	_MOLE_UNINSTALL_LIVE_SIBLING_FINGERPRINT=""
+	_MOLE_UNINSTALL_LIVE_SIBLING_PATHS=()
+	_MOLE_UNINSTALL_SCAN_UNREADABLE='/Volumes/Backups of mole-test\new'
+	return "$MOLE_UNINSTALL_SCAN_PARTIAL"
+}
+stop_launch_services() { :; }
+unregister_app_bundle() { :; }
+remove_login_item() { echo "UNEXPECTED_LOGIN_ITEM"; }
+force_kill_app() { echo "UNEXPECTED_KILL"; return 0; }
+mole_delete() {
+	printf 'DELETE:%s\n' "$1" >> "$HOME/managed-deletes.log"
+	return 0
+}
+
+selected_apps=("0|$HOME/Applications/Managed.app|Managed|com.example.Managed|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+
+printf '\n' | batch_uninstall_applications 2>&1
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    # The note belongs to this app's preview block. Printed during the scan,
+    # it landed on the scan spinner line, before the preview header.
+    local header_line app_line note_line
+    header_line=$(printf '%s\n' "$output" | grep -n 'Files to be removed' | head -1 | cut -d: -f1)
+    app_line=$(printf '%s\n' "$output" | grep -n ' Managed .*0B' | head -1 | cut -d: -f1)
+    note_line=$(printf '%s\n' "$output" | grep -nF 'Shared leftovers kept (cannot read /Volumes/Backups of mole-test\new)' | head -1 | cut -d: -f1)
     [[ -n "$header_line" && -n "$app_line" && -n "$note_line" ]] || { echo "$output"; return 1; }
     [[ $app_line -gt $header_line && $note_line -eq $((app_line + 1)) ]] || { echo "$output"; return 1; }
     [[ "$output" != *"UNEXPECTED_"* ]] || return 1

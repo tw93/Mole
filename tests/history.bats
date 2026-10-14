@@ -682,24 +682,26 @@ def write_log(ended):
         f.write("\n".join(lines) + "\n")
 
 
-def load_seconds(ended):
+def load_once(ended):
     write_log(ended)
-    best = None
-    for _ in range(2):
-        start = time.perf_counter()
-        subprocess.run([root + "/mole", "history", "--json"], env=dict(os.environ, HOME=home),
-                       stdout=subprocess.DEVNULL, check=True)
-        elapsed = time.perf_counter() - start
-        best = elapsed if best is None else min(best, elapsed)
-    return best
+    start = time.perf_counter()
+    subprocess.run([root + "/mole", "history", "--json"], env=dict(os.environ, HOME=home),
+                   stdout=subprocess.DEVNULL, check=True)
+    return time.perf_counter() - start
 
 
-finished = load_seconds(True)
-interrupted = load_seconds(False)
+# Alternate the two logs so a busy host slows both sides alike, and keep each
+# side's fastest run.
+finished = interrupted = None
+for _ in range(3):
+    f = load_once(True)
+    i = load_once(False)
+    finished = f if finished is None else min(finished, f)
+    interrupted = i if interrupted is None else min(interrupted, i)
 print("finished=%.2fs interrupted=%.2fs" % (finished, interrupted))
 assert interrupted < 2.0 * finished, (finished, interrupted)
 PY
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "mo history does not create logs when none exist" {

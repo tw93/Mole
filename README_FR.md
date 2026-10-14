@@ -16,7 +16,7 @@
   <img src="./docs/img/big-mole.png" alt="Résultats du nettoyage avec Mole" width="1000" />
 </p>
 
-> 💡 Ce dépôt contient la CLI open source gratuite (`mo`). Vous préférez une app native ? [Mole for Mac](https://mole.fit/) se télécharge séparément : vérification avant suppression, nettoyage des résidus testé sur plus de 800 apps, maintenance, exploration détaillée du disque, état en direct et contrôle des ventilateurs sur les Mac compatibles. `brew install mole` installe uniquement la CLI.
+> 💡 Ce dépôt contient la CLI open source gratuite (`mo`). Vous préférez une app native ? [Mole for Mac](https://mole.fit/) se télécharge séparément : vérification avant suppression, nettoyage des résidus testé sur plus de 800 apps, maintenance, exploration détaillée du disque, état en direct et contrôle des ventilateurs sur les Mac compatibles. Sous Windows, l'app native est [Mole for Windows](https://mole.fit/fr/windows). `brew install mole` installe uniquement la CLI.
 
 ## Fonctionnalités
 
@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
-Mole est distribué uniquement via Homebrew, ce dépôt GitHub et [mole.fit](https://mole.fit/) pour l'app Mac. Les sites qui proposent une app « basée sur Mole » ou vous demandent de coller une commande encodée dans le Terminal n'ont aucun lien avec Mole.
+Mole est distribué uniquement via Homebrew, ce dépôt GitHub et [mole.fit](https://mole.fit/) pour les apps Mac et Windows. Les sites qui proposent une app « basée sur Mole » ou vous demandent de coller une commande encodée dans le Terminal n'ont aucun lien avec Mole.
 
 **Commandes principales**
 

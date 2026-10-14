@@ -248,6 +248,14 @@ scan_installed_apps() {
                         fi
                     done
                 fi
+                # A PlayCover launcher alias has no Contents/ either; the strict
+                # alias check names the installed bundle that owns its id.
+                if [[ ! -f "$plist_path" ]]; then
+                    local playcover_bundle=""
+                    if playcover_bundle=$(mole_playcover_alias_target "$app_path" 2> /dev/null); then
+                        plist_path="$playcover_bundle/Info.plist"
+                    fi
+                fi
                 local bundle_id=""
                 if [[ ! -f "$plist_path" || ! -r "$plist_path" ]] ||
                     ! bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist_path" 2> /dev/null) ||

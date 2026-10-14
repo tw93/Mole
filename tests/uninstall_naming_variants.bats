@@ -475,3 +475,31 @@ EOF
     [[ "$output" == *"PGREP:-x MoleProbe"* ]] || return 1
     [[ "$output" != *"PGREP:-x Mole Probe"* ]]
 }
+
+@test "find_app_files finds the crash reporter and Darwin cache folders named by the exact bundle id (#1736)" {
+    local id="com.example.starry.proplus.8.osx"
+    local reporter="$HOME/Library/Caches/com.plausiblelabs.crashreporter.data"
+    mkdir -p "$reporter/$id" "$reporter/com.example.other" "$HOME/darwin-cache/C/$id" "$HOME/darwin-cache/C/com.example.other"
+    echo x > "$reporter/$id/report"
+    echo x > "$HOME/darwin-cache/C/$id/data"
+    mole_darwin_user_cache_root() { printf '%s\n' "$HOME/darwin-cache/C"; }
+
+    result=$(find_app_files "$id" "Starry Night")
+
+    [[ "$result" == *"$reporter/$id"* ]] || return 1
+    [[ "$result" == *"$HOME/darwin-cache/C/$id"* ]] || return 1
+    # Exact id only: a neighbor of the same vendor and the shared roots stay.
+    [[ "$result" != *"com.example.other"* ]] || return 1
+    [[ "$result" != *"$reporter"$'\n'* ]] || return 1
+    [[ "$result" != *"darwin-cache/C"$'\n'* ]] || return 1
+}
+
+@test "find_app_files skips the Darwin cache folder when its root cannot be resolved (#1736)" {
+    local id="com.example.starry.proplus.8.osx"
+    mkdir -p "$HOME/darwin-cache/C/$id"
+    mole_darwin_user_cache_root() { return 1; }
+
+    result=$(find_app_files "$id" "Starry Night")
+
+    [[ "$result" != *"darwin-cache"* ]] || return 1
+}

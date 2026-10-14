@@ -16,7 +16,7 @@
   <img src="./docs/img/big-mole.png" alt="Mole 清理成果" width="1000" />
 </p>
 
-> 💡 這個倉庫是免費開源的命令列工具（`mo`），喜歡圖形介面的話可以另外下載 [Mole for Mac](https://mole.fit/)，支援刪除前逐項確認、實測 800 多款軟體的解除安裝殘留、系統維護、逐層分析磁碟空間、即時狀態監控，以及在支援的 Mac 上控制風扇，`brew install mole` 只會安裝命令列工具。
+> 💡 這個倉庫是免費開源的命令列工具（`mo`），喜歡圖形介面的話可以另外下載 [Mole for Mac](https://mole.fit/)，支援刪除前逐項確認、實測 800 多款軟體的解除安裝殘留、系統維護、逐層分析磁碟空間、即時狀態監控，以及在支援的 Mac 上控制風扇，Windows 上對應的原生 App 是 [Mole for Windows](https://mole.fit/tw/windows)，`brew install mole` 只會安裝命令列工具。
 
 ## 功能
 
@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
-Mole 只透過 Homebrew、這個 GitHub 倉庫和 Mac 版官網 [mole.fit](https://mole.fit/) 發布，自稱基於 Mole 的其他 App，或要你往終端機貼上一段編碼指令的網站，都和 Mole 無關。
+Mole 只透過 Homebrew、這個 GitHub 倉庫和 Mac 版、Windows 版官網 [mole.fit](https://mole.fit/) 發布，自稱基於 Mole 的其他 App，或要你往終端機貼上一段編碼指令的網站，都和 Mole 無關。
 
 **常用指令**
 

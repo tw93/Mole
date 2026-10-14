@@ -316,6 +316,17 @@ check_notice(setup + '''run_mole_command /bin/bash -c 'echo CHILD_READY; kill -K
              expected_status=137, required=(b'CHILD_READY',), forbidden=(b'perl', b'Killed', b'Update 9.8.7'))
 print('PASS: a child killed by a signal keeps its status without bash job-status text')
 
+# Bash prints that same job-status line from whichever command finishes first
+# after the child is gone. Hold the router after the launch until the child has
+# died, then run an external command in the same window: nothing there may
+# reach the terminal, or a slow runner leaks the line at random (seen on CI).
+after_launch = instrument_router('command_pid=$!',
+                                 'command_pid=$!; local launch_deadline=$((SECONDS + 2)); '
+                                 'while ((SECONDS < launch_deadline)); do :; done; /bin/echo > /dev/null')
+check_notice(setup + after_launch + '''run_mole_command /bin/bash -c 'echo CHILD_READY; kill -KILL $$' ''',
+             expected_status=137, required=(b'CHILD_READY',), forbidden=(b'perl', b'Killed', b'Update 9.8.7'))
+print('PASS: a child that dies before the wait starts leaves no job-status line')
+
 # Delivery counts for INT. A terminal Ctrl-C reaches the child from the tty and
 # again from the router's forward, so one or two deliveries are expected there;
 # a signal sent to the router alone must arrive exactly once. The count child

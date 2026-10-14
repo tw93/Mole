@@ -1249,7 +1249,7 @@ codex_daemon_fixture() {
 
 codex_daemon_run() {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN="${1:-false}" \
-        BUSY_RELEASE="${2:-}" /bin/bash --noprofile --norc << 'INNER'
+        BUSY_RELEASE="${2:-}" REPOINT="${3:-}" /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
@@ -1270,6 +1270,10 @@ safe_clean_guarded() {
     local label="${*: -1}" path rc
     for path in "${@:1:$#-1}"; do
         rc=0
+        # A release becomes `current` after the scan listed it as a candidate.
+        if [[ -n "$REPOINT" ]]; then
+            ln -sfn "$HOME/.codex/packages/app-server-daemon/releases/$REPOINT" "$HOME/.codex/packages/app-server-daemon/current"
+        fi
         "$guard" "$path" || rc=$?
         if [[ $rc -eq 0 ]]; then
             echo "REMOVE:$label|${path##*/}"
@@ -1288,6 +1292,18 @@ fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)' "$HOME/.codex/packages/app-server
     echo "LOCK_RELEASED"
 fi
 INNER
+}
+
+@test "clean_codex_daemon_releases keeps a release that becomes current after the scan (#1704)" {
+    codex_daemon_fixture
+    local releases="$HOME/.codex/packages/app-server-daemon/releases"
+
+    codex_daemon_run false "" 0.159.0-aarch64-apple-darwin
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"SKIP:0.159.0-aarch64-apple-darwin"* ]] || return 1
+    [[ "$output" != *"REMOVE:Codex daemon old releases|0.159.0-aarch64-apple-darwin"* ]] || return 1
+    [[ -d "$releases/0.159.0-aarch64-apple-darwin" ]] || return 1
 }
 
 @test "clean_codex_daemon_releases removes only superseded releases (#1704)" {

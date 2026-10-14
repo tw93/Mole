@@ -1212,7 +1212,19 @@ find_app_files() {
             "$HOME/Library/Input Methods/$bundle_id.app"
             "$HOME/Library/Autosave Information/$bundle_id"
             "$HOME/Library/SyncedPreferences/$bundle_id.plist"
+            # PLCrashReporter keeps one folder per bundle id under its own root (#1736).
+            "$HOME/Library/Caches/com.plausiblelabs.crashreporter.data/$bundle_id"
         )
+        # The per-user Darwin cache root holds a folder named by the exact
+        # bundle id too. An unresolved root skips this one path, a signal stops.
+        local darwin_cache_root="" darwin_cache_rc=0
+        darwin_cache_root=$(mole_darwin_user_cache_root 2> /dev/null) || darwin_cache_rc=$?
+        if mole_rc_signal "$darwin_cache_rc" 2> /dev/null; then
+            return "$darwin_cache_rc"
+        fi
+        if [[ $darwin_cache_rc -eq 0 && -n "$darwin_cache_root" ]]; then
+            user_patterns+=("$darwin_cache_root/$bundle_id")
+        fi
     fi
 
     # A bundle id's last segment often names the data directory more precisely

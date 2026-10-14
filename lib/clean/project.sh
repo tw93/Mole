@@ -572,6 +572,19 @@ is_protected_purge_artifact() {
 # Scan purge targets using fd (fast) or pruned find. Optional $3 names a file
 # for the candidates the content probes verified clean; the caller that asks
 # for it owns and removes it, so a plain scan leaves nothing behind.
+# 0 when this find accepts `-flags +dataless`. Probed once per process on a
+# directory that is never dataless; any failure means "unknown", not "dataless".
+_purge_find_knows_dataless() {
+    if [[ -z "${_MOLE_PURGE_FIND_DATALESS:-}" ]]; then
+        if run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" find "$HOME" -maxdepth 0 -flags +dataless > /dev/null 2>&1; then
+            _MOLE_PURGE_FIND_DATALESS="yes"
+        else
+            _MOLE_PURGE_FIND_DATALESS="no"
+        fi
+    fi
+    [[ "$_MOLE_PURGE_FIND_DATALESS" == "yes" ]]
+}
+
 scan_purge_targets() {
     local search_path="$1"
     local output_file="$2"
@@ -792,7 +805,6 @@ scan_purge_targets() {
         # this disk, and listing it makes the File Provider fetch it from the
         # network, which is how a Google Drive root used up the scan budget
         # (#1679). Skip it without descending.
-        prune_expr+=(-o -flags +dataless)
 
         local target_expr=()
         for i in "${!purge_targets[@]}"; do
@@ -808,6 +820,12 @@ scan_purge_targets() {
             cleanup_scan_outputs
             debug_log "Purge discovery budget exhausted before find (status $find_status): $search_path"
             return "$find_status"
+        fi
+        # An older find that does not know the flag name fails the whole walk,
+        # so ask it once, after the budget check, and walk without the prune
+        # when it does not.
+        if [[ $find_status -eq 0 ]] && _purge_find_knows_dataless; then
+            prune_expr+=(-o -flags +dataless)
         fi
         if [[ $find_status -eq 0 ]]; then
             debug_log "Using find for scanning"

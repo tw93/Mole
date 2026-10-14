@@ -918,6 +918,34 @@ _MOLE_UNINSTALL_LIVE_VOLUMES_ROOT="/Volumes"
 # 3 is safe to add to the 0/1/124/128+ set these scans already speak.
 readonly MOLE_UNINSTALL_SCAN_PARTIAL=3
 
+# The first path a partial same-bundle scan could not read, so the preview can
+# name it instead of saying "some paths". One per app; reset by the caller.
+_MOLE_UNINSTALL_SCAN_UNREADABLE=""
+
+# Prints the path from the first "find: <path>: Permission denied" (or
+# "Operation not permitted") line of a find error file, ignoring the
+# timeout-backend preamble. Returns 1 when no such line exists.
+_uninstall_first_unreadable_path() {
+    local error_file="$1" line="" path=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            'find: '*': Permission denied')
+                path="${line#find: }"
+                path="${path%: Permission denied}"
+                ;;
+            'find: '*': Operation not permitted')
+                path="${line#find: }"
+                path="${path%: Operation not permitted}"
+                ;;
+            *) continue ;;
+        esac
+        [[ -n "$path" ]] || continue
+        printf '%s\n' "$path"
+        return 0
+    done < "$error_file"
+    return 1
+}
+
 _uninstall_materialize_complete_find0() {
     local output_file="$1"
     local deadline_seconds="$2"
@@ -960,6 +988,9 @@ _uninstall_materialize_complete_find0() {
             # Partial view: the listing is real but not exhaustive, so it can
             # support "something is there" and never "nothing is there".
             scan_rc="$MOLE_UNINSTALL_SCAN_PARTIAL"
+            if [[ -z "$_MOLE_UNINSTALL_SCAN_UNREADABLE" ]]; then
+                _MOLE_UNINSTALL_SCAN_UNREADABLE=$(_uninstall_first_unreadable_path "$scan_errors") || true
+            fi
         fi
         rm -f -- "$scan_errors" 2> /dev/null || true # SAFE: exact tracked temp file created above
     fi
@@ -1235,6 +1266,7 @@ uninstall_live_bundle_has_other_install() {
     local selected_path="$2"
     _MOLE_UNINSTALL_LIVE_SIBLING_FINGERPRINT=""
     _MOLE_UNINSTALL_LIVE_SIBLING_PATHS=()
+    _MOLE_UNINSTALL_SCAN_UNREADABLE=""
     mole_is_reverse_dns_bundle_id "$bundle_id" || return 1
 
     local deadline_seconds=$((SECONDS + (2 * MOLE_TIMEOUT_DISK_VERIFY_SEC)))
@@ -1797,7 +1829,13 @@ _batch_scan_app_details_impl() {
             live_sibling_present=true
             # Printed with this app's preview, not here: the scan spinner owns
             # this line, and the note belongs next to the plan it explains.
-            leftover_notes+=("$app_path|Shared leftovers kept (some paths unreadable)")
+            local unreadable_what="some paths unreadable"
+            if [[ -n "${_MOLE_UNINSTALL_SCAN_UNREADABLE:-}" ]]; then
+                # The note is printed with echo -e, so a backslash in the path stays literal.
+                unreadable_what="cannot read $(mole_terminal_safe_text "$_MOLE_UNINSTALL_SCAN_UNREADABLE")"
+                unreadable_what="${unreadable_what//\\/\\\\}"
+            fi
+            leftover_notes+=("$app_path|Shared leftovers kept ($unreadable_what)")
             debug_log "Same-bundle scan for $app_name could not read every path; shared leftovers kept"
         elif [[ $live_sibling_rc -ge 128 ]]; then
             return "$live_sibling_rc"

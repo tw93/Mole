@@ -969,30 +969,39 @@ run_mole_command() {
     # The checks above leave no known reason for the exec to fail; if one
     # appears anyway the cause is reported and the status is 1, like the plain
     # exec.
-    /usr/bin/perl -MPOSIX -e '$SIG{INT}="DEFAULT"; $SIG{QUIT}="DEFAULT"; POSIX::sigprocmask(POSIX::SIG_UNBLOCK(), POSIX::SigSet->new(POSIX::SIGTERM())) or die "Cannot unblock SIGTERM: $!\n"; kill "USR1", getppid(); exec {$ARGV[0]} @ARGV; warn "$ARGV[0]: $!\n"; exit 1' "$@" <&0 &
-    command_pid=$!
-    _mole_forward_pending_signal
-    # Bash 3.2 can discard INT inside a USR1 trap entered from wait. Settle
-    # the launcher's one readiness notification before using that builtin.
-    # A launcher that exits before notifying must still reach status collection.
+    # Bash prints a signalled background child ("Killed: 9 ... perl ...") from
+    # whichever command finishes first after the child dies. The launcher is
+    # that child when its command kills itself or crashes, so nothing between
+    # the launch and the end of the wait may write the shell's own stderr to
+    # the terminal. The command keeps the real stderr through fd 9.
+    exec 9>&2
     {
-        while [[ "$command_ready" != "true" ]] && kill -0 "$command_pid" 2> /dev/null; do
-            sleep 0.01 || true
+        /usr/bin/perl -MPOSIX -e '$SIG{INT}="DEFAULT"; $SIG{QUIT}="DEFAULT"; POSIX::sigprocmask(POSIX::SIG_UNBLOCK(), POSIX::SigSet->new(POSIX::SIGTERM())) or die "Cannot unblock SIGTERM: $!\n"; kill "USR1", getppid(); exec {$ARGV[0]} @ARGV; warn "$ARGV[0]: $!\n"; exit 1' "$@" <&0 2>&9 9>&- &
+        command_pid=$!
+        _mole_forward_pending_signal
+        # Bash 3.2 can discard INT inside a USR1 trap entered from wait. Settle
+        # the launcher's one readiness notification before using that builtin.
+        # A launcher that exits before notifying must still reach status collection.
+        {
+            while [[ "$command_ready" != "true" ]] && kill -0 "$command_pid" 2> /dev/null; do
+                sleep 0.01 || true
+            done
+        } 2> /dev/null
+        # wait returns early for a trapped signal. Retry only when this wait was
+        # interrupted, retaining the first cancellation status through child cleanup.
+        # Its stderr is dropped because bash reports a child killed by a signal
+        # (SIGKILL, a crash) with a job-status line that quotes the perl one-liner;
+        # the exit status is unaffected. The redirect sits on a group, not on the
+        # wait builtin: on bash 3.2 a TERM or HUP trap followed within a fraction
+        # of a millisecond by INT can leave a redirected wait looping at full CPU.
+        while true; do
+            observed_generation=$signal_generation
+            rc=0
+            { wait "$command_pid"; } 2> /dev/null || rc=$?
+            [[ "$observed_generation" -eq "$signal_generation" ]] && break
         done
     } 2> /dev/null
-    # wait returns early for a trapped signal. Retry only when this wait was
-    # interrupted, retaining the first cancellation status through child cleanup.
-    # Its stderr is dropped because bash reports a child killed by a signal
-    # (SIGKILL, a crash) with a job-status line that quotes the perl one-liner;
-    # the exit status is unaffected. The redirect sits on a group, not on the
-    # wait builtin: on bash 3.2 a TERM or HUP trap followed within a fraction
-    # of a millisecond by INT can leave a redirected wait looping at full CPU.
-    while true; do
-        observed_generation=$signal_generation
-        rc=0
-        { wait "$command_pid"; } 2> /dev/null || rc=$?
-        [[ "$observed_generation" -eq "$signal_generation" ]] && break
-    done
+    exec 9>&-
     [[ "$interrupted" -eq 0 ]] || rc=$interrupted
     trap - HUP INT TERM USR1
     if [[ "$rc" -lt 128 ]]; then

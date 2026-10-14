@@ -3231,6 +3231,45 @@ EOF
 	}
 }
 
+@test "installed-app scan reads a PlayCover launcher alias through its bundle and still fails closed on a look-alike" {
+	# The alias has no Contents/, only a copy of the bundle's Info.plist and
+	# links back into the PlayCover container. Before this it failed the scan
+	# closed and skipped App leftovers for every PlayCover user. Only the strict
+	# alias shape counts; a directory that merely resembles it stays unreadable.
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc << 'EOF'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+rm -f "$HOME/.cache/mole/installed_apps_cache"
+apps="$HOME/Applications"
+bundle="$HOME/Library/Containers/io.playcover.PlayCover/Applications/com.example.game.app"
+rm -rf "$apps" "$HOME/Library/Containers/io.playcover.PlayCover"
+mkdir -p "$apps/Good.app/Contents" "$apps/PlayCover/Game.app" "$bundle"
+plist='<?xml version="1.0"?><!DOCTYPE plist><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>%s</string></dict></plist>'
+printf "$plist" com.example.good > "$apps/Good.app/Contents/Info.plist"
+printf "$plist" com.example.game > "$bundle/Info.plist"
+cp "$bundle/Info.plist" "$apps/PlayCover/Game.app/Info.plist"
+: > "$bundle/Assets.car"
+ln -s "$bundle/Assets.car" "$apps/PlayCover/Game.app/Assets.car"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt" || { echo "SCAN_FAILED"; exit 1; }
+grep -Fxq "com.example.good" "$HOME/installed.txt" || { echo "MISSING_GOOD"; exit 1; }
+grep -Fxq "com.example.game" "$HOME/installed.txt" || { echo "MISSING_GAME"; exit 1; }
+
+# A flat directory outside the PlayCover launcher folder is not that alias.
+mkdir -p "$apps/Lookalike.app"
+printf "$plist" com.example.lookalike > "$apps/Lookalike.app/Info.plist"
+rm -f "$HOME/.cache/mole/installed_apps_cache"
+if scan_installed_apps "$HOME/installed2.txt"; then
+	echo "LOOKALIKE_NOT_FAILED"; exit 1
+fi
+EOF
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+}
+
 @test "installed-app scan skips an iOS app with a dangling WrappedBundle symlink" {
 	# AudioCopy.app has no Contents/, a WrappedBundle symlink into a Wrapper/
 	# that does not exist, so no readable plist anywhere. It owns no

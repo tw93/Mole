@@ -4473,6 +4473,46 @@ EOF
     [ "$failures" -eq 0 ]
 }
 
+@test "scan_purge_targets still walks when find rejects the dataless flag name" {
+	# An older macOS find that does not know `dataless` fails the whole walk
+	# with the flag in it. The probe must turn the prune off instead.
+	local root="$HOME/dataless-probe"
+	mkdir -p "$root/app/node_modules"
+	touch "$root/app/package.json"
+
+	local scan_output
+	scan_output="$(mktemp)"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ROOT="$root" SCAN_OUTPUT="$scan_output" \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+run_with_timeout() { shift; "$@"; }
+fd() { return 1; }
+find() {
+	local arg
+	for arg in "$@"; do
+		if [[ "$arg" == "-flags" ]]; then
+			echo "FLAG_SEEN" >> "$HOME/walk.log"
+			echo "find: -flags: dataless: illegal flag name" >&2
+			return 1
+		fi
+	done
+	/usr/bin/find "$@"
+}
+scan_purge_targets "$ROOT" "$SCAN_OUTPUT"
+cat "$SCAN_OUTPUT"
+echo "WALK_LOG:$(cat "$HOME/walk.log")"
+EOF
+
+	rm -f "$scan_output" "$HOME/walk.log"
+	rm -rf "$root"
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"$root/app/node_modules"* ]] || return 1
+	[[ "$output" == *"WALK_LOG:FLAG_SEEN"* ]] || return 1
+	[[ "$output" != *"WALK_LOG:FLAG_SEEN"*"FLAG_SEEN"* ]]
+}
+
 @test "scan_purge_targets skips online-only cloud folders and never uses fd for a cloud root (#1679)" {
 	local cloud="$HOME/Library/CloudStorage/GoogleDrive-test"
 	mkdir -p "$cloud/Local/app/node_modules" "$cloud/OnlineOnly/app/node_modules"
