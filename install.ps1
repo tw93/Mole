@@ -756,6 +756,30 @@ function Test-MoleInstallDir {
         (Test-Path -LiteralPath (Join-Path $Path "lib\core\base.ps1"))
 }
 
+# Removes one entry of the config folder without following links: a junction or
+# symbolic link is unlinked itself, never recursed into, so its target survives.
+# Windows PowerShell 5.1's Remove-Item -Recurse deletes a linked directory's
+# target contents.
+function Remove-MoleConfigEntry {
+    param([System.IO.FileSystemInfo]$Item)
+
+    if ($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        if ($Item.Attributes -band [System.IO.FileAttributes]::Directory) {
+            [System.IO.Directory]::Delete($Item.FullName, $false)
+        }
+        else {
+            [System.IO.File]::Delete($Item.FullName)
+        }
+        return
+    }
+    if ($Item.Attributes -band [System.IO.FileAttributes]::Directory) {
+        foreach ($child in @(Get-ChildItem -LiteralPath $Item.FullName -Force -ErrorAction Stop)) {
+            Remove-MoleConfigEntry -Item $child
+        }
+    }
+    Remove-Item -LiteralPath $Item.FullName -Force -ErrorAction Stop
+}
+
 function Uninstall-Mole {
     Write-Info "Uninstalling Mole..."
     Write-Host ""
@@ -850,7 +874,7 @@ function Uninstall-Mole {
                 $kept = @()
                 foreach ($item in @(Get-ChildItem -LiteralPath $configDir -Force -ErrorAction Stop)) {
                     if ($item.Name -like 'operations.log*') { $kept += $item.Name; continue }
-                    Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
+                    Remove-MoleConfigEntry -Item $item
                 }
                 if ($kept.Count -eq 0) {
                     Remove-Item -LiteralPath $configDir -Force -ErrorAction Stop

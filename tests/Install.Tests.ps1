@@ -6,7 +6,7 @@ BeforeAll {
     $script:WindowsDir = Split-Path -Parent $PSScriptRoot
     $installScript = Join-Path $script:WindowsDir "install.ps1"
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($installScript, [ref]$null, [ref]$null)
-    foreach ($name in @("Assert-InstallPhysicalPath", "Get-NormalizedPath", "Test-ProtectedInstallRoot", "Get-MoleInstallEntries", "Get-MoleInstallNestedFiles", "Remove-MoleNestedFiles", "Test-MoleInstallDir", "Uninstall-Mole")) {
+    foreach ($name in @("Assert-InstallPhysicalPath", "Get-NormalizedPath", "Test-ProtectedInstallRoot", "Get-MoleInstallEntries", "Get-MoleInstallNestedFiles", "Remove-MoleNestedFiles", "Remove-MoleConfigEntry", "Test-MoleInstallDir", "Uninstall-Mole")) {
         $definition = $ast.Find({
                 param($node)
                 $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -191,6 +191,37 @@ Describe "install.ps1 -Uninstall" {
         Uninstall-Mole | Should -BeTrue
 
         Test-Path -LiteralPath $config | Should -BeFalse
+    }
+
+    It "Unlinks a junction in the config folder and keeps its target's files" {
+        $own = Join-Path $env:LOCALAPPDATA "Programs\mole-cli"
+        New-CliTree -Root $own
+        $InstallDir = $own
+        $env:USERPROFILE = Join-Path $TestDrive ([guid]::NewGuid().ToString("N"))
+        $config = Join-Path $env:USERPROFILE ".config\mole"
+        New-Item -ItemType Directory -Path (Join-Path $config "cache") -Force | Out-Null
+        $outside = Join-Path $env:LOCALAPPDATA "outside"
+        New-Item -ItemType Directory -Path $outside -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $outside "keep.txt") -Value "keep"
+        $link = Join-Path $config "linked"
+        $nested = Join-Path $config "cache\linked"
+        $null = New-Item -ItemType Junction -Path $link -Target $outside
+        $null = New-Item -ItemType Junction -Path $nested -Target $outside
+        Mock Read-Host { "y" }
+
+        try {
+            Uninstall-Mole | Should -BeTrue
+
+            Get-Content -LiteralPath (Join-Path $outside "keep.txt") | Should -Be "keep"
+            Test-Path -LiteralPath $link | Should -BeFalse
+            Test-Path -LiteralPath $nested | Should -BeFalse
+            Test-Path -LiteralPath $config | Should -BeFalse
+        }
+        finally {
+            foreach ($path in @($link, $nested)) {
+                if (Test-Path -LiteralPath $path) { [System.IO.Directory]::Delete($path) }
+            }
+        }
     }
 
     It "Removes nothing from a folder that is not a Mole install" {
