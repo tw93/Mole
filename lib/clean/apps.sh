@@ -5,10 +5,16 @@ set -euo pipefail
 readonly ORPHAN_AGE_THRESHOLD=${MOLE_ORPHAN_AGE_DAYS:-30}
 readonly CLAUDE_VM_ORPHAN_AGE_THRESHOLD=7
 readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v3:complete"
-# Args: $1=target_dir, $2=label
+# Args: $1=target_dir, $2=label, optional $3=scan stderr file, $4...=find exclusions
 clean_ds_store_tree() {
     local target="$1"
     local label="$2"
+    local scan_errors="${3:-/dev/null}"
+    if [[ $# -ge 3 ]]; then
+        shift 3
+    else
+        shift 2
+    fi
     [[ -d "$target" ]] || return 0
     local file_count=0
     local total_bytes=0
@@ -26,16 +32,16 @@ clean_ds_store_tree() {
         -path "*/.git" -prune -o
         -path "*/Library/Caches" -prune -o
     )
-    local -a find_cmd=("find" "$target")
+    local -a find_cmd=("find" "-P" "$target")
     if [[ "$target" == "$HOME" ]]; then
         find_cmd+=("-maxdepth" "5")
     fi
-    find_cmd+=("${exclude_paths[@]}" "-type" "f" "-name" ".DS_Store" "-print0")
+    find_cmd+=("$@" "${exclude_paths[@]}" "-type" "f" "-name" ".DS_Store" "-print0")
     local scan_file=""
     scan_file=$(create_temp_file) || return 1
     local scan_rc=0
     run_with_timeout "$MOLE_TIMEOUT_HINT_SCAN_SEC" "${find_cmd[@]}" \
-        > "$scan_file" 2> /dev/null || scan_rc=$?
+        > "$scan_file" 2> "$scan_errors" || scan_rc=$?
     if [[ $scan_rc -ne 0 ]]; then
         rm -f -- "$scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
         [[ "$spinner_active" == "true" ]] && stop_section_spinner

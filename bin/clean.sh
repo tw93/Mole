@@ -1478,6 +1478,14 @@ start_cleanup() {
         printf '\033[2J\033[H'
     fi
     printf '\n'
+    # Both system and external-volume previews publish the same candidate ledger.
+    if [[ "$DRY_RUN" == "true" ]]; then
+        prepare_clean_preview_file || {
+            echo -e "${YELLOW}${ICON_WARNING}${NC} Unable to create a safe cleanup preview file" >&2
+            return 1
+        }
+        write_clean_preview_header
+    fi
     if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
         echo -e "${PURPLE_BOLD}Clean External Volume${NC}"
         echo -e "${GRAY}${EXTERNAL_VOLUME_TARGET}${NC}"
@@ -1501,12 +1509,6 @@ start_cleanup() {
     if [[ "$DRY_RUN" == "true" ]]; then
         echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
         echo ""
-
-        prepare_clean_preview_file || {
-            echo -e "${YELLOW}${ICON_WARNING}${NC} Unable to create a safe cleanup preview file" >&2
-            return 1
-        }
-        write_clean_preview_header
 
         # Preview system section when sudo is already cached (no password prompt).
         if adopt_sudo_session; then
@@ -1553,6 +1555,13 @@ perform_cleanup() {
 
     local initial_free_space_kb=""
     local initial_free_space_display="Unknown"
+    local free_space_target="$EXTERNAL_VOLUME_TARGET"
+    local free_space_parent="" free_space_parent_id="" free_space_volume_id=""
+    if [[ -n "$free_space_target" ]] && _mole_snapshot_path_identity "$free_space_target"; then
+        free_space_parent="$_MOLE_PATH_SNAPSHOT_PARENT"
+        free_space_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+        free_space_volume_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+    fi
 
     # Test mode skips expensive scans and returns minimal output.
     local test_mode_enabled=false
@@ -1895,21 +1904,29 @@ perform_cleanup() {
     fi
 
     # Emit one "Free space" line, with the measured delta in parentheses when
-    # available. $1 is the free space in KB captured before cleanup started.
+    # available. $1 is the initial free space in KB; $2 is the selected volume.
     # Caller appends each printed line to summary_details.
     emit_free_space_summary() {
         local initial_kb="$1"
-        if [[ "$DRY_RUN" == "true" ]]; then
-            printf 'Free space: %s\n' "$(get_free_space)"
+        local target="$2"
+        # A disconnected mount may leave a directory on the internal disk.
+        # Refuse it (or a replacement volume) instead of reporting that disk.
+        if [[ -n "$target" ]] && ! _mole_path_matches_identity \
+            "$target" "$free_space_parent" "$free_space_parent_id" "$free_space_volume_id"; then
+            printf 'Free space: Unknown\n'
             return 0
         fi
 
         local final_kb
-        if ! final_kb=$(get_free_space_kb 2> /dev/null); then
+        if ! final_kb=$(get_free_space_kb "$target" 2> /dev/null); then
+            final_kb=""
+        fi
+        if [[ -n "$target" ]] && ! _mole_path_matches_identity \
+            "$target" "$free_space_parent" "$free_space_parent_id" "$free_space_volume_id"; then
             final_kb=""
         fi
         local delta_note=""
-        if [[ "$initial_kb" =~ ^[0-9]+$ && "$final_kb" =~ ^[0-9]+$ && "$initial_kb" -ne "$final_kb" ]]; then
+        if [[ "$DRY_RUN" != "true" && "$initial_kb" =~ ^[0-9]+$ && "$final_kb" =~ ^[0-9]+$ && "$initial_kb" -ne "$final_kb" ]]; then
             delta_note=" ($(format_free_space_delta_kb "$((final_kb - initial_kb))"))"
         fi
         printf 'Free space: %s%s\n' "$(format_free_space_kb "$final_kb")" "$delta_note"
@@ -1961,7 +1978,7 @@ perform_cleanup() {
             local free_space_line
             while IFS= read -r free_space_line; do
                 summary_details+=("$free_space_line")
-            done < <(emit_free_space_summary "$initial_free_space_kb")
+            done < <(emit_free_space_summary "$initial_free_space_kb" "$free_space_target")
         fi
     else
         if [[ $cleanup_cancel_rc -eq 0 ]]; then
@@ -1981,7 +1998,7 @@ perform_cleanup() {
         local free_space_line
         while IFS= read -r free_space_line; do
             summary_details+=("$free_space_line")
-        done < <(emit_free_space_summary "$initial_free_space_kb")
+        done < <(emit_free_space_summary "$initial_free_space_kb" "$free_space_target")
     fi
 
     # Caches of running apps are deferred silently: skipping them is Mole's

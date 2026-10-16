@@ -1722,6 +1722,40 @@ _mole_external_volume_final_guard() {
         "$_MOLE_EXTERNAL_VOLUME_GUARD_TARGET_ID"
 }
 
+# Keep the normal failure short; retain every escaped diagnostic in the logs.
+_report_external_metadata_failure() {
+    local errors="$1" scan_rc="$2"
+    local detail="" first_detail=""
+    log_warning_to_file "External volume metadata cleanup stopped (exit $scan_rc)."
+    while IFS= read -r detail || [[ -n "$detail" ]]; do
+        [[ -n "$detail" ]] || continue
+        _mole_escape_log_value detail "$detail"
+        log_warning_to_file "$detail"
+        debug_log "$detail"
+        # The timeout wrapper writes its command trace to the same stderr.
+        if [[ -z "$first_detail" && "$detail" != '[TIMEOUT]'* ]]; then
+            first_detail="$detail"
+        fi
+    done < "$errors"
+    if [[ -n "$first_detail" ]]; then
+        printf '  %b%s%b\n' "$GRAY" "$(truncate_by_display_width "$first_detail" 320)" "$NC"
+    fi
+    local next_step=""
+    case "$first_detail" in
+        *'Permission denied'* | *'Operation not permitted'*)
+            next_step="Check this path's permissions and your terminal's disk access in System Settings."
+            ;;
+        *'No such file or directory'* | *'Device not configured'*)
+            next_step="Check that the external volume is still connected."
+            ;;
+        *)
+            _mole_escape_log_value next_step "$LOG_FILE"
+            next_step="Details: $next_step"
+            ;;
+    esac
+    printf '  %b%s%b\n' "$GRAY" "$next_step" "$NC"
+}
+
 clean_external_volume_target() {
     local volume="$1"
     [[ -d "$volume" ]] || return 1
@@ -1757,22 +1791,30 @@ clean_external_volume_target() {
     local metadata_scan_timeout="${MOLE_EXTERNAL_VOLUME_SCAN_TIMEOUT:-15}"
     [[ "$metadata_scan_timeout" =~ ^[0-9]+$ ]] || metadata_scan_timeout=15
     local metadata_scan_file=""
-    if ! metadata_scan_file=$(mktemp_file "external-volume-metadata"); then
+    local metadata_scan_errors=""
+    if ! metadata_scan_file=$(mktemp_file "external-volume-metadata") ||
+        ! metadata_scan_errors=$(create_temp_file); then
         stop_section_spinner
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}could not prepare scan, no changes${NC}"
         note_activity
         return 1
     fi
     local metadata_scan_rc=0
-    # Any nonzero find status fails the scan closed, and BSD find returns 1
-    # after a single unreadable directory. The volume metadata trees are
-    # root-owned on ownership-enabled volumes and never hold user AppleDouble
-    # files, so prune them rather than report a healthy volume as failed.
-    run_with_timeout "$metadata_scan_timeout" find -P "$volume" -xdev \
-        \( -path "$volume/.TemporaryItems" -o -path "$volume/.Trashes" \
-        -o -path "$volume/.Spotlight-V100" -o -path "$volume/.fseventsd" \
-        -o -path "$volume/.DocumentRevisions-V100" \) -prune -o \
-        -type f -name "._*" -print0 > "$metadata_scan_file" 2> /dev/null || metadata_scan_rc=$?
+    # Both metadata scans preserve these exact volume roots. Installation
+    # staging can be denied by macOS policy even with Full Disk Access.
+    # Escape find's pattern syntax so a volume name cannot change the scope.
+    local volume_pattern="${volume//\\/\\\\}"
+    volume_pattern="${volume_pattern//\*/\\*}"
+    volume_pattern="${volume_pattern//\?/\\?}"
+    volume_pattern="${volume_pattern//\[/\\[}"
+    local -a metadata_exclusions=(
+        -xdev \( -path "$volume_pattern/.TemporaryItems" -o -path "$volume_pattern/.Trashes"
+        -o -path "$volume_pattern/.Spotlight-V100" -o -path "$volume_pattern/.fseventsd"
+        -o -path "$volume_pattern/.DocumentRevisions-V100"
+        -o -path "$volume_pattern/.AppInstallationStaging" \) -prune -o
+    )
+    run_with_timeout "$metadata_scan_timeout" find -P "$volume" "${metadata_exclusions[@]}" \
+        -type f -name "._*" -print0 > "$metadata_scan_file" 2> "$metadata_scan_errors" || metadata_scan_rc=$?
     if [[ $metadata_scan_rc -ne 0 ]]; then
         : > "$metadata_scan_file" || true
         stop_section_spinner
@@ -1783,6 +1825,7 @@ clean_external_volume_target() {
         else
             echo -e "  ${YELLOW}${ICON_WARNING}${NC} External volume cleanup · ${GRAY}scan failed, no changes${NC}"
         fi
+        _report_external_metadata_failure "$metadata_scan_errors" "$metadata_scan_rc"
         note_activity
         _mole_record_clean_cancellation "$metadata_scan_rc"
         return "$metadata_scan_rc"
@@ -1799,6 +1842,15 @@ clean_external_volume_target() {
         local target_parent_id="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
         local target_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
         if should_protect_path "$target_path" 2> /dev/null || is_path_whitelisted "$target_path" 2> /dev/null; then
+            continue
+        fi
+        # macOS may expose these roots as write/search-only directories. Keep
+        # them without sizing or removal; other eligible metadata can proceed.
+        if [[ ! -r "$target_path" || ! -x "$target_path" ]]; then
+            local kept_reason=""
+            _mole_escape_log_value kept_reason "External volume cleanup kept unreadable directory: $target_path"
+            log_warning_to_file "$kept_reason"
+            debug_log "$kept_reason"
             continue
         fi
 
@@ -1830,9 +1882,11 @@ clean_external_volume_target() {
 
     if [[ "$PROTECT_FINDER_METADATA" != "true" ]]; then
         local finder_rc=0
-        clean_ds_store_tree "$volume" "${volume_name} volume, .DS_Store" || finder_rc=$?
+        clean_ds_store_tree "$volume" "${volume_name} volume, .DS_Store" \
+            "$metadata_scan_errors" "${metadata_exclusions[@]}" || finder_rc=$?
         if [[ $finder_rc -ne 0 ]]; then
             stop_section_spinner
+            _report_external_metadata_failure "$metadata_scan_errors" "$finder_rc"
             _mole_record_clean_cancellation "$finder_rc"
             return "$finder_rc"
         fi

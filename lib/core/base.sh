@@ -627,13 +627,15 @@ get_free_space_target() {
     printf '%s\n' "$target"
 }
 
-# Get free disk space on root volume in 1K blocks.
+# Get free disk space in 1K blocks. An omitted path selects the system volume.
 get_free_space_kb() {
-    local target
-    target=$(get_free_space_target)
+    local target="${1:-}"
+    [[ -n "$target" ]] || target=$(get_free_space_target)
 
     local available_kb
-    available_kb=$(command df -Pk "$target" 2> /dev/null | awk 'NR==2 {print $4}' || true)
+    if ! available_kb=$(command df -Pk "$target" 2> /dev/null | awk 'NR==2 {print $4}'); then
+        return 1
+    fi
     if [[ "$available_kb" =~ ^[0-9]+$ ]]; then
         printf '%s\n' "$available_kb"
         return 0
