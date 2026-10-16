@@ -55,7 +55,7 @@ Describe 'Cleanup physical boundaries' {
         $script:Cache = Join-Path $script:Root 'cache'
         New-Item -ItemType Directory -Path $script:Cache | Out-Null
         Set-Content -LiteralPath (Join-Path $script:Cache 'same.txt') -Value 'original'
-        Mock Get-PathSize {
+        Mock Get-ValidatedTreeSize {
             Move-Item -LiteralPath $script:Cache -Destination (Join-Path $script:Root 'original')
             New-Item -ItemType Directory -Path $script:Cache | Out-Null
             Set-Content -LiteralPath (Join-Path $script:Cache 'same.txt') -Value 'replacement'

@@ -265,6 +265,20 @@ function Get-PathSize {
     }
 }
 
+# Bytes in a tree Get-SafeDirectoryTreeItems already walked. Its Items are the
+# complete, no-follow listing the removal reuses, so sizing from it avoids a
+# second walk with its own time budget, where a timeout reads as 0 bytes.
+function Get-ValidatedTreeSize {
+    param([hashtable]$Tree)
+
+    [long]$total = 0
+    foreach ($item in @($Tree['Items'])) {
+        if ($null -eq $item -or $item.PSIsContainer) { continue }
+        $total += [long]$item.Length
+    }
+    return $total
+}
+
 function Get-PathSizeKB {
     <#
     .SYNOPSIS
@@ -559,7 +573,7 @@ function Remove-SafeItem {
     }
 
     # Get size before removal
-    $size = Get-PathSize -Path $Path
+    $size = if ($null -ne $validatedTree) { Get-ValidatedTreeSize -Tree $validatedTree } else { Get-PathSize -Path $Path }
     $sizeKB = [Math]::Ceiling($size / 1024)
     $sizeHuman = Format-ByteSize -Bytes $size
     
@@ -665,7 +679,7 @@ function Remove-SafeItems {
             }
         }
         
-        $size = Get-PathSize -Path $path
+        $size = if ($null -ne $validatedTree) { Get-ValidatedTreeSize -Tree $validatedTree } else { Get-PathSize -Path $path }
         if (-not (Test-SafePath $path) -or -not (Test-MolePathSnapshot $pathSnapshot)) { continue }
 
         if ($script:MoleDryRunMode) {

@@ -116,7 +116,7 @@ Describe 'Purge project boundaries' {
         $artifact = @(Find-ProjectArtifacts $root)
         $artifact.Count | Should -Be 1
         $script:ChangingProject = $root
-        Mock Get-PathSize {
+        Mock Get-ValidatedTreeSize {
             & git -C $script:ChangingProject add -- 'node_modules/payload.txt'
             if ($LASTEXITCODE -ne 0) { throw 'fixture Git add failed' }
             return 8

@@ -384,6 +384,54 @@ Describe "File Operations Module" {
             Test-Path $emptyDir | Should -Be $false
         }
 
+        It "Sizes a directory from its validated walk instead of walking it again (dry run: <DryRun>)" -TestCases @(@{ DryRun = $false }, @{ DryRun = $true }) {
+            param($DryRun)
+            $treeRoot = Join-Path $script:TestDir ("sized_tree_" + [guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path (Join-Path $treeRoot "nested") -Force | Out-Null
+            [System.IO.File]::WriteAllBytes((Join-Path $treeRoot "a.bin"), (New-Object byte[] 3000))
+            [System.IO.File]::WriteAllBytes((Join-Path $treeRoot "nested\b.bin"), (New-Object byte[] 5000))
+            Mock Get-PathSize { throw "second walk of an already validated tree" }
+            Reset-CleanupStats
+            try {
+                Set-DryRunMode -Enabled $DryRun
+                Remove-SafeItem -Path $treeRoot -Description "Sized tree" -Recurse | Should -Be $true
+                (Get-CleanupStats).TotalSizeKB | Should -Be ([Math]::Ceiling(8000 / 1024))
+                Test-Path -LiteralPath $treeRoot | Should -Be $DryRun
+            }
+            finally {
+                Set-DryRunMode -Enabled $false
+                Reset-CleanupStats
+                if (Test-Path $treeRoot) {
+                    Remove-Item -Path $treeRoot -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
+        It "Sizes each directory of a batch from its validated walk (dry run: <DryRun>)" -TestCases @(@{ DryRun = $false }, @{ DryRun = $true }) {
+            param($DryRun)
+            $first = Join-Path $script:TestDir ("batch_tree_" + [guid]::NewGuid().ToString("N"))
+            $second = Join-Path $script:TestDir ("batch_tree_" + [guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $first, $second -Force | Out-Null
+            [System.IO.File]::WriteAllBytes((Join-Path $first "a.bin"), (New-Object byte[] 4096))
+            [System.IO.File]::WriteAllBytes((Join-Path $second "b.bin"), (New-Object byte[] 6144))
+            Mock Get-PathSize { throw "second walk of an already validated tree" }
+            Reset-CleanupStats
+            try {
+                Set-DryRunMode -Enabled $DryRun
+                Remove-SafeItems -Paths @($first, $second) -Description "Batch trees"
+                (Get-CleanupStats).TotalSizeKB | Should -Be 10
+                (Get-CleanupStats).FilesCleaned | Should -Be 2
+                Test-Path -LiteralPath $first | Should -Be $DryRun
+            }
+            finally {
+                Set-DryRunMode -Enabled $false
+                Reset-CleanupStats
+                foreach ($path in @($first, $second)) {
+                    if (Test-Path $path) { Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue }
+                }
+            }
+        }
+
         It "Should not partially remove a directory tree when a protected child is present" {
             $treeRoot = Join-Path $script:TestDir "protected_child_tree"
             $safeFile = Join-Path $treeRoot "safe.txt"

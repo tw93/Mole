@@ -55,7 +55,7 @@ Describe 'Recoverable uninstall leftovers' {
 
     It 'Keeps a replaced root after sizing' {
         Mock Move-MoleItemToRecycleBin { throw 'Replacement must not be recycled' }
-        Mock Get-PathSize {
+        Mock Get-ValidatedTreeSize {
             Move-Item -LiteralPath $script:Source -Destination $script:Destination
             New-Item -ItemType Directory $script:Source | Out-Null
             Set-Content (Join-Path $script:Source 'replacement.txt') 'keep'
@@ -72,7 +72,7 @@ Describe 'Recoverable uninstall leftovers' {
         param($DryRun)
         Set-DryRunMode $DryRun
         Mock Test-Whitelisted { $Path -eq (Join-Path $script:Source 'keep.txt') }
-        Mock Get-PathSize {
+        Mock Get-ValidatedTreeSize {
             Set-Content (Join-Path $script:Source 'keep.txt') 'keep'
             return 7
         }
