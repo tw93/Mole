@@ -572,7 +572,7 @@ func newModel(path string, isOverview bool) model {
 		overviewScanningSet: make(map[string]*scanPublication),
 		multiSelected:       make(map[string]bool),
 		largeMultiSelected:  make(map[string]bool),
-		liveSortMode:        liveScanSortModeFromEnv(),
+		liveSortMode:        liveSortFreezeOnMove,
 	}
 
 	if isOverview {
