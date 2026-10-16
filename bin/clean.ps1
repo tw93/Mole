@@ -299,13 +299,7 @@ function Main {
     }
 
     # Run cleanup
-    try {
-        Start-Cleanup -IsDryRun $effectiveDryRun -IncludeSystem $System -IncludeGameMedia $GameMedia
-    }
-    finally {
-        # Cleanup temp files
-        Clear-TempFiles
-    }
+    Start-Cleanup -IsDryRun $effectiveDryRun -IncludeSystem $System -IncludeGameMedia $GameMedia
 }
 
 # Run main

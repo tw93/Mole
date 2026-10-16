@@ -555,33 +555,6 @@ function Get-CachePath {
 }
 
 # ============================================================================
-# Temporary File Management
-# ============================================================================
-
-$script:TempFiles = [System.Collections.ArrayList]::new()
-$script:TempDirs = [System.Collections.ArrayList]::new()
-
-function Clear-TempFiles {
-    <#
-    .SYNOPSIS
-        Clean up all tracked temporary files and directories
-    #>
-    foreach ($file in $script:TempFiles) {
-        if (Test-Path $file) {
-            Remove-Item $file -Force -ErrorAction SilentlyContinue
-        }
-    }
-    $script:TempFiles.Clear()
-    
-    foreach ($dir in $script:TempDirs) {
-        if (Test-Path $dir) {
-            Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-    $script:TempDirs.Clear()
-}
-
-# ============================================================================
 # Exports (functions and variables are available via dot-sourcing)
 # ============================================================================
 # Variables: Colors, Icons, Config, ProtectedPaths, ExactProtectedPaths, DefaultWhitelistPatterns

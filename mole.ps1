@@ -475,9 +475,6 @@ catch {
     Write-Host ""
     exit 1
 }
-finally {
-    Clear-TempFiles
-}
 if ($script:MoleExitCode -ne 0) {
     exit $script:MoleExitCode
 }

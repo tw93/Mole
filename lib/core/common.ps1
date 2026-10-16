@@ -69,11 +69,6 @@ function Initialize-Mole {
     # Ensure cache directory exists
     $cachePath = Get-CachePath
 
-    # Set up cleanup trap
-    $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
-        Clear-TempFiles
-    }
-
     Write-Debug "Mole initialized"
     Write-Debug "Config: $configPath"
     Write-Debug "Cache: $cachePath"

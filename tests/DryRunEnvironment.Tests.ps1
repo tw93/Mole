@@ -7,7 +7,6 @@ BeforeAll {
         Set-Item function:script:Main ([scriptblock]::Create($definition.Body.Extent.Text.TrimStart('{').TrimEnd('}')))
     }
     function Start-Cleanup { param($IsDryRun,$IncludeSystem,$IncludeGameMedia) }
-    function Clear-TempFiles {}
     function Get-SystemHealth { @{} }
     function Start-Spinner { param($Message) }
     function Stop-Spinner {}
