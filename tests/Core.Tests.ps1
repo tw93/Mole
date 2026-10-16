@@ -613,27 +613,6 @@ Describe "UI Module" {
         }
     }
 
-    Context "Show-Header" {
-        It "Should display header without error" {
-            { Show-Header -Title "Test Header" } | Should -Not -Throw
-        }
-
-        It "Should accept subtitle parameter" {
-            { Show-Header -Title "Test" -Subtitle "Subtitle" } | Should -Not -Throw
-        }
-    }
-
-    Context "Show-Summary" {
-        It "Should display summary without error" {
-            { Show-Summary -SizeBytes 1024 -ItemCount 5 } | Should -Not -Throw
-        }
-    }
-
-    Context "Read-Confirmation" {
-        It "Should have Read-Confirmation function" {
-            Get-Command Read-Confirmation -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
 }
 
 Describe "Version Helpers" {

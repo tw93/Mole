@@ -215,39 +215,6 @@ function Clear-UserLogs {
 }
 
 # ============================================================================
-# Clipboard History Cleanup
-# ============================================================================
-
-function Clear-ClipboardHistory {
-    <#
-    .SYNOPSIS
-        Clear Windows clipboard history
-    #>
-    
-    if (Test-DryRunMode) {
-        Write-DryRun "Clipboard history (would clear)"
-        return
-    }
-    
-    try {
-        # Load Windows Forms assembly for clipboard access
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-        
-        # Clear current clipboard
-        [System.Windows.Forms.Clipboard]::Clear()
-        
-        # Clear clipboard history (Windows 10 1809+)
-        $clipboardPath = "$env:LOCALAPPDATA\Microsoft\Windows\Clipboard"
-        if (Test-Path $clipboardPath) {
-            Clear-DirectoryContents -Path $clipboardPath -Description "Clipboard history"
-        }
-    }
-    catch {
-        Write-Debug "Could not clear clipboard: $_"
-    }
-}
-
-# ============================================================================
 # Main User Cleanup Function
 # ============================================================================
 

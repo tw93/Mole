@@ -75,18 +75,6 @@ Describe "Cache Cleanup Module" {
             Get-Command Clear-AppCaches -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
         }
     }
-    
-    Context "Windows Update Cache" {
-        It "Should have Clear-WindowsUpdateCache function" {
-            Get-Command Clear-WindowsUpdateCache -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
-    Context "Invoke-CacheCleanup" {
-        It "Should have main cache cleanup function" {
-            Get-Command Invoke-CacheCleanup -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
 }
 
 Describe "Developer Tools Cleanup Module" {
@@ -178,12 +166,6 @@ Describe "System Cleanup Module" {
         }
     }
     
-    Context "Windows Update Cleanup" {
-        It "Should have Clear-WindowsUpdateFiles function" {
-            Get-Command Clear-WindowsUpdateFiles -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
     Context "Memory Dumps" {
         It "Should have Clear-MemoryDumps function" {
             Get-Command Clear-MemoryDumps -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
@@ -231,7 +213,6 @@ Describe "Cleanup accounting" {
         @(Clear-DirectoryContents -Path $dir -Description "Test cache").Count | Should -Be 0
         @(Remove-SafeItems -Paths @($old) -Description "Test items").Count | Should -Be 0
         @(Remove-OldFiles -Path $dir -DaysOld 7 -Description "Test old").Count | Should -Be 0
-        @(Remove-EmptyDirectories -Path $script:Root).Count | Should -Be 0
     }
 
     It "Counts what a dry run would remove" {

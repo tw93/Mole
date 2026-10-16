@@ -88,16 +88,6 @@ function Clear-WindowsLogs {
 }
 
 # ============================================================================
-# Windows Update Cleanup
-# ============================================================================
-
-function Clear-WindowsUpdateFiles {
-    # Windows owns these protected files. Restarting its service cannot make
-    # them eligible for Mole cleanup and must not change a stopped service.
-    return
-}
-
-# ============================================================================
 # Installer Cleanup
 # ============================================================================
 
@@ -201,16 +191,6 @@ function Clear-MemoryDumps {
             Clear-DirectoryContents -Path $path -Description "$(Split-Path -Leaf $path)"
         }
     }
-}
-
-# ============================================================================
-# Font Cache
-# ============================================================================
-
-function Clear-SystemFontCache {
-    # Windows owns these protected files. Restarting its service cannot make
-    # them eligible for Mole cleanup and must not change a stopped service.
-    return
 }
 
 # ============================================================================

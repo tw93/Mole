@@ -196,48 +196,6 @@ function Optimize-DiskDrive {
     }
 }
 
-function Optimize-SearchIndex {
-    <#
-    .SYNOPSIS
-        Rebuild Windows Search index if needed
-    #>
-
-    $esc = [char]27
-
-    Write-Host ""
-    Write-Host "$esc[34m$($script:Icons.Arrow) Windows Search$esc[0m"
-
-    $searchService = Get-Service -Name WSearch -ErrorAction SilentlyContinue
-
-    if (-not $searchService) {
-        Write-Host "  $esc[90mWindows Search service not found$esc[0m"
-        return
-    }
-
-    if ($searchService.Status -ne 'Running') {
-        Write-Host "  $esc[33m$($script:Icons.Warning)$esc[0m Windows Search service is not running"
-
-        if ($script:DryRun) {
-            Write-Host "  $esc[33m$($script:Icons.DryRun)$esc[0m Would start search service"
-            return
-        }
-
-        try {
-            Start-Service -Name WSearch -ErrorAction Stop
-            Write-MoleOperation -Action "OPTIMIZED" -Path "WSearch service" -Detail "Start-Service"
-            Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Started Windows Search service"
-            $script:OptimizationsApplied++
-        }
-        catch {
-            Write-MoleOperation -Action "FAILED" -Path "WSearch service" -Detail "Start-Service: $($_.Exception.Message)"
-            Write-Host "  $esc[31m$($script:Icons.Error)$esc[0m Could not start search service"
-        }
-    }
-    else {
-        Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Search service running"
-    }
-}
-
 function Clear-DnsCache {
     <#
     .SYNOPSIS

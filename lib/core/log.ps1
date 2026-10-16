@@ -370,25 +370,9 @@ function Write-Progress {
     Update-Spinner -Message $label
 }
 
-function Complete-Progress { Stop-Spinner }
-
 # ============================================================================
 # Log File Management
 # ============================================================================
-
-function Set-LogFile {
-    <#
-    .SYNOPSIS
-        Set a log file for persistent logging
-    #>
-    param([string]$Path)
-
-    $script:LogConfig.LogFile = $Path
-    $dir = Split-Path -Parent $Path
-    if ($dir -and -not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
-}
 
 function Enable-DebugMode {
     <#
@@ -437,14 +421,6 @@ function Complete-MoleDebugSession {
     $nc = Get-MoleColor -Name "NC"
     Write-Host ""
     Write-Host "${gray}Debug session log saved to:${nc} $($script:LogConfig.LogFile)"
-}
-
-function Disable-DebugMode {
-    <#
-    .SYNOPSIS
-        Disable debug logging
-    #>
-    $script:LogConfig.DebugEnabled = $false
 }
 
 # ============================================================================

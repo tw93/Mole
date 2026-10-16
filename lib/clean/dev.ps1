@@ -319,10 +319,6 @@ function Clear-GoCaches {
     }
 }
 
-function Get-MiseCachePath {
-    return Get-MoleOwnerCachePath -Name 'mise' -Arguments @('cache', 'path')
-}
-
 function Clear-MiseCache {
     Invoke-MoleOwnerCacheCleanup -Name 'mise' -Query @('cache', 'path') -Arguments @('cache', 'clear') -Description 'mise cache'
 }

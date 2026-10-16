@@ -80,51 +80,6 @@ function Initialize-Mole {
 }
 
 # ============================================================================
-# Admin Elevation
-# ============================================================================
-
-function Request-AdminPrivileges {
-    <#
-    .SYNOPSIS
-        Request admin privileges if not already running as admin
-    .DESCRIPTION
-        Restarts the script with elevated privileges using UAC
-    #>
-    if (-not (Test-IsAdmin)) {
-        Write-MoleWarning "Some operations require administrator privileges."
-
-        if (Read-Confirmation -Prompt "Restart with admin privileges?" -Default $true) {
-            $scriptPath = $MyInvocation.PSCommandPath
-            if ($scriptPath) {
-                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
-                exit
-            }
-        }
-        return $false
-    }
-    return $true
-}
-
-function Invoke-AsAdmin {
-    <#
-    .SYNOPSIS
-        Run a script block with admin privileges
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [scriptblock]$ScriptBlock
-    )
-
-    if (Test-IsAdmin) {
-        & $ScriptBlock
-    }
-    else {
-        $command = $ScriptBlock.ToString()
-        Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -Command `"$command`"" -Verb RunAs -Wait
-    }
-}
-
-# ============================================================================
 # Exports (functions are available via dot-sourcing)
 # ============================================================================
 # All functions from base.ps1, log.ps1, file_ops.ps1, and ui.ps1 are

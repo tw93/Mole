@@ -15,92 +15,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\..\core\file_ops.ps1"
 
 # ============================================================================
-# Windows System Caches
-# ============================================================================
-
-function Clear-WindowsUpdateCache {
-    <#
-    .SYNOPSIS
-        Clean Windows Update cache (requires admin)
-    #>
-    
-    if (-not (Test-IsAdmin)) {
-        Write-Debug "Skipping Windows Update cache - requires admin"
-        return
-    }
-    
-    $wuPath = "$env:WINDIR\SoftwareDistribution\Download"
-    
-    if (Test-Path $wuPath) {
-        # Stop Windows Update service first
-        if (Test-DryRunMode) {
-            Write-DryRun "Windows Update cache"
-            Set-SectionActivity
-            return
-        }
-        
-        try {
-            Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
-            Clear-DirectoryContents -Path $wuPath -Description "Windows Update cache"
-            Start-Service -Name wuauserv -ErrorAction SilentlyContinue
-        }
-        catch {
-            Write-Debug "Could not clear Windows Update cache: $_"
-            Start-Service -Name wuauserv -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-function Clear-DeliveryOptimizationCache {
-    <#
-    .SYNOPSIS
-        Clean Windows Delivery Optimization cache (requires admin)
-    #>
-    
-    if (-not (Test-IsAdmin)) {
-        Write-Debug "Skipping Delivery Optimization cache - requires admin"
-        return
-    }
-    
-    $doPath = "$env:WINDIR\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization"
-    
-    if (Test-Path $doPath) {
-        if (Test-DryRunMode) {
-            Write-DryRun "Delivery Optimization cache"
-            Set-SectionActivity
-            return
-        }
-        
-        try {
-            Stop-Service -Name DoSvc -Force -ErrorAction SilentlyContinue
-            Clear-DirectoryContents -Path "$doPath\Cache" -Description "Delivery Optimization cache"
-            Start-Service -Name DoSvc -ErrorAction SilentlyContinue
-        }
-        catch {
-            Write-Debug "Could not clear Delivery Optimization cache: $_"
-            Start-Service -Name DoSvc -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-function Clear-FontCache {
-    <#
-    .SYNOPSIS
-        Clean Windows font cache (requires admin)
-    #>
-    
-    if (-not (Test-IsAdmin)) {
-        return
-    }
-    
-    $fontCachePath = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts\FontCache"
-    
-    if (Test-Path $fontCachePath) {
-        $null = Remove-SafeItem -Path $fontCachePath -Description "Font cache"
-    }
-}
-
-# ============================================================================
 # Browser Caches
 # ============================================================================
 
@@ -257,52 +171,6 @@ function Clear-AppCaches {
 }
 
 # ============================================================================
-# Windows Store / UWP App Caches
-# ============================================================================
-
-function Clear-StoreAppCaches {
-    <#
-    .SYNOPSIS
-        Clean Windows Store and UWP app caches
-    #>
-    
-    # Microsoft Store cache
-    $storeCache = "$env:LOCALAPPDATA\Microsoft\Windows\WCN"
-    if (Test-Path $storeCache) {
-        Clear-DirectoryContents -Path $storeCache -Description "Windows Store cache"
-    }
-    
-    # Store app temp files
-    $storeTemp = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsStore_*\LocalCache"
-    $storePaths = Resolve-Path $storeTemp -ErrorAction SilentlyContinue
-    foreach ($path in $storePaths) {
-        if (Test-Path $path.Path) {
-            Clear-DirectoryContents -Path $path.Path -Description "Store LocalCache"
-        }
-    }
-}
-
-# ============================================================================
-# .NET / Runtime Caches
-# ============================================================================
-
-function Clear-DotNetCaches {
-    <#
-    .SYNOPSIS
-        Clean .NET runtime caches
-    #>
-    
-    # .NET temp files
-    $dotnetTemp = "$env:LOCALAPPDATA\Temp\Microsoft.NET"
-    if (Test-Path $dotnetTemp) {
-        Clear-DirectoryContents -Path $dotnetTemp -Description ".NET temp files"
-    }
-    
-    # NGen cache (don't touch - managed by Windows)
-    # Assembly cache (don't touch - managed by CLR)
-}
-
-# ============================================================================
 # GPU Shader Caches
 # ============================================================================
 
@@ -376,54 +244,6 @@ function Clear-GPUShaderCaches {
 }
 
 # ============================================================================
-# Main Cache Cleanup Function
-# ============================================================================
-
-function Invoke-CacheCleanup {
-    <#
-    .SYNOPSIS
-        Run all cache cleanup tasks
-    #>
-    param(
-        [switch]$IncludeWindowsUpdate,
-        [switch]$IncludeBrowsers,
-        [switch]$IncludeApps,
-        [switch]$IncludeGPU
-    )
-    
-    Start-Section "System caches"
-    
-    # Windows system caches (if admin)
-    if (Test-IsAdmin) {
-        if ($IncludeWindowsUpdate) {
-            Clear-WindowsUpdateCache
-            Clear-DeliveryOptimizationCache
-        }
-        Clear-FontCache
-    }
-    
-    Clear-StoreAppCaches
-    Clear-DotNetCaches
-    
-    Stop-Section
-    
-    # GPU shader caches
-    if ($IncludeGPU) {
-        Clear-GPUShaderCaches
-    }
-    
-    # Browser caches
-    if ($IncludeBrowsers) {
-        Clear-BrowserCaches
-    }
-    
-    # Application caches
-    if ($IncludeApps) {
-        Clear-AppCaches
-    }
-}
-
-# ============================================================================
 # Exports
 # ============================================================================
-# Functions: Clear-WindowsUpdateCache, Clear-BrowserCaches, Clear-AppCaches, etc.
+# Functions: Clear-BrowserCaches, Clear-GPUShaderCaches, Clear-AppCaches, etc.

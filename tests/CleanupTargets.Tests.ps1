@@ -71,22 +71,22 @@ Describe 'Protected system cleanup does not disturb services' {
     BeforeEach {
         Mock Test-IsAdmin { $true }
         Mock Test-DryRunMode { $false }
-        Mock Get-Service { [pscustomobject]@{ Status = 'Stopped' } }
+        Mock Get-Service { [pscustomobject]@{ Status = 'Running' } }
         Mock Stop-Service {}
         Mock Start-Service {}
+        Mock Restart-Service {}
+        Mock Set-Service {}
         Mock Clear-DirectoryContents {}
+        Mock Remove-OldFiles {}
+        Mock Remove-SafeItems {}
+        Mock Remove-SafeItem { $true }
+        Mock Start-Process {}
     }
-    It 'Leaves a stopped font service stopped and does not attempt protected cleanup' {
-        Clear-SystemFontCache
+    It 'Never stops, starts or restarts FontCache or Windows Update during system cleanup' {
+        Invoke-SystemCleanup
         Should -Invoke Stop-Service -Times 0 -Exactly
         Should -Invoke Start-Service -Times 0 -Exactly
-        Should -Invoke Clear-DirectoryContents -Times 0 -Exactly
-    }
-    It 'Does not restart Windows Update for protected directories' {
-        Mock Get-Service { [pscustomobject]@{ Status = 'Running' } }
-        Clear-WindowsUpdateFiles
-        Should -Invoke Stop-Service -Times 0 -Exactly
-        Should -Invoke Start-Service -Times 0 -Exactly
-        Should -Invoke Clear-DirectoryContents -Times 0 -Exactly
+        Should -Invoke Restart-Service -Times 0 -Exactly
+        Should -Invoke Set-Service -Times 0 -Exactly
     }
 }

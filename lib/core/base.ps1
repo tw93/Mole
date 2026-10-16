@@ -304,33 +304,6 @@ function Get-WindowsVersion {
     }
 }
 
-function Get-CPUCores {
-    <#
-    .SYNOPSIS
-        Get number of CPU cores
-    #>
-    return (Get-WmiObject Win32_Processor).NumberOfLogicalProcessors
-}
-
-function Get-OptimalParallelJobs {
-    <#
-    .SYNOPSIS
-        Get optimal number of parallel jobs based on CPU cores
-    #>
-    param(
-        [ValidateSet('scan', 'io', 'compute', 'default')]
-        [string]$OperationType = 'default'
-    )
-    
-    $cores = Get-CPUCores
-    switch ($OperationType) {
-        'scan'    { return [Math]::Min($cores * 2, 32) }
-        'io'      { return [Math]::Min($cores * 2, 32) }
-        'compute' { return $cores }
-        default   { return [Math]::Min($cores + 2, 20) }
-    }
-}
-
 # ============================================================================
 # Path Utilities
 # ============================================================================
@@ -553,52 +526,9 @@ function Format-ByteSize {
     }
 }
 
-function Format-Number {
-    <#
-    .SYNOPSIS
-        Format a number with thousands separators
-    #>
-    param([long]$Number)
-    return $Number.ToString("N0")
-}
-
-function Format-TimeSpan {
-    <#
-    .SYNOPSIS
-        Format a timespan to human-readable string
-    #>
-    param([TimeSpan]$Duration)
-    
-    if ($Duration.TotalHours -ge 1) {
-        return "{0:N1}h" -f $Duration.TotalHours
-    }
-    elseif ($Duration.TotalMinutes -ge 1) {
-        return "{0:N0}m" -f $Duration.TotalMinutes
-    }
-    else {
-        return "{0:N0}s" -f $Duration.TotalSeconds
-    }
-}
-
 # ============================================================================
 # Environment Detection
 # ============================================================================
-
-function Get-UserHome {
-    <#
-    .SYNOPSIS
-        Get the current user's home directory
-    #>
-    return $env:USERPROFILE
-}
-
-function Get-TempPath {
-    <#
-    .SYNOPSIS
-        Get the system temp path
-    #>
-    return [System.IO.Path]::GetTempPath()
-}
 
 function Get-ConfigPath {
     <#
@@ -630,32 +560,6 @@ function Get-CachePath {
 
 $script:TempFiles = [System.Collections.ArrayList]::new()
 $script:TempDirs = [System.Collections.ArrayList]::new()
-
-function New-TempFile {
-    <#
-    .SYNOPSIS
-        Create a tracked temporary file
-    #>
-    param([string]$Prefix = "winmole")
-    
-    $tempPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "$Prefix-$([Guid]::NewGuid().ToString('N').Substring(0,8)).tmp")
-    New-Item -ItemType File -Path $tempPath -Force | Out-Null
-    [void]$script:TempFiles.Add($tempPath)
-    return $tempPath
-}
-
-function New-TempDirectory {
-    <#
-    .SYNOPSIS
-        Create a tracked temporary directory
-    #>
-    param([string]$Prefix = "winmole")
-    
-    $tempPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "$Prefix-$([Guid]::NewGuid().ToString('N').Substring(0,8))")
-    New-Item -ItemType Directory -Path $tempPath -Force | Out-Null
-    [void]$script:TempDirs.Add($tempPath)
-    return $tempPath
-}
 
 function Clear-TempFiles {
     <#
