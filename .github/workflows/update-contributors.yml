@@ -19,13 +19,13 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Generate contributors SVG
-        uses: tw93/contributors-list@master
+        uses: tw93/contributors-list@3722c5cb0d662c5e6dbffe78448002c461aab3b9 # master pinned 2026-07
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           svgPath: CONTRIBUTORS.svg
@@ -52,7 +52,7 @@ jobs:
             </g>
 
       - name: Commit & Push
-        uses: stefanzweifel/git-auto-commit-action@v7
+        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
         with:
           commit_message: "chore: update contributors [skip ci]"
           file_pattern: CONTRIBUTORS.svg
