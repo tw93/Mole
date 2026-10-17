@@ -7048,3 +7048,27 @@ EOF
     [ -d "$fixture_home/Applications/TestApp.app" ] || return 1
     [ -d "$fixture_home/Library/Application Support/TestApp" ] || return 1
 }
+
+@test "remove_mole without a terminal exits nonzero and removes nothing" {
+    local iso="$BATS_TEST_TMPDIR/no-tty-remove"
+    mkdir -p "$iso/.local/bin" "$iso/.config/mole" "$iso/.cache/mole"
+    cp "$PROJECT_ROOT/mole" "$iso/.local/bin/mole"
+    cp "$PROJECT_ROOT/mo" "$iso/.local/bin/mo"
+
+    run env -u MOLE_TEST_MODE HOME="$iso" PROJECT_ROOT="$PROJECT_ROOT" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/manage/remove.sh"
+drain_pending_input() { :; }
+remove_mole false < /dev/null
+EOF
+
+    [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"interactive terminal"* ]] || { echo "$output"; return 1; }
+    [ -f "$iso/.local/bin/mole" ] || return 1
+    [ -f "$iso/.local/bin/mo" ] || return 1
+    [ -d "$iso/.config/mole" ] || return 1
+    [ -d "$iso/.cache/mole" ] || return 1
+}
+
