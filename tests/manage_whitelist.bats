@@ -741,6 +741,55 @@ EOF
     [[ "$output" == *"PROTECTED=.gradle/caches/build-cache-1/0123456789abcdef0123456789abcdef"* ]] || { echo "$output"; return 1; }
 }
 
+@test "Xcode device support whitelist covers all platforms and migrates legacy iOS pattern" {
+    local test_home="$HOME/rows-xcode-devicesupport"
+    local whitelist_file="$test_home/.config/mole/whitelist"
+    rm -rf "$test_home"
+    mkdir -p "$(dirname "$whitelist_file")"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+get_all_cache_items
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    # shellcheck disable=SC2016  # Literal $HOME in inventory row
+    [[ "$output" == *"Xcode device support symbols|\$HOME/Library/Developer/Xcode/* DeviceSupport/*/Symbols/System/Library/Caches/*|ide_cache"* ]] || return 1
+    [[ "$output" != *"Xcode iOS device support symbols"* ]] || return 1
+
+    # Write legacy iOS-only pattern and verify migration on load
+    # shellcheck disable=SC2088  # Exercise a saved literal tilde pattern.
+    printf '%s\n' '~/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*' > "$whitelist_file"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+load_whitelist clean
+save_whitelist_patterns clean "${CURRENT_WHITELIST_PATTERNS[@]}"
+load_mole_whitelist "$HOME"
+
+platforms=("iOS" "macOS" "watchOS" "tvOS" "visionOS" "xrOS")
+for platform in "${platforms[@]}"; do
+    probe="$HOME/Library/Developer/Xcode/${platform} DeviceSupport/17.0/Symbols/System/Library/Caches/cache_file"
+    if is_path_whitelisted "$probe"; then
+        printf 'PROTECTED=%s\n' "$platform"
+    else
+        printf 'EXPOSED=%s\n' "$platform"
+    fi
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=iOS"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=macOS"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=watchOS"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=tvOS"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=visionOS"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PROTECTED=xrOS"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"EXPOSED="* ]] || return 1
+}
+
 # Each of these rows once named a path its cleaner never deletes, so ticking
 # the row protected nothing while the menu promised it did (same class as
 # #1699). Drive the real cleaners over a fixture HOME seeded at the paths they
