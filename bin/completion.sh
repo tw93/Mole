@@ -316,7 +316,7 @@ if [[ $# -eq 0 ]]; then
         grep -Ev "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$target" > "$temp_file" || true
         mv "$temp_file" "$target"
         if [[ -n "$original_mode" ]]; then
-            chmod "$original_mode" "$config_file" 2> /dev/null || true
+            chmod "$original_mode" "$target" 2> /dev/null || true
         fi
     fi
 
