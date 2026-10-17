@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"unicode"
@@ -293,7 +294,8 @@ func (m model) View() string {
 				maxSize := maxDirEntrySize(m.entries)
 
 				viewport := calculateViewport(m.height, false)
-				nameWidth := calculateNameWidth(m.width)
+				indexWidth := max(2, len(strconv.Itoa(len(m.entries))))
+				nameWidth := calculateNameWidth(m.width) - (indexWidth - 2)
 				start := max(m.offset, 0)
 				end := min(start+viewport, len(m.entries))
 
@@ -356,12 +358,12 @@ func (m model) View() string {
 					}
 
 					if hintLabel == "" {
-						fmt.Fprintf(&b, "%s%s %s%2d.%s %s %s%s%s  %s  %s %s%10s%s\n",
-							entryPrefix, selectIcon, numColor, displayIndex, colorReset, bar, percentColor, percentStr, colorReset,
+						fmt.Fprintf(&b, "%s%s %s%*d.%s %s %s%s%s  %s  %s %s%10s%s\n",
+							entryPrefix, selectIcon, numColor, indexWidth, displayIndex, colorReset, bar, percentColor, percentStr, colorReset,
 							activityMarker, nameSegment, sizeColor, size, colorReset)
 					} else {
-						fmt.Fprintf(&b, "%s%s %s%2d.%s %s %s%s%s  %s  %s %s%10s%s  %s\n",
-							entryPrefix, selectIcon, numColor, displayIndex, colorReset, bar, percentColor, percentStr, colorReset,
+						fmt.Fprintf(&b, "%s%s %s%*d.%s %s %s%s%s  %s  %s %s%10s%s  %s\n",
+							entryPrefix, selectIcon, numColor, indexWidth, displayIndex, colorReset, bar, percentColor, percentStr, colorReset,
 							activityMarker, nameSegment, sizeColor, size, colorReset, hintLabel)
 					}
 				}

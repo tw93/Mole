@@ -248,7 +248,12 @@ func (m *model) finishLiveScan(result scanResult) {
 	} else if selectedPath != "" {
 		m.selectEntryPath(selectedPath)
 	}
-	m.cache[m.path] = historyEntryFromScanResult(m.path, result, m.cache[m.path], false)
+	cached := historyEntryFromScanResult(m.path, result, m.cache[m.path], false)
+	m.cache[m.path] = cached
+	// The view mutates its backing arrays when rows are removed. The writer
+	// shares the immutable history snapshot instead of racing those changes.
+	result.Entries = cached.Entries
+	result.LargeFiles = cached.LargeFiles
 	publication := m.newBackgroundCacheWrite(context.Background(), m.path)
 	if m.scanState == scanComplete && m.totalSize > 0 {
 		if m.overviewSizeCache == nil {
@@ -295,7 +300,7 @@ func (m *model) selectEntryPath(path string) {
 	for i, entry := range m.entries {
 		if entry.Path == path {
 			m.selected = i
-			return
+			break
 		}
 	}
 	m.clampEntrySelection()
@@ -407,6 +412,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		filteredEntries := filterNonEmptyEntries(msg.result.Entries)
 		result := msg.result
 		result.Entries = filteredEntries
+		selectedPath := m.selectedEntryPath()
 		m.entriesAll = filteredEntries
 		m.entries = filteredEntries
 		m.largeFilesAll = msg.result.LargeFiles
@@ -421,6 +427,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// query is empty.
 		m.applyEntryFilter()
 		m.applyLargeFilter()
+		m.selectEntryPath(selectedPath)
 		m.cache[m.path] = historyEntryFromScanResult(m.path, result, m.cache[m.path], msg.stale)
 		if !msg.stale && m.scanState == scanComplete && m.totalSize > 0 {
 			if m.overviewSizeCache == nil {

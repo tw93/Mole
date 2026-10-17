@@ -3,6 +3,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -283,6 +286,95 @@ func TestEntryFilterDrillInPreservesFullParentOnBack(t *testing.T) {
 	}
 	if m.selected < 0 || m.selected >= len(m.entries) || m.entries[m.selected].Path != "/tmp/p/node_modules" {
 		t.Fatalf("entered entry should stay highlighted, selected=%d", m.selected)
+	}
+}
+
+func TestEntryFilterFindsEveryChildAfterLiveScanAndCacheReload(t *testing.T) {
+	for _, fixture := range []struct {
+		directories bool
+		count       int
+	}{{false, 40}, {true, 40}, {false, 10000}} {
+		t.Run(fmt.Sprintf("directories=%t/count=%d", fixture.directories, fixture.count), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			root := filepath.Join(home, "root")
+			if err := os.Mkdir(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			count := fixture.count
+			for i := range count {
+				path := filepath.Join(root, fmt.Sprintf("entry-%02d", i))
+				if fixture.directories {
+					if err := os.Mkdir(path, 0o755); err != nil {
+						t.Fatal(err)
+					}
+					path = filepath.Join(path, "data")
+				}
+				if err := os.WriteFile(path, []byte("data"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			m := newModel(root, false)
+			start := m.scanFreshCmd(root)().(liveScanStartMsg)
+			defer cancelAndDrainLiveScan(start)
+			updated, _ := m.Update(start)
+			m = updated.(model)
+			m, _ = filterRune(t, m, '/')
+			name := fmt.Sprintf("entry-%02d", count-1)
+			m = filterType(t, m, name)
+			m, _ = filterKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+			if len(m.entries) != 1 {
+				t.Fatalf("existing child missing during scan: %+v", m.entries)
+			}
+
+			result := drainLiveScanToResultMsg(t, start)
+			if result.err != nil {
+				t.Fatal(result.err)
+			}
+			updated, _ = m.Update(liveScanEventMsg{
+				id: start.id, path: root, kind: liveScanComplete, result: result.result,
+			})
+			m = updated.(model)
+			defer m.cancelBackgroundCacheWrites(nil)
+			target := filepath.Join(root, name)
+			if len(m.entries) != 1 || m.entries[0].Path != target {
+				t.Fatalf("existing child disappeared when scan finished: %+v", m.entries)
+			}
+			m, _ = filterKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+			if len(m.entries) != count {
+				t.Fatalf("want all %d children after clearing filter, got %d", count, len(m.entries))
+			}
+
+			waitForTestCondition(t, "completed listing to reach disk cache", func() bool {
+				_, err := loadCacheFromDisk(root)
+				return err == nil
+			})
+			cached, err := loadCacheFromDisk(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cached.Entries) > maxEntries || cached.TotalFiles != int64(count) {
+				t.Fatalf("cache must bound rows without losing measurement totals: %+v", cached)
+			}
+
+			warm := newModel(root, false)
+			msg := warm.scanCmd(root)().(scanResultMsg)
+			if !msg.stale {
+				t.Fatal("shortened cache must refresh before becoming a browsable listing")
+			}
+			updated, cmd := warm.Update(msg)
+			warm = updated.(model)
+			fresh := runScanResultCmd(t, cmd)
+			updated, _ = warm.Update(fresh)
+			warm = updated.(model)
+			defer warm.cancelBackgroundCacheWrites(nil)
+			warm, _ = filterRune(t, warm, '/')
+			warm = filterType(t, warm, name)
+			if len(warm.entries) != 1 || warm.entries[0].Path != target {
+				t.Fatalf("cache reload lost an existing child: %+v", warm.entries)
+			}
+		})
 	}
 }
 

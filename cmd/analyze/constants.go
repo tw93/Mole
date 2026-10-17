@@ -5,6 +5,7 @@ package main
 import "time"
 
 const (
+	// Bound cached and recursive summaries, not the browsed directory listing.
 	maxEntries    = 30
 	maxLargeFiles = 20
 	barWidth      = 24

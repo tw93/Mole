@@ -33,7 +33,8 @@ import (
 // v7: Library overview totals count cross-directory hardlinks once again.
 // v8: APFS clones that share every block count once, so v7 totals can be inflated.
 // v9: mixed clone/hardlink groups deduplicate together; bounded lists use path ties.
-const cacheSchemaVersion = 9
+// v10: shortened directory listings must refresh before they are browsed.
+const cacheSchemaVersion = 10
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`
@@ -692,9 +693,17 @@ func saveCacheToDiskWithOptions(publication *scanPublication, path string, resul
 		return err
 	}
 
+	// Recursive measurements and disk snapshots stay bounded. A shortened
+	// listing is useful for first paint and subtree totals, but browsing it
+	// requires a live scan to enumerate every direct child.
+	entries := result.Entries
+	if len(entries) > maxEntries {
+		entries = entries[:maxEntries]
+		needsRefresh = true
+	}
 	entry := cacheEntry{
 		State:         result.State,
-		Entries:       result.Entries,
+		Entries:       entries,
 		LargeFiles:    result.LargeFiles,
 		TotalSize:     result.TotalSize,
 		TotalFiles:    result.TotalFiles,
