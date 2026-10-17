@@ -759,6 +759,7 @@ EOF
     [[ "$output" != *"Xcode iOS device support symbols"* ]] || return 1
 
     # Write legacy iOS-only pattern and verify migration on load
+    # shellcheck disable=SC2088  # Exercise a saved literal tilde pattern.
     printf '%s\n' '~/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*' > "$whitelist_file"
 
     run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
