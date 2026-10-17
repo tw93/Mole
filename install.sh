@@ -1403,6 +1403,9 @@ download_binary() {
 
     local fallback_tag
     fallback_tag=$(get_latest_release_tag 2> /dev/null || true)
+    if [[ -z "$fallback_tag" ]]; then
+        fallback_tag=$(get_latest_release_tag_from_git 2> /dev/null || true)
+    fi
     if [[ -n "$fallback_tag" && "$fallback_tag" != "$release_tag" ]]; then
         local fallback_url="https://github.com/tw93/mole/releases/download/${fallback_tag}/${asset_name}"
         start_line_spinner "Retrying ${binary_name} from ${fallback_tag}..."
