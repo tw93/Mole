@@ -105,7 +105,7 @@ Gradle daemon processes cache|$HOME/.gradle/daemon/*|ide_cache
 Gradle worker cache|$HOME/.gradle/workers/*|ide_cache
 Xcode DerivedData (build outputs, indexes)|$HOME/Library/Developer/Xcode/DerivedData/*|ide_cache
 Xcode internal cache files|$HOME/Library/Caches/com.apple.dt.Xcode/*|ide_cache
-Xcode iOS device support symbols|$HOME/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*|ide_cache
+Xcode device support symbols|$HOME/Library/Developer/Xcode/* DeviceSupport/*/Symbols/System/Library/Caches/*|ide_cache
 JetBrains IDEs data (IntelliJ, PyCharm, WebStorm, GoLand)|$HOME/Library/Application Support/JetBrains/*|ide_cache
 JetBrains IDEs cache|$HOME/Library/Caches/JetBrains/*|ide_cache
 Android Studio cache and indexes|$HOME/Library/Caches/Google/AndroidStudio*/*|ide_cache
@@ -268,6 +268,13 @@ load_whitelist() {
             # unchecking clears it; keeping it saves the wider default instead.
             if [[ "$mode" == "clean" ]] && patterns_equivalent "$pattern" "$HOME/.gradle/caches/build-cache-*/*"; then
                 pattern="$HOME/.gradle/caches/*"
+            fi
+            # The menu saved the Xcode device support symbols row as iOS-only
+            # before all DeviceSupport platforms were covered. Read that line as
+            # the row so it shows checked and unchecking clears it; keeping it
+            # saves the wider pattern instead.
+            if [[ "$mode" == "clean" ]] && patterns_equivalent "$pattern" "$HOME/Library/Developer/Xcode/iOS DeviceSupport/*/Symbols/System/Library/Caches/*"; then
+                pattern="$HOME/Library/Developer/Xcode/* DeviceSupport/*/Symbols/System/Library/Caches/*"
             fi
             local duplicate="false"
             if [[ ${#unique_patterns[@]} -gt 0 ]]; then
