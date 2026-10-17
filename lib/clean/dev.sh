@@ -503,7 +503,7 @@ clean_dev_npm() {
     local bun_cache_path="$bun_default_cache"
     local bun_cache_cleaned=false
     local bun_dry_run="${DRY_RUN:-false}"
-    if command -v bun > /dev/null 2>&1 && bun --version > /dev/null 2>&1; then
+    if command -v bun > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" bun --version > /dev/null 2>&1; then
         if [[ -t 1 ]]; then start_section_spinner "Checking bun cache path..."; fi
         bun_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" bun pm cache 2> /dev/null) || bun_cache_path=""
         if [[ -t 1 ]]; then stop_section_spinner; fi
@@ -800,7 +800,7 @@ clean_clang_module_cache() {
 # Python/pip ecosystem caches.
 clean_dev_python() {
     # Check pip3 is functional (not just macOS stub that triggers CLT install dialog)
-    if command -v pip3 > /dev/null 2>&1 && pip3 --version > /dev/null 2>&1; then
+    if command -v pip3 > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pip3 --version > /dev/null 2>&1; then
         local pip_cache_path
         pip_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pip3 cache dir 2> /dev/null) || pip_cache_path=""
         if [[ -z "$pip_cache_path" || "$pip_cache_path" != /* ]]; then

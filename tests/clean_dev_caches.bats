@@ -4489,3 +4489,68 @@ EOF
     grep -qx 'TIMEOUT:77:npm cache clean --force' "$trace" || { cat "$trace"; return 1; }
     grep -qx 'NPM:cache clean --force' "$trace"
 }
+
+@test "clean_dev_npm checks bun version under the quick-detect timeout" {
+    local trace="$HOME/bun-version.trace"
+    : > "$trace"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TRACE="$trace" MOLE_TIMEOUT_QUICK_DETECT_SEC=12 \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_tool_cache() { :; }
+safe_clean() { :; }
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+clean_pnpm_stores() { return 0; }
+clean_corepack_cache() { return 0; }
+run_with_timeout() { printf 'TIMEOUT:%s:%s\n' "$1" "${*:2}" >> "$TRACE"; shift; "$@"; }
+npm() { return 1; }
+bun() {
+    if [[ "$1" == "--version" ]]; then
+        printf 'BUN:%s\n' "$*" >> "$TRACE"
+        return 0
+    fi
+    return 1
+}
+export -f npm bun
+clean_dev_npm
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    grep -qx 'TIMEOUT:12:bun --version' "$trace" || { cat "$trace"; return 1; }
+    grep -qx 'BUN:--version' "$trace"
+}
+
+@test "clean_dev_python checks pip3 version under the quick-detect timeout" {
+    local trace="$HOME/pip3-version.trace"
+    : > "$trace"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TRACE="$trace" MOLE_TIMEOUT_QUICK_DETECT_SEC=15 \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+clean_tool_cache() { :; }
+safe_clean() { :; }
+clean_uv_cache() { return 0; }
+clean_pyinstaller_bincache() { return 0; }
+clean_conda_metadata_caches() { return 0; }
+run_with_timeout() { printf 'TIMEOUT:%s:%s\n' "$1" "${*:2}" >> "$TRACE"; shift; "$@"; }
+pip3() {
+    if [[ "$1" == "--version" ]]; then
+        printf 'PIP3:%s\n' "$*" >> "$TRACE"
+        return 0
+    fi
+    return 1
+}
+export -f pip3
+clean_dev_python
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    grep -qx 'TIMEOUT:15:pip3 --version' "$trace" || { cat "$trace"; return 1; }
+    grep -qx 'PIP3:--version' "$trace"
+}
+
