@@ -220,3 +220,25 @@ setup() {
 	grep -Fq '# user zsh setting' "$HOME/dotfiles/zshrc" || return 1
 	grep -Eq '(mole|mo)[[:space:]]+completion' "$HOME/dotfiles/zshrc"
 }
+
+@test "completion auto-install does not treat unrelated completion commands as installed" {
+	mkdir -p "$HOME"
+	printf 'gizmo completion zsh\n' >"$HOME/.zshrc"
+
+	run env SHELL=/bin/zsh "$PROJECT_ROOT/bin/completion.sh" --dry-run
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" != *"Would normalize"* ]] || return 1
+	[[ "$output" == *"Will add to"* ]] || return 1
+
+	run /bin/bash -c "echo 'n' | SHELL=/bin/zsh \"$PROJECT_ROOT/bin/completion.sh\""
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"Cancelled"* ]] || return 1
+	grep -Fq 'gizmo completion zsh' "$HOME/.zshrc" || return 1
+	! grep -Fq 'Mole shell completion' "$HOME/.zshrc" || return 1
+
+	run /bin/bash -c "echo 'y' | SHELL=/bin/zsh \"$PROJECT_ROOT/bin/completion.sh\""
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"Completion added to"* ]] || return 1
+	grep -Fq 'gizmo completion zsh' "$HOME/.zshrc" || return 1
+	grep -Eq '(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)' "$HOME/.zshrc"
+}
