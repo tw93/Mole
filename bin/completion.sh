@@ -247,7 +247,7 @@ if [[ $# -eq 0 ]]; then
     fi
 
     # Check if already installed and normalize to latest line
-    if [[ -f "$config_file" ]] && grep -Eq "(mole|mo)[[:space:]]+completion" "$config_file" 2> /dev/null; then
+    if [[ -f "$config_file" ]] && grep -Eq "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$config_file" 2> /dev/null; then
         if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
             echo -e "${GRAY}${ICON_REVIEW} [DRY RUN] Would normalize completion entry in $config_file${NC}"
             echo ""
