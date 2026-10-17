@@ -351,9 +351,35 @@ remove_mole() {
     fi
     echo "  ${ICON_LIST} ~/.cache/mole"
     [[ -d "$HOME/Library/Logs/mole" ]] && echo "  ${ICON_LIST} ~/Library/Logs/mole (kept, operation history)"
+    # A read from a non-terminal fails and becomes an empty key, which the
+    # case below treats as Enter: a script or background runner could confirm
+    # removal without user consent. Only a real terminal may answer; tests
+    # opt in through MOLE_TEST_MODE and drive the prompt explicitly.
+    if [[ ! -t 0 && "${MOLE_TEST_MODE:-0}" != "1" ]]; then
+        echo ""
+        log_error "Removal confirmation needs an interactive terminal; Mole was not removed."
+        log_info "Run mo remove from an interactive terminal, or use mo remove --dry-run to preview"
+        exit 1
+    fi
+
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
 
-    IFS= read -r -s -n1 key || key=""
+    drain_pending_input # Clean up any pending input before confirmation
+    local key="" key_rc=0
+    IFS= read -r -s -n1 key || key_rc=$?
+    if [[ $key_rc -ne 0 ]]; then
+        # Test fixtures drive the prompt through a pipe and may have
+        # already consumed it; production only reaches here on a real
+        # terminal, where EOF is not consent.
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" ]]; then
+            key=""
+        else
+            echo ""
+            log_error "Could not read the removal confirmation; Mole was not removed."
+            log_info "Run mo remove from an interactive terminal; nothing was changed"
+            exit 1
+        fi
+    fi
     drain_pending_input # Clean up any escape sequence remnants
     case "$key" in
         $'\e')
