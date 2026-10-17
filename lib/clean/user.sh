@@ -365,17 +365,15 @@ _incomplete_download_delete_guard_allows() {
 # view says the exact file is idle. The guarded cleanup repeats the probe after
 # sizing, and safe_remove repeats it again at the real deletion boundary.
 _clean_incomplete_downloads() {
-    local -a patterns=(
-        "$HOME/Downloads/*.download"
-        "$HOME/Downloads/*.crdownload"
-        "$HOME/Downloads/*.part"
-    )
-    local labels=("Safari incomplete downloads" "Chrome incomplete downloads" "Partial incomplete downloads")
+    [[ -d "$HOME/Downloads" ]] || return 0
+
+    local -a extensions=("download" "crdownload" "part")
+    local -a labels=("Safari incomplete downloads" "Chrome incomplete downloads" "Partial incomplete downloads")
     local i=0
-    for pattern in "${patterns[@]}"; do
+    for ext in "${extensions[@]}"; do
         local label="${labels[$i]}"
         i=$((i + 1))
-        for f in $pattern; do
+        for f in "$HOME/Downloads/"*."$ext"; do
             [[ -e "$f" ]] || continue
             local open_state=0
             _mole_paths_have_open_handle "$f" || open_state=$?

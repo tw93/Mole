@@ -156,6 +156,37 @@ EOF
     [[ "$output" != *"UNEXPECTED_REGISTER"* ]] || return 1
 }
 
+@test "incomplete downloads scan discovers files when HOME contains spaces" {
+    local fake_home="$HOME/User Name With Spaces"
+    local partial="$fake_home/Downloads/pending.crdownload"
+    mkdir -p "$(dirname "$partial")"
+    printf 'partial\n' > "$partial"
+
+    run env HOME="$fake_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+trace_file=$(mktemp)
+lsof() {
+    case " $* " in
+        *" -p 1 "*) printf 'visibility\n' >> "$trace_file"; return 1 ;;
+        *) printf 'target\n' >> "$trace_file"; return 1 ;;
+    esac
+}
+run_with_timeout() { shift; "$@"; }
+safe_clean() { echo "UNEXPECTED_SAFE_CLEAN:$1"; }
+note_activity() { :; }
+_clean_incomplete_downloads
+printf 'TRACE=%s\n' "$(tr '\n' ',' < "$trace_file")"
+command rm -f "$trace_file"
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"open-file check unavailable"* ]] || return 1
+    [[ "$output" == *"TRACE=visibility,"* ]] || return 1
+    [[ "$output" != *"UNEXPECTED_SAFE_CLEAN"* ]]
+}
+
 @test "clean_user_essentials avoids Darwin runtime probes and live-log truncation" {
     mkdir -p "$HOME/Library/Caches/ordinary-app"
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
