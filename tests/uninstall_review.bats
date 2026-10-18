@@ -52,7 +52,7 @@ SH
     run env HOME="$HOME/config-references" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SH'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/uninstall/batch.sh"
-mkdir -p "$HOME/.cursor" "$HOME/.config/paseo"
+mkdir -p "$HOME/.cursor" "$HOME/.config/paseo" "$HOME/.config/fish"
 app="$HOME/Applications/Example.app"
 removed="$HOME/.config/removed-tool"
 # shellcheck disable=SC2016  # Literal forms stored by third-party installers.
@@ -63,6 +63,7 @@ printf '%s\n' 'alias example=Example' 'TOKEN=private-value' \
     'hook="${HOME}/.config/removed-tool/run"' \
     'hook="~/.config/removed-tool/run"' > "$HOME/.zshrc"
 printf '{"command":"%s/Contents/MacOS/example"}\n' "$app" > "$HOME/.cursor/mcp.json"
+printf '%s\n' "set -gx EXAMPLE_BIN \"$app/Contents/MacOS/example\"" > "$HOME/.config/fish/config.fish"
 cp "$HOME/.zshrc" "$HOME/config-before"
 uninstall_configuration_references "$app" "$removed" "$HOME/.config/paseo"
 cmp "$HOME/.zshrc" "$HOME/config-before" || exit 1
@@ -70,6 +71,7 @@ SH
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"~/.zshrc:3"* && "$output" == *"~/.zshrc:5"* && "$output" == *"~/.zshrc:6"* && "$output" == *"~/.zshrc:7"* ]] || return 1
     [[ "$output" == *"~/.cursor/mcp.json:1"* ]] || return 1
+    [[ "$output" == *"~/.config/fish/config.fish:1"* ]] || return 1
     [[ "$output" != *"private-value"* && "$output" != *"~/.zshrc:4"* && "$output" != *"~/.zshrc:1"* ]] || return 1
 }
 

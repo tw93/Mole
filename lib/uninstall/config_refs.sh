@@ -22,6 +22,7 @@ for my $path (@ARGV) {
 }
 exit 0 unless @needles;
 my @configs = qw(.zshrc .zprofile .zshenv .bashrc .bash_profile .profile
+    .config/fish/config.fish
     .claude/settings.json .claude.json .codex/hooks.json .codex/config.toml
     .cursor/hooks.json .cursor/mcp.json .gemini/settings.json);
 for my $relative (@configs) {
