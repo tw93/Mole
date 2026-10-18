@@ -560,6 +560,46 @@ get_latest_version_from_github() {
     return 0
 }
 
+get_latest_version_from_git() {
+    if ! command -v git > /dev/null 2>&1; then
+        return 0
+    fi
+    local response tag version=""
+    if response=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" \
+        /usr/bin/env \
+        -u GIT_CONFIG_PARAMETERS \
+        -u GIT_EXEC_PATH \
+        -u GIT_DIR \
+        -u GIT_WORK_TREE \
+        -u GIT_COMMON_DIR \
+        -u GIT_CONFIG \
+        -u GIT_PROXY_COMMAND \
+        -u GIT_SSH \
+        -u GIT_SSH_COMMAND \
+        -u GIT_SSL_NO_VERIFY \
+        GIT_TERMINAL_PROMPT=0 \
+        GIT_ASKPASS=/usr/bin/false \
+        SSH_ASKPASS=/usr/bin/false \
+        GIT_CONFIG_NOSYSTEM=1 \
+        GIT_CONFIG_GLOBAL=/dev/null \
+        GIT_CONFIG_COUNT=0 \
+        LC_ALL=C \
+        git -c credential.helper= -c core.askPass=/usr/bin/false \
+        -c protocol.allow=never -c protocol.https.allow=always \
+        -c http.sslVerify=true -C / \
+        ls-remote --tags --refs https://github.com/tw93/mole.git \
+        2> /dev/null); then
+        tag=$(printf '%s\n' "$response" |
+            awk -F/ '{print $NF}' |
+            grep -E '^V[0-9]+\.[0-9]+\.[0-9]+$' |
+            sort -V |
+            tail -n 1)
+        version="${tag#[Vv]}"
+    fi
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && printf '%s\n' "$version"
+    return 0
+}
+
 # Foreground `mo update` version discovery. The single-shot helpers above stay
 # fast because background notices must not delay commands; an
 # explicit update is worth a bounded retry instead, since the same proxy reset
@@ -572,6 +612,7 @@ resolve_latest_stable_version() {
     while true; do
         candidate=$(get_latest_version_from_github)
         [[ -z "$candidate" ]] && candidate=$(get_latest_version)
+        [[ -z "$candidate" ]] && candidate=$(get_latest_version_from_git)
         if [[ -n "$candidate" ]]; then
             printf '%s\n' "$candidate"
             return 0

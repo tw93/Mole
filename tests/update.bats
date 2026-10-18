@@ -2104,6 +2104,38 @@ SCRIPT
  [ "$status" -eq 0 ]
 }
 
+@test "stable discovery falls back to git release tags when HTTP API lookups fail" {
+	run /bin/bash <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/manage/update.sh"
+get_latest_version_from_github() { return 0; }
+get_latest_version() { return 0; }
+get_latest_version_from_git() { echo "1.61.0"; }
+[[ "$(resolve_latest_stable_version)" == "1.61.0" ]] || exit 1
+SCRIPT
+	[ "$status" -eq 0 ]
+}
+
+@test "get_latest_version_from_git resolves highest macOS release tag and ignores windows tags" {
+	local fake_bin="$TEST_ROOT/fake-bin-git"
+	mkdir -p "$fake_bin"
+	cat > "$fake_bin/git" <<'SCRIPT'
+#!/bin/bash
+printf '%s\trefs/tags/V1.59.0\n%s\trefs/tags/V1.61.0\n%s\trefs/tags/V1.62.0-windows\n' \
+    "deadbeef1" "deadbeef2" "deadbeef3"
+SCRIPT
+	chmod +x "$fake_bin/git"
+
+	run env PATH="$fake_bin:$PATH" /bin/bash <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/manage/update.sh"
+[[ "$(get_latest_version_from_git)" == "1.61.0" ]] || exit 1
+SCRIPT
+	[ "$status" -eq 0 ]
+}
+
 @test "update check stays silent when the cache cannot be written or read" {
  [ "$(id -u)" -ne 0 ] || skip "root ignores directory and file modes"
  run /bin/bash <<'SCRIPT'
