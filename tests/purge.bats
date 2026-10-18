@@ -2879,6 +2879,13 @@ EOF
 	[[ "$output" == *"Show zero-size project artifact directories"* ]]
 }
 
+@test "mo purge -h shows usage and exits 0" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" purge -h
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Usage: mo purge"* ]] || return 1
+	[[ "$output" == *"-h, --help"* ]]
+}
+
 @test "mo purge: accepts --debug flag" {
 	if ! command -v gtimeout >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1; then
 		skip "gtimeout/timeout not available"

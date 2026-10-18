@@ -280,6 +280,15 @@ EOF
 	done
 }
 
+@test "every command answers -h with usage and exit 0" {
+	local cmd
+	for cmd in clean uninstall optimize purge installer history completion touchid update remove; do
+		run env HOME="$HOME" "$PROJECT_ROOT/mole" "$cmd" -h
+		[ "$status" -eq 0 ] || return 1
+		[[ "$output" == *"Usage"* ]] || return 1
+	done
+}
+
 @test "mole --help does not list check command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
 	[ "$status" -eq 0 ]
