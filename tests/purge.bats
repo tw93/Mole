@@ -2882,7 +2882,7 @@ EOF
 @test "mo purge -h shows usage and exits 0" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" purge -h
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Usage: mo purge"* ]] || return 1
+	[[ "$output" == *"Usage:"* && "$output" == *"mo purge [options]"* ]] || return 1
 	[[ "$output" == *"-h, --help"* ]]
 }
 
