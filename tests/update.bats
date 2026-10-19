@@ -378,6 +378,7 @@ SCRIPT
 	local manual_config="$TEST_ROOT/manual/config"
 	local fake_bin="$TEST_ROOT/fake-bin"
 	local curl_attempt_log="$TEST_ROOT/discovery.attempts"
+	local git_attempt_log="$TEST_ROOT/discovery.git-attempts"
 
 	mkdir -p "$fake_bin"
 	make_manual_mole_install "$manual_bin" "$manual_config" "0.0.1"
@@ -390,13 +391,20 @@ SCRIPT
 printf 'x\n' >> "$CURL_ATTEMPT_LOG"
 exit 28
 SCRIPT
+	# The git tag fallback must fail too, or the test reaches the real GitHub.
+	cat > "$fake_bin/git" << 'SCRIPT'
+#!/usr/bin/env bash
+printf 'x\n' >> "$GIT_ATTEMPT_LOG"
+exit 128
+SCRIPT
 	printf '#!/bin/bash\nexit 0\n' > "$fake_bin/sleep"
-	chmod +x "$fake_bin/curl" "$fake_bin/sleep"
+	chmod +x "$fake_bin/curl" "$fake_bin/git" "$fake_bin/sleep"
 
 	run env \
 		HOME="$HOME" \
 		PATH="$fake_bin:/usr/bin:/bin" \
 		CURL_ATTEMPT_LOG="$curl_attempt_log" \
+		GIT_ATTEMPT_LOG="$git_attempt_log" \
 		"$manual_bin/mo" update
 
 	[ "$status" -eq 1 ] || return 1
@@ -405,7 +413,9 @@ SCRIPT
 	# The bounded retry must not run behind a blank screen.
 	[[ "$output" == *"Checking for updates"* ]] || return 1
 	# Two endpoints per round, three bounded rounds.
-	[ "$(wc -l < "$curl_attempt_log" | tr -d ' ')" -eq 6 ]
+	[ "$(wc -l < "$curl_attempt_log" | tr -d ' ')" -eq 6 ] || return 1
+	# One git tag lookup per round once both HTTP endpoints fail.
+	[ "$(wc -l < "$git_attempt_log" | tr -d ' ')" -eq 3 ]
 }
 
 @test "mo update announces the check before the bounded retry, not after it" {
@@ -422,7 +432,8 @@ SCRIPT
 printf 'x\n' >> "$CURL_ATTEMPT_LOG"
 exit 28
 SCRIPT
-	chmod +x "$fake_bin/curl"
+	printf '#!/bin/bash\nexit 128\n' > "$fake_bin/git"
+	chmod +x "$fake_bin/curl" "$fake_bin/git"
 	: > "$out_file"
 	: > "$curl_attempt_log"
 
