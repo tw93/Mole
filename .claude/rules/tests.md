@@ -2,6 +2,7 @@
 paths:
   - "tests/**"
   - "scripts/test.sh"
+  - "scripts/e2e_macos.py"
   - "scripts/audit_bats_assertions.py"
   - ".github/workflows/*.yml"
   - "cmd/**/*_test.go"
@@ -20,4 +21,5 @@ Suite-level rules (summary line, `$TERM`, cancelled CI runs, never piping into `
   - `scripts/audit_bats_assertions.py` enforces all of this from `check.sh` in test bodies and `run ... bash <<EOF` script bodies; mock function bodies, data heredocs and a computation without a comparison such as `(( n++ ))` are exempt.
   - Every guard test must be observed red against the pre-fix path and green after restoration. The complete vacuous-test and shared-`HOME` checklist lives in `.claude/skills/bugs/references/test-validity-and-refusal-diagnostics.md`.
 - Tests that intentionally replace `safe_clean` are a seam; see the `declare -f` shim rule in `.claude/rules/clean.md`.
+- `scripts/e2e_macos.py` is the real-Mac release run (`.claude/skills/release-flow/SKILL.md` pre-flight step 7), not a CI job: it needs a logged-in user session, network and the user's real `~/Downloads`. Its first run found two defects that every unit test missed, an analyze cache that ignored directory changes for 30 minutes and `--help` refused by `update` and `remove`, so when a step fails, read its transcript before loosening the step. `--keep-going` permits only independent checks: failed build, download, integrity, install or launch steps cannot authorize dependent mutations, and a failed uninstall retains its installer. `tests/e2e_harness_test.py`, called from `tests/cli.bats`, locks this with mocked actions and network; it does not run the real fixture.
 - Release preflight requires Check/Validation/CodeQL/Nix success on the tagged SHA. CodeQL and Nix ignore docs-only pushes, so the gate allows those two to be absent only when every changed file is `docs/**` or `*.md` and the nearest code-changing ancestor has both runs green; every required workflow also accepts `workflow_dispatch` so a missing run has a recovery path. A cancelled run is still not evidence.

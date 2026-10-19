@@ -40,24 +40,8 @@ _remove_log_removed() {
 
 # Shell integration written by `mo completion`: one marker line in a shell rc
 # file, and generated Fish completion files. Only these exact paths and this
-# exact marker pattern (the one bin/completion.sh writes) are touched; the rest
-# of an rc file stays byte for byte.
-_REMOVE_COMPLETION_PATTERN='(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)'
-
-_remove_completion_rc_target() {
-    local rc_file="$1"
-    local target="$rc_file"
-    local hops=0
-    while [[ -L "$target" ]]; do
-        local link
-        link=$(readlink "$target") || return 1
-        [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
-        target="$link"
-        hops=$((hops + 1))
-        [[ $hops -le 40 ]] || return 1
-    done
-    printf '%s\n' "$target"
-}
+# exact marker pattern (MOLE_COMPLETION_LINE_PATTERN, shared with
+# bin/completion.sh) are touched; every other rc line is kept.
 
 # Rc files that still carry a Mole completion entry.
 _remove_completion_rc_files() {
@@ -67,9 +51,9 @@ _remove_completion_rc_files() {
         "$HOME/.config/fish/config.fish"; do
         [[ -e "$candidate" || -L "$candidate" ]] || continue
         local target
-        target=$(_remove_completion_rc_target "$candidate") || continue
+        target=$(mole_resolve_link_chain "$candidate") || continue
         [[ -f "$target" ]] || continue
-        if grep -Eq "$_REMOVE_COMPLETION_PATTERN" "$target"; then
+        if grep -Eq "$MOLE_COMPLETION_LINE_PATTERN" "$target"; then
             printf '%s\n' "$candidate"
         fi
     done
@@ -92,7 +76,7 @@ _remove_completion_integration() {
     local rc_file target original_mode temp_file grep_rc helper_rc=0
     while IFS= read -r rc_file; do
         [[ -n "$rc_file" ]] || continue
-        if ! target=$(_remove_completion_rc_target "$rc_file"); then
+        if ! target=$(mole_resolve_link_chain "$rc_file"); then
             log_warning "Could not resolve shell completion file: $rc_file"
             helper_rc=1
             continue
@@ -104,7 +88,7 @@ _remove_completion_integration() {
             continue
         }
         grep_rc=0
-        grep -Ev "$_REMOVE_COMPLETION_PATTERN" "$target" > "$temp_file" || grep_rc=$?
+        grep -Ev "$MOLE_COMPLETION_LINE_PATTERN" "$target" > "$temp_file" || grep_rc=$?
         if [[ "$grep_rc" -gt 1 ]]; then
             log_warning "Could not read shell completion entries from $target"
             rm -f "$temp_file" || true # SAFE: exact mktemp-created scratch file

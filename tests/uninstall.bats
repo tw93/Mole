@@ -6847,7 +6847,7 @@ RC
     cat > "$HOME/.config/fish/config.fish" << 'RC'
 # user fish setting
 # Mole shell completion
-if output=(mole completion fish 2>/dev/null); eval "$output"; end
+set -l output (mole completion fish 2>/dev/null); and echo "$output" | source
 RC
     printf '# generated\n# Mole completions for mole\n' > "$HOME/.config/fish/completions/mole.fish"
     printf '# generated\nsource %s\n' "$HOME/.config/fish/completions/mole.fish" > "$HOME/.config/fish/completions/mo.fish"
@@ -6872,6 +6872,7 @@ EOF
     ! grep -Fq 'Mole shell completion' "$HOME/dotfiles/bashrc" || return 1
     grep -Fq '# user bash setting' "$HOME/dotfiles/bashrc" || return 1
     ! grep -Fq 'Mole shell completion' "$HOME/.config/fish/config.fish" || return 1
+    ! grep -Fq 'completion fish' "$HOME/.config/fish/config.fish" || return 1
     grep -Fq '# user fish setting' "$HOME/.config/fish/config.fish" || return 1
     [ ! -e "$HOME/.config/fish/completions/mole.fish" ] || return 1
     [ ! -e "$HOME/.config/fish/completions/mo.fish" ] || return 1
@@ -7049,6 +7050,33 @@ EOF
     [ -d "$fixture_home/Library/Application Support/TestApp" ] || return 1
 }
 
+@test "completion removal preserves quoted and mixed commands byte for byte" {
+    cat > "$HOME/expected-user-lines" <<'RC'
+export NOTE="mo completion zsh"
+alias setup='mo completion zsh; echo keep'
+if command -v mole; then source <(mole completion zsh); export KEEP=yes; fi
+# Run mole completion zsh to inspect the script
+RC
+    cat "$HOME/expected-user-lines" > "$HOME/.zshrc"
+    cat >> "$HOME/.zshrc" <<'RC'
+# Mole shell completion
+if output="$(mole completion zsh 2>/dev/null)"; then eval "$output"; fi
+eval "$(mo completion bash)"
+source <(mole completion zsh)
+set -l output (mo completion fish 2>/dev/null); and echo "$output" | source
+mo completion fish | source
+RC
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/manage/remove.sh"
+_remove_completion_integration
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    cmp "$HOME/expected-user-lines" "$HOME/.zshrc" || return 1
+}
+
 @test "remove_mole without a terminal exits nonzero and removes nothing" {
     local iso="$BATS_TEST_TMPDIR/no-tty-remove"
     mkdir -p "$iso/.local/bin" "$iso/.config/mole" "$iso/.cache/mole"
@@ -7071,4 +7099,3 @@ EOF
     [ -d "$iso/.config/mole" ] || return 1
     [ -d "$iso/.cache/mole" ] || return 1
 }
-

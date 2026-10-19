@@ -83,8 +83,24 @@ func (m model) Init() tea.Cmd {
 	}
 }
 
-func (m model) scanCmd(path string) tea.Cmd {
+func (m *model) newLiveScanRequest() (int64, *scanPublication) {
+	m.cancelLiveScan()
+	id := nextLiveScanID.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	publication := newScanPublication(ctx, cancel)
+	// Reserve identity before dispatch, including cache reads and commands
+	// that have not begun enumerating yet.
+	m.liveScanID = id
+	m.liveScanCancel = publication.cancel
+	return id, publication
+}
+
+func (m *model) scanCmd(path string) tea.Cmd {
+	id, publication := m.newLiveScanRequest()
 	return func() tea.Msg {
+		if err := publication.ctx.Err(); err != nil {
+			return liveScanStartMsg{id: id, path: path, err: err}
+		}
 		if cached, err := loadCacheFromDisk(path); err == nil {
 			result := scanResult{
 				State:      cached.State,
@@ -94,9 +110,9 @@ func (m model) scanCmd(path string) tea.Cmd {
 				TotalFiles: cached.TotalFiles,
 			}
 			if cached.NeedsRefresh {
-				return scanResultMsg{path: path, result: result, err: nil, stale: true}
+				return scanResultMsg{id: id, path: path, result: result, err: nil, stale: true}
 			}
-			return scanResultMsg{path: path, result: result, err: nil}
+			return scanResultMsg{id: id, path: path, result: result, err: nil}
 		}
 
 		if stale, err := loadStaleCacheFromDisk(path); err == nil {
@@ -107,23 +123,21 @@ func (m model) scanCmd(path string) tea.Cmd {
 				TotalSize:  stale.TotalSize,
 				TotalFiles: stale.TotalFiles,
 			}
-			return scanResultMsg{path: path, result: result, err: nil, stale: true}
+			return scanResultMsg{id: id, path: path, result: result, err: nil, stale: true}
 		}
 
-		return startLiveScanCmd(path, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath)()
+		return startLiveScanCmd(id, path, publication, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath, scanCacheReuse)()
 	}
 }
 
-func (m model) scanFreshCmd(path string) tea.Cmd {
-	return func() tea.Msg {
-		return startLiveScanCmd(path, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath)()
-	}
+func (m *model) scanFreshCmd(path string) tea.Cmd {
+	id, publication := m.newLiveScanRequest()
+	return startLiveScanCmd(id, path, publication, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath, scanCacheReuse)
 }
 
-func (m model) scanBypassingCacheCmd(path string) tea.Cmd {
-	return func() tea.Msg {
-		return startLiveScanCmdWithPolicy(path, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath, scanCacheBypass)()
-	}
+func (m *model) scanBypassingCacheCmd(path string) tea.Cmd {
+	id, publication := m.newLiveScanRequest()
+	return startLiveScanCmd(id, path, publication, m.filesScanned, m.dirsScanned, m.bytesScanned, m.currentPath, scanCacheBypass)
 }
 
 func tickCmd() tea.Cmd {
@@ -390,15 +404,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case scanResultMsg:
-		if msg.path != "" && msg.path != m.path {
-			if msg.err == nil {
-				filteredEntries := filterNonEmptyEntries(msg.result.Entries)
-				result := msg.result
-				result.Entries = filteredEntries
-				m.cache[msg.path] = historyEntryFromScanResult(msg.path, result, m.cache[msg.path], msg.stale)
-			}
+		if msg.id == 0 || msg.id != m.liveScanID || msg.path != m.path {
 			return m, nil
 		}
+		m.cancelLiveScan()
 		m.scanning = false
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Scan failed: %v", msg.err)
@@ -452,14 +461,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = scanSummary(m.totalSize, m.scanState)
 		return m, nil
 	case liveScanStartMsg:
-		if msg.path != m.path {
+		if msg.id == 0 || msg.id != m.liveScanID || msg.path != m.path {
 			if msg.cancel != nil {
 				msg.cancel()
 			}
 			return m, nil
 		}
-		m.cancelLiveScan()
 		if msg.err != nil {
+			m.cancelLiveScan()
 			m.scanning = false
 			m.status = fmt.Sprintf("Scan failed: %v", msg.err)
 			return m, nil

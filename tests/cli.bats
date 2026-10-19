@@ -271,6 +271,15 @@ EOF
 	done
 }
 
+@test "every command answers --help with usage and exit 0" {
+	local cmd
+	for cmd in clean uninstall optimize purge installer history completion touchid update remove; do
+		run env HOME="$HOME" "$PROJECT_ROOT/mole" "$cmd" --help
+		[ "$status" -eq 0 ] || return 1
+		[[ "$output" == *"Usage"* ]] || return 1
+	done
+}
+
 @test "mole --help does not list check command" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
 	[ "$status" -eq 0 ]
@@ -969,5 +978,11 @@ PY
 @test "interactive terminal contract: menu restore, update notice wrapper and signals (PTY)" {
 	command -v python3 >/dev/null 2>&1 || skip "python3 not available"
 	run python3 "$PROJECT_ROOT/tests/main_menu_pty.py"
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "e2e harness keeps failed prerequisites from authorizing later mutations" {
+	command -v python3 >/dev/null 2>&1 || skip "python3 not available"
+	run env MOLE_TEST_NO_AUTH=1 PYTHONDONTWRITEBYTECODE=1 python3 "$PROJECT_ROOT/tests/e2e_harness_test.py"
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }

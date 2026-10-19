@@ -21,7 +21,6 @@ const (
 	mdlsTimeout            = 5 * time.Second
 	maxConcurrentOverview  = 8
 	batchUpdateSize        = 100
-	cacheModTimeGrace      = 30 * time.Minute
 	staleCacheTTL          = 3 * 24 * time.Hour
 
 	// Analyzer cache admission and eviction budget. A subtree is only worth a

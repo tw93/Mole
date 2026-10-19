@@ -98,11 +98,13 @@ clean_corepack_cache() {
 clean_uv_cache() {
     local uv_cache_path="$HOME/.cache/uv"
     if command -v uv > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" uv --version > /dev/null 2>&1; then
-        local detected_cache
-        detected_cache=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" uv cache dir 2> /dev/null || true)
-        if [[ -n "$detected_cache" && "$detected_cache" == /* ]]; then
-            uv_cache_path="$detected_cache"
-        fi
+        local detected_cache cache_rc=0
+        detected_cache=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" uv cache dir 2> /dev/null) || cache_rc=$?
+        mole_rc_signal "$cache_rc" && return "$cache_rc"
+        # The owner may use a configured root. A failed lookup is not permission
+        # to check the default path and mutate a different one.
+        [[ $cache_rc -eq 0 && "$detected_cache" == /* && "$detected_cache" != *$'\n'* ]] || return 0
+        uv_cache_path="$detected_cache"
         clean_tool_cache "uv cache" "$uv_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" uv cache prune || return $?
     else
         safe_clean "$uv_cache_path"/* "uv cache"
@@ -295,9 +297,29 @@ clean_conda_metadata_caches() {
         return 0
     fi
 
-    local conda_cache_hint="$HOME/.conda/pkgs"
     if command -v conda > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" conda --version > /dev/null 2>&1; then
-        clean_tool_cache "conda index/tarball/log caches" "$conda_cache_hint" \
+        # Conda also cleans custom pkgs_dirs. Validate the complete owner
+        # snapshot before authorizing a command that can touch all of them.
+        local conda_info="" info_rc=0 root_count="" root="" i=0
+        conda_info=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" conda info --json 2> /dev/null) || info_rc=$?
+        mole_rc_signal "$info_rc" && return "$info_rc"
+        [[ $info_rc -eq 0 ]] || return 0
+        root_count=$(printf '%s' "$conda_info" | /usr/bin/plutil -extract pkgs_dirs raw -expect array -o - - 2> /dev/null) || return 0
+        [[ "$root_count" =~ ^[0-9]+$ && "$root_count" -gt 0 ]] || return 0
+        conda_pkg_roots=()
+        for ((i = 0; i < root_count; i++)); do
+            # Retain trailing newlines so malformed paths cannot become valid.
+            root=$(
+                printf '%s' "$conda_info" | /usr/bin/plutil -extract "pkgs_dirs.$i" raw -expect string -o - - 2> /dev/null || exit $?
+                printf '\001'
+            ) || return 0
+            root="${root%$'\001'}"
+            root="${root%$'\n'}"
+            [[ "$root" == /* && "$root" != *$'\n'* ]] || return 0
+            conda_pkg_roots+=("$root")
+        done
+        conda_cache_whitelisted "${conda_pkg_roots[@]}" && return 0
+        clean_tool_cache "conda index/tarball/log caches" "${conda_pkg_roots[0]}" \
             run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" conda clean --yes --index-cache --tarballs --logfiles || return $?
         return 0
     fi
@@ -460,14 +482,18 @@ clean_dev_npm() {
 
     if command -v npm > /dev/null 2>&1; then
         start_section_spinner "Checking npm cache path..."
-        npm_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" npm config get cache 2> /dev/null) || npm_cache_path=""
+        local npm_cache_rc=0
+        npm_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" npm config get cache 2> /dev/null) || npm_cache_rc=$?
         stop_section_spinner
+        mole_rc_signal "$npm_cache_rc" && return "$npm_cache_rc"
 
-        if [[ -z "$npm_cache_path" || "$npm_cache_path" != /* ]]; then
+        if [[ $npm_cache_rc -eq 0 && "$npm_cache_path" == /* && "$npm_cache_path" != *$'\n'* ]]; then
+            clean_tool_cache "npm cache" "$npm_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" npm cache clean --force || return $?
+        else
+            # Known default residuals below retain their own safe-clean guards;
+            # do not run an owner command against an unresolved configured root.
             npm_cache_path="$npm_default_cache"
         fi
-
-        clean_tool_cache "npm cache" "$npm_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" npm cache clean --force || return $?
     fi
 
     # These residual directories are not removed by `npm cache clean --force`
@@ -801,12 +827,12 @@ clean_clang_module_cache() {
 clean_dev_python() {
     # Check pip3 is functional (not just macOS stub that triggers CLT install dialog)
     if command -v pip3 > /dev/null 2>&1 && run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pip3 --version > /dev/null 2>&1; then
-        local pip_cache_path
-        pip_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pip3 cache dir 2> /dev/null) || pip_cache_path=""
-        if [[ -z "$pip_cache_path" || "$pip_cache_path" != /* ]]; then
-            pip_cache_path="$HOME/Library/Caches/pip"
+        local pip_cache_path pip_cache_rc=0
+        pip_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" pip3 cache dir 2> /dev/null) || pip_cache_rc=$?
+        mole_rc_signal "$pip_cache_rc" && return "$pip_cache_rc"
+        if [[ $pip_cache_rc -eq 0 && "$pip_cache_path" == /* && "$pip_cache_path" != *$'\n'* ]]; then
+            clean_tool_cache "pip cache" "$pip_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" pip3 cache purge || return $?
         fi
-        clean_tool_cache "pip cache" "$pip_cache_path" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" pip3 cache purge || return $?
     fi
     safe_clean ~/.pyenv/cache/* "pyenv cache"
     safe_clean ~/.cache/poetry/* "Poetry cache"
@@ -1084,20 +1110,22 @@ get_mise_cache_path() {
     fi
 
     if command -v mise > /dev/null 2>&1; then
-        local mise_cache_path
-        mise_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" mise cache path 2> /dev/null || echo "")
-        if [[ -n "$mise_cache_path" && "$mise_cache_path" == /* ]]; then
-            echo "$mise_cache_path"
-            return 0
-        fi
+        local mise_cache_path mise_cache_rc=0
+        mise_cache_path=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" mise cache path 2> /dev/null) || mise_cache_rc=$?
+        [[ $mise_cache_rc -eq 0 ]] || return "$mise_cache_rc"
+        [[ "$mise_cache_path" == /* && "$mise_cache_path" != *$'\n'* ]] || return 1
+        echo "$mise_cache_path"
+        return 0
     fi
 
     echo "$HOME/Library/Caches/mise"
 }
 
 clean_dev_mise() {
-    local mise_cache_path
-    mise_cache_path=$(get_mise_cache_path)
+    local mise_cache_path mise_cache_rc=0
+    mise_cache_path=$(get_mise_cache_path) || mise_cache_rc=$?
+    mole_rc_signal "$mise_cache_rc" && return "$mise_cache_rc"
+    [[ $mise_cache_rc -eq 0 ]] || return 0
 
     if command -v mise > /dev/null 2>&1; then
         if [[ "${DRY_RUN:-false}" != "true" ]]; then

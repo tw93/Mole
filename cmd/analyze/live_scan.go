@@ -88,19 +88,21 @@ func (s *liveScanEventStream) close() {
 	})
 }
 
-func startLiveScanCmd(path string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) tea.Cmd {
-	return startLiveScanCmdWithPolicy(path, filesScanned, dirsScanned, bytesScanned, currentPath, scanCacheReuse)
-}
-
-func startLiveScanCmdWithPolicy(path string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, cachePolicy scanCachePolicy) tea.Cmd {
+func startLiveScanCmd(id int64, path string, publication *scanPublication, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, cachePolicy scanCachePolicy) tea.Cmd {
 	return func() tea.Msg {
-		id := nextLiveScanID.Add(1)
-		ctx, cancelContext := context.WithCancel(context.Background())
+		ctx := publication.ctx
+		if err := ctx.Err(); err != nil {
+			return liveScanStartMsg{id: id, path: path, err: err}
+		}
 
 		limiter := newScanLimiter(0)
 		initial, targets, err := readLiveScanInitialEntries(path, limiter)
 		if err != nil {
-			cancelContext()
+			publication.cancel()
+			return liveScanStartMsg{id: id, path: path, err: err}
+		}
+
+		if err := ctx.Err(); err != nil {
 			return liveScanStartMsg{id: id, path: path, err: err}
 		}
 
@@ -111,7 +113,6 @@ func startLiveScanCmdWithPolicy(path string, filesScanned, dirsScanned, bytesSca
 			atomic.AddInt64(bytesScanned, initial.TotalSize)
 		}
 
-		publication := newScanPublication(ctx, cancelContext)
 		stream := newLiveScanEventStream(publication, len(targets))
 		go runLiveScan(ctx, id, path, initial, targets, limiter, filesScanned, dirsScanned, bytesScanned, currentPath, stream, cachePolicy)
 

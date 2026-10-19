@@ -138,6 +138,7 @@ type historyEntry struct {
 }
 
 type scanResultMsg struct {
+	id     int64
 	path   string
 	result scanResult
 	err    error

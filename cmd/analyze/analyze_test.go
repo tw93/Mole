@@ -71,7 +71,7 @@ func scanResultMsgFromMsg(t *testing.T, msg tea.Msg) (scanResultMsg, bool) {
 func drainLiveScanToResultMsg(t *testing.T, start liveScanStartMsg) scanResultMsg {
 	t.Helper()
 	if start.err != nil {
-		return scanResultMsg{path: start.path, err: start.err}
+		return scanResultMsg{id: start.id, path: start.path, err: start.err}
 	}
 	deadline := time.After(5 * time.Second)
 	for {
@@ -82,9 +82,9 @@ func drainLiveScanToResultMsg(t *testing.T, start liveScanStartMsg) scanResultMs
 			}
 			switch event.kind {
 			case liveScanComplete:
-				return scanResultMsg{path: start.path, result: event.result}
+				return scanResultMsg{id: start.id, path: start.path, result: event.result}
 			case liveScanFailed:
-				return scanResultMsg{path: start.path, err: event.err}
+				return scanResultMsg{id: start.id, path: start.path, err: event.err}
 			}
 		case <-deadline:
 			if start.cancel != nil {
@@ -2083,10 +2083,8 @@ func TestCanceledLiveScanPublishesNoResultsOrCache(t *testing.T) {
 	}
 	started := installBlockingDuProbe(t)
 
-	var filesScanned, dirsScanned, bytesScanned int64
-	currentPath := &atomic.Value{}
-	currentPath.Store("")
-	start, ok := startLiveScanCmd(root, &filesScanned, &dirsScanned, &bytesScanned, currentPath)().(liveScanStartMsg)
+	m := newModel(root, false)
+	start, ok := m.scanFreshCmd(root)().(liveScanStartMsg)
 	if !ok {
 		t.Fatal("expected live scan start message")
 	}
@@ -2411,8 +2409,10 @@ func TestLiveScanStartPreservesEntryFilterBackingList(t *testing.T) {
 
 	m := newModel(root, false)
 	m.entryFilter = "app"
+	_ = m.scanFreshCmd(root)
+	defer m.cancelLiveScan()
 	start := liveScanStartMsg{
-		id:   1,
+		id:   m.liveScanID,
 		path: root,
 		entries: []dirEntry{
 			{Name: "apps", Path: apps, Size: -1, IsDir: true},
@@ -3116,7 +3116,7 @@ func TestLoadCacheExpiresWhenDirectoryChanges(t *testing.T) {
 	if _, err := os.Stat(cachePath); err != nil {
 		t.Fatalf("stat cache: %v", err)
 	}
-	oldTime := time.Now().Add(-cacheModTimeGrace - time.Minute)
+	oldTime := time.Now().Add(-time.Hour)
 	if err := os.Chtimes(cachePath, oldTime, oldTime); err != nil {
 		t.Fatalf("chtimes cache: %v", err)
 	}
@@ -3151,11 +3151,12 @@ func TestLoadCacheExpiresWhenDirectoryChanges(t *testing.T) {
 	}
 }
 
-// setChangedAfterRecentScan runs save while dir's mtime is 2h old, then moves
-// the mtime to now: past the grace window, with the scan only just recorded.
+// setChangedAfterRecentScan runs save while dir's mtime is a minute old, then
+// moves the mtime to now: a file added or removed right after the scan, as when
+// a user downloads something and reopens analyze.
 func setChangedAfterRecentScan(t *testing.T, dir string, save func()) {
 	t.Helper()
-	old := time.Now().Add(-2 * time.Hour)
+	old := time.Now().Add(-time.Minute)
 	if err := os.Chtimes(dir, old, old); err != nil {
 		t.Fatalf("chtimes %s: %v", dir, err)
 	}
@@ -3667,10 +3668,8 @@ func TestLiveScanKeepsUnavailableDirectoryAndPartialTotal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
-	var files, dirs, bytes int64
-	current := &atomic.Value{}
-	current.Store("")
-	msg := runScanResultCmd(t, startLiveScanCmd(root, &files, &dirs, &bytes, current))
+	m := newModel(root, false)
+	msg := runScanResultCmd(t, m.scanFreshCmd(root))
 	if msg.err != nil || msg.result.State != scanPartial || msg.result.TotalSize != 4096 {
 		t.Fatalf("live scan lost partial result: %+v", msg)
 	}
@@ -4408,7 +4407,7 @@ func TestTickLoopEntrypoints(t *testing.T) {
 		{"enter stale directory", func(m *model) {
 			m.cache[m.entries[0].Path] = historyEntry{NeedsRefresh: true}
 		}, tea.KeyMsg{Type: tea.KeyEnter}},
-		{"stale scan result", func(m *model) {}, scanResultMsg{stale: true}},
+		{"stale scan result", func(m *model) { m.liveScanID, m.path = 1, "/fixture" }, scanResultMsg{id: 1, path: "/fixture", stale: true}},
 		{"single delete", func(m *model) {
 			m.deleteConfirm, m.deleteTarget = true, &m.entries[0]
 		}, tea.KeyMsg{Type: tea.KeyEnter}},
@@ -4692,7 +4691,8 @@ func TestCompletedScanCacheWritesRemainCancelable(t *testing.T) {
 			if live {
 				m.finishLiveScan(result)
 			} else {
-				updated, _ := m.Update(scanResultMsg{path: root, result: result})
+				_ = m.scanCmd(root)
+				updated, _ := m.Update(scanResultMsg{id: m.liveScanID, path: root, result: result})
 				m = updated.(model)
 			}
 			publication := m.cachePublications[root]
@@ -4791,8 +4791,9 @@ func TestDeleteAfterRefreshCancelsLiveScanBeforeCacheInvalidation(t *testing.T) 
 		t.Fatal("refresh during deletion was not scheduled")
 	}
 	canceled := false
+	refreshedID := m.liveScanID
 	updated, _ = m.Update(liveScanStartMsg{
-		id: 1, path: root, entries: result.Entries, totalSize: result.TotalSize,
+		id: refreshedID, path: root, entries: result.Entries, totalSize: result.TotalSize,
 		totalFiles: result.TotalFiles, events: make(chan liveScanEventMsg),
 		cancel: func() {
 			// Model a publication that won the lock just before cancellation.
@@ -4818,8 +4819,9 @@ func TestDeleteAfterRefreshCancelsLiveScanBeforeCacheInvalidation(t *testing.T) 
 	}
 	updated, _ = m.Update(deleteProgressMsg{done: true, count: 1, path: removed})
 	m = updated.(model)
-	if !canceled || m.liveScanCancel != nil {
-		t.Fatal("delete completion did not cancel the refreshed live scan")
+	defer m.cancelLiveScan()
+	if !canceled || m.liveScanID == refreshedID || m.liveScanID == 0 {
+		t.Fatal("delete completion did not cancel the refreshed scan and reserve its replacement")
 	}
 	if _, err := loadStoredOverviewSize(root); err == nil {
 		t.Error("live scan restored an overview snapshot after delete invalidation")
@@ -4971,5 +4973,122 @@ func TestTopLargeFilesKeepsEarlierEqualSizePathsAfterHeapFills(t *testing.T) {
 		if forward[i].Path != backward[i].Path {
 			t.Fatalf("arrival order changed selection: %s vs %s", forward[i].Path, backward[i].Path)
 		}
+	}
+}
+
+func TestLiveScanRejectsOlderSamePathStart(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := newModel(t.TempDir(), false)
+	oldCmd := m.scanCmd(m.path)
+	newCmd := m.scanCmd(m.path)
+	newer := newCmd().(liveScanStartMsg)
+	next, _ := m.Update(newer)
+	m = next.(model)
+	older := oldCmd().(liveScanStartMsg)
+	next, _ = m.Update(older)
+	got := next.(model)
+	defer got.cancelLiveScan()
+	if got.liveScanID != newer.id {
+		t.Fatalf("older request replaced newest scan: got=%d newest=%d", got.liveScanID, newer.id)
+	}
+}
+
+func TestLiveScanRejectsStartAfterCancel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := newModel(t.TempDir(), false)
+	cmd := m.scanCmd(m.path)
+	m.cancelLiveScan()
+	start := cmd().(liveScanStartMsg)
+	if !errors.Is(start.err, context.Canceled) {
+		t.Fatalf("canceled command still enumerated directory: %v", start.err)
+	}
+	next, wait := m.Update(start)
+	got := next.(model)
+	defer got.cancelLiveScan()
+	if got.liveScanID != 0 || wait != nil {
+		t.Fatalf("canceled queued request became active: id=%d", got.liveScanID)
+	}
+}
+
+func TestLiveScanRejectsDelayedStartedRequest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := newModel(t.TempDir(), false)
+	oldStart := m.scanCmd(m.path)().(liveScanStartMsg)
+	newerCmd := m.scanCmd(m.path)
+	newStart := newerCmd().(liveScanStartMsg)
+	next, _ := m.Update(newStart)
+	m = next.(model)
+	next, cmd := m.Update(oldStart)
+	got := next.(model)
+	defer got.cancelLiveScan()
+	if got.liveScanID != newStart.id || cmd != nil {
+		t.Fatal("delayed start superseded active request")
+	}
+}
+
+func TestLiveScanCurrentRequestCompletes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := newModel(t.TempDir(), false)
+	cmd := m.scanCmd(m.path)
+	next, wait := m.Update(cmd())
+	m = next.(model)
+	if wait == nil {
+		t.Fatal("current request did not start event delivery")
+	}
+	next, _ = m.Update(wait())
+	got := next.(model)
+	if got.scanning || got.liveScanID != 0 {
+		t.Fatalf("empty directory did not complete: scanning=%v id=%d", got.scanning, got.liveScanID)
+	}
+}
+
+func TestLiveScanVariantsRejectSupersededStart(t *testing.T) {
+	for _, bypass := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bypass=%t", bypass), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			m := newModel(t.TempDir(), false)
+			var older, newer tea.Cmd
+			if bypass {
+				older, newer = m.scanBypassingCacheCmd(m.path), m.scanBypassingCacheCmd(m.path)
+			} else {
+				older, newer = m.scanFreshCmd(m.path), m.scanFreshCmd(m.path)
+			}
+			next, _ := m.Update(newer())
+			m = next.(model)
+			id := m.liveScanID
+			next, wait := m.Update(older())
+			m = next.(model)
+			defer m.cancelLiveScan()
+			if id == 0 || m.liveScanID != id || wait != nil {
+				t.Fatal("older scan replaced current request")
+			}
+		})
+	}
+}
+
+func TestCachedScanRejectsSupersededResult(t *testing.T) {
+	for _, warmed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("warmed=%t", warmed), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			root := t.TempDir()
+			result := scanResult{TotalSize: 42, TotalFiles: 1}
+			if err := saveCacheToDiskWithOptions(newScanPublication(context.Background(), nil), root, result, warmed); err != nil {
+				t.Fatal(err)
+			}
+			m := newModel(root, false)
+			older := m.scanCmd(root)()
+			if _, ok := older.(scanResultMsg); !ok {
+				t.Fatalf("expected cached result, got %T", older)
+			}
+			next, _ := m.Update(m.scanFreshCmd(root)())
+			m = next.(model)
+			id := m.liveScanID
+			next, wait := m.Update(older)
+			m = next.(model)
+			defer m.cancelLiveScan()
+			if id == 0 || m.liveScanID != id || m.totalSize != 0 || wait != nil {
+				t.Fatal("cached result replaced the newer live scan")
+			}
+		})
 	}
 }

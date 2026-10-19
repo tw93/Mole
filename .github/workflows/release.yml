@@ -114,7 +114,9 @@ jobs:
             fi
             # A docs-only commit inherits its CodeQL/Nix evidence from the
             # nearest ancestor that changed code. Otherwise a failed Nix run on
-            # that ancestor could be hidden behind a later docs-only tag.
+            # that ancestor could be hidden behind a later docs-only tag. The
+            # contributors bot commits only CONTRIBUTORS.svg with [skip ci], so
+            # it has no runs of its own and is walked past like docs.
             code_ancestor=""
             if [[ "$docs_only" == "true" ]]; then
               commits=$(gh api "repos/${GITHUB_REPOSITORY}/commits?sha=${TARGET_SHA}&per_page=100" \
@@ -124,7 +126,7 @@ jobs:
                 candidate_files=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${candidate}" \
                   --jq '.files[].filename' 2> /dev/null || true)
                 [[ -n "$candidate_files" ]] || continue
-                if printf '%s\n' "$candidate_files" | grep -Ev '^(docs/|.*\.md$)' > /dev/null; then
+                if printf '%s\n' "$candidate_files" | grep -Ev '^(docs/|.*\.md$|CONTRIBUTORS\.svg$)' > /dev/null; then
                   code_ancestor="$candidate"
                   break
                 fi
@@ -139,8 +141,9 @@ jobs:
                 fi
                 inherited=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$code_ancestor" --limit 100 \
                   --json name,status,conclusion | jq -r --arg name "$workflow" \
-                  '[ .[] | select(.name == $name and .status == "completed" and .conclusion == "success") ] | length')
-                if [[ "$inherited" -eq 0 ]]; then
+                  '[ .[] | select(.name == $name and .status == "completed" and .conclusion == "success") ] | length') ||
+                  inherited=0
+                if [[ "${inherited:-0}" -eq 0 ]]; then
                   remaining+=("$workflow on ${code_ancestor:0:12}")
                 else
                   echo "Docs-only commit: ${workflow} inherits green from ${code_ancestor:0:12}"

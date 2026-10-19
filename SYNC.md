@@ -9,6 +9,8 @@ This is the synchronization entry point for **Mole CLI (macOS)**, branch `main` 
 - Mole CLI (Windows) with Mole for Windows, and the two apps: Mole for Windows' root `SYNC.md` owns the detailed comparison.
 - App-owned records remain private. Public CLI records contain public behavior, source and tests only; never copy private catalogs, implementation details, support data or repository links here.
 
+Scoped follow-up on 2026-10-18: Mole CLI (macOS) `8f2671cd` adapts the scan-request lifecycle from Mole CLI (Windows) `b8b27771`, including macOS cache-return paths. The existing CLI-SYNC-04 entry in the Windows record owns this comparison. Local tests passed and source is pushed; [the audit record](docs/weekly-audit.md#2026-10-18-dual-cli-post-release-audit) separates source delivery from exact-head CI. This is not a new release or a review of the desktop apps.
+
 ## Current disposition
 
 | Topic | Status | Source and next check |

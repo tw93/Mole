@@ -638,9 +638,7 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 	// loadStaleCacheFromDisk and refreshes behind it, and the rescan reuses the
 	// unchanged subtrees below, so refusing costs one level, not a full scan.
 	if info.ModTime().After(entry.ModTime) {
-		if cacheModTimeGrace <= 0 || info.ModTime().Sub(entry.ModTime) > cacheModTimeGrace {
-			return nil, fmt.Errorf("cache expired: directory modified")
-		}
+		return nil, fmt.Errorf("cache expired: directory modified")
 	}
 
 	return entry, nil

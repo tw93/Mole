@@ -37,6 +37,68 @@ SCRIPT
     chmod +x "$HOME/bin/gh"
 }
 
+assert_owner_cleanup_requires_confirmed_root() {
+    local owner_tool="$1" owner_entry="$2"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" \
+        MOLE_TEST_NO_AUTH=1 OWNER_TOOL="$owner_tool" OWNER_ENTRY="$owner_entry" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+safe_clean() { :; }
+clean_pnpm_stores() { :; }
+clean_corepack_cache() { :; }
+clean_conda_metadata_caches() { :; }
+run_with_timeout() { shift; "$@"; }
+owner_stub() {
+    case "$*" in
+        --version) return 0 ;;
+        'cache dir' | 'cache path' | 'config get cache')
+            case "$probe_mode" in
+                failed) printf '%s\n' "$HOME/protected-owner"; return 1 ;;
+                timeout) return 124 ;;
+                signal) return 130 ;;
+                relative) echo relative-cache ;;
+                multiline) printf '%s\nextra\n' "$HOME/protected-owner" ;;
+                empty) return 0 ;;
+                *) printf '%s\n' "$HOME/protected-owner" ;;
+            esac ;;
+        'cache prune' | 'cache clean --force' | 'cache purge' | 'cache clear')
+            echo owner >> "$HOME/owner-root.trace" ;;
+        *) return 1 ;;
+    esac
+}
+eval "$OWNER_TOOL() { owner_stub \"\$@\"; }"
+if [[ "$OWNER_TOOL" == pip3 ]]; then clean_uv_cache() { :; }; fi
+unset MISE_CACHE_DIR
+export UV_CACHE_DIR="$HOME/protected-owner"
+for probe_mode in failed timeout signal relative multiline empty whitelisted known; do
+    MOLE_CLEAN_CANCEL_STATUS=0
+    WHITELIST_PATTERNS=("$HOME/protected-owner")
+    [[ "$probe_mode" != known && "$probe_mode" != failed ]] || WHITELIST_PATTERNS=()
+    : > "$HOME/owner-root.trace"
+    rc=0
+    "$OWNER_ENTRY" || rc=$?
+    if [[ "$probe_mode" == signal ]]; then
+        [[ "$rc" == 130 ]] || exit 1
+    else
+        [[ "$rc" == 0 ]] || exit 1
+    fi
+    if [[ "$probe_mode" == known ]]; then
+        [[ "$(cat "$HOME/owner-root.trace")" == owner ]] || exit 1
+    else
+        [[ ! -s "$HOME/owner-root.trace" ]] || { echo "UNEXPECTED:$probe_mode"; exit 1; }
+    fi
+done
+echo ROOT_GUARD_OK
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *ROOT_GUARD_OK* ]] || return 1
+}
+
 @test "clean_github_cli_cache uses gh owner command for the default cache" {
     local trace="$HOME/gh-default.trace"
     mkdir -p "$HOME/.cache/gh"
@@ -4554,3 +4616,75 @@ EOF
     grep -qx 'PIP3:--version' "$trace"
 }
 
+
+@test "uv owner cleanup requires a confirmed cache root" {
+    assert_owner_cleanup_requires_confirmed_root uv clean_uv_cache
+}
+
+@test "npm owner cleanup requires a confirmed cache root" {
+    assert_owner_cleanup_requires_confirmed_root npm clean_dev_npm
+}
+
+@test "pip3 owner cleanup requires a confirmed cache root" {
+    assert_owner_cleanup_requires_confirmed_root pip3 clean_dev_python
+}
+
+@test "mise owner cleanup requires a confirmed cache root" {
+    assert_owner_cleanup_requires_confirmed_root mise clean_dev_mise
+}
+
+@test "conda owner cleanup protects every configured package cache root" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+run_with_timeout() { shift; "$@"; }
+note_activity() { :; }
+conda() {
+    case "$*" in
+        --version) return 0 ;;
+        'info --json')
+            case "$probe_mode" in
+                failed) return 1 ;;
+                timeout) return 124 ;;
+                signal) return 130 ;;
+                malformed) echo '{' ;;
+                missing) echo '{}' ;;
+                empty) echo '{"pkgs_dirs":[]}' ;;
+                itemtype) echo '{"pkgs_dirs":["/first",1]}' ;;
+                newline) printf '{"pkgs_dirs":["/first\\n"]}\n' ;;
+                single) printf '{"pkgs_dirs":["%s/first-cache"]}\n' "$HOME" ;;
+                wrongtype) echo '{"pkgs_dirs":"/unexpected"}' ;;
+                relative) echo '{"pkgs_dirs":["/first","relative"]}' ;;
+                *) printf '{"platform":"osx-arm64","active_prefix":null,"root_writable":true,"pkgs_dirs":["%s/first-cache","%s/custom-cache"],"envs":[]}\n' "$HOME" "$HOME" ;;
+            esac ;;
+        'clean --yes --index-cache --tarballs --logfiles') echo owner >> "$HOME/conda-root.trace" ;;
+        *) return 1 ;;
+    esac
+}
+for DRY_RUN in false true; do
+    for probe_mode in protected child failed timeout signal malformed missing empty itemtype newline wrongtype relative single known; do
+        WHITELIST_PATTERNS=()
+        [[ "$probe_mode" != protected ]] || WHITELIST_PATTERNS=("$HOME/custom-cache")
+        [[ "$probe_mode" != child ]] || WHITELIST_PATTERNS=("$HOME/custom-cache/keep")
+        : > "$HOME/conda-root.trace"
+        rc=0
+        clean_conda_metadata_caches || rc=$?
+        if [[ "$probe_mode" == signal ]]; then
+            [[ "$rc" == 130 ]] || exit 1
+        else
+            [[ "$rc" == 0 ]] || exit 1
+        fi
+        if [[ ( "$probe_mode" == known || "$probe_mode" == single ) && "$DRY_RUN" == false ]]; then
+            [[ "$(cat "$HOME/conda-root.trace")" == owner ]] || exit 1
+        else
+            [[ ! -s "$HOME/conda-root.trace" ]] || { echo "UNEXPECTED:$probe_mode"; exit 1; }
+        fi
+    done
+done
+echo CONDA_ROOT_GUARD_OK
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *CONDA_ROOT_GUARD_OK* ]] || return 1
+}

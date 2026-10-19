@@ -550,6 +550,28 @@ STAT_BSD="/usr/bin/stat"
 # paths in its errors and fails on mounts BSD find walks past.
 FIND_BSD="/usr/bin/find"
 
+# Only complete generated completion lines are owned by Mole. A quoted mention
+# or a mixed command may carry unrelated user settings and must remain intact.
+# Include the previous eval/source forms when normalizing or removing them.
+# shellcheck disable=SC2016 # Match literal shell substitutions in rc files.
+MOLE_COMPLETION_LINE_PATTERN='^[[:space:]]*(# Mole shell completion|if output="\$\((mole|mo) completion (bash|zsh) 2>/dev/null\)"; then eval "\$output"; fi|eval "\$\((mole|mo) completion (bash|zsh)\)"|source <\((mole|mo) completion (bash|zsh)\)|set -l output \((mole|mo) completion fish 2>/dev/null\); and echo "\$output" \| source|(mole|mo) completion fish \| source)[[:space:]]*$'
+
+# Print the final file a symlink chain points at. Renaming a rewritten rc file
+# over this target keeps every link in a dotfile chain; renaming over the first
+# link replaced it with a plain file. Fails on an unreadable link or a cycle.
+mole_resolve_link_chain() {
+    local target="$1"
+    local link hops=0
+    while [[ -L "$target" ]]; do
+        link=$(readlink "$target") || return 1
+        [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
+        target="$link"
+        hops=$((hops + 1))
+        [[ $hops -le 40 ]] || return 1
+    done
+    printf '%s\n' "$target"
+}
+
 # Get file size in bytes
 get_file_size() {
     local file="$1"

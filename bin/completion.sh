@@ -60,28 +60,19 @@ emit_fish_completions() {
     printf 'complete -f -c %s -n "not __fish_mole_no_subcommand" -a fish -d "generate fish completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
 }
 
-# Resolve the whole rc symlink chain. Renaming a temp file over one link used
-# to replace the user's dotfile link with a plain file; the final target keeps
-# the chain intact. A bounded loop refuses a cycle.
+# A dotfile chain is followed to its final file; a broken link or a cycle
+# leaves the config untouched and says what to fix.
 _completion_rc_target() {
-    local target="$1"
-    local hops=0
-    while [[ -L "$target" ]]; do
-        local link
-        link=$(readlink "$target") || return 1
-        [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
-        target="$link"
-        hops=$((hops + 1))
-        [[ $hops -le 40 ]] || return 1
-    done
-    printf '%s\n' "$target"
+    mole_resolve_link_chain "$1" && return 0
+    log_error "Could not follow the shell config link $1, so it was left unchanged. Fix or remove that link, then rerun mo completion"
+    return 1
 }
 
 remove_stale_completion_entries() {
     local config_file="$1"
     local success_message="$2"
 
-    if [[ ! -f "$config_file" ]] || ! grep -Eq "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$config_file" 2> /dev/null; then
+    if [[ ! -f "$config_file" ]] || ! grep -Eq "$MOLE_COMPLETION_LINE_PATTERN" "$config_file" 2> /dev/null; then
         return 1
     fi
 
@@ -89,7 +80,7 @@ remove_stale_completion_entries() {
     target="$(_completion_rc_target "$config_file")" || return 1
     original_mode="$("$STAT_BSD" -f '%Mp%Lp' "$target" 2> /dev/null || true)"
     temp_file="$(mktemp)"
-    grep -Ev "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$target" > "$temp_file" || true
+    grep -Ev "$MOLE_COMPLETION_LINE_PATTERN" "$target" > "$temp_file" || true
     mv "$temp_file" "$target"
     [[ -n "$original_mode" ]] && chmod "$original_mode" "$target" 2> /dev/null || true
     [[ -n "$success_message" ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} $success_message"
@@ -224,7 +215,7 @@ if [[ $# -eq 0 ]]; then
     esac
 
     if [[ -z "$completion_name" ]]; then
-        if [[ -f "$config_file" ]] && grep -Eq "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$config_file" 2> /dev/null; then
+        if [[ -f "$config_file" ]] && grep -Eq "$MOLE_COMPLETION_LINE_PATTERN" "$config_file" 2> /dev/null; then
             if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
                 echo -e "${GRAY}${ICON_REVIEW} [DRY RUN] Would remove stale completion entries from $config_file${NC}"
                 echo ""
@@ -233,7 +224,7 @@ if [[ $# -eq 0 ]]; then
                 target="$(_completion_rc_target "$config_file")" || exit 1
                 original_mode="$("$STAT_BSD" -f '%Mp%Lp' "$target" 2> /dev/null || true)"
                 temp_file="$(mktemp)"
-                grep -Ev "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$target" > "$temp_file" || true
+                grep -Ev "$MOLE_COMPLETION_LINE_PATTERN" "$target" > "$temp_file" || true
                 mv "$temp_file" "$target"
                 if [[ -n "$original_mode" ]]; then
                     chmod "$original_mode" "$target" 2> /dev/null || true
@@ -247,7 +238,7 @@ if [[ $# -eq 0 ]]; then
     fi
 
     # Check if already installed and normalize to latest line
-    if [[ -f "$config_file" ]] && grep -Eq "(mole|mo)[[:space:]]+completion" "$config_file" 2> /dev/null; then
+    if [[ -f "$config_file" ]] && grep -Eq "$MOLE_COMPLETION_LINE_PATTERN" "$config_file" 2> /dev/null; then
         if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
             echo -e "${GRAY}${ICON_REVIEW} [DRY RUN] Would normalize completion entry in $config_file${NC}"
             echo ""
@@ -258,7 +249,7 @@ if [[ $# -eq 0 ]]; then
         target="$(_completion_rc_target "$config_file")" || exit 1
         original_mode="$("$STAT_BSD" -f '%Mp%Lp' "$target" 2> /dev/null || true)"
         temp_file="$(mktemp)"
-        grep -Ev "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$target" > "$temp_file" || true
+        grep -Ev "$MOLE_COMPLETION_LINE_PATTERN" "$target" > "$temp_file" || true
         mv "$temp_file" "$target"
         if [[ -n "$original_mode" ]]; then
             chmod "$original_mode" "$target" 2> /dev/null || true
@@ -313,10 +304,10 @@ if [[ $# -eq 0 ]]; then
         target="$(_completion_rc_target "$config_file")" || exit 1
         original_mode="$("$STAT_BSD" -f '%Mp%Lp' "$target" 2> /dev/null || true)"
         temp_file="$(mktemp)"
-        grep -Ev "(^# Mole shell completion$|(^|[^[:alnum:]_-])(mole|mo)[[:space:]]+completion)" "$target" > "$temp_file" || true
+        grep -Ev "$MOLE_COMPLETION_LINE_PATTERN" "$target" > "$temp_file" || true
         mv "$temp_file" "$target"
         if [[ -n "$original_mode" ]]; then
-            chmod "$original_mode" "$config_file" 2> /dev/null || true
+            chmod "$original_mode" "$target" 2> /dev/null || true
         fi
     fi
 
@@ -484,6 +475,7 @@ Examples:
   # Manual install - Fish
   mole completion fish | source
 EOF
+        [[ "$1" == "--help" || "$1" == "-h" ]] && exit 0
         exit 1
         ;;
 esac

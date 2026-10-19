@@ -357,6 +357,19 @@ main() {
                 case "$arg" in
                     --force | -f) force_update=true ;;
                     --nightly) nightly_update=true ;;
+                    --help | -h)
+                        cat << 'EOF'
+Usage: mo update [--force] [--nightly]
+
+Update Mole to the latest release.
+
+Options:
+  -f, --force       Force reinstall latest stable version
+  --nightly         Install latest unreleased main branch build
+  -h, --help        Show this help message
+EOF
+                        exit 0
+                        ;;
                     *)
                         echo "Unknown update option: $arg" >&2
                         echo "Use 'mole update [--force] [--nightly]' for supported options." >&2
@@ -372,6 +385,18 @@ main() {
             for arg in "${args[@]:1}"; do
                 case "$arg" in
                     "--dry-run" | "-n") dry_run_remove=true ;;
+                    "--help" | "-h")
+                        cat << 'EOF'
+Usage: mo remove [--dry-run]
+
+Remove Mole from this Mac. Operation logs in ~/Library/Logs/mole are kept.
+
+Options:
+  -n, --dry-run     Preview Mole removal
+  -h, --help        Show this help message
+EOF
+                        exit 0
+                        ;;
                     *)
                         echo "Unknown remove option: $arg" >&2
                         echo "Use 'mole remove [--dry-run]' for supported options." >&2
