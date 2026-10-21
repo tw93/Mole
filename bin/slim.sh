@@ -542,10 +542,11 @@ slim_one_app() {
     fi
 
     # finder xattrs fail --strict but sit outside the seal: strip them on the
-    # copy only, then the untouched copy has to pass in place of the original
+    # copy only, then the untouched copy has to pass in place of the original.
+    # -s keeps xattr on a symlink itself, never on a target outside the copy.
     if [[ "$has_detritus" == "true" ]]; then
-        xattr -rd com.apple.FinderInfo "$copy" 2> /dev/null || true
-        xattr -rd com.apple.ResourceFork "$copy" 2> /dev/null || true
+        /usr/bin/xattr -rsd com.apple.FinderInfo "$copy" 2> /dev/null || true
+        /usr/bin/xattr -rsd com.apple.ResourceFork "$copy" 2> /dev/null || true
         if ! run_with_timeout "$SLIM_VERIFY_TIMEOUT_SEC" codesign --verify --deep --strict "$copy" > /dev/null 2>&1 < /dev/null; then
             slim_discard_stage "$stage"
             record_slim_failure "$app" "code signature already invalid"

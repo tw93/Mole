@@ -381,6 +381,32 @@ exec /usr/bin/codesign \"\$@\""
 	[ -z "$(ls -A "$TRASH_DIR")" ]
 }
 
+@test "slim strips Finder info on the copy without following a symlink out of it" {
+	[[ "$SLIM_HAVE_FAT_TOOLCHAIN" == "1" ]] || skip "needs clang and a developer directory"
+	local app outside="$BATS_TEST_TMPDIR/outside-target"
+	app=$(make_fixture_app)
+	printf 'keep\n' > "$outside"
+	add_finder_info "$outside"
+	ln -s "$outside" "$app/Contents/SharedSupport/outside-link"
+	mole_test_fake_command codesign "
+[[ \" \$* \" == *' --strict '* && \"\${!#}\" == '$app' ]] && { echo \"\${!#}: resource fork, Finder information, or similar detritus not allowed\" >&2; exit 1; }
+exec /usr/bin/codesign \"\$@\""
+	mole_test_fake_command spctl 'exit 0'
+
+	run slim_env MOLE_SLIM_TEST_HOST_ARM64=1 /bin/bash -c '
+		source "$1"
+		slim_signing_team() { echo ABCDE12345; }
+		slim_preflight || exit 9
+		collect_slim_candidates || exit 8
+		slim_one_app 0 || exit 7
+		echo "slimmed=$total_slimmed"
+	' bash "$PROJECT_ROOT/bin/slim.sh"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"slimmed=0"* ]] || return 1
+	/usr/bin/xattr -p com.apple.FinderInfo "$outside" > /dev/null
+}
+
 @test "slim lists a running app but refuses it when slimming starts" {
 	[[ "$SLIM_HAVE_FAT_TOOLCHAIN" == "1" ]] || skip "needs clang and a developer directory"
 	local app
