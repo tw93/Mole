@@ -520,9 +520,13 @@ slim_one_app() {
         return 0
     fi
     # A signature that is already broken cannot prove the copy is intact.
-    if ! run_with_timeout "$SLIM_VERIFY_TIMEOUT_SEC" codesign --verify --deep --strict "$app" > /dev/null 2>&1 < /dev/null; then
-        record_slim_failure "$app" "code signature already invalid"
-        return 0
+    local verify_out has_detritus=false
+    if ! verify_out=$(run_with_timeout "$SLIM_VERIFY_TIMEOUT_SEC" codesign --verify --deep --strict "$app" 2>&1 < /dev/null); then
+        if [[ "$verify_out" != *"detritus not allowed"* ]]; then
+            record_slim_failure "$app" "code signature already invalid"
+            return 0
+        fi
+        has_detritus=true
     fi
 
     local stage
@@ -535,6 +539,18 @@ slim_one_app() {
         slim_discard_stage "$stage"
         record_slim_failure "$app" "copy failed"
         return 0
+    fi
+
+    # finder xattrs fail --strict but sit outside the seal: strip them on the
+    # copy only, then the untouched copy has to pass in place of the original
+    if [[ "$has_detritus" == "true" ]]; then
+        xattr -rd com.apple.FinderInfo "$copy" 2> /dev/null || true
+        xattr -rd com.apple.ResourceFork "$copy" 2> /dev/null || true
+        if ! run_with_timeout "$SLIM_VERIFY_TIMEOUT_SEC" codesign --verify --deep --strict "$copy" > /dev/null 2>&1 < /dev/null; then
+            slim_discard_stage "$stage"
+            record_slim_failure "$app" "code signature already invalid"
+            return 0
+        fi
     fi
 
     local rel _bytes

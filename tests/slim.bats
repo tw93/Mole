@@ -319,6 +319,68 @@ PLIST
 	[ -z "$(ls -A "$TRASH_DIR")" ]
 }
 
+add_finder_info() {
+	local path
+	for path in "$@"; do
+		xattr -wx com.apple.FinderInfo 0000000000000000000400000000000000000000000000000000000000000000 "$path"
+	done
+}
+
+@test "slim strips Finder info on the copy when it is the only strict verify failure" {
+	[[ "$SLIM_HAVE_FAT_TOOLCHAIN" == "1" ]] || skip "needs clang and a developer directory"
+	local app
+	app=$(make_fixture_app)
+	add_finder_info "$app" "$app/Contents" "$app/Contents/MacOS"
+	run codesign --verify --deep --strict "$app"
+	[[ "$output" == *"detritus not allowed"* ]] || skip "codesign does not flag Finder info here"
+	mole_test_fake_command spctl 'exit 0'
+
+	run slim_env MOLE_SLIM_TEST_HOST_ARM64=1 /bin/bash -c '
+		source "$1"
+		slim_signing_team() { echo ABCDE12345; }
+		slim_preflight || exit 9
+		collect_slim_candidates || exit 8
+		slim_one_app 0 || exit 7
+		echo "slimmed=$total_slimmed failed=$total_failed"
+	' bash "$PROJECT_ROOT/bin/slim.sh"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"slimmed=1 failed=0"* ]] || return 1
+	[[ "$(lipo -archs "$app/Contents/MacOS/Fixture")" == "arm64" ]] || return 1
+	codesign --verify --deep --strict "$app" || return 1
+	local trashed=("$TRASH_DIR"/Fixture.app.*)
+	[[ -d "${trashed[0]}" ]] || return 1
+	xattr -p com.apple.FinderInfo "${trashed[0]}/Contents" > /dev/null
+}
+
+@test "slim keeps an app whose seal is broken under the Finder info" {
+	[[ "$SLIM_HAVE_FAT_TOOLCHAIN" == "1" ]] || skip "needs clang and a developer directory"
+	local app
+	app=$(make_fixture_app)
+	printf 'x' >> "$app/Contents/SharedSupport/tool"
+	# real codesign reports the broken seal first, so make detritus mask it
+	mole_test_fake_command codesign "
+[[ \" \$* \" == *' --strict '* && \"\${!#}\" == '$app' ]] && { echo \"\${!#}: resource fork, Finder information, or similar detritus not allowed\" >&2; exit 1; }
+exec /usr/bin/codesign \"\$@\""
+	mole_test_fake_command spctl 'exit 0'
+
+	run slim_env MOLE_SLIM_TEST_HOST_ARM64=1 /bin/bash -c '
+		source "$1"
+		slim_signing_team() { echo ABCDE12345; }
+		slim_preflight || exit 9
+		collect_slim_candidates || exit 8
+		slim_one_app 0 || exit 7
+		echo "slimmed=$total_slimmed failed=${SLIM_FAILURES[*]}"
+		ls "$SLIM_WORK_DIR"
+	' bash "$PROJECT_ROOT/bin/slim.sh"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"slimmed=0 failed=Fixture.app (code signature already invalid)"* ]] || return 1
+	[[ "$output" != *"app."* ]] || return 1
+	[[ "$(lipo -archs "$app/Contents/MacOS/Fixture")" == *x86_64* ]] || return 1
+	[ -z "$(ls -A "$TRASH_DIR")" ]
+}
+
 @test "slim lists a running app but refuses it when slimming starts" {
 	[[ "$SLIM_HAVE_FAT_TOOLCHAIN" == "1" ]] || skip "needs clang and a developer directory"
 	local app
