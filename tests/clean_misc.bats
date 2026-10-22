@@ -22,6 +22,7 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
 stop_section_spinner() { :; }
+pgrep() { return 1; }
 safe_clean() { echo "$2"; }
 clean_cloud_storage
 EOF
