@@ -35,7 +35,11 @@ We are **not** defending against:
 The lines we will not cross, regardless of input:
 - Never delete a path inside `/System`, `/bin`, `/sbin`, `/usr` (except
   `/usr/local`, where Homebrew and user software live), `/etc`,
-  `/Library/Extensions`, or `/var/db` (system databases).
+  `/Library/Extensions`, or `/var/db` (system databases). Under
+  `/System/Volumes/Data`, where the Data volume is mounted, an entry the
+  root reaches as the same directory (`/Users` through a firmlink, `/src`
+  through a `synthetic.conf` link) gets that root path's verdict instead;
+  every other entry on the volume stays inside `/System`.
 - Never delete a bare top-level root itself, even when children are
   deletable: `/Applications`, `/Library`, `/Library/Application Support`,
   `/Volumes`, `/opt`, `/Users`, a user home root `/Users/<name>`, or
