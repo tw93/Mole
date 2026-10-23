@@ -116,7 +116,7 @@ VERSION="1.62.0"
 MOLE_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {
-    grep -q "pam_tid.so" /etc/pam.d/sudo /etc/pam.d/sudo_local 2> /dev/null
+    mole_pam_enables_touchid /etc/pam.d/sudo || mole_pam_enables_touchid /etc/pam.d/sudo_local
 }
 
 # Update and remove flows live in lib/manage/{update,remove}.sh; this file
