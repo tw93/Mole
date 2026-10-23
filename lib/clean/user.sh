@@ -1686,7 +1686,10 @@ validate_external_volume_target() {
     local disk_info=""
     disk_info=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" command diskutil info "$resolved" 2> /dev/null || echo "")
     if [[ -n "$disk_info" ]]; then
-        if echo "$disk_info" | grep -Eq 'Internal:[[:space:]]+Yes'; then
+        # macOS 26 reports "Device Location: Internal" and no "Internal:"
+        # line. Refuse on either form; parseDiskMetadata in cmd/status reads
+        # both too.
+        if echo "$disk_info" | grep -Eq 'Internal:[[:space:]]+Yes|Device Location:[[:space:]]+Internal'; then
             echo "Refusing to clean an internal volume: $resolved" >&2
             return 1
         fi
