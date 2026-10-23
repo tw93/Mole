@@ -595,8 +595,12 @@ has_full_disk_access() {
         # Only test when the protected path exists
         if [[ -e "$test_path" ]]; then
             tested_count=$((tested_count + 1))
-            # Try to stat the ACTUAL protected path - this requires FDA
-            if stat "$test_path" > /dev/null 2>&1; then
+            # stat succeeds without FDA; only reading the contents proves access
+            if [[ -d "$test_path" ]]; then
+                if /bin/ls "$test_path" > /dev/null 2>&1; then
+                    accessible_count=$((accessible_count + 1))
+                fi
+            elif { : < "$test_path"; } 2> /dev/null; then
                 accessible_count=$((accessible_count + 1))
             fi
         fi

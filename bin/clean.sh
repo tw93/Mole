@@ -1667,8 +1667,7 @@ perform_cleanup() {
 
     if [[ -t 1 && "$DRY_RUN" != "true" ]]; then
         local fda_status=0
-        has_full_disk_access
-        fda_status=$?
+        has_full_disk_access || fda_status=$?
         if [[ $fda_status -eq 1 ]]; then
             echo ""
             echo -e "${GRAY}${ICON_REVIEW}${NC} ${GRAY}Grant Full Disk Access to your terminal in System Settings for best results${NC}"

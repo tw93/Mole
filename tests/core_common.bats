@@ -1475,3 +1475,53 @@ EOF
 
     [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
 }
+
+@test "has_full_disk_access reports denied when protected paths exist but cannot be read" {
+    mkdir -p "$HOME/Library/Mail/V10" "$HOME/Library/Messages"
+    : > "$HOME/Library/Messages/chat.db"
+    chmod 000 "$HOME/Library/Mail/V10" "$HOME/Library/Messages/chat.db"
+
+    run env HOME="$HOME" /bin/bash --noprofile --norc -c "
+source '$PROJECT_ROOT/lib/core/common.sh'
+unset MOLE_HAS_FDA
+rc=0
+has_full_disk_access || rc=\$?
+printf '%s:%s\n' \"\$rc\" \"\$MOLE_HAS_FDA\"
+"
+    chmod 755 "$HOME/Library/Mail/V10"
+    chmod 644 "$HOME/Library/Messages/chat.db"
+    rm -rf "$HOME/Library"
+
+    # stat succeeds on a TCC-protected path without Full Disk Access, so only
+    # listing a folder or opening a file proves the terminal can read it.
+    [ "$output" = "1:0" ]
+}
+
+@test "has_full_disk_access reports granted when a protected path can be read" {
+    mkdir -p "$HOME/Library/Mail/V10"
+
+    run env HOME="$HOME" /bin/bash --noprofile --norc -c "
+source '$PROJECT_ROOT/lib/core/common.sh'
+unset MOLE_HAS_FDA
+rc=0
+has_full_disk_access || rc=\$?
+printf '%s:%s\n' \"\$rc\" \"\$MOLE_HAS_FDA\"
+"
+    rm -rf "$HOME/Library"
+
+    [ "$output" = "0:1" ]
+}
+
+@test "has_full_disk_access reports unknown when no protected path exists" {
+    rm -rf "$HOME/Library"
+
+    run env HOME="$HOME" /bin/bash --noprofile --norc -c "
+source '$PROJECT_ROOT/lib/core/common.sh'
+unset MOLE_HAS_FDA
+rc=0
+has_full_disk_access || rc=\$?
+printf '%s:%s\n' \"\$rc\" \"\$MOLE_HAS_FDA\"
+"
+
+    [ "$output" = "2:unknown" ]
+}
