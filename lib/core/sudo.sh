@@ -13,16 +13,23 @@ check_touchid_support() {
     local pam_sudo_local_file="${MOLE_PAM_SUDO_LOCAL_FILE:-$(dirname "$pam_sudo_file")/sudo_local}"
 
     # Check sudo_local first (Sonoma+)
-    if [[ -f "$pam_sudo_local_file" ]] && grep -q "pam_tid.so" "$pam_sudo_local_file" 2> /dev/null; then
+    if [[ -f "$pam_sudo_local_file" ]] && mole_pam_enables_touchid "$pam_sudo_local_file"; then
         return 0
     fi
 
     # Fallback to checking sudo directly
     if [[ -f "$pam_sudo_file" ]]; then
-        grep -q "pam_tid.so" "$pam_sudo_file" 2> /dev/null
+        mole_pam_enables_touchid "$pam_sudo_file"
         return $?
     fi
     return 1
+}
+
+# A commented pam_tid.so line enables nothing: macOS ships sudo_local.template
+# with it commented out, and commenting it out is how people turn Touch ID off
+# by hand. Only a line with no "#" before pam_tid.so counts.
+mole_pam_enables_touchid() {
+    grep -q '^[^#]*pam_tid\.so' "$1" 2> /dev/null
 }
 
 # Detect clamshell mode (lid closed)
