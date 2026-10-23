@@ -132,7 +132,29 @@ _mole_normalize_deletion_policy_path() {
     done
 
     local trimmed="${path%/}"
-    [[ -n "$trimmed" ]] && printf '%s\n' "$trimmed" || printf '%s\n' "$path"
+    [[ -n "$trimmed" ]] && path="$trimmed"
+    _mole_data_volume_policy_path "$path"
+}
+
+# The Data volume is mounted at /System/Volumes/Data, which the deny list would
+# reject as part of /System. A top-level entry the root reaches as the same
+# directory, through a firmlink (/Users, /private) or a synthetic.conf link
+# (/src -> System/Volumes/Data/src), is judged by that root path instead:
+# physical resolution turns a purge root under /src into the Data path (#1814).
+# Entries the root cannot reach, such as the Spotlight store or the volume's
+# own System tree, keep the literal path and stay critical.
+_mole_data_volume_policy_path() {
+    local path="$1"
+    local data_root="/System/Volumes/Data"
+    if [[ "$path" == "$data_root"/?* ]]; then
+        local root_path="${path#"$data_root"}"
+        local top="${root_path#/}"
+        top="/${top%%/*}"
+        if [[ -d "$top" && "$top" -ef "$data_root$top" ]]; then
+            path="$root_path"
+        fi
+    fi
+    printf '%s\n' "$path"
 }
 
 # PerfPowerServices keeps one live SQLite database per telemetry store, named
