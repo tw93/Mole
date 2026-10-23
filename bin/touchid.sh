@@ -38,14 +38,14 @@ secure_install_pam() {
 is_touchid_configured() {
     # Check sudo_local first
     if [[ -f "$PAM_SUDO_LOCAL_FILE" ]]; then
-        grep -q "pam_tid.so" "$PAM_SUDO_LOCAL_FILE" 2> /dev/null && return 0
+        mole_pam_enables_touchid "$PAM_SUDO_LOCAL_FILE" && return 0
     fi
 
     # Fallback to standard sudo file
     if [[ ! -f "$PAM_SUDO_FILE" ]]; then
         return 1
     fi
-    grep -q "pam_tid.so" "$PAM_SUDO_FILE" 2> /dev/null
+    mole_pam_enables_touchid "$PAM_SUDO_FILE"
 }
 
 # Check if system supports Touch ID
@@ -114,9 +114,9 @@ enable_touchid() {
     # Check if we should use sudo_local (Sonoma+)
     if grep -q "sudo_local" "$PAM_SUDO_FILE"; then
         # Check if already correctly configured in sudo_local
-        if [[ -f "$PAM_SUDO_LOCAL_FILE" ]] && grep -q "pam_tid.so" "$PAM_SUDO_LOCAL_FILE"; then
+        if [[ -f "$PAM_SUDO_LOCAL_FILE" ]] && mole_pam_enables_touchid "$PAM_SUDO_LOCAL_FILE"; then
             # It is in sudo_local, but let's check if it's ALSO in sudo (incomplete migration)
-            if grep -q "pam_tid.so" "$PAM_SUDO_FILE"; then
+            if mole_pam_enables_touchid "$PAM_SUDO_FILE"; then
                 # Clean up legacy config
                 temp_file=$(create_temp_file)
                 grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
@@ -131,7 +131,7 @@ enable_touchid() {
         # Not configured in sudo_local yet.
         # Check if configured in sudo (Legacy)
         local is_legacy_configured=false
-        if grep -q "pam_tid.so" "$PAM_SUDO_FILE"; then
+        if mole_pam_enables_touchid "$PAM_SUDO_FILE"; then
             is_legacy_configured=true
         fi
 
@@ -146,7 +146,7 @@ enable_touchid() {
             write_success=true
         else
             # Append if not present
-            if ! grep -q "pam_tid.so" "$PAM_SUDO_LOCAL_FILE"; then
+            if ! mole_pam_enables_touchid "$PAM_SUDO_LOCAL_FILE"; then
                 temp_file=$(create_temp_file)
                 cp "$PAM_SUDO_LOCAL_FILE" "$temp_file"
                 echo "$PAM_TID_LINE" >> "$temp_file"
@@ -243,14 +243,14 @@ disable_touchid() {
     fi
 
     # Check sudo_local first
-    if [[ -f "$PAM_SUDO_LOCAL_FILE" ]] && grep -q "pam_tid.so" "$PAM_SUDO_LOCAL_FILE"; then
+    if [[ -f "$PAM_SUDO_LOCAL_FILE" ]] && mole_pam_enables_touchid "$PAM_SUDO_LOCAL_FILE"; then
         # Remove from sudo_local
         temp_file=$(create_temp_file)
         grep -v "pam_tid.so" "$PAM_SUDO_LOCAL_FILE" > "$temp_file"
 
         if secure_install_pam "$temp_file" "$PAM_SUDO_LOCAL_FILE" 2> /dev/null; then
             # Since we modified sudo_local, we should also check if it's in sudo file (legacy cleanup)
-            if grep -q "pam_tid.so" "$PAM_SUDO_FILE"; then
+            if mole_pam_enables_touchid "$PAM_SUDO_FILE"; then
                 temp_file=$(create_temp_file)
                 grep -v "pam_tid.so" "$PAM_SUDO_FILE" > "$temp_file"
                 secure_install_pam "$temp_file" "$PAM_SUDO_FILE"
@@ -266,7 +266,7 @@ disable_touchid() {
     fi
 
     # Fallback to sudo file (legacy)
-    if grep -q "pam_tid.so" "$PAM_SUDO_FILE"; then
+    if mole_pam_enables_touchid "$PAM_SUDO_FILE"; then
         # Create backup only if it doesn't exist
         if [[ ! -f "${PAM_SUDO_FILE}.mole-backup" ]]; then
             if ! sudo cp "$PAM_SUDO_FILE" "${PAM_SUDO_FILE}.mole-backup" 2> /dev/null; then
