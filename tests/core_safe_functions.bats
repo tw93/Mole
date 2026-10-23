@@ -283,6 +283,22 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "validate_path_for_deletion judges a Data volume path by the root path that reaches it (#1814)" {
+    # A synthetic.conf link such as /src -> System/Volumes/Data/src needs root
+    # and a reboot, so drive the same rule through the firmlinks every Mac has.
+    # Nothing exists at these paths; the verdict is policy only.
+    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/System/Volumes/Data/Users/mole-test-home-1814/src/app/node_modules'"
+    [ "$status" -eq 0 ]
+
+    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/System/Volumes/Data/private/tmp/mole-old-artifact'"
+    [ "$status" -eq 0 ]
+
+    # The volume's own System tree is not the directory the root calls /System.
+    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/System/Volumes/Data/System/Library/Caches/com.example' 2>&1"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"critical system path"* ]]
+}
+
 @test "validate_path_for_deletion accepts CoreSimulator system cache children" {
     run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; validate_path_for_deletion '/Library/Developer/CoreSimulator/Caches/dyld'"
     [ "$status" -eq 0 ]

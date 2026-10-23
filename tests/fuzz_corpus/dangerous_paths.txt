@@ -102,6 +102,18 @@ just-a-name
 /private/var/audit
 /private/var/folders/..
 
+# ---- Data volume paths: an alias keeps the verdict of the root path that
+# ---- reaches it, and entries the root cannot reach stay inside /System ----
+/System/Volumes/Data
+/System/Volumes/Data/.Spotlight-V100
+/System/Volumes/Data/.fseventsd
+/System/Volumes/Data/Users
+/System/Volumes/Data/Users/tw93
+/System/Volumes/Data/Library/Keychains
+/System/Volumes/Data/Applications/Safari.app
+/System/Volumes/Data/private/etc/sudoers
+/System/Volumes/Data/private/var/db
+
 # ---- realistic user-facing oopses ----
 /Users
 /Users/Shared
