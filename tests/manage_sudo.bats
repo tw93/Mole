@@ -209,22 +209,23 @@ EOF
 @test "check_touchid_support ignores a commented-out pam_tid line (#1815)" {
     local pam_sudo="$BATS_TEST_TMPDIR/sudo"
     local pam_sudo_local="$BATS_TEST_TMPDIR/sudo_local"
+    local probe="source '$PROJECT_ROOT/lib/core/sudo.sh'; check_touchid_support"
 
     printf 'auth       include        sudo_local\n' > "$pam_sudo"
     # The line macOS ships in /etc/pam.d/sudo_local.template.
     printf '#auth       sufficient     pam_tid.so\n' > "$pam_sudo_local"
-    export MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_sudo"
-    export MOLE_PAM_SUDO_LOCAL_FILE="$pam_sudo_local"
-
-    run check_touchid_support
+    run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_sudo" \
+        MOLE_PAM_SUDO_LOCAL_FILE="$pam_sudo_local" /bin/bash -c "$probe"
     [ "$status" -eq 1 ]
 
     # Turned off by hand in the legacy file, or named only inside a comment.
     printf '  # auth sufficient pam_tid.so\nauth sufficient pam_smartcard.so # pam_tid.so\n' > "$pam_sudo"
-    run check_touchid_support
+    run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_sudo" \
+        MOLE_PAM_SUDO_LOCAL_FILE="$pam_sudo_local" /bin/bash -c "$probe"
     [ "$status" -eq 1 ]
 
     printf 'auth       sufficient     pam_tid.so # Touch ID\n' >> "$pam_sudo_local"
-    run check_touchid_support
+    run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_sudo" \
+        MOLE_PAM_SUDO_LOCAL_FILE="$pam_sudo_local" /bin/bash -c "$probe"
     [ "$status" -eq 0 ]
 }
