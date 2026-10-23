@@ -791,6 +791,38 @@ EOF
 	[ "$perms" = "444" ]
 }
 
+@test "touchid enables the line sudo_local.template ships commented out (#1815)" {
+	pam_file="$HOME/pam_template_copy"
+	pam_local="$(dirname "$pam_file")/sudo_local_template_copy"
+	cat >"$pam_file" <<'EOF'
+# sudo: auth account password session
+auth       include        sudo_local
+auth       sufficient     pam_opendirectory.so
+EOF
+	# A copy of /etc/pam.d/sudo_local.template as macOS ships it.
+	cat >"$pam_local" <<'EOF'
+# sudo_local: local config file which survives system update and is included for sudo
+# uncomment following line to enable Touch ID for sudo
+#auth       sufficient     pam_tid.so
+EOF
+
+	run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_file" \
+		MOLE_PAM_SUDO_LOCAL_FILE="$pam_local" "$PROJECT_ROOT/bin/touchid.sh" status
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"not configured"* ]] || return 1
+
+	fake_bin="$HOME/fake-bin-template-copy"
+	create_fake_utils "$fake_bin"
+
+	run env PATH="$fake_bin:$PATH" MOLE_TEST_MODE=1 \
+		MOLE_PAM_SUDO_FILE="$pam_file" \
+		MOLE_PAM_SUDO_LOCAL_FILE="$pam_local" \
+		"$PROJECT_ROOT/bin/touchid.sh" enable
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"already enabled"* ]] || return 1
+	grep -q '^auth[[:space:]]*sufficient[[:space:]]*pam_tid\.so' "$pam_local"
+}
+
 # --- JSON output mode tests ---
 
 @test "mo analyze --json outputs valid JSON with expected fields" {
