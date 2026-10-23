@@ -2889,6 +2889,49 @@ EOF
     [[ "$output" != *"must be under"* ]]
 }
 
+@test "validate_external_volume_target refuses internal volumes in both diskutil forms (#1818)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+
+mock_bin="$HOME/bin-disk-location"
+mkdir -p "$mock_bin"
+cat > "$mock_bin/diskutil" <<'MOCK'
+#!/bin/bash
+printf '%s\n' "$MOCK_DISK_INFO"
+MOCK
+chmod +x "$mock_bin/diskutil"
+export PATH="$mock_bin:$PATH"
+
+volumes="$(mktemp -d "$HOME/ext-volumes.XXXXXX")"
+mkdir -p "$volumes/Data"
+export MOLE_EXTERNAL_VOLUMES_ROOT="$volumes"
+
+# What diskutil prints for an internal APFS volume on macOS 26.
+export MOCK_DISK_INFO='   Protocol:                  Apple Fabric
+   Device Location:           Internal
+   Removable Media:           Fixed'
+validate_external_volume_target "$volumes/Data" > /dev/null && echo "ACCEPTED_DEVICE_LOCATION"
+
+# The form the check matched before.
+export MOCK_DISK_INFO='   Internal:                  Yes'
+validate_external_volume_target "$volumes/Data" > /dev/null && echo "ACCEPTED_INTERNAL_YES"
+
+# A USB drive stays accepted.
+export MOCK_DISK_INFO='   Protocol:                  USB
+   Device Location:           External
+   Removable Media:           Removable'
+validate_external_volume_target "$volumes/Data" > /dev/null && echo "ACCEPTED_EXTERNAL"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Refusing to clean an internal volume"* ]] || return 1
+    [[ "$output" != *"ACCEPTED_DEVICE_LOCATION"* ]] || return 1
+    [[ "$output" != *"ACCEPTED_INTERNAL_YES"* ]] || return 1
+    [[ "$output" == *"ACCEPTED_EXTERNAL"* ]]
+}
+
 @test "clean_app_caches caps precise sandbox size scans when many containers exist" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true MOLE_CONTAINER_CACHE_PRECISE_SIZE_LIMIT=2 /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
