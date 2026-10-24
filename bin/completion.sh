@@ -165,7 +165,11 @@ if [[ $# -eq 0 ]]; then
             echo "  $mo_file"
             echo ""
             echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}fish${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
-            IFS= read -r -s -n1 key || key=""
+            if ! IFS= read -r -s -n1 key; then
+                echo ""
+                echo -e "${YELLOW}Cancelled${NC}"
+                exit 1
+            fi
             drain_pending_input
             echo ""
 
@@ -276,7 +280,11 @@ if [[ $# -eq 0 ]]; then
     fi
 
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}${current_shell}${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
-    IFS= read -r -s -n1 key || key=""
+    if ! IFS= read -r -s -n1 key; then
+        echo ""
+        echo -e "${YELLOW}Cancelled${NC}"
+        exit 1
+    fi
     drain_pending_input
     echo ""
 

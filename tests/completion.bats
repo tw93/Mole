@@ -250,3 +250,19 @@ RC
     # shellcheck disable=SC2016 # Assert literal shell configuration.
     grep -Fxq 'if output="$(mole completion zsh 2>/dev/null)"; then eval "$output"; fi' "$HOME/.zshrc" || return 1
 }
+
+@test "completion confirmation cancels on closed input (#1837)" {
+	run /bin/bash -c "SHELL=/bin/zsh \"$PROJECT_ROOT/bin/completion.sh\" </dev/null"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Cancelled"* ]] || return 1
+	[ ! -f "$HOME/.zshrc" ]
+}
+
+@test "completion fish confirmation cancels on closed input (#1837)" {
+	run /bin/bash -c "SHELL=/bin/fish \"$PROJECT_ROOT/bin/completion.sh\" </dev/null"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Cancelled"* ]] || return 1
+	[ ! -f "$HOME/.config/fish/completions/mole.fish" ]
+	[ ! -f "$HOME/.config/fish/completions/mo.fish" ]
+}
+
