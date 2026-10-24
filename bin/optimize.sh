@@ -219,7 +219,7 @@ main() {
             "--debug")
                 export MO_DEBUG=1
                 ;;
-            "--dry-run")
+            "--dry-run" | "-n")
                 export MOLE_DRY_RUN=1
                 ;;
             "--whitelist")

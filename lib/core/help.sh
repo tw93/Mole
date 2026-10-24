@@ -30,7 +30,7 @@ show_optimize_help() {
     echo "Refresh system caches and services, repair safe maintenance issues."
     echo ""
     echo "Options:"
-    echo "  --dry-run         Preview optimization without making changes"
+    echo "  --dry-run, -n     Preview optimization without making changes"
     echo "  --whitelist       Manage protected items"
     echo "  --debug           Show detailed operation logs"
     echo "  -h, --help        Show this help message"

@@ -319,6 +319,16 @@ EOF
 	[[ "$output" == *"Unknown optimize option: --check"* ]]
 }
 
+@test "optimize accepts -n as alias for --dry-run (#1841)" {
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" optimize --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"--dry-run, -n"* ]] || return 1
+
+	run env HOME="$HOME" bash -c "'$PROJECT_ROOT/bin/optimize.sh' -n --help"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"Unknown optimize option: -n"* ]]
+}
+
 @test "mole uninstall --whitelist returns unsupported option error" {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" uninstall --whitelist
 	[ "$status" -ne 0 ]
