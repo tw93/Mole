@@ -823,6 +823,33 @@ EOF
 	grep -q '^auth[[:space:]]*sufficient[[:space:]]*pam_tid\.so' "$pam_local"
 }
 
+@test "touchid menu cancels on closed input (#1839)" {
+	pam_file="$HOME/fake-sudo-pam-eof"
+	pam_local="$HOME/fake-sudo-local-eof"
+	cat >"$pam_file" <<'EOF'
+# sudo: auth account password session
+auth       sufficient     pam_opendirectory.so
+EOF
+	cat >"$pam_local" <<'EOF'
+# sudo_local: local config file
+EOF
+
+	# Unconfigured state (enable prompt) refuses EOF
+	run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_file" \
+		MOLE_PAM_SUDO_LOCAL_FILE="$pam_local" \
+		/bin/bash -c "\"$PROJECT_ROOT/bin/touchid.sh\" </dev/null"
+	[ "$status" -ne 0 ]
+	! grep -q "pam_tid.so" "$pam_local" || return 1
+
+	# Configured state (disable prompt) refuses EOF
+	printf 'auth       sufficient     pam_tid.so\n' >> "$pam_local"
+	run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_file" \
+		MOLE_PAM_SUDO_LOCAL_FILE="$pam_local" \
+		/bin/bash -c "\"$PROJECT_ROOT/bin/touchid.sh\" </dev/null"
+	[ "$status" -ne 0 ]
+	grep -q "pam_tid.so" "$pam_local"
+}
+
 # --- JSON output mode tests ---
 
 @test "mo analyze --json outputs valid JSON with expected fields" {

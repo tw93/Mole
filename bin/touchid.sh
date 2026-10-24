@@ -303,7 +303,10 @@ show_menu() {
     show_status
     if is_touchid_configured; then
         echo -ne "${PURPLE}☛${NC} Press ${GREEN}Enter${NC} to disable, ${GRAY}Q${NC} to quit: "
-        IFS= read -r -s -n1 key || key=""
+        if ! IFS= read -r -s -n1 key; then
+            printf '\n'
+            return 1
+        fi
         drain_pending_input # Clean up any escape sequence remnants
         echo ""
 
@@ -322,7 +325,10 @@ show_menu() {
         esac
     else
         echo -ne "${PURPLE}☛${NC} Press ${GREEN}Enter${NC} to enable, ${GRAY}Q${NC} to quit: "
-        IFS= read -r -s -n1 key || key=""
+        if ! IFS= read -r -s -n1 key; then
+            printf '\n'
+            return 1
+        fi
         drain_pending_input # Clean up any escape sequence remnants
 
         case "$key" in
