@@ -1932,6 +1932,92 @@ EOF
     check_find_delete_cancellation sudo identity 143 0
 }
 
+@test "safe_find_delete dry run records each target once without removal fallthrough (#1865)" {
+    local target_dir="$TEST_DIR/find-dry-run-once"
+    mkdir -p "$target_dir"
+    touch "$target_dir/file1.log" "$target_dir/file2.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+
+export MOLE_DRY_RUN=1
+trace_file="$TARGET_DIR/trace.txt"
+: > "$trace_file"
+
+safe_remove() {
+    printf 'REMOVE:%s\n' "$1" >> "$trace_file"
+}
+
+rc=0
+safe_find_delete "$TARGET_DIR" "*.log" 0 f || rc=$?
+printf 'RC=%s\n' "$rc"
+printf 'COUNT=%s\n' "${#DRY_RUN_SEEN_IDENTITIES[@]}"
+SCRIPT
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"RC=0"* ]] || return 1
+    [[ "$output" == *"COUNT=2"* ]] || return 1
+    [ ! -s "$target_dir/trace.txt" ] || return 1
+    [ -f "$target_dir/file1.log" ] || return 1
+    [ -f "$target_dir/file2.log" ] || return 1
+}
+
+@test "safe_sudo_find_delete dry run records targets once and tracks count (#1865)" {
+    local target_dir="$TEST_DIR/sudo-find-dry-run-once"
+    mkdir -p "$target_dir"
+    touch "$target_dir/file1.log" "$target_dir/file2.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+
+helper_source=$(declare -f safe_sudo_find_delete)
+# shellcheck disable=SC2016 # Match the literal production guard.
+test_guard='[[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]'
+helper_source=${helper_source/"$test_guard"/false}
+eval "$helper_source"
+
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        test) return 0 ;;
+        find)
+            printf '%s\0%s\0' "$TARGET_DIR/file1.log" "$TARGET_DIR/file2.log"
+            ;;
+        du)
+            printf '4\t%s\n' "${@: -1}"
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+trace_file="$TARGET_DIR/trace.txt"
+: > "$trace_file"
+safe_sudo_remove() {
+    printf 'SUDO_REMOVE:%s\n' "$1" >> "$trace_file"
+}
+
+export MOLE_DRY_RUN=1
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "*.log" 0 f 1 || rc=$?
+printf 'RC=%s\n' "$rc"
+printf 'COUNT=%s\n' "$MOLE_SAFE_SUDO_FIND_DELETE_COUNT"
+printf 'IDENTITIES=%s\n' "${#DRY_RUN_SEEN_IDENTITIES[@]}"
+SCRIPT
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"RC=0"* ]] || return 1
+    [[ "$output" == *"COUNT=2"* ]] || return 1
+    [[ "$output" == *"IDENTITIES=2"* ]] || return 1
+    [ ! -s "$target_dir/trace.txt" ] || return 1
+    [ -f "$target_dir/file1.log" ] || return 1
+    [ -f "$target_dir/file2.log" ] || return 1
+}
+
 @test "safe_sudo_remove refuses symlink paths" {
     local target_dir="$TEST_DIR/real"
     local link_dir="$TEST_DIR/link"
