@@ -3522,7 +3522,7 @@ safe_find_delete() {
                 delete_rc=$preview_rc
                 break
             fi
-            [[ $preview_rc -eq 0 ]] || continue
+            continue
         fi
         local remove_rc=0
         safe_remove "$match" true || remove_rc=$?
@@ -3877,7 +3877,10 @@ safe_sudo_find_delete() {
                 delete_rc=$preview_rc
                 break
             fi
-            [[ $preview_rc -eq 0 ]] || continue
+            if [[ $preview_rc -eq 0 ]]; then
+                removed_count=$((removed_count + 1))
+            fi
+            continue
         fi
         # -type f never emits symlinks; a path that is one now was swapped
         # after find saw it, and the single-file path refuses those.
