@@ -1984,7 +1984,10 @@ _mole_privileged_path_has_mutable_ancestor() { return 1; }
 sudo() {
     [[ "${1:-}" == "-n" ]] && shift
     case "${1:-}" in
-        test) return 0 ;;
+        test)
+            shift
+            command test "$@"
+            ;;
         find)
             printf '%s\0%s\0' "$TARGET_DIR/file1.log" "$TARGET_DIR/file2.log"
             ;;
