@@ -141,6 +141,7 @@ Homebrew downloaded packages|$HOME/Library/Caches/Homebrew/*|package_manager
 Yarn package manager cache|$HOME/.yarn/cache/*|package_manager
 Yarn v1 package cache|$HOME/Library/Caches/Yarn/*|package_manager
 pnpm package store|$HOME/Library/pnpm/store/*|package_manager
+Bun package cache|$HOME/.bun/install/cache/*|package_manager
 Composer PHP dependencies cache (legacy)|$HOME/.composer/cache/*|package_manager
 Composer PHP dependencies cache|$HOME/Library/Caches/composer/*|package_manager
 RubyGems package cache|$HOME/.gem/ruby/*/cache/*.gem|package_manager
