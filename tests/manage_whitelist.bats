@@ -268,6 +268,39 @@ EOF
     [[ "$output" == *"Tart OCI/IPSW cache|\$HOME/.tart/cache|container_cache"* ]] || return 1
 }
 
+@test "whitelist inventory exposes Bun package cache and protects cache root" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+get_all_cache_items
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    # shellcheck disable=SC2016  # Literal $HOME in inventory row
+    [[ "$output" == *"Bun package cache|\$HOME/.bun/install/cache/*|package_manager"* ]] || return 1
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+save_whitelist_patterns clean "~/.bun/install/cache/*"
+load_mole_whitelist "$HOME"
+
+bun_root="$HOME/.bun/install/cache"
+bun_file="$HOME/.bun/install/cache/pkg/tarball.tgz"
+
+if is_path_whitelisted "$bun_root"; then
+    echo "ROOT_PROTECTED"
+fi
+if is_path_whitelisted "$bun_file"; then
+    echo "FILE_PROTECTED"
+fi
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ROOT_PROTECTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"FILE_PROTECTED"* ]] || { echo "$output"; return 1; }
+}
+
 @test "whitelist inventory offers no protection for paths Mole never deletes" {
     # Every inventory row is a protection the user can switch on. Offering one
     # for a path no cleanup path touches invites the reader to conclude Mole
