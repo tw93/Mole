@@ -225,6 +225,130 @@ switch -Regex ($commandLine) {
             }
         }
 
+        It "Should skip the installer only when the last refresh finished at this revision" {
+            $fixtureRoot = Join-Path $TestDrive "unchanged-update-fixture"
+            $fixtureBin = Join-Path $fixtureRoot "bin"
+            $fakeTools = Join-Path $fixtureRoot "fake-tools"
+            $capturePath = Join-Path $fixtureRoot "install-dir.txt"
+            $fixtureUpdater = Join-Path $fixtureBin "update.ps1"
+            $marker = Join-Path $fixtureRoot ".git\mole-refreshed-revision"
+
+            New-Item -ItemType Directory -Path $fixtureBin, $fakeTools, (Join-Path $fixtureRoot ".git") -Force | Out-Null
+            Copy-Item (Join-Path $script:BinDir "update.ps1") $fixtureUpdater
+
+            @'
+param(
+    [string]$InstallDir,
+    [switch]$AddToPath,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [object[]]$RemainingArguments
+)
+
+Add-Content -LiteralPath $env:MOLE_INSTALL_CAPTURE -Value "ran"
+if ($env:MOLE_INSTALL_FAIL -eq "1") { exit 1 }
+'@ | Set-Content (Join-Path $fixtureRoot "install.ps1")
+
+            @'
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$GitArgs
+)
+
+$commandArgs = @($GitArgs)
+if ($commandArgs.Count -ge 3 -and $commandArgs[0] -eq "-C") {
+    $commandArgs = @($commandArgs[2..($commandArgs.Count - 1)])
+}
+while ($commandArgs.Count -ge 3 -and $commandArgs[0] -eq "-c") {
+    $commandArgs = @($commandArgs[2..($commandArgs.Count - 1)])
+}
+
+$commandLine = $commandArgs -join " "
+$global:LASTEXITCODE = 0
+switch -Regex ($commandLine) {
+    '^config --get https?\.proxy$' { $global:LASTEXITCODE = 1; break }
+    '^status --porcelain --untracked-files=no$' { break }
+    '^remote get-url origin$' { "https://github.com/tw93/Mole.git"; break }
+    '^branch --show-current$' { "windows"; break }
+    '^rev-parse --short HEAD$' { if ($env:MOLE_FAKE_HEAD) { $env:MOLE_FAKE_HEAD } else { "abc123" }; break }
+    '^rev-parse --git-path mole-refreshed-revision$' { ".git/mole-refreshed-revision"; break }
+    '^pull --ff-only --tags origin windows$' { break }
+    default {
+        Write-Error "Unexpected git command: $commandLine"
+        $global:LASTEXITCODE = 1
+    }
+}
+'@ | Set-Content (Join-Path $fakeTools "git.ps1")
+
+            $originalPath = $env:PATH
+            $originalCapture = $env:MOLE_INSTALL_CAPTURE
+            $originalFail = $env:MOLE_INSTALL_FAIL
+            $originalHead = $env:MOLE_FAKE_HEAD
+            try {
+                $env:PATH = "$fakeTools;$originalPath"
+                $env:MOLE_INSTALL_CAPTURE = $capturePath
+                $env:MOLE_INSTALL_FAIL = $null
+                $env:MOLE_FAKE_HEAD = $null
+
+                # First unchanged pull with no marker refreshes and records the revision.
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                @(Get-Content -LiteralPath $capturePath).Count | Should -Be 1
+                Get-Content -LiteralPath $marker -Raw | Should -Be "abc123"
+
+                # Same revision, launchers present: nothing is reinstalled.
+                Set-Content -LiteralPath (Join-Path $fixtureRoot "mole.cmd") -Value "x"
+                Set-Content -LiteralPath (Join-Path $fixtureRoot "mo.cmd") -Value "x"
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                @(Get-Content -LiteralPath $capturePath).Count | Should -Be 1
+
+                # A missing launcher is repaired even at the same revision.
+                Remove-Item -LiteralPath (Join-Path $fixtureRoot "mo.cmd")
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                @(Get-Content -LiteralPath $capturePath).Count | Should -Be 2
+                Set-Content -LiteralPath (Join-Path $fixtureRoot "mo.cmd") -Value "x"
+
+                # A failed refresh keeps no marker, so the next update tries again.
+                Remove-Item -LiteralPath $marker
+                $env:MOLE_INSTALL_FAIL = "1"
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 1
+                $marker | Should -Not -Exist
+                $env:MOLE_INSTALL_FAIL = $null
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                @(Get-Content -LiteralPath $capturePath).Count | Should -Be 4
+                Get-Content -LiteralPath $marker -Raw | Should -Be "abc123"
+
+                # A failed refresh at a new revision drops the old marker too.
+                $env:MOLE_FAKE_HEAD = "def456"
+                $env:MOLE_INSTALL_FAIL = "1"
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 1
+                $marker | Should -Not -Exist
+                $env:MOLE_INSTALL_FAIL = $null
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                @(Get-Content -LiteralPath $capturePath).Count | Should -Be 6
+                Get-Content -LiteralPath $marker -Raw | Should -Be "def456"
+            }
+            finally {
+                $env:MOLE_FAKE_HEAD = $originalHead
+                $env:PATH = $originalPath
+                $env:MOLE_INSTALL_CAPTURE = $originalCapture
+                $env:MOLE_INSTALL_FAIL = $originalFail
+            }
+        }
+
+        It "Should end a successful install with an explicit zero exit code" {
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:InstallScript, [ref]$tokens, [ref]$errors)
+            $last = $ast.EndBlock.Statements[$ast.EndBlock.Statements.Count - 1]
+            $last.Extent.Text | Should -Be "exit 0"
+        }
+
         It "Should refresh the source directory on the first update from v1.30.0" {
             $fixtureRoot = Join-Path $TestDrive "legacy-update-fixture"
             $fixtureBin = Join-Path $fixtureRoot "bin"

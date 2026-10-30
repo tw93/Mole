@@ -1001,3 +1001,8 @@ catch {
     Write-Host ""
     exit 1
 }
+
+# A native command inside Main (git diff, go build) can leave a nonzero
+# $LASTEXITCODE behind; the updater reads this script's exit code as the
+# refresh result, so success says so explicitly.
+exit 0

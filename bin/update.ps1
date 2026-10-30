@@ -26,7 +26,8 @@ function Show-UpdateHelp {
     Write-Host ""
     Write-Host "$esc[33mBehavior:$esc[0m"
     Write-Host "  - Pulls the latest commit from origin/windows"
-    Write-Host "  - Re-runs the local installer in-place"
+    Write-Host "  - Re-runs the local installer in-place when the source changed"
+    Write-Host "    or the last refresh did not finish"
     Write-Host "  - Rebuilds analyze/status if Go is available"
     Write-Host ""
     Write-Host "$esc[33mNotes:$esc[0m"
@@ -287,8 +288,36 @@ if ($afterResult.ExitCode -ne 0 -or -not $after) {
     exit 1
 }
 
+# The revision the installer last finished at. An unchanged pull skips the
+# refresh only when that refresh succeeded at this revision and both launchers
+# exist; a refresh that failed (a tool kept at an older build) or a missing
+# launcher runs the installer again. A marker that cannot be read or written
+# falls back to refreshing every time.
+$refreshMarker = Join-Path $gitDir "mole-refreshed-revision"
+$markerResult = Invoke-GitCommand -WorkingDirectory $windowsDir -Arguments @("rev-parse", "--git-path", "mole-refreshed-revision")
+if ($markerResult.ExitCode -eq 0 -and $markerResult.Text) {
+    $refreshMarker = $markerResult.Text
+    if (-not [System.IO.Path]::IsPathRooted($refreshMarker)) {
+        $refreshMarker = Join-Path $windowsDir $refreshMarker
+    }
+}
+
 if ($after -eq $before) {
+    $refreshedAt = $null
+    if (Test-Path -LiteralPath $refreshMarker -PathType Leaf) {
+        try {
+            $refreshedAt = (Get-Content -LiteralPath $refreshMarker -Raw -ErrorAction Stop).Trim()
+        }
+        catch {
+            $refreshedAt = $null
+        }
+    }
+    $launchersPresent = (Test-Path -LiteralPath (Join-Path $windowsDir "mole.cmd") -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $windowsDir "mo.cmd") -PathType Leaf)
     Write-Host "Already up to date at $after." -ForegroundColor Green
+    if ($refreshedAt -eq $after -and $launchersPresent) {
+        exit 0
+    }
 }
 else {
     Write-Host "Updated source: $before -> $after" -ForegroundColor Green
@@ -303,4 +332,18 @@ if (Test-InstallDirOnUserPath -Path $windowsDir) {
 }
 
 Write-Host "Refreshing local installation..." -ForegroundColor Cyan
+# Drop the old marker first, so a refresh that dies midway is retried.
+Remove-Item -LiteralPath $refreshMarker -Force -ErrorAction SilentlyContinue
+$global:LASTEXITCODE = 0
 & $installScript @installParams
+$installExit = $LASTEXITCODE
+if ($installExit -ne 0) {
+    exit $installExit
+}
+
+try {
+    Set-Content -LiteralPath $refreshMarker -Value $after -NoNewline -Encoding ASCII -ErrorAction Stop
+}
+catch {
+    # Without the marker the next unchanged update refreshes again.
+}
