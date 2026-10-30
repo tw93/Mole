@@ -36,6 +36,15 @@ Source follow-up verified before push on 2026-10-25: `87f26494` protects Xbox Ga
 
 Mole CLI (macOS) records the matching unknown-capacity rendering change in `e53abe03`; its `9c33da94` final cache/purge guards and `fda12f48` Bash test-temp isolation use macOS-specific consumers, not Windows path/API ports. The [macOS owner](https://github.com/tw93/Mole/blob/main/SYNC.md#2026-10-25-existing-cli-capability-follow-up) holds that complete runner/check/build receipt and its package boundary.
 
+## 2026-10-31 Mole CLI (macOS) safety fixes, checked against this branch
+
+Frozen sources after fetch: Mole CLI (macOS) `91e440bb` on `main`, Mole CLI (Windows) `08031c5e` on `windows`, both matching their remote refs. Mole CLI (macOS) `ea7abfc9..709efa56` adopted five Mole Mac safety rules; each was checked against this branch's own consumers, and none needs a Windows change. Source reading only; nothing here is a release.
+
+- Spotlight orphan-rule pruning (#1878) and Mail attachment copies: Not applicable, no Spotlight or Apple Mail on Windows.
+- An old AI CLI release a running session still has open: Not applicable, this branch does not clean superseded Claude Code, cursor-agent or Copilot releases; `lib/core/base.ps1` only protects `.claude` session state.
+- The llama.cpp model store: Not applicable, no generic `%LOCALAPPDATA%` sweep exists here, so `%LOCALAPPDATA%\llama.cpp` is never a cleanup candidate; cleanup targets are named paths.
+- Uninstall wording for Recycle Bin bytes: Not applicable, `bin/uninstall.ps1` reports app counts only, and `Show-CleanupSummary` in `bin/clean.ps1` says "Tracked cleanup" rather than freed space.
+
 ## CLI adaptation queue
 
 | ID | Topic | Status | Source, destination and next check |
