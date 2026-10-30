@@ -97,8 +97,14 @@ Describe 'Automatic update notices' {
         Mock Join-Path { throw 'Windows PowerShell path is blocked' } -ParameterFilter {
             $Path -eq $env:SystemRoot -and $ChildPath -eq 'System32\WindowsPowerShell\v1.0\powershell.exe'
         }
+        $previousError = if ($Error.Count) { $Error[0] } else { $null }
         $context = Start-MoleUpdateCheck -RootDir $root -Version '1.9.0' -Method Source
-        $context | Should -Not -BeNullOrEmpty
+        $startupError = 'no captured startup error'
+        if ($Error.Count -and -not [object]::ReferenceEquals($previousError, $Error[0])) {
+            $failure = $Error[0]
+            $startupError = '{0}: {1} (line {2})' -f $failure.Exception.GetType().FullName, $failure.Exception.Message, $failure.InvocationInfo.ScriptLineNumber
+        }
+        $context | Should -Not -BeNullOrEmpty -Because $startupError
         $marker = $context.Path + '.host'
         $clock = [Diagnostics.Stopwatch]::StartNew()
         while (-not (Test-Path -LiteralPath $marker) -and $clock.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 50 }
