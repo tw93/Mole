@@ -94,6 +94,13 @@ Describe 'Automatic update notices' {
         New-Item -ItemType Directory -Path (Split-Path $module) -Force | Out-Null
         # No network: the worker writes only inside this test's owned tree.
         Set-Content -LiteralPath $module -Value 'function Invoke-MoleUpdateLookup { param($Path,$Key,$Method) [IO.File]::WriteAllText($Path + ".host", $PSHOME) }'
+        # Pester 6 requires an explicit fallback for calls outside the filter.
+        # Capture the cmdlet before mocking so forwarding cannot recurse.
+        $script:RealUpdateJoinPath = Get-Command Join-Path -CommandType Cmdlet
+        Mock Join-Path {
+            param($Path, $ChildPath)
+            & $script:RealUpdateJoinPath -Path $Path -ChildPath $ChildPath
+        }
         Mock Join-Path { throw 'Windows PowerShell path is blocked' } -ParameterFilter {
             $Path -eq $env:SystemRoot -and $ChildPath -eq 'System32\WindowsPowerShell\v1.0\powershell.exe'
         }
