@@ -2818,6 +2818,78 @@ EOF
     rm -rf "$HOME/Library"
 }
 
+@test "clean_browsers covers BrowserOS caches when not running" {
+    mkdir -p "$HOME/Library/Caches/BrowserOS/Default/Cache"
+    mkdir -p "$HOME/Library/Caches/BrowserOS/Default/Code Cache"
+    mkdir -p "$HOME/Library/Application Support/BrowserOS/Default/GPUCache"
+    mkdir -p "$HOME/Library/Application Support/BrowserOS/component_crx_cache"
+    mkdir -p "$HOME/Library/Application Support/BrowserOS/Crashpad/completed"
+    touch "$HOME/Library/Caches/BrowserOS/Default/Cache/data_0" \
+        "$HOME/Library/Caches/BrowserOS/Default/Code Cache/js_0" \
+        "$HOME/Library/Application Support/BrowserOS/Default/GPUCache/gpu_data" \
+        "$HOME/Library/Application Support/BrowserOS/component_crx_cache/crx_file" \
+        "$HOME/Library/Application Support/BrowserOS/Crashpad/completed/report.dmp"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2|$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+pgrep() { return 1; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"BrowserOS HTTP cache|$HOME/Library/Caches/BrowserOS/Default/Cache/"* ]] || return 1
+    [[ "$output" == *"BrowserOS code cache|$HOME/Library/Caches/BrowserOS/Default/Code Cache/"* ]] || return 1
+    [[ "$output" == *"BrowserOS GPU cache|$HOME/Library/Application Support/BrowserOS/Default/GPUCache/"* ]] || return 1
+    [[ "$output" == *"BrowserOS component cache|$HOME/Library/Application Support/BrowserOS/component_crx_cache/"* ]] || return 1
+    [[ "$output" == *"BrowserOS crash reports|$HOME/Library/Application Support/BrowserOS/Crashpad/completed/"* ]] || return 1
+
+    rm -rf "$HOME/Library"
+}
+
+@test "clean_browsers skips BrowserOS caches while running" {
+    mkdir -p "$HOME/Library/Caches/BrowserOS/Default/Cache"
+    mkdir -p "$HOME/Library/Application Support/BrowserOS/Default/GPUCache"
+    touch "$HOME/Library/Caches/BrowserOS/Default/Cache/data_0" \
+        "$HOME/Library/Application Support/BrowserOS/Default/GPUCache/gpu_data"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "$2|$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+pgrep() {
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == "BrowserOS" || "$arg" == "BrowserOS Helper" || "$arg" == *"/BrowserOS[.]app/"* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_browsers
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"BrowserOS HTTP cache"* ]] || return 1
+    [[ "$output" != *"BrowserOS code cache"* ]] || return 1
+    [[ "$output" != *"BrowserOS GPU cache"* ]] || return 1
+
+    rm -rf "$HOME/Library"
+}
+
 @test "user cleanup process guards keep caches when pgrep cannot tell" {
     # These guards used `pgrep -x App && running=true` or `if pgrep; then
     # skip`, so a pgrep error (exit 2/3, or no pgrep) read as "not running"
@@ -2831,6 +2903,7 @@ EOF
         "brave|Brave code cache|Brave profile caches" \
         "vivaldi|Vivaldi code cache|Vivaldi profile caches" \
         "qqbrowser|QQ Browser code cache|QQ Browser profile caches" \
+        "browseros|BrowserOS GPU cache|BrowserOS profile caches" \
         "utm|UTM app cache|UTM caches"; do
         IFS='|' read -r case_name sink display_name <<< "$row"
         for pgrep_rc in 1 2; do
@@ -2871,6 +2944,11 @@ case "$CASE" in
         ;;
     qqbrowser)
         mkdir -p "$support/QQBrowser3/Default/Code Cache"
+        clean_browsers
+        ;;
+    browseros)
+        mkdir -p "$support/BrowserOS/Default/GPUCache"
+        echo x > "$support/BrowserOS/Default/GPUCache/data_0"
         clean_browsers
         ;;
     utm)

@@ -754,6 +754,13 @@ _qqbrowser_process_state() {
     mole_pgrep_any -x "QQBrowser3"
 }
 
+_browseros_process_state() {
+    mole_pgrep_any \
+        -x "BrowserOS" \
+        -x "BrowserOS Helper" \
+        -f "/BrowserOS[.]app/"
+}
+
 _utm_process_state() {
     mole_pgrep_any -x "UTM"
 }
@@ -2201,6 +2208,24 @@ clean_browsers() {
             safe_clean ~/Library/Application\ Support/QQBrowser3/Crashpad/completed/* "QQ Browser crash reports"
         else
             mole_report_guard_stop "QQ Browser profile caches" debug_log "QQ Browser is running, skipping QQ Browser profile caches"
+        fi
+    fi
+    # BrowserOS (Chromium-based agentic browser).
+    if [[ -d ~/Library/Application\ Support/BrowserOS || -d ~/Library/Caches/BrowserOS ]]; then
+        if mole_clean_process_guard _browseros_process_state "BrowserOS started"; then
+            safe_clean ~/Library/Caches/BrowserOS/*/Cache/* "BrowserOS HTTP cache"
+            safe_clean ~/Library/Caches/BrowserOS/*/Code\ Cache/* "BrowserOS code cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/*/GPUCache/* "BrowserOS GPU cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/*/DawnGraphiteCache/* "BrowserOS Dawn Graphite cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/*/DawnWebGPUCache/* "BrowserOS Dawn WebGPU cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/ShaderCache/* "BrowserOS shader cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/GrShaderCache/* "BrowserOS GR shader cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/GraphiteDawnCache/* "BrowserOS Dawn cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/GPUPersistentCache/* "BrowserOS GPU persistent cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/component_crx_cache/* "BrowserOS component cache"
+            safe_clean ~/Library/Application\ Support/BrowserOS/Crashpad/completed/* "BrowserOS crash reports"
+        else
+            mole_report_guard_stop "BrowserOS caches" debug_log "BrowserOS is running, skipping BrowserOS caches"
         fi
     fi
 }
