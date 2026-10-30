@@ -45,6 +45,14 @@ Frozen sources after fetch: Mole CLI (macOS) `91e440bb` on `main`, Mole CLI (Win
 - The llama.cpp model store: Not applicable, no generic `%LOCALAPPDATA%` sweep exists here, so `%LOCALAPPDATA%\llama.cpp` is never a cleanup candidate; cleanup targets are named paths.
 - Uninstall wording for Recycle Bin bytes: Not applicable, `bin/uninstall.ps1` reports app counts only, and `Show-CleanupSummary` in `bin/clean.ps1` says "Tracked cleanup" rather than freed space.
 
+Mole Mac rows still naming this branch as Pending, checked against `6d8cef1c` the same day:
+
+- Unknown or truncated Gradle usage metadata cannot prove a wrapper unused: Not applicable, this branch never cleans Gradle wrapper distributions (`lib/clean/dev.ps1` removes nothing in the JVM ecosystem); `mo purge` removes a project's own `.gradle` folder, not `~\.gradle\wrapper\dists`.
+- A package checkout missing HEAD is retained unless its Git metadata is empty: Not applicable, there is no headless exception to narrow; `mo purge` refuses any artifact folder with a `.git` child and any project whose `.git` cannot be read. `~\.cargo\git\checkouts` stays a whole-cache target, as the Mac also exempts Cargo's git cache from this check.
+- Uninstall data the user kept, offered later in Clean: Not applicable, `mo uninstall` lists no unticked data rows; it runs the registered uninstaller and recycles only an ownership-checked install folder.
+- Analyze auto-drill counts files: Not applicable, `cmd/analyze` never skips through a single-child folder.
+- What's New card and Updated pill: Not applicable, no chrome to carry a pill; whether `mo update` should print the installed version's notes is a separate product decision, not a port.
+
 ## CLI adaptation queue
 
 | ID | Topic | Status | Source, destination and next check |
