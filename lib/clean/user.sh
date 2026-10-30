@@ -2225,7 +2225,7 @@ clean_browsers() {
             safe_clean ~/Library/Application\ Support/BrowserOS/component_crx_cache/* "BrowserOS component cache"
             safe_clean ~/Library/Application\ Support/BrowserOS/Crashpad/completed/* "BrowserOS crash reports"
         else
-            mole_report_guard_stop "BrowserOS caches" debug_log "BrowserOS is running, skipping BrowserOS caches"
+            mole_report_guard_stop "BrowserOS profile caches" debug_log "BrowserOS is running, skipping BrowserOS profile caches"
         fi
     fi
 }
