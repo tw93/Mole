@@ -912,6 +912,7 @@ function Uninstall-Mole {
         $cachePath = Join-Path $env:USERPROFILE ".cache\mole"
         if (Test-Path -LiteralPath $cachePath) {
             try {
+                Assert-InstallPhysicalPath -Path $cachePath
                 $cacheRoot = Get-Item -LiteralPath $cachePath -Force -ErrorAction Stop
                 if ($cacheRoot.PSIsContainer -and
                     -not ($cacheRoot.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {

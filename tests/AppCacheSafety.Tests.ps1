@@ -44,6 +44,60 @@ Describe 'Application cache boundaries' {
         Mock Stop-Section {}
     }
 
+    It 'Keeps both VS Code cleanup entries guarded for <Owner> in preview <Preview>' -ForEach @(
+        @{Owner='Code';Preview=$false}, @{Owner='Code';Preview=$true},
+        @{Owner='Code - Insiders';Preview=$false}, @{Owner='Code - Insiders';Preview=$true},
+        @{Owner='unknown';Preview=$false}, @{Owner='unknown';Preview=$true}
+    ) {
+        $code = New-CacheFile "$env:APPDATA\Code\Cache\entry"
+        $insiders = New-CacheFile "$env:APPDATA\Code - Insiders\Cache\entry"
+        $cpp = New-CacheFile "$env:LOCALAPPDATA\Microsoft\vscode-cpptools\entry"
+        if ($Owner -eq 'unknown') { Mock Get-Process { throw 'incomplete inventory' } }
+        else { Mock Get-Process { [pscustomobject]@{ProcessName=$Owner} } }
+        Set-DryRunMode -Enabled $Preview
+        Clear-AppCaches
+        Clear-EditorCaches
+        $kept = if ($Owner -eq 'Code - Insiders') { $insiders } else { $code }
+        Test-Path -LiteralPath $kept | Should -BeTrue
+        Test-Path -LiteralPath $cpp | Should -BeTrue
+        if (Test-Path -LiteralPath $script:ExportListFile) {
+            Get-Content -LiteralPath $script:ExportListFile -Raw | Should -Not -Match ([regex]::Escape($kept))
+            Get-Content -LiteralPath $script:ExportListFile -Raw | Should -Not -Match ([regex]::Escape($cpp))
+        }
+        if ($Owner -eq 'unknown') { Test-Path -LiteralPath $insiders | Should -BeTrue }
+    }
+
+    It 'Cleans both VS Code channels when their owners are idle' {
+        $code = New-CacheFile "$env:APPDATA\Code\Cache\entry"
+        $insiders = New-CacheFile "$env:APPDATA\Code - Insiders\Cache\entry"
+        Clear-AppCaches
+        Clear-EditorCaches
+        Test-Path -LiteralPath $code | Should -BeFalse
+        Test-Path -LiteralPath $insiders | Should -BeFalse
+    }
+
+    It 'Keeps an unavailable Bun cache for a running or unknown owner: <Owner>' -ForEach @(
+        @{Owner='bun'}, @{Owner='bunx'}, @{Owner='unknown'}
+    ) {
+        $cache = New-CacheFile "$env:USERPROFILE\.bun\install\cache\entry"
+        Mock Invoke-MoleOwnerProcess { $null }
+        if ($Owner -eq 'unknown') { Mock Get-Process { throw 'incomplete inventory' } }
+        else { Mock Get-Process { [pscustomobject]@{ProcessName=$Owner} } }
+        foreach ($preview in @($true,$false)) {
+            Set-DryRunMode -Enabled $preview
+            Clear-NpmCache
+            Test-Path -LiteralPath $cache | Should -BeTrue
+            (Get-CleanupStats).FilesCleaned | Should -Be 0
+        }
+    }
+
+    It 'Cleans the default Bun cache only when Bun is unavailable and idle' {
+        $cache = New-CacheFile "$env:USERPROFILE\.bun\install\cache\entry"
+        Mock Invoke-MoleOwnerProcess { $null }
+        Clear-NpmCache
+        Test-Path -LiteralPath $cache | Should -BeFalse
+    }
+
     It 'Keeps recent error reports and dumps in preview and real cleanup' {
         $old = New-CacheFile "$env:LOCALAPPDATA\Microsoft\Windows\WER\ReportArchive\old\Report.wer"
         $recent = New-CacheFile "$env:LOCALAPPDATA\Microsoft\Windows\WER\ReportArchive\recent\Report.wer"

@@ -100,7 +100,8 @@ function Start-MoleUpdateCheck {
         $command = "`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'; . $($quoted[0]); Invoke-MoleUpdateLookup -Path $($quoted[1]) -Key $($quoted[2]) -Method $($quoted[3])"
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         $start = New-Object Diagnostics.ProcessStartInfo
-        $start.FileName = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $hostName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+        $start.FileName = Join-Path $PSHOME $hostName
         $start.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
         $start.UseShellExecute = $false
         $start.CreateNoWindow = $true

@@ -88,6 +88,23 @@ Describe 'Automatic update notices' {
         Should -Invoke Invoke-RestMethod -Exactly 0
     }
 
+    It 'Starts update lookup with the current PowerShell host' {
+        $root = Join-Path $TestDrive ('worker-' + [guid]::NewGuid().ToString('N'))
+        $module = Join-Path $root 'lib\core\update_check.ps1'
+        New-Item -ItemType Directory -Path (Split-Path $module) -Force | Out-Null
+        # No network: the worker writes only inside this test's owned tree.
+        Set-Content -LiteralPath $module -Value 'function Invoke-MoleUpdateLookup { param($Path,$Key,$Method) [IO.File]::WriteAllText($Path + ".host", $PSHOME) }'
+        Mock Join-Path { throw 'Windows PowerShell path is blocked' } -ParameterFilter {
+            $Path -eq $env:SystemRoot -and $ChildPath -eq 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        }
+        $context = Start-MoleUpdateCheck -RootDir $root -Version '1.9.0' -Method Source
+        $context | Should -Not -BeNullOrEmpty
+        $marker = $context.Path + '.host'
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        while (-not (Test-Path -LiteralPath $marker) -and $clock.Elapsed.TotalSeconds -lt 10) { Start-Sleep -Milliseconds 50 }
+        Get-Content -LiteralPath $marker -Raw | Should -Be $PSHOME
+    }
+
     It 'Keeps a failed lookup quiet and retains its one-hour retry interval' {
         $script:State.Interval = 3600
         $script:State.Latest = ''

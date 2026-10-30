@@ -105,8 +105,9 @@ function Get-MoleOwnerCachePath {
 }
 
 function Invoke-MoleOwnerCacheCleanup {
-    param([string]$Name, [string[]]$Query, [string[]]$Arguments, [string]$Description)
+    param([string]$Name, [string[]]$Query, [string[]]$Arguments, [string]$Description, [scriptblock]$CanRemove = $null)
 
+    if (-not (Test-MoleRemovalCondition -CanRemove $CanRemove)) { return }
     $path = Get-MoleOwnerCachePath -Name $Name -Arguments $Query
     if (-not $path -or -not (Test-SafePath $path)) { return }
     $snapshot = Get-MolePathSnapshot -Path $path
@@ -117,6 +118,7 @@ function Invoke-MoleOwnerCacheCleanup {
     foreach ($item in $tree.Items) {
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return }
     }
+    if (-not (Test-MoleRemovalCondition -CanRemove $CanRemove)) { return }
     if (Test-DryRunMode) {
         # Selective owner pruning cannot promise the size of the whole store.
         Add-DryRunListEntries -Description $Description -Paths @($path)
@@ -129,6 +131,7 @@ function Invoke-MoleOwnerCacheCleanup {
     # One fresh whitelist read for the boundary, not one per cache entry.
     $current = Get-MoleOwnerCachePath -Name $Name -Arguments $Query
     $whitelistState = Get-WhitelistState
+    if (-not (Test-MoleRemovalCondition -CanRemove $CanRemove)) { return }
     if ($current -ne $path -or -not (Test-SafePath $path -WhitelistState $whitelistState) -or
         -not (Test-MolePathSnapshot $snapshot)) { return }
     foreach ($item in $tree.Items) {
@@ -190,10 +193,16 @@ function Clear-NpmCache {
         }
     }
     
-    # Bun cache
-    $bunCachePath = "$env:USERPROFILE\.bun\install\cache"
-    if (Test-Path $bunCachePath) {
-        Clear-DirectoryContents -Path $bunCachePath -Description "Bun cache"
+    # A usable Bun owns its configured cache. Unknown roots and failed owner
+    # commands must never fall back to deleting a guessed directory.
+    if (Test-MoleCacheOwnerIdle -Names @('bun', 'bunx')) {
+        $bun = Invoke-MoleOwnerProcess -Name 'bun' -Arguments @('--version')
+        if ($null -ne $bun -and -not [string]::IsNullOrWhiteSpace($bun.Output)) {
+            Invoke-MoleOwnerCacheCleanup -Name 'bun' -Query @('pm', 'cache') -Arguments @('pm', 'cache', 'rm') -Description 'Bun cache' -CanRemove { Test-MoleCacheOwnerIdle -Names @('bun', 'bunx') }
+        }
+        else {
+            Clear-MoleAppCache -Path "$env:USERPROFILE\.bun\install\cache" -Description 'Bun cache' -Processes @('bun', 'bunx')
+        }
     }
 }
 
@@ -557,7 +566,8 @@ function Clear-EditorCaches {
     )
     foreach ($path in $vscodeCachePaths) {
         if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "VS Code cache"
+            $owners = if ($path -eq "$env:LOCALAPPDATA\Microsoft\vscode-cpptools") { @('Code', 'Code - Insiders') } else { @('Code') }
+            Clear-MoleAppCache -Path $path -Description "VS Code cache" -Processes $owners
         }
     }
     
@@ -573,7 +583,7 @@ function Clear-EditorCaches {
     )
     foreach ($path in $vscodeInsidersCachePaths) {
         if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "VS Code Insiders cache"
+            Clear-MoleAppCache -Path $path -Description "VS Code Insiders cache" -Processes @('Code - Insiders')
         }
     }
     

@@ -196,6 +196,25 @@ Describe "install.ps1 -Uninstall" {
         }
     }
 
+    It 'Keeps the cache when its ancestor is a junction' {
+        $own = Join-Path $env:LOCALAPPDATA 'Programs\mole-cli'
+        New-CliTree -Root $own
+        $InstallDir = $own
+        $env:USERPROFILE = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $env:USERPROFILE -Force | Out-Null
+        $outside = Join-Path $TestDrive ('cache-target-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Join-Path $outside 'mole') -Force | Out-Null
+        $kept = Join-Path $outside 'mole\keep.txt'
+        Set-Content -LiteralPath $kept -Value 'keep'
+        $link = Join-Path $env:USERPROFILE '.cache'
+        $null = New-Item -ItemType Junction -Path $link -Target $outside
+        try {
+            Uninstall-Mole | Should -BeTrue
+            Get-Content -LiteralPath $kept | Should -Be 'keep'
+        }
+        finally { [IO.Directory]::Delete($link, $false) }
+    }
+
     It "Records the cache removal in the operation log" {
         $own = Join-Path $env:LOCALAPPDATA "Programs\mole-cli"
         New-CliTree -Root $own

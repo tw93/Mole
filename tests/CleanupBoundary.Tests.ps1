@@ -449,7 +449,7 @@ Describe 'Owner cache cleanup whitelist' {
     }
     It 'Does not invoke npm or pnpm mutations for a whitelisted resolved root' {
         Clear-NpmCache
-        Should -Invoke Invoke-MoleOwnerProcess -Times 0
+        Should -Invoke Invoke-MoleOwnerProcess -Times 0 -ParameterFilter { $TimeoutSeconds -eq 120 }
         Should -Invoke npm -Times 0 -ParameterFilter { $args -contains 'clean' }
         Should -Invoke pnpm -Times 0 -ParameterFilter { $args -contains 'prune' }
     }
@@ -494,8 +494,56 @@ Describe 'Owner cache cleanup whitelist' {
     It 'Keeps a cache when its owner cannot resolve the root' {
         Mock Get-MoleOwnerCachePath { $null }
         Clear-NpmCache
-        Should -Invoke Invoke-MoleOwnerProcess -Times 0
+        Should -Invoke Invoke-MoleOwnerProcess -Times 0 -ParameterFilter { $TimeoutSeconds -eq 120 }
     }
+    It 'Uses the configured Bun root and never falls back after a failed owner command' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value '# no exclusions'
+        Mock Get-Process { @() }
+        $default = Join-Path $env:USERPROFILE '.bun\install\cache\keep.txt'
+        New-Item -ItemType Directory -Path (Split-Path $default) -Force | Out-Null
+        Set-Content -LiteralPath $default -Value 'keep'
+        Mock Invoke-MoleOwnerProcess { [pscustomobject]@{Output='1.3.0'} } -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains '--version' }
+        Mock Invoke-MoleOwnerProcess { $null } -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains 'rm' }
+        Clear-NpmCache
+        Should -Invoke Get-MoleOwnerCachePath -Times 2 -ParameterFilter { $Name -eq 'bun' -and ($Arguments -join ' ') -eq 'pm cache' }
+        Should -Invoke Invoke-MoleOwnerProcess -Times 1 -ParameterFilter { $Name -eq 'bun' -and ($Arguments -join ' ') -eq 'pm cache rm' }
+        Test-Path -LiteralPath $default | Should -BeTrue
+    }
+    It 'Keeps the default Bun cache when a usable owner returns an unknown root' {
+        Mock Get-Process { @() }
+        $default = Join-Path $env:USERPROFILE '.bun\install\cache\keep.txt'
+        New-Item -ItemType Directory -Path (Split-Path $default) -Force | Out-Null
+        Set-Content -LiteralPath $default -Value 'keep'
+        Mock Invoke-MoleOwnerProcess { [pscustomobject]@{Output='1.3.0'} } -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains '--version' }
+        Mock Get-MoleOwnerCachePath { $null } -ParameterFilter { $Name -eq 'bun' }
+        Clear-NpmCache
+        Should -Invoke Invoke-MoleOwnerProcess -Times 0 -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains 'rm' }
+        Test-Path -LiteralPath $default | Should -BeTrue
+    }
+    It 'Previews the configured Bun root without starting cleanup' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value '# no exclusions'
+        Mock Get-Process { @() }
+        Mock Invoke-MoleOwnerProcess { [pscustomobject]@{Output='1.3.0'} } -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains '--version' }
+        Mock Add-DryRunListEntries {}
+        Set-DryRunMode -Enabled $true
+        Clear-NpmCache
+        Should -Invoke Add-DryRunListEntries -Times 1 -ParameterFilter { $Description -eq 'Bun cache' -and $Paths -contains $script:OwnerCache }
+        Should -Invoke Invoke-MoleOwnerProcess -Times 0 -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains 'rm' }
+    }
+
+    It 'Rechecks Bun activity before its owner command' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value '# no exclusions'
+        $script:BunChecks = 0
+        Mock Get-Process {
+            $script:BunChecks++
+            if ($script:BunChecks -ge 4) { [pscustomobject]@{ProcessName='bun'} }
+        }
+        Mock Invoke-MoleOwnerProcess { [pscustomobject]@{Output='1.3.0'} } -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains '--version' }
+        Clear-NpmCache
+        $script:BunChecks | Should -BeGreaterOrEqual 4
+        Should -Invoke Invoke-MoleOwnerProcess -Times 0 -ParameterFilter { $Name -eq 'bun' -and $Arguments -contains 'rm' }
+    }
+
     It 'Preserves Gradle transaction locks' {
         $lock = Join-Path $env:USERPROFILE '.gradle\caches\build-cache-1\build-cache-1.lock'
         New-Item -ItemType Directory -Path (Split-Path -Parent $lock) -Force | Out-Null
