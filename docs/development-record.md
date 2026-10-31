@@ -2,6 +2,14 @@
 
 This is the handoff record for the `windows` branch of `tw93/Mole`, not the paid Windows app or the macOS CLI. Read [AGENTS.md](../AGENTS.md) for current policy and [development pitfalls](development-pitfalls.md) for reusable lessons. Git history retains individual edits; this file records completed batches and their delivery boundaries. Recheck live state before resuming work.
 
+## 2026-10-31: V1.40.0-windows release preparation
+
+Candidate `971022b1` sets both version sources to 1.40.0 (`82c7361f`) and adds the e2e release lookup fallback (`36ec94ab`, rebased onto a contributors-only commit). Check and [Validation](https://github.com/tw93/Mole/actions/runs/41156946172) passed at that exact commit, including PowerShell 5.1 and 7.
+
+Native x64 acceptance on the ThinkPad ran `scripts/e2e_windows.py` at `36ec94ab`, which differs from the candidate only in `CONTRIBUTORS.svg`: all nine steps and 15 smoke commands passed, with WinMerge's registration and install folder gone and its installer in the Recycle Bin. The first two attempts stopped before deployment, one on the e2e key the ThinkPad does not authorize (its own key under `~/.config/mole-thinkpad` was used instead) and one on the anonymous GitHub API limit, which the fallback fixes. The ARM64 VM e2e did not run: since the VM moved to the test Mac this Mac has no SSH route to it, and adding one would change networking. The clean output change itself passed Pester on Windows PowerShell 5.1 in that VM, recorded in the next entry.
+
+No tag, signed package or release exists yet. Signing needs the maintainer's SimplySign session.
+
 ## 2026-10-31: Clean output from the macOS CLI
 
 Adapted Mole CLI (macOS) `afc7943c`, `51d8d887`, `1bc5f1d5` and `01eb6a5d` as recorded in [SYNC.md](../SYNC.md): the dry-run glyph is the empty circle, owner-command rows show the bytes their complete before/after measurement found, `Remove-SafeItems` prints no row for a measured 0B batch while still counting it, and a real cleanup summary says `Removed`.
