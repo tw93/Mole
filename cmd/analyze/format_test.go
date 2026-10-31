@@ -4,6 +4,8 @@ package main
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -290,6 +292,18 @@ func TestDisplayPath(t *testing.T) {
 			},
 		},
 		{
+			name: "Keep sibling of home that shares its prefix",
+			setup: func() string {
+				t.Setenv("HOME", "/Users/test")
+				return "/Users/tester/Downloads"
+			},
+			check: func(t *testing.T, result string) {
+				if result != "/Users/tester/Downloads" {
+					t.Errorf("Expected unchanged path, got %q", result)
+				}
+			},
+		},
+		{
 			name: "Keep absolute path outside home",
 			setup: func() string {
 				t.Setenv("HOME", "/Users/test")
@@ -310,6 +324,29 @@ func TestDisplayPath(t *testing.T) {
 			tt.check(t, result)
 		})
 	}
+}
+
+func TestViewHeaderKeepsSiblingOfHomeUnabbreviated(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "test")
+	sibling := filepath.Join(root, "tester")
+	for _, dir := range []string{home, sibling} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+
+	m := newModel(sibling, false)
+	for line := range strings.SplitSeq(m.View(), "\n") {
+		if strings.Contains(line, "Analyze Disk") {
+			if !strings.Contains(line, sibling) {
+				t.Fatalf("header should show %s, got %q", sibling, line)
+			}
+			return
+		}
+	}
+	t.Fatal("header line not rendered")
 }
 
 func TestPadName(t *testing.T) {
