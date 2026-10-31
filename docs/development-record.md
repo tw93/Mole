@@ -2,13 +2,15 @@
 
 This is the handoff record for the `windows` branch of `tw93/Mole`, not the paid Windows app or the macOS CLI. Read [AGENTS.md](../AGENTS.md) for current policy and [development pitfalls](development-pitfalls.md) for reusable lessons. Git history retains individual edits; this file records completed batches and their delivery boundaries. Recheck live state before resuming work.
 
-## 2026-10-31: V1.40.0-windows release preparation
+## 2026-10-31: V1.40.0-windows release
 
 Candidate `971022b1` sets both version sources to 1.40.0 (`82c7361f`) and adds the e2e release lookup fallback (`36ec94ab`, rebased onto a contributors-only commit). Check and [Validation](https://github.com/tw93/Mole/actions/runs/41156946172) passed at that exact commit, including PowerShell 5.1 and 7.
 
 Native x64 acceptance on the ThinkPad ran `scripts/e2e_windows.py` at `36ec94ab`, which differs from the candidate only in `CONTRIBUTORS.svg`: all nine steps and 15 smoke commands passed, with WinMerge's registration and install folder gone and its installer in the Recycle Bin. The first two attempts stopped before deployment, one on the e2e key the ThinkPad does not authorize (its own key under `~/.config/mole-thinkpad` was used instead) and one on the anonymous GitHub API limit, which the fallback fixes. The ARM64 VM e2e did not run: since the VM moved to the test Mac this Mac has no SSH route to it, and adding one would change networking. The clean output change itself passed Pester on Windows PowerShell 5.1 in that VM, recorded in the next entry.
 
-No tag, signed package or release exists yet. Signing needs the maintainer's SimplySign session.
+[V1.40.0-windows Lucid](https://github.com/tw93/Mole/releases/tag/V1.40.0-windows) is published from tag `V1.40.0-windows` at `971022b1` with `make_latest: false`; `releases/latest` stays Mole CLI (macOS) V1.67.0. The release workflow built the draft, and `scripts/sign-release.ps1` signed 29 files inside the zip and both TUI assets in the ARM64 VM with the Faberon certificate and a Certum timestamp. An independent check there found 101 files in both zips with identical lists, all 31 targets `Valid` with the expected thumbprint and a timestamp, the other 72 files byte-identical, and the raw TUI assets equal to the zip's copies. The public downloads are byte-identical to the signed files and match `SHA256SUMS.txt`. On the x64 ThinkPad the downloaded zip verified the same way (31 targets `Valid`), its `mo.exe` printed 1.40.0, and `mo status --json` parsed. The bilingual notes and the six maintainer reactions were read back. No winget or Scoop submission was made; Scoop follows through `checkver`/`autoupdate`.
+
+Signing ran from a copy of the release tools in the VM user profile: `sign-release.ps1` needs its sibling `new-release-zip.ps1` and `write-checksums.ps1`, so a lone copy of the script stops after signing the inner files, and `C:\` is not writable for that user. A long inline `prlctl exec` command failed twice to open a guest session while a short one succeeded; the verification ran from a script file instead.
 
 ## 2026-10-31: Clean output from the macOS CLI
 

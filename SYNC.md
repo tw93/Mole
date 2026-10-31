@@ -46,6 +46,8 @@ Source: Mole CLI (macOS) `afc7943c`, `51d8d887`, `1bc5f1d5` and `01eb6a5d` on `m
 - Summary wording: Implemented. A real cleanup says `Removed: X | Items: N` instead of `Tracked cleanup: X | Items cleaned: N`; the dry run already said `Potential space: X | Items: N`. `mo purge` keeps its own summary, as on macOS.
 - Daily temp-root listing, review rows with a linked label and one fact, DerivedData coverage, the whitelist banner and the macOS loading fixes: Not applicable. There is no Mole temp-root prune, no Large files or Xcode review section, no pattern listing at startup, and this branch's loading states have their own spinner and console-host contract (`lib/core/ui.ps1`).
 
+Delivery: released in [V1.40.0-windows](https://github.com/tw93/Mole/releases/tag/V1.40.0-windows) (2026-10-31), signed package receipt in the [development record](docs/development-record.md).
+
 ## 2026-10-31 Mole CLI (macOS) safety fixes, checked against this branch
 
 Frozen sources after fetch: Mole CLI (macOS) `91e440bb` on `main`, Mole CLI (Windows) `08031c5e` on `windows`, both matching their remote refs. Mole CLI (macOS) `ea7abfc9..709efa56` adopted five Mole Mac safety rules; each was checked against this branch's own consumers, and none needs a Windows change. Source reading only; nothing here is a release.
