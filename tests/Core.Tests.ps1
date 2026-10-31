@@ -103,6 +103,10 @@ Describe "Base Module" {
             $script:Icons.Error | Should -Not -BeNullOrEmpty
             $script:Icons.Solid | Should -Be "*"
         }
+
+        It "Marks dry-run rows with the empty circle the macOS CLI uses" {
+            (Get-MoleDefaultIcons).DryRun | Should -Be ([char]0x25CB)
+        }
     }
 
     Context "Test-IsAdmin" {
@@ -522,6 +526,52 @@ Describe "File Operations Module" {
                 foreach ($path in @($first, $second)) {
                     if (Test-Path $path) { Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue }
                 }
+            }
+        }
+
+        It "Counts a measured 0B batch without printing its row (dry run: <DryRun>)" -TestCases @(@{ DryRun = $false }, @{ DryRun = $true }) {
+            param($DryRun)
+            $first = Join-Path $script:TestDir ("empty_tree_" + [guid]::NewGuid().ToString("N"))
+            $second = Join-Path $script:TestDir ("empty_tree_" + [guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $first, $second -Force | Out-Null
+            $script:Rows = @()
+            Mock Write-Success { $script:Rows += $Message }
+            Mock Write-DryRun { $script:Rows += $Message }
+            Reset-CleanupStats
+            try {
+                Set-DryRunMode -Enabled $DryRun
+                Remove-SafeItems -Paths @($first, $second) -Description "Empty trees"
+                (Get-CleanupStats).FilesCleaned | Should -Be 2
+                @($script:Rows).Count | Should -Be 0
+            }
+            finally {
+                Set-DryRunMode -Enabled $false
+                Reset-CleanupStats
+                foreach ($path in @($first, $second)) {
+                    if (Test-Path $path) { Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue }
+                }
+            }
+        }
+
+        It "Keeps the row when a file size could not be read (dry run: <DryRun>)" -TestCases @(@{ DryRun = $false }, @{ DryRun = $true }) {
+            param($DryRun)
+            $file = Join-Path $script:TestDir ("unsized_" + [guid]::NewGuid().ToString("N") + ".log")
+            [System.IO.File]::WriteAllBytes($file, (New-Object byte[] 2048))
+            $script:Rows = @()
+            Mock Get-PathSize { 0 }
+            Mock Write-Success { $script:Rows += $Message }
+            Mock Write-DryRun { $script:Rows += $Message }
+            Reset-CleanupStats
+            try {
+                Set-DryRunMode -Enabled $DryRun
+                Remove-SafeItems -Paths @($file) -Description "Unsized file"
+                @($script:Rows).Count | Should -Be 1
+                $script:Rows[0] | Should -Match '^Unsized file'
+            }
+            finally {
+                Set-DryRunMode -Enabled $false
+                Reset-CleanupStats
+                if (Test-Path $file) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
             }
         }
 

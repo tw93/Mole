@@ -140,7 +140,7 @@ function Show-CleanupSummary {
             $details += "Potential space: ${green}${size}${nc} | Items: $($Stats.FilesCleaned)"
         }
         else {
-            $details += "Tracked cleanup: ${green}${size}${nc} | Items cleaned: $($Stats.FilesCleaned)"
+            $details += "Removed: ${green}${size}${nc} | Items: $($Stats.FilesCleaned)"
         }
     }
     elseif ($Stats.ContainsKey('OwnerCleanups') -and $Stats.OwnerCleanups -gt 0) {

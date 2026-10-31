@@ -695,6 +695,8 @@ function Remove-SafeItems {
     $totalSize = 0
     $removedCount = 0
     $failedCount = 0
+    # A file whose size read as 0 may not have been measured at all.
+    $sizeUnknown = $false
     $dryRunPaths = New-Object System.Collections.Generic.List[string]
     # One whitelist read for the batch, not several per path.
     $whitelistState = Get-WhitelistState
@@ -727,6 +729,7 @@ function Remove-SafeItems {
         if (-not (Test-SafePath $path -WhitelistState $whitelistState) -or -not (Test-MolePathSnapshot $pathSnapshot)) { continue }
 
         if (-not (Test-MoleRemovalCondition $CanRemove)) { continue }
+        if ($null -eq $validatedTree -and $size -le 0) { $sizeUnknown = $true }
         if (-not (Test-MolePathSnapshot $pathSnapshot)) { continue }
 
         if ($script:MoleDryRunMode) {
@@ -772,6 +775,12 @@ function Remove-SafeItems {
         $script:FilesCleaned += $removedCount
         $script:TotalItems++
         $noun = if ($removedCount -eq 1) { 'item' } else { 'items' }
+        # Empty folders still count, but a measured 0B row is noise.
+        if ($totalSize -eq 0 -and -not $sizeUnknown) {
+            if ($script:MoleDryRunMode) { Add-DryRunListEntries -Description $Description -Paths $dryRunPaths.ToArray() }
+            Set-SectionActivity
+            return
+        }
         if ($script:MoleDryRunMode) {
             Write-DryRun "$Description $($script:Colors.Yellow)($removedCount $noun, $sizeHuman dry)$($script:Colors.NC)"
             Add-DryRunListEntries -Description $Description -Paths $dryRunPaths.ToArray()

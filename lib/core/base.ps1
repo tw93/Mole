@@ -44,7 +44,7 @@ function Get-MoleDefaultIcons {
         Solid    = [char]0x25CF  # solid dot
         List     = [char]0x2022  # list bullet
         Arrow    = [char]0x27A4  # navigation arrow
-        DryRun   = [char]0x2192  # dry-run arrow
+        DryRun   = [char]0x25CB  # dry-run circle, as on macOS
         NavUp    = [char]0x2191  # up arrow
         NavDown  = [char]0x2193  # down arrow
         Folder   = [char]0x25A0  # folder substitute

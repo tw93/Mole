@@ -150,6 +150,7 @@ function Invoke-MoleOwnerCacheCleanup {
         $script:OwnerCleanups++
         # Count only a complete before/after measurement of the same root.
         # Missing or replaced roots are unmeasured, never assumed empty.
+        $removedBytes = 0L
         if (Test-MolePathSnapshot $snapshot) {
             $after = Get-SafeDirectoryTreeItems -Path $path
             if ($after.Success -and (Test-MolePathSnapshot $snapshot)) {
@@ -162,7 +163,10 @@ function Invoke-MoleOwnerCacheCleanup {
                 if ($removedBytes -gt 0) { $script:TotalItems++ }
             }
         }
-        Write-Success $Description
+        if ($removedBytes -gt 0) {
+            Write-Success "$Description $($script:Colors.Green)($(Format-ByteSize -Bytes $removedBytes))$($script:Colors.NC)"
+        }
+        else { Write-Success $Description }
         Set-SectionActivity
     }
     else {

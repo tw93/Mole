@@ -2,6 +2,14 @@
 
 This is the handoff record for the `windows` branch of `tw93/Mole`, not the paid Windows app or the macOS CLI. Read [AGENTS.md](../AGENTS.md) for current policy and [development pitfalls](development-pitfalls.md) for reusable lessons. Git history retains individual edits; this file records completed batches and their delivery boundaries. Recheck live state before resuming work.
 
+## 2026-10-31: Clean output from the macOS CLI
+
+Adapted Mole CLI (macOS) `afc7943c`, `51d8d887`, `1bc5f1d5` and `01eb6a5d` as recorded in [SYNC.md](../SYNC.md): the dry-run glyph is the empty circle, owner-command rows show the bytes their complete before/after measurement found, `Remove-SafeItems` prints no row for a measured 0B batch while still counting it, and a real cleanup summary says `Removed`.
+
+On Windows PowerShell 5.1.26100.9711 with Pester 6.2.0 in the ARM64 VM, `Core.Tests.ps1` and `Clean.Tests.ps1` ran 139 passed and 5 failed on the old source with the new tests, the 5 failures being exactly the new cases, and 144 passed on the changed source. This is a targeted run of two files; the complete dual-engine suite is the Validation run of this commit.
+
+The user-visible changes are the glyph, the size on owner rows, fewer 0B rows and the summary label. No command, flag, setting, cleanup target or release is included.
+
 ## 2026-10-30: Cache boundaries and update worker host
 
 Reviewed `V1.38.0-windows..dd034c31`; behavior repair `3d2db78f` is committed and pushed. Both VS Code cleanup entries now use the same owner-aware cache guard for their six existing leaves. Self-removal refuses a junction in any ancestor of its cache root. Bun uses its confirmed configured root and bounded owner command, rechecks running owners, and retains the cache on unknown roots or command failure; the default direct-cleanup path is limited to an unavailable/unusable Bun with an idle owner. Automatic update lookup starts the current PowerShell host, so a working PowerShell 7 fallback does not try the blocked Windows PowerShell executable again.

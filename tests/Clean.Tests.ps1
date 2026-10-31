@@ -447,6 +447,20 @@ Describe "Owner cache accounting" {
         (Get-CleanupStats).TotalSizeKB | Should -Be 0
         (Get-CleanupStats).OwnerCleanups | Should -Be 1
     }
+    It "Shows the bytes a prune removed on its row, and no size when nothing went" {
+        $script:Rows = @()
+        Mock Write-Success { $script:Rows += $Message }
+        Mock Invoke-MoleOwnerProcess {
+            Remove-Item -LiteralPath (Join-Path $script:Root 'gone.bin')
+            [pscustomobject]@{ Output = '' }
+        }
+        Invoke-MoleOwnerCacheCleanup -Name fixture -Query @('path') -Arguments @('prune') -Description 'Fixture cache'
+        Mock Invoke-MoleOwnerProcess { [pscustomobject]@{ Output = '' } }
+        Invoke-MoleOwnerCacheCleanup -Name fixture -Query @('path') -Arguments @('prune') -Description 'Fixture cache'
+        @($script:Rows).Count | Should -Be 2
+        $script:Rows[0] | Should -Match '^Fixture cache .*\(4KB\)'
+        $script:Rows[1] | Should -Be 'Fixture cache'
+    }
     It "Handles an empty owner cache without a missing Sum property" {
         Remove-Item -LiteralPath (Join-Path $script:Root 'gone.bin'), (Join-Path $script:Root 'kept.bin')
         { Invoke-MoleOwnerCacheCleanup -Name fixture -Query @('path') -Arguments @('prune') -Description 'Fixture cache' } | Should -Not -Throw
@@ -534,6 +548,16 @@ Describe 'Review regressions: owner log and summary' {
         $output = Show-CleanupSummary -Stats @{ TotalSizeKB = 4; FilesCleaned = 2; TotalItems = 1; OwnerCleanups = 0 } -IsDryRun $true | Out-String
         $output | Should -Match 'Potential space:.*Items: 2'
         $output | Should -Not -Match 'Categories:|--whitelist'
+    }
+    It 'Says Removed with one item count after a real cleanup' {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:WindowsDir 'bin\clean.ps1'), [ref]$null, [ref]$null)
+        $definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Show-CleanupSummary' }, $true)
+        . ([scriptblock]::Create($definition.Extent.Text))
+        Mock Get-FreeSpace { '10 GB' }
+        Mock Show-SummaryBlock { Write-Output ($Details -join "`n") }
+        $output = Show-CleanupSummary -Stats @{ TotalSizeKB = 4; FilesCleaned = 2; TotalItems = 1; OwnerCleanups = 0 } -IsDryRun $false | Out-String
+        $output | Should -Match 'Removed:.*\| Items: 2'
+        $output | Should -Not -Match 'Tracked cleanup|Items cleaned'
     }
 }
 
