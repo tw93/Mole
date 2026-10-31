@@ -373,5 +373,16 @@ $result = & {
                 self.assertEqual(receipts[0]["stopped"], [101] if state == "running" else [])
 
 
+class ReleaseLookupTests(unittest.TestCase):
+    def test_rate_limited_lookup_falls_back_to_signed_in_gh(self):
+        limited = E2E.urllib.error.HTTPError("https://api.github.com", 403, "rate limit exceeded", {}, None)
+        gh = E2E.subprocess.CompletedProcess(["gh"], 0, stdout=json.dumps({"tag_name": "v1", "assets": []}), stderr="")
+        with patch.object(E2E.urllib.request, "urlopen", side_effect=limited), \
+                patch.object(E2E.shutil, "which", return_value="/usr/local/bin/gh"), \
+                patch.object(E2E.subprocess, "run", return_value=gh) as run:
+            self.assertEqual(E2E.latest_release()["tag_name"], "v1")
+        self.assertEqual(run.call_args.args[0][:2], ["gh", "api"])
+
+
 if __name__ == "__main__":
     unittest.main()

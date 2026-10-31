@@ -27,6 +27,7 @@ from pathlib import Path
 import pty
 import re
 import select
+import shutil
 import signal
 import struct
 import subprocess
@@ -34,6 +35,7 @@ import sys
 import tempfile
 import termios
 import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -322,10 +324,25 @@ Test-Path -LiteralPath '{run.info['mole']}'""")
     return f"{run.info['goarch']} tools, {version[0]}"
 
 
-def download(run):
+def latest_release():
     api = f"https://api.github.com/repos/{FIXTURE_REPO}/releases/latest"
-    with urllib.request.urlopen(urllib.request.Request(api, headers={"Accept": "application/vnd.github+json"}), timeout=30) as resp:
-        release = json.load(resp)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(api, headers={"Accept": "application/vnd.github+json"}), timeout=30) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as err:
+        # Anonymous API calls share the egress IP's 60/hour, which a proxy
+        # exhausts; a signed-in gh has its own quota.
+        if err.code not in (403, 429) or not shutil.which("gh"):
+            raise
+    result = subprocess.run(["gh", "api", f"repos/{FIXTURE_REPO}/releases/latest"], stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=30)
+    if result.returncode:
+        raise StepFailed(f"release lookup rate limited and gh api failed: {result.stderr.strip()}")
+    return json.loads(result.stdout)
+
+
+def download(run):
+    release = latest_release()
     asset = next(a for a in release["assets"] if FIXTURE_ASSET.search(a["name"]))
     digest = (asset.get("digest") or "").removeprefix("sha256:")
     if not digest:
