@@ -384,13 +384,13 @@ desktop() {
         for r in e f; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_process_running telegram-desktop || rc=$?; echo "$r=$rc"; done
         _MOLE_PROC_ROOT='"$pr"'/none; rc=0; mole_files_running /usr/bin/keepassxc || rc=$?; echo "none=$rc"'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"a=1"* ]]
-    [[ "$output" == *"b=2"* ]]
-    [[ "$output" == *"c=1"* ]]
-    [[ "$output" == *"d=0"* ]]
-    [[ "$output" == *"e=2"* ]]
-    [[ "$output" == *"f=1"* ]]
-    [[ "$output" == *"none=2"* ]]
+    [[ " ${lines[*]} " == *" a=1 "* ]]
+    [[ " ${lines[*]} " == *" b=2 "* ]]
+    [[ " ${lines[*]} " == *" c=1 "* ]]
+    [[ " ${lines[*]} " == *" d=0 "* ]]
+    [[ " ${lines[*]} " == *" e=2 "* ]]
+    [[ " ${lines[*]} " == *" f=1 "* ]]
+    [[ " ${lines[*]} " == *" none=2 "* ]]
 }
 
 @test "leftovers reach dot folders, known aliases, Flatpak overrides and AUR build folders" {
