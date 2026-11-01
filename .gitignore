@@ -76,6 +76,9 @@ bin/status-go
 bin/analyze-darwin-*
 bin/status-darwin-*
 
+# Local research clones and scratch output (oss-linux study clones, sync reviews)
+/.artifacts/
+
 # Test artifacts
 tests/tmp-*/
 tests/*.tmp
