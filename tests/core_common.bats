@@ -849,6 +849,47 @@ EOF
     [ "$result" = "not-protected" ]
 }
 
+@test "protected bundle alternation matches exactly what each pattern matches alone" {
+    run env HOME="$HOME" /bin/bash --noprofile --norc <<'EOF2'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+patterns=("${SYSTEM_CRITICAL_BUNDLES[@]}" "${DATA_PROTECTED_BUNDLES[@]}")
+# An entry with | ( or ) would change the meaning of the @(a|b|...) alternation.
+for pattern in "${patterns[@]}"; do
+    [[ -n "$pattern" && "$pattern" != *[\|\(\)]* ]] || { echo "bad entry: $pattern"; exit 1; }
+done
+probes=("$HOME/Library/Caches/com.example.app" "plain" "日本語IME" "$HOME/Library/Caches/Écrivain/1Password/x")
+for pattern in "${patterns[@]}"; do
+    literal="${pattern//\*/X}"
+    probes+=("$literal" "/p/$literal/q" "${pattern//\*/}")
+done
+for probe in "${probes[@]}"; do
+    expected=1
+    for pattern in "${patterns[@]}"; do
+        # shellcheck disable=SC2053 # unquoted RHS is the glob under test
+        if [[ "$probe" == $pattern ]]; then expected=0; break; fi
+    done
+    actual=1
+    _mole_matches_protected_glob "$probe" "$_MOLE_CLEAN_PROTECTED_GLOB" && actual=0
+    [[ "$actual" == "$expected" ]] || { echo "mismatch: $probe"; exit 1; }
+done
+# A caller with nocasematch keeps its locale's case folding: U+212A, the
+# Kelvin sign, folds to k only in a UTF-8 locale, so org.<U+212A>eepassxc
+# still matches org.keepassxc.* as it did with the per-pattern loop.
+export LC_ALL=en_US.UTF-8
+kelvin_id=$(printf 'org.\xe2\x84\xaaeepassxc.any')
+shopt -s nocasematch
+should_protect_data "$kelvin_id" || { echo "nocasematch lost Unicode folding"; exit 1; }
+shopt -u nocasematch
+# The C locale used for the match stays inside the helper.
+should_protect_data "plain" || true
+[[ "$LC_ALL" == "en_US.UTF-8" ]] || { echo "caller locale changed"; exit 1; }
+echo ok
+EOF2
+    [ "$status" -eq 0 ]
+    [ "$output" = "ok" ]
+}
+
 # Regression: CUPS prefs have a bundle-ID-style name but no parent .app,
 # so the orphan sweep deleted them and users lost their default printer
 # and recent-printer list. See #731.

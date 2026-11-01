@@ -30,6 +30,33 @@ fi
 # shellcheck source=lib/core/app_protection_data.sh
 source "$_MOLE_CORE_DIR/app_protection_data.sh"
 
+# Each protected list joined once into an @(a|b|...) alternation. Clean
+# checks every candidate against about 480 patterns; one [[ == ]] on the
+# alternation runs that loop in bash's matcher instead of in shell code.
+# [[ == ]] reads @(...) without the extglob option. The patterns contain no
+# |, ( or ), so the alternation matches exactly what each pattern would.
+_MOLE_DATA_PROTECTED_GLOB=""
+_MOLE_CLEAN_PROTECTED_GLOB=""
+_mole_build_protected_globs() {
+    local IFS='|'
+    _MOLE_DATA_PROTECTED_GLOB="@(${DATA_PROTECTED_BUNDLES[*]})"
+    _MOLE_CLEAN_PROTECTED_GLOB="@(${SYSTEM_CRITICAL_BUNDLES[*]}|${DATA_PROTECTED_BUNDLES[*]})"
+}
+_mole_build_protected_globs
+
+# True when $1 matches the alternation $2. Bash 3.2 matches in wide
+# characters under a UTF-8 locale, which for this pattern costs about 1 MiB
+# of peak memory; the patterns are ASCII, so the C locale's byte matching
+# gives the same answer. A caller with nocasematch keeps its own locale,
+# because case folding of non-ASCII letters depends on it.
+_mole_matches_protected_glob() {
+    local value="$1"
+    local alternation="$2"
+    shopt -q nocasematch || local LC_ALL=C
+    # shellcheck disable=SC2053 # unquoted RHS is the glob alternation
+    [[ "$value" == $alternation ]]
+}
+
 # Return 0 when Xcode/build tooling is active, 1 after reliable no-match
 # results, and 2 when process ownership cannot be established.
 xcode_build_tooling_process_state() {
@@ -221,25 +248,13 @@ should_protect_data() {
             ;;
         com.tencent.* | com.sogou.* | com.baidu.* | com.googlecode.* | im.rime.*)
             # These might have wildcards, check detailed list
-            for pattern in "${DATA_PROTECTED_BUNDLES[@]}"; do
-                # shellcheck disable=SC2053 # unquoted RHS is the glob, as in bundle_matches_pattern
-                if [[ -n "$pattern" && "$bundle_id" == $pattern ]]; then
-                    return 0
-                fi
-            done
-            return 1
+            _mole_matches_protected_glob "$bundle_id" "$_MOLE_DATA_PROTECTED_GLOB"
+            return
             ;;
     esac
 
     # Fallback: check against the full DATA_PROTECTED_BUNDLES list
-    for pattern in "${DATA_PROTECTED_BUNDLES[@]}"; do
-        # shellcheck disable=SC2053 # unquoted RHS is the glob, as in bundle_matches_pattern
-        if [[ -n "$pattern" && "$bundle_id" == $pattern ]]; then
-            return 0
-        fi
-    done
-
-    return 1
+    _mole_matches_protected_glob "$bundle_id" "$_MOLE_DATA_PROTECTED_GLOB"
 }
 
 # Endpoint security / EDR / MDM agents (CrowdStrike Falcon, SentinelOne, ESET,
@@ -642,12 +657,9 @@ should_protect_path() {
             done
         else
             # Normal mode (cleanup): protect both system-critical and data-protected bundles
-            for pattern in "${SYSTEM_CRITICAL_BUNDLES[@]}" "${DATA_PROTECTED_BUNDLES[@]}"; do
-                # shellcheck disable=SC2053 # unquoted RHS is the glob, as in bundle_matches_pattern
-                if [[ -n "$pattern" && "$path" == $pattern ]]; then
-                    return 0
-                fi
-            done
+            if _mole_matches_protected_glob "$path" "$_MOLE_CLEAN_PROTECTED_GLOB"; then
+                return 0
+            fi
         fi
 
         # 7. Check if the filename itself matches any protected patterns
