@@ -6,12 +6,13 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // mountTable answers the one mount question every walker asks: is this
 // directory where another filesystem starts? It is read from
-// /proc/self/mountinfo once per process, so a scan never stats or wakes a
-// mounted filesystem to find out.
+// /proc/self/mountinfo at the start of every scan and du run, so a scan never
+// stats or wakes a mounted filesystem to find out.
 //
 // The walkers (the tree scan, the live scan, the fast fallback walk) and the du
 // probe behind the overview all use this one rule, so a folder's overview size
@@ -60,7 +61,7 @@ func (t *mountTable) mountAt(path string) (mountInfo, bool) {
 	if t == nil {
 		return mountInfo{}, false
 	}
-	path = filepath.Clean(path)
+	path = realMountPath(filepath.Clean(path))
 	for _, point := range t.points {
 		if pathWithin(path, point) {
 			return t.byPoint[point], true
@@ -100,7 +101,7 @@ func (t *mountTable) isForeignMount(path string) bool {
 	if t == nil {
 		return false
 	}
-	path = filepath.Clean(path)
+	path = realMountPath(filepath.Clean(path))
 	if path == "/" {
 		return false
 	}
@@ -122,9 +123,10 @@ func (t *mountTable) foreignMountsUnder(root string) []string {
 		return nil
 	}
 	root = filepath.Clean(root)
+	real := realMountPath(root)
 	var kept []string
 	for _, p := range t.foreign {
-		if p == root || !pathWithin(p, root) {
+		if p == real || !pathWithin(p, real) {
 			continue
 		}
 		// Mounts inside an excluded mount are covered by its exclusion.
@@ -132,6 +134,12 @@ func (t *mountTable) foreignMountsUnder(root string) []string {
 			continue
 		}
 		kept = append(kept, p)
+	}
+	// du walks the path it was given, so name the mounts the same way.
+	if real != root {
+		for i, p := range kept {
+			kept[i] = root + strings.TrimPrefix(p, real)
+		}
 	}
 	return kept
 }
@@ -147,15 +155,79 @@ func (t *mountTable) noAccessTime(path string) bool {
 	return strings.Contains(","+m.Options+",", ",noatime,")
 }
 
-// currentMountTable is a var so tests can supply a fixture table.
-var currentMountTable = sync.OnceValue(func() *mountTable {
+// readMountInfo returns /proc/self/mountinfo; tests replace it.
+var readMountInfo = func() (string, error) {
 	data, err := os.ReadFile("/proc/self/mountinfo")
+	return string(data), err
+}
+
+// loadMountTable builds a table from readMountInfo; tests replace it with a
+// fixture table.
+var loadMountTable = func() *mountTable {
+	data, err := readMountInfo()
 	if err != nil {
 		return nil
 	}
-	return newMountTable(parseMountInfo(string(data)))
-})
+	return newMountTable(parseMountInfo(data))
+}
+
+var activeMountTable atomic.Pointer[mountTable]
+
+// refreshMountTable reads the mount table anew. Every scan and every du run
+// starts with it, so a share mounted after Mole started is still kept out.
+func refreshMountTable() *mountTable {
+	t := loadMountTable()
+	activeMountTable.Store(t)
+	return t
+}
+
+// currentMountTable is the table the last refresh read, for the per-folder
+// questions inside a walk.
+func currentMountTable() *mountTable {
+	if t := activeMountTable.Load(); t != nil {
+		return t
+	}
+	return refreshMountTable()
+}
 
 func isForeignMountPath(path string) bool {
 	return currentMountTable().isForeignMount(path)
+}
+
+// Scan roots reached through a symlink (/home -> /var/home on Fedora Atomic
+// and Silverblue): mountinfo names the real path, the walk the link's. Each
+// scan root and du target is resolved once with filepath.EvalSymlinks; the
+// walkers never follow links below it, so a path inside it maps by prefix.
+var (
+	rootAliasMu sync.RWMutex
+	rootAliases = map[string]string{} // link path -> real path
+)
+
+// noteScanRoot records how root resolves, when that differs from root.
+func noteScanRoot(root string) {
+	root = filepath.Clean(root)
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil || real == root {
+		return
+	}
+	rootAliasMu.Lock()
+	rootAliases[root] = real
+	rootAliasMu.Unlock()
+}
+
+// realMountPath maps a path below a recorded scan root to the real path the
+// mount table uses, through the longest matching root.
+func realMountPath(path string) string {
+	rootAliasMu.RLock()
+	defer rootAliasMu.RUnlock()
+	best := ""
+	for from := range rootAliases {
+		if pathWithin(path, from) && from != "/" && len(from) > len(best) {
+			best = from
+		}
+	}
+	if best == "" {
+		return path
+	}
+	return rootAliases[best] + strings.TrimPrefix(path, best)
 }

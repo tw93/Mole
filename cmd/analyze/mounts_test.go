@@ -29,9 +29,104 @@ const omarchyMountInfo = `26 1 0:24 /@ / rw,noatime shared:1 - btrfs /dev/mapper
 
 func useMountTable(t *testing.T, table *mountTable) {
 	t.Helper()
-	previous := currentMountTable
-	currentMountTable = func() *mountTable { return table }
-	t.Cleanup(func() { currentMountTable = previous })
+	previous := loadMountTable
+	loadMountTable = func() *mountTable { return table }
+	activeMountTable.Store(table)
+	t.Cleanup(func() {
+		loadMountTable = previous
+		activeMountTable.Store(nil)
+	})
+}
+
+// useMountInfo serves mountinfo text through readMountInfo, which the real
+// loader reads on every refresh.
+func useMountInfo(t *testing.T, text *string) {
+	t.Helper()
+	previous := readMountInfo
+	readMountInfo = func() (string, error) { return *text, nil }
+	activeMountTable.Store(nil)
+	t.Cleanup(func() {
+		readMountInfo = previous
+		activeMountTable.Store(nil)
+	})
+}
+
+func TestMountTableIsReadAgainForEachScanAndDuRun(t *testing.T) {
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote")
+	if err := os.Mkdir(remote, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFileOfSize(t, filepath.Join(remote, "big.bin"), 512*1024)
+	text := "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
+	useMountInfo(t, &text)
+	t.Setenv("HOME", t.TempDir())
+	if isForeignMountPath(remote) {
+		t.Fatal("nothing is mounted yet")
+	}
+	// A share mounted after the first read.
+	text += "2 1 0:70 / " + remote + " rw,relatime - fuse.sshfs host:/srv rw\n"
+	var files, dirs, bytes int64
+	var current atomic.Value
+	result, err := scanPathConcurrentAllEntries(context.Background(), root, &files, &dirs, &bytes, &current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalSize >= 512*1024 {
+		t.Fatalf("a mount that appeared after start was walked: total %d", result.TotalSize)
+	}
+	text = "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
+	activeMountTable.Store(nil)
+	_ = currentMountTable()
+	text += "2 1 0:70 / " + remote + " rw,relatime - fuse.sshfs host:/srv rw\n"
+	size, err := getDirectorySizeFromDu(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size >= 512*1024 {
+		t.Fatalf("du counted a mount that appeared after the last read: %d", size)
+	}
+}
+
+func TestMountTableResolvesASymlinkedScanRoot(t *testing.T) {
+	base := t.TempDir()
+	realHome := filepath.Join(base, "var", "home")
+	remote := filepath.Join(realHome, "u", "remote")
+	if err := os.MkdirAll(remote, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "home")
+	if err := os.Symlink(realHome, link); err != nil {
+		t.Fatal(err)
+	}
+	realRemote, err := filepath.EvalSymlinks(remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFileOfSize(t, filepath.Join(remote, "big.bin"), 512*1024)
+	text := "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n2 1 0:70 / " + realRemote + " rw,relatime - fuse.sshfs host:/srv rw\n"
+	useMountInfo(t, &text)
+	t.Cleanup(func() {
+		rootAliasMu.Lock()
+		delete(rootAliases, link)
+		rootAliasMu.Unlock()
+	})
+	t.Setenv("HOME", t.TempDir())
+	var files, dirs, bytes int64
+	var current atomic.Value
+	result, err := scanPathConcurrentAllEntries(context.Background(), link, &files, &dirs, &bytes, &current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalSize >= 512*1024 {
+		t.Fatalf("the share under the symlinked root was walked: total %d", result.TotalSize)
+	}
+	if !isForeignMountPath(filepath.Join(link, "u", "remote")) {
+		t.Fatal("the link path must map to the mountpoint under the real path")
+	}
+	if got := currentMountTable().foreignMountsUnder(link); !slices.Equal(got, []string{filepath.Join(link, "u", "remote")}) {
+		t.Fatalf("du excludes must use the path du walks: %q", got)
+	}
 }
 
 func TestMountTableTreatsBtrfsSubvolumesAsOneFilesystem(t *testing.T) {

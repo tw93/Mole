@@ -256,6 +256,8 @@ func scanPathConcurrentAllEntries(ctx context.Context, root string, filesScanned
 }
 
 func scanPathConcurrentWithOptions(ctx context.Context, root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value, entryLimit int) (scanResult, error) {
+	noteScanRoot(root)
+	refreshMountTable()
 	return scanPathConcurrentWithLimiter(ctx, root, filesScanned, dirsScanned, bytesScanned, currentPath, entryLimit, nil, scanCacheReuse, newScanPublication(ctx, nil))
 }
 
@@ -956,7 +958,8 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		ctx, cancel := context.WithTimeout(ctx, duTimeout)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, duBinary, duSizeArgs(target, ignoreNames, currentMountTable().foreignMountsUnder(target))...)
+		noteScanRoot(target)
+		cmd := exec.CommandContext(ctx, duBinary, duSizeArgs(target, ignoreNames, refreshMountTable().foreignMountsUnder(target))...)
 		cmd.Env = append(os.Environ(), "LC_ALL=C")
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
