@@ -81,10 +81,21 @@ func sameFilesystem(a, b mountInfo) bool {
 	return a.FSType == "btrfs" && b.FSType == "btrfs" && a.Source != "" && a.Source == b.Source
 }
 
-// isForeignMount reports whether path is a mountpoint whose filesystem differs
-// from the one it is mounted on: a network share, a FUSE mount, an overlay or
-// tmpfs, or another disk. Btrfs subvolumes of the same filesystem (@home,
-// @log, @pkg) are not foreign.
+// localDiskMount reports a filesystem on a local block device (ext4, xfs,
+// btrfs, f2fs, vfat, exfat, NTFS through fuseblk, LUKS/dm mappings). These are
+// walked like any folder, so analyzing / counts a separate /home or /boot.
+// Network shares, FUSE, 9p/virtiofs, overlay, tmpfs, squashfs and pseudo
+// filesystems are not: their source is not a /dev node (virtiofs has a tag,
+// tmpfs a name), and squashfs on /dev/loopN is caught by type.
+func localDiskMount(m mountInfo) bool {
+	return strings.HasPrefix(m.Source, "/dev/") && !skipMountFS(m.FSType)
+}
+
+// isForeignMount reports whether path is a mountpoint the walk must not enter:
+// another filesystem that is not a local disk (a network share, a FUSE mount,
+// 9p or virtiofs, an overlay, tmpfs, squashfs, a pseudo filesystem). A local
+// disk mounted there is walked, and btrfs subvolumes of the same filesystem
+// (@home, @log, @pkg) are the same filesystem anyway.
 func (t *mountTable) isForeignMount(path string) bool {
 	if t == nil {
 		return false
@@ -94,7 +105,7 @@ func (t *mountTable) isForeignMount(path string) bool {
 		return false
 	}
 	m, ok := t.byPoint[path]
-	if !ok {
+	if !ok || localDiskMount(m) {
 		return false
 	}
 	parent, ok := t.mountAt(filepath.Dir(path))

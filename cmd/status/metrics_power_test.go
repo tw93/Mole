@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,23 @@ func TestReadPeripheralsListsDeviceScopeBatteries(t *testing.T) {
 	text := strings.Join(power.lines, "\n")
 	if !strings.Contains(text, "Logitech MX Master 3  ") || !strings.Contains(text, "15%") || !strings.Contains(text, "Normal") {
 		t.Fatalf("power card = %q", power.lines)
+	}
+}
+
+func TestPeripheralsEncodeAsEmptyArray(t *testing.T) {
+	data, err := json.Marshal(MetricsSnapshot{Peripherals: readPeripherals(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"peripherals":[]`) {
+		t.Fatalf("peripherals without devices must encode as [], got %s", data)
+	}
+	var e snapshotEnrichment
+	e.peripherals = readPeripherals(t.TempDir())
+	var snap MetricsSnapshot
+	e.apply(&snap)
+	if snap.Peripherals == nil {
+		t.Fatal("the enrichment copy must keep the empty array")
 	}
 }
 

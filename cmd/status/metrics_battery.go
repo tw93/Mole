@@ -277,7 +277,7 @@ func collectPeripherals() []PeripheralBattery {
 // manufacturer when the model does not already carry it), else by the
 // supply's directory name.
 func readPeripherals(root string) []PeripheralBattery {
-	var out []PeripheralBattery
+	out := []PeripheralBattery{} // --json prints [] rather than null when there are none
 	for _, ps := range listPowerSupplies(root) {
 		if ps.scope != "Device" || ps.notReady || (ps.typ != "Battery" && ps.typ != "") {
 			continue

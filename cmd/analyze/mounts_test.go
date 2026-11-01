@@ -42,7 +42,7 @@ func TestMountTableTreatsBtrfsSubvolumesAsOneFilesystem(t *testing.T) {
 		"/var/log":                            false, // @log
 		"/var/cache/pacman/pkg":               false, // @pkg
 		"/home/u/vm":                          false, // same source, other device number
-		"/boot":                               true,
+		"/boot":                               false, // vfat on a local disk is walked
 		"/tmp":                                true,
 		"/home/u/remote":                      true,
 		"/home/u/My Share":                    true,
@@ -54,6 +54,78 @@ func TestMountTableTreatsBtrfsSubvolumesAsOneFilesystem(t *testing.T) {
 	for path, want := range cases {
 		if got := table.isForeignMount(path); got != want {
 			t.Errorf("isForeignMount(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+// A non-btrfs layout: / and a separate /home on ext4, the ESP on vfat, a
+// LUKS-mapped xfs data disk, plus the mounts that must never be walked.
+const ext4MountInfo = `1 0 8:2 / / rw,relatime - ext4 /dev/sda2 rw
+2 1 8:3 / /home rw,relatime - ext4 /dev/sda3 rw
+3 1 8:1 / /boot rw,relatime - vfat /dev/sda1 rw,fmask=0022
+4 2 254:0 / /home/u/data rw,relatime - xfs /dev/mapper/luks-data rw
+5 2 0:50 / /home/u/remote rw,relatime - fuse.sshfs u@nas:/srv rw
+6 1 0:51 / /mnt/host rw,relatime - 9p hostshare rw
+7 1 0:52 / /mnt/vfs rw,relatime - virtiofs share rw
+8 1 7:0 / /var/lib/snapd/snap/core/1 ro,relatime - squashfs /dev/loop0 ro
+9 1 0:53 / /tmp rw - tmpfs tmpfs rw
+10 1 0:54 / /proc rw - proc proc rw
+11 1 0:55 / /var/lib/docker/overlay2/abc/merged rw - overlay overlay rw
+12 2 0:56 / /home/u/share rw - nfs4 nas:/export rw
+`
+
+func TestMountTableWalksLocalDisksButNotSharesOrMemory(t *testing.T) {
+	table := newMountTable(parseMountInfo(ext4MountInfo))
+	walked := []string{"/home", "/boot", "/home/u/data"}
+	skipped := []string{"/home/u/remote", "/mnt/host", "/mnt/vfs", "/var/lib/snapd/snap/core/1", "/tmp", "/proc", "/var/lib/docker/overlay2/abc/merged", "/home/u/share"}
+	for _, path := range walked {
+		if table.isForeignMount(path) {
+			t.Errorf("%s is a local disk and must be walked", path)
+		}
+	}
+	for _, path := range skipped {
+		if !table.isForeignMount(path) {
+			t.Errorf("%s must not be walked", path)
+		}
+	}
+	got := table.foreignMountsUnder("/")
+	for _, path := range walked {
+		if slices.Contains(got, path) {
+			t.Errorf("du excludes %s, so mo analyze / would miss it: %q", path, got)
+		}
+	}
+	if !slices.Equal(table.foreignMountsUnder("/home"), []string{"/home/u/remote", "/home/u/share"}) {
+		t.Fatalf("foreignMountsUnder(/home) = %q", table.foreignMountsUnder("/home"))
+	}
+}
+
+func TestScanWalksLocalDiskMount(t *testing.T) {
+	root := t.TempDir()
+	disk := filepath.Join(root, "disk")
+	if err := os.Mkdir(disk, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFileOfSize(t, filepath.Join(disk, "big.bin"), 512*1024)
+	useMountTable(t, newMountTable(parseMountInfo("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 8:17 / "+disk+" rw - ext4 /dev/sdb1 rw\n")))
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", "")
+
+	var files, dirs, bytes int64
+	result, err := scanPathConcurrentWithOptions(context.Background(), root, &files, &dirs, &bytes, &atomic.Value{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalSize < 512*1024 {
+		t.Fatalf("total %d leaves out the second disk mounted inside the root", result.TotalSize)
+	}
+	for _, e := range result.Entries {
+		if e.Path == disk && e.Mounted {
+			t.Fatal("a local disk mount was listed as not scanned")
+		}
+	}
+	if _, err := os.Stat(duBinary); err == nil {
+		if size, err := getDirectorySizeFromDu(context.Background(), root); err != nil || size < 512*1024 {
+			t.Fatalf("du = %d, %v, want the local disk counted", size, err)
 		}
 	}
 }
