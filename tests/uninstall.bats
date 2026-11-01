@@ -345,6 +345,35 @@ desktop() {
     [ "$(printf '%s\n' "$output" | grep -c .)" -eq 2 ]
 }
 
+@test "process probes read the real uid from status, match --opt=/path, and fall back to comm" {
+    local me other pr
+    me=$(id -u); other=$((me + 1)); pr="$TEST_ROOT/proc"
+    # Another user's process running the file is not the user's.
+    fake_proc "$pr/a" 100 "$other" keepassxc /usr/bin/keepassxc keepassxc
+    # A non-dumpable process of the user: no exe, argv not a path, comm matches.
+    fake_proc "$pr/b" 101 "$me" keepassxc - keepassxc
+    # A non-dumpable process of the user with another comm stays "not running".
+    fake_proc "$pr/c" 102 "$me" bash - bash
+    # An argument in --opt=/path form.
+    fake_proc "$pr/d" 103 "$me" electron /usr/bin/electron electron --app=/usr/lib/code/out/main.js
+    # A name longer than comm: no exe, argv[0] another name.
+    fake_proc "$pr/e" 104 "$me" telegram-deskto - launcher
+    fake_proc "$pr/f" 105 "$other" telegram-deskto /usr/bin/telegram-desktop /usr/bin/telegram-desktop
+    mole_run core '
+        for r in a b c; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_files_running /usr/bin/keepassxc || rc=$?; echo "$r=$rc"; done
+        _MOLE_PROC_ROOT='"$pr"'/d; rc=0; mole_files_running /usr/lib/code/out/main.js || rc=$?; echo "d=$rc"
+        for r in e f; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_process_running telegram-desktop || rc=$?; echo "$r=$rc"; done
+        _MOLE_PROC_ROOT='"$pr"'/none; rc=0; mole_files_running /usr/bin/keepassxc || rc=$?; echo "none=$rc"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"a=1"* ]]
+    [[ "$output" == *"b=2"* ]]
+    [[ "$output" == *"c=1"* ]]
+    [[ "$output" == *"d=0"* ]]
+    [[ "$output" == *"e=2"* ]]
+    [[ "$output" == *"f=1"* ]]
+    [[ "$output" == *"none=2"* ]]
+}
+
 @test "leftovers reach dot folders, known aliases, Flatpak overrides and AUR build folders" {
     mkdir -p "$HOME/.foo" "$HOME/.vscode-oss" "$HOME/.local/share/flatpak/overrides" "$HOME/.cache/yay/foo-base" "$HOME/.cache/paru/clone/foo-base" "$HOME/.cache/yay/foo"
     touch "$HOME/.local/share/flatpak/overrides/org.a.App" "$HOME/.cache/yay/foo-base/PKGBUILD" "$HOME/.cache/paru/clone/foo-base/PKGBUILD"

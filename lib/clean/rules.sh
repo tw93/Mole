@@ -288,14 +288,23 @@ mole_rule_children() {
     esac
 }
 
-# Executables the user's processes run, one per line.
+# Executables the user's processes run, one per line; a process whose
+# executable cannot be read (non-dumpable) prints comm:<its comm> instead.
+# Returns 2 when /proc cannot be read at all.
 mole_running_exes() {
-    local pid exe
-    for pid in /proc/[0-9]*; do
-        [[ -O "$pid" ]] || continue
-        exe=$(readlink -- "$pid/exe" 2> /dev/null) || continue
-        printf '%s\n' "${exe% (deleted)}"
+    local pid exe comm
+    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
+    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
+        mole_pid_mine "$pid" || continue
+        if exe=$(readlink -- "$pid/exe" 2> /dev/null); then
+            printf '%s\n' "${exe% (deleted)}"
+        else
+            comm=""
+            IFS= read -r comm 2> /dev/null < "$pid/comm" || true
+            [[ -n "$comm" ]] && printf 'comm:%s\n' "$comm"
+        fi
     done
+    return 0
 }
 
 # Old versions under root: everything except the one <link> resolves into and
@@ -320,14 +329,17 @@ mole_select_old_versions() {
     done < <(find "$root" -mindepth 1 -maxdepth 1 -printf '%T@\t%f\0' 2> /dev/null | sort -z -t $'\t' -k1,1 -rn)
     ((${#others[@]} > 1)) || return 0
 
+    # Which versions run cannot be told without /proc: nothing is selected.
     local exes
-    exes=$(mole_running_exes)
+    exes=$(mole_running_exes) || return 0
     local i path in_use exe
     for ((i = 1; i < ${#others[@]}; i++)); do
         path="$root/${others[i]}"
         in_use=false
         while IFS= read -r exe; do
             [[ "$exe" == "$path" || "$exe" == "$path/"* || "$exe" == "$root_real/${others[i]}" || "$exe" == "$root_real/${others[i]}/"* ]] && in_use=true && break
+            # An unreadable executable whose comm is this version's file name.
+            [[ "$exe" == "comm:${others[i]:0:15}" ]] && in_use=true && break
         done <<< "$exes"
         [[ "$in_use" == false ]] && printf '%s\0' "$path"
     done

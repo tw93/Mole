@@ -160,6 +160,25 @@ mole_display_path() {
     fi
 }
 
+# Where processes are read from (tests point it at a fake tree).
+_MOLE_PROC_ROOT=/proc
+_MOLE_UID=""
+
+# 0 when the process's real uid, from the Uid: line of its status, is the
+# user's. Not -O on /proc/<pid>: a non-dumpable process (KeePassXC) has its
+# /proc folder owned by root although the user runs it.
+mole_pid_mine() {
+    local key uid
+    [[ -n "$_MOLE_UID" ]] || _MOLE_UID=$(id -u)
+    while read -r key uid _; do
+        if [[ "$key" == Uid: ]]; then
+            [[ "$uid" == "$_MOLE_UID" ]]
+            return
+        fi
+    done 2> /dev/null < "$1/status"
+    return 1
+}
+
 # Process running check by exact process name. Returns 0 when running, 1 when
 # not, 2 when the probe itself failed (callers treat 2 as running).
 # The kernel keeps only 15 bytes of a name in comm, and pgrep -x with a longer
@@ -187,9 +206,9 @@ mole_process_running() {
 # One name longer than comm holds, among the user's own processes.
 _mole_long_process_running() {
     local name="$1" short="${1:0:15}" pid comm exe argv0 rc=1
-    [[ -d /proc/self ]] || return 2
-    for pid in /proc/[0-9]*; do
-        [[ -O "$pid" ]] || continue
+    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
+    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
+        mole_pid_mine "$pid" || continue
         comm=""
         IFS= read -r comm 2> /dev/null < "$pid/comm" || continue
         [[ "$comm" == "$short" ]] || continue
@@ -200,9 +219,9 @@ _mole_long_process_running() {
         if [[ "${exe##*/}" == "$name" || "${argv0##*/}" == "$name" ]]; then
             return 0
         fi
-        # Same 15 bytes, and neither the executable nor argv[0] can be read:
-        # it may be the program, so the answer is "cannot tell".
-        [[ -z "$exe" && -z "$argv0" ]] && rc=2
+        # Same 15 bytes and the executable cannot be read (a non-dumpable
+        # process): argv[0] may be anything, so the answer is "cannot tell".
+        [[ -z "$exe" ]] && rc=2
     done
     return "$rc"
 }
@@ -213,10 +232,13 @@ _mole_long_process_running() {
 # /usr/lib/code/out/main.js, /usr/bin/discord runs /opt/discord/Discord).
 # Directories in the list count only as /usr/lib/<x> or /opt/<x>, the
 # folders a single package owns; /usr/lib itself belongs to every package.
+# A token --opt=/path counts by its path. A process whose executable cannot be
+# read (non-dumpable) and whose argv names no listed file is matched by its
+# comm against the first 15 bytes of the list's executables: 2, cannot tell.
 # 1 when none does, 2 when /proc cannot be read.
 mole_files_running() {
-    local list="$1" line pid exe word
-    local -A own=()
+    local list="$1" line pid exe word comm rc=1
+    local -A own=() short=()
     while IFS= read -r line; do
         [[ "$line" == /* ]] || continue
         if [[ "$line" == */ ]]; then
@@ -228,21 +250,31 @@ mole_files_running() {
             esac
         fi
         own[$line]=1
+        [[ "$line" == */bin/* ]] && short[${line##*/}]=1
     done <<< "$list"
     [[ ${#own[@]} -gt 0 ]] || return 1
-    [[ -d /proc/self ]] || return 2
-    for pid in /proc/[0-9]*; do
-        [[ -O "$pid" ]] || continue
+    local name
+    local -A short15=()
+    for name in "${!short[@]}"; do short15[${name:0:15}]=1; done
+    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
+    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
+        mole_pid_mine "$pid" || continue
         exe=$(readlink -- "$pid/exe" 2> /dev/null) || exe=""
         exe="${exe% (deleted)}"
         [[ -n "$exe" && -n "${own[$exe]:-}" ]] && return 0
         while IFS= read -r -d '' word; do
+            [[ "$word" == -*=/* ]] && word="${word#*=}"
             [[ "$word" == /* ]] || continue
             word="${word%/}"
             [[ -n "${own[$word]:-}" ]] && return 0
         done 2> /dev/null < "$pid/cmdline" || true
+        if [[ -z "$exe" && ${#short15[@]} -gt 0 ]]; then
+            comm=""
+            IFS= read -r comm 2> /dev/null < "$pid/comm" || true
+            [[ -n "$comm" && -n "${short15[$comm]:-}" ]] && rc=2
+        fi
     done
-    return 1
+    return "$rc"
 }
 
 # 0 when the Flatpak app runs, 1 when it does not, 2 when flatpak cannot say.
@@ -258,7 +290,7 @@ mole_flatpak_running() {
 # AppImage's runtime keeps running as its FUSE server), 1 when none does.
 mole_exe_running() {
     local want="$1" exe pid
-    for pid in /proc/[0-9]*; do
+    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
         exe=$(readlink -- "$pid/exe" 2> /dev/null) || continue
         [[ "$exe" == "$want" ]] && return 0
     done

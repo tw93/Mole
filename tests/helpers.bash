@@ -38,3 +38,15 @@ fake_command() {
     printf '#!/bin/bash\n%s\n' "$body" > "$TEST_ROOT/bin/$name"
     chmod +x "$TEST_ROOT/bin/$name"
 }
+
+# A fake /proc entry under $1 for code that reads _MOLE_PROC_ROOT:
+# fake_proc <root> <pid> <uid> <comm> <exe or -> [argv...]
+fake_proc() {
+    local root="$1" pid="$2" uid="$3" comm="$4" exe="$5"
+    shift 5
+    mkdir -p "$root/self" "$root/$pid"
+    printf 'Name:\t%s\nUid:\t%s\t%s\t%s\t%s\n' "$comm" "$uid" "$uid" "$uid" "$uid" > "$root/$pid/status"
+    printf '%s\n' "$comm" > "$root/$pid/comm"
+    [[ "$exe" != - ]] && ln -s "$exe" "$root/$pid/exe"
+    if [[ $# -gt 0 ]]; then printf '%s\0' "$@" > "$root/$pid/cmdline"; else : > "$root/$pid/cmdline"; fi
+}

@@ -332,6 +332,24 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [ ! -e "$v/1.0.0" ]
 }
 
+@test "old agent versions: unreadable /proc selects nothing, a non-dumpable runner keeps its version" {
+    v="$HOME/.local/share/claude/versions"
+    mkdir -p "$v" "$HOME/.local/bin"
+    for n in 1.0.0 1.1.0 1.2.0 1.3.0; do head -c 65536 /dev/zero > "$v/$n"; done
+    touch -d '4 days ago' "$v/1.0.0"
+    touch -d '3 days ago' "$v/1.1.0"
+    touch -d '2 days ago' "$v/1.3.0"
+    touch -d '1 days ago' "$v/1.2.0"
+    ln -s "$v/1.3.0" "$HOME/.local/bin/claude"
+    mole_run clean '_MOLE_PROC_ROOT="$HOME/none"; mole_select_old_versions "$HOME/.local/share/claude/versions" "$HOME/.local/bin/claude" | tr "\0" "\n"'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    fake_proc "$TEST_ROOT/proc" 100 "$(id -u)" 1.1.0 -
+    mole_run clean '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/proc"; mole_select_old_versions "$HOME/.local/share/claude/versions" "$HOME/.local/bin/claude" | tr "\0" "\n"'
+    [ "$status" -eq 0 ]
+    [ "$output" = "$v/1.0.0" ]
+}
+
 @test "old agent versions are kept when the active link is missing" {
     v="$HOME/.local/share/claude/versions"
     mkdir -p "$v"
