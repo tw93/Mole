@@ -1,5 +1,0 @@
-# Per-test temporary HOME directories created by bats setup_file.
-# These are cleaned in teardown_file but get left behind when bats is
-# killed mid-run (Ctrl-C, OOM, kill -9). scripts/test.sh removes
-# orphaned ones older than 60 minutes at startup.
-tmp-*/
