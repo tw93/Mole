@@ -5,11 +5,27 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
 // pacmanCachePath is a var so tests can point it away from the host.
 var pacmanCachePath = "/var/cache/pacman/pkg"
+
+// insightSystemRoot prefixes the system-wide insight paths (/var/lib/...), so
+// tests can point it at a fixture tree.
+var insightSystemRoot = "/"
+
+// readableDir reports a directory this user can list. System stores such as
+// /var/lib/docker are root-only on most machines; a row that can only ever
+// read "unknown" is left out.
+func readableDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	return syscall.Access(path, 0x4|0x1) == nil // R_OK|X_OK
+}
 
 // createInsightEntries returns the list of hidden-space insight entries
 // to show in the overview screen alongside the standard directory entries.
@@ -66,6 +82,11 @@ func createInsightEntries() []dirEntry {
 		{"Docker Data (rootless)", filepath.Join(dataHome, "docker")},
 		{"Ollama Models", filepath.Join(home, ".ollama")},
 		{"Hugging Face Cache", filepath.Join(home, ".cache", "huggingface")},
+
+		// Apps and runtimes that grow quietly.
+		{"Flatpak (user)", filepath.Join(dataHome, "flatpak")},
+		{"Steam", filepath.Join(dataHome, "Steam")},
+		{"Podman Storage", filepath.Join(dataHome, "containers")},
 	}
 	for _, c := range cleanablePaths {
 		if info, err := os.Stat(c.path); err == nil && info.IsDir() {
@@ -75,6 +96,23 @@ func createInsightEntries() []dirEntry {
 				IsDir: true,
 				Size:  -1,
 			})
+		}
+	}
+
+	// System stores, listed only when this user can read them.
+	systemPaths := []struct {
+		name string
+		path string
+	}{
+		{"Flatpak (system)", "var/lib/flatpak"},
+		{"systemd Journal", "var/log/journal"},
+		{"Docker Data", "var/lib/docker"},
+		{"Core Dumps", "var/lib/systemd/coredump"},
+	}
+	for _, c := range systemPaths {
+		path := filepath.Join(insightSystemRoot, c.path)
+		if readableDir(path) {
+			entries = append(entries, dirEntry{Name: c.name, Path: path, IsDir: true, Size: -1})
 		}
 	}
 

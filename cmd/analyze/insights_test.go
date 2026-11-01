@@ -14,8 +14,65 @@ func isolateInsightHost(t *testing.T) string {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
 	pacmanCachePath = filepath.Join(home, "no-pacman")
-	t.Cleanup(func() { pacmanCachePath = "/var/cache/pacman/pkg" })
+	insightSystemRoot = filepath.Join(home, "no-system-root")
+	t.Cleanup(func() {
+		pacmanCachePath = "/var/cache/pacman/pkg"
+		insightSystemRoot = "/"
+	})
 	return home
+}
+
+func TestCreateInsightEntriesListsAppStoresAndReadableSystemStores(t *testing.T) {
+	home := isolateInsightHost(t)
+	system := filepath.Join(home, "sysroot")
+	insightSystemRoot = system
+
+	want := map[string]string{
+		"Flatpak (user)":   filepath.Join(home, ".local", "share", "flatpak"),
+		"Steam":            filepath.Join(home, ".local", "share", "Steam"),
+		"Podman Storage":   filepath.Join(home, ".local", "share", "containers"),
+		"Flatpak (system)": filepath.Join(system, "var/lib/flatpak"),
+		"systemd Journal":  filepath.Join(system, "var/log/journal"),
+		"Core Dumps":       filepath.Join(system, "var/lib/systemd/coredump"),
+	}
+	for _, path := range want {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Root-only Docker storage: present but unreadable, so not listed.
+	docker := filepath.Join(system, "var/lib/docker")
+	if err := os.MkdirAll(docker, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(docker, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(docker, 0o755) })
+
+	got := map[string]string{}
+	for _, entry := range createInsightEntries() {
+		got[entry.Name] = entry.Path
+	}
+	for name, path := range want {
+		if got[name] != path {
+			t.Errorf("insight %q path = %q, want %q", name, got[name], path)
+		}
+	}
+	if _, listed := got["Docker Data"]; listed && os.Geteuid() != 0 {
+		t.Error("unreadable /var/lib/docker must not be listed")
+	}
+
+	if err := os.Chmod(docker, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range createInsightEntries() {
+		found = found || (entry.Name == "Docker Data" && entry.Path == docker)
+	}
+	if !found {
+		t.Error("readable /var/lib/docker must be listed")
+	}
 }
 
 func TestCreateInsightEntries(t *testing.T) {
