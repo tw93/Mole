@@ -314,6 +314,51 @@ $1"
     [ "$(installed_version)" = "0.10.0" ]
 }
 
+@test "versions compare by their X.Y.Z core: a prerelease or broken VERSION is replaced, never downgraded" {
+    install_current 0.2.0-rc1
+    publish 0.2.0
+    releases '[{"tag_name": "V0.2.0-linux", "prerelease": false}]'
+    run_update
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Updating Mole 0.2.0-rc1 to"* ]]
+    [ "$(installed_version)" = "0.2.0" ]
+
+    rm -f "$CURL_LOG"
+    install_current 0.1.0
+    rm -f "$HOME/.local/share/mole/VERSION"
+    publish 0.1.0
+    releases '[{"tag_name": "V0.1.0-linux", "prerelease": false}]'
+    run_update
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Updating Mole unknown to"* ]]
+    [ "$(installed_version)" = "0.1.0" ]
+    install_current unknown
+    run_update --force
+    [ "$status" -eq 0 ]
+    [ "$(installed_version)" = "0.1.0" ]
+
+    rm -f "$CURL_LOG"
+    install_current 0.1.0
+    run_update
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Mole 0.1.0 is the latest version"* ]]
+    [ -z "$(grep 'releases/download' "$CURL_LOG")" ]
+
+    install_current 0.10.0
+    publish 0.9.0
+    releases '[{"tag_name": "V0.9.0-linux", "prerelease": false}]'
+    run_update --force
+    [[ "$output" == *"Mole 0.10.0 is newer than the latest release 0.9.0"* ]]
+    [ "$(installed_version)" = "0.10.0" ]
+}
+
+@test "the notice offers a release over a prerelease of the same version, not over a newer core" {
+    export NOTICE_LATEST=0.2.0
+    notice_run 'VERSION=0.2.0-rc1; mole_update_notice_check wait; echo "rc=[$(mole_update_notice_message)]"; VERSION=0.3.0-rc1; echo "newer=[$(mole_update_notice_message)]"'
+    [[ "$output" == *"rc=[Update 0.2.0 available"* ]]
+    [[ "$output" == *"newer=[]"* ]]
+}
+
 @test "the background check returns at once even when the lookup hangs" {
     notice_run 'mole_update_fetch_latest() { sleep 30; }
         start=$SECONDS; mole_update_notice_check; echo "took=$((SECONDS - start))"'

@@ -29,7 +29,8 @@ for arg in "$@"; do
     esac
 done
 
-current="$(cat "$SCRIPT_DIR/VERSION" 2> /dev/null || echo unknown)"
+current="$(tr -d '[:space:]' 2> /dev/null < "$SCRIPT_DIR/VERSION" || true)"
+current="${current:-unknown}"
 if [[ -d "$SCRIPT_DIR/.git" ]]; then
     log_error "This Mole runs from a source checkout; update it with git pull."
     exit 1
@@ -53,14 +54,15 @@ if [[ $rc -ne 0 || ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
-# A prerelease or hand-built copy newer than the latest release is never
-# replaced by it, --force included: that would be a downgrade.
-if [[ "$current" != "$latest" && "$newest" == "$current" ]]; then
+# The numeric X.Y.Z core decides: a prerelease of the same core or a broken
+# VERSION is replaced, an installed core above the latest is never
+# downgraded, --force included.
+verdict=$(mole_update_verdict "$latest" "$current")
+if [[ "$verdict" == newer ]]; then
     echo -e "${GREEN}${ICON_SUCCESS}${NC} Mole $current is newer than the latest release $latest, nothing to install"
     exit 0
 fi
-if [[ "$force" != true && "$current" == "$latest" ]]; then
+if [[ "$force" != true && "$verdict" == current ]]; then
     echo -e "${GREEN}${ICON_SUCCESS}${NC} Mole $current is the latest version"
     exit 0
 fi

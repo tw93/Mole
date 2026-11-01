@@ -78,6 +78,20 @@ install_release() {
     [ -f "$HOME/.local/share/mole/notes.txt" ]
 }
 
+@test "a folder with only a mole file is refused; a Mole tree missing VERSION is replaced" {
+    mkdir -p "$HOME/.local/share/mole"
+    echo mine > "$HOME/.local/share/mole/mole"
+    make_release 0.1.0
+    install_release 0.1.0
+    [ "$status" -eq 1 ]
+    [ "$(cat "$HOME/.local/share/mole/mole")" = mine ]
+    mkdir -p "$HOME/.local/share/mole/lib/core"
+    touch "$HOME/.local/share/mole/lib/core/common.sh"
+    install_release 0.1.0
+    [ "$status" -eq 0 ]
+    [ "$(cat "$HOME/.local/share/mole/VERSION")" = 0.1.0 ]
+}
+
 @test "only an exact V1.2.3-linux tag counts as a Linux release" {
     fake_command curl 'case "$*" in
         *"&page=1") printf "%s\n" "[{\"tag_name\": \"V1.67.0\"}, {\"tag_name\": \"V1.40.0-windows\"}, {\"tag_name\": \"V0.2.0-linux-beta\"}]" ;;

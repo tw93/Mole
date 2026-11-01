@@ -171,6 +171,35 @@ mole_runs_installed_tree() {
     [[ -n "$here" && "$here" == "$there" ]]
 }
 
+# What mo update should do with the latest release $1 (X.Y.Z) over the
+# installed version $2, by the numeric X.Y.Z core only (sort -V puts
+# 0.1.0-rc1 above 0.1.0 and "unknown" above 1.0.0). Prints one word:
+# install (latest is newer, or the installed version is a prerelease of the
+# same core, or not a version at all), current (same version), or newer (the
+# installed core is above the latest: never downgrade).
+mole_update_verdict() {
+    local latest="$1" current="$2" i
+    local -a l c
+    [[ "$latest" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+    l=("${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}")
+    if [[ ! "$current" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+        echo install
+        return 0
+    fi
+    c=("${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}")
+    local suffix="${BASH_REMATCH[4]}"
+    for i in 0 1 2; do
+        if ((10#${l[i]} > 10#${c[i]})); then
+            echo install
+            return 0
+        elif ((10#${l[i]} < 10#${c[i]})); then
+            echo newer
+            return 0
+        fi
+    done
+    if [[ -n "$suffix" ]]; then echo install; else echo current; fi
+}
+
 # Where processes are read from (tests point it at a fake tree).
 _MOLE_PROC_ROOT=/proc
 _MOLE_UID=""

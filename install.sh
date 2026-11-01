@@ -182,7 +182,10 @@ if [[ "$reported" != "$VERSION" ]]; then
 fi
 
 if [[ -e "$INSTALL_ROOT" ]]; then
-    [[ -f "$INSTALL_ROOT/mole" && -f "$INSTALL_ROOT/VERSION" && ! -L "$INSTALL_ROOT" && ! -d "$INSTALL_ROOT/.git" ]] ||
+    # A Mole tree: its launcher plus VERSION, or plus its own core library
+    # when VERSION went missing (mo update repairs that install).
+    [[ -f "$INSTALL_ROOT/mole" && (-f "$INSTALL_ROOT/VERSION" || -f "$INSTALL_ROOT/lib/core/common.sh") &&
+        ! -L "$INSTALL_ROOT" && ! -d "$INSTALL_ROOT/.git" ]] ||
         fail "$INSTALL_ROOT exists and is not an installed Mole; move it away and retry."
     mv -- "$INSTALL_ROOT" "$OLD"
 fi
