@@ -270,6 +270,7 @@ type Collector struct {
 	defaultNetInterface string
 	lastGPUAt           time.Time
 	cachedGPU           []GPUStatus
+	gpuIdle             gpuIdleTracker
 	prevDiskIO          disk.IOCountersStat
 	lastDiskAt          time.Time
 

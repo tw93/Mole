@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,14 +45,18 @@ func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
 	}
 	result := make([]GPUStatus, len(c.cachedGPU))
 	copy(result, c.cachedGPU)
-	refreshGPUUsage("/", result)
+	if c.gpuIdle == nil {
+		c.gpuIdle = make(gpuIdleTracker)
+	}
+	refreshGPUUsage("/", result, c.gpuIdle, now)
 	return result, nil
 }
 
 type drmGPU struct {
 	vendorID string
 	slot     string // PCI slot such as 00:02.0, empty when not PCI
-	dir      string
+	pciAddr  string // full PCI address such as 0000:01:00.0, empty when not PCI
+	dir      string // root/sys/class/drm/cardN/device
 }
 
 func listDRMGPUs(root string) []drmGPU {
@@ -69,11 +74,12 @@ func listDRMGPUs(root string) []drmGPU {
 		if vendor == "" {
 			continue
 		}
-		slot := ""
+		slot, addr := "", ""
 		if target, err := os.Readlink(dev); err == nil {
-			slot = strings.TrimPrefix(filepath.Base(target), "0000:")
+			addr = filepath.Base(target)
+			slot = strings.TrimPrefix(addr, "0000:")
 		}
-		gpus = append(gpus, drmGPU{vendorID: vendor, slot: slot, dir: dev})
+		gpus = append(gpus, drmGPU{vendorID: vendor, slot: slot, pciAddr: addr, dir: dev})
 	}
 	sort.Slice(gpus, func(i, j int) bool { return gpus[i].dir < gpus[j].dir })
 	return gpus
@@ -113,9 +119,31 @@ func readGPUs(root string, names func() map[string]string) []GPUStatus {
 	return gpus
 }
 
-// refreshGPUUsage fills Usage from gpu_busy_percent (amdgpu, some others) and
-// nvidia-smi for NVIDIA cards; adapters without a counter stay at -1.
-func refreshGPUUsage(root string, gpus []GPUStatus) {
+// gpuIdleTracker keeps the last idle-residency reading per card, so busy
+// time can be derived from the change between two collections.
+type gpuIdleTracker map[string]gpuIdleSample
+
+type gpuIdleSample struct {
+	idleMS int64
+	at     time.Time
+}
+
+// gpuSuspended reports a device the kernel has runtime-suspended. Reading its
+// counters (gpu_busy_percent, rc6 residency, nvidia-smi) would wake it and
+// cost a laptop's dGPU its power savings, so a sleeping card is reported idle
+// without touching it.
+func gpuSuspended(card drmGPU) bool {
+	switch readTrimmed(filepath.Join(card.dir, "power/runtime_status")) {
+	case "suspended", "suspending":
+		return true
+	}
+	return false
+}
+
+// refreshGPUUsage fills Usage from gpu_busy_percent (amdgpu, some others),
+// nvidia-smi for NVIDIA cards (each queried by its own PCI address), and
+// Intel's idle residency counters; adapters without a counter stay at -1.
+func refreshGPUUsage(root string, gpus []GPUStatus, idle gpuIdleTracker, now time.Time) {
 	cards := listDRMGPUs(root)
 	idx := 0
 	for _, card := range cards {
@@ -125,34 +153,105 @@ func refreshGPUUsage(root string, gpus []GPUStatus) {
 		if idx >= len(gpus) {
 			return
 		}
-		if v, ok := readInt(filepath.Join(card.dir, "gpu_busy_percent")); ok && v >= 0 && v <= 100 {
-			gpus[idx].Usage = float64(v)
-		} else if card.vendorID == pciVendorNVIDIA && commandExists("nvidia-smi") {
-			applyNvidiaSMI(&gpus[idx])
-		}
+		gpu := &gpus[idx]
 		idx++
+		if gpuSuspended(card) {
+			gpu.Usage = 0
+			gpu.Note = "suspended"
+			delete(idle, card.dir)
+			continue
+		}
+		if v, ok := readInt(filepath.Join(card.dir, "gpu_busy_percent")); ok && v >= 0 && v <= 100 {
+			gpu.Usage = float64(v)
+		} else if card.vendorID == pciVendorNVIDIA && card.pciAddr != "" && commandExists("nvidia-smi") {
+			applyNvidiaSMI(gpu, card.pciAddr)
+		} else if card.vendorID == "0x8086" {
+			if busy, ok := intelBusyPercent(card, idle, now); ok {
+				gpu.Usage = busy
+			}
+		}
 	}
 }
 
-func applyNvidiaSMI(gpu *GPUStatus) {
+// intelIdleResidencyMS reads the render GT's cumulative idle time: i915's
+// rc6_residency_ms (gt/gt0, or power/ on older kernels) or xe's
+// gtidle/idle_residency_ms. Both are world-readable.
+func intelIdleResidencyMS(card drmGPU) (int64, bool) {
+	cardDir := filepath.Dir(card.dir)
+	for _, path := range []string{
+		filepath.Join(cardDir, "gt/gt0/rc6_residency_ms"),
+		filepath.Join(cardDir, "power/rc6_residency_ms"),
+		filepath.Join(card.dir, "tile0/gt0/gtidle/idle_residency_ms"),
+	} {
+		if v, ok := readInt(path); ok && v >= 0 {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// intelBusyPercent turns the idle residency change since the previous
+// collection into a busy percentage. The first reading only primes the
+// tracker.
+func intelBusyPercent(card drmGPU, idle gpuIdleTracker, now time.Time) (float64, bool) {
+	if idle == nil {
+		return 0, false
+	}
+	ms, ok := intelIdleResidencyMS(card)
+	if !ok {
+		return 0, false
+	}
+	prev, had := idle[card.dir]
+	idle[card.dir] = gpuIdleSample{idleMS: ms, at: now}
+	if !had {
+		return 0, false
+	}
+	wall := now.Sub(prev.at).Milliseconds()
+	if wall < 200 || ms < prev.idleMS {
+		return 0, false
+	}
+	busy := 100 - float64(ms-prev.idleMS)*100/float64(wall)
+	return math.Round(math.Max(0, math.Min(100, busy))), true
+}
+
+// nvidiaBusID turns a sysfs PCI address (0000:01:00.0) into nvidia-smi's form
+// (00000000:01:00.0).
+func nvidiaBusID(pciAddr string) string {
+	domain, rest, ok := strings.Cut(pciAddr, ":")
+	if !ok {
+		return pciAddr
+	}
+	return strings.ToUpper(strings.Repeat("0", max(0, 8-len(domain)))+domain) + ":" + strings.ToUpper(rest)
+}
+
+func applyNvidiaSMI(gpu *GPUStatus, pciAddr string) {
 	ctx, cancel := context.WithTimeout(context.Background(), nvidiaSMIWait)
 	defer cancel()
-	out, err := runCmd(ctx, "nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total,name", "--format=csv,noheader,nounits")
+	busID := nvidiaBusID(pciAddr)
+	out, err := runCmd(ctx, "nvidia-smi", "--id="+busID, "--query-gpu=pci.bus_id,utilization.gpu,memory.used,memory.total,name", "--format=csv,noheader,nounits")
 	if err != nil {
 		return
 	}
-	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
-	fields := strings.Split(line, ",")
-	if len(fields) < 4 {
+	parseNvidiaSMI(gpu, busID, out)
+}
+
+// parseNvidiaSMI applies the line whose bus id matches this card, so one
+// card's numbers are never copied onto another.
+func parseNvidiaSMI(gpu *GPUStatus, busID, out string) {
+	for line := range strings.Lines(out) {
+		fields := strings.Split(strings.TrimSpace(line), ",")
+		if len(fields) < 5 || !strings.EqualFold(strings.TrimSpace(fields[0]), busID) {
+			continue
+		}
+		if v, err := strconv.ParseFloat(strings.TrimSpace(fields[1]), 64); err == nil {
+			gpu.Usage = v
+		}
+		gpu.MemoryUsed, _ = strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+		gpu.MemoryTotal, _ = strconv.ParseFloat(strings.TrimSpace(fields[3]), 64)
+		if name := strings.TrimSpace(fields[4]); name != "" {
+			gpu.Name = name
+		}
 		return
-	}
-	if v, err := strconv.ParseFloat(strings.TrimSpace(fields[0]), 64); err == nil {
-		gpu.Usage = v
-	}
-	gpu.MemoryUsed, _ = strconv.ParseFloat(strings.TrimSpace(fields[1]), 64)
-	gpu.MemoryTotal, _ = strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
-	if name := strings.TrimSpace(fields[3]); name != "" {
-		gpu.Name = name
 	}
 }
 
