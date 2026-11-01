@@ -7,12 +7,15 @@ set -euo pipefail
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)}"
 source "$SCRIPT_DIR/lib/core/common.sh"
 source "$SCRIPT_DIR/lib/clean/rules.sh"
+source "$SCRIPT_DIR/lib/clean/whitelist.sh"
 mole_refuse_root
 
 DRY_RUN=false
+WHITELIST_MODE=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run | -n) DRY_RUN=true ;;
+        --whitelist) WHITELIST_MODE=true ;;
         --debug) export MO_DEBUG=1 ;;
         -h | --help)
             echo "Usage: mo clean [OPTIONS]"
@@ -22,6 +25,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --dry-run, -n     Preview cleanup without making changes"
+            echo "  --whitelist       Choose what clean keeps"
             echo "  --debug           Show detailed operation logs"
             echo "  -h, --help        Show this help message"
             exit 0
@@ -71,6 +75,14 @@ review_line() {
 add_total() {
     TOTAL_KB=$((TOTAL_KB + $1))
     TOTAL_ITEMS=$((TOTAL_ITEMS + $2))
+}
+
+whitelist_note() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        printf '%s · would skip (whitelist)' "$1"
+    else
+        printf '%s · skipped (whitelist)' "$1"
+    fi
 }
 
 # 0 when any owner runs, 1 when none does, 2 when a probe cannot tell.
@@ -165,6 +177,11 @@ clean_rule_collect() {
     done < <(mole_rule_children "$root" "$selector")
     [[ ${#children[@]} -gt 0 ]] || return 0
 
+    if mole_whitelisted "$label" "$root"; then
+        group_note "$(whitelist_note "$label")"
+        return 0
+    fi
+
     local kb=0
     for child in "${children[@]}"; do
         mole_cache_child_ok "$child" "$root" || continue
@@ -220,6 +237,10 @@ clean_uv_cache() {
     command -v uv > /dev/null 2>&1 || return 0
     dir=$(mole_c timeout 10 uv cache dir 2> /dev/null) || return 0
     [[ "$dir" == /* && "$dir" != *$'\n'* && -d "$dir" ]] || return 0
+    if mole_whitelisted "$label" "$dir" || mole_whitelisted "$label" "$root"; then
+        group_note "$(whitelist_note "$label")"
+        return 0
+    fi
     local rc=0
     rule_owner_state "$owners" || rc=$?
     if [[ $rc -eq 0 ]]; then
@@ -295,6 +316,11 @@ clean_trash() {
     local e
     while IFS= read -r -d '' e; do entries+=("$e"); done < <(find "$files" -mindepth 1 -maxdepth 1 -print0 2> /dev/null)
     if [[ ${#entries[@]} -eq 0 ]]; then
+        end_section
+        return 0
+    fi
+    if mole_whitelisted "Trash" "$MOLE_TRASH_DIR"; then
+        skip_line "$(whitelist_note Trash)"
         end_section
         return 0
     fi
@@ -441,6 +467,10 @@ clean_flatpak_unused() {
         dir=/var/lib/flatpak
         label+=" (system)"
     fi
+    if mole_whitelisted "$label" "$dir"; then
+        skip_line "$(whitelist_note "$label")"
+        return 0
+    fi
     if [[ "$DRY_RUN" == "true" ]]; then
         skip_line "$label · would run flatpak uninstall --$scope --unused"
         return 0
@@ -517,7 +547,9 @@ clean_system() {
 clean_system_sudo_items() {
     local have_paccache="$1" have_journal="$2" system_flatpak="$3"
     if [[ "$have_paccache" == "true" ]]; then
-        if [[ -e /var/lib/pacman/db.lck ]]; then
+        if mole_whitelisted "Package cache" /var/cache/pacman/pkg; then
+            skip_line "$(whitelist_note "Package cache")"
+        elif [[ -e /var/lib/pacman/db.lck ]]; then
             skip_line "Package cache · skipped while pacman is running"
         else
             local out kb=0 count=0
@@ -543,17 +575,21 @@ clean_system_sudo_items() {
 
     if [[ "$have_journal" == "true" ]]; then
         local before after
-        before=$(journal_usage_kb)
-        if [[ "$DRY_RUN" == "true" ]]; then
-            ((before > 0)) && skip_line "Journal logs older than 2 weeks · journal uses $(bytes_to_human_kb "$before") now"
-        elif mole_c sudo journalctl --vacuum-time=2weeks > /dev/null 2>&1; then
-            after=$(journal_usage_kb)
-            # The vacuum ran as root; it is logged even when the size could
-            # not be read before and after.
-            log_operation clean REMOVED /var/log/journal "journalctl --vacuum-time=2weeks, $(bytes_to_human_kb "$before") before, $(bytes_to_human_kb "$after") after"
-            if ((before > after)); then
-                report_line "Journal logs older than 2 weeks" "$((before - after))" 1
-                add_total "$((before - after))" 1
+        if mole_whitelisted "Journal logs" /var/log/journal; then
+            skip_line "$(whitelist_note "Journal logs")"
+        else
+            before=$(journal_usage_kb)
+            if [[ "$DRY_RUN" == "true" ]]; then
+                ((before > 0)) && skip_line "Journal logs older than 2 weeks · journal uses $(bytes_to_human_kb "$before") now"
+            elif mole_c sudo journalctl --vacuum-time=2weeks > /dev/null 2>&1; then
+                after=$(journal_usage_kb)
+                # The vacuum ran as root; it is logged even when the size could
+                # not be read before and after.
+                log_operation clean REMOVED /var/log/journal "journalctl --vacuum-time=2weeks, $(bytes_to_human_kb "$before") before, $(bytes_to_human_kb "$after") after"
+                if ((before > after)); then
+                    report_line "Journal logs older than 2 weeks" "$((before - after))" 1
+                    add_total "$((before - after))" 1
+                fi
             fi
         fi
     fi
@@ -572,6 +608,10 @@ main() {
         echo -e "${YELLOW}Dry Run Mode${NC}, Preview only, no deletions"
     elif [[ -t 0 ]]; then
         echo -e "${GRAY}${ICON_WARNING} Use --dry-run to preview${NC}"
+    fi
+    if ! mole_whitelist_load; then
+        echo "Cannot read $(mole_display_path "$MOLE_WHITELIST_FILE"); fix or remove it, then run mo clean again." >&2
+        exit 1
     fi
     prompt_for_system_clean
 
@@ -610,5 +650,10 @@ main() {
 
 # Sourced by the bats tests for its functions; run directly otherwise.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ "$WHITELIST_MODE" == "true" ]]; then
+        source "$SCRIPT_DIR/lib/ui/menu_paginated.sh"
+        manage_whitelist
+        exit $?
+    fi
     main
 fi

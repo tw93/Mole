@@ -244,6 +244,32 @@ start_owner() {
     [ -f "$HOME/.config/obsidian/obsidian.json" ]
 }
 
+@test "a whitelisted rule is skipped and shown, by label or by path, and the Trash can be kept" {
+    make_cache "$HOME/.cache/thumbnails"
+    make_cache "$HOME/.cache/go-build"
+    mkdir -p "$HOME/.local/share/Trash/files" "$HOME/.local/share/Trash/info"
+    echo x > "$HOME/.local/share/Trash/files/old"
+    mkdir -p "$HOME/.config/mole"
+    printf '%s\n' "# keep" "Thumbnails" "~/.cache/go-build" "Trash" > "$HOME/.config/mole/whitelist"
+    mole_run clean 'mole_whitelist_load; DRY_RUN=true; clean_user_rules; clean_trash'
+    [[ "$output" == *"Thumbnails · would skip (whitelist)"* ]]
+    [[ "$output" == *"Go build cache · would skip (whitelist)"* ]]
+    [[ "$output" == *"Trash · would skip (whitelist)"* ]]
+    mole_run clean 'mole_whitelist_load; clean_user_rules; clean_trash'
+    [[ "$output" == *"Thumbnails · skipped (whitelist)"* ]]
+    [ -f "$HOME/.cache/thumbnails/entry/blob" ]
+    [ -f "$HOME/.cache/go-build/entry/blob" ]
+    [ -f "$HOME/.local/share/Trash/files/old" ]
+}
+
+@test "an unreadable whitelist stops clean before anything is removed" {
+    make_cache "$HOME/.cache/thumbnails"
+    mkdir -p "$HOME/.config/mole/whitelist"
+    run bash -c 'SCRIPT_DIR="$MOLE_TEST_REPO" bash "$MOLE_TEST_REPO/bin/clean.sh" < /dev/null'
+    [ "$status" -ne 0 ]
+    [ -f "$HOME/.cache/thumbnails/entry/blob" ]
+}
+
 @test "flatpak unused runtimes are removed only when flatpak and a user installation exist" {
     mole_run clean 'DRY_RUN=true; clean_system'
     [[ "$output" != *"Flatpak"* ]]
