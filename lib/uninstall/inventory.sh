@@ -5,7 +5,9 @@
 # explicitly installed and ships a .desktop file, a Flatpak app, or an Omarchy
 # web app launcher. Rows are tab separated:
 #   kind  id  name  size_kb  desktop_ids(comma)  exec  scope
-# kind is pacman | aur | flatpak | webapp; scope is user|system for Flatpak.
+# kind is pacman | aur | flatpak | webapp | appimage | orphan; scope is
+# user|system for Flatpak. An orphan is a Flatpak sandbox home whose app is no
+# longer installed in any installation (flatsweep's test, minus its rmtree).
 
 set -euo pipefail
 
@@ -28,6 +30,63 @@ mole_desktop_exec() {
         printf '%s' "$(basename -- "${word//\"/}")"
         return 0
     done
+}
+
+# Exec= program as written (quotes removed), for launchers that point at a file.
+mole_desktop_exec_path() {
+    local exec word
+    exec=$(mole_desktop_field "$1" Exec)
+    for word in $exec; do
+        [[ "$word" == *=* && "$word" != /* ]] && continue
+        [[ "$word" == env ]] && continue
+        printf '%s' "${word//\"/}"
+        return 0
+    done
+}
+
+# StartupWMClass is the name the app itself declares for its windows, and for
+# most Electron and GTK apps it is also its config folder (Code, obsidian).
+# It counts as an exact ID only when one launcher on the system declares it and
+# it is not a runtime's generic class.
+declare -A _MOLE_WMCLASS_COUNT=()
+_MOLE_WMCLASS_LOADED=false
+_mole_load_wmclasses() {
+    [[ "$_MOLE_WMCLASS_LOADED" == true ]] && return 0
+    _MOLE_WMCLASS_LOADED=true
+    local -a files=()
+    local f cls lc
+    for f in /usr/share/applications/*.desktop "$MOLE_DATA_HOME/applications"/*.desktop \
+        /var/lib/flatpak/exports/share/applications/*.desktop "$MOLE_DATA_HOME/flatpak/exports/share/applications"/*.desktop; do
+        [[ -f "$f" ]] && files+=("$f")
+    done
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    while IFS= read -r cls; do
+        [[ -n "$cls" ]] || continue
+        mole_ascii_lowercase lc "$cls"
+        _MOLE_WMCLASS_COUNT[$lc]=$((${_MOLE_WMCLASS_COUNT[$lc]:-0} + 1))
+    done < <(awk '
+        FNR == 1 { in_entry = 0 }
+        /^\[/ { in_entry = ($0 == "[Desktop Entry]"); next }
+        in_entry && index($0, "StartupWMClass=") == 1 { print substr($0, 16) }
+    ' "${files[@]}" 2> /dev/null)
+}
+
+mole_desktop_wmclass_id() {
+    local cls lc
+    cls=$(mole_desktop_field "$1" StartupWMClass)
+    [[ "$cls" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || return 0
+    mole_ascii_lowercase lc "$cls"
+    case "$lc" in
+        electron* | java* | sun-awt-* | wine* | python* | steam_app_* | chromium | chromium-browser | qemu*) return 0 ;;
+    esac
+    _mole_load_wmclasses
+    [[ "${_MOLE_WMCLASS_COUNT[$lc]:-0}" -eq 1 ]] && printf '%s' "$cls"
+    return 0
+}
+
+# Pacman package names as pacman accepts them; anything else never reaches argv.
+mole_valid_package_name() {
+    [[ "$1" =~ ^[A-Za-z0-9@_+][A-Za-z0-9@._+-]*$ ]]
 }
 
 mole_desktop_hidden() {
@@ -68,15 +127,18 @@ _inventory_pacman() {
 
     # "<path> is owned by <pkg> <version>"
     declare -A pkg_desktops=() pkg_name=() pkg_exec=()
-    local line path pkg id owned_re='^(/.+) is owned by ([^ ]+) [^ ]+$'
+    local line path pkg id cls owned_re='^(/.+) is owned by ([^ ]+) [^ ]+$'
     while IFS= read -r line; do
         [[ "$line" =~ $owned_re ]] || continue
         path="${BASH_REMATCH[1]}"
         pkg="${BASH_REMATCH[2]}"
+        mole_valid_package_name "$pkg" || continue
         grep -qxF -- "$pkg" <<< "$explicit" || continue
         mole_package_protected "$pkg" && continue
         id="$(basename -- "$path" .desktop)"
         pkg_desktops[$pkg]="${pkg_desktops[$pkg]:+${pkg_desktops[$pkg]},}$id"
+        cls=$(mole_desktop_wmclass_id "$path")
+        [[ -n "$cls" ]] && pkg_desktops[$pkg]+=",$cls"
         if [[ -z "${pkg_name[$pkg]:-}" || "$id" == "$pkg" ]]; then
             pkg_name[$pkg]="$(mole_desktop_field "$path" Name)"
             pkg_exec[$pkg]="$(mole_desktop_exec "$path")"
@@ -139,11 +201,67 @@ _inventory_webapps() {
     done
 }
 
+# AppImages started from a launcher in ~/.local/share/applications (by hand or
+# by AppImageLauncher / Gear Lever): the launcher's Exec names the file.
+_inventory_appimages() {
+    local dir="$MOLE_DATA_HOME/applications" f target id ids cls kb
+    [[ -d "$dir" ]] || return 0
+    for f in "$dir"/*.desktop; do
+        [[ -f "$f" && ! -L "$f" ]] || continue
+        target=$(mole_desktop_exec_path "$f")
+        [[ "$target" == "$HOME/"* ]] || continue
+        mole_ascii_lowercase ids "$target"
+        [[ "$ids" == *.appimage ]] || continue
+        [[ -f "$target" && ! -L "$target" && -O "$target" ]] || continue
+        id="$(basename -- "$f" .desktop)"
+        ids="$id"
+        cls=$(mole_desktop_wmclass_id "$f")
+        [[ -n "$cls" ]] && ids+=",$cls"
+        kb=$(($(mole_c stat -c %s -- "$target" 2> /dev/null || echo 0) / 1024))
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' appimage "$id" "$(mole_desktop_field "$f" Name)" "$kb" "$ids" "$target" user
+    done
+}
+
+# Files an AppImage launcher owns: the launcher, the AppImage and its icon.
+mole_appimage_files() {
+    local id="$1" target="$2" desktop="$MOLE_DATA_HOME/applications/$1.desktop" icon f
+    printf '%s\n' "$desktop" "$target"
+    icon=$(mole_desktop_field "$desktop" Icon)
+    if [[ "$icon" == "$HOME/"* ]]; then
+        [[ -f "$icon" ]] && printf '%s\n' "$icon"
+    elif [[ "$icon" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
+        for f in "$MOLE_DATA_HOME/icons/hicolor"/*/apps/"$icon".{png,svg}; do
+            [[ -f "$f" ]] && printf '%s\n' "$f"
+        done
+    fi
+    return 0
+}
+
+# ~/.var/app/<id> left behind by a Flatpak app that is no longer installed in
+# any installation. Only when flatpak itself answered the inventory question.
+_inventory_flatpak_orphans() {
+    local base="$HOME/.var/app" installed dir id kb
+    [[ -d "$base" && ! -L "$base" ]] || return 0
+    command -v flatpak > /dev/null 2>&1 || return 0
+    installed=$(mole_c flatpak list --app --columns=application 2> /dev/null) || return 0
+    for dir in "$base"/*; do
+        [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] || continue
+        id="${dir##*/}"
+        [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || continue
+        grep -qxF -- "$id" <<< "$installed" && continue
+        [[ -d "$dir/cache" || -d "$dir/config" || -d "$dir/data" ]] || continue
+        kb=$(mole_path_kb "$dir")
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' orphan "$id" "$id" "$kb" "" "" user
+    done
+}
+
 mole_list_apps() {
     {
         _inventory_pacman
         _inventory_flatpak
         _inventory_webapps
+        _inventory_appimages
+        _inventory_flatpak_orphans
     } | LC_ALL=C sort -t $'\t' -f -k3,3
 }
 
@@ -179,6 +297,7 @@ mole_app_leftovers() {
         printf '%s\t%s\n' "$class" "$path"
     }
 
+    [[ "$kind" == orphan ]] && return 0
     if [[ "$kind" == flatpak ]]; then
         emit data "$HOME/.var/app/$id"
         return 0
@@ -191,6 +310,6 @@ mole_app_leftovers() {
         emit data "$MOLE_DATA_HOME/$d"
         emit data "$MOLE_STATE_HOME/$d"
         emit data "$MOLE_CONFIG_HOME/systemd/user/$d.service"
-        [[ "$kind" == webapp ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
+        [[ "$kind" == webapp || "$kind" == appimage ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
     done
 }

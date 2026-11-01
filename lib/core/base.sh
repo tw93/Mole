@@ -174,6 +174,17 @@ mole_process_running() {
     return "$rc"
 }
 
+# 0 when one of the user's processes runs this exact executable file (an
+# AppImage's runtime keeps running as its FUSE server), 1 when none does.
+mole_exe_running() {
+    local want="$1" exe pid
+    for pid in /proc/[0-9]*; do
+        exe=$(readlink -- "$pid/exe" 2> /dev/null) || continue
+        [[ "$exe" == "$want" ]] && return 0
+    done
+    return 1
+}
+
 mole_ascii_lowercase() {
     local _value="${2:-}"
     printf -v "$1" '%s' "$(LC_ALL=C tr '[:upper:]' '[:lower:]' <<< "$_value")"

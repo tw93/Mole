@@ -60,6 +60,8 @@ kind_label() {
         aur) echo "AUR" ;;
         flatpak) echo "Flatpak" ;;
         webapp) echo "Web app" ;;
+        appimage) echo "AppImage" ;;
+        orphan) echo "Leftover" ;;
     esac
 }
 
@@ -137,15 +139,24 @@ choose_apps() {
 # Collect leftovers for the chosen apps. Caches always go with the app; the
 # user picks which settings and data go.
 declare -a LEFT_APP=() LEFT_CLASS=() LEFT_PATH=() LEFT_ON=()
+app_own_files() {
+    local i="$1"
+    case "${APP_KIND[i]}" in
+        webapp) mole_webapp_files "${APP_ID[i]}" ;;
+        appimage) mole_appimage_files "${APP_ID[i]}" "${APP_EXEC[i]}" ;;
+        orphan) printf '%s\n' "$HOME/.var/app/${APP_ID[i]}" ;;
+    esac
+}
+
 collect_leftovers() {
     local i class path
     for i in "${SELECTED[@]}"; do
-        if [[ "${APP_KIND[i]}" == webapp ]]; then
-            while IFS= read -r path; do
-                [[ -e "$path" ]] || continue
-                LEFT_APP+=("$i") LEFT_CLASS+=(app) LEFT_PATH+=("$path") LEFT_ON+=(true)
-            done < <(mole_webapp_files "${APP_ID[i]}")
-        fi
+        # Files that are the app itself; it counts as removed once they are
+        # in the Trash.
+        while IFS= read -r path; do
+            [[ -e "$path" || -L "$path" ]] || continue
+            LEFT_APP+=("$i") LEFT_CLASS+=(app) LEFT_PATH+=("$path") LEFT_ON+=(true)
+        done < <(app_own_files "$i")
         while IFS=$'\t' read -r class path; do
             [[ -n "$path" ]] || continue
             LEFT_APP+=("$i") LEFT_CLASS+=("$class") LEFT_PATH+=("$path")
@@ -181,13 +192,17 @@ choose_data() {
     local -a picked=()
     IFS=',' read -ra picked <<< "${MOLE_SELECTION_RESULT:-}"
     for n in "${picked[@]}"; do
-        [[ "$n" =~ ^[0-9]+$ && $n -lt ${#idx[@]} ]] && LEFT_ON[${idx[n]}]=true
+        [[ "$n" =~ ^[0-9]+$ && $n -lt ${#idx[@]} ]] && LEFT_ON[idx[n]]=true
     done
 }
 
 show_plan() {
     local i j label
     echo ""
+    local -a pkgs=()
+    for i in "${SELECTED[@]}"; do
+        [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] && pkgs+=("${APP_ID[i]}")
+    done
     for i in "${SELECTED[@]}"; do
         echo -e "${PURPLE_BOLD}${ICON_ARROW}${NC} ${APP_NAME[i]} ${GRAY}$(kind_label "${APP_KIND[i]}") · $(bytes_to_human_kb "${APP_KB[i]}")${NC}"
         for j in "${!LEFT_PATH[@]}"; do
@@ -200,6 +215,12 @@ show_plan() {
             fi
         done
     done
+    # pacman's own answer to what -Rns takes along, read before any sudo.
+    if [[ ${#pkgs[@]} -gt 0 ]]; then
+        local extra
+        extra=$(mole_c pacman -Rsp --print-format '%n' -- "${pkgs[@]}" 2> /dev/null | grep -vxF -f <(printf '%s\n' "${pkgs[@]}") | paste -sd ' ') || extra=""
+        [[ -n "$extra" ]] && echo -e "  ${GRAY}pacman also removes the dependencies only these use: ${extra}${NC}"
+    fi
     echo ""
 }
 
@@ -207,9 +228,13 @@ running_apps() {
     local i rc
     RUNNING=()
     for i in "${SELECTED[@]}"; do
-        [[ -n "${APP_EXEC[i]}" && "${APP_KIND[i]}" != webapp ]] || continue
+        [[ -n "${APP_EXEC[i]}" ]] || continue
         rc=0
-        mole_process_running "${APP_EXEC[i]}" || rc=$?
+        case "${APP_KIND[i]}" in
+            webapp | orphan) continue ;;
+            appimage) mole_exe_running "${APP_EXEC[i]}" || rc=$? ;;
+            *) mole_process_running "${APP_EXEC[i]}" || rc=$? ;;
+        esac
         [[ $rc -eq 0 ]] && RUNNING+=("${APP_NAME[i]}")
     done
     [[ ${#RUNNING[@]} -gt 0 ]]
@@ -246,9 +271,10 @@ remove_packages() {
                     log_operation uninstall REMOVED "flatpak:${APP_ID[i]}"
                 fi
                 ;;
-            webapp)
-                # A web app is its launcher and icon; it is removed only once
-                # those are in the Trash.
+            webapp | appimage | orphan)
+                # The app is its own files (launcher, icon, AppImage, or the
+                # data a removed Flatpak left); removed only once they are in
+                # the Trash.
                 local -a own=()
                 local j
                 for j in "${!LEFT_PATH[@]}"; do
@@ -351,4 +377,7 @@ main() {
     [[ ${#REMOVED[@]} -gt 0 ]]
 }
 
-main
+# Sourced by the bats tests for its functions; run directly otherwise.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi
