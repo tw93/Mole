@@ -54,7 +54,13 @@ if [[ $rc -ne 0 || ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
-if [[ "$force" != true && ("$current" == "$latest" || "$newest" == "$current") ]]; then
+# A prerelease or hand-built copy newer than the latest release is never
+# replaced by it, --force included: that would be a downgrade.
+if [[ "$current" != "$latest" && "$newest" == "$current" ]]; then
+    echo -e "${GREEN}${ICON_SUCCESS}${NC} Mole $current is newer than the latest release $latest, nothing to install"
+    exit 0
+fi
+if [[ "$force" != true && "$current" == "$latest" ]]; then
     echo -e "${GREEN}${ICON_SUCCESS}${NC} Mole $current is the latest version"
     exit 0
 fi

@@ -297,6 +297,23 @@ $1"
     [[ "$output" == *"msg=[]"* ]]
 }
 
+@test "mo update --force refuses to replace a newer installed version with an older release" {
+    install_current 1.3.0
+    publish 1.2.0
+    releases '[{"tag_name": "V1.2.0-linux", "prerelease": false}]'
+    run_update --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Mole 1.3.0 is newer than the latest release 1.2.0"* ]]
+    [ -z "$(grep 'releases/download' "$CURL_LOG")" ]
+    [ "$(installed_version)" = "1.3.0" ]
+    install_current 0.10.0
+    publish 0.9.0
+    releases '[{"tag_name": "V0.9.0-linux", "prerelease": false}]'
+    run_update -f
+    [[ "$output" == *"newer than the latest release 0.9.0"* ]]
+    [ "$(installed_version)" = "0.10.0" ]
+}
+
 @test "the background check returns at once even when the lookup hangs" {
     notice_run 'mole_update_fetch_latest() { sleep 30; }
         start=$SECONDS; mole_update_notice_check; echo "took=$((SECONDS - start))"'
