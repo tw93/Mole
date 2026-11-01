@@ -266,6 +266,20 @@ desktop() {
     cmp -s "$HOME/.config/mimeapps.list" "$TEST_ROOT/before"
 }
 
+@test "--with-data leaves Waterfox, Floorp and other Gecko or Chromium family profiles unselected" {
+    mkdir -p "$HOME/.waterfox" "$HOME/.floorp" "$HOME/.config/thorium" "$HOME/.local/share/torbrowser" "$HOME/.cache/waterfox"
+    mole_run uninstall '
+        APP_KIND=(pacman pacman pacman pacman); APP_ID=(waterfox floorp thorium torbrowser); APP_NAME=(W F T B)
+        APP_DESKTOPS=(waterfox floorp thorium torbrowser); APP_EXEC=("" "" "" ""); SELECTED=(0 1 2 3); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}=${LEFT_ON[j]}"; done'
+    [[ "$output" == *"$HOME/.waterfox=false"* ]]
+    [[ "$output" == *"$HOME/.floorp=false"* ]]
+    [[ "$output" == *"$HOME/.config/thorium=false"* ]]
+    [[ "$output" == *"$HOME/.local/share/torbrowser=false"* ]]
+    [[ "$output" == *"$HOME/.cache/waterfox=true"* ]]
+}
+
 @test "--with-data still leaves browser profiles and offline music unselected" {
     mkdir -p "$HOME/.config/chromium" "$HOME/.cache/chromium" "$HOME/.config/spotify" "$HOME/.cache/spotify"
     mole_run uninstall '

@@ -551,6 +551,24 @@ mole_leftover_holdback() {
             echo "offline music"
             return 0
             ;;
+        "$v/net.waterfox.waterfox" | "$v/one.ablaze.floorp" | "$v/net.mullvad.MullvadBrowser" | \
+            "$v/org.torproject.torbrowser-launcher" | "$v/com.github.Eloston.UngoogledChromium" | \
+            "$v/io.github.ungoogled_software.ungoogled_chromium")
+            echo "browser profile"
+            return 0
+            ;;
     esac
+    # Other Gecko and Chromium family browsers, in ~/.config, ~/.<name> and
+    # ~/.local/share forms.
+    local n
+    for n in waterfox floorp librewolf mullvad-browser tor-browser torbrowser palemoon \
+        "moonchild productions" seamonkey icecat thorium ungoogled-chromium; do
+        case "$1" in
+            "$c/$n" | "$HOME/.$n" | "$MOLE_DATA_HOME/$n")
+                echo "browser profile"
+                return 0
+                ;;
+        esac
+    done
     return 1
 }
