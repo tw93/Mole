@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -11,7 +9,7 @@ import (
 )
 
 // TestMain keeps every test in this package off the user's real Mole logs:
-// the delete commands now append to ~/Library/Logs/mole, and a test that
+// the delete commands now append to $XDG_STATE_HOME/mole, and a test that
 // forgets to repoint HOME must not land rows in the real operations.log.
 func TestMain(m *testing.M) {
 	scratch, err := os.MkdirTemp("", "mole-analyze-logs-")
@@ -36,9 +34,10 @@ func enableAnalyzeLogs(t *testing.T) (string, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("MO_NO_OPLOG", "")
 	t.Setenv("MOLE_DELETE_LOG", "")
-	logDir := filepath.Join(home, "Library", "Logs", "mole")
+	logDir := filepath.Join(home, ".local", "state", "mole")
 	return filepath.Join(logDir, "operations.log"), filepath.Join(logDir, "deletions.log")
 }
 
@@ -128,7 +127,7 @@ func TestAnalyzeAuditHonorsMoNoOplog(t *testing.T) {
 	t.Setenv("MO_NO_OPLOG", "1")
 	audit := newDeleteAudit(nil)
 	audit.begin()
-	audit.record("/Users/someone/file", nil)
+	audit.record("/home/someone/file", nil)
 	audit.end()
 	if _, err := os.Stat(opLog); !os.IsNotExist(err) {
 		t.Fatalf("operations.log must stay unwritten with MO_NO_OPLOG=1: %v", err)
@@ -143,15 +142,33 @@ func TestAnalyzeAuditHonorsMoNoOplog(t *testing.T) {
 func TestAnalyzeAuditReportsAnUnwritableLog(t *testing.T) {
 	enableAnalyzeLogs(t)
 	home := os.Getenv("HOME")
-	if err := os.WriteFile(filepath.Join(home, "Library"), []byte("not a folder"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".local"), []byte("not a folder"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	audit := newDeleteAudit(nil)
 	audit.begin()
-	audit.record("/Users/someone/file", nil)
+	audit.record("/home/someone/file", nil)
 	audit.end()
 	if audit.warning() == "" {
 		t.Fatalf("a failed log write must surface a warning")
+	}
+}
+
+func TestOperationsLogPathFollowsXDGStateHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", "")
+	if got, ok := operationsLogPath(); !ok || got != filepath.Join(home, ".local", "state", "mole", "operations.log") {
+		t.Fatalf("default operations log = %q, %v", got, ok)
+	}
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	if got, ok := operationsLogPath(); !ok || got != filepath.Join(state, "mole", "operations.log") {
+		t.Fatalf("XDG operations log = %q, %v", got, ok)
+	}
+	t.Setenv("XDG_STATE_HOME", "relative/state")
+	if got, _ := operationsLogPath(); got != filepath.Join(home, ".local", "state", "mole", "operations.log") {
+		t.Fatalf("relative XDG_STATE_HOME must be ignored, got %q", got)
 	}
 }
 

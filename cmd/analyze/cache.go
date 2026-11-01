@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -525,7 +523,7 @@ func pruneAnalyzerCacheDirWithLimits(cacheDir string, now time.Time, maxEntries 
 // store with millions of entries is never held in memory, and it is resumable:
 // whatever a short-lived process does not reach is picked up by the next run.
 // Unlinks are spread over a few workers because a single one clears roughly
-// 7k files/s on APFS, which is a long tail on the largest stores seen in the
+// 7k files/s, which is a long tail on the largest stores seen in the
 // wild (1.88M files); the small pool roughly doubles that without turning
 // housekeeping into a competitor for the scan itself.
 func sweepLegacyAnalyzerCache(root string) error {

@@ -1,11 +1,10 @@
-//go:build darwin
-
 package main
 
 import (
 	"context"
 	"errors"
-	"reflect"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,78 +12,63 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestParseLocalSnapshotCount(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-		want   int
-	}{
-		{
-			name: "counts documented snapshot dates",
-			output: `Snapshot dates for volume group containing disk /:
-2026-08-26-091500
-2026-08-26-101500
-`,
-			want: 2,
-		},
-		{
-			name:   "ignores a localized heading with no snapshots",
-			output: "本地快照日期：\n",
-			want:   0,
-		},
-		{
-			name: "ignores snapshot names and malformed dates",
-			output: `Snapshots for volume group containing disk /:
-com.apple.os.update-MSUPrepareUpdate
-2026-99-99-999999
-`,
-			want: 0,
-		},
+func TestCountSnapshotsInCountsOnlyDirectories(t *testing.T) {
+	root := t.TempDir()
+	snapper := filepath.Join(root, ".snapshots")
+	timeshift := filepath.Join(root, "timeshift", "snapshots")
+	for _, dir := range []string{
+		filepath.Join(snapper, "1", "snapshot"),
+		filepath.Join(snapper, "2", "snapshot"),
+		filepath.Join(timeshift, "2026-08-26_09-15-00"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(snapper, "stray.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseLocalSnapshotCount([]byte(tt.output))
-			if got != tt.want {
-				t.Fatalf("parseLocalSnapshotCount() = %d, want %d", got, tt.want)
-			}
-		})
+	got, err := countSnapshotsIn(context.Background(), []string{snapper, timeshift, filepath.Join(root, "absent")})
+	if err != nil || got != 3 {
+		t.Fatalf("countSnapshotsIn = %d, %v; want 3, nil", got, err)
 	}
 }
 
-func TestLocalSnapshotProbeUsesBoundedReadOnlyTMUtilQuery(t *testing.T) {
-	var gotName string
-	var gotArgs []string
-	runner := func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		gotName = name
-		gotArgs = append([]string(nil), args...)
+func TestCountSnapshotsInReportsNothingForMissingStores(t *testing.T) {
+	got, err := countSnapshotsIn(context.Background(), []string{filepath.Join(t.TempDir(), "absent")})
+	if err != nil || got != 0 {
+		t.Fatalf("countSnapshotsIn = %d, %v; want 0, nil", got, err)
+	}
+}
+
+func TestCountSnapshotsInStopsWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := countSnapshotsIn(ctx, []string{t.TempDir()}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestLocalSnapshotProbeHasBoundedBudget(t *testing.T) {
+	counter := func(ctx context.Context) (int, error) {
 		deadline, ok := ctx.Deadline()
 		if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > localSnapshotProbeTimeout {
 			t.Fatalf("snapshot probe context deadline = %v, want a live %s budget", deadline, localSnapshotProbeTimeout)
 		}
-		return []byte("Snapshot dates:\n2026-08-26-091500\n2026-08-26-101500\n"), nil
+		return 2, nil
 	}
-
-	msg := localSnapshotProbeCmd(runner, 0)().(localSnapshotMsg)
+	msg := localSnapshotProbeCmd(counter, 0)().(localSnapshotMsg)
 	if msg.err != nil || msg.count != 2 {
 		t.Fatalf("snapshot probe result = %#v, want count 2", msg)
 	}
-	if gotName != "/usr/bin/tmutil" {
-		t.Fatalf("snapshot probe command = %q, want /usr/bin/tmutil", gotName)
-	}
-	wantArgs := []string{"listlocalsnapshotdates", "/"}
-	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("snapshot probe args = %#v, want %#v", gotArgs, wantArgs)
-	}
 }
 
-func TestLocalSnapshotProbeReportsCommandFailure(t *testing.T) {
-	wantErr := errors.New("tmutil unavailable")
-	msg := localSnapshotProbeCmd(func(context.Context, string, ...string) ([]byte, error) {
-		return nil, wantErr
-	}, 0)().(localSnapshotMsg)
+func TestLocalSnapshotProbeReportsFailure(t *testing.T) {
+	wantErr := errors.New("snapshot store unreadable")
+	msg := localSnapshotProbeCmd(func(context.Context) (int, error) { return 0, wantErr }, 0)().(localSnapshotMsg)
 	if !errors.Is(msg.err, wantErr) || msg.count != 0 {
-		t.Fatalf("snapshot probe result = %#v, want command error", msg)
+		t.Fatalf("snapshot probe result = %#v, want error", msg)
 	}
 }
 
@@ -116,8 +100,8 @@ func TestOverviewRefreshReprobesLocalSnapshots(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	m := newModel("/", true)
-	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n"), nil
+	m.snapshotRunner = func(context.Context) (int, error) {
+		return 0, nil
 	}
 	m.localSnapshotCount = 4
 	firstUpdated, firstCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
@@ -147,8 +131,8 @@ func TestOverviewRefreshResultSurvivesDrillDown(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	m := newModel("/", true)
-	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n"), nil
+	m.snapshotRunner = func(context.Context) (int, error) {
+		return 0, nil
 	}
 	m.localSnapshotCount = 4
 	refreshedModel, refreshCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
@@ -173,8 +157,8 @@ func TestEnteringOverviewProbesLocalSnapshots(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	m := newModel(t.TempDir(), false)
-	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n2026-08-27-101500\n"), nil
+	m.snapshotRunner = func(context.Context) (int, error) {
+		return 1, nil
 	}
 
 	overviewModel, overviewCmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -194,8 +178,8 @@ func TestSwitchingToOverviewAdvancesSnapshotProbeGeneration(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	m := newModel(t.TempDir(), false)
-	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n2026-08-29-101500\n"), nil
+	m.snapshotRunner = func(context.Context) (int, error) {
+		return 1, nil
 	}
 	firstMsg := localSnapshotMsgFromBatch(t, m.switchToOverviewMode())
 	m.isOverview = false
@@ -250,7 +234,7 @@ func TestOverviewViewExplainsLocalSnapshotOnlySpace(t *testing.T) {
 	}
 
 	view := m.View()
-	for _, want := range []string{"2 Time Machine local snapshots", "snapshot-only space is not listed below"} {
+	for _, want := range []string{"2 local snapshots", "snapshot-only space is not listed below"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected overview snapshot notice %q, got:\n%s", want, view)
 		}
@@ -267,7 +251,7 @@ func TestOverviewViewUsesSingularSnapshotLabel(t *testing.T) {
 	}
 
 	view := m.View()
-	if !strings.Contains(view, "1 Time Machine local snapshot") || strings.Contains(view, "1 Time Machine local snapshots") {
+	if !strings.Contains(view, "1 local snapshot") || strings.Contains(view, "1 local snapshots") {
 		t.Fatalf("expected singular snapshot notice, got:\n%s", view)
 	}
 }
@@ -293,7 +277,7 @@ func TestOverviewViewOmitsSnapshotNoticeWhenNoneDetected(t *testing.T) {
 		entries:    []dirEntry{{Name: "Home", Path: "/tmp/home", Size: 1, IsDir: true}},
 	}
 
-	if view := m.View(); strings.Contains(view, "Time Machine local snapshot") {
+	if view := m.View(); strings.Contains(view, "local snapshot") {
 		t.Fatalf("expected no snapshot notice, got:\n%s", view)
 	}
 }

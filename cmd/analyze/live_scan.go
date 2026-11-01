@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -25,7 +23,7 @@ type liveScanTargetKind int
 const (
 	liveScanTargetDirectory liveScanTargetKind = iota + 1
 	liveScanTargetFoldedDirectory
-	liveScanTargetHomeLibrary
+	liveScanTargetHomeCache
 )
 
 type liveScanTarget struct {
@@ -194,8 +192,8 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 			}
 
 			targetKind := liveScanTargetDirectory
-			if isHomeDir && child.Name() == "Library" {
-				targetKind = liveScanTargetHomeLibrary
+			if isHomeDir && child.Name() == homeCacheDirName {
+				targetKind = liveScanTargetHomeCache
 			} else if shouldFoldDirWithPath(child.Name(), fullPath) {
 				targetKind = liveScanTargetFoldedDirectory
 			}
@@ -453,7 +451,7 @@ func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan ch
 	}
 
 	switch target.kind {
-	case liveScanTargetHomeLibrary:
+	case liveScanTargetHomeCache:
 		if cachePolicy == scanCacheReuse {
 			if cached, state, err := loadStoredOverviewMeasurement(target.path); err == nil && cached > 0 {
 				return scanResult{TotalSize: cached, State: state}, nil

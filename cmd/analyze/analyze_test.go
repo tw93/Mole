@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -320,7 +318,7 @@ func TestPerformScanForJSONCountsTopLevelFiles(t *testing.T) {
 }
 
 func TestDeletePathWithProgress(t *testing.T) {
-	skipIfFinderUnavailable(t)
+	isolateTrash(t)
 
 	parent := t.TempDir()
 	target := filepath.Join(parent, "target")
@@ -1455,10 +1453,10 @@ func TestScanPathConcurrentSkipsCacheForCheapSubdir(t *testing.T) {
 	}
 }
 
-func TestAnalyzeIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *testing.T) {
+func TestAnalyzeIncludesParallelsVMStorageButKeepsVMMountSkips(t *testing.T) {
 	root := t.TempDir()
 	parallels := filepath.Join(root, "Parallels")
-	orbStack := filepath.Join(root, "OrbStack")
+	orbStack := filepath.Join(root, ".colima")
 	for _, dir := range []string{parallels, orbStack} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create %s: %v", dir, err)
@@ -1471,7 +1469,7 @@ func TestAnalyzeIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *te
 	var filesScanned, dirsScanned, bytesScanned int64
 	current := &atomic.Value{}
 	current.Store("")
-	result, err := scanPathConcurrentWithOptions(context.Background(), root, &filesScanned, &dirsScanned, &bytesScanned, current, false, 0)
+	result, err := scanPathConcurrentWithOptions(context.Background(), root, &filesScanned, &dirsScanned, &bytesScanned, current, 0)
 	if err != nil {
 		t.Fatalf("scan root: %v", err)
 	}
@@ -1485,7 +1483,7 @@ func TestAnalyzeIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *te
 				t.Fatalf("expected Parallels to contribute a positive size, got %d", entry.Size)
 			}
 		case orbStack:
-			t.Fatalf("expected existing OrbStack skip to remain in place")
+			t.Fatalf("expected existing .colima skip to remain in place")
 		}
 	}
 	if !foundParallels {
@@ -1493,10 +1491,10 @@ func TestAnalyzeIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *te
 	}
 }
 
-func TestLiveScanIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *testing.T) {
+func TestLiveScanIncludesParallelsVMStorageButKeepsVMMountSkips(t *testing.T) {
 	root := t.TempDir()
 	parallels := filepath.Join(root, "Parallels")
-	orbStack := filepath.Join(root, "OrbStack")
+	orbStack := filepath.Join(root, ".colima")
 	for _, dir := range []string{parallels, orbStack} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create %s: %v", dir, err)
@@ -1515,7 +1513,7 @@ func TestLiveScanIncludesParallelsVMStorageButKeepsOtherVirtualizationSkips(t *t
 		case parallels:
 			foundParallelsEntry = true
 		case orbStack:
-			t.Fatalf("expected existing OrbStack skip to remain in live entries")
+			t.Fatalf("expected existing .colima skip to remain in live entries")
 		}
 	}
 	foundParallelsTarget := false
@@ -1619,72 +1617,6 @@ func TestScanPathConcurrentUsesChildCacheLargeFiles(t *testing.T) {
 		t.Fatalf("expected root large files to include cached child large file")
 	}
 }
-
-func TestScanPathConcurrentWarmsChildCachesWithoutRecursiveSpotlight(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	root := filepath.Join(home, "root")
-	childOne := filepath.Join(root, "child-one")
-	childTwo := filepath.Join(root, "child-two")
-	for _, dir := range []string{childOne, childTwo} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatalf("create dir %s: %v", dir, err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "data.bin"), []byte(strings.Repeat("x", 4096)), 0o644); err != nil {
-			t.Fatalf("write data in %s: %v", dir, err)
-		}
-	}
-
-	originalRunner := spotlightQueryRunner
-	spotlightRoots := []string{}
-	spotlightQueryRunner = func(_ context.Context, queryRoot, _ string) ([]byte, error) {
-		spotlightRoots = append(spotlightRoots, queryRoot)
-		return nil, nil
-	}
-	t.Cleanup(func() {
-		spotlightQueryRunner = originalRunner
-	})
-
-	var filesScanned, dirsScanned, bytesScanned int64
-	current := &atomic.Value{}
-	current.Store("")
-
-	if _, err := scanPathConcurrent(context.Background(), root, &filesScanned, &dirsScanned, &bytesScanned, current); err != nil {
-		t.Fatalf("scanPathConcurrent(root): %v", err)
-	}
-
-	if len(spotlightRoots) != 1 || spotlightRoots[0] != root {
-		t.Fatalf("expected only root spotlight invocation, got %q", spotlightRoots)
-	}
-}
-
-func TestSpotlightConsumerStopsWhenScanIsCanceled(t *testing.T) {
-	root := t.TempDir()
-	file := filepath.Join(root, "large.bin")
-	if err := os.WriteFile(file, []byte("large"), 0o644); err != nil {
-		t.Fatalf("write spotlight result: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	originalRunner := spotlightQueryRunner
-	spotlightQueryRunner = func(_ context.Context, _, _ string) ([]byte, error) {
-		cancel()
-		return []byte(strings.Repeat(file+"\n", 10_000)), nil
-	}
-	t.Cleanup(func() {
-		spotlightQueryRunner = originalRunner
-	})
-
-	files, err := findLargeFilesWithSpotlight(ctx, root, 1)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected canceled Spotlight consumer, got %v", err)
-	}
-	if len(files) != 0 {
-		t.Fatalf("canceled Spotlight consumer returned %d files", len(files))
-	}
-}
-
 func TestScanCmdTreatsWarmedCacheAsStale(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -2326,20 +2258,20 @@ func TestManualRefreshBypassesNestedSubdirCache(t *testing.T) {
 	}
 }
 
-func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
+func TestCacheBypassSkipsHomeCacheOverviewSnapshot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	resetOverviewSnapshotForTest()
 	t.Cleanup(resetOverviewSnapshotForTest)
 
-	library := filepath.Join(home, "Library")
-	if err := os.MkdirAll(library, 0o755); err != nil {
-		t.Fatalf("create Library: %v", err)
+	cacheDir := filepath.Join(home, ".cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("create .cache dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(library, "live.bin"), []byte(strings.Repeat("x", 8192)), 0o644); err != nil {
-		t.Fatalf("write Library data: %v", err)
+	if err := os.WriteFile(filepath.Join(cacheDir, "live.bin"), []byte(strings.Repeat("x", 8192)), 0o644); err != nil {
+		t.Fatalf("write .cache dir data: %v", err)
 	}
-	if err := storeOverviewSize(library, 1); err != nil {
+	if err := storeOverviewSize(cacheDir, 1); err != nil {
 		t.Fatalf("store stale overview size: %v", err)
 	}
 
@@ -2352,7 +2284,7 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 		limiter := newScanLimiter(1)
 		result, err := scanLiveTarget(
 			ctx,
-			liveScanTarget{name: "Library", path: library, kind: liveScanTargetHomeLibrary},
+			liveScanTarget{name: ".cache dir", path: cacheDir, kind: liveScanTargetHomeCache},
 			make(chan fileEntry, maxLargeFiles*2),
 			limiter,
 			&filesScanned,
@@ -2363,7 +2295,7 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 			newScanPublication(ctx, nil),
 		)
 		if err != nil {
-			t.Fatalf("scan Home Library: %v", err)
+			t.Fatalf("scan Home .cache dir: %v", err)
 		}
 		return result
 	}
@@ -2372,7 +2304,7 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 		t.Fatalf("expected reuse policy to return snapshot size 1, got %d", got)
 	}
 	if got := scanTarget(scanCacheBypass).TotalSize; got <= 1 {
-		t.Fatalf("expected bypass policy to scan live Library size, got %d", got)
+		t.Fatalf("expected bypass policy to scan live .cache dir size, got %d", got)
 	}
 
 	scanHome := func(policy scanCachePolicy) int64 {
@@ -2381,16 +2313,16 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 		var filesScanned, dirsScanned, bytesScanned int64
 		current := &atomic.Value{}
 		current.Store("")
-		result, err := scanPathConcurrentWithLimiter(ctx, home, &filesScanned, &dirsScanned, &bytesScanned, current, false, maxEntries, nil, policy, newScanPublication(ctx, nil))
+		result, err := scanPathConcurrentWithLimiter(ctx, home, &filesScanned, &dirsScanned, &bytesScanned, current, maxEntries, nil, policy, newScanPublication(ctx, nil))
 		if err != nil {
 			t.Fatalf("scan Home: %v", err)
 		}
 		for _, entry := range result.Entries {
-			if entry.Path == library {
+			if entry.Path == cacheDir {
 				return entry.Size
 			}
 		}
-		t.Fatalf("Library entry missing from Home scan")
+		t.Fatalf(".cache dir entry missing from Home scan")
 		return 0
 	}
 
@@ -2398,7 +2330,7 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 		t.Fatalf("expected concurrent reuse policy to return snapshot size 1, got %d", got)
 	}
 	if got := scanHome(scanCacheBypass); got <= 1 {
-		t.Fatalf("expected concurrent bypass policy to scan live Library size, got %d", got)
+		t.Fatalf("expected concurrent bypass policy to scan live .cache dir size, got %d", got)
 	}
 }
 
@@ -3023,22 +2955,20 @@ func TestIsHandledByMoClean(t *testing.T) {
 		want bool
 	}{
 		// Paths mo clean handles.
-		{"user caches", "/Users/test/Library/Caches/com.example", true},
-		{"user logs", "/Users/test/Library/Logs/DiagnosticReports", true},
-		{"saved app state", "/Users/test/Library/Saved Application State/com.example", true},
-		{"user trash", "/Users/test/.Trash/deleted-file", true},
-		{"diagnostic reports", "/Users/test/Library/DiagnosticReports/crash.log", true},
+		{"user caches", "/home/test/.cache/example", true},
+		{"nested user cache", "/home/test/.cache/pip/wheels/ab", true},
+		{"user trash", "/home/test/.local/share/Trash/files/deleted-file", true},
 
 		// Paths mo clean does NOT handle.
-		{"project node_modules", "/Users/test/project/node_modules", false},
-		{"project build", "/Users/test/project/build", false},
-		{"home directory", "/Users/test", false},
+		{"project node_modules", "/home/test/project/node_modules", false},
+		{"project build", "/home/test/project/build", false},
+		{"home directory", "/home/test", false},
 		{"random path", "/some/random/path", false},
 		{"empty string", "", false},
 
 		// Partial matches should not trigger (case sensitive).
-		{"lowercase caches", "/users/test/library/caches/foo", false},
-		{"different trash path", "/Users/test/Trash/file", false}, // Missing dot prefix
+		{"uppercase cache dir", "/home/test/.Cache/foo", false},
+		{"different trash path", "/home/test/Trash/file", false}, // Not the XDG Trash
 	}
 
 	for _, tt := range tests {
@@ -3061,31 +2991,28 @@ func TestIsCleanableDir(t *testing.T) {
 		{"empty string", "", false},
 
 		// Project dependencies (should be cleanable).
-		{"node_modules", "/Users/test/project/node_modules", true},
-		{"nested node_modules", "/Users/test/project/packages/app/node_modules", true},
-		{"venv", "/Users/test/project/venv", true},
-		{"dot venv", "/Users/test/project/.venv", true},
-		{"pycache", "/Users/test/project/src/__pycache__", true},
-		{"build dir", "/Users/test/project/build", true},
-		{"dist dir", "/Users/test/project/dist", true},
-		{"target dir", "/Users/test/project/target", true},
-		{"next.js cache", "/Users/test/project/.next", true},
-		{"DerivedData", "/Users/test/Library/Developer/Xcode/DerivedData", true},
-		{"Pods", "/Users/test/project/ios/Pods", true},
-		{"gradle cache", "/Users/test/project/.gradle", true},
-		{"coverage", "/Users/test/project/coverage", true},
-		{"terraform", "/Users/test/infra/.terraform", true},
+		{"node_modules", "/home/test/project/node_modules", true},
+		{"nested node_modules", "/home/test/project/packages/app/node_modules", true},
+		{"venv", "/home/test/project/venv", true},
+		{"dot venv", "/home/test/project/.venv", true},
+		{"pycache", "/home/test/project/src/__pycache__", true},
+		{"build dir", "/home/test/project/build", true},
+		{"dist dir", "/home/test/project/dist", true},
+		{"target dir", "/home/test/project/target", true},
+		{"next.js cache", "/home/test/project/.next", true},
+		{"gradle cache", "/home/test/project/.gradle", true},
+		{"coverage", "/home/test/project/coverage", true},
+		{"terraform", "/home/test/infra/.terraform", true},
 
 		// Paths handled by mo clean (should NOT be cleanable).
-		{"user caches", "/Users/test/Library/Caches/com.example", false},
-		{"user logs", "/Users/test/Library/Logs/app.log", false},
-		{"trash", "/Users/test/.Trash/deleted", false},
+		{"user caches", "/home/test/.cache/example", false},
+		{"trash", "/home/test/.local/share/Trash/files/deleted", false},
 
 		// Not in projectDependencyDirs.
-		{"src dir", "/Users/test/project/src", false},
-		{"random dir", "/Users/test/project/random", false},
-		{"home dir", "/Users/test", false},
-		{".git dir", "/Users/test/project/.git", false},
+		{"src dir", "/home/test/project/src", false},
+		{"random dir", "/home/test/project/random", false},
+		{"home dir", "/home/test", false},
+		{".git dir", "/home/test/project/.git", false},
 
 		// Edge cases.
 		{"just basename node_modules", "node_modules", true},
@@ -3441,10 +3368,10 @@ func TestCalculateDirSizeFastHighFanoutCompletes(t *testing.T) {
 
 func TestSystemOverviewRootsDefaultsToRealSystemPaths(t *testing.T) {
 	roots := systemOverviewRoots()
-	if len(roots) != 2 {
-		t.Fatalf("expected 2 default system roots, got %d", len(roots))
+	if len(roots) < 2 || len(roots) > 3 {
+		t.Fatalf("expected /usr, /var and optionally /opt, got %d roots", len(roots))
 	}
-	if roots[0].Path != "/Applications" || roots[1].Path != "/Library" {
+	if roots[0].Path != "/usr" || roots[1].Path != "/var" {
 		t.Fatalf("unexpected default system roots: %q, %q", roots[0].Path, roots[1].Path)
 	}
 	for _, root := range roots {
@@ -4063,7 +3990,7 @@ func TestTransientPartialIsNotCachedAndDenialOnlyPartialIs(t *testing.T) {
 			var files, dirs, bytes int64
 			current := &atomic.Value{}
 			current.Store("")
-			result, err := scanPathConcurrentWithOptions(context.Background(), root, &files, &dirs, &bytes, current, false, 0)
+			result, err := scanPathConcurrentWithOptions(context.Background(), root, &files, &dirs, &bytes, current, 0)
 			if err != nil {
 				t.Fatal(err)
 			}

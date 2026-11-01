@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -90,8 +88,8 @@ func TestGetDirectorySizeFromDuMeasuresUserLibraryInOneTraversal(t *testing.T) {
 	library := filepath.Join(home, "Library")
 	writeFileWithSize(t, filepath.Join(library, "Application Support", "state.dat"), 4096)
 	writeFileWithSize(t, filepath.Join(library, "Caches", "cache.dat"), 8192)
-	writeFileWithSize(t, filepath.Join(library, "Containers", "app", "Mobile Documents", "nested.dat"), 4*1024*1024)
-	writeFileWithSize(t, filepath.Join(library, "Mobile Documents", "cloud.dat"), 4*1024*1024)
+	writeFileWithSize(t, filepath.Join(library, "Containers", "app", ".gvfs", "nested.dat"), 4*1024*1024)
+	writeFileWithSize(t, filepath.Join(library, ".gvfs", "cloud.dat"), 4*1024*1024)
 	writeFileWithSize(t, filepath.Join(library, "top.plist"), 100)
 
 	binDir := t.TempDir()
@@ -115,7 +113,7 @@ func TestGetDirectorySizeFromDuMeasuresUserLibraryInOneTraversal(t *testing.T) {
 		t.Fatalf("expected sibling sizes to be summed, got %d", size)
 	}
 	if size >= 1024*1024 {
-		t.Fatalf("expected both Mobile Documents trees to be ignored, got %d", size)
+		t.Fatalf("expected both .gvfs trees to be ignored, got %d", size)
 	}
 
 	data, err := os.ReadFile(operandLog)
@@ -184,18 +182,18 @@ func TestOverviewPerChildDuPoolBelongsToOneMeasurement(t *testing.T) {
 func TestGetDirectorySizeFromDuWithIgnoresSkipsCloudPlaceholderTree(t *testing.T) {
 	base := t.TempDir()
 	writeFileWithSize(t, filepath.Join(base, "Application Support", "state.dat"), 4096)
-	writeFileWithSize(t, filepath.Join(base, "Mobile Documents", "cloud.dat"), 1024*1024)
+	writeFileWithSize(t, filepath.Join(base, ".gvfs", "cloud.dat"), 1024*1024)
 
 	withoutIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", nil)
 	if err != nil {
 		t.Fatalf("getDirectorySizeFromDuWithExcludeAndIgnores without ignore: %v", err)
 	}
-	withIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{"Mobile Documents"})
+	withIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{".gvfs"})
 	if err != nil {
 		t.Fatalf("getDirectorySizeFromDuWithExcludeAndIgnores with ignore: %v", err)
 	}
 	if withIgnore >= withoutIgnore {
-		t.Fatalf("expected ignored Mobile Documents to reduce size, got ignored=%d without=%d", withIgnore, withoutIgnore)
+		t.Fatalf("expected ignored .gvfs to reduce size, got ignored=%d without=%d", withIgnore, withoutIgnore)
 	}
 	if withIgnore <= 0 {
 		t.Fatalf("expected non-zero size for included files, got %d", withIgnore)
@@ -205,7 +203,7 @@ func TestGetDirectorySizeFromDuWithIgnoresSkipsCloudPlaceholderTree(t *testing.T
 func TestDuIgnoresUseSystemDuWhenGNUDuIsFirstInPath(t *testing.T) {
 	base := t.TempDir()
 	writeFileWithSize(t, filepath.Join(base, "Application Support", "state.dat"), 4096)
-	writeFileWithSize(t, filepath.Join(base, "Mobile Documents", "cloud.dat"), 1024*1024)
+	writeFileWithSize(t, filepath.Join(base, ".gvfs", "cloud.dat"), 1024*1024)
 
 	// GNU coreutils du has no -I, so a gnubin PATH broke every ignore-aware
 	// size, including the User Library overview row.
@@ -216,7 +214,7 @@ func TestDuIgnoresUseSystemDuWhenGNUDuIsFirstInPath(t *testing.T) {
 	}
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{"Mobile Documents"})
+	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{".gvfs"})
 	if err != nil {
 		t.Fatalf("ignore-aware size failed with a GNU du in PATH: %v", err)
 	}
@@ -231,7 +229,7 @@ func TestValidateDuIgnoreNameRejectsPathPatterns(t *testing.T) {
 			t.Fatalf("expected %q to be rejected", name)
 		}
 	}
-	if err := validateDuIgnoreName("Mobile Documents"); err != nil {
+	if err := validateDuIgnoreName(".gvfs"); err != nil {
 		t.Fatalf("expected basename ignore to be accepted: %v", err)
 	}
 }
@@ -282,7 +280,7 @@ func TestScanUnreadableDescendantPreservesCoverageAndGoodCache(t *testing.T) {
 		var files, dirs, bytes int64
 		current := &atomic.Value{}
 		current.Store("")
-		result, err := scanPathConcurrentWithLimiter(context.Background(), scanRoot, &files, &dirs, &bytes, current, false, 0, nil, scanCacheBypass, newScanPublication(context.Background(), nil))
+		result, err := scanPathConcurrentWithLimiter(context.Background(), scanRoot, &files, &dirs, &bytes, current, 0, nil, scanCacheBypass, newScanPublication(context.Background(), nil))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -361,7 +359,7 @@ func TestFoldedDirectoryRetainsPartialDuOutput(t *testing.T) {
 	var files, dirs, bytes int64
 	current := &atomic.Value{}
 	current.Store("")
-	result, err := scanPathConcurrentWithOptions(context.Background(), root, &files, &dirs, &bytes, current, false, 0)
+	result, err := scanPathConcurrentWithOptions(context.Background(), root, &files, &dirs, &bytes, current, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -57,8 +55,8 @@ func measurementState(size int64, err error) scanState {
 	return scanUnavailable
 }
 
-// isPermissionFailure reports a denial macOS will repeat on every scan until
-// access changes (no Full Disk Access, chmod 000), so a partial result caused
+// isPermissionFailure reports a denial that will repeat on every scan until
+// access changes (root-owned tree, chmod 000), so a partial result caused
 // only by these is as current as a complete one. Everything else (timeouts,
 // cancellation, vanished files, I/O errors) may clear on the next attempt.
 func isPermissionFailure(err error) bool {
@@ -243,10 +241,10 @@ type model struct {
 	totalFiles          int64           // Total files found in current/last scan
 	lastTotalFiles      int64           // Total files from previous scan (for progress bar)
 	diskFree            int64           // Free disk space for the analyzed volume
-	localSnapshotCount  int             // Read-only Time Machine snapshot count for overview context
+	localSnapshotCount  int             // Snapshot count (snapper, Timeshift) for overview context
 	localSnapshotFresh  bool            // False after the latest matching probe failed
 	snapshotProbeID     int64
-	snapshotRunner      localSnapshotCommandRunner
+	snapshotRunner      localSnapshotCounter
 	viewNeedsRefresh    bool
 	// Top-files (T) view incremental filter. largeFilesAll is the full,
 	// size-ranked list; largeFiles is the view actually rendered and acted on,

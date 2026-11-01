@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -10,9 +8,18 @@ import (
 	"time"
 )
 
-func TestCreateInsightEntries(t *testing.T) {
+func isolateInsightHost(t *testing.T) string {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	pacmanCachePath = filepath.Join(home, "no-pacman")
+	t.Cleanup(func() { pacmanCachePath = "/var/cache/pacman/pkg" })
+	return home
+}
+
+func TestCreateInsightEntries(t *testing.T) {
+	home := isolateInsightHost(t)
 	if entries := createInsightEntries(); len(entries) != 0 {
 		t.Fatalf("empty home returned %d insight entries", len(entries))
 	}
@@ -42,30 +49,62 @@ func TestCreateInsightEntries(t *testing.T) {
 	}
 }
 
-func TestCreateInsightEntriesIncludesOrbStackData(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+func TestCreateInsightEntriesListsLinuxCacheStores(t *testing.T) {
+	home := isolateInsightHost(t)
+	pacmanCachePath = filepath.Join(home, "pacman-pkg")
 
-	orbstackData := filepath.Join(home, "Library", "Group Containers", "HUAQ24HBR6.dev.orbstack", "data")
-	if err := os.MkdirAll(orbstackData, 0755); err != nil {
+	want := map[string]string{
+		"Trash":                  filepath.Join(home, ".local", "share", "Trash"),
+		"Pacman Package Cache":   pacmanCachePath,
+		"yay Cache":              filepath.Join(home, ".cache", "yay"),
+		"paru Cache":             filepath.Join(home, ".cache", "paru"),
+		"npm Cache":              filepath.Join(home, ".npm", "_cacache"),
+		"pip Cache":              filepath.Join(home, ".cache", "pip"),
+		"Go Build Cache":         filepath.Join(home, ".cache", "go-build"),
+		"Go Modules":             filepath.Join(home, "go", "pkg", "mod"),
+		"Cargo Registry":         filepath.Join(home, ".cargo", "registry"),
+		"Rust Toolchains":        filepath.Join(home, ".rustup", "toolchains"),
+		"mise Installs":          filepath.Join(home, ".local", "share", "mise"),
+		"mise Cache":             filepath.Join(home, ".cache", "mise"),
+		"Gradle Cache":           filepath.Join(home, ".gradle", "caches"),
+		"JetBrains Cache":        filepath.Join(home, ".cache", "JetBrains"),
+		"Docker Data (rootless)": filepath.Join(home, ".local", "share", "docker"),
+		"Ollama Models":          filepath.Join(home, ".ollama"),
+		"Hugging Face Cache":     filepath.Join(home, ".cache", "huggingface"),
+	}
+	for _, path := range want {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[string]string{}
+	for _, entry := range createInsightEntries() {
+		got[entry.Name] = entry.Path
+	}
+	for name, path := range want {
+		if got[name] != path {
+			t.Errorf("insight %q path = %q, want %q", name, got[name], path)
+		}
+	}
+}
+
+func TestCreateInsightEntriesHonorsXDGDataHome(t *testing.T) {
+	home := isolateInsightHost(t)
+	data := filepath.Join(home, "xdg-data")
+	t.Setenv("XDG_DATA_HOME", data)
+	if err := os.MkdirAll(filepath.Join(data, "Trash"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-
-	entries := createInsightEntries()
-	for _, entry := range entries {
-		if entry.Name == "OrbStack Data" {
-			if entry.Path != orbstackData {
-				t.Fatalf("OrbStack path = %q, want %q", entry.Path, orbstackData)
-			}
+	for _, entry := range createInsightEntries() {
+		if entry.Name == "Trash" && entry.Path == filepath.Join(data, "Trash") {
 			return
 		}
 	}
-	t.Fatal("OrbStack Data insight not found")
+	t.Fatal("Trash under XDG_DATA_HOME not listed")
 }
 
 func TestCreateInsightEntriesIncludesUvCache(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := isolateInsightHost(t)
 
 	uvCache := filepath.Join(home, ".cache", "uv")
 	if err := os.MkdirAll(uvCache, 0755); err != nil {

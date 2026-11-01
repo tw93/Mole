@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -44,11 +42,15 @@ func operationsLogEnabled() bool {
 }
 
 func moleLogDir() (string, bool) {
-	home := os.Getenv("HOME")
-	if home == "" {
-		return "", false
+	state := os.Getenv("XDG_STATE_HOME")
+	if !filepath.IsAbs(state) {
+		home := os.Getenv("HOME")
+		if home == "" {
+			return "", false
+		}
+		state = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(home, "Library", "Logs", "mole"), true
+	return filepath.Join(state, "mole"), true
 }
 
 func operationsLogPath() (string, bool) {

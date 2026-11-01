@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 // entryHeap is a min-heap of dirEntry used to keep Top N largest entries.

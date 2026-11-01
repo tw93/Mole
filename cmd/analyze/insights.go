@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -10,6 +8,9 @@ import (
 	"time"
 )
 
+// pacmanCachePath is a var so tests can point it away from the host.
+var pacmanCachePath = "/var/cache/pacman/pkg"
+
 // createInsightEntries returns the list of hidden-space insight entries
 // to show in the overview screen alongside the standard directory entries.
 func createInsightEntries() []dirEntry {
@@ -18,18 +19,12 @@ func createInsightEntries() []dirEntry {
 		return nil
 	}
 
-	var entries []dirEntry
-
-	// iOS Backups: ~/Library/Application Support/MobileSync/Backup
-	backupPath := filepath.Join(home, "Library", "Application Support", "MobileSync", "Backup")
-	if info, err := os.Stat(backupPath); err == nil && info.IsDir() {
-		entries = append(entries, dirEntry{
-			Name:  "iOS Backups",
-			Path:  backupPath,
-			IsDir: true,
-			Size:  -1,
-		})
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if !filepath.IsAbs(dataHome) {
+		dataHome = filepath.Join(home, ".local", "share")
 	}
+
+	var entries []dirEntry
 
 	// Old Downloads: ~/Downloads (files older than 90 days)
 	downloadsPath := filepath.Join(home, "Downloads")
@@ -43,39 +38,34 @@ func createInsightEntries() []dirEntry {
 	}
 
 	// Cleanable paths: things mo clean can remove or the user can safely delete.
-	// System Caches (~Library/Caches) is intentionally omitted here because the
-	// specific cache subdirectories below are already its children; listing both
-	// would double-count the same bytes.
+	// Report-only: nothing here is ever selected for the user. ~/.cache is its
+	// own overview row, so the cache children below are listed only for the
+	// stores worth naming; each is a child of that row, as on every platform.
 	cleanablePaths := []struct {
 		name string
 		path string
 	}{
 		// Universal (everyone has these)
-		{"System Logs", filepath.Join(home, "Library", "Logs")},
-		{"Homebrew Cache", filepath.Join(home, "Library", "Caches", "Homebrew")},
+		{"Trash", filepath.Join(dataHome, "Trash")},
+		{"Pacman Package Cache", pacmanCachePath},
+		{"yay Cache", filepath.Join(home, ".cache", "yay")},
+		{"paru Cache", filepath.Join(home, ".cache", "paru")},
 
 		// Developer-specific (only shown if path exists)
-		{"Xcode DerivedData", filepath.Join(home, "Library", "Developer", "Xcode", "DerivedData")},
-		{"Xcode Simulators", filepath.Join(home, "Library", "Developer", "CoreSimulator", "Devices")},
-		{"Xcode Archives", filepath.Join(home, "Library", "Developer", "Xcode", "Archives")},
-		{"Spotify Cache", filepath.Join(home, "Library", "Application Support", "Spotify", "PersistentCache")},
-		{"JetBrains Cache", filepath.Join(home, "Library", "Caches", "JetBrains")},
-		{"Docker Data", filepath.Join(home, "Library", "Containers", "com.docker.docker", "Data")},
-		{"pip Cache", filepath.Join(home, "Library", "Caches", "pip")},
+		{"npm Cache", filepath.Join(home, ".npm", "_cacache")},
+		{"pip Cache", filepath.Join(home, ".cache", "pip")},
 		{"uv Cache", filepath.Join(home, ".cache", "uv")},
+		{"Go Build Cache", filepath.Join(home, ".cache", "go-build")},
+		{"Go Modules", filepath.Join(home, "go", "pkg", "mod")},
+		{"Cargo Registry", filepath.Join(home, ".cargo", "registry")},
+		{"Rust Toolchains", filepath.Join(home, ".rustup", "toolchains")},
+		{"mise Installs", filepath.Join(dataHome, "mise")},
+		{"mise Cache", filepath.Join(home, ".cache", "mise")},
 		{"Gradle Cache", filepath.Join(home, ".gradle", "caches")},
-		{"CocoaPods Cache", filepath.Join(home, "Library", "Caches", "CocoaPods")},
-	}
-	if matches, err := filepath.Glob(filepath.Join(home, "Library", "Group Containers", "*dev.orbstack", "data")); err == nil {
-		for _, match := range matches {
-			if info, statErr := os.Stat(match); statErr == nil && info.IsDir() {
-				cleanablePaths = append(cleanablePaths, struct {
-					name string
-					path string
-				}{"OrbStack Data", match})
-				break
-			}
-		}
+		{"JetBrains Cache", filepath.Join(home, ".cache", "JetBrains")},
+		{"Docker Data (rootless)", filepath.Join(dataHome, "docker")},
+		{"Ollama Models", filepath.Join(home, ".ollama")},
+		{"Hugging Face Cache", filepath.Join(home, ".cache", "huggingface")},
 	}
 	for _, c := range cleanablePaths {
 		if info, err := os.Stat(c.path); err == nil && info.IsDir() {

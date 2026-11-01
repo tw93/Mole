@@ -1,11 +1,8 @@
-//go:build darwin
-
 package main
 
 import (
 	"context"
-	"os/exec"
-	"strings"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,43 +16,65 @@ type localSnapshotMsg struct {
 	err     error
 }
 
-type localSnapshotCommandRunner func(context.Context, string, ...string) ([]byte, error)
+// localSnapshotCounter counts filesystem snapshots without running a tool.
+type localSnapshotCounter func(context.Context) (int, error)
 
-func runLocalSnapshotCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+// snapshotStores are the places snapper and Timeshift keep read-only
+// snapshots. Each snapshot is one numbered (snapper) or dated (Timeshift)
+// directory below the store; the stores are counted, never scanned.
+var snapshotStores = []string{
+	"/.snapshots",
+	"/timeshift/snapshots",
+	"/run/timeshift/backup/timeshift/snapshots",
+}
+
+func countSnapshotsIn(ctx context.Context, stores []string) (int, error) {
+	count := 0
+	var firstErr error
+	for _, store := range stores {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		entries, err := os.ReadDir(store)
+		if err != nil {
+			if !os.IsNotExist(err) && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				count++
+			}
+		}
+	}
+	if count == 0 && firstErr != nil {
+		return 0, firstErr
+	}
+	return count, nil
+}
+
+func runLocalSnapshotCount(ctx context.Context) (int, error) {
+	return countSnapshotsIn(ctx, snapshotStores)
 }
 
 func (m model) detectLocalSnapshotsCmd() tea.Cmd {
-	run := m.snapshotRunner
-	if run == nil {
-		run = runLocalSnapshotCommand
+	count := m.snapshotRunner
+	if count == nil {
+		count = runLocalSnapshotCount
 	}
-	return localSnapshotProbeCmd(run, m.snapshotProbeID)
+	return localSnapshotProbeCmd(count, m.snapshotProbeID)
 }
 
-func localSnapshotProbeCmd(run localSnapshotCommandRunner, probeID int64) tea.Cmd {
+func localSnapshotProbeCmd(count localSnapshotCounter, probeID int64) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), localSnapshotProbeTimeout)
 		defer cancel()
 
-		output, err := run(ctx, "/usr/bin/tmutil", "listlocalsnapshotdates", "/")
+		n, err := count(ctx)
 		if err != nil {
 			return localSnapshotMsg{probeID: probeID, err: err}
 		}
-
-		return localSnapshotMsg{probeID: probeID, count: parseLocalSnapshotCount(output)}
+		return localSnapshotMsg{probeID: probeID, count: n}
 	}
-}
-
-// parseLocalSnapshotCount ignores tmutil's localized heading and counts only
-// the documented YYYY-MM-DD-HHMMSS snapshot-date rows. Snapshot sizes are
-// intentionally not inferred because tmutil does not expose retained bytes.
-func parseLocalSnapshotCount(data []byte) int {
-	count := 0
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if _, err := time.Parse("2006-01-02-150405", strings.TrimSpace(line)); err == nil {
-			count++
-		}
-	}
-	return count
 }

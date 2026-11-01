@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -35,8 +33,8 @@ Options:
 
 Examples:
   mo analyze                 Machine-wide overview
-  mo analyze ~/Library       Scan one directory
-  mo analyze --json /Volumes Machine-readable output
+  mo analyze ~/.cache        Scan one directory
+  mo analyze --json /mnt     Machine-readable output
 `
 
 // parseArgs applies Mole's CLI conventions to the flag package: help goes to
@@ -85,7 +83,7 @@ func main() {
 // resolveScanTarget decides which scan a given invocation asks for. Kept
 // separate from main so the overview-vs-directory routing has a test that fails
 // when it flips: an end-to-end overview scan measures the real /Applications
-// and /Library, which cost 106s of a single CI test file's 134s.
+// and /usr, which cost 106s of a single CI test file's 134s.
 func resolveScanTarget(envPath string, args []string) (string, bool, error) {
 	target := envPath
 	if target == "" && len(args) > 0 {
@@ -153,7 +151,7 @@ func newModel(path string, isOverview bool) model {
 		multiSelected:       make(map[string]bool),
 		largeMultiSelected:  make(map[string]bool),
 		liveSortMode:        liveSortFreezeOnMove,
-		snapshotRunner:      runLocalSnapshotCommand,
+		snapshotRunner:      runLocalSnapshotCount,
 	}
 
 	if isOverview {
@@ -187,16 +185,13 @@ func createOverviewEntriesWithInsights(insightEntries []dirEntry) []dirEntry {
 	home := os.Getenv("HOME")
 	entries := []dirEntry{}
 
-	// Separate Home and ~/Library to avoid double counting.
+	// Separate Home and ~/.cache to avoid double counting.
 	if home != "" {
 		entries = append(entries, dirEntry{Name: "Home", Path: home, IsDir: true, Size: -1})
 
-		userLibrary := filepath.Join(home, "Library")
-		if _, err := os.Stat(userLibrary); err == nil {
-			// Renamed from "App Library" to "User Library" so it parallels
-			// "System Library" (`/Library`) and is not confused with
-			// `/Applications`. Path unchanged.
-			entries = append(entries, dirEntry{Name: "User Library", Path: userLibrary, IsDir: true, Size: -1})
+		userCache := filepath.Join(home, homeCacheDirName)
+		if info, err := os.Stat(userCache); err == nil && info.IsDir() {
+			entries = append(entries, dirEntry{Name: "User Cache", Path: userCache, IsDir: true, Size: -1})
 		}
 	}
 
@@ -210,10 +205,18 @@ func createOverviewEntriesWithInsights(insightEntries []dirEntry) []dirEntry {
 }
 
 func systemOverviewRoots() []dirEntry {
-	return []dirEntry{
-		{Name: "Applications", Path: "/Applications", IsDir: true, Size: -1},
-		{Name: "System Library", Path: "/Library", IsDir: true, Size: -1},
+	roots := []dirEntry{
+		{Name: "System (/usr)", Path: "/usr", IsDir: true, Size: -1},
+		{Name: "Variable Data (/var)", Path: "/var", IsDir: true, Size: -1},
+		{Name: "Optional (/opt)", Path: "/opt", IsDir: true, Size: -1},
 	}
+	var present []dirEntry
+	for _, root := range roots {
+		if info, err := os.Stat(root.Path); err == nil && info.IsDir() {
+			present = append(present, root)
+		}
+	}
+	return present
 }
 
 func sumKnownEntrySizes(entries []dirEntry) int64 {
@@ -244,25 +247,34 @@ func hasPendingOverviewEntries(entries []dirEntry) bool {
 	return false
 }
 
+// safeOpen opens path with the desktop's default handler through xdg-open.
+// With reveal it opens the containing directory instead, since xdg-open has no
+// way to select a file in the file manager.
 func safeOpen(path string, reveal bool) error {
 	if err := validatePath(path); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), openCommandTimeout)
 	defer cancel()
-	args := []string{path}
+	target := path
 	if reveal {
-		args = []string{"-R", path}
+		target = filepath.Dir(path)
 	}
-	return exec.CommandContext(ctx, "open", args...).Run()
+	return runXDGOpen(ctx, target)
 }
 
-// safePreview opens the file with the default macOS application.
+// safePreview opens the file with the default application.
 func safePreview(path string) error {
 	if err := validatePath(path); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), openCommandTimeout)
 	defer cancel()
-	return exec.CommandContext(ctx, "open", path).Run()
+	return runXDGOpen(ctx, path)
+}
+
+func runXDGOpen(ctx context.Context, target string) error {
+	cmd := exec.CommandContext(ctx, "xdg-open", target)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	return cmd.Run()
 }

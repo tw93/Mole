@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 func nextLiveSortMode(mode liveSortMode) liveSortMode {

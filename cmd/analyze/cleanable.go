@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import (
@@ -75,11 +73,8 @@ func isHandledByMoClean(path string) bool {
 }
 
 var moCleanHandledPathFragments = []string{
-	"/Library/Caches/",
-	"/Library/Logs/",
-	"/Library/Saved Application State/",
-	"/.Trash/",
-	"/Library/DiagnosticReports/",
+	"/.cache/",
+	"/.local/share/Trash/",
 }
 
 // Project dependency and build directories.
@@ -132,12 +127,9 @@ var projectDependencyDirs = map[string]bool{
 	".astro":      true,
 	".docusaurus": true,
 
-	// Apple dev.
-	"DerivedData": true,
-	"Pods":        true,
-	".build":      true,
-	"Carthage":    true,
-	".dart_tool":  true,
+	// Swift and Dart.
+	".build":     true,
+	".dart_tool": true,
 
 	// Other tools.
 	".terraform": true,

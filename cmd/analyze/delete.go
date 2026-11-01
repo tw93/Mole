@@ -1,39 +1,19 @@
-//go:build darwin
-
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
-	"syscall"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"golang.org/x/sys/unix"
+
+	"github.com/tw93/mole/internal/xdgtrash"
 )
-
-const trashTimeout = 30 * time.Second
-
-// trashBinary is Apple's own trash(8). It moves paths to the user Trash without
-// involving Finder, which is what makes deletion work over SSH: the Finder
-// AppleScript path raises a dialog on the physical machine that a remote user
-// cannot answer, so the delete only ever times out (discussion #474).
-//
-// Invoked by absolute path rather than a PATH lookup so a "trash" shadowed
-// earlier in the user's PATH can never receive a delete request. Arguments are
-// always absolute paths, so no "--" separator is needed; passing one would make
-// trash(8) report a missing file named "--" and exit non-zero even though it
-// still trashed the real target, which would trigger a duplicate delete via the
-// Finder fallback.
-const trashBinary = "/usr/bin/trash"
 
 func deletePathCmd(path string, counter *int64, audit *deleteAudit) tea.Cmd {
 	return func() tea.Msg {
@@ -121,7 +101,7 @@ func trashPathWithProgress(root string, counter *int64) (int64, error) {
 	// first made large directory deletes appear hung before the move began.
 	const count int64 = 1
 
-	// Move through a headless Trash route, with Finder as the last compatibility fallback.
+	// Move through the freedesktop.org Trash.
 	if err := moveToTrash(root); err != nil {
 		return 0, err
 	}
@@ -132,9 +112,10 @@ func trashPathWithProgress(root string, counter *int64) (int64, error) {
 	return count, nil
 }
 
-// moveToTrash moves a file/directory to the user Trash. macOS 15+ ships
-// trash(8); older supported systems use an atomic, no-overwrite move into the
-// correct per-volume Trash. Finder is only the final compatibility fallback.
+// moveToTrash moves a file or directory to the freedesktop.org Trash through
+// the shared xdgtrash sink: the home Trash for items on the home filesystem,
+// the volume's $topdir/.Trash-$uid for other filesystems, and a refusal rather
+// than a copy-and-delete when neither is possible.
 func moveToTrash(path string) error {
 	// Validate raw input before Abs resolves ".." components away.
 	if err := validateTrashTarget(path); err != nil {
@@ -151,158 +132,9 @@ func moveToTrash(path string) error {
 		return err
 	}
 
-	if trashErr := moveToTrashViaBinary(absPath); trashErr == nil {
-		return nil
+	if _, err := xdgtrash.Move(absPath); err != nil {
+		return fmt.Errorf("failed to move to Trash: %w", err)
 	}
-	if filesystemErr := moveToTrashViaFilesystem(absPath); filesystemErr == nil {
-		return nil
-	}
-
-	return moveToTrashViaFinder(absPath)
-}
-
-// moveToTrashViaBinary moves absPath to Trash using trash(8). Returns an error
-// when the binary is missing so callers fall back to Finder.
-func moveToTrashViaBinary(absPath string) error {
-	if _, err := os.Stat(trashBinary); err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), trashTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, trashBinary, absPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("timeout moving to Trash")
-		}
-		return fmt.Errorf("failed to move to Trash: %s", strings.TrimSpace(string(output)))
-	}
-
-	return nil
-}
-
-// moveToTrashViaFilesystem provides a headless path for macOS versions before
-// trash(8). It uses renameatx_np(RENAME_EXCL), so a concurrent name collision
-// can never overwrite an existing Trash item.
-func moveToTrashViaFilesystem(absPath string) error {
-	trashDir, err := trashDirectoryForPath(absPath)
-	if err != nil {
-		return err
-	}
-
-	base := filepath.Base(absPath)
-	if base == "." || base == string(filepath.Separator) || base == "" {
-		return fmt.Errorf("invalid Trash item name")
-	}
-
-	stamp := time.Now().UnixNano()
-	for attempt := range 100 {
-		name := base
-		if attempt > 0 {
-			name = fmt.Sprintf("%s.%d.%d.%d", base, stamp, os.Getpid(), attempt)
-		}
-		dest := filepath.Join(trashDir, name)
-		err = unix.RenameatxNp(unix.AT_FDCWD, absPath, unix.AT_FDCWD, dest, unix.RENAME_EXCL)
-		if err == nil {
-			return nil
-		}
-		if err != syscall.EEXIST {
-			return fmt.Errorf("failed to move to Trash: %w", err)
-		}
-	}
-
-	return fmt.Errorf("failed to choose unique Trash destination for %s", absPath)
-}
-
-func trashDirectoryForPath(absPath string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve home directory: %w", err)
-	}
-
-	var pathFS, homeFS unix.Statfs_t
-	if err := unix.Statfs(absPath, &pathFS); err != nil {
-		return "", fmt.Errorf("failed to inspect target volume: %w", err)
-	}
-	if err := unix.Statfs(home, &homeFS); err != nil {
-		return "", fmt.Errorf("failed to inspect home volume: %w", err)
-	}
-
-	if pathFS.Fsid == homeFS.Fsid {
-		trashDir := filepath.Join(home, ".Trash")
-		if err := ensureOwnedTrashDirectory(trashDir, true); err != nil {
-			return "", err
-		}
-		return trashDir, nil
-	}
-
-	mountPoint := strings.TrimRight(string(pathFS.Mntonname[:]), "\x00")
-	if mountPoint == "" {
-		return "", fmt.Errorf("target volume has no mount point")
-	}
-	trashRoot := filepath.Join(mountPoint, ".Trashes")
-	rootInfo, err := os.Lstat(trashRoot)
-	if err != nil {
-		return "", fmt.Errorf("volume Trash is unavailable: %w", err)
-	}
-	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
-		return "", fmt.Errorf("volume Trash is not a normal directory")
-	}
-
-	trashDir := filepath.Join(trashRoot, fmt.Sprintf("%d", os.Getuid()))
-	if err := ensureOwnedTrashDirectory(trashDir, true); err != nil {
-		return "", err
-	}
-	return trashDir, nil
-}
-
-func ensureOwnedTrashDirectory(path string, create bool) error {
-	info, err := os.Lstat(path)
-	if os.IsNotExist(err) && create {
-		if err := os.Mkdir(path, 0o700); err != nil {
-			return fmt.Errorf("failed to create Trash directory: %w", err)
-		}
-		info, err = os.Lstat(path)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to inspect Trash directory: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return fmt.Errorf("trash path is not a normal directory")
-	}
-
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Getuid()) {
-		return fmt.Errorf("trash directory is not owned by the current user")
-	}
-	if info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("trash directory is writable by another user")
-	}
-	return nil
-}
-
-// moveToTrashViaFinder remains as a last fallback for unusual volume layouts.
-func moveToTrashViaFinder(absPath string) error {
-	// Escape path for AppleScript (handle quotes and backslashes).
-	escapedPath := strings.ReplaceAll(absPath, "\\", "\\\\")
-	escapedPath = strings.ReplaceAll(escapedPath, "\"", "\\\"")
-
-	script := fmt.Sprintf(`tell application "Finder" to delete POSIX file "%s"`, escapedPath)
-
-	ctx, cancel := context.WithTimeout(context.Background(), trashTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("timeout moving to Trash")
-		}
-		return fmt.Errorf("failed to move to Trash: %s", strings.TrimSpace(string(output)))
-	}
-
 	return nil
 }
 
@@ -319,156 +151,122 @@ func validateTrashTarget(path string) error {
 	return nil
 }
 
+// protectedSystemTrees are never an Analyze cleanup surface: neither the
+// directory nor anything inside it. Matching is by file identity, so /lib
+// and /bin resolve to /usr/lib and /usr/bin on a merged-usr system.
+var protectedSystemTrees = []string{
+	"/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root",
+	"/run", "/sbin", "/sys", "/usr", "/nix/store", "/snap",
+}
+
+// protectedSystemRoots are refused as the exact path only; ordinary
+// directories below them (/var/tmp, a build under /var/lib) stay selectable.
+var protectedSystemRoots = []string{"/", "/var"}
+
+// protectedHomeTrees are refused inside every account's home, relative to it.
+var protectedHomeTrees = []string{
+	filepath.Join(".cache", "doc"),               // Flatpak document portal
+	filepath.Join(".local", "share", "keyrings"), // GNOME keyring
+	".gnupg",
+	".ssh",
+}
+
 func isProtectedAnalyzeDeletePath(path string) bool {
 	if path == "" {
 		return false
 	}
 
 	cleanPath := filepath.Clean(path)
-
-	// EDR / Darwin-cache protection is based on the absolute path and does not
-	// depend on HOME, so check it first: an unset HOME must not let a Falcon
-	// cache slip through (e.g. `env -u HOME mo analyze`).
-	if isEndpointSecurityCachePath(cleanPath) {
-		return true
-	}
 	if isCriticalAnalyzeDeletePath(cleanPath) {
 		return true
 	}
 
-	homeRoots := protectedAnalyzeHomeRoots()
-	if len(homeRoots) == 0 {
-		return false
+	for _, trashRoot := range protectedTrashRoots() {
+		if cleanPath == trashRoot || strings.HasPrefix(cleanPath, trashRoot+string(filepath.Separator)) ||
+			isPathWithinExistingRoot(cleanPath, trashRoot) {
+			return true
+		}
+	}
+	// A volume Trash ($topdir/.Trash-$uid) is the same kind of place.
+	trashName := fmt.Sprintf(".Trash-%d", os.Getuid())
+	if slices.Contains(strings.Split(cleanPath, string(filepath.Separator)), trashName) {
+		return true
 	}
 
-	for _, homeRoot := range homeRoots {
+	for _, homeRoot := range protectedAnalyzeHomeRoots() {
 		if cleanPath == homeRoot || isSameExistingPath(cleanPath, homeRoot) {
 			return true
 		}
-
-		dockerDesktopState := filepath.Join(homeRoot, "Library", "Containers", "com.docker.docker")
-		if cleanPath == dockerDesktopState || strings.HasPrefix(cleanPath, dockerDesktopState+string(filepath.Separator)) {
-			return true
-		}
-		if isPathWithinExistingRoot(cleanPath, dockerDesktopState) ||
-			containsProtectedRoot(cleanPath, dockerDesktopState) {
-			return true
-		}
-
-		orbstackState := filepath.Join(homeRoot, ".orbstack")
-		if cleanPath == orbstackState || strings.HasPrefix(cleanPath, orbstackState+string(filepath.Separator)) {
-			return true
-		}
-		if isPathWithinExistingRoot(cleanPath, orbstackState) ||
-			containsProtectedRoot(cleanPath, orbstackState) {
-			return true
-		}
-
-		groupContainers := filepath.Join(homeRoot, "Library", "Group Containers")
-		if entries, err := os.ReadDir(groupContainers); err == nil {
-			for _, entry := range entries {
-				if !strings.HasSuffix(strings.ToLower(entry.Name()), "dev.orbstack") {
-					continue
-				}
-				stateRoot := filepath.Join(groupContainers, entry.Name())
-				if isPathWithinExistingRoot(cleanPath, stateRoot) ||
-					containsProtectedRoot(cleanPath, stateRoot) {
-					return true
-				}
+		for _, rel := range protectedHomeTrees {
+			tree := filepath.Join(homeRoot, rel)
+			if cleanPath == tree || strings.HasPrefix(cleanPath, tree+string(filepath.Separator)) ||
+				isPathWithinExistingRoot(cleanPath, tree) {
+				return true
 			}
-		}
-
-		rel, err := filepath.Rel(strings.ToLower(groupContainers), strings.ToLower(cleanPath))
-		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-
-		containerName := rel
-		if idx := strings.Index(containerName, string(filepath.Separator)); idx >= 0 {
-			containerName = containerName[:idx]
-		}
-		if strings.HasSuffix(strings.ToLower(containerName), "dev.orbstack") {
-			return true
 		}
 	}
 	return false
 }
 
 func isCriticalAnalyzeDeletePath(path string) bool {
-	criticalRoots := []string{
-		"/",
-		"/Applications",
-		"/Applications/Finder.app",
-		"/Applications/Safari.app",
-		"/Library",
-		"/Library/Apple",
-		"/Library/Application Support",
-		"/Library/Extensions",
-		"/Library/Keychains",
-		"/System",
-		"/Users",
-		"/Volumes",
-		"/Network",
-		"/cores",
-		"/dev",
-		"/etc",
-		"/home",
-		"/net",
-		"/tmp",
-		"/var",
-		"/private",
-		"/private/etc",
-		"/private/tmp",
-		"/private/var",
-		"/private/var/audit",
-		"/private/var/db",
-		"/private/var/root",
-		"/private/var/tmp",
-		"/private/var/folders",
-		"/bin",
-		"/sbin",
-		"/usr",
-		"/opt",
-		"/opt/homebrew",
-	}
-	for _, root := range criticalRoots {
+	for _, root := range protectedSystemRoots {
 		if path == root || isSameExistingPath(path, root) {
 			return true
 		}
 	}
-
-	// A child directly under /Users is another account's home root, not an
+	// A child directly under /home is another account's home root, not an
 	// ordinary directory. Protect every account root while keeping its
 	// descendants available to the owning user.
-	if isDirectChildOfExistingRoot(path, "/Users") {
+	if isDirectChildOfExistingRoot(path, "/home") {
 		return true
 	}
-
-	// These system-owned trees are never an Analyze cleanup surface, even when
-	// a caller starts inside one instead of selecting its top-level row.
-	protectedTrees := []string{
-		"/System",
-		"/bin",
-		"/sbin",
-		"/usr",
-		"/private/etc",
-		"/private/var/audit",
-		"/private/var/db",
-		"/private/var/root",
-		"/Library/Apple",
-		"/Library/Extensions",
-		"/Library/Keychains",
-		"/Applications/Finder.app",
-		"/Applications/Safari.app",
-		"/dev",
+	if isMountPointPath(path) {
+		return true
 	}
-	for _, root := range protectedTrees {
-		if strings.HasPrefix(path, root+string(filepath.Separator)) ||
+	for _, root := range protectedSystemTrees {
+		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) ||
 			isPathWithinExistingRoot(path, root) {
 			return true
 		}
 	}
 	return false
+}
+
+func isDirectChildOfExistingRoot(path, protectedRoot string) bool {
+	cleanPath := filepath.Clean(path)
+	return cleanPath != filepath.Clean(protectedRoot) &&
+		filepath.Dir(cleanPath) != cleanPath &&
+		isSameExistingPath(filepath.Dir(cleanPath), protectedRoot)
+}
+
+// isMountPointPath reports whether path is exactly a mount point in the live
+// mount table. Moving one to the Trash would fail at best and hide a whole
+// filesystem at worst.
+func isMountPointPath(path string) bool {
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return false
+	}
+	return mountTableHasMountPoint(string(data), path)
+}
+
+func mountTableHasMountPoint(mountinfo, path string) bool {
+	for _, mount := range parseMountInfo(mountinfo) {
+		if mount.Mountpoint == path {
+			return true
+		}
+	}
+	return false
+}
+
+// protectedTrashRoots lists the home Trash directory, as XDG_DATA_HOME or the
+// default location names it.
+func protectedTrashRoots() []string {
+	env, err := xdgtrash.DefaultEnv()
+	if err != nil {
+		return nil
+	}
+	return []string{env.HomeTrash()}
 }
 
 func protectedAnalyzeHomeRoots() []string {
@@ -496,19 +294,6 @@ func protectedAnalyzeHomeRoots() []string {
 	return homeRoots
 }
 
-func containsProtectedRoot(path, protectedRoot string) bool {
-	// An absent runtime must not make an otherwise empty container directory
-	// undeletable. Unknown visibility still keeps its structural ancestors.
-	if _, err := os.Lstat(protectedRoot); os.IsNotExist(err) {
-		return false
-	}
-	if resolved, err := filepath.EvalSymlinks(protectedRoot); err == nil &&
-		isPathWithinExistingRoot(resolved, path) {
-		return true
-	}
-	return isPathWithinExistingRoot(protectedRoot, path)
-}
-
 func isPathWithinExistingRoot(path, protectedRoot string) bool {
 	protectedInfo, err := os.Stat(protectedRoot)
 	if err != nil {
@@ -530,54 +315,6 @@ func isSameExistingPath(path, protectedPath string) bool {
 	pathInfo, pathErr := os.Stat(path)
 	protectedInfo, protectedErr := os.Stat(protectedPath)
 	return pathErr == nil && protectedErr == nil && os.SameFile(pathInfo, protectedInfo)
-}
-
-func isDirectChildOfExistingRoot(path, protectedRoot string) bool {
-	cleanPath := filepath.Clean(path)
-	return cleanPath != filepath.Clean(protectedRoot) &&
-		filepath.Dir(cleanPath) != cleanPath &&
-		isSameExistingPath(filepath.Dir(cleanPath), protectedRoot)
-}
-
-// endpointSecurityBundlePrefixes mirrors ENDPOINT_SECURITY_BUNDLE_PREFIXES in
-// lib/core/app_protection_data.sh. Deleting anything inside one of these EDR/MDM
-// agents' per-user Darwin caches trips sensor tamper detection (e.g. CrowdStrike
-// MacFalconSensorTamper, MITRE T1562.001), so analyze must never Trash them.
-var endpointSecurityBundlePrefixes = []string{
-	"com.crowdstrike.",
-	"com.sentinelone.",
-	"com.sentinel-labs.",
-	"com.eset.",
-	"com.jamf.",
-	"com.jamfsoftware.",
-	"com.paloaltonetworks.",
-	"com.cisco.anyconnect",
-	"com.cisco.secureclient",
-	"com.alibaba.security.",
-}
-
-// isEndpointSecurityCachePath reports whether path is an endpoint-security / EDR
-// agent file under the per-user Darwin folder (/private/var/folders or its
-// /var/folders symlink form). Mirror of is_endpoint_security_cache_path() in
-// lib/core/app_protection.sh.
-func isEndpointSecurityCachePath(path string) bool {
-	lowerPath := strings.ToLower(path)
-	if !strings.HasPrefix(lowerPath, "/private/var/folders/") && !strings.HasPrefix(lowerPath, "/var/folders/") {
-		return false
-	}
-	// A whole Darwin user/cache container also moves any protected agent
-	// below it. Keep the structural ancestors; ordinary app cache leaves stay
-	// eligible without an unbounded recursive scan of the shared container.
-	rel := strings.TrimPrefix(strings.TrimPrefix(lowerPath, "/private"), "/var/folders/")
-	if len(strings.Split(rel, string(filepath.Separator))) <= 3 {
-		return true
-	}
-	for _, prefix := range endpointSecurityBundlePrefixes {
-		if strings.Contains(lowerPath, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // validatePath checks path safety for external commands.

@@ -1,5 +1,3 @@
-//go:build darwin
-
 package main
 
 import "time"
@@ -12,14 +10,12 @@ const (
 	// Below this many columns a scanned path is too clipped to tell anything
 	// apart, so it moves to its own row instead of sharing the status line.
 	scanPathInlineMinWidth = 24
-	spotlightMinFileSize   = 100 << 20
 	largeFileWarmupMinSize = 1 << 20
 	defaultViewport        = 12
 	analyzerCacheTTL       = 7 * 24 * time.Hour
 	overviewCacheTTL       = 7 * 24 * time.Hour
 	overviewCacheFile      = "overview_sizes.json"
 	duTimeout              = 30 * time.Second
-	mdlsTimeout            = 5 * time.Second
 	maxConcurrentOverview  = 8
 	batchUpdateSize        = 100
 	staleCacheTTL          = 3 * 24 * time.Hour
@@ -50,26 +46,29 @@ const (
 	overviewCacheKeepEntries = 900
 	overviewRefreshDivisor   = 8
 
-	// Worker pool limits. Deliberately conservative: the User Library scan
+	// Worker pool limits. Deliberately conservative: the home cache scan
 	// blocks many goroutines in syscalls on high-fan-out trees (Steam
 	// workshop/temp, browser caches), and each blocked goroutine holds an
-	// OS thread. Exceeding the per-user thread limit on macOS produces a
+	// OS thread. Exceeding the per-user thread limit produces a
 	// fatal "runtime: failed to create new OS thread" with no recovery.
-	// Further reduced after #765: System Library (184GB, 261k files) with
+	// Further reduced after #765: System tree (184GB, 261k files) with
 	// deep permission checks can still exhaust threads at previous limits.
 	minWorkers         = 2
 	maxWorkers         = 12
 	cpuMultiplier      = 1
 	openCommandTimeout = 10 * time.Second
-	scanSendTimeout    = 100 * time.Millisecond
-	uiTickInterval     = 100 * time.Millisecond
+
+	// homeCacheDirName is listed as its own overview row and excluded from the
+	// Home total so the two never count the same bytes.
+	homeCacheDirName = ".cache"
+	scanSendTimeout  = 100 * time.Millisecond
+	uiTickInterval   = 100 * time.Millisecond
 )
 
 var overviewDuIgnoreNames = map[string]bool{
-	// iCloud Drive's FileProvider tree can block `du` for tens of seconds even
-	// when most entries are cloud placeholders. Keep the overview responsive;
-	// users can still drill into the folder explicitly when they need it.
-	"Mobile Documents": true,
+	// A stale GVFS FUSE mount can block `du` for tens of seconds. Keep the
+	// overview responsive; users can still drill into the folder explicitly.
+	".gvfs": true,
 }
 
 var foldDirs = map[string]bool{
@@ -150,43 +149,24 @@ var foldDirs = map[string]bool{
 	".fleet":  true,
 
 	// Cache directories.
-	".cache":                  true,
-	"__MACOSX":                true,
-	".DS_Store":               true,
-	".Trash":                  true,
-	"Caches":                  true,
-	".Spotlight-V100":         true,
-	".fseventsd":              true,
-	".DocumentRevisions-V100": true,
-	".TemporaryItems":         true,
-	"$RECYCLE.BIN":            true,
-	".temp":                   true,
-	".tmp":                    true,
-	"_temp":                   true,
-	"_tmp":                    true,
-	".Homebrew":               true,
-	".rustup":                 true,
-	".sdkman":                 true,
-	".nvm":                    true,
-
-	// macOS.
-	"Application Scripts":     true,
-	"Saved Application State": true,
-
-	// iCloud.
-	"Mobile Documents": true,
+	".cache":       true,
+	"Trash":        true,
+	"$RECYCLE.BIN": true,
+	".temp":        true,
+	".tmp":         true,
+	"_temp":        true,
+	"_tmp":         true,
+	".rustup":      true,
+	".sdkman":      true,
+	".nvm":         true,
 
 	// Containers.
 	".docker":     true,
 	".containerd": true,
 
 	// Mobile development.
-	"Pods":        true,
-	"DerivedData": true,
-	".build":      true,
-	"xcuserdata":  true,
-	"Carthage":    true,
-	".dart_tool":  true,
+	".build":     true,
+	".dart_tool": true,
 
 	// Web frameworks.
 	".angular":    true,
@@ -206,44 +186,33 @@ var foldDirs = map[string]bool{
 	"temp":       true,
 }
 
+// skipSystemDirs are skipped when the scan root is "/": kernel and runtime
+// pseudo trees, and snapshot stores that are counted by the filesystem, never
+// walked.
 var skipSystemDirs = map[string]bool{
-	"dev":                     true,
-	"tmp":                     true,
-	"private":                 true,
-	"cores":                   true,
-	"net":                     true,
-	"home":                    true,
-	"System":                  true,
-	"sbin":                    true,
-	"bin":                     true,
-	"etc":                     true,
-	"var":                     true,
-	"opt":                     false,
-	"usr":                     false,
-	"Volumes":                 true,
-	"Network":                 true,
-	".vol":                    true,
-	".Spotlight-V100":         true,
-	".fseventsd":              true,
-	".DocumentRevisions-V100": true,
-	".TemporaryItems":         true,
-	".MobileBackups":          true,
+	"dev":        true,
+	"proc":       true,
+	"sys":        true,
+	"run":        true,
+	"tmp":        true,
+	"lost+found": true,
+	"mnt":        true,
+	"media":      true,
+	"timeshift":  true,
 }
 
+// defaultSkipDirs are skipped at every depth.
 var defaultSkipDirs = map[string]bool{
-	"nfs":         true,
-	"PHD":         true,
-	"Permissions": true,
+	"nfs": true,
 
-	// Virtualization/Container mounts (NFS, network filesystems).
-	"OrbStack":        true, // OrbStack NFS mounts
-	"Colima":          true, // Colima VM mounts
-	"VMware Fusion":   true, // VMware Fusion VMs
-	"VirtualBox VMs":  true, // VirtualBox VMs
-	"Rancher Desktop": true, // Rancher Desktop mounts
-	".lima":           true, // Lima VM mounts
-	".colima":         true, // Colima config/mounts
-	".orbstack":       true, // OrbStack config/mounts
+	// Snapshot stores (snapper, Timeshift): sizes are shared with the live
+	// tree, so walking them double counts.
+	".snapshots": true,
+
+	// Virtualization/container mounts.
+	".lima":   true,
+	".colima": true,
+	".gvfs":   true,
 }
 
 var skipExtensions = map[string]bool{
