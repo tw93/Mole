@@ -2,6 +2,10 @@
 
 This document describes Mole CLI (macOS), updated for V1.67.0 on 2026-10-31, with the 2026-10-26 review starting from `ec968fc8` on `main` (the code is unchanged from `00f8279e`). It covers safety boundaries, destructive-operation controls, release integrity signals, and known limitations. This is a maintainer review, not an independent security certification. Mole Mac and Mole for Windows are outside its scope.
 
+## 2026-11-01 Yarn Berry dependency boundary
+
+`e59e7d60` removes automatic cleanup of the global Berry archive store and protects it at shared clean sinks, including custom-whitelist runs and parent-target attempts. Classic cache cleanup and explicit uninstall keep their existing policies. The producer and real-sink regressions fail on the prior source; the full no-authorization check and test scripts pass, and an independent review found no production defect. This source repair is not a package release; the defect was present in V1.67.0.
+
 ## Review Scope and Evidence
 
 The review covers the complete CLI, rather than only changes since V1.64.0. Concurrent work was initially excluded, then the committed Slim/whitelist, mounted-volume overview and fixture changes (`0f9c0df4`, `4f9abf8b`, `c8fe24f1`) received an incremental review and integration run. The subsequent `502b3483` changes only the contributors image. The following matrix identifies the reviewed boundaries and their regression suites; listing a suite does not claim that it passed in this review.
