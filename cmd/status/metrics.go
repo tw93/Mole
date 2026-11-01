@@ -574,7 +574,7 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 	return MetricsSnapshot{
 		CollectedAt:    now,
 		Host:           hostInfo.Hostname,
-		Platform:       fmt.Sprintf("%s %s", hostInfo.Platform, hostInfo.PlatformVersion),
+		Platform:       strings.TrimSpace(hostInfo.Platform + " " + hostInfo.PlatformVersion), // rolling distros have no version
 		Uptime:         formatUptime(hostInfo.Uptime),
 		UptimeSeconds:  hostInfo.Uptime,
 		Procs:          hostInfo.Procs,
