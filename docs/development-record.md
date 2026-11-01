@@ -2,6 +2,16 @@
 
 This is the handoff record for the `windows` branch of `tw93/Mole`, not the paid Windows app or the macOS CLI. Read [AGENTS.md](../AGENTS.md) for current policy and [development pitfalls](development-pitfalls.md) for reusable lessons. Git history retains individual edits; this file records completed batches and their delivery boundaries. Recheck live state before resuming work.
 
+## 2026-11-01: Cache owners, Berry dependencies and charge-limit notice
+
+Baseline `9bb9b24c`. The source batch guards Adobe Common media/peak cache cleanup and Yarn Classic with the existing owner predicate, preserves named Yarn Berry dependency stores at the shared clean sink, and adds the charge-limit consequence to the existing uninstall confirmation and dry-run preview. The Adobe wildcard Cache, CameraRaw and Temp branches are unchanged: the media-owner boundary does not establish their owners.
+
+Source commits are `673a7deb` and `a3f67bc3`; regressions are in `tests/AppCacheSafety.Tests.ps1`, `tests/Uninstall.Tests.ps1` and the shared dry-run fixture. Old baseline `9bb9b24c` failed 27 of 229 targeted native cases, with 202 adjacent controls passing. Final Windows PowerShell 5.1 and PowerShell 7.6.9 each passed all 759 Pester tests on the ARM64 VM, under the desktop account with elevation for the owned symbolic-link fixtures. SYSTEM is unsuitable here because its Pester temporary root is protected Windows storage; those exploratory results are not acceptance. Pester's optional XML writer cannot encode ANSI case names in that mode, so final receipts use its structured Result/TotalCount/PassedCount/FailedCount, with missing results rejected. Python tests passed (29 total, 4 platform skips); `go test ./cmd/...` and the Windows cross-build passed. Independent review cleared production code and the corrected late-owner fixture.
+
+Vesktop 1.6.8 was installed into a new VM fixture after proving its profile absent, and was never signed in. The official release asset digest was checked before execution; upstream `src/main/constants.ts` sets session data under `DATA_DIR/sessionData`. The observed ordinary Windows profile contained Cache, Code Cache and GPUCache, with process name `vesktop`; settings, Local Storage, Network and Shared Dictionary were siblings. The real shared cache sink retained running-cache markers, removed them only after the owned processes had exited and retained a settings marker. The fixture was then uninstalled. Synthetic producer tests additionally retain `vencordFiles`. Receipts are under `.artifacts/cli-sync-review` (`green-cli-ps51-summary.json`, `green-cli-ps7-summary.json`, `old-cli-ps51-summary.json`, `vesktop-cache-result.json`). No pre-existing application was uninstalled and no release was produced.
+
+Visible changes are retained busy/unknown media caches and Berry dependencies, three measured Vesktop cache leaves, plus one consequence line only for the matched uninstall rows. No command, flag, setting, extra confirmation or general inventory is added.
+
 ## 2026-10-31: V1.40.0-windows release
 
 Candidate `971022b1` sets both version sources to 1.40.0 (`82c7361f`) and adds the e2e release lookup fallback (`36ec94ab`, rebased onto a contributors-only commit). Check and [Validation](https://github.com/tw93/Mole/actions/runs/41156946172) passed at that exact commit, including PowerShell 5.1 and 7.
