@@ -17,7 +17,9 @@ concurrency:
 jobs:
   tests:
     name: Unit & Integration Tests
-    runs-on: macos-latest
+    # Pinned rather than macos-latest so the newest image is a decision, not a
+    # silent migration; Security Checks runs on the same image.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,13 +53,18 @@ jobs:
 
   compatibility:
     name: macOS
-    # Hosted runtime coverage is macOS 15 and 26, not macOS 14. macOS 26 is
-    # pinned so it stays a distinct lane after macos-latest, which the full
-    # test job uses, moves on. Release builds separately enforce an
-    # LC_BUILD_VERSION minimum of macOS 12 in check_release_minos.sh.
+    # Hosted runtime coverage is macOS 15 and 26, not macOS 14: the full suite
+    # covers macOS 26, so this lane runs only the oldest hosted image. A
+    # separate macos-26 lane ran the same subset on the full suite's image and
+    # failed alone only on a flaky spinner case, while macos-15 caught real
+    # version differences (I-01, plutil on macOS 15; 2180e93d, simulator
+    # metadata). When a newer image goes GA, move the full suite and Security
+    # Checks to it and keep this lane on the oldest supported image. Release
+    # builds separately enforce an LC_BUILD_VERSION minimum of macOS 12 in
+    # check_release_minos.sh.
     strategy:
       matrix:
-        os: [macos-15, macos-26]
+        os: [macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -87,7 +94,7 @@ jobs:
           LC_ALL: en_US.UTF-8
         # clean_app_caches.bats is here because it is the suite that reads
         # system tool output whose format varies by macOS version, which the
-        # full run on macos-latest cannot see. tw93/Mole#1512 was reported on
+        # full run on macos-26 cannot see. tw93/Mole#1512 was reported on
         # macOS 15, fixed, then silently regressed for eight days with CI green
         # the whole time, because that file was not in this subset. It adds
         # about 16s to a job that runs in 90s under a 30 minute budget.
@@ -101,7 +108,7 @@ jobs:
 
   security:
     name: Security Checks
-    runs-on: macos-latest
+    runs-on: macos-26
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,4 +151,21 @@ jobs:
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
-        run: bats tests/core_safe_functions.bats tests/purge.bats tests/installer.bats
+        # Two concurrent lanes on the three-core runner, core_safe_functions in
+        # one and purge with installer in the other; serial, the three took
+        # about 205s. The full suite still runs all three under scripts/test.sh,
+        # where core_safe_functions sits in the uncontended sequential tail, so
+        # a contention flake here would show up as this job alone going red.
+        # Lines are prefixed live, so a timeout kill keeps what already ran.
+        run: |
+          set -o pipefail
+          (bats tests/core_safe_functions.bats 2>&1 | awk '{ print "[safe] " $0; fflush() }') &
+          safe_pid=$!
+          (bats tests/purge.bats tests/installer.bats 2>&1 | awk '{ print "[paths] " $0; fflush() }') &
+          paths_pid=$!
+          safe_status=0
+          wait "$safe_pid" || safe_status=$?
+          paths_status=0
+          wait "$paths_pid" || paths_status=$?
+          echo "core_safe_functions.bats exit $safe_status; purge.bats installer.bats exit $paths_status"
+          [ "$safe_status" -eq 0 ] && [ "$paths_status" -eq 0 ]

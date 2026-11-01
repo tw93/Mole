@@ -19,8 +19,8 @@ Layers, earliest first:
 - `check`: `./scripts/check.sh --no-format` (ShellCheck, golangci-lint, the `scripts/audit_*.py` gates), locally and
   in the Check workflow.
 - `unit`: the Bats suite through `./scripts/test.sh` and `go test ./...`, locally and in the Validation workflow on
-  macos-latest.
-- `compat`: the Validation workflow's macos-15 and macos-26 Bats subset, the only lane that sees another macOS
+  macos-26.
+- `compat`: the Validation workflow's macos-15 Bats subset, the only lane that sees another macOS
   version's tool output.
 - `review`: a diff review, the line-by-line review AGENTS.md requires for destructive sinks, or the weekly audit.
 - `e2e`: `scripts/e2e_macos.py` on a real Mac before a release.
