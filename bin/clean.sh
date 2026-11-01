@@ -521,7 +521,8 @@ report_coredumps() {
 }
 
 # 0 when a Docker daemon socket exists to ask: DOCKER_HOST's unix path, else
-# the system and rootless sockets. A tcp DOCKER_HOST is the user's own choice.
+# the system, Docker Desktop (~/.docker/desktop) and rootless sockets. A tcp
+# DOCKER_HOST is the user's own choice.
 docker_daemon_present() {
     local host="${DOCKER_HOST:-}"
     if [[ -n "$host" ]]; then
@@ -529,7 +530,7 @@ docker_daemon_present() {
         [[ -S "${host#unix://}" ]]
         return
     fi
-    [[ -S /var/run/docker.sock || -S /run/docker.sock ]] && return 0
+    [[ -S /var/run/docker.sock || -S /run/docker.sock || -S "$HOME/.docker/desktop/docker.sock" ]] && return 0
     [[ -n "${XDG_RUNTIME_DIR:-}" && -S "$XDG_RUNTIME_DIR/docker.sock" ]]
 }
 
