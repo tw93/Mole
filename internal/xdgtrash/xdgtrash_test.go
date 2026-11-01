@@ -140,3 +140,25 @@ func TestEncodePath(t *testing.T) {
 		}
 	}
 }
+
+func TestStrayTrashItemDoesNotBlockItsName(t *testing.T) {
+	env, home := testEnv(t)
+	files := filepath.Join(home, ".local/share/Trash/files")
+	if err := os.MkdirAll(files, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(files, "note"), []byte("stray"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(home, "note")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := env.Move(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TrashFile != filepath.Join(files, "note.2") {
+		t.Fatalf("trash file = %s, want note.2", res.TrashFile)
+	}
+}

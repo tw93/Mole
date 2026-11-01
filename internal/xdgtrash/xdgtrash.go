@@ -130,7 +130,7 @@ func (e *Env) Move(path string) (Result, error) {
 	}
 	body := "[Trash Info]\nPath=" + EncodePath(stored) + "\nDeletionDate=" + now().Format("2006-01-02T15:04:05") + "\n"
 
-	name, infoPath, err := reserveInfo(infoDir, filepath.Base(abs), body)
+	name, infoPath, err := reserveInfo(infoDir, filesDir, filepath.Base(abs), body)
 	if err != nil {
 		return Result{}, err
 	}
@@ -229,7 +229,9 @@ func (e *Env) ensureOwnedDir(dir string) error {
 }
 
 // reserveInfo creates <name>.trashinfo with O_EXCL, trying name, name.2, …
-func reserveInfo(infoDir, base, body string) (string, string, error) {
+// reserveInfo claims the first free name: no info file and no item in files/
+// (a stray item left without its info file would otherwise block the name).
+func reserveInfo(infoDir, filesDir, base, body string) (string, string, error) {
 	if base == "" || base == "." || base == "/" || base == ".." {
 		return "", "", fmt.Errorf("invalid item name %q", base)
 	}
@@ -237,6 +239,9 @@ func reserveInfo(infoDir, base, body string) (string, string, error) {
 		name := base
 		if i > 1 {
 			name = fmt.Sprintf("%s.%d", base, i)
+		}
+		if _, err := os.Lstat(filepath.Join(filesDir, name)); err == nil {
+			continue
 		}
 		infoPath := filepath.Join(infoDir, name+".trashinfo")
 		f, err := os.OpenFile(infoPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)

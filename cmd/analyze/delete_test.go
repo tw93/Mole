@@ -137,6 +137,7 @@ func TestValidateTrashTargetRejectsLinuxSystemPaths(t *testing.T) {
 		"/", "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root",
 		"/run", "/sbin", "/sys", "/usr", "/var", "/nix/store", "/snap",
 		"/usr/bin/env", "/etc/passwd", "/boot/vmlinuz", "/proc/self",
+		"/var/lib", "/var/lib/pacman/local", "/var/log", "/var/log/journal",
 	}
 	for _, path := range rejected {
 		// Paths absent on this machine cannot be matched by identity, so only

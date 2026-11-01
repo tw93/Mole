@@ -39,10 +39,10 @@ func main() {
 		res, err := env.Move(p)
 		if err != nil {
 			failed = true
-			fmt.Fprintf(os.Stderr, "error\t%s\t%s\n", p, oneLine(err.Error()))
+			fmt.Fprintf(os.Stderr, "error\t%s\t%s\n", field(p), oneLine(err.Error()))
 			continue
 		}
-		fmt.Printf("ok\t%s\t%s\n", res.Source, res.TrashFile)
+		fmt.Printf("ok\t%s\t%s\n", field(res.Source), field(res.TrashFile))
 	}
 	if failed {
 		os.Exit(1)
@@ -51,4 +51,10 @@ func main() {
 
 func oneLine(s string) string {
 	return strings.NewReplacer("\n", " ", "\t", " ").Replace(s)
+}
+
+// field keeps one path on one tab-separated line: a name holding a line break
+// or a tab must never forge a second "ok" line for the caller to count.
+func field(s string) string {
+	return strings.NewReplacer("\\", "\\\\", "\n", "\\n", "\t", "\\t", "\r", "\\r").Replace(s)
 }

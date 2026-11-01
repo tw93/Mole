@@ -157,10 +157,11 @@ func validateTrashTarget(path string) error {
 var protectedSystemTrees = []string{
 	"/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root",
 	"/run", "/sbin", "/sys", "/usr", "/nix/store", "/snap",
+	"/var/lib", "/var/log", // package databases, service state, live logs
 }
 
 // protectedSystemRoots are refused as the exact path only; ordinary
-// directories below them (/var/tmp, a build under /var/lib) stay selectable.
+// directories below them (/var/tmp, /var/cache) stay selectable.
 var protectedSystemRoots = []string{"/", "/var"}
 
 // protectedHomeTrees are refused inside every account's home, relative to it.
