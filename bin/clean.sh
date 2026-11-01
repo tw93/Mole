@@ -81,7 +81,15 @@ clean_rule() {
     kb=$(mole_path_kb "$root")
     ((kb >= 8)) || return 0
 
-    if [[ -n "$owners" ]]; then
+    # An owner that runs, or a probe that cannot tell, skips the rule.
+    if [[ "$owners" == flatpak:* ]]; then
+        local rc=0
+        mole_flatpak_running "${owners#flatpak:}" || rc=$?
+        if [[ $rc -ne 1 ]]; then
+            skip_line "$label · skipped while ${owners#flatpak:} is running"
+            return 0
+        fi
+    elif [[ -n "$owners" ]]; then
         local -a names=()
         IFS=',' read -ra names <<< "$owners"
         local rc=0
@@ -289,4 +297,7 @@ main() {
     fi
 }
 
-main
+# Sourced by the bats tests for its functions; run directly otherwise.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi
