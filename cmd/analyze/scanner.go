@@ -825,8 +825,21 @@ func measureOverviewSizeWithPublication(ctx context.Context, path string, public
 		return 0, fmt.Errorf("path must be absolute: %s", path)
 	}
 
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil {
 		return 0, fmt.Errorf("cannot access path: %v", err)
+	}
+	// A directory that cannot be listed has no measurable contents. du still
+	// counts the directory's own block (4 KB on ext4 and overlayfs, 0 on
+	// btrfs), which would read as a partial size of the contents.
+	if info.IsDir() {
+		dir, openErr := os.Open(path)
+		if openErr != nil && errors.Is(openErr, fs.ErrPermission) {
+			return 0, fmt.Errorf("cannot read directory: %w", openErr)
+		}
+		if openErr == nil {
+			_ = dir.Close()
+		}
 	}
 
 	// Determine if we should exclude ~/.cache (when scanning Home)
