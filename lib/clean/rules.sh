@@ -307,6 +307,21 @@ mole_running_exes() {
     return 0
 }
 
+# 0 when which agent version runs can be told, 2 when it cannot: /proc cannot
+# be read, or one of the user's processes hides its executable (non-dumpable)
+# and its comm is the tool's (the link's name) or node, which runs a
+# folder-style version (Cursor Agent versions/<v>/) or a renamed one.
+mole_versions_probe() {
+    local link="$1" tool="${1##*/}" exes line name
+    exes=$(mole_running_exes) || return 2
+    while IFS= read -r line; do
+        [[ "$line" == comm:* ]] || continue
+        name="${line#comm:}"
+        [[ "$name" == node || "$name" == "${tool:0:15}" || "$name" == cursor-agent ]] && return 2
+    done <<< "$exes"
+    return 0
+}
+
 # Old versions under root: everything except the one <link> resolves into and
 # the newest other one by mtime, and never a version a process runs from.
 # Without a link that resolves into root nothing is selected: which version is
@@ -329,7 +344,8 @@ mole_select_old_versions() {
     done < <(find "$root" -mindepth 1 -maxdepth 1 -printf '%T@\t%f\0' 2> /dev/null | sort -z -t $'\t' -k1,1 -rn)
     ((${#others[@]} > 1)) || return 0
 
-    # Which versions run cannot be told without /proc: nothing is selected.
+    # Which versions run cannot be told: nothing is selected (clean says so).
+    mole_versions_probe "$link" || return 0
     local exes
     exes=$(mole_running_exes) || return 0
     local i path in_use exe

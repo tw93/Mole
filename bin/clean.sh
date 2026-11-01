@@ -172,6 +172,13 @@ clean_rule_collect() {
     [[ -n "$root" && -d "$root" && ! -L "$root" ]] || return 0
     local -a children=() eligible=()
     local child
+    # Old agent versions whose running one cannot be told: said once, kept.
+    if [[ "$selector" == versions:* ]] && ! mole_versions_probe "${selector#versions:}"; then
+        local n=0
+        for child in "$root"/[0-9]*; do [[ -e "$child" ]] && n=$((n + 1)); done
+        ((n > 2)) && group_note "$label · skipped (process state unknown)"
+        return 0
+    fi
     while IFS= read -r -d '' child; do
         children+=("$child")
     done < <(mole_rule_children "$root" "$selector")

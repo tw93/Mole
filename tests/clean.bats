@@ -395,10 +395,39 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     mole_run clean '_MOLE_PROC_ROOT="$HOME/none"; mole_select_old_versions "$HOME/.local/share/claude/versions" "$HOME/.local/bin/claude" | tr "\0" "\n"'
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+    mole_run clean '_MOLE_PROC_ROOT="$HOME/none"; clean_rule "Claude Code old versions" "$HOME/.local/share/claude/versions" "" "versions:$HOME/.local/bin/claude"'
+    [[ "$output" == *"Claude Code old versions · skipped (process state unknown)"* ]]
+    [ -f "$v/1.0.0" ] && [ -f "$v/1.1.0" ]
     fake_proc "$TEST_ROOT/proc" 100 "$(id -u)" 1.1.0 -
     mole_run clean '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/proc"; mole_select_old_versions "$HOME/.local/share/claude/versions" "$HOME/.local/bin/claude" | tr "\0" "\n"'
     [ "$status" -eq 0 ]
     [ "$output" = "$v/1.0.0" ]
+}
+
+@test "folder-style agent versions: a hidden node or cursor-agent process keeps every version" {
+    v="$HOME/.local/share/cursor-agent/versions"
+    mkdir -p "$HOME/.local/bin"
+    for n in 2025.1.1 2025.1.2 2025.1.3 2025.1.4; do make_cache "$v/$n"; done
+    touch -d '4 days ago' "$v/2025.1.1"
+    touch -d '3 days ago' "$v/2025.1.2"
+    touch -d '2 days ago' "$v/2025.1.4"
+    touch -d '1 days ago' "$v/2025.1.3"
+    ln -s "$v/2025.1.4/cursor-agent" "$HOME/.local/bin/cursor-agent"
+    touch "$v/2025.1.4/cursor-agent"
+    rule='clean_rule "Cursor Agent old versions" "$HOME/.local/share/cursor-agent/versions" "" "versions:$HOME/.local/bin/cursor-agent"'
+    for comm in node cursor-agent; do
+        rm -rf "$TEST_ROOT/proc"
+        fake_proc "$TEST_ROOT/proc" 100 "$(id -u)" "$comm" -
+        mole_run clean '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/proc"; '"$rule"
+        [[ "$output" == *"Cursor Agent old versions · skipped (process state unknown)"* ]]
+        [ -d "$v/2025.1.1" ] && [ -d "$v/2025.1.2" ]
+    done
+    # Another hidden process does not block.
+    rm -rf "$TEST_ROOT/proc"
+    fake_proc "$TEST_ROOT/proc" 100 "$(id -u)" keepassxc -
+    mole_run clean '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/proc"; '"$rule"
+    [ ! -e "$v/2025.1.1" ] && [ ! -e "$v/2025.1.2" ]
+    [ -d "$v/2025.1.3" ] && [ -d "$v/2025.1.4" ]
 }
 
 @test "old agent versions are kept when the active link is missing" {
