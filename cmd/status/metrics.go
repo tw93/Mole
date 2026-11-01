@@ -73,27 +73,28 @@ type MetricsSnapshot struct {
 	// empty when none. Uptime alone never sets it.
 	RestartReason string `json:"restart_reason,omitempty"`
 
-	CPU                   CPUStatus          `json:"cpu"`
-	GPU                   []GPUStatus        `json:"gpu"`
-	Memory                MemoryStatus       `json:"memory"`
-	Disks                 []DiskStatus       `json:"disks"`
-	TrashSize             uint64             `json:"trash_size"`
-	TrashApprox           bool               `json:"trash_approx"`
-	DiskIO                DiskIOStatus       `json:"disk_io"`
-	Network               []NetworkStatus    `json:"network"`
-	NetworkHistory        NetworkHistory     `json:"network_history"`
-	Proxy                 ProxyStatus        `json:"proxy"`
-	Batteries             []BatteryStatus    `json:"batteries"`
-	Thermal               ThermalStatus      `json:"thermal"`
-	Sensors               []SensorReading    `json:"sensors"`
-	TopProcesses          []ProcessInfo      `json:"top_processes"`
-	ProcessCollectedAt    *time.Time         `json:"process_collected_at,omitempty"`
-	ProcessStale          *bool              `json:"process_stale,omitempty"`
-	ZombieCount           *int               `json:"zombie_count,omitempty"`
-	ZombieParents         []ZombieParent     `json:"zombie_parents"`
-	ZombieParentsComplete *bool              `json:"zombie_parents_complete,omitempty"`
-	ProcessWatch          ProcessWatchConfig `json:"process_watch"`
-	ProcessAlerts         []ProcessAlert     `json:"process_alerts"`
+	CPU                   CPUStatus           `json:"cpu"`
+	GPU                   []GPUStatus         `json:"gpu"`
+	Memory                MemoryStatus        `json:"memory"`
+	Disks                 []DiskStatus        `json:"disks"`
+	TrashSize             uint64              `json:"trash_size"`
+	TrashApprox           bool                `json:"trash_approx"`
+	DiskIO                DiskIOStatus        `json:"disk_io"`
+	Network               []NetworkStatus     `json:"network"`
+	NetworkHistory        NetworkHistory      `json:"network_history"`
+	Proxy                 ProxyStatus         `json:"proxy"`
+	Batteries             []BatteryStatus     `json:"batteries"`
+	Peripherals           []PeripheralBattery `json:"peripherals"`
+	Thermal               ThermalStatus       `json:"thermal"`
+	Sensors               []SensorReading     `json:"sensors"`
+	TopProcesses          []ProcessInfo       `json:"top_processes"`
+	ProcessCollectedAt    *time.Time          `json:"process_collected_at,omitempty"`
+	ProcessStale          *bool               `json:"process_stale,omitempty"`
+	ZombieCount           *int                `json:"zombie_count,omitempty"`
+	ZombieParents         []ZombieParent      `json:"zombie_parents"`
+	ZombieParentsComplete *bool               `json:"zombie_parents_complete,omitempty"`
+	ProcessWatch          ProcessWatchConfig  `json:"process_watch"`
+	ProcessAlerts         []ProcessAlert      `json:"process_alerts"`
 }
 
 type HardwareInfo struct {
@@ -135,6 +136,12 @@ type CPUStatus struct {
 	Load15           float64   `json:"load15"`
 	CoreCount        int       `json:"core_count"`
 	LogicalCPU       int       `json:"logical_cpu"`
+	PCoreCount       int       `json:"p_core_count"` // Performance cores (Intel hybrid), 0 elsewhere
+	ECoreCount       int       `json:"e_core_count"` // Efficiency cores (Intel hybrid), 0 elsewhere
+	// FreqAvgMHz and FreqMaxMHz are the mean and highest current clock across
+	// online CPUs from cpufreq; 0 when the kernel exposes no cpufreq (most VMs).
+	FreqAvgMHz float64 `json:"freq_avg_mhz"`
+	FreqMaxMHz float64 `json:"freq_max_mhz"`
 }
 
 type GPUStatus struct {
@@ -158,6 +165,17 @@ type MemoryStatus struct {
 	// PSI is the raw Pressure Stall Information behind Pressure, nil when the
 	// kernel does not provide it.
 	PSI *MemoryPressureStats `json:"psi,omitempty"`
+	// Zram sums the compressed RAM swap devices; nil when none holds data.
+	Zram *ZramStatus `json:"zram,omitempty"`
+}
+
+// ZramStatus totals /sys/block/zram*/mm_stat, in bytes.
+type ZramStatus struct {
+	Devices    int     `json:"devices"`
+	Original   uint64  `json:"original"`   // data stored, uncompressed
+	Compressed uint64  `json:"compressed"` // the same data compressed
+	MemUsed    uint64  `json:"mem_used"`   // RAM the devices take, allocator overhead included
+	Ratio      float64 `json:"ratio"`      // Original / MemUsed
 }
 
 // MemoryPressureStats holds /proc/pressure/memory averages, in percent of time
@@ -274,6 +292,7 @@ type collectedMetrics struct {
 	netStats                []NetworkStatus
 	proxyStats              ProxyStatus
 	batteryStats            []BatteryStatus
+	peripheralStats         []PeripheralBattery
 	thermalStats            ThermalStatus
 	sensorStats             []SensorReading
 	gpuStats                []GPUStatus
@@ -297,6 +316,7 @@ type snapshotEnrichment struct {
 	trashApprox    bool
 	proxy          ProxyStatus
 	batteries      []BatteryStatus
+	peripherals    []PeripheralBattery
 	thermal        ThermalStatus
 	sensors        []SensorReading
 }
@@ -461,6 +481,8 @@ func (c *Collector) collectFull() (MetricsSnapshot, error) {
 		func() error {
 			collected.batteryStats, _ = collectBatteries()
 			next.batteries = slices.Clone(collected.batteryStats)
+			collected.peripheralStats = collectPeripherals()
+			next.peripherals = slices.Clone(collected.peripheralStats)
 			return nil
 		},
 		func() error {
@@ -596,6 +618,7 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 		},
 		Proxy:                 collected.proxyStats,
 		Batteries:             collected.batteryStats,
+		Peripherals:           collected.peripheralStats,
 		Thermal:               collected.thermalStats,
 		Sensors:               collected.sensorStats,
 		TopProcesses:          topProcs,
@@ -681,6 +704,7 @@ func (e snapshotEnrichment) apply(snapshot *MetricsSnapshot) {
 	snapshot.TrashApprox = e.trashApprox
 	snapshot.Proxy = e.proxy
 	snapshot.Batteries = slices.Clone(e.batteries)
+	snapshot.Peripherals = slices.Clone(e.peripherals)
 	snapshot.Thermal = e.thermal
 	snapshot.Sensors = slices.Clone(e.sensors)
 }

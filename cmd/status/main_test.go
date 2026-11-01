@@ -480,6 +480,7 @@ func TestMetricsSnapshotFieldsHaveCollectionClassifications(t *testing.T) {
 		"NetworkHistory":        "fast",
 		"Proxy":                 "enrichment",
 		"Batteries":             "enrichment",
+		"Peripherals":           "enrichment",
 		"Thermal":               "enrichment",
 		"Sensors":               "enrichment",
 		"TopProcesses":          "live-or-enrichment",

@@ -62,6 +62,7 @@ func readThermal(root string) ThermalStatus {
 	}
 	thermal.GPUTemp = pickTemp(devices, gpuHwmonDrivers, gpuTempLabels)
 	thermal.BatteryTemp = readBatteryTemp(root)
+	readPower(root, &thermal)
 
 	for _, d := range devices {
 		for _, f := range d.fans {

@@ -70,14 +70,14 @@ func acOnline(supplies []powerSupply) bool {
 
 // readBatteries parses every Battery or UPS supply under root. Supplies with
 // scope=Device (a wireless mouse, a stylus) belong to peripherals, not to this
-// machine, and are skipped.
+// machine; readPeripherals lists them.
 func readBatteries(root string) []BatteryStatus {
 	supplies := listPowerSupplies(root)
 	ac := acOnline(supplies)
 
 	var out []BatteryStatus
 	for _, ps := range supplies {
-		if (ps.typ != "Battery" && ps.typ != "UPS") || ps.scope == "Device" || ps.notReady {
+		if !machineBattery(ps) {
 			continue
 		}
 		if b, ok := parseBattery(ps.dir, ac); ok {
@@ -194,4 +194,116 @@ func readBatteryTemp(root string) float64 {
 		}
 	}
 	return 0
+}
+
+// machineBattery reports a supply that powers this computer: a Battery or UPS
+// with system scope that is present.
+func machineBattery(ps powerSupply) bool {
+	return (ps.typ == "Battery" || ps.typ == "UPS") && ps.scope != "Device" && !ps.notReady
+}
+
+// supplyWatts reads a supply's instantaneous power in watts: power_now (uW),
+// else current_now (uA) times voltage_now (uV). Drivers differ on the sign,
+// so the magnitude is returned and the caller applies the direction.
+func supplyWatts(dir string) (float64, bool) {
+	if uw, ok := readInt(filepath.Join(dir, "power_now")); ok && uw != 0 {
+		return math.Abs(float64(uw)) / 1e6, true
+	}
+	ua, okA := readInt(filepath.Join(dir, "current_now"))
+	uv, okV := readInt(filepath.Join(dir, "voltage_now"))
+	if okA && okV && ua != 0 && uv > 0 {
+		return math.Abs(float64(ua)) * float64(uv) / 1e12, true
+	}
+	return 0, false
+}
+
+// readPower fills the power fields of ThermalStatus the way the Mac reads
+// them from AppleSmartBattery: BatteryPower is positive while discharging and
+// negative while charging; SystemPower is what the machine draws, known only
+// while the battery alone supplies it; AdapterPower is the rated maximum of an
+// online charger (USB-PD and UCSI ports publish voltage_max and current_max;
+// a plain AC supply does not, and the Input line stays hidden).
+func readPower(root string, thermal *ThermalStatus) {
+	supplies := listPowerSupplies(root)
+	ac := acOnline(supplies)
+	var battery float64
+	for _, ps := range supplies {
+		if !machineBattery(ps) {
+			continue
+		}
+		watts, ok := supplyWatts(ps.dir)
+		if !ok || watts >= 500 {
+			continue
+		}
+		switch normalizeBatteryStatus(readTrimmed(filepath.Join(ps.dir, "status")), ac) {
+		case "discharging":
+			battery += watts
+		case "charging":
+			battery -= watts
+		}
+	}
+	thermal.BatteryPower = battery
+	if battery > 0 && !ac {
+		thermal.SystemPower = battery
+	}
+	for _, ps := range supplies {
+		if ps.typ == "Battery" || ps.typ == "UPS" || ps.scope == "Device" || !ps.hasOnl || !ps.online {
+			continue
+		}
+		uv, okV := readInt(filepath.Join(ps.dir, "voltage_max"))
+		ua, okA := readInt(filepath.Join(ps.dir, "current_max"))
+		if okV && okA && uv > 0 && ua > 0 {
+			if w := float64(uv) * float64(ua) / 1e12; w < 500 {
+				thermal.AdapterPower = max(thermal.AdapterPower, math.Round(w))
+			}
+		}
+	}
+}
+
+// PeripheralBattery is a device's own battery reported through power_supply
+// with scope=Device: a wireless mouse, keyboard, headset or stylus.
+type PeripheralBattery struct {
+	Name    string  `json:"name"`
+	Percent float64 `json:"percent"` // -1 when the device reports only a level
+	Level   string  `json:"level,omitempty"`
+	Status  string  `json:"status,omitempty"`
+}
+
+func collectPeripherals() []PeripheralBattery {
+	return readPeripherals("/")
+}
+
+// readPeripherals lists scope=Device batteries, named by model_name (with the
+// manufacturer when the model does not already carry it), else by the
+// supply's directory name.
+func readPeripherals(root string) []PeripheralBattery {
+	var out []PeripheralBattery
+	for _, ps := range listPowerSupplies(root) {
+		if ps.scope != "Device" || ps.notReady || (ps.typ != "Battery" && ps.typ != "") {
+			continue
+		}
+		p := PeripheralBattery{Percent: -1}
+		if v, ok := readInt(filepath.Join(ps.dir, "capacity")); ok && v >= 0 && v <= 100 {
+			p.Percent = float64(v)
+		}
+		if level := readTrimmed(filepath.Join(ps.dir, "capacity_level")); level != "" && !strings.EqualFold(level, "unknown") {
+			p.Level = level
+		}
+		if p.Percent < 0 && p.Level == "" {
+			continue
+		}
+		p.Status = normalizeBatteryStatus(readTrimmed(filepath.Join(ps.dir, "status")), false)
+		model := readTrimmed(filepath.Join(ps.dir, "model_name"))
+		vendor := readTrimmed(filepath.Join(ps.dir, "manufacturer"))
+		switch {
+		case model != "" && vendor != "" && !strings.Contains(strings.ToLower(model), strings.ToLower(vendor)):
+			p.Name = vendor + " " + model
+		case model != "":
+			p.Name = model
+		default:
+			p.Name = filepath.Base(ps.dir)
+		}
+		out = append(out, p)
+	}
+	return out
 }

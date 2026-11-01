@@ -2,7 +2,11 @@ package main
 
 import (
 	"errors"
+	"math"
+	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -78,7 +82,14 @@ func collectCPUWithOptions(includeSlowFallbacks bool) (CPUStatus, error) {
 		loadAvg = *loadStats
 	}
 
+	pCores, eCores := readHybridCores("/")
+	freqAvg, freqMax := readCPUFrequency("/")
+
 	return CPUStatus{
+		PCoreCount:       pCores,
+		ECoreCount:       eCores,
+		FreqAvgMHz:       freqAvg,
+		FreqMaxMHz:       freqMax,
 		Usage:            totalPercent,
 		PerCore:          percents,
 		PerCoreEstimated: perCoreEstimated,
@@ -164,4 +175,79 @@ func perCoreUsageFromTimes(before, after []cpu.TimesStat, elapsed float64) ([]fl
 
 func cpuBusyTime(t cpu.TimesStat) float64 {
 	return t.User + t.System + t.Nice + t.Irq + t.Softirq + t.Steal
+}
+
+// readCPUFrequency averages scaling_cur_freq (kHz) over the CPUs that have
+// cpufreq, and reports the highest. A VM usually has none: both stay 0.
+func readCPUFrequency(root string) (avgMHz, maxMHz float64) {
+	matches, _ := filepath.Glob(filepath.Join(root, "sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq"))
+	var sum float64
+	n := 0
+	for _, path := range matches {
+		khz, ok := readInt(path)
+		if !ok || khz <= 0 {
+			continue
+		}
+		mhz := float64(khz) / 1000
+		sum += mhz
+		maxMHz = max(maxMHz, mhz)
+		n++
+	}
+	if n == 0 {
+		return 0, 0
+	}
+	return math.Round(sum / float64(n)), math.Round(maxMHz)
+}
+
+// readHybridCores counts the physical performance and efficiency cores of an
+// Intel hybrid CPU from the PMU device lists cpu_core and cpu_atom. A P-core
+// with Hyper-Threading lists two logical CPUs; they share one core_id within a
+// package, so cores are counted by (package, core id). Without both lists
+// (AMD, older Intel, VMs) it reports 0, 0.
+func readHybridCores(root string) (pCores, eCores int) {
+	count := func(pmu string) int {
+		cpus := parseCPUList(readTrimmed(filepath.Join(root, "sys/devices", pmu, "cpus")))
+		seen := map[string]bool{}
+		for _, cpu := range cpus {
+			topo := filepath.Join(root, "sys/devices/system/cpu", "cpu"+strconv.Itoa(cpu), "topology")
+			pkg := readTrimmed(filepath.Join(topo, "physical_package_id"))
+			core := readTrimmed(filepath.Join(topo, "core_id"))
+			if core == "" {
+				core = "cpu" + strconv.Itoa(cpu)
+			}
+			seen[pkg+"/"+core] = true
+		}
+		return len(seen)
+	}
+	pCores, eCores = count("cpu_core"), count("cpu_atom")
+	if pCores == 0 || eCores == 0 {
+		return 0, 0
+	}
+	return pCores, eCores
+}
+
+// parseCPUList reads the kernel's cpulist format: "0-11,16,18-19".
+func parseCPUList(list string) []int {
+	var cpus []int
+	for part := range strings.SplitSeq(list, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		lo, hi, isRange := strings.Cut(part, "-")
+		start, err := strconv.Atoi(lo)
+		if err != nil {
+			return nil
+		}
+		end := start
+		if isRange {
+			if end, err = strconv.Atoi(hi); err != nil || end < start || end-start > 4096 {
+				return nil
+			}
+		}
+		for c := start; c <= end; c++ {
+			cpus = append(cpus, c)
+		}
+	}
+	return cpus
 }

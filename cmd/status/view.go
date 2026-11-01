@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -398,9 +399,18 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus, cpuCores int) cardData 
 		}
 	}
 
+	if cpu.FreqAvgMHz > 0 {
+		lines = append(lines, fmt.Sprintf("Freq   %s avg · %s max", formatMHz(cpu.FreqAvgMHz), formatMHz(cpu.FreqMaxMHz)))
+	}
+
 	// Load line at the end
-	lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
-		cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
+	if cpu.PCoreCount > 0 && cpu.ECoreCount > 0 {
+		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %dP+%dE",
+			cpu.Load1, cpu.Load5, cpu.Load15, cpu.PCoreCount, cpu.ECoreCount))
+	} else {
+		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
+			cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
+	}
 
 	return cardData{icon: iconCPU, title: "CPU", lines: lines}
 }
@@ -439,6 +449,10 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 			lines = append(lines, swapLine)
 		}
 
+		if z := mem.Zram; z != nil && z.MemUsed > 0 {
+			lines = append(lines, fmt.Sprintf("Zram   %s in %s · %.1fx",
+				humanBytesCompact(z.Original), humanBytesCompact(z.MemUsed), z.Ratio))
+		}
 		lines = append(lines, formatMemoryDetailLine("Total", humanBytes(mem.Used)+" / "+humanBytes(mem.Total), mem.Available, cardWidth))
 	} else {
 		// Layout without Swap:
@@ -693,8 +707,15 @@ func buildCards(m MetricsSnapshot, width int, cpuCores int, batteryProbed bool) 
 	// A desktop or VM has no battery: hide the Power card instead of printing
 	// "No battery". Until a full collection has run, an empty list only means
 	// "not measured yet", so the placeholder card keeps the layout still.
-	if len(m.Batteries) > 0 || !batteryProbed {
-		cards = append(cards, renderBatteryCard(m.Batteries, m.Thermal, batteryProbed))
+	switch {
+	case len(m.Batteries) > 0 || !batteryProbed:
+		power := renderBatteryCard(m.Batteries, m.Thermal, batteryProbed)
+		power.lines = append(power.lines, peripheralLines(m.Peripherals)...)
+		cards = append(cards, power)
+	case len(m.Peripherals) > 0:
+		// A desktop with a wireless mouse or keyboard: the card lists only
+		// their batteries.
+		cards = append(cards, cardData{icon: iconBattery, title: "Power", lines: peripheralLines(m.Peripherals)})
 	}
 	cards = append(cards,
 		processCard,
@@ -906,6 +927,43 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus, probed bool
 	}
 
 	return cardData{icon: iconBattery, title: "Power", lines: lines}
+}
+
+// formatMHz prints a clock as GHz from 1000 MHz up, as the Mac's CPU model
+// strings do.
+func formatMHz(mhz float64) string {
+	if mhz >= 1000 {
+		return fmt.Sprintf("%.1f GHz", mhz/1000)
+	}
+	return fmt.Sprintf("%.0f MHz", mhz)
+}
+
+// maxPeripheralLines keeps the Power card short when many devices report.
+const maxPeripheralLines = 3
+
+// peripheralLines renders one line per peripheral battery, lowest first, so a
+// mouse about to die is the one that shows.
+func peripheralLines(peripherals []PeripheralBattery) []string {
+	sorted := slices.Clone(peripherals)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Percent < sorted[j].Percent })
+	var lines []string
+	for i, p := range sorted {
+		if i == maxPeripheralLines {
+			break
+		}
+		value := p.Level
+		if p.Percent >= 0 {
+			value = fmt.Sprintf("%.0f%%", p.Percent)
+			if p.Percent < 20 && p.Status != "charging" {
+				value = dangerStyle.Render(value)
+			}
+		}
+		if p.Status == "charging" {
+			value += " · Charging"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s", shorten(p.Name, 22), value))
+	}
+	return lines
 }
 
 func isPoweredByAC(statusLower string) bool {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -52,6 +53,7 @@ func collectMemoryWithOptions(includeSlowAnnotations bool) (MemoryStatus, error)
 		SwapUsed:    swap.Used,
 		SwapTotal:   swap.Total,
 		Cached:      vm.Cached,
+		Zram:        readZram("/"),
 	}
 	if includeSlowAnnotations {
 		if psi, ok := memoryPSIFunc(); ok {
@@ -122,4 +124,41 @@ func classifyMemoryPressure(psi MemoryPressureStats) string {
 		return "warn"
 	}
 	return "normal"
+}
+
+// readZram totals every zram device under root/sys/block. mm_stat's first
+// three fields are orig_data_size, compr_data_size and mem_used_total.
+func readZram(root string) *ZramStatus {
+	matches, _ := filepath.Glob(filepath.Join(root, "sys/block/zram*/mm_stat"))
+	var z ZramStatus
+	for _, path := range matches {
+		fields := strings.Fields(readTrimmed(path))
+		if len(fields) < 3 {
+			continue
+		}
+		var vals [3]uint64
+		ok := true
+		for i := range vals {
+			v, err := strconv.ParseUint(fields[i], 10, 64)
+			if err != nil {
+				ok = false
+				break
+			}
+			vals[i] = v
+		}
+		if !ok {
+			continue
+		}
+		z.Devices++
+		z.Original += vals[0]
+		z.Compressed += vals[1]
+		z.MemUsed += vals[2]
+	}
+	if z.Original == 0 {
+		return nil
+	}
+	if z.MemUsed > 0 {
+		z.Ratio = math.Round(float64(z.Original)/float64(z.MemUsed)*10) / 10
+	}
+	return &z
 }
