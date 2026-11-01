@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
+<p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole CLI for Windows</h1>
@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-windows.png" alt="Меню Mole CLI for Windows" width="736" />
 </p>
 
-> 💡 Ця гілка містить безкоштовний CLI для Windows з відкритим кодом (`mo`). Хочете нативний застосунок? [Mole for Windows](https://mole.fit/windows) завантажується окремо: перегляд перед видаленням, оновлення застосунків, керування автозапуском, детальний розбір диска та стан у реальному часі. CLI для macOS розташований у [гілці main](https://github.com/tw93/Mole).
+> 💡 Ця гілка містить безкоштовний CLI для Windows з відкритим кодом (`mo`). Хочете нативний застосунок? [Mole for Windows](https://mole.fit/windows) завантажується окремо: перегляд перед видаленням, оновлення застосунків, керування автозапуском, детальний розбір диска та стан у реальному часі. CLI для macOS розташований у [гілці main](https://github.com/tw93/Mole#readme).
 
 ## Можливості
 

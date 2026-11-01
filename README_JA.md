@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
+<p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole CLI for Windows</h1>
@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows メニュー" width="736" />
 </p>
 
-> 💡 このブランチは無料のオープンソースWindows CLI（`mo`）です。ネイティブアプリがよければ、[Mole for Windows](https://mole.fit/ja/windows) を別途ダウンロードできます。削除前の確認、アプリの更新、スタートアップ管理、ディスクの階層分析、リアルタイムのステータス表示を備えています。macOS版CLIは [mainブランチ](https://github.com/tw93/Mole) にあります。
+> 💡 このブランチは無料のオープンソースWindows CLI（`mo`）です。ネイティブアプリがよければ、[Mole for Windows](https://mole.fit/ja/windows) を別途ダウンロードできます。削除前の確認、アプリの更新、スタートアップ管理、ディスクの階層分析、リアルタイムのステータス表示を備えています。macOS版CLIは [mainブランチ](https://github.com/tw93/Mole#readme) にあります。
 
 ## 機能
 

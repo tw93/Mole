@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
+<p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole CLI for Windows</h1>
@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows menu" width="736" />
 </p>
 
-> 💡 This branch is the free open-source Windows CLI (`mo`). Prefer a native app? [Mole for Windows](https://mole.fit/windows) is a separate download with review-before-delete cleanup, app updates, startup management, disk drill-downs, and live status. The macOS CLI lives on the [main branch](https://github.com/tw93/Mole).
+> 💡 This branch is the free open-source Windows CLI (`mo`). Prefer a native app? [Mole for Windows](https://mole.fit/windows) is a separate download with review-before-delete cleanup, app updates, startup management, disk drill-downs, and live status. The macOS CLI lives on the [main branch](https://github.com/tw93/Mole#readme).
 
 ## Features
 

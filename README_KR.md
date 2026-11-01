@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
+<p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole CLI for Windows</h1>
@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 메뉴" width="736" />
 </p>
 
-> 💡 이 브랜치는 무료 오픈소스 Windows CLI(`mo`)입니다. 네이티브 앱을 원한다면 [Mole for Windows](https://mole.fit/ko/windows)를 별도로 내려받을 수 있습니다. 삭제 전 항목별 확인, 앱 업데이트, 시작 프로그램 관리, 디스크 단계별 분석, 실시간 상태 확인을 제공합니다. macOS CLI는 [main 브랜치](https://github.com/tw93/Mole)에 있습니다.
+> 💡 이 브랜치는 무료 오픈소스 Windows CLI(`mo`)입니다. 네이티브 앱을 원한다면 [Mole for Windows](https://mole.fit/ko/windows)를 별도로 내려받을 수 있습니다. 삭제 전 항목별 확인, 앱 업데이트, 시작 프로그램 관리, 디스크 단계별 분석, 실시간 상태 확인을 제공합니다. macOS CLI는 [main 브랜치](https://github.com/tw93/Mole#readme)에 있습니다.
 
 ## 주요 기능
 

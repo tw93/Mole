@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
+<p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole CLI for Windows</h1>
@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 菜单界面" width="736" />
 </p>
 
-> 💡 这个分支是免费开源的 Windows 命令行工具（`mo`），喜欢图形界面的话可以单独下载 [Mole for Windows](https://mole.fit/zh/windows)，支持删除前逐项确认、应用更新、启动项管理、逐层分析磁盘空间与实时状态监控，macOS 命令行在 [main 分支](https://github.com/tw93/Mole)。
+> 💡 这个分支是免费开源的 Windows 命令行工具（`mo`），喜欢图形界面的话可以单独下载 [Mole for Windows](https://mole.fit/zh/windows)，支持删除前逐项确认、应用更新、启动项管理、逐层分析磁盘空间与实时状态监控，macOS 命令行在 [main 分支](https://github.com/tw93/Mole#readme)。
 
 ## 功能
 
