@@ -23,7 +23,8 @@ jobs:
   tests:
     name: Unit & Integration Tests (${{ matrix.shard }})
     # Pinned rather than macos-latest so the newest image is a decision, not a
-    # silent migration; Security Checks runs on the same image.
+    # silent migration. These shards also run the high-risk files
+    # (core_safe_functions, purge, installer) that Security Checks used to repeat.
     runs-on: macos-26
     # Two machines instead of one: scripts/test.sh runs its timing-sensitive
     # files one by one after the parallel batch, which kept the single job at
@@ -90,8 +91,8 @@ jobs:
     # separate macos-26 lane ran the same subset on the full suite's image and
     # failed alone only on a flaky spinner case, while macos-15 caught real
     # version differences (I-01, plutil on macOS 15; 2180e93d, simulator
-    # metadata). When a newer image goes GA, move the full suite and Security
-    # Checks to it and keep this lane on the oldest supported image. Release
+    # metadata). When a newer image goes GA, move the full suite to it and
+    # keep this lane on the oldest supported image. Release
     # builds separately enforce an LC_BUILD_VERSION minimum of macOS 12 in
     # check_release_minos.sh.
     strategy:
@@ -140,15 +141,16 @@ jobs:
 
   security:
     name: Security Checks
-    runs-on: macos-26
+    # Linux on purpose: every step here is Python, git history or a sourced
+    # Bash function. Its Bats files used to repeat what the macOS shards
+    # already run, and that seventh macOS job pushed two jobs past the five
+    # concurrent macOS slots, queueing them about 190s per push.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Install tools
-        run: brew install bats-core coreutils
 
       - name: Check for unsafe rm usage
         run: python3 scripts/audit_destructive_sinks.py
@@ -170,16 +172,3 @@ jobs:
             exit 1
           fi
           '
-
-      - name: Run high-risk path regression tests
-        env:
-          MOLE_TEST_NO_AUTH: "1"
-          BATS_FORMATTER: tap
-          LANG: en_US.UTF-8
-          LC_ALL: en_US.UTF-8
-        # Serial on purpose. Two concurrent lanes (core_safe_functions beside
-        # purge and installer) failed on their first CI run: the purge PTY
-        # driver's two-second waits lost to CPU contention on the three-core
-        # runner. This job runs beside the full suite, so its 205s is off the
-        # critical path anyway.
-        run: bats tests/core_safe_functions.bats tests/purge.bats tests/installer.bats
