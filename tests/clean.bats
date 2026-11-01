@@ -80,3 +80,20 @@ make_cache() {
     [[ "$output" == *"Mole tool cache"*"dry"* ]]
     [ -f "$HOME/.cache/moletool/entry/blob" ]
 }
+
+@test "outside a terminal, clean never asks for a password and skips System" {
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; exit 1'
+    fake_command journalctl 'exit 0'
+    run bash -c 'SCRIPT_DIR="$MOLE_TEST_REPO" bash "$MOLE_TEST_REPO/bin/clean.sh" < /dev/null'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"skipped without sudo"* ]]
+    [ -z "$(grep -- '-v' "$TEST_ROOT/sudo.log")" ]
+}
+
+@test "a sudo session the user already had survives Mole" {
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; exit 0'
+    mole_run core 'mole_sudo_ready; mole_sudo_end'
+    [ "$status" -eq 0 ]
+    [ -z "$(grep -x -- '-k' "$TEST_ROOT/sudo.log")" ]
+    [ -z "$(grep -- '-p' "$TEST_ROOT/sudo.log")" ]
+}

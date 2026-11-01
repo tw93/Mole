@@ -39,7 +39,7 @@ TOTAL_KB=0
 TOTAL_ITEMS=0
 SYSTEM_READY=false
 
-trap 'stop_inline_spinner; show_cursor; echo ""; exit 130' INT TERM
+trap 'stop_inline_spinner; show_cursor; mole_sudo_end; echo ""; exit 130' INT TERM
 
 report_line() {
     local label="$1" kb="$2" count="$3" note="${4:-}"
@@ -192,21 +192,61 @@ journal_usage_kb() {
     human_to_kb "${usage:-0}"
 }
 
+have_paccache() { command -v paccache > /dev/null 2>&1 && [[ -d /var/cache/pacman/pkg ]]; }
+have_journal() { command -v journalctl > /dev/null 2>&1; }
+
+# Ask for sudo once, before anything is cleaned, like Mole CLI (macOS): Enter
+# asks for the password, Space skips the System section, ESC cancels.
+prompt_for_system_clean() {
+    [[ "$DRY_RUN" != "true" ]] || return 0
+    have_paccache || have_journal || return 0
+    if sudo -n true 2> /dev/null; then
+        mole_sudo_ready && SYSTEM_READY=true
+        [[ -t 1 ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
+        return 0
+    fi
+    [[ -t 0 ]] || return 0
+    local key attempt=0
+    while true; do
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} Package cache and journal need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+        key=$(read_key) || key="QUIT"
+        case "$key" in
+            ENTER)
+                printf '\r\033[K'
+                mole_sudo_ready && SYSTEM_READY=true
+                break
+                ;;
+            SPACE)
+                echo -e "${GRAY}Skipped${NC}"
+                break
+                ;;
+            QUIT)
+                echo -e "${GRAY}Cancelled${NC}"
+                exit 0
+                ;;
+            *)
+                attempt=$((attempt + 1))
+                printf '\r\033[K'
+                if ((attempt >= 2)); then
+                    echo -e "${PURPLE}${ICON_ARROW}${NC} Package cache and journal need sudo. ${GRAY}Skipped${NC}"
+                    break
+                fi
+                ;;
+        esac
+    done
+}
+
 clean_system() {
     local have_paccache=false have_journal=false
-    command -v paccache > /dev/null 2>&1 && [[ -d /var/cache/pacman/pkg ]] && have_paccache=true
-    command -v journalctl > /dev/null 2>&1 && have_journal=true
+    have_paccache && have_paccache=true
+    have_journal && have_journal=true
     [[ "$have_paccache" == "true" || "$have_journal" == "true" ]] || return 0
 
     start_section "System"
-    if [[ "$DRY_RUN" != "true" ]]; then
-        if mole_sudo_ready "Package cache and journal trimming need sudo"; then
-            SYSTEM_READY=true
-        else
-            skip_line "Package cache and journal · skipped without sudo"
-            end_section
-            return 0
-        fi
+    if [[ "$DRY_RUN" != "true" && "$SYSTEM_READY" != "true" ]]; then
+        skip_line "Package cache and journal · skipped without sudo"
+        end_section
+        return 0
     fi
 
     if [[ "$have_paccache" == "true" ]]; then
@@ -264,6 +304,7 @@ main() {
     elif [[ -t 0 ]]; then
         echo -e "${GRAY}${ICON_WARNING} Use --dry-run to preview${NC}"
     fi
+    prompt_for_system_clean
 
     clean_user_rules
     clean_trash
@@ -294,9 +335,7 @@ main() {
         details+=("Free space: $(bytes_to_human_kb "$final_free")$note")
     fi
     print_summary_block "$heading" "${details[@]}"
-    if [[ "$SYSTEM_READY" == "true" ]]; then
-        sudo -k 2> /dev/null || true
-    fi
+    mole_sudo_end
 }
 
 # Sourced by the bats tests for its functions; run directly otherwise.

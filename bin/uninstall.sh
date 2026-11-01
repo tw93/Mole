@@ -53,7 +53,7 @@ for arg in "$@"; do
 done
 export DRY_RUN
 
-trap 'stop_inline_spinner; show_cursor; echo ""; exit 130' INT TERM
+trap 'stop_inline_spinner; show_cursor; mole_sudo_end; echo ""; exit 130' INT TERM
 
 declare -a APP_KIND=() APP_ID=() APP_NAME=() APP_KB=() APP_DESKTOPS=() APP_EXEC=() APP_SCOPE=()
 
@@ -272,7 +272,10 @@ remove_packages() {
             log_error "pacman is busy (/var/lib/pacman/db.lck); try again when it finishes"
         else
             echo -e "${PURPLE}${ICON_ADMIN}${NC} pacman removes ${pkgs[*]} and the dependencies only they use"
-            sudo pacman -Rns -- "${pkgs[@]}" || true
+            if mole_sudo_ready; then
+                sudo pacman -Rns -- "${pkgs[@]}" || true
+            fi
+            mole_sudo_end
         fi
     fi
     for i in "${SELECTED[@]}"; do
