@@ -35,8 +35,7 @@ if [[ -d "$SCRIPT_DIR/.git" ]]; then
     exit 1
 fi
 
-install_root="$MOLE_DATA_HOME/mole"
-if [[ "$(readlink -f -- "$SCRIPT_DIR")" != "$(readlink -f -- "$install_root" 2> /dev/null || echo /nonexistent)" ]]; then
+if ! mole_runs_installed_tree; then
     log_error "This Mole runs from $SCRIPT_DIR, not an installed copy, so mo update would install a second one. Update it yourself, or install with install.sh."
     exit 1
 fi

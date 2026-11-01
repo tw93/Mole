@@ -53,7 +53,8 @@ mole_update_notice_lookup() {
 mole_update_notice_check() {
     local mode="${1:-background}" dir now checked=0 interval=0
     [[ "${MOLE_NO_UPDATE_CHECK:-}" == "1" ]] && return 0
-    [[ -d "${SCRIPT_DIR:-}/.git" ]] && return 0
+    # Only the installed tree can act on the line (mo update refuses others).
+    mole_runs_installed_tree || return 0
     dir="$(mole_update_notice_dir)"
     mkdir -p "$dir" 2> /dev/null || return 0
     now=$(date +%s)
@@ -79,6 +80,7 @@ mole_update_notice_check() {
 # Print the line to show, or nothing.
 mole_update_notice_message() {
     [[ "${MOLE_NO_UPDATE_CHECK:-}" == "1" ]] && return 0
+    mole_runs_installed_tree || return 0
     local latest=""
     # The cache file has no trailing newline, so read reports failure on a good value.
     { read -r latest < "$(mole_update_notice_dir)/update_latest"; } 2> /dev/null || [[ -n "$latest" ]] || return 0

@@ -160,6 +160,17 @@ mole_display_path() {
     fi
 }
 
+# 0 when this Mole runs from the tree install.sh installs (~/.local/share/mole),
+# not a source checkout or another copy. mo update refuses to run otherwise and
+# the update notice stays quiet, so both ask this one question.
+mole_runs_installed_tree() {
+    [[ -n "${SCRIPT_DIR:-}" && ! -d "$SCRIPT_DIR/.git" ]] || return 1
+    local here there
+    here=$(readlink -e -- "$SCRIPT_DIR" 2> /dev/null) || return 1
+    there=$(readlink -e -- "$MOLE_DATA_HOME/mole" 2> /dev/null) || return 1
+    [[ -n "$here" && "$here" == "$there" ]]
+}
+
 # Where processes are read from (tests point it at a fake tree).
 _MOLE_PROC_ROOT=/proc
 _MOLE_UID=""

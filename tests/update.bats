@@ -230,7 +230,9 @@ run_update() { run bash "$HOME/.local/share/mole/bin/update.sh" "$@"; }
 
 # Runs $1 with the update-notice library and a stubbed lookup (no network).
 notice_run() {
+    mkdir -p "$HOME/.local/share/mole"
     mole_run core "source \"\$MOLE_TEST_REPO/lib/core/update_notice.sh\"
+SCRIPT_DIR=\"\$HOME/.local/share/mole\"
 VERSION=0.1.0
 mole_update_fetch_latest() { echo x >> \"\$TEST_ROOT/calls\"; echo \"\$NOTICE_LATEST\"; }
 calls=0
@@ -283,6 +285,16 @@ $1"
     mkdir -p "$TEST_ROOT/co/.git"
     notice_run "SCRIPT_DIR='$TEST_ROOT/co'; mole_update_notice_check wait; count; echo \"calls=\$calls\""
     [[ "$output" == *"calls=0"* ]]
+}
+
+@test "notice stays quiet in a copy that is not the installed one" {
+    export NOTICE_LATEST=0.2.0
+    mkdir -p "$TEST_ROOT/elsewhere"
+    notice_run "SCRIPT_DIR='$TEST_ROOT/elsewhere'; mole_update_notice_check wait; count; echo \"calls=\$calls\""
+    [[ "$output" == *"calls=0"* ]]
+    # A cached answer from the installed copy is not shown in the other one.
+    notice_run 'mole_update_notice_check wait; SCRIPT_DIR='"$TEST_ROOT/elsewhere"'; echo "msg=[$(mole_update_notice_message)]"'
+    [[ "$output" == *"msg=[]"* ]]
 }
 
 @test "the background check returns at once even when the lookup hangs" {
