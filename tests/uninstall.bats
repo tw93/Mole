@@ -263,7 +263,7 @@ desktop() {
     grep -q -- "-q $apps" "$TEST_ROOT/udd.log"
     [[ "$output" == *"HEY.desktop	x-scheme-handler/mailto"* ]]
     [[ "$output" != *other.desktop* ]]
-    cmp -s "$HOME/.config/mimeapps.list" "$TEST_ROOT/before"
+    [ "$(cat "$HOME/.config/mimeapps.list")" = "$(cat "$TEST_ROOT/before")" ]
 }
 
 @test "--with-data leaves Waterfox, Floorp and other Gecko or Chromium family profiles unselected" {

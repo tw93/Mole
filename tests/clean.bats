@@ -353,7 +353,7 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
 @test "container storage: podman is not asked before its storage exists, docker not without a socket" {
     fake_command podman 'echo "$*" >> "'"$TEST_ROOT"'/podman.log"; printf "Images\t200MB (50%%)\n"'
     fake_command docker 'echo "$*" >> "'"$TEST_ROOT"'/docker.log"; printf "Images\t300MB (50%%)\n"'
-    mole_run clean 'unset DOCKER_HOST; XDG_RUNTIME_DIR="'"$TEST_ROOT"'/run"; report_container_storage'
+    mole_run clean 'unset DOCKER_HOST; MOLE_DOCKER_SYSTEM_SOCKETS="'"$TEST_ROOT"'/no.sock"; XDG_RUNTIME_DIR="'"$TEST_ROOT"'/run"; report_container_storage'
     [ "$status" -eq 0 ]
     [ ! -e "$TEST_ROOT/podman.log" ]
     [ ! -e "$HOME/.local/share/containers" ]
@@ -368,7 +368,7 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     rm -f "$TEST_ROOT/docker.log"
     mkdir -p "$HOME/.docker/desktop"
     python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$HOME/.docker/desktop/docker.sock"
-    mole_run clean 'unset DOCKER_HOST; XDG_RUNTIME_DIR="'"$TEST_ROOT"'/run"; report_container_storage'
+    mole_run clean 'unset DOCKER_HOST; MOLE_DOCKER_SYSTEM_SOCKETS="'"$TEST_ROOT"'/no.sock"; XDG_RUNTIME_DIR="'"$TEST_ROOT"'/run"; report_container_storage'
     grep -q "system df" "$TEST_ROOT/docker.log"
 }
 

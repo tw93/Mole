@@ -530,7 +530,13 @@ docker_daemon_present() {
         [[ -S "${host#unix://}" ]]
         return
     fi
-    [[ -S /var/run/docker.sock || -S /run/docker.sock || -S "$HOME/.docker/desktop/docker.sock" ]] && return 0
+    local sys
+    # MOLE_DOCKER_SYSTEM_SOCKETS lets tests replace the system paths (CI
+    # containers have the host's /var/run/docker.sock mounted).
+    for sys in ${MOLE_DOCKER_SYSTEM_SOCKETS-/var/run/docker.sock /run/docker.sock}; do
+        [[ -S "$sys" ]] && return 0
+    done
+    [[ -S "$HOME/.docker/desktop/docker.sock" ]] && return 0
     [[ -n "${XDG_RUNTIME_DIR:-}" && -S "$XDG_RUNTIME_DIR/docker.sock" ]]
 }
 
