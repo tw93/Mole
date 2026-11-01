@@ -39,7 +39,15 @@ jobs:
           test "$(nix eval --no-write-lock-file --json .#checks --apply 'checks: builtins.all (system: checks.${system} ? formatting) [ "aarch64-darwin" "x86_64-darwin" ]')" = true
           check_log="$RUNNER_TEMP/nix-flake-check.log"
           status=0
-          nix flake check --no-write-lock-file --print-build-logs 2>&1 | tee "$check_log" || status=$?
+          if [[ "$RUNNER_ARCH" == "X64" ]]; then
+            # The formatting check reads only the source tree, so its result is
+            # the same on both architectures; arm64 builds it, and Intel only
+            # evaluates every check and builds the package (about 220s saved).
+            { nix flake check --no-write-lock-file --no-build &&
+              nix build --no-write-lock-file --print-build-logs .#checks.x86_64-darwin.mole; } 2>&1 | tee "$check_log" || status=$?
+          else
+            nix flake check --no-write-lock-file --print-build-logs 2>&1 | tee "$check_log" || status=$?
+          fi
           if [[ $status -ne 0 ]]; then
             # A go.mod or go.sum change without a matching vendorHash fails here; name the new hash.
             got=$(awk '/hash mismatch in fixed-output derivation .*-go-modules\.drv/ { m = 1; next } m && $1 == "got:" { print $2; exit }' "$check_log")
