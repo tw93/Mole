@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <a href="https://github.com/tw93/Mole/tree/windows">Windows</a> · <b>Linux</b></p>
+<p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <a href="https://github.com/tw93/Mole/tree/windows#readme">Windows</a> · <b>Linux</b></p>
 
 <div align="center">
   <h1>Mole CLI for Linux</h1>
@@ -16,7 +16,7 @@
 
 **Under construction.** Mole CLI for Linux is still early: [V0.1.0-linux](https://github.com/tw93/Mole/releases/tag/V0.1.0-linux) is the first release, and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; on other distributions the user-level parts work and the pacman items do not appear.
 
-This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole).
+This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole#readme).
 
 ## Features
 
