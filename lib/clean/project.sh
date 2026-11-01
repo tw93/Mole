@@ -2431,7 +2431,7 @@ clean_project_artifacts() {
         if [[ "$PURGE_RUN_OUTCOME" == "incomplete" ]]; then
             echo -e "${GRAY}No artifacts found in the completed project scans${NC}"
         else
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No old project artifacts to clean"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} No old project artifacts to clean"
         fi
         printf '\n'
         [[ "$PURGE_RUN_OUTCOME" != "incomplete" ]] && PURGE_RUN_OUTCOME="no_candidates"

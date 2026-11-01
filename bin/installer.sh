@@ -357,7 +357,7 @@ collect_installers() {
 
     if [[ ${#all_files[@]} -eq 0 ]]; then
         if [[ "${IN_ALT_SCREEN:-0}" != "1" ]]; then
-            echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+            echo -e "${GREEN}${ICON_SUCCESS}${NC} No installer files to clean"
         fi
         return 1
     fi
@@ -906,7 +906,7 @@ perform_installers() {
             printf '\nCheck that the scan locations are readable and responsive, then retry mo installer.\n' >&2
             return "$collect_status"
         fi
-        echo -e "${GREEN}${ICON_SUCCESS}${NC} Great! No installer files to clean"
+        echo -e "${GREEN}${ICON_SUCCESS}${NC} No installer files to clean"
         printf '\n'
         return 2 # Nothing to clean
     fi

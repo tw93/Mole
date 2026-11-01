@@ -2358,7 +2358,7 @@ EOF
 	[[ "$output" == *"~/www"* ]] || return 1
 	[[ "$output" == *"(status 7)"* ]] || return 1
 	[[ "$output" == *"PURGE_OUTCOME=scan_failed"* ]] || return 1
-	[[ "$output" != *"Great! No old project artifacts to clean"* ]] || return 1
+	[[ "$output" != *"No old project artifacts to clean"* ]] || return 1
 	[[ "$output" != *"UNEXPECTED_REMOVE:"* ]] || return 1
 }
 

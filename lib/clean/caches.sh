@@ -52,7 +52,7 @@ check_tcc_permissions() {
         echo ""
         echo -e "${BLUE}First-time setup${NC}"
         echo -e "${GRAY}macOS will request permissions to access Library folders.${NC}"
-        echo -e "${GRAY}You may see ${GREEN}${#tcc_dirs[@]} permission dialogs${NC}${GRAY}, please approve them all.${NC}"
+        echo -e "${GRAY}You may see ${GREEN}${#tcc_dirs[@]} permission dialogs${NC}${GRAY}, allow each one so these caches can be cleaned.${NC}"
         echo ""
         echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to continue: "
         read -r

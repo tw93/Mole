@@ -382,9 +382,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancelBackgroundCacheWrites(removedPaths)
 				invalidateCacheAncestry(removedPaths)
 				if msg.err != nil {
-					m.status = fmt.Sprintf("Deleted %d items; some failed: %v", msg.count, msg.err)
+					m.status = fmt.Sprintf("Moved %d items to Trash, some failed: %v", msg.count, msg.err)
 				} else {
-					m.status = fmt.Sprintf("Deleted %d items", msg.count)
+					m.status = fmt.Sprintf("Moved %d items to Trash", msg.count)
 				}
 				if msg.logWarning != "" {
 					m.status += " · " + msg.logWarning
@@ -424,9 +424,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			if msg.err != nil {
-				m.status = fmt.Sprintf("Failed to delete: %v", msg.err)
+				m.status = fmt.Sprintf("Failed to move to Trash: %v", msg.err)
 			} else {
-				m.status = fmt.Sprintf("Deleted %d items", msg.count)
+				m.status = fmt.Sprintf("Moved %d items to Trash", msg.count)
 			}
 			if msg.logWarning != "" {
 				m.status += " · " + msg.logWarning
@@ -678,19 +678,19 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deleteTarget = nil
 			if len(pathsToDelete) == 0 {
 				m.deleting = false
-				m.status = "Nothing to delete"
+				m.status = "Nothing to move to Trash"
 				return m, nil
 			}
 
 			audit := newDeleteAudit(m.selectedPathSizes(pathsToDelete))
 			if len(pathsToDelete) == 1 {
 				targetPath := pathsToDelete[0]
-				m.status = fmt.Sprintf("Deleting %s...", filepath.Base(targetPath))
+				m.status = fmt.Sprintf("Moving %s to Trash...", filepath.Base(targetPath))
 				cmd := tea.Batch(deletePathCmd(targetPath, m.deleteCount, audit), m.startTick())
 				return m, cmd
 			}
 
-			m.status = fmt.Sprintf("Deleting %d items...", len(pathsToDelete))
+			m.status = fmt.Sprintf("Moving %d items to Trash...", len(pathsToDelete))
 			cmd := tea.Batch(deleteMultiplePathsCmd(pathsToDelete, m.deleteCount, audit), m.startTick())
 			return m, cmd
 		case "esc", "q":
@@ -1041,7 +1041,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "delete", "backspace":
 		if m.scanning {
-			m.status = "Delete is available after the scan finishes"
+			m.status = "Move to Trash is available after the scan finishes"
 			return m, nil
 		}
 		if m.showLargeFiles {
@@ -1089,7 +1089,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else if m.selected < len(m.entries) {
 				selected := m.entries[m.selected]
 				if selected.State == scanUnavailable {
-					m.status = fmt.Sprintf("Cannot delete %s, size unknown", selected.Name)
+					m.status = fmt.Sprintf("Cannot move %s to Trash, size unknown", selected.Name)
 					return m, nil
 				}
 				m.deleteConfirm = true

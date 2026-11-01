@@ -489,7 +489,7 @@ func TestViewDeleteConfirmShowsUninstallHintForAppBundle(t *testing.T) {
 	if !strings.Contains(view, "mo uninstall Safari") {
 		t.Fatalf("expected app-specific uninstall command, got:\n%s", view)
 	}
-	if !strings.Contains(view, "bundle only") {
+	if !strings.Contains(view, "only the bundle moves to Trash") {
 		t.Fatalf("expected bundle-only warning, got:\n%s", view)
 	}
 }
@@ -3466,7 +3466,7 @@ func TestDeleteViewHidesZeroTally(t *testing.T) {
 	if strings.Contains(view, "0 items") {
 		t.Fatalf("expected no zero tally while nothing has completed, got:\n%s", view)
 	}
-	if !strings.Contains(view, "moving to Trash") {
+	if !strings.Contains(view, "Moving to Trash") {
 		t.Fatalf("expected a progress line while deleting, got:\n%s", view)
 	}
 
@@ -3517,7 +3517,7 @@ func TestDeleteProgressPartialFailureRemovesSucceededPathsAndRefreshes(t *testin
 	if got.totalSize != 20 {
 		t.Fatalf("expected successful removal to update total size, got %d", got.totalSize)
 	}
-	if !strings.Contains(got.status, "Deleted 1 items; some failed") {
+	if !strings.Contains(got.status, "Moved 1 items to Trash, some failed") {
 		t.Fatalf("expected partial-failure status, got %q", got.status)
 	}
 	if entry := got.cache[parent]; !entry.NeedsRefresh {
