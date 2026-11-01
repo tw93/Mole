@@ -142,3 +142,33 @@ desktop() {
     mole_run uninstall 'mole_webapp_files HEY'
     [[ "$output" == *"applications/icons/HEY.png"* ]]
 }
+
+@test "a running program whose name is longer than comm holds is seen as running" {
+    local long="mole-long-process-name-probe"
+    cp "$(command -v sleep)" "$TEST_ROOT/bin/$long"
+    "$TEST_ROOT/bin/$long" 30 &
+    OWNER_PID=$!
+    mole_run core 'rc=0; mole_process_running '"$long"' || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=0" ]
+    kill "$OWNER_PID"
+    wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+    mole_run core 'rc=0; mole_process_running '"$long"' || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=1" ]
+}
+
+@test "a long name shares its first 15 bytes with another program: not taken for it" {
+    cp "$(command -v sleep)" "$TEST_ROOT/bin/mole-long-processXYZ"
+    "$TEST_ROOT/bin/mole-long-processXYZ" 30 &
+    OWNER_PID=$!
+    mole_run core 'rc=0; mole_process_running mole-long-process-name-probe || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=1" ]
+}
+
+@test "an interpreter running a package's file counts as that package running" {
+    mkdir -p "$TEST_ROOT/usr/lib/tool"
+    printf 'sleep 30\n' > "$TEST_ROOT/usr/lib/tool/main.sh"
+    mole_run core 'bash "'"$TEST_ROOT"'/usr/lib/tool/main.sh" & p=$!; sleep 0.2
+        rc=0; mole_files_running "'"$TEST_ROOT"'/usr/lib/tool/main.sh" || rc=$?; kill $p; echo "rc=$rc"'
+    [ "$output" = "rc=0" ]
+}

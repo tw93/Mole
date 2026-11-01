@@ -160,18 +160,89 @@ mole_display_path() {
     fi
 }
 
-# Process running check by exact process name (comm). Returns 0 when running,
-# 1 when not, 2 when the probe itself failed (callers treat 2 as running).
+# Process running check by exact process name. Returns 0 when running, 1 when
+# not, 2 when the probe itself failed (callers treat 2 as running).
+# The kernel keeps only 15 bytes of a name in comm, and pgrep -x with a longer
+# name warns and answers "not running" (procps-ng 4.0.7: telegram-desktop), so a
+# longer name is matched on its first 15 bytes in /proc/<pid>/comm and then
+# confirmed by the basename of /proc/<pid>/exe or of argv[0].
 mole_process_running() {
     local name rc=1 probe
-    command -v pgrep > /dev/null 2>&1 || return 2
     for name in "$@"; do
+        [[ -n "$name" ]] || continue
         probe=0
-        pgrep -x -u "$(id -u)" -- "$name" > /dev/null 2>&1 || probe=$?
+        if ((${#name} > 15)); then
+            _mole_long_process_running "$name" || probe=$?
+        elif command -v pgrep > /dev/null 2>&1; then
+            pgrep -x -u "$(id -u)" -- "$name" > /dev/null 2>&1 || probe=$?
+        else
+            probe=2
+        fi
         [[ $probe -eq 0 ]] && return 0
         [[ $probe -eq 1 ]] || rc=2
     done
     return "$rc"
+}
+
+# One name longer than comm holds, among the user's own processes.
+_mole_long_process_running() {
+    local name="$1" short="${1:0:15}" pid comm exe argv0 rc=1
+    [[ -d /proc/self ]] || return 2
+    for pid in /proc/[0-9]*; do
+        [[ -O "$pid" ]] || continue
+        comm=""
+        IFS= read -r comm 2> /dev/null < "$pid/comm" || continue
+        [[ "$comm" == "$short" ]] || continue
+        exe=$(readlink -- "$pid/exe" 2> /dev/null) || exe=""
+        exe="${exe% (deleted)}"
+        argv0=""
+        IFS= read -r -d '' argv0 2> /dev/null < "$pid/cmdline" || true
+        if [[ "${exe##*/}" == "$name" || "${argv0##*/}" == "$name" ]]; then
+            return 0
+        fi
+        # Same 15 bytes, and neither the executable nor argv[0] can be read:
+        # it may be the program, so the answer is "cannot tell".
+        [[ -z "$exe" && -z "$argv0" ]] && rc=2
+    done
+    return "$rc"
+}
+
+# 0 when one of the user's processes runs a file from this list of absolute
+# paths (one per line), either as its executable or as one of its arguments
+# (a wrapper or interpreter: /usr/bin/code runs electron with
+# /usr/lib/code/out/main.js, /usr/bin/discord runs /opt/discord/Discord).
+# Directories in the list count only as /usr/lib/<x> or /opt/<x>, the
+# folders a single package owns; /usr/lib itself belongs to every package.
+# 1 when none does, 2 when /proc cannot be read.
+mole_files_running() {
+    local list="$1" line pid exe word
+    local -A own=()
+    while IFS= read -r line; do
+        [[ "$line" == /* ]] || continue
+        if [[ "$line" == */ ]]; then
+            line="${line%/}"
+            [[ "$line" =~ ^/usr/lib/[^/]+$ || "$line" =~ ^/opt/[^/]+$ ]] || continue
+            case "${line##*/}" in
+                systemd | modules | firmware | python* | perl* | ruby | node_modules | girepository-1.0 | \
+                    gtk-* | qt* | gstreamer-* | gio | dri | pkgconfig | cmake | udev | sysusers.d | tmpfiles.d) continue ;;
+            esac
+        fi
+        own[$line]=1
+    done <<< "$list"
+    [[ ${#own[@]} -gt 0 ]] || return 1
+    [[ -d /proc/self ]] || return 2
+    for pid in /proc/[0-9]*; do
+        [[ -O "$pid" ]] || continue
+        exe=$(readlink -- "$pid/exe" 2> /dev/null) || exe=""
+        exe="${exe% (deleted)}"
+        [[ -n "$exe" && -n "${own[$exe]:-}" ]] && return 0
+        while IFS= read -r -d '' word; do
+            [[ "$word" == /* ]] || continue
+            word="${word%/}"
+            [[ -n "${own[$word]:-}" ]] && return 0
+        done 2> /dev/null < "$pid/cmdline" || true
+    done
+    return 1
 }
 
 # 0 when the Flatpak app runs, 1 when it does not, 2 when flatpak cannot say.
