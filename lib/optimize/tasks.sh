@@ -155,9 +155,82 @@ task_launchers() {
     fi
 }
 
+# Program names a Hyprland config starts: `exec-once = cmd` and `exec = cmd`
+# in ~/.config/hypr/*.conf, and the string passed to launch_on_start, exec_cmd
+# or launch in the Lua config Omarchy now writes. Prints file<TAB>line<TAB>cmd.
+opt_hypr_commands() {
+    local dir="$MOLE_CONFIG_HOME/hypr" f
+    [[ -d "$dir" ]] || return 0
+    for f in "$dir"/*.conf; do
+        [[ -f "$f" ]] || continue
+        awk '
+            /^[ \t]*#/ { next }
+            /^[ \t]*exec(-once)?[ \t]*=/ {
+                cmd = $0; sub(/^[^=]*=[ \t]*/, "", cmd); sub(/[ \t]+#.*$/, "", cmd)
+                if (cmd != "") printf "%s\t%d\t%s\n", FILENAME, FNR, cmd
+            }' "$f" 2> /dev/null || true
+    done
+    for f in "$dir"/*.lua; do
+        [[ -f "$f" ]] || continue
+        awk '
+            /^[ \t]*--/ { next }
+            {
+                line = $0
+                while (match(line, /(launch_on_start|exec_cmd|launch)\([ \t]*"[^"]*"/)) {
+                    cmd = substr(line, RSTART, RLENGTH); sub(/^[^"]*"/, "", cmd); sub(/"$/, "", cmd)
+                    if (cmd != "") printf "%s\t%d\t%s\n", FILENAME, FNR, cmd
+                    line = substr(line, RSTART + RLENGTH)
+                }
+            }' "$f" 2> /dev/null || true
+    done
+}
+
+# The program a shell command line starts, when that can be told without
+# running a shell: no expansions, pipes, lists or redirections. Leading env
+# assignments and the uwsm / app2unit launch wrappers are skipped. Prints
+# nothing when it cannot tell.
+opt_command_program() {
+    local cmd="$1" w i=0
+    [[ "$cmd" == *[\$\`\;\|\&\(\)\<\>\'\"\\]* ]] && return 0
+    local -a words=()
+    read -ra words <<< "$cmd"
+    while ((i < ${#words[@]})); do
+        w="${words[i]}"
+        if [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= || "$w" == exec || "$w" == -- ]]; then
+            :
+        elif [[ "$w" == uwsm && "${words[i + 1]:-}" == app ]]; then
+            i=$((i + 1))
+        elif [[ "$w" == uwsm-app || "$w" == app2unit ]]; then
+            :
+        elif [[ "$w" == -* && $i -gt 0 ]]; then
+            :
+        else
+            printf '%s' "$w"
+            return 0
+        fi
+        i=$((i + 1))
+    done
+    return 0
+}
+
+# The program of each ExecStart= in the user's own unit files, with
+# systemd's prefixes (-@:+!) removed; specifiers and variables are skipped.
+opt_unit_programs() {
+    local f
+    for f in "$MOLE_CONFIG_HOME/systemd/user"/*.service; do
+        [[ -f "$f" ]] || continue
+        awk '
+            /^[ \t]*ExecStart(Pre|Post)?[ \t]*=/ {
+                v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/^[-@:+!]+/, "", v)
+                split(v, w, /[ \t]+/)
+                if (w[1] != "" && w[1] !~ /[%$]/) printf "%s\t%s\n", FILENAME, w[1]
+            }' "$f" 2> /dev/null || true
+    done
+}
+
 task_autostart() {
     local dir="$MOLE_CONFIG_HOME/autostart" f checked=0
-    local -a broken=()
+    local -a broken=() hypr=() units=() links=()
     if [[ -d "$dir" && ! -L "$dir" ]]; then
         for f in "$dir"/*.desktop; do
             [[ -f "$f" && ! -L "$f" ]] || continue
@@ -169,9 +242,46 @@ task_autostart() {
             fi
         done
     fi
+    local file line cmd prog
+    while IFS=$'\t' read -r file line cmd; do
+        [[ -n "$cmd" ]] || continue
+        checked=$((checked + 1))
+        prog=$(opt_command_program "$cmd")
+        [[ -n "$prog" ]] || continue
+        opt_program_exists "$prog" || hypr+=("$(mole_display_path "$file"):$line  ${GRAY}$prog${NC}")
+    done < <(opt_hypr_commands)
+    while IFS=$'\t' read -r file prog; do
+        [[ -n "$prog" ]] || continue
+        checked=$((checked + 1))
+        opt_program_exists "$prog" || units+=("$(mole_display_path "$file")  ${GRAY}$prog${NC}")
+    done < <(opt_unit_programs)
+    # An enablement link whose unit file is gone: systemd logs an error for
+    # it at every login.
+    for f in "$MOLE_CONFIG_HOME/systemd/user"/*.wants/*; do
+        [[ -L "$f" && ! -e "$f" ]] && links+=("$f")
+    done
     if [[ ${#broken[@]} -gt 0 ]]; then
         opt_warn "$(mole_count_label "${#broken[@]}" "autostart entry" "autostart entries") $(opt_agree "${#broken[@]}" "starts a program that is" "start programs that are") gone"
         opt_list_paths "${broken[@]}"
+    fi
+    if [[ ${#hypr[@]} -gt 0 ]]; then
+        opt_warn "$(mole_count_label "${#hypr[@]}" "Hyprland start command") $(opt_agree "${#hypr[@]}" "runs a program that is" "run programs that are") gone"
+        local h
+        for h in "${hypr[@]:0:5}"; do opt_sub "$h"; done
+        [[ ${#hypr[@]} -gt 5 ]] && opt_sub "and $((${#hypr[@]} - 5)) more"
+    fi
+    if [[ ${#units[@]} -gt 0 ]]; then
+        opt_warn "$(mole_count_label "${#units[@]}" "user service") $(opt_agree "${#units[@]}" "starts a program that is" "start programs that are") gone"
+        local u
+        for u in "${units[@]:0:5}"; do opt_sub "$u"; done
+        [[ ${#units[@]} -gt 5 ]] && opt_sub "and $((${#units[@]} - 5)) more"
+    fi
+    if [[ ${#links[@]} -gt 0 ]]; then
+        opt_warn "$(mole_count_label "${#links[@]}" "user service link") $(opt_agree "${#links[@]}" "points at a unit that is" "point at units that are") gone"
+        opt_list_paths "${links[@]}"
+        opt_hint "Remove a link with rm, or reinstall the program it belonged to"
+    fi
+    if [[ $((${#broken[@]} + ${#hypr[@]} + ${#units[@]} + ${#links[@]})) -gt 0 ]]; then
         opt_outcome attention
     elif ((checked > 0)); then
         opt_line "Autostart entries all healthy ($checked checked)"
@@ -179,6 +289,69 @@ task_autostart() {
     else
         opt_line "No personal autostart entries"
         opt_outcome unchanged
+    fi
+}
+
+# Files directly in the home folder or ~/.config that root owns (left by an
+# app once run with sudo): the user's own apps cannot update them. Reported
+# with the command that gives them back; Mole never changes ownership.
+task_home_ownership() {
+    local uid="${OPT_FOREIGN_UID:-0}" p
+    local -a hits=()
+    local -A seen=()
+    while IFS= read -r -d '' p; do
+        [[ -n "${seen[$p]:-}" ]] && continue
+        seen[$p]=1
+        hits+=("$p")
+    done < <(find "$HOME" "$MOLE_CONFIG_HOME" -mindepth 1 -maxdepth 1 -uid "$uid" ! -type l -print0 2> /dev/null)
+    if [[ ${#hits[@]} -eq 0 ]]; then
+        opt_line "No root-owned files in your home folder"
+        opt_outcome unchanged
+        return
+    fi
+    opt_warn "$(mole_count_label "${#hits[@]}" item) in your home folder $(opt_agree "${#hits[@]}" "is" "are") owned by root, so your apps cannot change $(opt_agree "${#hits[@]}" "it" "them")"
+    opt_sub "$(mole_display_path "${hits[0]}")"
+    opt_hint "Give it back with sudo chown -R $(id -un): \"${hits[0]}\""
+    opt_outcome attention
+}
+
+# Icon themes in ~/.local/share/icons that carry an index.theme get their
+# icon cache rebuilt, so icons added or removed by hand show up.
+task_icon_cache() {
+    local base="$MOLE_DATA_HOME/icons" t
+    local -a themes=()
+    if [[ -d "$base" && ! -L "$base" ]]; then
+        for t in "$base"/*/; do
+            t="${t%/}"
+            [[ -d "$t" && ! -L "$t" && -f "$t/index.theme" ]] && themes+=("$t")
+        done
+    fi
+    if [[ ${#themes[@]} -eq 0 ]]; then
+        opt_line "No personal icon themes"
+        opt_outcome unchanged
+        return
+    fi
+    if ! command -v gtk-update-icon-cache > /dev/null 2>&1; then
+        opt_gray "Icon cache skipped, gtk-update-icon-cache is not installed"
+        opt_outcome unavailable
+        return
+    fi
+    local failed=0
+    if [[ "${DRY_RUN:-false}" != "true" ]]; then
+        for t in "${themes[@]}"; do
+            if mole_c gtk-update-icon-cache -q -f "$t" > /dev/null 2>&1; then
+                log_operation optimize REBUILT "$t/icon-theme.cache" "gtk-update-icon-cache"
+            else
+                failed=$((failed + 1))
+            fi
+        done
+    fi
+    if ((failed > 0)); then
+        opt_warn "Icon cache refresh failed for $(mole_count_label "$failed" theme)"
+        opt_outcome failed
+    else
+        opt_line "Icon cache refreshed for $(mole_count_label "${#themes[@]}" theme)"
+        opt_outcome applied
     fi
 }
 
@@ -288,28 +461,43 @@ task_pacman_lock() {
 }
 
 # browser label|process names|profile root|database files in a profile
+# Chromium family: the history, icon, autofill, top sites and shortcut
+# databases; Cookies and Login Data are never opened. Gecko family (Firefox,
+# Zen, Thunderbird): every *.sqlite at the top of a profile except
+# cookies.sqlite, as Firefox's own idle maintenance compacts them; per-site
+# storage below the profile is not read. Newer Firefox keeps profiles under
+# ~/.config/mozilla/firefox, older under ~/.mozilla/firefox; both are read.
 opt_browser_specs() {
-    local c="$MOLE_CONFIG_HOME" chromium_dbs="History,Favicons" firefox_dbs="places.sqlite,favicons.sqlite"
+    local c="$MOLE_CONFIG_HOME" chromium_dbs="History,Favicons,Web Data,Top Sites,Shortcuts" gecko="*.sqlite"
     cat << SPECS
 Chromium|chromium|$c/chromium|$chromium_dbs
 Google Chrome|chrome|$c/google-chrome|$chromium_dbs
 Brave|brave|$c/BraveSoftware/Brave-Browser|$chromium_dbs
 Vivaldi|vivaldi-bin|$c/vivaldi|$chromium_dbs
 Microsoft Edge|msedge|$c/microsoft-edge|$chromium_dbs
-Firefox|firefox,firefox-esr,firefox-bin|$HOME/.mozilla/firefox|$firefox_dbs
-Zen|zen,zen-bin|$HOME/.zen|$firefox_dbs
+Firefox|firefox,firefox-esr,firefox-bin|$HOME/.mozilla/firefox|$gecko
+Firefox|firefox,firefox-esr,firefox-bin|$c/mozilla/firefox|$gecko
+Zen|zen,zen-bin|$HOME/.zen|$gecko
+Thunderbird|thunderbird,thunderbird-bin|$HOME/.thunderbird|$gecko
 SPECS
 }
 
 # Database files of one browser: Chromium keeps them in Default and Profile N,
-# Firefox and Zen in one folder per profile.
+# Firefox, Zen and Thunderbird in one folder per profile.
 opt_browser_dbs() {
-    local root="$1" names="$2" profile name
+    local root="$1" names="$2" profile name f
     local -a files=()
     IFS=',' read -ra files <<< "$names"
     for profile in "$root"/*/; do
         profile="${profile%/}"
         [[ -d "$profile" && ! -L "$profile" ]] || continue
+        if [[ "$names" == "*.sqlite" ]]; then
+            for f in "$profile"/*.sqlite; do
+                [[ "${f##*/}" == cookies.sqlite ]] && continue
+                [[ -f "$f" && ! -L "$f" ]] && printf '%s\n' "$f"
+            done
+            continue
+        fi
         for name in "${files[@]}"; do
             [[ -f "$profile/$name" && ! -L "$profile/$name" ]] && printf '%s\n' "$profile/$name"
         done
@@ -368,9 +556,9 @@ task_browser_dbs() {
             mole_process_running "${names_list[@]}" || rc=$?
             if [[ $rc -ne 1 ]]; then
                 if [[ $rc -eq 0 ]]; then
-                    open+=("$label")
+                    [[ " ${open[*]-} " == *" $label "* ]] || open+=("$label")
                 else
-                    unsure+=("$label")
+                    [[ " ${unsure[*]-} " == *" $label "* ]] || unsure+=("$label")
                 fi
                 skipped_any=true
                 break

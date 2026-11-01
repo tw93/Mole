@@ -1,9 +1,9 @@
 #!/bin/bash
-# Mole CLI (Linux) - optimize: refresh the user's font and launcher caches,
-# compact browser databases while the browser is closed, and report what a
-# person should act on (failed services, broken launchers and autostart
-# entries, orphan packages, a stale pacman lock, TRIM, power-manager
-# conflicts). It never uses sudo and never changes CPU, power or sysctl
+# Mole CLI (Linux) - optimize: refresh the user's font, launcher and icon
+# caches, compact browser databases while the browser is closed, and report
+# what a person should act on (failed services, broken launchers, autostart
+# entries, Hyprland start commands and user services, orphan packages, a stale
+# pacman lock, TRIM, power-manager conflicts, root-owned files in the home). It never uses sudo and never changes CPU, power or sysctl
 # settings, which belong to TLP, power-profiles-daemon and the like.
 
 set -euo pipefail
@@ -172,6 +172,7 @@ main() {
 
     run_task "Font Cache Refresh" task_fonts
     run_task "App Launchers" task_launchers
+    run_task "Icon Cache Refresh" task_icon_cache
     run_task "Autostart Entries" task_autostart
     run_task "Failed Services" task_services
     if command -v pacman > /dev/null 2>&1; then
@@ -181,6 +182,7 @@ main() {
     run_task "Browser Databases" task_browser_dbs
     run_task "Disk TRIM" task_trim
     run_task "Power Management" task_power
+    run_task "Home Folder Ownership" task_home_ownership
 
     show_summary
     echo ""

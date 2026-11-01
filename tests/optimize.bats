@@ -258,3 +258,82 @@ systemd_up() { mkdir -p "$TEST_ROOT/run-systemd"; export OPT_SYSTEMD_RUN_DIR="$T
     [[ "$output" == *"Compacted 1 database"* ]]
     [[ "$output" == *"Chromium is open"* ]]
 }
+
+@test "Chromium's Web Data, Top Sites and Shortcuts are compacted, Cookies and Login Data never" {
+    local p="$HOME/.config/chromium/Default"
+    mkdir -p "$p"
+    touch "$p/History" "$p/Web Data" "$p/Top Sites" "$p/Shortcuts" "$p/Cookies" "$p/Login Data"
+    mole_run optimize 'while IFS="|" read -r l o r n; do opt_browser_dbs "$r" "$n"; done < <(opt_browser_specs)'
+    [[ "$output" == *"$p/Web Data"* ]]
+    [[ "$output" == *"$p/Top Sites"* ]]
+    [[ "$output" == *"$p/Shortcuts"* ]]
+    [[ "$output" != *Cookies* ]]
+    [[ "$output" != *"Login Data"* ]]
+}
+
+@test "Firefox, Zen and Thunderbird profiles give every top-level sqlite but cookies.sqlite, in both Firefox folders" {
+    local old="$HOME/.mozilla/firefox/a.default" new="$HOME/.config/mozilla/firefox/b.default" tb="$HOME/.thunderbird/c.default"
+    mkdir -p "$old/storage" "$new" "$tb"
+    touch "$old/places.sqlite" "$old/formhistory.sqlite" "$old/cookies.sqlite" "$old/storage/x.sqlite" "$old/key4.db"
+    touch "$new/places.sqlite" "$tb/global-messages-db.sqlite" "$tb/cookies.sqlite"
+    mole_run optimize 'while IFS="|" read -r l o r n; do opt_browser_dbs "$r" "$n" | sed "s/^/$l: /"; done < <(opt_browser_specs)'
+    [[ "$output" == *"Firefox: $old/places.sqlite"* ]]
+    [[ "$output" == *"Firefox: $old/formhistory.sqlite"* ]]
+    [[ "$output" == *"Firefox: $new/places.sqlite"* ]]
+    [[ "$output" == *"Thunderbird: $tb/global-messages-db.sqlite"* ]]
+    [[ "$output" != *cookies.sqlite* ]]
+    [[ "$output" != *storage/x.sqlite* ]]
+    [[ "$output" != *key4.db* ]]
+}
+
+@test "Hyprland start commands that run a missing program are reported, conf and Lua alike" {
+    mkdir -p "$HOME/.config/hypr"
+    printf 'exec-once = mole-no-such-daemon --flag\nexec-once = sh -c true\n# exec-once = mole-commented-out\nexec = uwsm app -- mole-no-such-bar\nexec-once = foo $HOME | bar\n' > "$HOME/.config/hypr/autostart.conf"
+    printf -- '-- o.launch_on_start("mole-lua-commented")\no.launch_on_start("mole-no-such-lua-app --x")\nhl.exec_cmd(o.launch("sh"))\n' > "$HOME/.config/hypr/autostart.lua"
+    mole_run optimize 'task_autostart; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"3 Hyprland start commands run programs that are gone"* ]]
+    [[ "$output" == *"autostart.conf:1"*mole-no-such-daemon* ]]
+    [[ "$output" == *mole-no-such-bar* ]]
+    [[ "$output" == *"autostart.lua:2"*mole-no-such-lua-app* ]]
+    [[ "$output" != *commented* ]]
+    [[ "$output" != *"foo"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+}
+
+@test "a user service whose program is gone, or a link to a gone unit, needs attention" {
+    local u="$HOME/.config/systemd/user"
+    mkdir -p "$u/default.target.wants"
+    printf '[Service]\nExecStart=-/opt/mole-gone/daemon --x\n' > "$u/gone.service"
+    printf '[Service]\nExecStart=/bin/sh -c true\n' > "$u/fine.service"
+    ln -s "$u/missing.service" "$u/default.target.wants/missing.service"
+    mole_run optimize 'task_autostart; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"1 user service starts a program that is gone"* ]]
+    [[ "$output" == *"gone.service"*"/opt/mole-gone/daemon"* ]]
+    [[ "$output" != *fine.service* ]]
+    [[ "$output" == *"1 user service link points at a unit that is gone"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+}
+
+@test "root-owned files in the home folder are reported with the fix, never changed" {
+    mkdir -p "$HOME/.config/stuck" "$HOME/Documents"
+    mole_run optimize 'OPT_FOREIGN_UID=999999; task_home_ownership; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"No root-owned files"* ]]
+    [[ "$output" == *"outcome=unchanged"* ]]
+    mole_run optimize 'OPT_FOREIGN_UID=$(id -u); task_home_ownership; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"owned by root"* ]]
+    [[ "$output" == *"sudo chown -R"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+}
+
+@test "a personal icon theme with an index gets its icon cache rebuilt, a dry run only says so" {
+    mkdir -p "$HOME/.local/share/icons/MyTheme" "$HOME/.local/share/icons/hicolor"
+    touch "$HOME/.local/share/icons/MyTheme/index.theme"
+    fake_command gtk-update-icon-cache 'echo "$*" >> "'"$TEST_ROOT"'/gtk.log"'
+    mole_run optimize 'DRY_RUN=true; task_icon_cache; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"Icon cache refreshed for 1 theme"* ]]
+    [ ! -e "$TEST_ROOT/gtk.log" ]
+    mole_run optimize 'task_icon_cache; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"outcome=applied"* ]]
+    grep -qx -- "-q -f $HOME/.local/share/icons/MyTheme" "$TEST_ROOT/gtk.log"
+    [ -z "$(grep hicolor "$TEST_ROOT/gtk.log")" ]
+}
