@@ -557,7 +557,6 @@ remove_packages() {
                 disable_package_units
                 sudo pacman -Rns -- "${pkgs[@]}" || true
             fi
-            mole_sudo_end
         fi
     fi
     local kept_pkg=false
@@ -577,7 +576,19 @@ remove_packages() {
                     log_error "${APP_NAME[i]}: unknown Flatpak installation \"${APP_SCOPE[i]}\""
                     continue
                 fi
-                if flatpak uninstall "$flag" -- "${APP_ID[i]}"; then
+                # The user installation is the user's own; a system or custom
+                # installation needs root, asked for on Mole's line like
+                # pacman. flatpak keeps its own confirmation (no -y).
+                local -a fp=(flatpak uninstall "$flag" -- "${APP_ID[i]}")
+                if [[ "$flag" != --user ]]; then
+                    echo -e "${PURPLE}${ICON_ADMIN}${NC} flatpak removes ${APP_ID[i]} from the ${APP_SCOPE[i]} installation"
+                    if ! mole_sudo_ready; then
+                        log_error "${APP_NAME[i]}: needs sudo, not removed"
+                        continue
+                    fi
+                    fp=(sudo "${fp[@]}")
+                fi
+                if "${fp[@]}"; then
                     REMOVED+=("$i")
                     log_operation uninstall REMOVED "flatpak:${APP_ID[i]}"
                 fi
@@ -604,6 +615,8 @@ remove_packages() {
                 ;;
         esac
     done
+    # One sudo session covers pacman and system Flatpaks; it ends here.
+    mole_sudo_end
     # pacman kept a package (cancelled, failed): its units come back on.
     [[ "$kept_pkg" == true ]] && restore_package_units
     return 0

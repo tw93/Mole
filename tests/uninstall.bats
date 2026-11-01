@@ -292,16 +292,35 @@ desktop() {
     [[ "$output" == *"$HOME/.config/spotify=true"* ]]
 }
 
-@test "a Flatpak from a custom installation is removed from that installation" {
+@test "a Flatpak is removed from its own installation, system and custom ones through sudo" {
     fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"; exit 0'
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
     mole_run uninstall '
-        APP_KIND=(flatpak flatpak flatpak); APP_ID=(org.a.One org.b.Two org.c.Three); APP_NAME=(One Two Three); APP_SCOPE=(extra user "bad name"); SELECTED=(0 1 2)
+        APP_KIND=(flatpak flatpak flatpak flatpak); APP_ID=(org.a.One org.b.Two org.c.Three org.d.Four); APP_NAME=(One Two Three Four)
+        APP_SCOPE=(extra user "bad name" system); SELECTED=(0 1 2 3)
         remove_packages; echo "removed=${REMOVED[*]}"'
     grep -qx -- "uninstall --installation=extra -- org.a.One" "$TEST_ROOT/flatpak.log"
     grep -qx -- "uninstall --user -- org.b.Two" "$TEST_ROOT/flatpak.log"
-    [ -z "$(grep -- --system "$TEST_ROOT/flatpak.log")" ]
+    grep -qx -- "uninstall --system -- org.d.Four" "$TEST_ROOT/flatpak.log"
+    grep -qx -- "flatpak uninstall --installation=extra -- org.a.One" "$TEST_ROOT/sudo.log"
+    grep -qx -- "flatpak uninstall --system -- org.d.Four" "$TEST_ROOT/sudo.log"
+    [ -z "$(grep -- org.b.Two "$TEST_ROOT/sudo.log")" ]
+    [ -z "$(grep -E -- '(^| )-y( |$)|--noninteractive|--assumeyes' "$TEST_ROOT/flatpak.log")" ]
     [ -z "$(grep -- org.c.Three "$TEST_ROOT/flatpak.log")" ]
-    [[ "$output" == *"removed=0 1"* ]]
+    [[ "$output" == *"flatpak removes org.d.Four from the system installation"* ]]
+    [[ "$output" == *"removed=0 1 3"* ]]
+}
+
+@test "a system Flatpak without sudo is left installed and the user one still goes" {
+    fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"; exit 0'
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; exit 1'
+    mole_run uninstall '
+        APP_KIND=(flatpak flatpak); APP_ID=(org.d.Four org.b.Two); APP_NAME=(Four Two); APP_SCOPE=(system user); SELECTED=(0 1)
+        remove_packages < /dev/null; echo "removed=${REMOVED[*]}"'
+    [ -z "$(grep -- org.d.Four "$TEST_ROOT/flatpak.log")" ]
+    grep -qx -- "uninstall --user -- org.b.Two" "$TEST_ROOT/flatpak.log"
+    [[ "$output" == *"Four: needs sudo, not removed"* ]]
+    [[ "$output" == *"removed=1"* ]]
 }
 
 @test "a web app icon kept in its original format goes with it, a shared icon stays" {
