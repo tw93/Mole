@@ -1,4 +1,4 @@
-<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows">Windows</a> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
+<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows#readme">Windows</a> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole</h1>
@@ -135,7 +135,7 @@ nix profile remove mole
 
 </details>
 
-**Windows 上安装**（[Windows CLI](https://github.com/tw93/Mole/tree/windows)）
+**Windows 上安装**（[Windows CLI](https://github.com/tw93/Mole/tree/windows#readme)）
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
