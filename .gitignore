@@ -99,3 +99,4 @@ mole_guidelines.md
 
 # Built Go helpers (make build)
 /bin/*-go
+/release/

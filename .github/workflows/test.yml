@@ -24,9 +24,9 @@ jobs:
     steps:
       - name: Install tools
         run: pacman -Syu --noconfirm --needed bash bats git go make procps-ng shellcheck sudo
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Shellcheck
-        run: shellcheck -x mole mo bin/*.sh lib/*/*.sh
+        run: shellcheck -x mole mo install.sh bin/*.sh lib/*/*.sh scripts/*.sh
       - name: Prepare test user
         run: |
           useradd -m mole
@@ -37,3 +37,44 @@ jobs:
         run: su mole -c "cd '$GITHUB_WORKSPACE' && go test ./cmd/... ./internal/..."
       - name: Bats
         run: su mole -c "cd '$GITHUB_WORKSPACE' && bats tests/"
+      - name: Release archive installs, runs and removes itself
+        run: |
+          su mole -c "cd '$GITHUB_WORKSPACE' && scripts/build-release.sh > /dev/null"
+          version="$(tr -d '[:space:]' < VERSION)"
+          useradd -m fresh
+          cp "release/mole-$version-linux-x86_64.tar.gz" release/SHA256SUMS.txt install.sh /tmp/
+          chmod 644 /tmp/*.tar.gz /tmp/SHA256SUMS.txt /tmp/install.sh
+          su - fresh -c "bash /tmp/install.sh --archive /tmp/mole-$version-linux-x86_64.tar.gz --sums /tmp/SHA256SUMS.txt"
+          su - fresh -c "~/.local/bin/mo --version | grep -qx 'Mole version $version'"
+          su - fresh -c "~/.local/bin/mo clean --dry-run > /dev/null"
+          su - fresh -c "~/.local/bin/mo status --json > /dev/null"
+          su - fresh -c "~/.local/bin/mo remove --yes && test ! -e ~/.local/share/mole"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            release/*.tar.gz
+            release/SHA256SUMS.txt
+            install.sh
+          if-no-files-found: error
+          retention-days: 1
+
+  aarch64:
+    needs: arch
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: artifact
+      - name: Install the aarch64 archive and run it
+        run: |
+          archive=$(ls artifact/release/mole-*-linux-aarch64.tar.gz)
+          version=$(basename "$archive" | sed 's/^mole-//; s/-linux-aarch64.tar.gz$//')
+          bash artifact/install.sh --archive "$archive" --sums artifact/release/SHA256SUMS.txt
+          ~/.local/bin/mo --version | grep -qx "Mole version $version"
+          ~/.local/bin/mo clean --dry-run > /dev/null
+          ~/.local/bin/mo status --json > /dev/null
+          ~/.local/bin/mo remove --yes
+          test ! -e ~/.local/share/mole

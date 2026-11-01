@@ -18,7 +18,8 @@ export SCRIPT_DIR
 
 source "$SCRIPT_DIR/lib/core/common.sh"
 
-VERSION="0.1.0"
+VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION" 2> /dev/null || true)"
+VERSION="${VERSION:-unknown}"
 MOLE_TAGLINE="Deep clean your Linux desktop."
 
 show_brand_banner() {
@@ -34,8 +35,18 @@ BANNER
 
 show_version() {
     local os="Unknown"
+    # Read, never source: os-release sets VERSION on Debian and Ubuntu.
+    local line name=""
     if [[ -r /etc/os-release ]]; then
-        os=$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-${NAME:-Linux}}")
+        while IFS= read -r line; do
+            case "$line" in
+                PRETTY_NAME=*) os="${line#PRETTY_NAME=}" ;;
+                NAME=*) name="${line#NAME=}" ;;
+            esac
+        done < /etc/os-release
+        [[ "$os" != Unknown ]] || os="${name:-Linux}"
+        os="${os#[\"\']}"
+        os="${os%[\"\']}"
     fi
     printf '\nMole version %s\n' "$VERSION" 2> /dev/null || return 0
     printf 'OS: %s\n' "$os" 2> /dev/null || return 0
@@ -51,6 +62,8 @@ MOLE_COMMANDS=(
     "uninstall:Remove apps completely"
     "analyze:Explore disk usage"
     "status:Monitor system health"
+    "update:Update to the latest version"
+    "remove:Remove Mole from this computer"
     "help:Show help"
     "version:Show version"
 )
@@ -174,7 +187,7 @@ main() {
         fi
     done
     case "${args[0]:-}" in
-        clean | uninstall | analyze | status)
+        clean | uninstall | analyze | status | update | remove)
             run_mole_command "$SCRIPT_DIR/bin/${args[0]}.sh" "${args[@]:1}"
             ;;
         analyse) run_mole_command "$SCRIPT_DIR/bin/analyze.sh" "${args[@]:1}" ;;

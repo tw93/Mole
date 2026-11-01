@@ -1,0 +1,126 @@
+name: Linux Release
+
+# Mole CLI (Linux) releases are tagged V1.2.3-linux. The workflow only creates
+# a draft; the maintainer reads it and publishes it with --latest=false (see
+# AGENTS.md Releases). A Linux release must never become the repository's
+# "latest" release: macOS installs and `mo update` read releases/latest.
+on:
+  push:
+    tags:
+      - 'V*.*.*-linux'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux:latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed bash bats curl git go make procps-ng shellcheck sudo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag matches VERSION
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#V}"
+          tag="${tag%-linux}"
+          declared="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$declared" ]; then
+            echo "::error file=VERSION::Tag $GITHUB_REF_NAME does not match VERSION $declared. Bump VERSION, commit, delete the tag with 'git push origin :refs/tags/$GITHUB_REF_NAME', then tag the new commit."
+            exit 1
+          fi
+          echo "VERSION=$declared" >> "$GITHUB_ENV"
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+      - name: Tests as an unprivileged user
+        run: |
+          useradd -m mole
+          chown -R mole:mole "$GITHUB_WORKSPACE"
+          su mole -c "cd '$GITHUB_WORKSPACE' && shellcheck -x mole mo install.sh bin/*.sh lib/*/*.sh scripts/*.sh"
+          su mole -c "cd '$GITHUB_WORKSPACE' && make build && go test ./cmd/... ./internal/... && bats tests/"
+      - name: Build archives
+        run: su mole -c "cd '$GITHUB_WORKSPACE' && scripts/build-release.sh '$VERSION'"
+      - name: Install the x86_64 archive into a fresh home and run it
+        run: |
+          useradd -m fresh
+          cp "release/mole-$VERSION-linux-x86_64.tar.gz" release/SHA256SUMS.txt install.sh /tmp/
+          chmod 644 /tmp/*.tar.gz /tmp/SHA256SUMS.txt /tmp/install.sh
+          su - fresh -c "bash /tmp/install.sh --archive /tmp/mole-$VERSION-linux-x86_64.tar.gz --sums /tmp/SHA256SUMS.txt"
+          su - fresh -c "~/.local/bin/mo --version | grep -qx 'Mole version $VERSION'"
+          su - fresh -c "~/.local/bin/mo clean --dry-run > /dev/null"
+          su - fresh -c "~/.local/bin/mo status --json > /dev/null"
+          su - fresh -c "~/.local/bin/mo remove --yes && test ! -e ~/.local/share/mole"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            release/*.tar.gz
+            release/SHA256SUMS.txt
+            install.sh
+          if-no-files-found: error
+          retention-days: 1
+
+  aarch64:
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: artifact
+      - name: Install the aarch64 archive and run it
+        run: |
+          bash artifact/install.sh --archive "artifact/release/mole-$VERSION-linux-aarch64.tar.gz" --sums artifact/release/SHA256SUMS.txt
+          ~/.local/bin/mo --version | grep -qx "Mole version $VERSION"
+          ~/.local/bin/mo clean --dry-run > /dev/null
+          ~/.local/bin/mo status --json > /dev/null
+          ~/.local/bin/mo remove --yes
+          test ! -e ~/.local/share/mole
+
+  draft:
+    needs: [build, aarch64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: artifact
+      - name: Create draft release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          name: ${{ github.ref_name }}
+          files: |
+            artifact/release/mole-${{ env.VERSION }}-linux-x86_64.tar.gz
+            artifact/release/mole-${{ env.VERSION }}-linux-aarch64.tar.gz
+            artifact/release/SHA256SUMS.txt
+          draft: true
+          prerelease: false
+          make_latest: false
+          generate_release_notes: false
+          body: |
+            ## Mole CLI for Linux ${{ env.VERSION }}
+
+            Install:
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
+            ```
+
+            Already installed? Run `mo update`. `SHA256SUMS.txt` lists the checksum of each archive, and the installer checks it before installing.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
