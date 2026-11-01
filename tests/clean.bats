@@ -244,6 +244,20 @@ start_owner() {
     [ -f "$HOME/.config/obsidian/obsidian.json" ]
 }
 
+@test "flatpak unused runtimes are removed only when flatpak and a user installation exist" {
+    mole_run clean 'DRY_RUN=true; clean_system'
+    [[ "$output" != *"Flatpak"* ]]
+
+    fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"'
+    mole_run clean 'clean_system'
+    [ ! -e "$TEST_ROOT/flatpak.log" ]
+
+    mkdir -p "$HOME/.local/share/flatpak/repo"
+    mole_run clean 'clean_system'
+    grep -qx -- "uninstall --user --unused --noninteractive" "$TEST_ROOT/flatpak.log"
+    [ -z "$(grep -- "--system" "$TEST_ROOT/flatpak.log")" ]
+}
+
 @test "old agent versions: the active one and the newest other stay" {
     v="$HOME/.local/share/claude/versions"
     mkdir -p "$v" "$HOME/.local/bin"
