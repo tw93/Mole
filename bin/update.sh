@@ -7,23 +7,37 @@ SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]
 source "$SCRIPT_DIR/lib/core/common.sh"
 mole_refuse_root
 
-case "${1:-}" in
-    -h | --help)
-        echo "Usage: mo update"
-        echo ""
-        echo "Install the newest Mole CLI (Linux) release, verified by its checksum."
-        exit 0
-        ;;
-    "") ;;
-    *)
-        echo "Unknown option: $1" >&2
-        exit 1
-        ;;
-esac
+force=false
+for arg in "$@"; do
+    case "$arg" in
+        --force | -f) force=true ;;
+        -h | --help)
+            echo "Usage: mo update [--force]"
+            echo ""
+            echo "Install the newest Mole CLI (Linux) release, verified by its checksum."
+            echo ""
+            echo "Options:"
+            echo "  -f, --force       Reinstall the latest version even when up to date"
+            echo "  -h, --help        Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown update option: $arg" >&2
+            echo "Use 'mo update --help' for supported options." >&2
+            exit 1
+            ;;
+    esac
+done
 
 current="$(cat "$SCRIPT_DIR/VERSION" 2> /dev/null || echo unknown)"
 if [[ -d "$SCRIPT_DIR/.git" ]]; then
     log_error "This Mole runs from a source checkout; update it with git pull."
+    exit 1
+fi
+
+install_root="$MOLE_DATA_HOME/mole"
+if [[ "$(readlink -f -- "$SCRIPT_DIR")" != "$(readlink -f -- "$install_root" 2> /dev/null || echo /nonexistent)" ]]; then
+    log_error "This Mole runs from $SCRIPT_DIR, not an installed copy, so mo update would install a second one. Update it yourself, or install with install.sh."
     exit 1
 fi
 
@@ -41,12 +55,16 @@ if [[ $rc -ne 0 || ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
-if [[ "$current" == "$latest" || "$newest" == "$current" ]]; then
+if [[ "$force" != true && ("$current" == "$latest" || "$newest" == "$current") ]]; then
     echo -e "${GREEN}${ICON_SUCCESS}${NC} Mole $current is the latest version"
     exit 0
 fi
 
-echo -e "Updating Mole ${current} to ${GREEN}${latest}${NC}"
+if [[ "$current" == "$latest" ]]; then
+    echo -e "Reinstalling Mole ${GREEN}${latest}${NC}"
+else
+    echo -e "Updating Mole ${current} to ${GREEN}${latest}${NC}"
+fi
 # The installer replaces this very tree; run a copy of it from outside.
 copy="$(mktemp "${TMPDIR:-/tmp}/mole-install.XXXXXX")"
 cp -- "$SCRIPT_DIR/install.sh" "$copy"

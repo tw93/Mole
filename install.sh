@@ -84,13 +84,18 @@ fetch() { curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 "$@"; }
 # Newest published stable Mole CLI (Linux) release. Releases are listed newest
 # first; macOS (V1.2.3) and Windows (V1.2.3-windows) share the repository and
 # release far more often, so pages are read until an exact V1.2.3-linux tag
-# shows up. Drafts are not visible here.
+# that is not a prerelease shows up. Drafts are not visible here.
 latest_version() {
     local body tag page
     for page in 1 2 3 4 5 6 7 8 9 10; do
         body=$(fetch -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page") || return 1
-        tag=$(grep -oE '"tag_name": *"V[0-9]+\.[0-9]+\.[0-9]+-linux"' <<< "$body" | head -1 | grep -oE 'V[0-9.]+-linux') || tag=""
+        # Each release lists tag_name, then prerelease; a prerelease never counts.
+        tag=$(grep -oE '"tag_name": *"[^"]*"|"prerelease": *(true|false)' <<< "$body" |
+            awk -F'"' 'function ok() { return t ~ /^V[0-9]+\.[0-9]+\.[0-9]+-linux$/ && !pre }
+                /tag_name/ { if (ok()) { print t; done = 1; exit } t = $4; pre = 0; next }
+                /prerelease/ && /true/ { pre = 1 }
+                END { if (!done && ok()) print t }') || tag=""
         if [[ -n "$tag" ]]; then
             tag="${tag#V}"
             printf '%s' "${tag%-linux}"
