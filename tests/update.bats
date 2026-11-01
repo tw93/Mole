@@ -2500,3 +2500,28 @@ grep -q -- '--max-time 3 .*proxy=$' "$HOME/curl-calls" || exit 3
 SCRIPT
  [ "$status" -eq 0 ]
 }
+
+@test "release highlights take the first changelog titles and stop at the next section" {
+ run /bin/bash <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+body=$'Intro\r\n### Changelog\r\n\r\n1. Clearer clean output: Rows say what they hold.\r\n2. `mo slim` is safer: detail\r\n3. Plain item without a colon\r\n4. Fourth: x\r\n5. Fifth: y\r\n\r\n### 更新日志\r\n1. 中文: 不应出现'
+got=$(mole_release_highlight_titles "$body" 4)
+want=$'Clearer clean output\n`mo slim` is safer\nPlain item without a colon\nFourth'
+[[ "$got" == "$want" ]] || { printf 'got: %s\n' "$got"; exit 1; }
+[[ -z "$(mole_release_highlight_titles 'no list here' 4)" ]] || exit 1
+SCRIPT
+ [ "$status" -eq 0 ]
+}
+
+@test "release highlights stay silent off a terminal and never fetch there" {
+ run /bin/bash <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+curl() { touch "$HOME/fetched"; printf '{"body":"### Changelog\\n1. A: b"}\n'; }
+out=$(mole_print_release_highlights 9.8.7)
+[[ -z "$out" ]] || { echo "printed: $out"; exit 1; }
+[[ ! -e "$HOME/fetched" ]] || exit 1
+SCRIPT
+ [ "$status" -eq 0 ]
+}

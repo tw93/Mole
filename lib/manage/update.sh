@@ -456,6 +456,7 @@ _update_print_verified_success() {
         printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to ${success_label}"
     else
         printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to ${success_label}, ${_MOLE_UPDATE_VERIFIED_VERSION}"
+        mole_print_release_highlights "${_MOLE_UPDATE_VERIFIED_VERSION:-}"
     fi
 }
 
@@ -1502,10 +1503,12 @@ update_mole() (
             fi
             printf '%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Updated to ${success_label}, ${new_version:-unknown}"
             log_operation "update" "REBUILT" "${mole_path:-mole}" "updated to ${new_version:-unknown}"
+            [[ "$nightly_update" == "true" ]] || mole_print_release_highlights "${new_version:-}"
         else
             printf '\n'
             if printf '%s\n' "$output" | grep -q "Updated to latest version"; then
                 log_operation "update" "REBUILT" "${mole_path:-mole}" "updated to ${fallback_version:-unknown}"
+                [[ "$nightly_update" == "true" ]] || mole_print_release_highlights "${fallback_version:-}"
             fi
         fi
     }

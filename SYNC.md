@@ -121,3 +121,10 @@ Implemented in source (Mole CLI (macOS), `main` at `709efa56`), one commit each:
 - Intentional difference: the CLI needs no Citro Labs vendor-folder fix, because it already cleans Chromium HTTP caches under `~/Library/Caches` while the browser runs and has no parent-folder row.
 - Not applicable to the CLI: Gradle wrapper usage proof (the CLI never cleans wrapper distributions), uninstall-kept data offered later (the CLI has no unticked review tier), Analyze auto-drill (the CLI has none), and the package-checkout HEAD proof (purge removes `.build` whole after its own activity and manifest checks).
 
+
+## 2026-11-01 Release highlights after `mo update`
+
+Implemented in source (Mole CLI (macOS), `main`): a successful stable `mo update`, through the installer or Homebrew, prints up to four changelog titles of the installed version from its GitHub release and the release link; nightly installs, non-terminal output and failed lookups print nothing, and the update's exit status is unchanged (`lib/core/common.sh` `mole_print_release_highlights`, `tests/update.bats`). Not released until the next tagged version ships it.
+
+- Mole Mac: Not applicable. Sparkle shows each version's notes before installing and the in-app What's New card lists them after.
+- Mole CLI (Windows): Pending. `mo update` on Windows has no post-update summary; the Windows branch SYNC.md owns the adaptation and its next check.
