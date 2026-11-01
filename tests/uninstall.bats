@@ -316,6 +316,21 @@ desktop() {
     [[ "$output" == *"$icons/lazy-tool.png"* ]]
 }
 
+@test "a terminal app launcher leaves only its launcher and icon, never the program's own files" {
+    local apps="$HOME/.local/share/applications" icons="$HOME/.local/share/icons/hicolor/256x256/apps"
+    mkdir -p "$icons" "$HOME/.config/btop" "$HOME/.btop" "$HOME/.local/state/btop" "$HOME/.cache/btop" "$HOME/.local/share/btop"
+    touch "$icons/btop.png"
+    desktop "$apps/btop.desktop" "Name=btop" "Exec=xdg-terminal-exec --app-id=TUI.float -e btop" "Icon=btop"
+    mole_run uninstall '
+        APP_KIND=(tui); APP_ID=(btop); APP_NAME=(btop); APP_DESKTOPS=(btop); APP_EXEC=(""); SELECTED=(0); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}"; done'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$apps/btop.desktop"* ]]
+    [[ "$output" == *"$icons/btop.png"* ]]
+    [ "$(printf '%s\n' "$output" | grep -c .)" -eq 2 ]
+}
+
 @test "leftovers reach dot folders, known aliases, Flatpak overrides and AUR build folders" {
     mkdir -p "$HOME/.foo" "$HOME/.vscode-oss" "$HOME/.local/share/flatpak/overrides" "$HOME/.cache/yay/foo-base" "$HOME/.cache/paru/clone/foo-base" "$HOME/.cache/yay/foo"
     touch "$HOME/.local/share/flatpak/overrides/org.a.App" "$HOME/.cache/yay/foo-base/PKGBUILD" "$HOME/.cache/paru/clone/foo-base/PKGBUILD"

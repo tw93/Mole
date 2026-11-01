@@ -484,7 +484,10 @@ mole_app_leftovers() {
         printf '%s\t%s\n' "$class" "$path"
     }
 
-    [[ "$kind" == orphan ]] && return 0
+    # A web app or terminal app launcher is only its launcher and icon
+    # (mole_webapp_files): the program a TUI launcher starts is still
+    # installed, so its config, dot folder, state and cache are not leftovers.
+    [[ "$kind" == orphan || "$kind" == webapp || "$kind" == tui ]] && return 0
     if [[ "$kind" == flatpak ]]; then
         emit data "$HOME/.var/app/$id"
         # Permissions the user gave the app with flatpak override --user.
@@ -503,7 +506,7 @@ mole_app_leftovers() {
         emit data "$MOLE_CONFIG_HOME/systemd/user/$d.service"
         emit data "$MOLE_CONFIG_HOME/systemd/user/$d.timer"
         emit data "$MOLE_CONFIG_HOME/systemd/user/$d.socket"
-        [[ "$kind" == webapp || "$kind" == tui || "$kind" == appimage ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
+        [[ "$kind" == appimage ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
     done
     while IFS= read -r d; do
         [[ -n "$d" ]] && emit data "$d"
