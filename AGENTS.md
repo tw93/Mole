@@ -39,7 +39,7 @@ Every rule below is a design requirement for code that does not exist yet; each 
 ## Test environment
 
 - LazyCat devbox (Debian 12 container, `linux-devbox` skill): run tests as the non-root user `mole` (`su mole -c "bats ..."`), since Mole refuses root. Go runs on the Mac: build with `GOOS=linux` (or `go test -c`) and execute the binary there.
-- Omarchy: the Try Omarchy VM on the ThinkPad (lease `thinkpad`). Its setup and the read-only incident of 2026-10-31 are tracked outside this branch until the VM is restarted.
+- Omarchy: the Try Omarchy VM on the ThinkPad (lease `thinkpad`), reached from the Mac with `ssh -F ~/.config/mole-omarchy/config mole-omarchy` through the ThinkPad hop. The guest runs a user-level sshd (systemd user unit `mole-sshd`, port 2222, key only); the host-side forward `127.0.0.1:2222` is a runtime QMP `hostfwd_add n0 tcp:127.0.0.1:2222-:2222` and must be re-sent after every VM restart. No sudo password is available there: tests run as the desktop user, bats lives in `~/.local/bin`, Go binaries are cross-compiled on the Mac. The guest locale is Chinese, which is the point: parsing must survive it.
 - CI: Linux runners only, Arch tests inside an `archlinux` container. No macOS jobs on this branch.
 
 ## Releases
