@@ -1,10 +1,14 @@
 name: Check
 
+# Path filters skip changes that only touch files no step here reads; the
+# incident ledger check reads docs/incidents.md, so it stays in scope.
 on:
   push:
     branches: [windows]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!.github/ISSUE_TEMPLATE/**', '!.github/FUNDING.yml', '!.claude/**', '!.agents/**', 'docs/incidents.md']
   pull_request:
     branches: [windows]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!.github/ISSUE_TEMPLATE/**', '!.github/FUNDING.yml', '!.claude/**', '!.agents/**', 'docs/incidents.md']
 
 permissions:
   contents: read

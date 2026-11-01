@@ -1,10 +1,14 @@
 name: Validation
 
+# Path filters skip changes that only touch files no test reads; Release.Tests
+# packs README.md and every README_*.md it links, so those stay in scope.
 on:
   push:
     branches: [windows]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!.github/ISSUE_TEMPLATE/**', '!.github/FUNDING.yml', '!.claude/**', '!.agents/**', 'README*.md']
   pull_request:
     branches: [windows]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!.github/ISSUE_TEMPLATE/**', '!.github/FUNDING.yml', '!.claude/**', '!.agents/**', 'README*.md']
 
 permissions:
   contents: read
