@@ -24,7 +24,7 @@ BeforeAll {
     }
 
     Import-ScriptFunction -Script (Join-Path $script:WindowsDir "bin\uninstall.ps1") -Names @(
-        "Get-UninstallMethodDescription", "Uninstall-SelectedApps", "Test-MoleStoreRemovalAllowed", "Invoke-MoleUninstallProcess", "Get-MoleProperty", "Get-NormalizedFolderPath",
+        "Get-UninstallMethodDescription", "Show-UninstallChargeLimitNote", "Uninstall-SelectedApps", "Test-MoleStoreRemovalAllowed", "Invoke-MoleUninstallProcess", "Get-MoleProperty", "Get-NormalizedFolderPath",
         "Test-MoleInstallContentFree", "Test-MoleInstallFolder", "Get-MoleInstallOwners", "Test-MoleLeftoverOwnership", "Test-UninstallEntryGone", "Get-MsiProductCode", "Split-UninstallCommand", "Test-InnoUninstaller",
         "Test-NsisUninstaller", "Test-SteamClientUninstaller", "Get-UninstallLaunch"
     )

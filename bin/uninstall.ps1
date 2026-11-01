@@ -1232,6 +1232,30 @@ function Get-UninstallMethodDescription {
     return "no uninstall command registered"
 }
 
+# These public identities name apps that manage firmware charging thresholds.
+# This only explains the consequence; it never authorizes or refuses removal.
+function Show-UninstallChargeLimitNote {
+    param($App)
+
+    $source = [string](Get-MoleProperty $App 'Source')
+    $setsLimit = $false
+    if ($source -eq 'WindowsStore') {
+        $identity = ([string](Get-MoleProperty $App 'PackageFullName') -split '_', 2)[0]
+        $setsLimit = $identity -in @(
+            'E046963F.LenovoCompanion', 'LenovoCompanyLimited.LenovoVantageService',
+            'B9ECED6F.ASUSPCAssistant', 'Microsoft.SurfaceHub'
+        )
+    }
+    elseif ($source -eq 'Registry') {
+        $name = ([string](Get-MoleProperty $App 'Name')).Trim()
+        $publisher = ([string](Get-MoleProperty $App 'Publisher')).Trim()
+        $setsLimit = $name -eq 'Lenovo Vantage Service' -and $publisher -match '^Lenovo(?:\s|$)'
+    }
+    if ($setsLimit) {
+        Write-Host '    The charge limit stays after uninstall. Change it in this app first if needed.'
+    }
+}
+
 # The display name alone cannot say which install an uninstall row was about,
 # so each row also carries the folder, the registry entry and the command run.
 function Get-UninstallOperationDetail {
@@ -1277,6 +1301,7 @@ function Uninstall-SelectedApps {
             $previewCount++
             Write-Host "$esc[34m$($script:Icons.Arrow)$esc[0m $($app.Name)"
             Write-Host "  $esc[90mWould uninstall with $(Get-UninstallMethodDescription -App $app)$esc[0m"
+            Show-UninstallChargeLimitNote -App $app
             $folder = [string](Get-MoleProperty $app 'InstallLocation')
             if ($app.Source -ne "WindowsStore" -and (Test-MoleLeftoverOwnership -Path $folder -App $app -Preview)) {
                 $guard = { param($candidate) Test-MoleLeftoverOwnership -Path $candidate -App $app -Preview }
@@ -1442,6 +1467,7 @@ function Main {
 
     foreach ($app in $selected) {
         Write-Host "  $($script:Icons.List) $($app.Name) ($($app.SizeHuman))"
+        Show-UninstallChargeLimitNote -App $app
     }
 
     Write-Host ""

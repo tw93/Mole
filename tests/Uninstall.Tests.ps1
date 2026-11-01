@@ -1335,3 +1335,55 @@ Describe 'Store package eligibility at the removal boundary' {
         Should -Invoke Get-AppxPackage -Times 1 -Exactly -ParameterFilter { $Name -eq 'Contoso.Notes' }
     }
 }
+
+
+Describe 'Charge limit uninstall notice' {
+    BeforeEach {
+        $DryRun = $false
+        $DebugMode = $false
+        $ShowHelp = $false
+        $Rescan = $false
+        $List = $false
+        Set-DryRunMode -Enabled $false
+        $script:Icons = Get-MoleDefaultIcons
+        Mock Clear-MoleScreen {}
+        Mock Write-Info {}
+        Mock Write-Host {}
+        Mock Read-Host { 'n' }
+        Mock Test-MoleStoreRemovalAllowed { $true }
+        Mock Test-MoleLeftoverOwnership { $false }
+        Mock Invoke-MoleUninstallProcess { throw 'No real uninstall' }
+        Mock Remove-AppxPackage { throw 'No real uninstall' }
+    }
+
+    AfterEach { Set-DryRunMode -Enabled $false }
+
+    It 'Shows the charge-limit consequence for <Identity> only when applicable' -ForEach @(
+        @{Identity='E046963F.LenovoCompanion';Source='WindowsStore';Publisher='';Expected=1},
+        @{Identity='LenovoCompanyLimited.LenovoVantageService';Source='WindowsStore';Publisher='';Expected=1},
+        @{Identity='B9ECED6F.ASUSPCAssistant';Source='WindowsStore';Publisher='';Expected=1},
+        @{Identity='Microsoft.SurfaceHub';Source='WindowsStore';Publisher='';Expected=1},
+        @{Identity='Lenovo Vantage Service';Source='Registry';Publisher='Lenovo Group Limited';Expected=1},
+        @{Identity='Lenovo Vantage Service';Source='Registry';Publisher='Other vendor';Expected=0},
+        @{Identity='Lenovo Vantage Service';Source='Registry';Publisher='LenovoClone';Expected=0},
+        @{Identity='E046963F.LenovoCompanionExtra';Source='WindowsStore';Publisher='';Expected=0},
+        @{Identity='Microsoft.SurfaceHub';Source='Registry';Publisher='Microsoft';Expected=0},
+        @{Identity='Ordinary app';Source='Registry';Publisher='Lenovo';Expected=0}
+    ) {
+        $script:ChargeApp = [pscustomobject]@{
+            Name=$Identity; Source=$Source; Publisher=$Publisher; SizeHuman='1MB'
+            PackageFullName=($Identity + '_1.0.0.0_x64__example'); InstallLocation=''
+            UninstallString='C:\fixture\uninstall.exe'; QuietUninstallString=$null; WindowsInstaller=$false
+        }
+        Mock Get-InstalledApplications { $script:ChargeApp }
+        Mock Show-AppSelectionMenu { $script:ChargeApp }
+        Main
+        Should -Invoke Write-Host -Times $Expected -Exactly -ParameterFilter { "$Object" -like '*charge limit*' }
+        Should -Invoke Read-Host -Times 1 -Exactly
+        Set-DryRunMode -Enabled $true
+        Uninstall-SelectedApps @($script:ChargeApp)
+        Should -Invoke Write-Host -Times ($Expected * 2) -Exactly -ParameterFilter { "$Object" -like '*charge limit*' }
+        Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
+        Should -Invoke Remove-AppxPackage -Times 0 -Exactly
+    }
+}
