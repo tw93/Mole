@@ -15,7 +15,9 @@ Each row names the source (branch, commit or entry), the Linux status (`Pending`
 | Privileged Trash staging under `/Library` | Not applicable | Linux Mole never deletes or moves arbitrary paths as root; root cleanup runs only through distribution commands. |
 | Finder, TCC, LaunchServices, APFS clone handling | Not applicable | macOS-only mechanisms. |
 
-## Implemented on `linux` (2026-11-01, not released)
+## Implemented on `linux` (2026-11-01, released in V0.1.0-linux on 2026-11-02)
+
+Released: tag `V0.1.0-linux` on `417e4c2d`, x86_64 and aarch64 archives with `SHA256SUMS.txt`, installed from the public `install.sh` into a fresh home on the Omarchy VM and `mo update` reporting 0.1.0 as latest. Known residual: the Flatpak inventory, uninstall and unused-runtime paths are verified only against a fake `flatpak`; check them on a machine with real Flatpak (the maintainer accepted shipping with this, 2026-11-02).
 
 | Contract | Source | Status | Verification |
 | --- | --- | --- | --- |

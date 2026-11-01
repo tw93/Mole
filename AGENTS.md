@@ -2,7 +2,7 @@
 
 This is the `linux` branch of `tw93/Mole`: **Mole CLI (Linux)**, a terminal cleaner for Linux desktops used by developers. It is developed like the `windows` branch (Mole CLI (Windows)): its own code, its own tests, its own release tags. Nothing here is shared with `main` (Mole CLI (macOS)) at runtime; the Go TUIs under `cmd/` were forked from `main` at the branch point and evolve independently. Rules, product values and safety contracts transfer by deliberate re-implementation, recorded in `SYNC.md`, never by importing macOS code (maintainer 2026-11-01: the two platforms clean different things and shared code breaks easily).
 
-Status: pre-release. The branch stays unannounced until the first usable version (the MVP below) works on Omarchy; then README, release and the reply on tw93/Mole#1371 change together (maintainer 2026-11-01).
+Status: released. `V0.1.0-linux` was published on 2026-11-02, with the README status line and a reply on tw93/Mole#1371 in the same step; the README keeps its "Under construction" framing while the product is early. Flatpak paths are still verified only against a fake `flatpak` (see `SYNC.md`).
 
 ## Product names
 
@@ -51,7 +51,7 @@ Every rule below is a design requirement for code that does not exist yet; each 
 - `install.sh` (served from this branch at `raw.githubusercontent.com/tw93/Mole/linux/install.sh`) takes the newest exact `V*-linux` tag from the releases list, checks the archive against `SHA256SUMS.txt`, unpacks into `~/.local/share/mole` beside the old copy, runs it, then swaps it in and links `~/.local/bin/mo`. `mo update` reruns a copy of it (skipping prerelease tags, refusing to run from a tree that is not the installed one, `--force` reinstalls; versions compare by their numeric X.Y.Z core only, so a prerelease of the latest core or a broken VERSION is replaced and only a core above the latest is refused as a downgrade; the main menu, only in the installed tree (`mole_runs_installed_tree`, the same check), checks for a newer release in the background at most once a day, cached in `~/.cache/mole`, off with `MOLE_NO_UPDATE_CHECK=1`); `mo remove` deletes only that tree, the two links when they point at it, and Mole's own config, cache and state folders.
 - Before tagging: the Test and Secrets runs on the commit to be tagged are green (`gh run list --repo tw93/Mole --branch linux --commit <sha>`).
 - Publishing the draft: GitHub ignores `make_latest` while a release is a draft and defaults it to true when it is published, and the web page's "Set as the latest release" box can be ticked. Publish only with `gh release edit V<version>-linux --repo tw93/Mole --draft=false --latest=false`, then confirm `gh api repos/tw93/Mole/releases/latest --jq .tag_name` still names a macOS tag (no `-linux`); if it does not, run `gh release edit <that macOS tag> --repo tw93/Mole --latest` at once.
-- No tag, release or announcement without the maintainer's explicit go-ahead; publishing also changes README links and the reply on tw93/Mole#1371.
+- No tag, release or announcement without the maintainer's explicit go-ahead. Publish with `gh release edit <tag> --draft=false --latest=false`, then confirm `releases/latest` still names a macOS tag.
 
 ## Git
 

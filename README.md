@@ -14,7 +14,7 @@
   <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="600" />
 </p>
 
-**Under construction.** Mole CLI for Linux is being built on this branch and has no release yet, so the install command below starts working with the first `V0.1.0-linux` release. Star or watch the repository to hear when it lands. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; on other distributions the user-level parts work and the pacman items do not appear.
+**Under construction.** Mole CLI for Linux is still early: [V0.1.0-linux](https://github.com/tw93/Mole/releases/tag/V0.1.0-linux) is the first release, and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; on other distributions the user-level parts work and the pacman items do not appear.
 
 This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole).
 
