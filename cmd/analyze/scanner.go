@@ -361,6 +361,7 @@ func scanPathConcurrentWithLimiter(ctx context.Context, root string, filesScanne
 	isRootDir := root == "/"
 	home := os.Getenv("HOME")
 	isHomeDir := home != "" && root == home
+	noatime := currentMountTable().noAccessTime(root)
 
 scanChildren:
 	for _, child := range children {
@@ -391,7 +392,7 @@ scanChildren:
 				Path:       fullPath,
 				Size:       size,
 				IsDir:      isDir,
-				LastAccess: getLastAccessTimeFromInfo(info),
+				LastAccess: getLastUsedTimeFromInfo(info, noatime),
 			}, scanSendTimeout)
 			continue
 
@@ -404,6 +405,12 @@ scanChildren:
 
 			// Skip system dirs at root.
 			if isRootDir && skipSystemDirs[child.Name()] {
+				continue
+			}
+
+			// Another filesystem is mounted here: list it, do not walk it.
+			if isForeignMountPath(fullPath) {
+				trySend(ctx, entryChan, mountedDirEntry(child.Name(), fullPath), scanSendTimeout)
 				continue
 			}
 
@@ -552,7 +559,7 @@ scanChildren:
 			Path:       fullPath,
 			Size:       size,
 			IsDir:      false,
-			LastAccess: getLastAccessTimeFromInfo(info),
+			LastAccess: getLastUsedTimeFromInfo(info, noatime),
 		}, scanSendTimeout)
 
 		// Track large files only.
@@ -759,6 +766,9 @@ func calculateDirSizeFastWithLimiter(ctx context.Context, root string, limiter *
 			}
 			if entry.IsDir() {
 				subDir := filepath.Join(dirPath, entry.Name())
+				if isForeignMountPath(subDir) {
+					continue
+				}
 				atomic.AddInt64(dirsScanned, 1)
 
 				select {
@@ -946,12 +956,7 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		ctx, cancel := context.WithTimeout(ctx, duTimeout)
 		defer cancel()
 
-		args := []string{"-skPx"}
-		for _, ignoreName := range ignoreNames {
-			args = append(args, "--exclude="+ignoreName)
-		}
-		args = append(args, target)
-		cmd := exec.CommandContext(ctx, duBinary, args...)
+		cmd := exec.CommandContext(ctx, duBinary, duSizeArgs(target, ignoreNames, currentMountTable().foreignMountsUnder(target))...)
 		cmd.Env = append(os.Environ(), "LC_ALL=C")
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -1105,6 +1110,9 @@ func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path stri
 		if filepath.Clean(fullPath) == excludePath {
 			continue
 		}
+		if entry.IsDir() && isForeignMountPath(fullPath) {
+			continue
+		}
 
 		if entry.Type()&fs.ModeSymlink != 0 || !entry.IsDir() {
 			info, err := entry.Info()
@@ -1149,7 +1157,7 @@ func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, exclud
 			return nil
 		}
 		// Skip excluded path
-		if p == excludePath || (p != path && d.IsDir() && slices.Contains(ignoreNames, d.Name())) {
+		if p == excludePath || (p != path && d.IsDir() && (slices.Contains(ignoreNames, d.Name()) || d.Name() == snapshotDirName || isForeignMountPath(p))) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() {
@@ -1210,4 +1218,57 @@ func getLastAccessTimeFromInfo(info fs.FileInfo) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
+}
+
+// getLastUsedTimeFromInfo is the time the "unused" hint counts from. On a
+// noatime mount the access time stays at whenever the file was written, so a
+// file read every day would look untouched for years; there the later of the
+// access and modification times is the best evidence left.
+func getLastUsedTimeFromInfo(info fs.FileInfo, noatime bool) time.Time {
+	used := getLastAccessTimeFromInfo(info)
+	if noatime {
+		if modified := info.ModTime(); modified.After(used) {
+			return modified
+		}
+	}
+	return used
+}
+
+func mountedDirEntry(name, path string) dirEntry {
+	return dirEntry{Name: name, Path: path, IsDir: true, Mounted: true}
+}
+
+// snapshotDirName is the snapper snapshot store. On btrfs each snapshot is a
+// subvolume holding a full copy of the tree, so counting it would multiply
+// the folder it sits in. The walkers skip it by name (defaultSkipDirs).
+const snapshotDirName = ".snapshots"
+
+// duSizeArgs builds the du command line. du does not get -x: it compares
+// st_dev, which differs for every btrfs subvolume, so -x stopped at @log and
+// @pkg and the /var overview disagreed with the drill-in total. Mounts of
+// other filesystems are excluded by path instead, from the same mount table
+// the walkers use.
+func duSizeArgs(target string, ignoreNames, excludeMounts []string) []string {
+	args := []string{"-skP", "--exclude=" + snapshotDirName}
+	for _, ignoreName := range ignoreNames {
+		args = append(args, "--exclude="+ignoreName)
+	}
+	for _, mount := range excludeMounts {
+		args = append(args, "--exclude="+duEscapePattern(mount))
+	}
+	return append(args, target)
+}
+
+// duEscapePattern escapes the fnmatch characters du's --exclude interprets, so
+// a mountpoint is matched as the literal path.
+func duEscapePattern(path string) string {
+	var b strings.Builder
+	for _, r := range path {
+		switch r {
+		case '*', '?', '[', ']', '\\':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

@@ -320,6 +320,9 @@ func (m model) View() string {
 					if entry.Size < 0 {
 						size = fmt.Sprintf("%s %s", spinnerFrames[m.spinner], "scanning")
 						sizeColor = colorCyan
+					} else if entry.Mounted {
+						size = sizeColumn("-")
+						sizeColor = colorGray
 					}
 
 					isMultiSelected := m.multiSelected != nil && m.multiSelected[entry.Path]
@@ -558,6 +561,9 @@ func sizeColorForPercent(percent float64) string {
 }
 
 func entryHintLabel(entry dirEntry) string {
+	if entry.Mounted {
+		return fmt.Sprintf("%smounted, not scanned%s", colorGray, colorReset)
+	}
 	if entry.IsDir && isCleanableDir(entry.Path) {
 		return fmt.Sprintf("%s🧹%s", colorYellow, colorReset)
 	}

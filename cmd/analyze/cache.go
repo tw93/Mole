@@ -32,7 +32,10 @@ import (
 // v8: APFS clones that share every block count once, so v7 totals can be inflated.
 // v9: mixed clone/hardlink groups deduplicate together; bounded lists use path ties.
 // v10: shortened directory listings must refresh before they are browsed.
-const cacheSchemaVersion = 10
+// v11: walks and du stop at mounts of another filesystem but follow btrfs
+// subvolumes of the same one, so v10 totals can include an sshfs or overlay
+// mount and miss @log or @pkg.
+const cacheSchemaVersion = 11
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`

@@ -146,6 +146,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 	isRootDir := root == "/"
 	home := os.Getenv("HOME")
 	isHomeDir := home != "" && root == home
+	noatime := currentMountTable().noAccessTime(root)
 
 	entries := make([]dirEntry, 0, len(children))
 	targets := make([]liveScanTarget, 0, len(children))
@@ -178,7 +179,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 				Path:       fullPath,
 				Size:       size,
 				IsDir:      isDir,
-				LastAccess: getLastAccessTimeFromInfo(info),
+				LastAccess: getLastUsedTimeFromInfo(info, noatime),
 			})
 			continue
 		}
@@ -188,6 +189,10 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 				continue
 			}
 			if isRootDir && skipSystemDirs[child.Name()] {
+				continue
+			}
+			if isForeignMountPath(fullPath) {
+				entries = append(entries, mountedDirEntry(child.Name(), fullPath))
 				continue
 			}
 
@@ -227,7 +232,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 			Path:       fullPath,
 			Size:       size,
 			IsDir:      false,
-			LastAccess: getLastAccessTimeFromInfo(info),
+			LastAccess: getLastUsedTimeFromInfo(info, noatime),
 		})
 		if !shouldSkipFileForLargeTracking(fullPath) && size >= largeFileWarmupMinSize {
 			largeFiles = append(largeFiles, fileEntry{Name: child.Name(), Path: fullPath, Size: size})

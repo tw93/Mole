@@ -29,6 +29,9 @@ type jsonEntry struct {
 	Insight    bool      `json:"insight,omitempty"`
 	Cleanable  bool      `json:"cleanable,omitempty"`
 	LastAccess string    `json:"last_access,omitempty"`
+	// Mounted marks a mountpoint of another filesystem that was not walked;
+	// its size is not measured.
+	Mounted bool `json:"mounted,omitempty"`
 }
 
 type jsonFileEntry struct {
@@ -171,6 +174,7 @@ func jsonEntriesFromDirEntries(entries []dirEntry, isOverview bool, insightPaths
 			Size:       entry.Size,
 			IsDir:      entry.IsDir,
 			Cleanable:  entry.IsDir && isCleanableDir(entry.Path),
+			Mounted:    entry.Mounted,
 		}
 
 		if isOverview {

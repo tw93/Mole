@@ -74,6 +74,10 @@ type dirEntry struct {
 	Size       int64
 	IsDir      bool
 	LastAccess time.Time
+	// Mounted marks a directory where another filesystem is mounted (a
+	// network share, FUSE, overlay, tmpfs or another disk). The walk does not
+	// enter it, so Size is 0 and means "not scanned", not empty.
+	Mounted bool
 }
 
 type fileEntry struct {
