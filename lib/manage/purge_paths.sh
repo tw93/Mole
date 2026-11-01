@@ -66,7 +66,7 @@ manage_purge_paths() {
     # Check if using custom config
     local custom_count=0
     if [[ -f "$PURGE_PATHS_CONFIG" ]]; then
-        while IFS= read -r line; do
+        while IFS= read -r line || [[ -n "$line" ]]; do
             line="${line#"${line%%[![:space:]]*}"}"
             line="${line%"${line##*[![:space:]]}"}"
             [[ -z "$line" || "$line" =~ ^# ]] && continue
