@@ -31,7 +31,8 @@ make_cache() {
     make_cache "$HOME/.cache/moletool"
     fake_command pgrep 'exit 3'
     mole_run clean 'clean_rule "Mole tool cache" "$HOME/.cache/moletool" "anything"'
-    [[ "$output" == *"skipped while anything is running"* ]]
+    [[ "$output" == *"Mole tool cache · skipped (process state unknown)"* ]]
+    [[ "$output" != *"is running"* ]]
     [ -f "$HOME/.cache/moletool/entry/blob" ]
 }
 
@@ -44,7 +45,7 @@ make_cache() {
 
     fake_command flatpak 'exit 1'
     mole_run clean 'clean_rule "org.test.App cache" "$HOME/.var/app/org.test.App/cache" "flatpak:org.test.App"'
-    [[ "$output" == *"skipped while"* ]]
+    [[ "$output" == *"skipped (process state unknown)"* ]]
     [ -f "$HOME/.var/app/org.test.App/cache/entry/blob" ]
 
     fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
@@ -96,4 +97,105 @@ make_cache() {
     [ "$status" -eq 0 ]
     [ -z "$(grep -x -- '-k' "$TEST_ROOT/sudo.log")" ]
     [ -z "$(grep -- '-p' "$TEST_ROOT/sudo.log")" ]
+}
+
+# Run a stand-in process under a given name until the test ends.
+start_owner() {
+    cp "$(command -v sleep)" "$TEST_ROOT/$1"
+    "$TEST_ROOT/$1" 30 &
+    OWNER_PID=$!
+}
+
+@test "JetBrains: only each IDE's log folder is a rule, LocalHistory and index stay" {
+    jb="$HOME/.cache/JetBrains/IntelliJIdea2026.2"
+    make_cache "$jb/log"
+    make_cache "$jb/LocalHistory"
+    make_cache "$jb/index"
+    mole_run clean 'mole_clean_rules | grep JetBrains'
+    [ "$output" = "Developer tools|JetBrains IDE logs|$jb/log|idea,pycharm,webstorm,goland,clion,rustrover,rider,phpstorm,rubymine,datagrip,dataspell,aqua,fleet,studio,cmd:com[.]intellij[.]idea[.]Main" ]
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    [ ! -e "$jb/log/entry" ]
+    [ -f "$jb/LocalHistory/entry/blob" ]
+    [ -f "$jb/index/entry/blob" ]
+}
+
+@test "JetBrains logs wait for an IDE that runs as java" {
+    jb="$HOME/.cache/JetBrains/PyCharm2026.2"
+    make_cache "$jb/log"
+    bash -c 'sleep 30; :' -Didea.vendor.name=JetBrains com.intellij.idea.Main &
+    OWNER_PID=$!
+    mole_run clean 'clean_user_rules'
+    [[ "$output" == *"JetBrains IDE logs · skipped while idea is running"* ]]
+    [ -f "$jb/log/entry/blob" ]
+}
+
+@test "Deno: remote imports and compiled output go, location_data and runtimes stay" {
+    for d in deps remote gen npm location_data dl; do make_cache "$HOME/.cache/deno/$d"; done
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    for d in deps remote gen npm; do [ ! -e "$HOME/.cache/deno/$d/entry" ]; done
+    [ -f "$HOME/.cache/deno/location_data/entry/blob" ]
+    [ -f "$HOME/.cache/deno/dl/entry/blob" ]
+}
+
+@test "uv: uv cache prune runs when uv exists, the folder is never rm'd, and without uv nothing happens" {
+    make_cache "$HOME/.cache/uv"
+    mole_run clean 'mole_clean_rules | grep "|uv cache|"'
+    [ "$output" = "Developer tools|uv cache|$HOME/.cache/uv|uv,uvx|tool:uv" ]
+    mole_run clean 'clean_rule "uv cache" "$HOME/.cache/uv" "uv,uvx" "tool:uv"'
+    [ "$status" -eq 0 ]
+    [ -f "$HOME/.cache/uv/entry/blob" ]
+
+    fake_command uv 'case "$1 $2" in "cache dir") echo "$HOME/.cache/uv" ;; "cache prune") echo prune >> "'"$TEST_ROOT"'/uv.log" ;; esac'
+    mole_run clean 'clean_rule "uv cache" "$HOME/.cache/uv" "uv,uvx" "tool:uv"'
+    [ "$status" -eq 0 ]
+    grep -qx prune "$TEST_ROOT/uv.log"
+    [ -f "$HOME/.cache/uv/entry/blob" ]
+
+    mole_run clean 'DRY_RUN=true; clean_rule "uv cache" "$HOME/.cache/uv" "uv,uvx" "tool:uv"'
+    [[ "$output" == *"would run uv cache prune"* ]]
+    [ "$(grep -c prune "$TEST_ROOT/uv.log")" -eq 1 ]
+}
+
+@test "dry run sizes only the children a real run would remove" {
+    mkdir -p "$HOME/.cache/tool/plain" "$HOME/.cache/tool/mnt"
+    head -c 65536 /dev/zero > "$HOME/.cache/tool/plain/blob"
+    head -c 4194304 /dev/zero > "$HOME/.cache/tool/mnt/blob"
+    real_stat="$(command -v stat)"
+    fake_command stat 'if [[ "${!#}" == */mnt ]]; then echo 99; else exec '"$real_stat"' "$@"; fi'
+    mole_run clean 'DRY_RUN=true; clean_rule "Tool cache" "$HOME/.cache/tool" ""'
+    [[ "$output" == *"Tool cache"*"KB"*"dry"* ]]
+    [[ "$output" != *"MB"* ]]
+}
+
+@test "a redirected cache folder is named once and left alone" {
+    mkdir -p "$TEST_ROOT/elsewhere"
+    make_cache "$TEST_ROOT/elsewhere/chromium"
+    make_cache "$TEST_ROOT/elsewhere/thumbnails"
+    ln -s "$TEST_ROOT/elsewhere" "$HOME/.cache"
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c "is redirected elsewhere" <<< "$output")" -eq 1 ]
+    [ -f "$TEST_ROOT/elsewhere/chromium/entry/blob" ]
+    [ -f "$TEST_ROOT/elsewhere/thumbnails/entry/blob" ]
+
+    rm "$HOME/.cache"
+    export XDG_CACHE_HOME="$TEST_ROOT/elsewhere"
+    mole_run clean 'clean_user_rules'
+    [ "$(grep -c "is redirected elsewhere" <<< "$output")" -eq 1 ]
+    [ -f "$TEST_ROOT/elsewhere/chromium/entry/blob" ]
+}
+
+@test "Bazel: only the repository cache goes, never an output base" {
+    user=$(id -un)
+    base="$HOME/.cache/bazel/_bazel_$user"
+    make_cache "$base/cache/repos/v1"
+    make_cache "$base/0123456789abcdef/execroot"
+    chmod a-w "$base/0123456789abcdef/execroot/entry"
+    mole_run clean 'mole_clean_rules | grep -i bazel'
+    [ "$output" = "Developer tools|Bazel repository cache|$base/cache/repos|bazel,bazelisk,java" ]
+    mole_run clean 'clean_user_rules'
+    [ ! -e "$base/cache/repos/v1" ]
+    [ -f "$base/0123456789abcdef/execroot/entry/blob" ]
 }

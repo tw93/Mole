@@ -105,10 +105,11 @@ mole_trash() {
     [[ ${#MOLE_TRASH_ERRORS[@]} -eq 0 ]]
 }
 
-# Remove one cache path directly. $2 is the allowlisted root it must sit under
-# (the root itself is never removed). Stays on one filesystem.
-mole_remove_cache() {
-    local path="$1" root="$2" command="${3:-clean}" detail="${4:-}"
+# 0 when mole_remove_cache would remove this child of an allowlisted root.
+# Dry runs size exactly these, so a preview never counts what a real run
+# refuses (another device, not the user's, below a symlink).
+mole_cache_child_ok() {
+    local path="$1" root="$2"
     [[ "$path" == "$root/"* ]] || return 1
     mole_path_is_plain_home_item "$path" || return 1
     # rm --one-file-system stays on the device of the path it is given, so a
@@ -117,7 +118,14 @@ mole_remove_cache() {
     local path_dev root_dev
     path_dev=$(stat -c %d -- "$path" 2> /dev/null) || return 1
     root_dev=$(stat -c %d -- "$root" 2> /dev/null) || return 1
-    [[ "$path_dev" == "$root_dev" ]] || return 1
+    [[ "$path_dev" == "$root_dev" ]]
+}
+
+# Remove one cache path directly. $2 is the allowlisted root it must sit under
+# (the root itself is never removed). Stays on one filesystem.
+mole_remove_cache() {
+    local path="$1" root="$2" command="${3:-clean}" detail="${4:-}"
+    mole_cache_child_ok "$path" "$root" || return 1
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         return 0
     fi

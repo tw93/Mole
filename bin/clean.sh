@@ -66,66 +66,189 @@ add_total() {
     TOTAL_ITEMS=$((TOTAL_ITEMS + $2))
 }
 
-# Remove every child of one allowlisted root; the root itself stays.
-clean_rule() {
-    local label="$1" root="$2" owners="$3"
+# 0 when any owner runs, 1 when none does, 2 when a probe cannot tell.
+rule_owner_state() {
+    local owners="$1" token probe rc=1
+    [[ -n "$owners" ]] || return 1
+    if [[ "$owners" == flatpak:* ]]; then
+        mole_flatpak_running "${owners#flatpak:}"
+        return
+    fi
+    local -a tokens=() names=()
+    IFS=',' read -ra tokens <<< "$owners"
+    for token in "${tokens[@]}"; do
+        [[ -n "$token" ]] || continue
+        if [[ "$token" == cmd:* ]]; then
+            command -v pgrep > /dev/null 2>&1 || return 2
+            probe=0
+            pgrep -f -u "$(id -u)" -- "${token#cmd:}" > /dev/null 2>&1 || probe=$?
+            [[ $probe -eq 0 ]] && return 0
+            [[ $probe -eq 1 ]] || rc=2
+        else
+            names+=("$token")
+        fi
+    done
+    if [[ ${#names[@]} -gt 0 ]]; then
+        probe=0
+        mole_process_running "${names[@]}" || probe=$?
+        [[ $probe -eq 0 ]] && return 0
+        [[ $probe -eq 1 ]] || rc=2
+    fi
+    return "$rc"
+}
+
+# The name shown for a rule's owners: the first one, without its prefix.
+rule_owner_name() {
+    local first="${1%%,*}"
+    first="${first#flatpak:}"
+    printf '%s' "${first#cmd:}"
+}
+
+# 0 when the cache folder is not a plain folder of the user's inside $HOME
+# (a symlink to another disk, an XDG_CACHE_HOME elsewhere). Every cache rule
+# would refuse it anyway; clean says so once instead of reporting nothing.
+cache_home_redirected() {
+    local c="$MOLE_CACHE_HOME" real home_real
+    [[ -e "$c" || -L "$c" ]] || return 1
+    [[ "$c" == "$HOME/"* ]] || return 0
+    real=$(readlink -f -- "$c" 2> /dev/null) || return 0
+    home_real=$(readlink -f -- "$HOME" 2> /dev/null) || return 0
+    [[ "$real" == "$home_real${c#"$HOME"}" ]] || return 0
+    [[ -d "$c" && -O "$c" ]] || return 0
+    return 1
+}
+
+# A group is one or more consecutive rules sharing a label, reported as one line.
+G_LABEL=""
+G_KB=0
+G_COUNT=0
+G_NOTE=""
+group_begin() {
+    G_LABEL="$1"
+    G_KB=0
+    G_COUNT=0
+    G_NOTE=""
+}
+group_note() { [[ -n "$G_NOTE" ]] || G_NOTE="$1"; }
+group_flush() {
+    [[ -n "$G_LABEL" ]] || return 0
+    if ((G_COUNT > 0 && G_KB > 0)); then
+        report_line "$G_LABEL" "$G_KB" "$G_COUNT"
+        add_total "$G_KB" "$G_COUNT"
+    elif [[ -n "$G_NOTE" ]]; then
+        skip_line "$G_NOTE"
+    fi
+    G_LABEL=""
+    return 0
+}
+
+# Clean one rule into the current group. Only children mole_remove_cache would
+# accept are sized and counted, in a dry run as in a real one.
+clean_rule_collect() {
+    local label="$1" root="$2" owners="$3" selector="${4:-}"
+    if [[ "$selector" == tool:uv ]]; then
+        clean_uv_cache "$label" "$root" "$owners"
+        return 0
+    fi
     [[ -n "$root" && -d "$root" && ! -L "$root" ]] || return 0
-    local -a children=()
+    local -a children=() eligible=()
     local child
     while IFS= read -r -d '' child; do
         children+=("$child")
-    done < <(find "$root" -mindepth 1 -maxdepth 1 -print0 2> /dev/null)
+    done < <(mole_rule_children "$root" "$selector")
     [[ ${#children[@]} -gt 0 ]] || return 0
 
-    local kb
-    kb=$(mole_path_kb "$root")
+    local kb=0
+    for child in "${children[@]}"; do
+        mole_cache_child_ok "$child" "$root" || continue
+        eligible+=("$child")
+        kb=$((kb + $(mole_path_kb "$child")))
+    done
+    [[ ${#eligible[@]} -gt 0 ]] || return 0
     ((kb >= 8)) || return 0
 
     # An owner that runs, or a probe that cannot tell, skips the rule.
-    if [[ "$owners" == flatpak:* ]]; then
-        local rc=0
-        mole_flatpak_running "${owners#flatpak:}" || rc=$?
-        if [[ $rc -ne 1 ]]; then
-            skip_line "$label · skipped while ${owners#flatpak:} is running"
-            return 0
-        fi
-    elif [[ -n "$owners" ]]; then
-        local -a names=()
-        IFS=',' read -ra names <<< "$owners"
-        local rc=0
-        mole_process_running "${names[@]}" || rc=$?
-        if [[ $rc -ne 1 ]]; then
-            skip_line "$label · skipped while ${names[0]} is running"
-            return 0
-        fi
+    local rc=0
+    rule_owner_state "$owners" || rc=$?
+    if [[ $rc -eq 0 ]]; then
+        group_note "$label · skipped while $(rule_owner_name "$owners") is running"
+        return 0
+    elif [[ $rc -ne 1 ]]; then
+        group_note "$label · skipped (process state unknown)"
+        return 0
     fi
 
-    local removed=0 failed=0
-    for child in "${children[@]}"; do
+    if [[ "$DRY_RUN" == "true" ]]; then
+        G_KB=$((G_KB + kb))
+        G_COUNT=$((G_COUNT + ${#eligible[@]}))
+        return 0
+    fi
+    local removed=0 failed=0 left=0
+    for child in "${eligible[@]}"; do
         if mole_remove_cache "$child" "$root" clean "$label"; then
             removed=$((removed + 1))
         else
             failed=$((failed + 1))
+            left=$((left + $(mole_path_kb "$child")))
         fi
     done
-    if [[ "$DRY_RUN" != "true" ]]; then
-        local left
-        left=$(mole_path_kb "$root")
-        kb=$((kb > left ? kb - left : 0))
-    fi
-    if ((removed > 0 && kb > 0)); then
-        report_line "$label" "$kb" "$removed"
-        add_total "$kb" "$removed"
-    fi
+    G_KB=$((G_KB + (kb > left ? kb - left : 0)))
+    G_COUNT=$((G_COUNT + removed))
     ((failed > 0)) && debug_log "$label: $failed item(s) not removed"
     return 0
 }
 
+# One rule on its own line (the tests' entry point).
+clean_rule() {
+    group_begin "$1"
+    clean_rule_collect "$@"
+    group_flush
+}
+
+# uv hardlinks (or symlinks) its cache into every virtualenv, so deleting the
+# folder frees little and can break environments. Only uv's own prune runs,
+# and only when uv is installed (Mac: lib/clean/dev.sh clean_uv_cache).
+clean_uv_cache() {
+    local label="$1" root="$2" owners="$3" dir
+    command -v uv > /dev/null 2>&1 || return 0
+    dir=$(mole_c timeout 10 uv cache dir 2> /dev/null) || return 0
+    [[ "$dir" == /* && "$dir" != *$'\n'* && -d "$dir" ]] || return 0
+    local rc=0
+    rule_owner_state "$owners" || rc=$?
+    if [[ $rc -eq 0 ]]; then
+        group_note "$label · skipped while uv is running"
+        return 0
+    elif [[ $rc -ne 1 ]]; then
+        group_note "$label · skipped (process state unknown)"
+        return 0
+    fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+        group_note "$label · would run uv cache prune"
+        return 0
+    fi
+    # Free space, not du: hardlinked files cost nothing to keep.
+    local before after
+    before=$(get_free_space_kb "$dir")
+    if UV_LOCK_TIMEOUT=10 mole_c timeout 300 uv cache prune > /dev/null 2>&1; then
+        after=$(get_free_space_kb "$dir")
+        log_operation clean REMOVED "$dir" "uv cache prune"
+        if ((after > before)); then
+            G_KB=$((G_KB + after - before))
+            G_COUNT=$((G_COUNT + 1))
+        fi
+    else
+        debug_log "uv cache prune failed"
+    fi
+    return 0
+}
+
 clean_user_rules() {
-    local current="" section label root owners
-    while IFS='|' read -r section label root owners; do
+    local current="" section label root owners selector redirected=false told=false
+    cache_home_redirected && redirected=true
+    while IFS='|' read -r section label root owners selector; do
         [[ -n "$section" ]] || continue
         if [[ "$section" != "$current" ]]; then
+            group_flush
             if [[ -n "$current" ]]; then
                 stop_section_spinner
                 end_section
@@ -133,9 +256,22 @@ clean_user_rules() {
             current="$section"
             start_section "$section"
         fi
+        if [[ "$redirected" == true && "$root" == "$MOLE_CACHE_HOME/"* ]]; then
+            if [[ "$told" == false ]]; then
+                group_flush
+                skip_line "Cache folder $(mole_display_path "$MOLE_CACHE_HOME") is redirected elsewhere · left alone"
+                told=true
+            fi
+            continue
+        fi
+        [[ "$label" == "$G_LABEL" ]] || {
+            group_flush
+            group_begin "$label"
+        }
         start_section_spinner "Scanning $label..."
-        clean_rule "$label" "$root" "$owners"
+        clean_rule_collect "$label" "$root" "$owners" "$selector"
     done < <(mole_clean_rules)
+    group_flush
     stop_section_spinner
     [[ -n "$current" ]] && end_section
     return 0
@@ -148,27 +284,29 @@ clean_trash() {
         end_section
         return 0
     fi
-    local -a entries=()
+    local -a entries=() eligible=()
     local e
     while IFS= read -r -d '' e; do entries+=("$e"); done < <(find "$files" -mindepth 1 -maxdepth 1 -print0 2> /dev/null)
     if [[ ${#entries[@]} -eq 0 ]]; then
         end_section
         return 0
     fi
-    local kb removed=0 meta
-    kb=$(mole_path_kb "$files")
+    local kb=0 removed=0 left=0 meta
     for e in "${entries[@]}"; do
+        mole_cache_child_ok "$e" "$files" || continue
+        eligible+=("$e")
+        kb=$((kb + $(mole_path_kb "$e")))
+    done
+    for e in ${eligible[@]+"${eligible[@]}"}; do
         if mole_remove_cache "$e" "$files" clean "Trash"; then
             removed=$((removed + 1))
             meta="$info/$(basename -- "$e").trashinfo"
             [[ -f "$meta" ]] && mole_remove_cache "$meta" "$info" clean "Trash info" || true
+        else
+            left=$((left + $(mole_path_kb "$e")))
         fi
     done
-    if [[ "$DRY_RUN" != "true" ]]; then
-        local left
-        left=$(mole_path_kb "$files")
-        kb=$((kb > left ? kb - left : 0))
-    fi
+    kb=$((kb > left ? kb - left : 0))
     if ((removed > 0)); then
         report_line "Trash" "$kb" "$removed"
         add_total "$kb" "$removed"
