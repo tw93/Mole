@@ -20,7 +20,8 @@ Each row names the source (branch, commit or entry), the Linux status (`Pending`
 | Contract | Source | Status | Verification |
 | --- | --- | --- | --- |
 | Trash by default, operations.log row per change, dry-run lists exactly what runs | `main` `docs/SECURITY_DESIGN.md` | Implemented | `internal/xdgtrash` + `bin/trash-go`, `lib/core/delete.sh`; Go tests and a real fixture uninstall on the Omarchy VM, incl. a broken-helper red run. Caches in Clean's allowlist are removed directly (see `AGENTS.md`). |
-| Running-owner check before every cache deletion | `main` `lib/core/file_ops.sh` | Implemented | Owner process names per rule in `lib/clean/rules.sh`; an unrunnable probe counts as running. No automated test yet. |
-| Exact-evidence uninstall leftovers, no vendor wildcards | `main` `AGENTS.md` | Implemented | `lib/uninstall/inventory.sh` (package id and desktop ids only); data rows unchecked by default. No bats suite yet. |
+| Running-owner check before every cache deletion | `main` `lib/core/file_ops.sh` | Implemented | Owner process names per rule in `lib/clean/rules.sh` (Flatpak app caches ask `flatpak ps`); an unrunnable probe counts as running. `tests/clean.bats`, red-run on the VM. |
+| Exact-evidence uninstall leftovers, no vendor wildcards | `main` `AGENTS.md` | Implemented | `lib/uninstall/inventory.sh` (package id, desktop ids, and a `StartupWMClass` only one launcher declares); data rows unchecked by default. `tests/uninstall.bats`, red-run on the VM. |
 | Main menu, colors, icons, key bindings, paginated multi-select | `main` `mole`, `lib/core/ui.sh`, `lib/ui/menu_paginated.sh` | Implemented | Menu copied as is; frame captured on the VM. |
+| Developer cache list | `main` `lib/clean/dev.sh` | Implemented | Mapped to each tool's Linux cache folder in `lib/clean/rules.sh`; macOS-only apps and download stores without a cache folder have no row. |
 | analyze and status TUIs | `main` `cmd/analyze`, `cmd/status` | Implemented | Forked and ported (mountinfo, GNU `du --exclude`, sysfs, PSI health); 245 and 209 tests pass on the VM. |

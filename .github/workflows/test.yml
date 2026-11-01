@@ -1,0 +1,39 @@
+name: Test
+
+# Mole CLI (Linux) only: Linux runners, Arch inside an archlinux container.
+# Tests run as an unprivileged user because Mole refuses root.
+on:
+  push:
+    branches: [linux]
+  pull_request:
+    branches: [linux]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: archlinux:latest
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed bash bats git go make procps-ng shellcheck sudo
+      - uses: actions/checkout@v4
+      - name: Shellcheck
+        run: shellcheck -x mole mo bin/*.sh lib/*/*.sh
+      - name: Prepare test user
+        run: |
+          useradd -m mole
+          chown -R mole:mole "$GITHUB_WORKSPACE"
+      - name: Build helpers
+        run: su mole -c "cd '$GITHUB_WORKSPACE' && make build"
+      - name: Go tests
+        run: su mole -c "cd '$GITHUB_WORKSPACE' && go test ./cmd/... ./internal/..."
+      - name: Bats
+        run: su mole -c "cd '$GITHUB_WORKSPACE' && bats tests/"
