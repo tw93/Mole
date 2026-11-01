@@ -21,10 +21,20 @@ concurrency:
 
 jobs:
   tests:
-    name: Unit & Integration Tests
+    name: Unit & Integration Tests (${{ matrix.shard }})
     # Pinned rather than macos-latest so the newest image is a decision, not a
     # silent migration; Security Checks runs on the same image.
     runs-on: macos-26
+    # Two machines instead of one: scripts/test.sh runs its timing-sensitive
+    # files one by one after the parallel batch, which kept the single job at
+    # about 13 minutes. The serial shard gets those files on a machine of its
+    # own, where test.sh still runs them one at a time; the parallel shard gets
+    # every other file. SERIAL must list exactly the files test.sh routes to its
+    # sequential run, which tests/scripts.bats checks.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [parallel, serial]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,7 +64,24 @@ jobs:
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
-        run: ./scripts/test.sh
+          SHARD: ${{ matrix.shard }}
+          SERIAL: core_performance regression core_safe_functions clean_system_caches optimize uninstall_menu cli uninstall_review history
+        run: |
+          serial_files=()
+          other_files=()
+          while IFS= read -r file; do
+            name=$(basename "$file" .bats)
+            if [[ " $SERIAL " == *" $name "* ]]; then
+              serial_files+=("$file")
+            else
+              other_files+=("$file")
+            fi
+          done < <(find tests -type f -name '*.bats' | sort)
+          if [[ "$SHARD" == serial ]]; then
+            ./scripts/test.sh "${serial_files[@]}"
+          else
+            ./scripts/test.sh "${other_files[@]}"
+          fi
 
   compatibility:
     name: macOS

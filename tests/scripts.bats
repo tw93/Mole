@@ -441,6 +441,36 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "Validation serial shard lists exactly the files test.sh runs sequentially" {
+    command -v python3 > /dev/null 2>&1 || skip "python3 not available"
+    run python3 - "$PROJECT_ROOT" <<'EOF'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+workflow = (root / ".github/workflows/test.yml").read_text()
+runner = (root / "scripts/test.sh").read_text()
+serial = re.findall(r"^\s+SERIAL: (.+)$", workflow, re.M)
+patterns = re.findall(r"^\s+(\*core_performance\.bats .*)\) _sequential_files\+=", runner, re.M)
+if len(serial) != 1 or len(patterns) != 2 or len(set(patterns)) != 1:
+    sys.exit(f"expected one SERIAL line and two identical case lines, got {serial!r} {patterns!r}")
+want = {p.strip().lstrip("*").removesuffix(".bats") for p in patterns[0].split("|")}
+got = set(serial[0].split())
+if want != got:
+    sys.exit(f"test.sh sequential files {sorted(want)} != workflow SERIAL {sorted(got)}")
+missing = sorted(n for n in got if not (root / "tests" / f"{n}.bats").is_file())
+if missing:
+    sys.exit(f"SERIAL names missing test files: {missing}")
+# test.sh matches by suffix (*cli.bats); the workflow by exact name.
+shadowed = sorted(f.name for f in (root / "tests").glob("*.bats")
+                  if f.stem not in got and any(f.name.endswith(f"{n}.bats") for n in got))
+if shadowed:
+    sys.exit(f"test.sh runs these sequentially but SERIAL misses them: {shadowed}")
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "release workflow keeps Homebrew distribution on official core only" {
     run grep -q 'update-homebrew-core:' "$PROJECT_ROOT/.github/workflows/release.yml"
     [ "$status" -eq 0 ]
