@@ -2,7 +2,7 @@
 
 <div align="center">
   <h1>Mole CLI for Linux</h1>
-  <p><b>Clean caches, uninstall apps, analyze disk and watch your system from one terminal command. Free and open source.</b></p>
+  <p><b>Clean caches, uninstall apps, optimize, analyze disk and watch your system from one terminal command. Free and open source.</b></p>
 </div>
 
 This is the Linux edition of [Mole](https://github.com/tw93/Mole). It lives on its own branch with its own code, built for Linux paths and tools; the look, the keys and the safety rules match the macOS edition. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems. On other distributions the user-level parts work and the pacman items simply do not appear.
@@ -11,6 +11,7 @@ This is the Linux edition of [Mole](https://github.com/tw93/Mole). It lives on i
 
 - **Clean**: removes caches apps rebuild by themselves (browsers, thumbnails, shader caches, npm, pip, Go and other developer tools, Flatpak app caches), empties the Trash, and trims old pacman packages and journal logs through pacman's and systemd's own tools
 - **Uninstall**: removes pacman, AUR and Flatpak apps, Omarchy web apps and AppImages, then moves their leftovers to the Trash, matched by the app's exact ID only
+- **Optimize**: refreshes the font cache and the app launcher index, compacts browser databases while the browser is closed, and points out failed services, launchers and autostart entries whose program is gone, orphan packages, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
 - **Analyze**: an interactive disk map of your volumes, home, caches and package cache; deleting from it moves items to the Trash
 - **Status**: live CPU, memory pressure, disks, network, temperatures, battery and processes, with a health score
 
@@ -36,6 +37,8 @@ mo clean --dry-run         # preview, nothing removed
 mo uninstall               # pick apps to remove
 mo uninstall --list        # apps and the names mo uninstall accepts
 mo uninstall --dry-run zoom
+mo optimize                # refresh caches and check the system
+mo optimize --dry-run      # preview
 mo analyze                 # disk map
 mo analyze /mnt/data
 mo status                  # live system status
