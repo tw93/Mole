@@ -150,21 +150,9 @@ jobs:
           BATS_FORMATTER: tap
           LANG: en_US.UTF-8
           LC_ALL: en_US.UTF-8
-        # Two concurrent lanes on the three-core runner, core_safe_functions in
-        # one and purge with installer in the other; serial, the three took
-        # about 205s. The full suite still runs all three under scripts/test.sh,
-        # where core_safe_functions sits in the uncontended sequential tail, so
-        # a contention flake here would show up as this job alone going red.
-        # Lines are prefixed live, so a timeout kill keeps what already ran.
-        run: |
-          set -o pipefail
-          (bats tests/core_safe_functions.bats 2>&1 | awk '{ print "[safe] " $0; fflush() }') &
-          safe_pid=$!
-          (bats tests/purge.bats tests/installer.bats 2>&1 | awk '{ print "[paths] " $0; fflush() }') &
-          paths_pid=$!
-          safe_status=0
-          wait "$safe_pid" || safe_status=$?
-          paths_status=0
-          wait "$paths_pid" || paths_status=$?
-          echo "core_safe_functions.bats exit $safe_status; purge.bats installer.bats exit $paths_status"
-          [ "$safe_status" -eq 0 ] && [ "$paths_status" -eq 0 ]
+        # Serial on purpose. Two concurrent lanes (core_safe_functions beside
+        # purge and installer) failed on their first CI run: the purge PTY
+        # driver's two-second waits lost to CPU contention on the three-core
+        # runner. This job runs beside the full suite, so its 205s is off the
+        # critical path anyway.
+        run: bats tests/core_safe_functions.bats tests/purge.bats tests/installer.bats
