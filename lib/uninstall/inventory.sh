@@ -5,8 +5,8 @@
 # explicitly installed and ships a .desktop file, a Flatpak app, or an Omarchy
 # web app launcher. Rows are tab separated:
 #   kind  id  name  size_kb  desktop_ids(comma)  exec  scope
-# kind is pacman | aur | flatpak | webapp | appimage | orphan; scope is
-# user|system for Flatpak. An orphan is a Flatpak sandbox home whose app is no
+# kind is pacman | aur | flatpak | webapp | tui | appimage | orphan; scope is
+# the Flatpak installation (user, system, or a custom installation's name). An orphan is a Flatpak sandbox home whose app is no
 # longer installed in any installation (flatsweep's test, minus its rmtree).
 
 set -euo pipefail
@@ -218,17 +218,41 @@ _inventory_pacman() {
     done
 }
 
+# A Flatpak installation name as `flatpak list` prints it: user, system, or
+# the name of a custom installation (/etc/flatpak/installations.d).
+mole_valid_flatpak_installation() {
+    [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+}
+
+# The flatpak option that addresses one installation. A custom installation is
+# neither --user nor --system; picking either would act on the wrong one.
+mole_flatpak_installation_flag() {
+    case "$1" in
+        user) printf '%s' --user ;;
+        system) printf '%s' --system ;;
+        *)
+            mole_valid_flatpak_installation "$1" || return 1
+            printf '%s' "--installation=$1"
+            ;;
+    esac
+}
+
 _inventory_flatpak() {
     command -v flatpak > /dev/null 2>&1 || return 0
-    local id name scope dir kb
+    local id name scope dir kb flag
     while IFS=$'\t' read -r id name scope; do
         [[ -n "$id" ]] || continue
-        if [[ "$scope" == user ]]; then
-            dir="$MOLE_DATA_HOME/flatpak/app/$id"
-        else
-            dir="/var/lib/flatpak/app/$id"
-        fi
-        kb=$(mole_path_kb "$dir")
+        mole_valid_flatpak_installation "$scope" || continue
+        case "$scope" in
+            user) dir="$MOLE_DATA_HOME/flatpak/app/$id" ;;
+            system) dir="/var/lib/flatpak/app/$id" ;;
+            *)
+                flag=$(mole_flatpak_installation_flag "$scope") || continue
+                dir=$(mole_c flatpak "$flag" info --show-location -- "$id" 2> /dev/null) || dir=""
+                ;;
+        esac
+        kb=0
+        [[ "$dir" == /* ]] && kb=$(mole_path_kb "$dir")
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' flatpak "$id" "${name:-$id}" "$kb" "$id" "$id" "$scope"
     done < <(mole_c flatpak list --app --columns=application,name,installation 2> /dev/null)
 }
@@ -236,15 +260,34 @@ _inventory_flatpak() {
 # Omarchy web apps: a launcher whose Exec runs omarchy-launch-webapp or a
 # webapp handler. Removing one removes its launcher and icon, as Omarchy's
 # own omarchy-webapp-remove does.
+mole_desktop_is_webapp() {
+    local exec
+    exec=$(mole_desktop_field "$1" Exec)
+    [[ "$exec" == *omarchy-launch-webapp* || "$exec" == *omarchy-webapp-handler* ]]
+}
+
+# Omarchy terminal app launchers (omarchy-tui-install): a terminal started
+# with -e, the test omarchy-tui-remove itself uses.
+mole_desktop_is_tui() {
+    local exec
+    exec=$(mole_desktop_field "$1" Exec)
+    [[ "$exec" =~ (\$TERMINAL|xdg-terminal-exec).*\ -e\  ]]
+}
+
 _inventory_webapps() {
-    local dir="$MOLE_DATA_HOME/applications" f exec id
+    local dir="$MOLE_DATA_HOME/applications" f id kind
     [[ -d "$dir" ]] || return 0
     for f in "$dir"/*.desktop; do
         [[ -f "$f" && ! -L "$f" ]] || continue
-        exec=$(mole_desktop_field "$f" Exec)
-        [[ "$exec" == *omarchy-launch-webapp* || "$exec" == *omarchy-webapp-handler* ]] || continue
+        if mole_desktop_is_webapp "$f"; then
+            kind=webapp
+        elif mole_desktop_is_tui "$f"; then
+            kind=tui
+        else
+            continue
+        fi
         id="$(basename -- "$f" .desktop)"
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' webapp "$id" "$(mole_desktop_field "$f" Name)" 4 "$id" "" user
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$id" "$(mole_desktop_field "$f" Name)" 4 "$id" "" user
     done
 }
 
@@ -279,7 +322,7 @@ mole_appimage_files() {
     if [[ "$icon" == "$MOLE_DATA_HOME/icons/"* && "$icon" != *"/../"* ]]; then
         [[ -f "$icon" && ! -L "$icon" ]] && printf '%s\n' "$icon"
     elif [[ "$icon" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
-        for f in "$MOLE_DATA_HOME/icons/hicolor"/*/apps/"$icon".{png,svg}; do
+        for f in "$MOLE_DATA_HOME/icons/hicolor"/*/apps/"$icon".{png,svg,jpg,jpeg,webp,gif,ico,xpm}; do
             [[ -f "$f" ]] && printf '%s\n' "$f"
         done
     fi
@@ -314,15 +357,108 @@ mole_list_apps() {
     } | LC_ALL=C sort -t $'\t' -f -k3,3
 }
 
-# Files that belong to a web app itself (always removed with it).
+# How many launchers on the system name this Icon=, so an icon file is taken
+# with a launcher only when no other launcher shows it.
+declare -A _MOLE_ICON_COUNT=()
+_MOLE_ICON_LOADED=false
+_mole_load_icons() {
+    [[ "$_MOLE_ICON_LOADED" == true ]] && return 0
+    _MOLE_ICON_LOADED=true
+    local -a files=()
+    local f icon
+    for f in /usr/share/applications/*.desktop "$MOLE_DATA_HOME/applications"/*.desktop \
+        /var/lib/flatpak/exports/share/applications/*.desktop "$MOLE_DATA_HOME/flatpak/exports/share/applications"/*.desktop; do
+        [[ -f "$f" ]] && files+=("$f")
+    done
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    while IFS= read -r icon; do
+        [[ -n "$icon" ]] || continue
+        _MOLE_ICON_COUNT[$icon]=$((${_MOLE_ICON_COUNT[$icon]:-0} + 1))
+    done < <(awk '
+        FNR == 1 { in_entry = 0 }
+        /^\[/ { in_entry = ($0 == "[Desktop Entry]"); next }
+        in_entry && index($0, "Icon=") == 1 { print substr($0, 6) }
+    ' "${files[@]}" 2> /dev/null)
+}
+
+# Image extensions an icon copied by omarchy-webapp-install or
+# omarchy-tui-install may keep: they copy a local file with its own extension.
+readonly MOLE_ICON_EXTS="png svg jpg jpeg webp gif ico xpm"
+
+# Files that belong to an Omarchy web app or terminal app launcher (always
+# removed with it): the launcher and its icon under the names Omarchy writes
+# (the lowercased name, the name itself, or what Icon= says when no other
+# launcher uses that icon), in any image format, plus the old icon folder.
 mole_webapp_files() {
-    local id="$1" icon_dir="$MOLE_DATA_HOME/icons/hicolor/256x256/apps" icon_name
-    printf '%s\n' "$MOLE_DATA_HOME/applications/$id.desktop"
-    icon_name=$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]\{1,\}/-/g; s/^-//; s/-$//')
-    [[ -f "$icon_dir/$icon_name.png" ]] && printf '%s\n' "$icon_dir/$icon_name.png"
-    [[ "$icon_name" != "$id" && -f "$icon_dir/$id.png" ]] && printf '%s\n' "$icon_dir/$id.png"
-    # Older Omarchy releases kept web app icons beside the launchers.
-    [[ -f "$MOLE_DATA_HOME/applications/icons/$id.png" ]] && printf '%s\n' "$MOLE_DATA_HOME/applications/icons/$id.png"
+    local id="$1" desktop="$MOLE_DATA_HOME/applications/$1.desktop"
+    local icon_dir="$MOLE_DATA_HOME/icons/hicolor/256x256/apps" old_dir="$MOLE_DATA_HOME/applications/icons"
+    local safe icon name ext f
+    printf '%s\n' "$desktop"
+    safe=$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]\{1,\}/-/g; s/^-//; s/-$//')
+    local -a names=("$safe")
+    [[ "$id" != "$safe" ]] && names+=("$id")
+    icon=$(mole_desktop_field "$desktop" Icon)
+    if [[ -n "$icon" && "$icon" != */* && "$icon" != "$safe" && "$icon" != "$id" ]]; then
+        _mole_load_icons
+        [[ "${_MOLE_ICON_COUNT[$icon]:-0}" -eq 1 ]] && names+=("$icon")
+    fi
+    local -A seen=()
+    for name in "${names[@]}"; do
+        for ext in $MOLE_ICON_EXTS; do
+            for f in "$icon_dir/$name.$ext" "$old_dir/$name.$ext"; do
+                [[ -f "$f" && ! -L "$f" && -z "${seen[$f]:-}" ]] || continue
+                seen[$f]=1
+                printf '%s\n' "$f"
+            done
+        done
+    done
+    return 0
+}
+
+# Folders in $HOME a known app keeps under a name that is not its ID. Only
+# what the app itself documents: the Code - OSS build Arch ships as `code`
+# keeps ~/.vscode-oss, Microsoft's build ~/.vscode.
+mole_app_alias_paths() {
+    case "$1" in
+        code) printf '%s\n' "$HOME/.vscode-oss" "$MOLE_CONFIG_HOME/Code - OSS" ;;
+        visual-studio-code-bin | visual-studio-code-insiders-bin) printf '%s\n' "$HOME/.vscode" ;;
+        vscodium | vscodium-bin) printf '%s\n' "$HOME/.vscode-oss" "$MOLE_CONFIG_HOME/VSCodium" ;;
+        cursor-bin | cursor) printf '%s\n' "$HOME/.cursor" "$MOLE_CONFIG_HOME/Cursor" ;;
+        firefox | firefox-esr | firefox-developer-edition) printf '%s\n' "$HOME/.mozilla" "$MOLE_CONFIG_HOME/mozilla" ;;
+        thunderbird) printf '%s\n' "$HOME/.thunderbird" ;;
+        zen-browser-bin | zen-browser) printf '%s\n' "$HOME/.zen" ;;
+    esac
+    return 0
+}
+
+# Names shared by many apps or by the desktop itself: a folder with one of
+# these names is never an app's leftover, whatever app it was found for
+# (mole-linux's SHARED_NAMES, plus the dot folders every tool shares).
+mole_shared_leftover_name() {
+    local lc
+    mole_ascii_lowercase lc "$1"
+    case "$lc" in
+        applications | autostart | dbus-1 | dconf | environment.d | flatpak | fontconfig | fonts | gtk-2.0 | gtk-3.0 | \
+            gtk-4.0 | gvfs-metadata | icons | keyrings | libsecret | mime | pipewire | pulse | recently-used.xbel | \
+            seahorse | ssh | gnupg | steam | systemd | themes | thumbnails | trash | wireplumber | local | config | \
+            cache | var | pki | cargo | rustup | npm | java | m2 | gradle | docker | kube | aws | git | bin | \
+            omarchy | hypr | xdg-desktop-portal | menus | desktop-directories | sounds) return 0 ;;
+    esac
+    return 1
+}
+
+# The pkgbase of an installed package from pacman's local database, which
+# names the AUR helper's build folder (a split package shares its base).
+mole_pkgbase() {
+    local pkg="$1" ver dbpath desc base
+    ver=$(mole_c pacman -Q -- "$pkg" 2> /dev/null | awk 'NR == 1 { print $2 }') || ver=""
+    if [[ -n "$ver" ]]; then
+        dbpath="${MOLE_PACMAN_DBPATH:-/var/lib/pacman}"
+        desc="$dbpath/local/$pkg-$ver/desc"
+        [[ -r "$desc" ]] && base=$(awk '/^%BASE%$/ { getline; print; exit }' "$desc" 2> /dev/null)
+    fi
+    base="${base:-$pkg}"
+    mole_valid_package_name "$base" && printf '%s' "$base"
     return 0
 }
 
@@ -351,16 +487,67 @@ mole_app_leftovers() {
     [[ "$kind" == orphan ]] && return 0
     if [[ "$kind" == flatpak ]]; then
         emit data "$HOME/.var/app/$id"
+        # Permissions the user gave the app with flatpak override --user.
+        emit data "$MOLE_DATA_HOME/flatpak/overrides/$id"
         return 0
     fi
     for d in "${ids[@]}"; do
         [[ "$d" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || continue
+        mole_shared_leftover_name "$d" && continue
         emit cache "$MOLE_CACHE_HOME/$d"
         emit cache "$MOLE_CONFIG_HOME/autostart/$d.desktop"
         emit data "$MOLE_CONFIG_HOME/$d"
         emit data "$MOLE_DATA_HOME/$d"
         emit data "$MOLE_STATE_HOME/$d"
+        emit data "$HOME/.$d"
         emit data "$MOLE_CONFIG_HOME/systemd/user/$d.service"
-        [[ "$kind" == webapp || "$kind" == appimage ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
+        emit data "$MOLE_CONFIG_HOME/systemd/user/$d.timer"
+        emit data "$MOLE_CONFIG_HOME/systemd/user/$d.socket"
+        [[ "$kind" == webapp || "$kind" == tui || "$kind" == appimage ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
     done
+    while IFS= read -r d; do
+        [[ -n "$d" ]] && emit data "$d"
+    done < <(mole_app_alias_paths "$id")
+    if [[ "$kind" == aur ]]; then
+        local base
+        base=$(mole_pkgbase "$id")
+        if [[ -n "$base" ]]; then
+            # Build folders of the AUR helpers, only when they hold a
+            # PKGBUILD: a folder of that name without one is not a build.
+            [[ -f "$MOLE_CACHE_HOME/yay/$base/PKGBUILD" ]] && emit cache "$MOLE_CACHE_HOME/yay/$base"
+            [[ -f "$MOLE_CACHE_HOME/paru/clone/$base/PKGBUILD" ]] && emit cache "$MOLE_CACHE_HOME/paru/clone/$base"
+        fi
+    fi
+    return 0
+}
+
+# Data that --with-data still leaves unselected (they are listed, never
+# preselected): browser and mail profiles hold passwords, history,
+# extensions and mail; Spotify keeps its offline music under ~/.cache.
+# Prints the reason when it holds a path back.
+mole_leftover_holdback() {
+    local c="$MOLE_CONFIG_HOME" v="$HOME/.var/app"
+    case "$1" in
+        "$c/chromium" | "$c/google-chrome" | "$c/google-chrome-"* | "$c/BraveSoftware" | "$c/vivaldi" | "$c/vivaldi-"* | \
+            "$c/microsoft-edge" | "$c/microsoft-edge-"* | "$HOME/.mozilla" | "$c/mozilla" | "$HOME/.zen" | "$c/zen" | \
+            "$HOME/.librewolf" | "$c/librewolf")
+            echo "browser profile"
+            return 0
+            ;;
+        "$HOME/.thunderbird" | "$c/thunderbird" | "$v/org.mozilla.Thunderbird")
+            echo "mail profile"
+            return 0
+            ;;
+        "$v/org.mozilla.firefox" | "$v/org.chromium.Chromium" | "$v/com.google.Chrome" | \
+            "$v/com.brave.Browser" | "$v/com.vivaldi.Vivaldi" | "$v/com.microsoft.Edge" | "$v/app.zen_browser.zen" | \
+            "$v/io.gitlab.librewolf-community")
+            echo "browser profile"
+            return 0
+            ;;
+        "$MOLE_CACHE_HOME/spotify" | "$v/com.spotify.Client")
+            echo "offline music"
+            return 0
+            ;;
+    esac
+    return 1
 }
