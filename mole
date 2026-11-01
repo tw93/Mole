@@ -17,6 +17,7 @@ SCRIPT_DIR="$(dirname -- "$SCRIPT_PATH")"
 export SCRIPT_DIR
 
 source "$SCRIPT_DIR/lib/core/common.sh"
+source "$SCRIPT_DIR/lib/core/update_notice.sh"
 
 VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/VERSION" 2> /dev/null || true)"
 VERSION="${VERSION:-unknown}"
@@ -63,8 +64,8 @@ MOLE_COMMANDS=(
     "optimize:Refresh caches and services"
     "analyze:Explore disk usage"
     "status:Monitor system health"
-    "update:Update to the latest version"
-    "remove:Remove Mole from this computer"
+    "update:Update to latest version"
+    "remove:Remove Mole from system"
     "help:Show help"
     "version:Show version"
 )
@@ -89,6 +90,8 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --list" "$NC" "List apps mo uninstall accepts"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /mnt" "$NC" "Analyze another mount"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest version"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "Preview Mole removal"
     echo
     printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
     printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
@@ -122,6 +125,10 @@ show_main_menu() {
     done
     if [[ -t 0 ]]; then
         printf '\r\033[2K\n'
+        if [[ -n "${MAIN_MENU_UPDATE_MESSAGE:-}" ]]; then
+            printf '\r\033[2K%s\n' "${YELLOW}${MAIN_MENU_UPDATE_MESSAGE%mo update}${GREEN}mo update${NC}"
+            printf '\r\033[2K\n'
+        fi
         printf '\r\033[2K%s\n' "${GRAY}↑↓  |  Enter  |  M More  |  V Version  |  Q Quit${NC}"
         printf '\r\033[2K\n'
     fi
@@ -132,6 +139,10 @@ interactive_main_menu() {
     local original_stty="" current=1 redraw=true key
     [[ -t 0 ]] && original_stty=$(stty -g 2> /dev/null || true)
     MAIN_MENU_BANNER="$(show_brand_banner)"
+    # Today's answer comes from the cache; a due lookup runs in the background
+    # and shows up on the next open, so the menu never waits on the network.
+    mole_update_notice_check
+    MAIN_MENU_UPDATE_MESSAGE="$(mole_update_notice_message)"
 
     menu_exit() {
         [[ -n "$original_stty" ]] && stty "$original_stty" 2> /dev/null
