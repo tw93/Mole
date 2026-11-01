@@ -3601,6 +3601,22 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "decode_file_list rejects NUL bytes without an empty regex error" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+encoded=$(printf '/path/one\0/path/two' | base64 | tr -d '\n')
+result=$(decode_file_list "$encoded" "TestApp" 2>&1)
+[[ "$result" == *"contains null bytes"* ]] || exit 1
+[[ "$result" != *"empty (sub)expression"* ]] || exit 1
+[[ "$result" != *"/path/one"* ]] || exit 1
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "login item helper discovery discards partial results and preserves cancellation" {
     local app="$HOME/Applications/PartialHelpers.app"
     local helper="$app/Contents/Library/LoginItems/Partial.app"
@@ -3686,6 +3702,22 @@ if grep -q 'decode_file_list "$encoded_login_item_helpers"' "$PROJECT_ROOT/lib/u
     exit 1
 fi
 exit 0
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "decode_bundle_id_list rejects NUL bytes without an empty regex error" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+encoded=$(printf 'com.example.App\0com.example.Helper' | base64 | tr -d '\n')
+result=$(decode_bundle_id_list "$encoded" "TestApp" 2>&1)
+[[ "$result" == *"contains null bytes"* ]] || exit 1
+[[ "$result" != *"empty (sub)expression"* ]] || exit 1
+[[ "$result" != *"com.example.App"* ]] || exit 1
 EOF
 
     [ "$status" -eq 0 ]
