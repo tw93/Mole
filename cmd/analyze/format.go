@@ -21,11 +21,15 @@ var subCellBlocks = [8]string{"", "▏", "▎", "▍", "▌", "▋", "▊", "▉
 
 func displayPath(path string) string {
 	home, err := os.UserHomeDir()
+	home = strings.TrimSuffix(home, "/")
 	if err != nil || home == "" {
 		return path
 	}
-	if strings.HasPrefix(path, home) {
-		return strings.Replace(path, home, "~", 1)
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+"/"); ok {
+		return "~/" + rest
 	}
 	return path
 }
