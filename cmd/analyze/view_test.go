@@ -73,7 +73,7 @@ func TestBackspaceGoesBackAndDeleteKeyConfirms(t *testing.T) {
 		t.Fatalf("Delete: deleteConfirm=%v target=%v, want a prompt for %q", got.deleteConfirm, got.deleteTarget, file)
 	}
 	view := stripANSI(got.View())
-	if !strings.Contains(view, "Delete: file.bin, 10 B  Press Enter to confirm  |  ESC cancel") {
+	if !strings.Contains(view, "Move to Recycle Bin: file.bin, 10 B  Press Enter to confirm  |  ESC cancel") {
 		t.Fatalf("expected the macOS confirmation line, got:\n%s", view)
 	}
 
@@ -96,7 +96,7 @@ func TestDeleteKeysIgnoredWhileScanning(t *testing.T) {
 	if got.deleteConfirm {
 		t.Fatal("Delete opened a confirmation while scanning")
 	}
-	if got.status != "Delete is available after the scan finishes" {
+	if got.status != "Move to Recycle Bin is available after the scan finishes" {
 		t.Fatalf("status = %q", got.status)
 	}
 }
@@ -121,7 +121,7 @@ func TestDirectoryFooterMatchesMacOSWithWindowsDeleteKey(t *testing.T) {
 		totalSize:  1024,
 	}
 
-	want := "↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | Del Delete | T Top 1 | Esc Back | Q/Ctrl+C Quit"
+	want := "↑↓←→ | Space Select | Enter | / Filter | R Refresh | O Open | P Preview | F File | Del Recycle | T Top 1 | Esc Back | Q/Ctrl+C Quit"
 	if !strings.Contains(stripANSI(m.View()), want) {
 		t.Fatalf("expected footer %q, got:\n%s", want, stripANSI(m.View()))
 	}
@@ -293,7 +293,7 @@ func TestDeleteViewHidesZeroTally(t *testing.T) {
 	if strings.Contains(view, "0 items") {
 		t.Fatalf("expected no zero tally while nothing has completed, got:\n%s", view)
 	}
-	if !strings.Contains(view, "moving to Recycle Bin") {
+	if !strings.Contains(view, "Moving to Recycle Bin") {
 		t.Fatalf("expected a progress line while deleting, got:\n%s", view)
 	}
 
@@ -319,7 +319,7 @@ func TestLargeFilesViewLayout(t *testing.T) {
 	if !strings.HasPrefix(row, " ▶ ○  1. "+strings.Repeat("█", barWidth)+"  |  📄 ") || !strings.HasSuffix(row, "    4.0 GB") {
 		t.Fatalf("unexpected large-file row %q", row)
 	}
-	if !strings.Contains(view, "↑↓← | Space Select | / Filter | R Refresh | O Open | P Preview | F File | Del Delete | Esc Back | Q/Ctrl+C Quit") {
+	if !strings.Contains(view, "↑↓← | Space Select | / Filter | R Refresh | O Open | P Preview | F File | Del Recycle | Esc Back | Q/Ctrl+C Quit") {
 		t.Fatalf("unexpected large-file footer:\n%s", view)
 	}
 }
@@ -489,7 +489,7 @@ func TestDeleteProgressPartialFailureRemovesSucceededPathsAndRefreshes(t *testin
 	if len(got.entries) != 1 || got.entries[0].Path != failed || got.totalSize != 20 {
 		t.Fatalf("entries=%+v total=%d, want only the failed path and 20", got.entries, got.totalSize)
 	}
-	if !strings.Contains(got.status, "Deleted 1 items; some failed") {
+	if !strings.Contains(got.status, "Moved 1 items to Recycle Bin, some failed") {
 		t.Fatalf("status = %q", got.status)
 	}
 	if !got.cache[parent].NeedsRefresh {

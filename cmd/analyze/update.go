@@ -318,9 +318,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancelLiveScan()
 				m.cancelOverviewScans(removedPaths)
 				if msg.err != nil {
-					m.status = fmt.Sprintf("Deleted %d items; some failed: %v", msg.count, msg.err)
+					m.status = fmt.Sprintf("Moved %d items to Recycle Bin, some failed: %v", msg.count, msg.err)
 				} else {
-					m.status = fmt.Sprintf("Deleted %d items", msg.count)
+					m.status = fmt.Sprintf("Moved %d items to Recycle Bin", msg.count)
 				}
 
 				// Selective invalidation: only views whose size the delete
@@ -357,9 +357,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			if msg.err != nil {
-				m.status = fmt.Sprintf("Failed to delete: %v", msg.err)
+				m.status = fmt.Sprintf("Failed to move to Recycle Bin: %v", msg.err)
 			} else {
-				m.status = fmt.Sprintf("Deleted %d items", msg.count)
+				m.status = fmt.Sprintf("Moved %d items to Recycle Bin", msg.count)
 			}
 		}
 		return m, nil
@@ -536,19 +536,19 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deleteTarget = nil
 			if len(pathsToDelete) == 0 {
 				m.deleting = false
-				m.status = "Nothing to delete"
+				m.status = "Nothing to move to Recycle Bin"
 				return m, nil
 			}
 
 			sizes := m.deleteSizeLabels(pathsToDelete)
 			if len(pathsToDelete) == 1 {
 				targetPath := pathsToDelete[0]
-				m.status = fmt.Sprintf("Deleting %s...", filepath.Base(targetPath))
+				m.status = fmt.Sprintf("Moving %s to Recycle Bin...", filepath.Base(targetPath))
 				cmd := tea.Batch(deletePathCmd(targetPath, sizes[targetPath], m.deleteCount), m.startTick())
 				return m, cmd
 			}
 
-			m.status = fmt.Sprintf("Deleting %d items...", len(pathsToDelete))
+			m.status = fmt.Sprintf("Moving %d items to Recycle Bin...", len(pathsToDelete))
 			cmd := tea.Batch(deleteMultiplePathsCmd(pathsToDelete, sizes, m.deleteCount), m.startTick())
 			return m, cmd
 		case "esc", "q":
@@ -892,7 +892,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "delete":
 		if m.scanning {
-			m.status = "Delete is available after the scan finishes"
+			m.status = "Move to Recycle Bin is available after the scan finishes"
 			return m, nil
 		}
 		if m.showLargeFiles {
@@ -940,7 +940,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else if m.selected < len(m.entries) {
 				selected := m.entries[m.selected]
 				if selected.State == scanUnavailable {
-					m.status = fmt.Sprintf("Cannot delete %s, size unknown", selected.Name)
+					m.status = fmt.Sprintf("Cannot move %s to Recycle Bin, size unknown", selected.Name)
 					return m, nil
 				}
 				m.deleteConfirm = true
