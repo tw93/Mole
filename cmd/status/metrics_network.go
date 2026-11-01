@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,7 +19,11 @@ const (
 	networkIPCacheTTL        = 10 * time.Second
 )
 
-var noiseInterfacePrefixes = [...]string{"lo", "awdl", "utun", "llw", "bridge", "gif", "stf", "xhc", "anpi", "ap"}
+// noiseInterfacePrefixes are loopback and container or VM plumbing: Docker's
+// bridge and per-container veth pairs, user-defined bridges (br-<id>), libvirt
+// virbr and vnet taps. They carry traffic that the physical interface already
+// counted, or none a person looks at.
+var noiseInterfacePrefixes = [...]string{"lo", "docker", "veth", "br-", "virbr", "vnet", "cni", "flannel"}
 
 func collectIOCountersSafely() (stats []net.IOCountersStat, err error) {
 	defer func() {
@@ -43,9 +45,9 @@ func (c *Collector) primeNetworkCounters(now time.Time) {
 	}
 }
 
-// Only full collection may spawn commands; fast frames reuse the latest route.
+// Only full collection re-reads the route table; fast frames reuse the latest route.
 func (c *Collector) collectNetworkFull(now time.Time) []NetworkStatus {
-	c.defaultNetInterface = defaultRouteInterface()
+	c.defaultNetInterface = defaultRouteFunc()
 	return c.collectNetwork(now)
 }
 
@@ -62,7 +64,7 @@ func (c *Collector) collectNetwork(now time.Time) []NetworkStatus {
 
 	stats, err := collectIOCountersSafely()
 	if err != nil {
-		// Some restricted environments can break netstat-backed collectors.
+		// Restricted environments can hide /proc/net/dev.
 		// Degrade gracefully to keep status output available.
 		c.rxHistoryBuf.Add(0)
 		c.txHistoryBuf.Add(0)
@@ -139,26 +141,46 @@ func (c *Collector) collectNetwork(now time.Time) []NetworkStatus {
 	return result
 }
 
+// defaultRouteFunc is replaceable so tests can script the routing table.
+var defaultRouteFunc = defaultRouteInterface
+
 // The IPv4 default route identifies the active tunnel without guessing from
-// cumulative bytes on idle system tunnels. A failed probe keeps physical rates.
+// cumulative bytes on idle system tunnels. A failed read keeps physical rates.
 func defaultRouteInterface() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	out, err := runCmd(ctx, "route", "-n", "get", "default")
+	data, err := os.ReadFile("/proc/net/route")
 	if err != nil {
 		return ""
 	}
-	for line := range strings.Lines(out) {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), ":")
-		if ok && key == "interface" {
-			return strings.TrimSpace(value)
+	return parseDefaultRouteInterface(string(data))
+}
+
+// parseDefaultRouteInterface picks the up interface with destination 0.0.0.0
+// and mask 0.0.0.0 that has the lowest metric. Columns:
+// Iface Destination Gateway Flags RefCnt Use Metric Mask ...
+func parseDefaultRouteInterface(raw string) string {
+	best, bestMetric := "", -1
+	for line := range strings.Lines(raw) {
+		f := strings.Fields(line)
+		if len(f) < 8 || f[1] != "00000000" || f[7] != "00000000" {
+			continue
+		}
+		flags, err := strconv.ParseUint(f[3], 16, 32)
+		if err != nil || flags&0x1 == 0 { // RTF_UP
+			continue
+		}
+		metric, err := strconv.Atoi(f[6])
+		if err != nil {
+			continue
+		}
+		if bestMetric < 0 || metric < bestMetric {
+			best, bestMetric = f[0], metric
 		}
 	}
-	return ""
+	return best
 }
 
 func isTunnelInterface(name string) bool {
-	for _, prefix := range []string{"utun", "tun", "ipsec", "ppp"} {
+	for _, prefix := range []string{"tun", "wg", "tailscale", "ppp", "ipsec"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}
@@ -222,20 +244,8 @@ func collectProxy() ProxyStatus {
 		return proxy
 	}
 
-	// macOS: check system proxy via scutil.
-	if runtime.GOOS == "darwin" {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		defer cancel()
-		out, err := runCmd(ctx, "scutil", "--proxy")
-		if err == nil {
-			if proxy := collectProxyFromScutilOutput(out); proxy.Enabled {
-				return proxy
-			}
-		}
-
-		if proxy := collectProxyFromTunInterfaces(); proxy.Enabled {
-			return proxy
-		}
+	if proxy := collectProxyFromTunInterfaces(); proxy.Enabled {
+		return proxy
 	}
 
 	return ProxyStatus{Enabled: false}
@@ -270,51 +280,6 @@ func collectProxyFromEnv(getenv func(string) string) ProxyStatus {
 	return ProxyStatus{Enabled: false}
 }
 
-func collectProxyFromScutilOutput(out string) ProxyStatus {
-	if out == "" {
-		return ProxyStatus{Enabled: false}
-	}
-
-	if scutilProxyEnabled(out, "SOCKSEnable") {
-		host := joinHostPort(scutilProxyValue(out, "SOCKSProxy"), scutilProxyValue(out, "SOCKSPort"))
-		if host == "" {
-			host = "System Proxy"
-		}
-		return ProxyStatus{Enabled: true, Type: "SOCKS", Host: host}
-	}
-
-	if scutilProxyEnabled(out, "HTTPSEnable") {
-		host := joinHostPort(scutilProxyValue(out, "HTTPSProxy"), scutilProxyValue(out, "HTTPSPort"))
-		if host == "" {
-			host = "System Proxy"
-		}
-		return ProxyStatus{Enabled: true, Type: "HTTPS", Host: host}
-	}
-
-	if scutilProxyEnabled(out, "HTTPEnable") {
-		host := joinHostPort(scutilProxyValue(out, "HTTPProxy"), scutilProxyValue(out, "HTTPPort"))
-		if host == "" {
-			host = "System Proxy"
-		}
-		return ProxyStatus{Enabled: true, Type: "HTTP", Host: host}
-	}
-
-	if scutilProxyEnabled(out, "ProxyAutoConfigEnable") {
-		pacURL := scutilProxyValue(out, "ProxyAutoConfigURLString")
-		host := parseProxyHost(pacURL)
-		if host == "" {
-			host = "PAC"
-		}
-		return ProxyStatus{Enabled: true, Type: "PAC", Host: host}
-	}
-
-	if scutilProxyEnabled(out, "ProxyAutoDiscoveryEnable") {
-		return ProxyStatus{Enabled: true, Type: "WPAD", Host: "Auto Discovery"}
-	}
-
-	return ProxyStatus{Enabled: false}
-}
-
 func collectProxyFromTunInterfaces() ProxyStatus {
 	stats, err := collectIOCountersSafely()
 	if err != nil {
@@ -324,7 +289,7 @@ func collectProxyFromTunInterfaces() ProxyStatus {
 	var activeTun []string
 	for _, s := range stats {
 		lower := strings.ToLower(s.Name)
-		if strings.HasPrefix(lower, "utun") || strings.HasPrefix(lower, "tun") {
+		if strings.HasPrefix(lower, "tun") {
 			if s.BytesRecv+s.BytesSent > 0 {
 				activeTun = append(activeTun, s.Name)
 			}
@@ -339,28 +304,12 @@ func collectProxyFromTunInterfaces() ProxyStatus {
 		host = activeTun[0] + "+"
 	}
 	// Reported as a tunnel, never as a proxy. This branch is only reached when
-	// no proxy is configured in the environment or in scutil, which is exactly
-	// the case where an active `utun` is most likely iCloud Private Relay or a
-	// VPN. Calling that "Proxy TUN" told users something false about a machine
-	// that has no proxy at all.
+	// no proxy is configured in the environment, which is exactly the case
+	// where an active `tun` is most likely a VPN. Calling that "Proxy TUN"
+	// told users something false about a machine that has no proxy at all.
 	// Keep the existing JSON type value for automation consumers. IsTunnel is
 	// the presentation hint that lets the terminal UI use an honest label.
 	return ProxyStatus{Enabled: true, Type: "TUN", Host: host, IsTunnel: true}
-}
-
-func scutilProxyEnabled(out, key string) bool {
-	return scutilProxyValue(out, key) == "1"
-}
-
-func scutilProxyValue(out, key string) string {
-	prefix := key + " :"
-	for line := range strings.Lines(out) {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, prefix); ok {
-			return strings.TrimSpace(after)
-		}
-	}
-	return ""
 }
 
 func parseProxyHost(raw string) string {

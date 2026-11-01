@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -260,27 +259,27 @@ func TestCollectFullKeepsCachedProcessSummaryWhenProcessCollectionFails(t *testi
 }
 
 func TestFullCollectionPublishesIndependentEnrichment(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("memory_pressure is a macOS probe")
-	}
 	for _, failure := range []string{"error", "panic"} {
 		t.Run(failure, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
 			origRunCmd, origCommandExists := runCmd, commandExists
 			origPartitions, origUsage := diskPartitionsFunc, diskUsageFunc
-			origProcesses := collectProcessesFunc
+			origProcesses, origPSI := collectProcessesFunc, memoryPSIFunc
 			t.Cleanup(func() {
 				runCmd, commandExists = origRunCmd, origCommandExists
 				diskPartitionsFunc, diskUsageFunc = origPartitions, origUsage
-				collectProcessesFunc = origProcesses
+				collectProcessesFunc, memoryPSIFunc = origProcesses, origPSI
 			})
 
 			pressure, total, failDisk := "normal", uint64(2<<30), false
-			runCmd = func(_ context.Context, name string, _ ...string) (string, error) {
-				if name == "memory_pressure" {
-					return pressure, nil
-				}
+			runCmd = func(context.Context, string, ...string) (string, error) {
 				return "", errors.New("optional metric unavailable")
+			}
+			memoryPSIFunc = func() (MemoryPressureStats, bool) {
+				if pressure == "warn" {
+					return MemoryPressureStats{SomeAvg10: 20}, true
+				}
+				return MemoryPressureStats{}, true
 			}
 			commandExists = func(string) bool { return false }
 			diskPartitionsFunc = func(bool) ([]disk.PartitionStat, error) {
@@ -290,7 +289,7 @@ func TestFullCollectionPublishesIndependentEnrichment(t *testing.T) {
 					}
 					return nil, errors.New("disk probe failed")
 				}
-				return []disk.PartitionStat{{Device: "/dev/disk3s1", Mountpoint: "/", Fstype: "apfs"}}, nil
+				return []disk.PartitionStat{{Device: "/dev/vda2", Mountpoint: "/", Fstype: "ext4"}}, nil
 			}
 			diskUsageFunc = func(string) (*disk.UsageStat, error) {
 				return &disk.UsageStat{Total: total, Used: total / 2, Free: total / 2, UsedPercent: 50}, nil

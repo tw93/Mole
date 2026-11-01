@@ -2,195 +2,222 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
+	"os"
+	"path/filepath"
 	"regexp"
-	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	systemProfilerTimeout = 4 * time.Second
-	macGPUInfoTTL         = 10 * time.Minute
-	macGPUUsageTTL        = 5 * time.Second
-	powermetricsTimeout   = 2 * time.Second
+	gpuInfoTTL      = 10 * time.Minute
+	lspciTimeout    = 800 * time.Millisecond
+	nvidiaSMIWait   = 600 * time.Millisecond
+	pciVendorNVIDIA = "0x10de"
 )
 
-// Regex for GPU usage parsing.
-var (
-	gpuActiveResidencyRe = regexp.MustCompile(`GPU HW active residency:\s+([\d.]+)%`)
-	gpuIdleResidencyRe   = regexp.MustCompile(`GPU idle residency:\s+([\d.]+)%`)
-)
+// pciVendorNames covers GPUs by PCI vendor id, read from sysfs with no tool.
+var pciVendorNames = map[string]string{
+	"0x10de": "NVIDIA",
+	"0x1002": "AMD",
+	"0x8086": "Intel",
+	"0x1af4": "Virtio",
+	"0x1234": "QEMU",
+	"0x1b36": "QEMU",
+	"0x15ad": "VMware",
+	"0x1414": "Microsoft",
+	"0x106b": "Apple",
+	"0x5143": "Qualcomm",
+}
 
+var drmCardDir = regexp.MustCompile(`^card[0-9]+$`)
+
+// collectGPU lists display adapters. Names come from sysfs vendor ids, refined
+// by lspci when it is installed; a machine with no DRM device reports none and
+// the field stays empty. Usage is read live where the driver exposes it.
 func (c *Collector) collectGPU(now time.Time) ([]GPUStatus, error) {
-	if runtime.GOOS == "darwin" {
-		// Static GPU info (cached 10 min).
-		if len(c.cachedGPU) == 0 || c.lastGPUAt.IsZero() || now.Sub(c.lastGPUAt) >= macGPUInfoTTL {
-			if gpus, err := readMacGPUInfo(); err == nil && len(gpus) > 0 {
-				c.cachedGPU = gpus
-				c.lastGPUAt = now
-			}
-		}
-
-		// Real-time GPU usage.
-		if len(c.cachedGPU) > 0 {
-			usage := c.getMacGPUUsage(now)
-			result := make([]GPUStatus, len(c.cachedGPU))
-			copy(result, c.cachedGPU)
-			// Apply usage to first GPU (Apple Silicon).
-			if len(result) > 0 {
-				result[0].Usage = usage
-			}
-			return result, nil
-		}
+	if c.lastGPUAt.IsZero() || now.Sub(c.lastGPUAt) >= gpuInfoTTL {
+		c.cachedGPU = readGPUs("/", lspciNames)
+		c.lastGPUAt = now
 	}
+	result := make([]GPUStatus, len(c.cachedGPU))
+	copy(result, c.cachedGPU)
+	refreshGPUUsage("/", result)
+	return result, nil
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+type drmGPU struct {
+	vendorID string
+	slot     string // PCI slot such as 00:02.0, empty when not PCI
+	dir      string
+}
+
+func listDRMGPUs(root string) []drmGPU {
+	entries, err := os.ReadDir(filepath.Join(root, "sys/class/drm"))
+	if err != nil {
+		return nil
+	}
+	var gpus []drmGPU
+	for _, e := range entries {
+		if !drmCardDir.MatchString(e.Name()) {
+			continue
+		}
+		dev := filepath.Join(root, "sys/class/drm", e.Name(), "device")
+		vendor := strings.ToLower(readTrimmed(filepath.Join(dev, "vendor")))
+		if vendor == "" {
+			continue
+		}
+		slot := ""
+		if target, err := os.Readlink(dev); err == nil {
+			slot = strings.TrimPrefix(filepath.Base(target), "0000:")
+		}
+		gpus = append(gpus, drmGPU{vendorID: vendor, slot: slot, dir: dev})
+	}
+	sort.Slice(gpus, func(i, j int) bool { return gpus[i].dir < gpus[j].dir })
+	return gpus
+}
+
+// readGPUs builds the static GPU list under root. names, when non-nil, maps a
+// PCI slot to a device name from lspci. Cards with an unknown vendor id are
+// left out.
+func readGPUs(root string, names func() map[string]string) []GPUStatus {
+	cards := listDRMGPUs(root)
+	if len(cards) == 0 {
+		return nil
+	}
+	var lspci map[string]string
+	if names != nil {
+		lspci = names()
+	}
+	var gpus []GPUStatus
+	for _, card := range cards {
+		vendor := pciVendorNames[card.vendorID]
+		if vendor == "" {
+			continue // refreshGPUUsage skips the same cards to stay aligned
+		}
+		name := lspci[card.slot]
+		switch {
+		case name != "":
+			// lspci names include the vendor in the bracketed marketing name
+			// ("Intel Corporation ... [Iris Xe Graphics]"); keep it readable.
+			if vendor != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(vendor)) {
+				name = vendor + " " + name
+			}
+		default:
+			name = vendor + " graphics"
+		}
+		gpus = append(gpus, GPUStatus{Name: name, Usage: -1})
+	}
+	return gpus
+}
+
+// refreshGPUUsage fills Usage from gpu_busy_percent (amdgpu, some others) and
+// nvidia-smi for NVIDIA cards; adapters without a counter stay at -1.
+func refreshGPUUsage(root string, gpus []GPUStatus) {
+	cards := listDRMGPUs(root)
+	idx := 0
+	for _, card := range cards {
+		if pciVendorNames[card.vendorID] == "" {
+			continue
+		}
+		if idx >= len(gpus) {
+			return
+		}
+		if v, ok := readInt(filepath.Join(card.dir, "gpu_busy_percent")); ok && v >= 0 && v <= 100 {
+			gpus[idx].Usage = float64(v)
+		} else if card.vendorID == pciVendorNVIDIA && commandExists("nvidia-smi") {
+			applyNvidiaSMI(&gpus[idx])
+		}
+		idx++
+	}
+}
+
+func applyNvidiaSMI(gpu *GPUStatus) {
+	ctx, cancel := context.WithTimeout(context.Background(), nvidiaSMIWait)
 	defer cancel()
-
-	if !commandExists("nvidia-smi") {
-		return []GPUStatus{{
-			Name: "No GPU metrics available",
-			Note: "Install nvidia-smi or use platform-specific metrics",
-		}}, nil
-	}
-
 	out, err := runCmd(ctx, "nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total,name", "--format=csv,noheader,nounits")
 	if err != nil {
-		return nil, err
+		return
 	}
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	fields := strings.Split(line, ",")
+	if len(fields) < 4 {
+		return
+	}
+	if v, err := strconv.ParseFloat(strings.TrimSpace(fields[0]), 64); err == nil {
+		gpu.Usage = v
+	}
+	gpu.MemoryUsed, _ = strconv.ParseFloat(strings.TrimSpace(fields[1]), 64)
+	gpu.MemoryTotal, _ = strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+	if name := strings.TrimSpace(fields[3]); name != "" {
+		gpu.Name = name
+	}
+}
 
-	var gpus []GPUStatus
-	for line := range strings.Lines(strings.TrimSpace(out)) {
-		fields := strings.Split(line, ",")
-		if len(fields) < 4 {
+// lspciNames maps PCI slot to a device name for display controllers. It runs
+// only when lspci is installed and always under the C locale.
+func lspciNames() map[string]string {
+	if !commandExists("lspci") {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lspciTimeout)
+	defer cancel()
+	out, err := runCmd(ctx, "lspci", "-mm")
+	if err != nil {
+		return nil
+	}
+	return parseLspciDisplays(out)
+}
+
+var bracketName = regexp.MustCompile(`\[([^\]]+)\]`)
+
+// parseLspciDisplays reads machine-readable lines such as
+//
+//	00:02.0 "VGA compatible controller" "Intel Corporation" "Alder Lake-P GT2 [Iris Xe Graphics]" -r0c ...
+//
+// and keeps VGA, 3D and Display controllers, preferring the bracketed
+// marketing name.
+func parseLspciDisplays(raw string) map[string]string {
+	names := map[string]string{}
+	for line := range strings.Lines(raw) {
+		slot, rest, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok {
 			continue
 		}
-		util, _ := strconv.ParseFloat(strings.TrimSpace(fields[0]), 64)
-		memUsed, _ := strconv.ParseFloat(strings.TrimSpace(fields[1]), 64)
-		memTotal, _ := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
-		name := strings.TrimSpace(fields[3])
-
-		gpus = append(gpus, GPUStatus{
-			Name:        name,
-			Usage:       util,
-			MemoryUsed:  memUsed,
-			MemoryTotal: memTotal,
-		})
-	}
-
-	if len(gpus) == 0 {
-		return []GPUStatus{{
-			Name: "GPU read failed",
-			Note: "Verify nvidia-smi availability",
-		}}, nil
-	}
-
-	return gpus, nil
-}
-
-func readMacGPUInfo() ([]GPUStatus, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), systemProfilerTimeout)
-	defer cancel()
-
-	if !commandExists("system_profiler") {
-		return nil, errors.New("system_profiler unavailable")
-	}
-
-	out, err := runCmd(ctx, "system_profiler", "-json", "SPDisplaysDataType")
-	if err != nil {
-		return nil, err
-	}
-
-	var data struct {
-		Displays []struct {
-			Name   string `json:"_name"`
-			VRAM   string `json:"spdisplays_vram"`
-			Vendor string `json:"spdisplays_vendor"`
-			Metal  string `json:"spdisplays_metal"`
-			Cores  string `json:"sppci_cores"`
-		} `json:"SPDisplaysDataType"`
-	}
-	if err := json.Unmarshal([]byte(out), &data); err != nil {
-		return nil, err
-	}
-
-	var gpus []GPUStatus
-	for _, d := range data.Displays {
-		if d.Name == "" {
+		fields := splitQuoted(rest)
+		if len(fields) < 3 {
 			continue
 		}
-		noteParts := []string{}
-		if d.VRAM != "" {
-			noteParts = append(noteParts, "VRAM "+d.VRAM)
+		class := strings.ToLower(fields[0])
+		if !strings.Contains(class, "vga") && !strings.Contains(class, "3d controller") && !strings.Contains(class, "display controller") {
+			continue
 		}
-		if d.Metal != "" {
-			noteParts = append(noteParts, d.Metal)
+		device := fields[2]
+		if m := bracketName.FindStringSubmatch(device); m != nil {
+			device = m[1]
 		}
-		if d.Vendor != "" {
-			noteParts = append(noteParts, d.Vendor)
+		if device = strings.TrimSpace(device); device != "" {
+			names[strings.TrimPrefix(slot, "0000:")] = device
 		}
-		note := strings.Join(noteParts, " · ")
-		coreCount, _ := strconv.Atoi(d.Cores)
-		gpus = append(gpus, GPUStatus{
-			Name:      d.Name,
-			Usage:     -1, // Will be updated with real-time data
-			CoreCount: coreCount,
-			Note:      note,
-		})
 	}
-
-	if len(gpus) == 0 {
-		return []GPUStatus{{
-			Name: "GPU info unavailable",
-			Note: "Unable to parse system_profiler output",
-		}}, nil
-	}
-
-	return gpus, nil
+	return names
 }
 
-func (c *Collector) getMacGPUUsage(now time.Time) float64 {
-	if !c.lastGPUUsageAt.IsZero() && now.Sub(c.lastGPUUsageAt) < macGPUUsageTTL {
-		return c.cachedGPUUsage
-	}
-
-	usage := getMacGPUUsage()
-	c.cachedGPUUsage = usage
-	c.lastGPUUsageAt = now
-	return usage
-}
-
-// getMacGPUUsage reads GPU active residency from powermetrics.
-func getMacGPUUsage() float64 {
-	ctx, cancel := context.WithTimeout(context.Background(), powermetricsTimeout)
-	defer cancel()
-
-	// powermetrics may require root.
-	out, err := runCmd(ctx, "powermetrics", "--samplers", "gpu_power", "-i", "500", "-n", "1")
-	if err != nil {
-		return -1
-	}
-
-	// Parse "GPU HW active residency: X.XX%".
-	matches := gpuActiveResidencyRe.FindStringSubmatch(out)
-	if len(matches) >= 2 {
-		usage, err := strconv.ParseFloat(matches[1], 64)
-		if err == nil {
-			return usage
+// splitQuoted returns the double-quoted fields of an lspci -mm line.
+func splitQuoted(s string) []string {
+	var fields []string
+	for {
+		start := strings.IndexByte(s, '"')
+		if start < 0 {
+			return fields
 		}
-	}
-
-	// Fallback: parse idle residency and derive active.
-	matchesIdle := gpuIdleResidencyRe.FindStringSubmatch(out)
-	if len(matchesIdle) >= 2 {
-		idle, err := strconv.ParseFloat(matchesIdle[1], 64)
-		if err == nil {
-			return 100.0 - idle
+		end := strings.IndexByte(s[start+1:], '"')
+		if end < 0 {
+			return fields
 		}
+		fields = append(fields, s[start+1:start+1+end])
+		s = s[start+1+end+1:]
 	}
-
-	return -1
 }

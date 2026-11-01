@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"runtime"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shirou/gopsutil/v4/disk"
 )
@@ -19,44 +19,21 @@ func TestShouldSkipDiskPartition(t *testing.T) {
 		part disk.PartitionStat
 		want bool
 	}{
-		{
-			name: "keep local apfs root volume",
-			part: disk.PartitionStat{
-				Device:     "/dev/disk3s1s1",
-				Mountpoint: "/",
-				Fstype:     "apfs",
-			},
-			want: false,
-		},
-		{
-			name: "skip macfuse mirror mount",
-			part: disk.PartitionStat{
-				Device:     "kaku-local:/",
-				Mountpoint: "/Users/tw93/Library/Caches/dev.kaku/sshfs/kaku-local",
-				Fstype:     "macfuse",
-			},
-			want: true,
-		},
-		{
-			name: "skip smb share",
-			part: disk.PartitionStat{
-				Device:     "//server/share",
-				Mountpoint: "/Volumes/share",
-				Fstype:     "smbfs",
-			},
-			want: true,
-		},
-		{
-			name: "skip system volume",
-			part: disk.PartitionStat{
-				Device:     "/dev/disk3s5",
-				Mountpoint: "/System/Volumes/Data",
-				Fstype:     "apfs",
-			},
-			want: true,
-		},
+		{"keep ext4 root", disk.PartitionStat{Device: "/dev/vda2", Mountpoint: "/", Fstype: "ext4"}, false},
+		{"keep btrfs home subvolume", disk.PartitionStat{Device: "/dev/nvme0n1p2", Mountpoint: "/home", Fstype: "btrfs"}, false},
+		{"keep removable media", disk.PartitionStat{Device: "/dev/sdb1", Mountpoint: "/run/media/me/USB", Fstype: "exfat"}, false},
+		{"keep ntfs-3g external", disk.PartitionStat{Device: "/dev/sdc1", Mountpoint: "/mnt/data", Fstype: "fuseblk"}, false},
+		{"skip tmpfs", disk.PartitionStat{Device: "tmpfs", Mountpoint: "/tmp", Fstype: "tmpfs"}, true},
+		{"skip proc", disk.PartitionStat{Device: "proc", Mountpoint: "/proc", Fstype: "proc"}, true},
+		{"skip run tmpfs", disk.PartitionStat{Device: "tmpfs", Mountpoint: "/run/user/1000", Fstype: "tmpfs"}, true},
+		{"skip docker overlay", disk.PartitionStat{Device: "overlay", Mountpoint: "/var/lib/docker/overlay2/x/merged", Fstype: "overlay"}, true},
+		{"skip snap squashfs", disk.PartitionStat{Device: "/dev/loop3", Mountpoint: "/snap/core/1", Fstype: "squashfs"}, true},
+		{"skip loop device", disk.PartitionStat{Device: "/dev/loop0", Mountpoint: "/mnt/img", Fstype: "ext4"}, true},
+		{"skip sshfs", disk.PartitionStat{Device: "me@host:/", Mountpoint: "/mnt/remote", Fstype: "fuse.sshfs"}, true},
+		{"skip nfs", disk.PartitionStat{Device: "host:/export", Mountpoint: "/mnt/nfs", Fstype: "nfs4"}, true},
+		{"skip cifs", disk.PartitionStat{Device: "//server/share", Mountpoint: "/mnt/share", Fstype: "cifs"}, true},
+		{"skip devtmpfs", disk.PartitionStat{Device: "devtmpfs", Mountpoint: "/dev", Fstype: "devtmpfs"}, true},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := shouldSkipDiskPartition(tt.part); got != tt.want {
@@ -66,154 +43,159 @@ func TestShouldSkipDiskPartition(t *testing.T) {
 	}
 }
 
-func TestExtractPlistUint(t *testing.T) {
-	t.Run("prefers first matching key", func(t *testing.T) {
-		raw := `<plist><dict>
-<key>TotalSize</key><integer>1099511627776</integer>
-<key>DiskSize</key><integer>2199023255552</integer>
-</dict></plist>`
-
-		got, err := extractPlistUint(raw, "TotalSize", "DiskSize")
-		if err != nil {
-			t.Fatalf("extractPlistUint() error = %v", err)
-		}
-		if got != 1099511627776 {
-			t.Fatalf("extractPlistUint() = %d, want %d", got, uint64(1099511627776))
-		}
-	})
-
-	t.Run("falls back to later keys", func(t *testing.T) {
-		raw := `<plist><dict><key>DiskSize</key><integer>1099511627776</integer></dict></plist>`
-
-		got, err := extractPlistUint(raw, "TotalSize", "DiskSize", "Size")
-		if err != nil {
-			t.Fatalf("extractPlistUint() error = %v", err)
-		}
-		if got != 1099511627776 {
-			t.Fatalf("extractPlistUint() = %d, want %d", got, uint64(1099511627776))
-		}
-	})
-
-	t.Run("returns error for malformed integer", func(t *testing.T) {
-		raw := `<plist><dict><key>TotalSize</key><integer>oops</integer></dict></plist>`
-
-		if _, err := extractPlistUint(raw, "TotalSize"); err == nil {
-			t.Fatalf("extractPlistUint() expected parse error")
-		}
-	})
-}
-
-func TestParseDiskMetadataSMARTStatuses(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{name: "verified", raw: "Verified", want: smartStatusVerified},
-		{name: "failing", raw: "Failing", want: smartStatusFailing},
-		{name: "unsupported", raw: "Not Supported", want: smartStatusUnsupported},
-		{name: "unknown value", raw: "Unavailable", want: smartStatusUnknown},
+func TestParseMountinfo(t *testing.T) {
+	raw := strings.Join([]string{
+		"22 1 253:1 / / rw,relatime shared:1 - ext4 /dev/mapper/vg-root rw,errors=remount-ro",
+		"30 22 0:27 / /proc rw,nosuid,nodev,noexec,relatime shared:12 - proc proc rw",
+		`41 22 8:17 / /mnt/My\040Disk rw,relatime - btrfs /dev/sdb1 rw,subvolid=5`,
+		"garbage line",
+	}, "\n")
+	got := parseMountinfo(raw)
+	if len(got) != 3 {
+		t.Fatalf("parseMountinfo() = %d entries, want 3: %#v", len(got), got)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metadata, err := parseDiskMetadata("Internal: Yes\nSMART Status: " + tt.raw + "\n")
-			if err != nil {
-				t.Fatalf("parseDiskMetadata() error = %v", err)
-			}
-			if metadata.SmartStatus != tt.want {
-				t.Fatalf("parseDiskMetadata() smart status = %q, want %q", metadata.SmartStatus, tt.want)
-			}
-			if metadata.External {
-				t.Fatal("parseDiskMetadata() internal disk marked external")
-			}
-		})
+	if got[0].Device != "/dev/mapper/vg-root" || got[0].Mountpoint != "/" || got[0].Fstype != "ext4" {
+		t.Fatalf("root entry = %#v", got[0])
+	}
+	if got[2].Mountpoint != "/mnt/My Disk" || got[2].Fstype != "btrfs" || got[2].Device != "/dev/sdb1" {
+		t.Fatalf("octal escape / btrfs entry = %#v", got[2])
 	}
 }
 
-func TestParseDiskMetadataUsesDeviceLocationAndUnknownForMissingSMART(t *testing.T) {
-	metadata, err := parseDiskMetadata("Device Location: External\n")
+func TestReadMountinfoMissingFile(t *testing.T) {
+	if _, err := readMountinfo(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("readMountinfo() on a missing file returned nil error")
+	}
+}
+
+func TestCollectDisksDedupesBtrfsSubvolumesBySourceAndFstype(t *testing.T) {
+	origPartitions, origUsage := diskPartitionsFunc, diskUsageFunc
+	t.Cleanup(func() { diskPartitionsFunc, diskUsageFunc = origPartitions, origUsage })
+
+	const total = uint64(100) << 30
+	diskPartitionsFunc = func(bool) ([]disk.PartitionStat, error) {
+		// "/home" is listed before "/" to prove the root mount wins the dedupe.
+		return []disk.PartitionStat{
+			{Device: "/dev/nvme0n1p2", Mountpoint: "/home", Fstype: "btrfs"},
+			{Device: "/dev/nvme0n1p2", Mountpoint: "/", Fstype: "btrfs"},
+			{Device: "/dev/nvme0n1p2", Mountpoint: "/var/log", Fstype: "btrfs"},
+			{Device: "/dev/nvme0n1p1", Mountpoint: "/boot", Fstype: "vfat"},
+			{Device: "tmpfs", Mountpoint: "/tmp", Fstype: "tmpfs"},
+			{Device: "/dev/sdb1", Mountpoint: "/mnt/other", Fstype: "ext4"},
+		}, nil
+	}
+	diskUsageFunc = func(path string) (*disk.UsageStat, error) {
+		size := total
+		if path == "/boot" {
+			size = 512 << 20
+		}
+		return &disk.UsageStat{Path: path, Total: size, Used: size / 2, UsedPercent: 50}, nil
+	}
+
+	got, err := collectDisks()
 	if err != nil {
-		t.Fatalf("parseDiskMetadata() error = %v", err)
+		t.Fatalf("collectDisks() error = %v", err)
 	}
-	if !metadata.External {
-		t.Fatal("parseDiskMetadata() external location was not detected")
+	if len(got) != 2 {
+		t.Fatalf("collectDisks() = %d disks, want 2 (btrfs once, ext4 once): %#v", len(got), got)
 	}
-	if metadata.SmartStatus != smartStatusUnknown {
-		t.Fatalf("parseDiskMetadata() missing SMART = %q, want unknown", metadata.SmartStatus)
+	if got[0].Mount != "/" || got[1].Mount != "/mnt/other" {
+		t.Fatalf("mounts = %q, %q, want / then /mnt/other", got[0].Mount, got[1].Mount)
 	}
 }
 
-func TestAnnotateDiskMetadataCachesDiskutilResult(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("diskutil metadata is macOS-only")
-	}
+func TestCollectDisksKeepsTwoDistinctSameSizeDisks(t *testing.T) {
+	origPartitions, origUsage := diskPartitionsFunc, diskUsageFunc
+	t.Cleanup(func() { diskPartitionsFunc, diskUsageFunc = origPartitions, origUsage })
 
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	origCache := diskMetadataCache
-	origCacheAt := lastDiskCacheAt
+	diskPartitionsFunc = func(bool) ([]disk.PartitionStat, error) {
+		return []disk.PartitionStat{
+			{Device: "/dev/sda1", Mountpoint: "/", Fstype: "ext4"},
+			{Device: "/dev/sdb1", Mountpoint: "/data", Fstype: "ext4"},
+		}, nil
+	}
+	diskUsageFunc = func(path string) (*disk.UsageStat, error) {
+		return &disk.UsageStat{Path: path, Total: 1 << 40, Used: 1 << 39, UsedPercent: 50}, nil
+	}
+	got, err := collectDisks()
+	if err != nil || len(got) != 2 {
+		t.Fatalf("collectDisks() = %#v, %v; want both identical-size disks", got, err)
+	}
+}
+
+func TestCollectDisksDoesNotRunExternalCommands(t *testing.T) {
+	origPartitions, origUsage := diskPartitionsFunc, diskUsageFunc
+	origRunCmd, origCommandExists := runCmd, commandExists
 	t.Cleanup(func() {
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-		diskMetadataCache = origCache
-		lastDiskCacheAt = origCacheAt
+		diskPartitionsFunc, diskUsageFunc = origPartitions, origUsage
+		runCmd, commandExists = origRunCmd, origCommandExists
 	})
-
-	diskMetadataCache = make(map[string]diskMetadata)
-	lastDiskCacheAt = time.Time{}
-	commandExists = func(name string) bool { return name == "diskutil" }
-	calls := 0
-	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-		calls++
-		return "Internal: No\nSMART Status: Verified\n", nil
+	diskPartitionsFunc = func(bool) ([]disk.PartitionStat, error) {
+		return []disk.PartitionStat{{Device: "/dev/vda2", Mountpoint: "/", Fstype: "ext4"}}, nil
 	}
-
-	first := []DiskStatus{{Device: "/dev/disk9s2", Mount: "/Volumes/Fast", SmartStatus: smartStatusUnknown}}
-	second := []DiskStatus{{Device: "/dev/disk9s3", Mount: "/Volumes/Fast", SmartStatus: smartStatusUnknown}}
-	annotateDiskMetadata(first)
-	annotateDiskMetadata(second)
-
-	if calls != 1 {
-		t.Fatalf("diskutil calls = %d, want 1 cache miss", calls)
+	diskUsageFunc = func(path string) (*disk.UsageStat, error) {
+		return &disk.UsageStat{Path: path, Total: 2 << 30, Used: 1 << 30, UsedPercent: 50}, nil
 	}
-	for _, disks := range [][]DiskStatus{first, second} {
-		if !disks[0].External || disks[0].SmartStatus != smartStatusVerified {
-			t.Fatalf("cached disk metadata = %#v", disks[0])
+	commandExists = func(name string) bool {
+		t.Fatalf("collectDisks() checked external command %q", name)
+		return false
+	}
+	runCmd = func(context.Context, string, ...string) (string, error) {
+		t.Fatal("collectDisks() ran an external command")
+		return "", errors.New("unexpected command")
+	}
+	for _, collect := range []func() ([]DiskStatus, error){collectDisks, collectDisksFast} {
+		got, err := collect()
+		if err != nil || len(got) != 1 {
+			t.Fatalf("collect() = %#v, %v", got, err)
+		}
+		if got[0].SmartStatus != smartStatusUnknown || got[0].External {
+			t.Fatalf("collect() = %#v, want internal disk with unknown SMART", got[0])
 		}
 	}
 }
 
-func TestAnnotateDiskMetadataKeepsUnknownWhenDiskutilFails(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("diskutil metadata is macOS-only")
+func TestIsExternalMount(t *testing.T) {
+	for mount, want := range map[string]bool{
+		"/": false, "/home": false, "/run/media/me/USB": true, "/media/me/USB": true, "/mnt/data": false,
+	} {
+		if got := isExternalMount(mount); got != want {
+			t.Fatalf("isExternalMount(%q) = %v, want %v", mount, got, want)
+		}
 	}
+}
 
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	origCache := diskMetadataCache
-	origCacheAt := lastDiskCacheAt
-	t.Cleanup(func() {
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-		diskMetadataCache = origCache
-		lastDiskCacheAt = origCacheAt
-	})
-
-	diskMetadataCache = make(map[string]diskMetadata)
-	lastDiskCacheAt = time.Time{}
-	commandExists = func(name string) bool { return name == "diskutil" }
-	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "", errors.New("diskutil failed")
+func TestIsPhysicalDiskNameCountsWholeDisksOnly(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"sda", "nvme0n1", "dm-0", "loop0", "md0", "vda"} {
+		if err := os.MkdirAll(filepath.Join(root, "sys/block", name), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-
-	disks := []DiskStatus{{Device: "/dev/disk8s1", Mount: "/Volumes/Backup", SmartStatus: smartStatusUnknown}}
-	annotateDiskMetadata(disks)
-	if !disks[0].External {
-		t.Fatal("failed diskutil query should keep the mount-based external fallback")
+	for name, want := range map[string]bool{
+		"sda": true, "nvme0n1": true, "vda": true,
+		"sda1": false, "nvme0n1p1": false, // partitions have no /sys/block entry
+		"dm-0": false, "loop0": false, "md0": false,
+	} {
+		if got := isPhysicalDiskName(name, root); got != want {
+			t.Fatalf("isPhysicalDiskName(%q) = %v, want %v", name, got, want)
+		}
 	}
-	if disks[0].SmartStatus != smartStatusUnknown {
-		t.Fatalf("failed diskutil query smart status = %q, want unknown", disks[0].SmartStatus)
+}
+
+func TestTrashSizeCountsXDGTrashFiles(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	files := filepath.Join(data, "Trash", "files")
+	if err := os.MkdirAll(files, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(files, "a.bin"), make([]byte, 1500), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	size, approx := scanTrashSize()
+	if size != 1500 || approx {
+		t.Fatalf("scanTrashSize() = %d, %v; want 1500, false", size, approx)
 	}
 }
 
@@ -246,338 +228,11 @@ func TestDiskStatusJSONAndNDJSONAlwaysIncludeSMARTStatus(t *testing.T) {
 	}
 }
 
-func TestCollectDisksFastSkipsSlowCorrections(t *testing.T) {
-	origPartitions := diskPartitionsFunc
-	origUsage := diskUsageFunc
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	t.Cleanup(func() {
-		diskPartitionsFunc = origPartitions
-		diskUsageFunc = origUsage
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-	})
-
-	const rawTotal = uint64(2 * 1024 * 1024 * 1024)
-	const rawUsed = uint64(1024 * 1024 * 1024)
-	diskPartitionsFunc = func(all bool) ([]disk.PartitionStat, error) {
-		if all {
-			t.Fatalf("collectDisksFast() should request physical partitions only")
-		}
-		return []disk.PartitionStat{
-			{Device: "/dev/disk3s1s1", Mountpoint: "/", Fstype: "apfs"},
-		}, nil
-	}
-	diskUsageFunc = func(path string) (*disk.UsageStat, error) {
-		if path != "/" {
-			t.Fatalf("unexpected disk usage path %q", path)
-		}
-		return &disk.UsageStat{
-			Path:        path,
-			Fstype:      "apfs",
-			Total:       rawTotal,
-			Used:        rawUsed,
-			UsedPercent: 50,
-		}, nil
-	}
-	commandExists = func(name string) bool {
-		t.Fatalf("collectDisksFast() should not check external command %q", name)
-		return false
-	}
-	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-		t.Fatalf("collectDisksFast() should not run external command %q", name)
-		return "", errors.New("unexpected command")
-	}
-
-	got, err := collectDisksFast()
-	if err != nil {
-		t.Fatalf("collectDisksFast() error = %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("collectDisksFast() returned %d disks, want 1: %#v", len(got), got)
-	}
-	if got[0].Total != rawTotal || got[0].Used != rawUsed || got[0].UsedPercent != 50 {
-		t.Fatalf("collectDisksFast() should keep raw usage, got %#v", got[0])
-	}
-	if got[0].SmartStatus != smartStatusUnknown {
-		t.Fatalf("collectDisksFast() smart status = %q, want unknown", got[0].SmartStatus)
-	}
-}
-
-func TestCorrectDiskTotalBytes(t *testing.T) {
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	t.Cleanup(func() {
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-	})
-
-	commandExists = func(name string) bool {
-		return name == "diskutil"
-	}
-
-	t.Run("uses diskutil total when meaningfully different", func(t *testing.T) {
-		runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-			if name != "diskutil" {
-				return "", errors.New("unexpected command")
-			}
-			return `<plist><dict><key>TotalSize</key><integer>1099511627776</integer></dict></plist>`, nil
-		}
-
-		got := correctDiskTotalBytes("/Volumes/Backup", 2199023255552)
-		if got != 1099511627776 {
-			t.Fatalf("correctDiskTotalBytes() = %d, want %d", got, uint64(1099511627776))
-		}
-	})
-
-	t.Run("keeps raw total for small differences", func(t *testing.T) {
-		runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-			return `<plist><dict><key>TotalSize</key><integer>1000500000000</integer></dict></plist>`, nil
-		}
-
-		const rawTotal = 1000000000000
-		got := correctDiskTotalBytes("/Volumes/FastSSD", rawTotal)
-		if got != rawTotal {
-			t.Fatalf("correctDiskTotalBytes() = %d, want %d", got, uint64(rawTotal))
-		}
-	})
-
-	t.Run("keeps raw total when diskutil fails", func(t *testing.T) {
-		runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-			return "", errors.New("diskutil failed")
-		}
-
-		const rawTotal = 1099511627776
-		got := correctDiskTotalBytes("/Volumes/FastSSD", rawTotal)
-		if got != rawTotal {
-			t.Fatalf("correctDiskTotalBytes() = %d, want %d", got, uint64(rawTotal))
-		}
-	})
-}
-
-func TestCollectDisksReadsDiskutilPlistOncePerVolume(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("diskutil corrections are macOS-only")
-	}
-	origPartitions := diskPartitionsFunc
-	origUsage := diskUsageFunc
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	t.Cleanup(func() {
-		diskPartitionsFunc = origPartitions
-		diskUsageFunc = origUsage
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-	})
-
-	const plistTotal = uint64(1) << 40               // 1 TiB
-	const containerFree = uint64(600) << 30          // 600 GiB
-	const rawTotal = uint64(2) << 40                 // 2 TiB, doubled statfs
-	const rawFree = uint64(700) << 30                // 700 GiB
-	const rawUsed = rawTotal - rawFree               // ~1.3 TiB
-	const correctedUsed = plistTotal - containerFree // 424 GiB
-	const mountpoint = "/Volumes/Correction"
-
-	diskPartitionsFunc = func(bool) ([]disk.PartitionStat, error) {
-		return []disk.PartitionStat{
-			{Device: "/dev/disk9s1", Mountpoint: mountpoint, Fstype: "apfs"},
-		}, nil
-	}
-	diskUsageFunc = func(path string) (*disk.UsageStat, error) {
-		if path != mountpoint {
-			t.Fatalf("unexpected disk usage path %q", path)
-		}
-		return &disk.UsageStat{Path: path, Fstype: "apfs", Total: rawTotal, Used: rawUsed, Free: rawFree}, nil
-	}
-	commandExists = func(name string) bool { return name == "diskutil" }
-	plistCalls := 0
-	runCmd = func(_ context.Context, name string, args ...string) (string, error) {
-		if name != "diskutil" {
-			t.Fatalf("unexpected command %q", name)
-		}
-		for _, arg := range args {
-			if arg == "-plist" {
-				plistCalls++
-			}
-		}
-		return `<plist><dict>
-<key>TotalSize</key><integer>1099511627776</integer>
-<key>APFSContainerFree</key><integer>644245094400</integer>
-</dict></plist>`, nil
-	}
-
-	got, err := collectDisks()
-	if err != nil {
-		t.Fatalf("collectDisks() error = %v", err)
-	}
-	if plistCalls != 1 {
-		t.Fatalf("collectDisks() ran %d `diskutil info -plist` probes for one volume, want 1", plistCalls)
-	}
-	if len(got) != 1 {
-		t.Fatalf("collectDisks() returned %d disks, want 1: %#v", len(got), got)
-	}
-	if got[0].Total != plistTotal {
-		t.Fatalf("Total = %d, want corrected %d", got[0].Total, plistTotal)
-	}
-	if got[0].Used != correctedUsed || got[0].Purgeable != 0 {
-		t.Fatalf("Used/Purgeable = %d/%d, want %d/0", got[0].Used, got[0].Purgeable, correctedUsed)
-	}
-}
-
 func TestCounterDeltaClampsCounterReset(t *testing.T) {
 	if got := counterDelta(150, 100); got != 50 {
 		t.Fatalf("counterDelta increasing = %d, want 50", got)
 	}
 	if got := counterDelta(10, 100); got != 0 {
 		t.Fatalf("counterDelta reset = %d, want 0", got)
-	}
-}
-
-func TestCorrectAPFSDiskUsageReportsFinderPurgeable(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("APFS Finder corrections are macOS-only")
-	}
-	// scripts/test.sh exports MOLE_TEST_NO_AUTH=1, which skips the Finder tier.
-	t.Setenv("MOLE_TEST_MODE", "")
-	t.Setenv("MOLE_TEST_NO_AUTH", "")
-
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	origCachedAt := finderDiskCachedAt
-	origFree := finderDiskFree
-	origTotal := finderDiskTotal
-	t.Cleanup(func() {
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-		finderDiskCachedAt = origCachedAt
-		finderDiskFree = origFree
-		finderDiskTotal = origTotal
-	})
-	finderDiskCachedAt = time.Time{}
-
-	commandExists = func(name string) bool { return name == "osascript" }
-	// Finder: 663.7 GB free of 1.8897 TB, i.e. statfs free (522.7 GB) plus
-	// 141 GB purgeable, matching the #1357 scenario.
-	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "663700000000, 1889700000000", nil
-	}
-
-	total := uint64(1889700000000)
-	rawFree := uint64(522700000000)
-	rawUsed := total - rawFree
-	used, usedPercent, purgeable := correctAPFSDiskUsage("/", total, rawUsed, rawFree)
-
-	if want := total - uint64(663700000000); used != want {
-		t.Fatalf("used = %d, want %d", used, want)
-	}
-	if usedPercent < 64.87 || usedPercent > 64.89 {
-		t.Fatalf("usedPercent = %f, want ~64.88", usedPercent)
-	}
-	if purgeable != uint64(141000000000) {
-		t.Fatalf("purgeable = %d, want %d", purgeable, uint64(141000000000))
-	}
-}
-
-func TestCorrectAPFSDiskUsageClampsPurgeableToZero(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("APFS Finder corrections are macOS-only")
-	}
-	// scripts/test.sh exports MOLE_TEST_NO_AUTH=1, which skips the Finder tier.
-	t.Setenv("MOLE_TEST_MODE", "")
-	t.Setenv("MOLE_TEST_NO_AUTH", "")
-
-	origRunCmd := runCmd
-	origCommandExists := commandExists
-	origCachedAt := finderDiskCachedAt
-	origFree := finderDiskFree
-	origTotal := finderDiskTotal
-	t.Cleanup(func() {
-		runCmd = origRunCmd
-		commandExists = origCommandExists
-		finderDiskCachedAt = origCachedAt
-		finderDiskFree = origFree
-		finderDiskTotal = origTotal
-	})
-	finderDiskCachedAt = time.Time{}
-
-	commandExists = func(name string) bool { return name == "osascript" }
-	// Finder free below the statfs free means there is no purgeable space.
-	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "500000000000, 1889700000000", nil
-	}
-
-	total := uint64(1889700000000)
-	rawFree := uint64(522700000000)
-	rawUsed := total - rawFree
-	_, _, purgeable := correctAPFSDiskUsage("/", total, rawUsed, rawFree)
-	if purgeable != 0 {
-		t.Fatalf("purgeable = %d, want 0", purgeable)
-	}
-}
-
-func TestCorrectAPFSDiskUsageSkipsFinderUnderTestMode(t *testing.T) {
-	for _, env := range []string{"MOLE_TEST_MODE", "MOLE_TEST_NO_AUTH"} {
-		t.Run(env, func(t *testing.T) {
-			t.Setenv("MOLE_TEST_MODE", "")
-			t.Setenv("MOLE_TEST_NO_AUTH", "")
-			t.Setenv(env, "1")
-
-			origRunCmd := runCmd
-			origCommandExists := commandExists
-			origCachedAt := finderDiskCachedAt
-			origFree := finderDiskFree
-			origTotal := finderDiskTotal
-			t.Cleanup(func() {
-				runCmd = origRunCmd
-				commandExists = origCommandExists
-				finderDiskCachedAt = origCachedAt
-				finderDiskFree = origFree
-				finderDiskTotal = origTotal
-			})
-			finderDiskCachedAt = time.Time{}
-
-			commandExists = func(name string) bool { return name == "osascript" || name == "diskutil" }
-			var ran []string
-			runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-				ran = append(ran, name)
-				switch name {
-				case "osascript":
-					return "663700000000, 1889700000000", nil
-				case "diskutil":
-					return "<dict><key>APFSContainerFree</key><integer>600000000000</integer></dict>", nil
-				}
-				return "", errors.New("unexpected command")
-			}
-
-			total := uint64(1889700000000)
-			rawFree := uint64(522700000000)
-			rawUsed := total - rawFree
-			used, _, purgeable := correctAPFSDiskUsage("/", total, rawUsed, rawFree)
-
-			for _, name := range ran {
-				if name == "osascript" {
-					t.Fatalf("%s=1 must not send Apple events to Finder, ran %v", env, ran)
-				}
-			}
-			// Positive trace: the diskutil tier answered instead.
-			if want := total - uint64(600000000000); used != want || purgeable != 0 {
-				t.Fatalf("used = %d purgeable = %d, want diskutil fallback %d and 0 (ran %v)", used, purgeable, want, ran)
-			}
-		})
-	}
-}
-
-func TestFinderPurgeableBytesIgnoresCorrectedTotal(t *testing.T) {
-	// The regression this pins: purgeable was once derived from the
-	// diskutil-corrected total minus statfs used, so the correction itself
-	// showed up as purgeable space. The statfs free figure is the only
-	// valid baseline.
-	rawFree := uint64(500 << 30)
-	finderFree := uint64(520 << 30)
-	if got, want := finderPurgeableBytes(rawFree, finderFree), uint64(20<<30); got != want {
-		t.Fatalf("purgeable = %d, want %d", got, want)
-	}
-	if got := finderPurgeableBytes(finderFree, rawFree); got != 0 {
-		t.Fatalf("purgeable when finder below statfs = %d, want 0", got)
 	}
 }

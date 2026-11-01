@@ -272,87 +272,6 @@ func TestDiskLabel(t *testing.T) {
 	}
 }
 
-func TestParseInt(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  int
-	}{
-		// Basic integers.
-		{"simple number", "123", 123},
-		{"zero", "0", 0},
-		{"single digit", "5", 5},
-
-		// With whitespace.
-		{"leading space", "  42", 42},
-		{"trailing space", "42  ", 42},
-		{"both spaces", "  42  ", 42},
-
-		// With non-numeric padding.
-		{"leading @", "@60", 60},
-		{"trailing Hz", "120Hz", 120},
-		{"both padding", "@60Hz", 60},
-
-		// Decimals (truncated to int).
-		{"decimal", "60.00", 60},
-		{"decimal with suffix", "119.88hz", 119},
-
-		// Edge cases.
-		{"empty string", "", 0},
-		{"only spaces", "   ", 0},
-		{"no digits", "abc", 0},
-		{"negative strips sign", "-5", 5}, // Strips non-numeric prefix.
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseInt(tt.input)
-			if got != tt.want {
-				t.Errorf("parseInt(%q) = %d, want %d", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseRefreshRate(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		// Standard formats.
-		{"60Hz format", "Resolution: 1920x1080 @ 60Hz", "60Hz"},
-		{"120Hz format", "Resolution: 2560x1600 @ 120Hz", "120Hz"},
-		{"separated Hz", "Refresh Rate: 60 Hz", "60Hz"},
-
-		// Decimal refresh rates.
-		{"decimal Hz", "Resolution: 3840x2160 @ 59.94Hz", "59Hz"},
-		{"ProMotion", "Resolution: 3456x2234 @ 120.00Hz", "120Hz"},
-
-		// Multiple lines: picks highest valid.
-		{"multiple rates", "Display 1: 60Hz\nDisplay 2: 120Hz", "120Hz"},
-
-		// Edge cases.
-		{"empty string", "", ""},
-		{"no Hz found", "Resolution: 1920x1080", ""},
-		{"invalid Hz value", "Rate: abcHz", ""},
-		{"Hz too high filtered", "Rate: 600Hz", ""},
-
-		// Case insensitivity.
-		{"lowercase hz", "60hz", "60Hz"},
-		{"uppercase HZ", "60HZ", "60Hz"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseRefreshRate(tt.input)
-			if got != tt.want {
-				t.Errorf("parseRefreshRate(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestIsNoiseInterface(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -361,24 +280,19 @@ func TestIsNoiseInterface(t *testing.T) {
 	}{
 		// Noise interfaces (should return true).
 		{"loopback", "lo0", true},
-		{"awdl", "awdl0", true},
-		{"utun", "utun0", true},
-		{"llw", "llw0", true},
-		{"bridge", "bridge0", true},
-		{"gif", "gif0", true},
-		{"stf", "stf0", true},
-		{"xhc", "xhc0", true},
-		{"anpi", "anpi0", true},
-		{"ap", "ap1", true},
+		{"docker bridge", "docker0", true},
+		{"container veth", "veth3a1b2c", true},
+		{"user bridge", "br-1f2e3d4c5b6a", true},
+		{"libvirt bridge", "virbr0", true},
 
 		// Real interfaces (should return false).
-		{"ethernet", "en0", false},
-		{"wifi", "en1", false},
-		{"thunderbolt", "en5", false},
+		{"ethernet", "enp3s0", false},
+		{"legacy ethernet", "eth0", false},
+		{"wifi", "wlan0", false},
 
 		// Case insensitivity.
 		{"uppercase LO", "LO0", true},
-		{"mixed case Awdl", "Awdl0", true},
+		{"mixed case Docker", "Docker0", true},
 
 		// Edge cases.
 		{"empty string", "", false},
@@ -389,105 +303,6 @@ func TestIsNoiseInterface(t *testing.T) {
 			got := isNoiseInterface(tt.input)
 			if got != tt.want {
 				t.Errorf("isNoiseInterface(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParsePMSet(t *testing.T) {
-	tests := []struct {
-		name     string
-		raw      string
-		health   string
-		cycles   int
-		capacity int
-		wantLen  int
-		wantPct  float64
-		wantStat string
-		wantTime string
-	}{
-		{
-			name: "charging with time",
-			raw: `Now drawing from 'AC Power'
- -InternalBattery-0 (id=1234)	85%; charging; 0:45 remaining present: true`,
-			health:   "Good",
-			cycles:   150,
-			capacity: 92,
-			wantLen:  1,
-			wantPct:  85,
-			wantStat: "charging",
-			wantTime: "0:45",
-		},
-		{
-			name: "discharging",
-			raw: `Now drawing from 'Battery Power'
- -InternalBattery-0 (id=1234)	45%; discharging; 2:30 remaining present: true`,
-			health:   "Normal",
-			cycles:   200,
-			capacity: 88,
-			wantLen:  1,
-			wantPct:  45,
-			wantStat: "discharging",
-			wantTime: "2:30",
-		},
-		{
-			name: "fully charged",
-			raw: `Now drawing from 'AC Power'
- -InternalBattery-0 (id=1234)	100%; charged; present: true`,
-			health:   "Good",
-			cycles:   50,
-			capacity: 100,
-			wantLen:  1,
-			wantPct:  100,
-			wantStat: "charged",
-			wantTime: "",
-		},
-		{
-			name:     "empty output",
-			raw:      "",
-			health:   "",
-			cycles:   0,
-			capacity: 0,
-			wantLen:  0,
-		},
-		{
-			name:     "no battery line",
-			raw:      "Now drawing from 'AC Power'\nNo batteries found.",
-			health:   "",
-			cycles:   0,
-			capacity: 0,
-			wantLen:  0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parsePMSet(tt.raw, tt.health, tt.cycles, tt.capacity)
-			if len(got) != tt.wantLen {
-				t.Errorf("parsePMSet() returned %d batteries, want %d", len(got), tt.wantLen)
-				return
-			}
-			if tt.wantLen == 0 {
-				return
-			}
-			b := got[0]
-			if b.Percent != tt.wantPct {
-				t.Errorf("Percent = %v, want %v", b.Percent, tt.wantPct)
-			}
-			if b.Status != tt.wantStat {
-				t.Errorf("Status = %q, want %q", b.Status, tt.wantStat)
-			}
-			if b.TimeLeft != tt.wantTime {
-				t.Errorf("TimeLeft = %q, want %q", b.TimeLeft, tt.wantTime)
-			}
-			if b.Health != tt.health {
-				t.Errorf("Health = %q, want %q", b.Health, tt.health)
-			}
-			if b.CycleCount != tt.cycles {
-				t.Errorf("CycleCount = %d, want %d", b.CycleCount, tt.cycles)
-			}
-			if b.Capacity != tt.capacity {
-				t.Errorf("Capacity = %d, want %d", b.Capacity, tt.capacity)
 			}
 		})
 	}
@@ -737,22 +552,6 @@ func TestFormatDiskLine(t *testing.T) {
 			wantFree:     "0 free",
 			wantNoSubstr: "%",
 		},
-		{
-			name:         "purgeable space is excluded from immediate free space",
-			label:        "INTR",
-			disk:         DiskStatus{UsedPercent: 64.9, Used: 1226 << 30, Total: 1860 << 30, Purgeable: 141 << 30},
-			wantUsed:     "1T used",
-			wantFree:     "493G free",
-			wantNoSubstr: "%",
-		},
-		{
-			name:         "purgeable exceeds available space clamps free to zero",
-			label:        "INTR",
-			disk:         DiskStatus{UsedPercent: 90, Used: 90 << 30, Total: 100 << 30, Purgeable: 20 << 30},
-			wantUsed:     "90G used",
-			wantFree:     "0 free",
-			wantNoSubstr: "%",
-		},
 	}
 
 	for _, tt := range tests {
@@ -797,21 +596,6 @@ func TestRenderDiskCardAddsMetaLineForSingleDisk(t *testing.T) {
 	meta := stripANSI(card.lines[1])
 	if meta != "Total  926G · APFS" {
 		t.Fatalf("renderDiskCard() single disk meta line = %q, want %q", meta, "Total  926G · APFS")
-	}
-}
-
-func TestRenderDiskCardMetaLineShowsPurgeable(t *testing.T) {
-	card := renderDiskCard([]DiskStatus{{
-		UsedPercent: 64.9,
-		Used:        1226 << 30,
-		Total:       926 << 30,
-		Fstype:      "apfs",
-		Purgeable:   141 << 30,
-	}}, DiskIOStatus{}, 0, false)
-
-	meta := stripANSI(card.lines[1])
-	if meta != "Total  926G · APFS · 141G purgeable" {
-		t.Fatalf("renderDiskCard() meta line = %q, want %q", meta, "Total  926G · APFS · 141G purgeable")
 	}
 }
 
@@ -1215,7 +999,7 @@ func TestBuildCardsMarksStaleProcessSampleAtNarrowAndWideWidths(t *testing.T) {
 
 	for _, width := range []int{5, 19, 20, 56} {
 		cards := buildCards(snapshot, width, 0, true)
-		processCard := cards[4]
+		processCard := findCard(t, cards, "Processes")
 		rendered := stripANSI(renderCard(processCard, width))
 		if !strings.Contains(rendered, "STALE") {
 			t.Fatalf("process card width %d missing stale marker: %q", width, rendered)
@@ -1235,7 +1019,7 @@ func TestBuildCardsMarksUnknownProcessFreshness(t *testing.T) {
 	}
 
 	cards := buildCards(snapshot, 56, 0, true)
-	rendered := stripANSI(renderCard(cards[4], 56))
+	rendered := stripANSI(renderCard(findCard(t, cards, "Processes"), 56))
 	if !strings.Contains(rendered, "UNKNOWN") || !strings.Contains(rendered, "Xcode") {
 		t.Fatalf("unknown-freshness process card should label retained evidence: %q", rendered)
 	}
@@ -1259,7 +1043,7 @@ func TestBuildCardsDistinguishesEmptyProcessSampleStates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cards := buildCards(tt.snapshot, 38, 0, true)
-			rendered := stripANSI(renderCard(cards[4], 38))
+			rendered := stripANSI(renderCard(findCard(t, cards, "Processes"), 38))
 			if !strings.Contains(rendered, tt.want) {
 				t.Fatalf("process state should render %q, got %q", tt.want, rendered)
 			}
@@ -1383,12 +1167,11 @@ func TestRenderHeaderWrapsOnNarrowWidth(t *testing.T) {
 	m := MetricsSnapshot{
 		HealthScore: 91,
 		Hardware: HardwareInfo{
-			Model:       "MacBook Pro",
-			CPUModel:    "Apple M3 Max",
-			TotalRAM:    "128GB",
-			DiskSize:    "4TB",
-			RefreshRate: "120Hz",
-			OSVersion:   "macOS 15.0",
+			Model:     "MacBook Pro",
+			CPUModel:  "Apple M3 Max",
+			TotalRAM:  "128GB",
+			DiskSize:  "4TB",
+			OSVersion: "macOS 15.0",
 		},
 		Uptime: "10d 3h",
 	}
@@ -1405,12 +1188,11 @@ func TestRenderHeaderHidesOSAndUptimeOnNarrowWidth(t *testing.T) {
 	m := MetricsSnapshot{
 		HealthScore: 91,
 		Hardware: HardwareInfo{
-			Model:       "MacBook Pro",
-			CPUModel:    "Apple M3 Max",
-			TotalRAM:    "128GB",
-			DiskSize:    "4TB",
-			RefreshRate: "120Hz",
-			OSVersion:   "macOS 15.0",
+			Model:     "MacBook Pro",
+			CPUModel:  "Apple M3 Max",
+			TotalRAM:  "128GB",
+			DiskSize:  "4TB",
+			OSVersion: "macOS 15.0",
 		},
 		Uptime: "10d 3h",
 	}
@@ -1429,11 +1211,10 @@ func TestRenderHeaderKeepsLabeledSpecsOnCompactWidth(t *testing.T) {
 	m := MetricsSnapshot{
 		HealthScore: 91,
 		Hardware: HardwareInfo{
-			Model:       "MacBook Pro",
-			CPUModel:    "Apple M4 Pro",
-			TotalRAM:    "48G",
-			DiskSize:    "926GB",
-			RefreshRate: "120Hz",
+			Model:    "MacBook Pro",
+			CPUModel: "Apple M4 Pro",
+			TotalRAM: "48G",
+			DiskSize: "926GB",
 		},
 		GPU: []GPUStatus{{CoreCount: 20}},
 	}
@@ -1457,12 +1238,11 @@ func TestRenderHeaderDropsLowPriorityInfoToStaySingleLine(t *testing.T) {
 	m := MetricsSnapshot{
 		HealthScore: 90,
 		Hardware: HardwareInfo{
-			Model:       "MacBook Pro",
-			CPUModel:    "Apple M2 Pro",
-			TotalRAM:    "32.0 GB",
-			DiskSize:    "460.4 GB",
-			RefreshRate: "60Hz",
-			OSVersion:   "macOS 26.3",
+			Model:     "MacBook Pro",
+			CPUModel:  "Apple M2 Pro",
+			TotalRAM:  "32.0 GB",
+			DiskSize:  "460.4 GB",
+			OSVersion: "macOS 26.3",
 		},
 		GPU:    []GPUStatus{{CoreCount: 19}},
 		Uptime: "9d 13h",

@@ -2,13 +2,15 @@ package main
 
 import (
 	"container/heap"
-	"context"
+	"errors"
 	"fmt"
-	"runtime"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,119 +23,166 @@ var collectProcessesFunc = collectProcesses
 
 const zombieParentLimit = 3
 
+// collectProcesses reads the process table straight from /proc, so it works
+// without procps and spawns nothing. CPU is a rate over the interval since the
+// previous sample; the first sample of a pid falls back to its lifetime average,
+// which is what ps shows.
 func collectProcesses() (processSample, error) {
-	if runtime.GOOS != "darwin" {
-		return processSample{}, nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	return defaultProcSampler.sample("/", time.Now())
+}
 
-	out, err := runCmd(ctx, "ps", "-Aceo", "pid=,ppid=,state=,pcpu=,pmem=,rss=,comm=", "-r")
-	if err == nil {
-		if procs, parseErr := parseProcessOutputStrict(out); parseErr == nil {
-			return processSample{processes: procs, parentsAvailable: true}, nil
+// procClockTicks is USER_HZ. The kernel exports /proc times in it and it is
+// 100 on every Linux architecture Mole builds for; reading it through sysconf
+// would need cgo.
+const procClockTicks = 100.0
+
+type procCPUPoint struct {
+	ticks     uint64
+	startTime uint64 // field 22 of stat; changes when the pid is reused
+}
+
+type procSampler struct {
+	mu     sync.Mutex
+	prev   map[int]procCPUPoint
+	prevAt time.Time
+}
+
+var defaultProcSampler = &procSampler{}
+
+// procStat is the subset of /proc/<pid>/stat the status card needs.
+type procStat struct {
+	pid       int
+	comm      string
+	state     string
+	ppid      int
+	ticks     uint64 // utime + stime
+	startTime uint64
+	rssPages  uint64
+}
+
+// parseProcStat parses one /proc/<pid>/stat line. comm sits in parentheses and
+// may itself contain spaces and parentheses, so split on the last ")".
+func parseProcStat(raw string) (procStat, bool) {
+	open := strings.IndexByte(raw, '(')
+	closeIdx := strings.LastIndexByte(raw, ')')
+	if open < 0 || closeIdx < open {
+		return procStat{}, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(raw[:open]))
+	if err != nil || pid <= 0 {
+		return procStat{}, false
+	}
+	rest := strings.Fields(raw[closeIdx+1:])
+	// rest[0] is field 3 (state), so field N is rest[N-3].
+	if len(rest) < 22 {
+		return procStat{}, false
+	}
+	ppid, err1 := strconv.Atoi(rest[1])
+	utime, err2 := strconv.ParseUint(rest[11], 10, 64)
+	stime, err3 := strconv.ParseUint(rest[12], 10, 64)
+	start, err4 := strconv.ParseUint(rest[19], 10, 64)
+	rss, err5 := strconv.ParseInt(rest[21], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || ppid < 0 {
+		return procStat{}, false
+	}
+	if rss < 0 {
+		rss = 0
+	}
+	return procStat{
+		pid:       pid,
+		comm:      raw[open+1 : closeIdx],
+		state:     rest[0],
+		ppid:      ppid,
+		ticks:     utime + stime,
+		startTime: start,
+		rssPages:  uint64(rss),
+	}, true
+}
+
+func readProcUptime(root string) float64 {
+	fields := strings.Fields(readTrimmed(filepath.Join(root, "proc/uptime")))
+	if len(fields) == 0 {
+		return 0
+	}
+	v, _ := strconv.ParseFloat(fields[0], 64)
+	return v
+}
+
+func readMemTotalBytes(root string) uint64 {
+	data, err := os.ReadFile(filepath.Join(root, "proc/meminfo"))
+	if err != nil {
+		return 0
+	}
+	for line := range strings.Lines(string(data)) {
+		rest, ok := strings.CutPrefix(line, "MemTotal:")
+		if !ok {
+			continue
 		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			return 0
+		}
+		kb, _ := strconv.ParseUint(fields[0], 10, 64)
+		return kb * 1024
 	}
+	return 0
+}
 
-	out, err = runCmd(ctx, "ps", "aux")
+func (s *procSampler) sample(root string, now time.Time) (processSample, error) {
+	dirs, err := filepath.Glob(filepath.Join(root, "proc/[0-9]*"))
 	if err != nil {
 		return processSample{}, err
 	}
-	procs, err := parsePsAuxOutputStrict(out)
-	if err != nil {
-		return processSample{}, err
-	}
-	return processSample{processes: procs}, nil
-}
+	uptime := readProcUptime(root)
+	memTotal := readMemTotalBytes(root)
+	pageSize := uint64(os.Getpagesize())
 
-func parseProcessOutputStrict(raw string) ([]ProcessInfo, error) {
-	rows := strings.Split(strings.TrimSpace(raw), "\n")
-	if len(rows) == 0 || (len(rows) == 1 && rows[0] == "") {
-		return nil, fmt.Errorf("empty ps process table")
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	elapsed := now.Sub(s.prevAt).Seconds()
+	usePrev := !s.prevAt.IsZero() && elapsed >= 0.2
 
-	procs := make([]ProcessInfo, 0, len(rows))
-	for _, row := range rows {
-		fields := strings.Fields(row)
-		if len(fields) < 7 || !isProcessStateToken(fields[2]) {
-			return nil, fmt.Errorf("unexpected ps process row")
+	procs := make([]ProcessInfo, 0, len(dirs))
+	next := make(map[int]procCPUPoint, len(dirs))
+	for _, dir := range dirs {
+		raw, err := os.ReadFile(filepath.Join(dir, "stat"))
+		if err != nil {
+			continue // exited between the glob and the read
 		}
-		pid, pidErr := strconv.Atoi(fields[0])
-		ppid, ppidErr := strconv.Atoi(fields[1])
-		cpuVal, cpuErr := strconv.ParseFloat(fields[3], 64)
-		memVal, memErr := strconv.ParseFloat(fields[4], 64)
-		rssKB, rssErr := strconv.ParseUint(fields[5], 10, 64)
-		command := strings.Join(fields[6:], " ")
-		if pidErr != nil || ppidErr != nil || cpuErr != nil || memErr != nil || rssErr != nil ||
-			pid <= 0 || ppid < 0 || command == "" {
-			return nil, fmt.Errorf("unexpected ps process row")
+		st, ok := parseProcStat(string(raw))
+		if !ok {
+			continue
 		}
-		procs = append(procs, ProcessInfo{
-			PID:         pid,
-			PPID:        ppid,
-			State:       fields[2],
-			Name:        processNameFromComm(command),
-			Command:     command,
-			CPU:         cpuVal,
-			Memory:      memVal,
-			MemoryBytes: rssKB * 1024,
-		})
-	}
-	return procs, nil
-}
+		next[st.pid] = procCPUPoint{ticks: st.ticks, startTime: st.startTime}
 
-func parsePsAuxOutputStrict(raw string) ([]ProcessInfo, error) {
-	rows := strings.Split(strings.TrimSpace(raw), "\n")
-	expectedHeader := []string{"USER", "PID", "%CPU", "%MEM", "VSZ", "RSS", "TT", "STAT", "STARTED", "TIME", "COMMAND"}
-	if len(rows) < 2 || !slices.Equal(strings.Fields(rows[0]), expectedHeader) {
-		return nil, fmt.Errorf("unexpected ps aux header")
-	}
-
-	procs := make([]ProcessInfo, 0, len(rows)-1)
-	for _, row := range rows[1:] {
-		fields := strings.Fields(row)
-		if len(fields) < 11 || !isProcessStateToken(fields[7]) {
-			return nil, fmt.Errorf("unexpected ps aux process row")
+		cpuPct := 0.0
+		if prev, seen := s.prev[st.pid]; usePrev && seen && prev.startTime == st.startTime && st.ticks >= prev.ticks {
+			cpuPct = float64(st.ticks-prev.ticks) / procClockTicks / elapsed * 100
+		} else if life := uptime - float64(st.startTime)/procClockTicks; life > 0 {
+			cpuPct = float64(st.ticks) / procClockTicks / life * 100
 		}
-		pid, pidErr := strconv.Atoi(fields[1])
-		cpuVal, cpuErr := strconv.ParseFloat(fields[2], 64)
-		memVal, memErr := strconv.ParseFloat(fields[3], 64)
-		_, vszErr := strconv.ParseUint(fields[4], 10, 64)
-		rssKB, rssErr := strconv.ParseUint(fields[5], 10, 64)
-		command := strings.Join(fields[10:], " ")
-		if pidErr != nil || cpuErr != nil || memErr != nil || vszErr != nil || rssErr != nil || pid <= 0 || command == "" {
-			return nil, fmt.Errorf("unexpected ps aux process row")
+
+		rssBytes := st.rssPages * pageSize
+		memPct := 0.0
+		if memTotal > 0 {
+			memPct = float64(rssBytes) / float64(memTotal) * 100
 		}
 		procs = append(procs, ProcessInfo{
-			PID:         pid,
-			PPID:        0,
-			State:       fields[7],
-			Name:        processNameFromCommand(command),
-			Command:     command,
-			CPU:         cpuVal,
-			Memory:      memVal,
-			MemoryBytes: rssKB * 1024,
+			PID:         st.pid,
+			PPID:        st.ppid,
+			State:       st.state,
+			Name:        st.comm,
+			Command:     st.comm,
+			CPU:         cpuPct,
+			Memory:      memPct,
+			MemoryBytes: rssBytes,
 		})
 	}
-	return procs, nil
-}
-
-func isProcessStateToken(state string) bool {
-	if state == "" {
-		return false
+	if len(procs) == 0 {
+		return processSample{}, errors.New("no processes readable under /proc")
 	}
-	// Darwin can report "?" while a process state is temporarily unknown.
-	// Keep the row so one transient state does not invalidate the whole sample;
-	// isZombieState still treats only Z-prefixed states as zombies.
-	if !strings.ContainsRune("?DIRSTUWZ", rune(state[0])) {
-		return false
-	}
-	for _, modifier := range state[1:] {
-		if !strings.ContainsRune("+<>AELNSsVWX", modifier) {
-			return false
-		}
-	}
-	return true
+	s.prev, s.prevAt = next, now
+	return processSample{processes: procs, parentsAvailable: true}, nil
 }
 
 func isZombieState(state string) bool {
@@ -197,25 +246,6 @@ func summarizeZombies(processes []ProcessInfo, limit int, parentsAvailable bool)
 		complete = false
 	}
 	return count, parents, complete
-}
-
-func processNameFromComm(command string) string {
-	name := command
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
-	}
-	return strings.TrimSpace(name)
-}
-
-func processNameFromCommand(command string) string {
-	name := command
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
-	}
-	if spIdx := strings.Index(name, " "); spIdx >= 0 {
-		name = name[:spIdx]
-	}
-	return name
 }
 
 func topProcesses(processes []ProcessInfo, limit int) []ProcessInfo {

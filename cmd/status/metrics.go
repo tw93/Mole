@@ -69,6 +69,9 @@ type MetricsSnapshot struct {
 	Hardware       HardwareInfo `json:"hardware"`
 	HealthScore    int          `json:"health_score"`     // 0-100 system health score
 	HealthScoreMsg string       `json:"health_score_msg"` // Brief explanation
+	// RestartReason names why a restart is advisable (pending kernel update);
+	// empty when none. Uptime alone never sets it.
+	RestartReason string `json:"restart_reason,omitempty"`
 
 	CPU                   CPUStatus          `json:"cpu"`
 	GPU                   []GPUStatus        `json:"gpu"`
@@ -83,7 +86,6 @@ type MetricsSnapshot struct {
 	Batteries             []BatteryStatus    `json:"batteries"`
 	Thermal               ThermalStatus      `json:"thermal"`
 	Sensors               []SensorReading    `json:"sensors"`
-	Bluetooth             []BluetoothDevice  `json:"bluetooth"`
 	TopProcesses          []ProcessInfo      `json:"top_processes"`
 	ProcessCollectedAt    *time.Time         `json:"process_collected_at,omitempty"`
 	ProcessStale          *bool              `json:"process_stale,omitempty"`
@@ -95,12 +97,11 @@ type MetricsSnapshot struct {
 }
 
 type HardwareInfo struct {
-	Model       string `json:"model"`        // MacBook Pro 14-inch, 2021
-	CPUModel    string `json:"cpu_model"`    // Apple M1 Pro / Intel Core i7
-	TotalRAM    string `json:"total_ram"`    // 16GB
-	DiskSize    string `json:"disk_size"`    // 512GB
-	OSVersion   string `json:"os_version"`   // macOS Sonoma 14.5
-	RefreshRate string `json:"refresh_rate"` // 120Hz / 60Hz
+	Model     string `json:"model"`      // LENOVO 20XW ThinkPad X1 Carbon Gen 9; empty when DMI has nothing real
+	CPUModel  string `json:"cpu_model"`  // 11th Gen Intel(R) Core(TM) i7-1185G7
+	TotalRAM  string `json:"total_ram"`  // 16GB
+	DiskSize  string `json:"disk_size"`  // Root filesystem, 512GB
+	OSVersion string `json:"os_version"` // Arch Linux, kernel 6.12.1-arch1-1
 }
 
 type DiskIOStatus struct {
@@ -134,8 +135,6 @@ type CPUStatus struct {
 	Load15           float64   `json:"load15"`
 	CoreCount        int       `json:"core_count"`
 	LogicalCPU       int       `json:"logical_cpu"`
-	PCoreCount       int       `json:"p_core_count"` // Performance cores (Apple Silicon)
-	ECoreCount       int       `json:"e_core_count"` // Efficiency cores (Apple Silicon)
 }
 
 type GPUStatus struct {
@@ -155,7 +154,19 @@ type MemoryStatus struct {
 	SwapUsed    uint64  `json:"swap_used"`
 	SwapTotal   uint64  `json:"swap_total"`
 	Cached      uint64  `json:"cached"`   // File cache that can be freed if needed
-	Pressure    string  `json:"pressure"` // macOS memory pressure: normal/warn/critical
+	Pressure    string  `json:"pressure"` // From PSI: normal/warn/critical; empty without /proc/pressure/memory
+	// PSI is the raw Pressure Stall Information behind Pressure, nil when the
+	// kernel does not provide it.
+	PSI *MemoryPressureStats `json:"psi,omitempty"`
+}
+
+// MemoryPressureStats holds /proc/pressure/memory averages, in percent of time
+// tasks were stalled on memory over the last 10 and 60 seconds.
+type MemoryPressureStats struct {
+	SomeAvg10 float64 `json:"some_avg10"`
+	SomeAvg60 float64 `json:"some_avg60"`
+	FullAvg10 float64 `json:"full_avg10"`
+	FullAvg60 float64 `json:"full_avg60"`
 }
 
 type DiskStatus struct {
@@ -167,9 +178,6 @@ type DiskStatus struct {
 	Fstype      string  `json:"fstype"`
 	External    bool    `json:"external"`
 	SmartStatus string  `json:"smart_status"`
-	// Purgeable is the reclaimable purgeable bytes Finder counts as free on
-	// macOS APFS. Zero when unknown.
-	Purgeable uint64 `json:"purgeable,omitempty"`
 }
 
 type NetworkStatus struct {
@@ -212,7 +220,7 @@ type BatteryStatus struct {
 type ThermalStatus struct {
 	CPUTemp      float64 `json:"cpu_temp"`
 	GPUTemp      float64 `json:"gpu_temp"`
-	BatteryTemp  float64 `json:"battery_temp"` // Battery temperature in Celsius when exposed by AppleSmartBattery
+	BatteryTemp  float64 `json:"battery_temp"` // Battery temperature in Celsius when power_supply exposes it
 	FanSpeed     int     `json:"fan_speed"`
 	FanCount     int     `json:"fan_count"`
 	SystemPower  float64 `json:"system_power"`  // System power consumption in Watts
@@ -227,21 +235,12 @@ type SensorReading struct {
 	Note  string  `json:"note"`
 }
 
-type BluetoothDevice struct {
-	Name      string `json:"name"`
-	Connected bool   `json:"connected"`
-	Battery   string `json:"battery"`
-}
-
 type Collector struct {
 	// Static cache.
-	cachedHW  HardwareInfo
-	lastHWAt  time.Time
-	hasStatic bool
-
-	// Slow cache (30s-1m).
-	lastBTAt time.Time
-	lastBT   []BluetoothDevice
+	cachedHW      HardwareInfo
+	cachedRestart string
+	lastHWAt      time.Time
+	hasStatic     bool
 
 	// Fast metrics (1s).
 	prevNet             map[string]net.IOCountersStat
@@ -253,8 +252,6 @@ type Collector struct {
 	defaultNetInterface string
 	lastGPUAt           time.Time
 	cachedGPU           []GPUStatus
-	lastGPUUsageAt      time.Time
-	cachedGPUUsage      float64
 	prevDiskIO          disk.IOCountersStat
 	lastDiskAt          time.Time
 
@@ -280,7 +277,6 @@ type collectedMetrics struct {
 	thermalStats            ThermalStatus
 	sensorStats             []SensorReading
 	gpuStats                []GPUStatus
-	btStats                 []BluetoothDevice
 	allProcs                []ProcessInfo
 	hasProcesses            bool
 	processParentsAvailable bool
@@ -290,10 +286,10 @@ type snapshotEnrichment struct {
 	// When adding MetricsSnapshot fields, update
 	// TestMetricsSnapshotFieldsHaveCollectionClassifications.
 	hardware       HardwareInfo
-	cpuPCores      int
-	cpuECores      int
 	memoryCached   uint64
 	memoryPressure string
+	memoryPSI      *MemoryPressureStats
+	restartReason  string
 	disks          []DiskStatus
 	hasDisks       bool
 	gpu            []GPUStatus
@@ -303,7 +299,6 @@ type snapshotEnrichment struct {
 	batteries      []BatteryStatus
 	thermal        ThermalStatus
 	sensors        []SensorReading
-	bluetooth      []BluetoothDevice
 }
 
 type processEnrichment struct {
@@ -425,15 +420,11 @@ func (c *Collector) collectFull() (MetricsSnapshot, error) {
 	next := c.enrichment
 
 	// Sample CPU first, before the concurrent collectors below spawn their
-	// subprocesses (system_profiler, df, ps, ...). The usage window is only
+	// work (disk and process reads, lspci, ...). The usage window is only
 	// 100ms, so measuring while our own collection burst runs inflates the
 	// reading with Mole's own load (#1237).
 	var cpuErr error
 	collected.cpuStats, cpuErr = collectCPUFunc()
-	if cpuErr == nil {
-		next.cpuPCores = collected.cpuStats.PCoreCount
-		next.cpuECores = collected.cpuStats.ECoreCount
-	}
 
 	// Launch independent collection tasks.
 	tasks := []func() error{
@@ -443,6 +434,7 @@ func (c *Collector) collectFull() (MetricsSnapshot, error) {
 			if err == nil {
 				next.memoryCached = collected.memStats.Cached
 				next.memoryPressure = collected.memStats.Pressure
+				next.memoryPSI = collected.memStats.PSI
 			}
 			return
 		},
@@ -476,8 +468,11 @@ func (c *Collector) collectFull() (MetricsSnapshot, error) {
 			next.thermal = collected.thermalStats
 			return nil
 		},
-		// Sensors disabled - CPU temp already shown in CPU card
-		// collect(func() (err error) { sensorStats, _ = collectSensors(); return nil })
+		func() error {
+			collected.sensorStats = collectSensors()
+			next.sensors = slices.Clone(collected.sensorStats)
+			return nil
+		},
 		func() (err error) {
 			collected.gpuStats, err = c.collectGPU(now)
 			if err == nil {
@@ -485,27 +480,17 @@ func (c *Collector) collectFull() (MetricsSnapshot, error) {
 			}
 			return
 		},
-		func() (err error) {
-			// Bluetooth is slow; cache for 30s.
-			if now.Sub(c.lastBTAt) > 30*time.Second || len(c.lastBT) == 0 {
-				collected.btStats = c.collectBluetooth(now)
-				c.lastBT = collected.btStats
-				c.lastBTAt = now
-			} else {
-				collected.btStats = c.lastBT
-			}
-			next.bluetooth = slices.Clone(collected.btStats)
-			return nil
-		},
 		func() error { return collectProcessesInto(&collected) },
 	}
 	// Hardware info is expensive and rarely changes, so refresh it every 10
 	// minutes. Its subprocesses join the burst instead of running after it.
 	var hwStatic HardwareInfo
+	var restartStatic string
 	hwDone := false
 	if !c.hasStatic || now.Sub(c.lastHWAt) > 10*time.Minute {
 		tasks = append(tasks, func() error {
 			hwStatic = collectHardwareStatic()
+			restartStatic = detectRestartReason("/")
 			hwDone = true
 			return nil
 		})
@@ -513,12 +498,14 @@ func (c *Collector) collectFull() (MetricsSnapshot, error) {
 	mergeErr := collectConcurrently(tasks...)
 	if hwDone {
 		c.cachedHW = finishHardware(hwStatic, collected.memStats.Total, collected.diskStats)
+		c.cachedRestart = restartStatic
 		c.lastHWAt = now
 		c.hasStatic = true
 	}
 
 	snapshot := c.snapshotFromMetrics(now, hostInfo, collected)
 	next.hardware = snapshot.Hardware
+	next.restartReason = snapshot.RestartReason
 	c.enrichment = next
 	c.hasEnrichment = true
 	c.applyEnrichment(&snapshot, collected.hasProcesses)
@@ -549,7 +536,7 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 		collected.diskIO,
 		collected.thermalStats,
 		collected.batteryStats,
-		hostInfo.Uptime,
+		c.cachedRestart,
 	)
 	var topProcs []ProcessInfo
 	var processCollectedAt *time.Time
@@ -594,6 +581,7 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 		Hardware:       hwInfo,
 		HealthScore:    score,
 		HealthScoreMsg: scoreMsg,
+		RestartReason:  c.cachedRestart,
 		CPU:            collected.cpuStats,
 		GPU:            collected.gpuStats,
 		Memory:         collected.memStats,
@@ -610,7 +598,6 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 		Batteries:             collected.batteryStats,
 		Thermal:               collected.thermalStats,
 		Sensors:               collected.sensorStats,
-		Bluetooth:             collected.btStats,
 		TopProcesses:          topProcs,
 		ProcessCollectedAt:    processCollectedAt,
 		ProcessStale:          processStale,
@@ -668,7 +655,7 @@ func (c *Collector) applyEnrichment(snapshot *MetricsSnapshot, preserveLiveProce
 			snapshot.DiskIO,
 			snapshot.Thermal,
 			snapshot.Batteries,
-			snapshot.UptimeSeconds,
+			snapshot.RestartReason,
 		)
 	}
 	if !preserveLiveProcesses && c.hasProcessData {
@@ -678,15 +665,14 @@ func (c *Collector) applyEnrichment(snapshot *MetricsSnapshot, preserveLiveProce
 
 func (e snapshotEnrichment) apply(snapshot *MetricsSnapshot) {
 	snapshot.Hardware = e.hardware
-	snapshot.CPU.PCoreCount = e.cpuPCores
-	snapshot.CPU.ECoreCount = e.cpuECores
 	snapshot.Memory.Cached = e.memoryCached
 	snapshot.Memory.Pressure = e.memoryPressure
-	// Disk capacity is slow-changing and the corrections (APFS purgeable,
-	// diskutil, Finder) are expensive, so the fast path collects raw statfs
-	// values and we overwrite them with the last full-refresh corrected
-	// snapshot. DiskIO stays live. Skip when the cache is empty so the first
-	// fast paint still shows raw disks instead of a blank card.
+	snapshot.Memory.PSI = e.memoryPSI
+	snapshot.RestartReason = e.restartReason
+	// Disk capacity is slow-changing, so the fast path collects raw statfs
+	// values and we overwrite them with the last full-refresh snapshot.
+	// DiskIO stays live. Skip when the cache is empty so the first fast paint
+	// still shows raw disks instead of a blank card.
 	if e.hasDisks && len(e.disks) > 0 {
 		snapshot.Disks = slices.Clone(e.disks)
 	}
@@ -697,7 +683,6 @@ func (e snapshotEnrichment) apply(snapshot *MetricsSnapshot) {
 	snapshot.Batteries = slices.Clone(e.batteries)
 	snapshot.Thermal = e.thermal
 	snapshot.Sensors = slices.Clone(e.sensors)
-	snapshot.Bluetooth = slices.Clone(e.bluetooth)
 }
 
 func (e processEnrichment) apply(snapshot *MetricsSnapshot) {

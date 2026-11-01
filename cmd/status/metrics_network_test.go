@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -25,43 +23,6 @@ func TestCollectProxyFromEnvSupportsAllProxy(t *testing.T) {
 	}
 	if got.Type != "SOCKS" {
 		t.Fatalf("expected SOCKS type, got %s", got.Type)
-	}
-	if got.Host != "127.0.0.1:7890" {
-		t.Fatalf("unexpected host: %s", got.Host)
-	}
-}
-
-func TestCollectProxyFromScutilOutputPAC(t *testing.T) {
-	out := `
-<dictionary> {
-  ProxyAutoConfigEnable : 1
-  ProxyAutoConfigURLString : http://127.0.0.1:6152/proxy.pac
-}`
-	got := collectProxyFromScutilOutput(out)
-	if !got.Enabled {
-		t.Fatalf("expected proxy enabled")
-	}
-	if got.Type != "PAC" {
-		t.Fatalf("expected PAC type, got %s", got.Type)
-	}
-	if got.Host != "127.0.0.1:6152" {
-		t.Fatalf("unexpected host: %s", got.Host)
-	}
-}
-
-func TestCollectProxyFromScutilOutputHTTPHostPort(t *testing.T) {
-	out := `
-<dictionary> {
-  HTTPEnable : 1
-  HTTPProxy : 127.0.0.1
-  HTTPPort : 7890
-}`
-	got := collectProxyFromScutilOutput(out)
-	if !got.Enabled {
-		t.Fatalf("expected proxy enabled")
-	}
-	if got.Type != "HTTP" {
-		t.Fatalf("expected HTTP type, got %s", got.Type)
 	}
 	if got.Host != "127.0.0.1:7890" {
 		t.Fatalf("unexpected host: %s", got.Host)
@@ -187,20 +148,20 @@ func TestCollectNetworkClampsCounterReset(t *testing.T) {
 }
 
 func TestTunnelInterfaceIsNotReportedAsAProxy(t *testing.T) {
-	// A machine with no configured proxy but an active utun (iCloud Private
+	// A machine with no configured proxy but an active tun (iCloud Private
 	// Relay, a corporate VPN, or a TUN-mode client) must not be told it has a
 	// proxy. The reading is still surfaced, just honestly labelled.
 	original := ioCountersFunc
 	ioCountersFunc = func(bool) ([]gopsutilnet.IOCountersStat, error) {
 		return []gopsutilnet.IOCountersStat{
 			{Name: "en0", BytesRecv: 100},
-			{Name: "utun4", BytesRecv: 20, BytesSent: 30},
+			{Name: "tun4", BytesRecv: 20, BytesSent: 30},
 		}, nil
 	}
 	t.Cleanup(func() { ioCountersFunc = original })
 
 	got := collectProxyFromTunInterfaces()
-	if !got.Enabled || !got.IsTunnel || got.Type != "TUN" || got.Host != "utun4" {
+	if !got.Enabled || !got.IsTunnel || got.Type != "TUN" || got.Host != "tun4" {
 		t.Fatalf("unexpected tunnel status: %+v", got)
 	}
 	card := renderNetworkCard(
@@ -217,38 +178,32 @@ func TestTunnelHintDoesNotExpandProxyJSONContract(t *testing.T) {
 	encoded, err := json.Marshal(ProxyStatus{
 		Enabled:  true,
 		Type:     "TUN",
-		Host:     "utun4",
+		Host:     "tun4",
 		IsTunnel: true,
 	})
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	const want = `{"enabled":true,"type":"TUN","host":"utun4"}`
+	const want = `{"enabled":true,"type":"TUN","host":"tun4"}`
 	if string(encoded) != want {
 		t.Fatalf("proxy JSON contract changed: got %s, want %s", encoded, want)
 	}
 }
 
 func TestCollectNetworkDefaultTunnel(t *testing.T) {
-	originalIO, originalRun := ioCountersFunc, runCmd
-	t.Cleanup(func() { ioCountersFunc, runCmd = originalIO, originalRun })
+	originalIO, originalRoute := ioCountersFunc, defaultRouteFunc
+	t.Cleanup(func() { ioCountersFunc, defaultRouteFunc = originalIO, originalRoute })
 	const mb = 1024 * 1024
 	now := time.Now()
-	route := "utun4"
+	route := "tun4"
 	routeErr := false
-	runCmd = func(ctx context.Context, name string, args ...string) (string, error) {
-		if name != "route" || strings.Join(args, " ") != "-n get default" {
-			t.Fatalf("unexpected probe %s %v", name, args)
-		}
-		if _, ok := ctx.Deadline(); !ok {
-			t.Fatal("route probe has no deadline")
-		}
+	defaultRouteFunc = func() string {
 		if routeErr {
-			return "", errors.New("no default route")
+			return ""
 		}
-		return "   route to: default\n  interface: " + route + "\n      flags: <UP,GATEWAY>\n", nil
+		return route
 	}
-	names := []string{"en0", "en4", "en6", "utun4", "ppp0", "ipsec0", "utun9"}
+	names := []string{"en0", "en4", "en6", "tun4", "ppp0", "ipsec0", "tun9"}
 	counters := make([]gopsutilnet.IOCountersStat, len(names))
 	for i, name := range names {
 		counters[i] = gopsutilnet.IOCountersStat{Name: name, BytesRecv: 100 * mb, BytesSent: 100 * mb}
@@ -263,7 +218,7 @@ func TestCollectNetworkDefaultTunnel(t *testing.T) {
 		fail   bool
 		wantRx float64
 	}{
-		{"utun4", false, 2}, {"ppp0", false, 3}, {"ipsec0", false, 4}, {"en0", false, 30}, {"utun4", true, 30},
+		{"tun4", false, 2}, {"ppp0", false, 3}, {"ipsec0", false, 4}, {"en0", false, 30}, {"tun4", true, 30},
 	} {
 		route, routeErr = step.route, step.fail
 		for i := range counters {
@@ -369,7 +324,7 @@ func TestNetworkCardShowsRoutedInterfaceIP(t *testing.T) {
 		t.Fatalf("routed adapter without en0 shows no IP: %q", got)
 	}
 	// A routed tunnel's address is not the LAN IP; keep en0.
-	tunnel := NetworkStatus{Name: "utun4", IP: "100.64.0.2", defaultRoute: true, defaultTunnel: true}
+	tunnel := NetworkStatus{Name: "tun4", IP: "100.64.0.2", defaultRoute: true, defaultTunnel: true}
 	if got := ipLine([]NetworkStatus{tunnel, wifi}); got != "192.0.2.10" {
 		t.Fatalf("routed tunnel replaced the LAN IP: %q", got)
 	}
@@ -397,5 +352,42 @@ func TestCollectNetworkMarksRoutedInterface(t *testing.T) {
 	card := renderNetworkCard(got, NetworkHistory{}, ProxyStatus{}, 40)
 	if line := card.lines[len(card.lines)-1]; line != "198.51.100.7" {
 		t.Fatalf("collected rows lost the routed interface: %+v, IP line %q", got, line)
+	}
+}
+
+func TestIsNoiseInterfaceSkipsContainerAndVMPlumbing(t *testing.T) {
+	for name, want := range map[string]bool{
+		"lo": true, "docker0": true, "veth3a1b2c": true, "br-1f2e3d4c5b6a": true,
+		"virbr0": true, "vnet12": true,
+		"eth0": false, "enp3s0": false, "wlan0": false, "wlp2s0": false, "tailscale0": false, "wg0": false,
+	} {
+		if got := isNoiseInterface(name); got != want {
+			t.Fatalf("isNoiseInterface(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestIsTunnelInterfaceLinuxNames(t *testing.T) {
+	for name, want := range map[string]bool{
+		"tun0": true, "wg0": true, "tailscale0": true, "ppp0": true,
+		"eth0": false, "wlan0": false, "docker0": false,
+	} {
+		if got := isTunnelInterface(name); got != want {
+			t.Fatalf("isTunnelInterface(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestParseDefaultRouteInterfacePicksLowestMetricUpRoute(t *testing.T) {
+	raw := "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n" +
+		"wlan0\t00000000\t0100A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n" +
+		"eth0\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n" +
+		"eth1\t00000000\t0100A8C0\t0002\t0\t0\t50\t00000000\t0\t0\t0\n" + // not RTF_UP
+		"eth0\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n" // on-link subnet, not default
+	if got := parseDefaultRouteInterface(raw); got != "eth0" {
+		t.Fatalf("parseDefaultRouteInterface() = %q, want eth0", got)
+	}
+	if got := parseDefaultRouteInterface("Iface\tDestination\n"); got != "" {
+		t.Fatalf("parseDefaultRouteInterface(no routes) = %q, want empty", got)
 	}
 }

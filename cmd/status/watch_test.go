@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -24,22 +23,24 @@ func TestStatusWatchProcess(t *testing.T) {
 	if mode == "" {
 		t.Skip("watch subprocess helper")
 	}
-	runCmd = func(_ context.Context, name string, _ ...string) (string, error) {
-		if mode == "process-failed" && name == "memory_pressure" {
-			// This expensive probe runs only during full collection. Count real
+	runCmd = func(context.Context, string, ...string) (string, error) {
+		return "", errors.New("optional metric unavailable")
+	}
+	memoryPSIFunc = func() (MemoryPressureStats, bool) {
+		if mode == "process-failed" {
+			// This probe runs only during full collection. Count real
 			// dispatches to ensure a process failure cannot restart it each tick.
 			file, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), "full-refreshes"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 			if err != nil {
-				return "", err
+				return MemoryPressureStats{}, false
 			}
 			_, err = file.WriteString("full\n")
 			file.Close()
 			if err != nil {
-				return "", err
+				return MemoryPressureStats{}, false
 			}
-			return "normal", nil
 		}
-		return "", errors.New("optional metric unavailable")
+		return MemoryPressureStats{}, true
 	}
 	commandExists = func(string) bool { return false }
 	var calls atomic.Int32
@@ -48,7 +49,7 @@ func TestStatusWatchProcess(t *testing.T) {
 		if mode == "failed" || (mode == "recover" && attempt <= 2) {
 			return nil, errors.New("partition probe failed")
 		}
-		return []disk.PartitionStat{{Device: "/dev/disk3s1", Mountpoint: "/", Fstype: "apfs"}}, nil
+		return []disk.PartitionStat{{Device: "/dev/vda2", Mountpoint: "/", Fstype: "ext4"}}, nil
 	}
 	diskUsageFunc = func(string) (*disk.UsageStat, error) {
 		return &disk.UsageStat{Total: 2 << 30, Used: 1 << 30, Free: 1 << 30, UsedPercent: 50}, nil
@@ -65,9 +66,6 @@ func TestStatusWatchProcess(t *testing.T) {
 func TestWatchHonorsIntervalAfterInitialSnapshot(t *testing.T) {
 	for _, mode := range []string{"healthy", "failed", "recover", "process-failed"} {
 		t.Run(mode, func(t *testing.T) {
-			if mode == "process-failed" && runtime.GOOS != "darwin" {
-				t.Skip("memory_pressure is a macOS probe")
-			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStatusWatchProcess$")

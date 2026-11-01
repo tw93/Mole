@@ -184,22 +184,16 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 	} else if disk, ok := rootDisk(m.Disks); ok && disk.Total > 0 {
 		specParts = append(specParts, "Disk "+humanBytes(disk.Total))
 	}
-	refreshParts := []string{}
-	if m.Hardware.RefreshRate != "" {
-		refreshParts = append(refreshParts, m.Hardware.RefreshRate)
-	}
 	optionalInfoParts := []string{}
 	if !compactHeader && m.Hardware.OSVersion != "" {
 		optionalInfoParts = append(optionalInfoParts, m.Hardware.OSVersion)
 	}
 	if !compactHeader && m.Uptime != "" {
 		uptimeText := "up " + m.Uptime
-		switch uptimeSeverity(m.UptimeSeconds) {
-		case "danger":
+		if m.RestartReason != "" {
+			// A pending kernel update, not uptime, is what asks for a restart.
 			uptimeText = dangerStyle.Render(uptimeText + " ↻")
-		case "warn":
-			uptimeText = warnStyle.Render(uptimeText)
-		default:
+		} else {
 			uptimeText = subtleStyle.Render(uptimeText)
 		}
 		optionalInfoParts = append(optionalInfoParts, uptimeText)
@@ -229,8 +223,8 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 			return "", false
 		}
 		candidates := [][]string{
-			joinInfoParts(identityParts, specParts, refreshParts, optionalInfoParts),
-			joinInfoParts(identityParts, specParts, refreshParts),
+			joinInfoParts(identityParts, specParts, optionalInfoParts),
+			joinInfoParts(identityParts, specParts),
 			joinInfoParts(identityParts, specParts),
 		}
 		if len(identityParts) > 1 {
@@ -247,7 +241,7 @@ func renderHeader(m MetricsSnapshot, errMsg string, animFrame int, termWidth int
 		if headerLine == headLeft {
 			// Last resort: preserve the existing tail-drop behavior for unusual
 			// hardware strings that still do not fit the priority candidates.
-			fitParts := joinInfoParts(identityParts, specParts, refreshParts)
+			fitParts := joinInfoParts(identityParts, specParts)
 			for len(fitParts) > 0 {
 				if line, ok := fitHeaderParts(fitParts); ok {
 					headerLine = line
@@ -405,13 +399,8 @@ func renderCPUCard(cpu CPUStatus, thermal ThermalStatus, cpuCores int) cardData 
 	}
 
 	// Load line at the end
-	if cpu.PCoreCount > 0 && cpu.ECoreCount > 0 {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %dP+%dE",
-			cpu.Load1, cpu.Load5, cpu.Load15, cpu.PCoreCount, cpu.ECoreCount))
-	} else {
-		lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
-			cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
-	}
+	lines = append(lines, fmt.Sprintf("Load   %.2f / %.2f / %.2f, %d cores",
+		cpu.Load1, cpu.Load5, cpu.Load15, cpu.LogicalCPU))
 
 	return cardData{icon: iconCPU, title: "CPU", lines: lines}
 }
@@ -544,14 +533,6 @@ func formatDiskLine(label string, d DiskStatus) string {
 	if d.Total > d.Used {
 		free = d.Total - d.Used
 	}
-	// Finder's corrected used value includes purgeable APFS space in the
-	// corresponding free value. Keep the main status line for immediately
-	// free space; the meta line below reports purgeable space separately.
-	if free > d.Purgeable {
-		free -= d.Purgeable
-	} else {
-		free = 0
-	}
 	return fmt.Sprintf("%-6s %s  %s used, %s free", label, bar, used, humanBytesShort(free))
 }
 
@@ -559,9 +540,6 @@ func formatDiskMetaLine(d DiskStatus) string {
 	parts := []string{humanBytesShort(d.Total)}
 	if d.Fstype != "" {
 		parts = append(parts, strings.ToUpper(d.Fstype))
-	}
-	if d.Purgeable > 0 {
-		parts = append(parts, humanBytesShort(d.Purgeable)+" purgeable")
 	}
 	return fmt.Sprintf("Total  %s", strings.Join(parts, " · "))
 }
@@ -711,14 +689,19 @@ func buildCards(m MetricsSnapshot, width int, cpuCores int, batteryProbed bool) 
 		renderCPUCard(m.CPU, m.Thermal, cpuCores),
 		renderMemoryCard(m.Memory, width),
 		renderDiskCard(m.Disks, m.DiskIO, m.TrashSize, m.TrashApprox),
-		renderBatteryCard(m.Batteries, m.Thermal, batteryProbed),
+	}
+	// A desktop or VM has no battery: hide the Power card instead of printing
+	// "No battery". Until a full collection has run, an empty list only means
+	// "not measured yet", so the placeholder card keeps the layout still.
+	if len(m.Batteries) > 0 || !batteryProbed {
+		cards = append(cards, renderBatteryCard(m.Batteries, m.Thermal, batteryProbed))
+	}
+	cards = append(cards,
 		processCard,
 		renderNetworkCard(m.Network, m.NetworkHistory, m.Proxy, width),
-	}
-	// Sensors card disabled - redundant with CPU temp
-	// if hasSensorData(m.Sensors) {
-	// 	cards = append(cards, renderSensorsCard(m.Sensors))
-	// }
+	)
+	// Sensors card disabled - redundant with CPU temp; the readings are in
+	// the JSON output.
 	return cards
 }
 

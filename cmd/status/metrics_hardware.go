@@ -1,140 +1,190 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"runtime"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
-	"time"
 )
 
-// collectHardwareStatic runs the slow subprocess half of the hardware card.
-// collectFull schedules it inside its concurrent burst; finishHardware fills
-// the fields that depend on that burst's memory and disk results.
+// collectHardwareStatic reads the slow-changing identity of the machine from
+// procfs, sysfs and /etc. Every source is a plain file read, so it can run
+// inside collectFull's concurrent burst without spawning a process. Fields it
+// cannot establish stay empty and the header hides them.
 func collectHardwareStatic() HardwareInfo {
-	if runtime.GOOS != "darwin" {
-		return HardwareInfo{
-			Model:       "Unknown",
-			CPUModel:    runtime.GOARCH,
-			OSVersion:   runtime.GOOS,
-			RefreshRate: "",
-		}
-	}
+	return readHardwareInfo("/")
+}
 
-	// Model and CPU from system_profiler.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	var model, cpuModel, osVersion, refreshRate string
-
-	out, err := runCmd(ctx, "system_profiler", "SPHardwareDataType")
-	if err == nil {
-		for line := range strings.Lines(out) {
-			lower := strings.ToLower(strings.TrimSpace(line))
-			// Prefer "Model Name" over "Model Identifier".
-			if strings.Contains(lower, "model name:") {
-				parts := strings.Split(line, ":")
-				if len(parts) == 2 {
-					model = strings.TrimSpace(parts[1])
-				}
-			}
-			if strings.Contains(lower, "chip:") {
-				parts := strings.Split(line, ":")
-				if len(parts) == 2 {
-					cpuModel = strings.TrimSpace(parts[1])
-				}
-			}
-			if strings.Contains(lower, "processor name:") && cpuModel == "" {
-				parts := strings.Split(line, ":")
-				if len(parts) == 2 {
-					cpuModel = strings.TrimSpace(parts[1])
-				}
-			}
-		}
-	}
-
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel2()
-	out2, err := runCmd(ctx2, "sw_vers", "-productVersion")
-	if err == nil {
-		osVersion = "macOS " + strings.TrimSpace(out2)
-	}
-
-	// Get refresh rate from display info (use mini detail to keep it fast).
-	ctx3, cancel3 := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel3()
-	out3, err := runCmd(ctx3, "system_profiler", "-detailLevel", "mini", "SPDisplaysDataType")
-	if err == nil {
-		refreshRate = parseRefreshRate(out3)
-	}
-
+// readHardwareInfo reads under root so tests can point it at a fixture tree.
+func readHardwareInfo(root string) HardwareInfo {
 	return HardwareInfo{
-		Model:       model,
-		CPUModel:    cpuModel,
-		OSVersion:   osVersion,
-		RefreshRate: refreshRate,
+		Model:     readDMIModel(filepath.Join(root, "sys/class/dmi/id")),
+		CPUModel:  readCPUModel(filepath.Join(root, "proc/cpuinfo")),
+		OSVersion: readOSVersion(root),
 	}
 }
 
+// finishHardware fills the fields that depend on the memory and disk results
+// of the same collection burst. DiskSize is the size of the root filesystem.
 func finishHardware(hw HardwareInfo, totalRAM uint64, disks []DiskStatus) HardwareInfo {
-	hw.TotalRAM = humanBytes(totalRAM)
-	hw.DiskSize = "Unknown"
-	if runtime.GOOS == "darwin" && len(disks) > 0 {
-		hw.DiskSize = humanBytes(disks[0].Total)
+	if totalRAM > 0 {
+		hw.TotalRAM = humanBytes(totalRAM)
+	}
+	if disk, ok := rootMountDisk(disks); ok && disk.Total > 0 {
+		hw.DiskSize = humanBytes(disk.Total)
+	} else if usage, err := diskUsageFunc("/"); err == nil && usage.Total > 0 {
+		hw.DiskSize = humanBytes(usage.Total)
 	}
 	return hw
 }
 
-// parseRefreshRate extracts the highest refresh rate from system_profiler display output.
-func parseRefreshRate(output string) string {
-	maxHz := 0
+func rootMountDisk(disks []DiskStatus) (DiskStatus, bool) {
+	for _, d := range disks {
+		if d.Mount == "/" {
+			return d, true
+		}
+	}
+	return DiskStatus{}, false
+}
 
-	for line := range strings.Lines(output) {
-		lower := strings.ToLower(line)
-		// Look for patterns like "@ 60Hz", "@ 60.00Hz", or "Refresh Rate: 120 Hz".
-		if strings.Contains(lower, "hz") {
-			fields := strings.Fields(lower)
-			for i, field := range fields {
-				if field == "hz" && i > 0 {
-					if hz := parseInt(fields[i-1]); hz > maxHz && hz < 500 {
-						maxHz = hz
-					}
-					continue
-				}
-				if numStr, ok := strings.CutSuffix(field, "hz"); ok {
-					if numStr == "" && i > 0 {
-						numStr = fields[i-1]
-					}
-					if hz := parseInt(numStr); hz > maxHz && hz < 500 {
-						maxHz = hz
-					}
-				}
+// dmiPlaceholders are the strings firmware vendors leave in DMI fields they
+// never filled in. They carry no information, so they count as unknown.
+var dmiPlaceholders = map[string]bool{
+	"":                       true,
+	"default string":         true,
+	"to be filled by o.e.m.": true,
+	"to be filled by oem":    true,
+	"system product name":    true,
+	"system manufacturer":    true,
+	"system version":         true,
+	"not specified":          true,
+	"not applicable":         true,
+	"none":                   true,
+	"unknown":                true,
+	"n/a":                    true,
+	"o.e.m.":                 true,
+	"oem":                    true,
+}
+
+// versionNoise matches product_version values such as "1.0", "A1" or the QEMU
+// machine type "pc-q35-8.1" that say nothing about the model.
+var versionNoise = regexp.MustCompile(`^([A-Za-z]?[0-9][0-9.\-]*|pc-(q35|i440fx)[0-9a-z.\-]*)$`)
+
+func cleanDMIValue(raw string) string {
+	value := strings.Join(strings.Fields(raw), " ")
+	if dmiPlaceholders[strings.ToLower(value)] {
+		return ""
+	}
+	return value
+}
+
+// readDMIModel joins sys_vendor, product_name and product_version, dropping
+// placeholders and repeated words. A lone "QEMU" vendor names no model, but
+// "QEMU Standard PC (Q35 + ICH9, 2009)" is a real description of the VM.
+func readDMIModel(dir string) string {
+	vendor := cleanDMIValue(readTrimmed(filepath.Join(dir, "sys_vendor")))
+	product := cleanDMIValue(readTrimmed(filepath.Join(dir, "product_name")))
+	version := cleanDMIValue(readTrimmed(filepath.Join(dir, "product_version")))
+
+	if versionNoise.MatchString(version) {
+		version = ""
+	}
+	parts := []string{}
+	add := func(s string) {
+		if s == "" {
+			return
+		}
+		lower := strings.ToLower(strings.Join(parts, " "))
+		if strings.Contains(lower, strings.ToLower(s)) {
+			return
+		}
+		parts = append(parts, s)
+	}
+	if vendor != "" && product != "" && strings.HasPrefix(strings.ToLower(product), strings.ToLower(vendor)) {
+		vendor = ""
+	}
+	add(vendor)
+	add(product)
+	add(version)
+	// A bare hypervisor vendor names no model.
+	if len(parts) == 1 && strings.EqualFold(parts[0], "qemu") {
+		return ""
+	}
+	return strings.Join(parts, " ")
+}
+
+// readCPUModel returns the first "model name" of /proc/cpuinfo. ARM kernels
+// have no such key, so fall back to "Model" or "Hardware" and otherwise stay
+// empty.
+func readCPUModel(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	fallback := ""
+	for line := range strings.Lines(string(data)) {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Join(strings.Fields(value), " ")
+		if value == "" {
+			continue
+		}
+		switch key {
+		case "model name":
+			return value
+		case "Model", "Hardware":
+			if fallback == "" {
+				fallback = value
 			}
 		}
 	}
+	return fallback
+}
 
-	if maxHz > 0 {
-		return fmt.Sprintf("%dHz", maxHz)
+// readOSVersion renders "<PRETTY_NAME>, kernel <release>" from
+// /etc/os-release (or /usr/lib/os-release) and the running kernel release.
+func readOSVersion(root string) string {
+	name := ""
+	for _, rel := range []string{"etc/os-release", "usr/lib/os-release"} {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			continue
+		}
+		name = parseOSReleasePrettyName(string(data))
+		if name != "" {
+			break
+		}
+	}
+	kernel := readTrimmed(filepath.Join(root, "proc/sys/kernel/osrelease"))
+	switch {
+	case name != "" && kernel != "":
+		return name + ", kernel " + kernel
+	case name != "":
+		return name
+	case kernel != "":
+		return "Linux " + kernel
 	}
 	return ""
 }
 
-// parseInt safely parses an integer from a string.
-func parseInt(s string) int {
-	// Trim away non-numeric padding, keep digits and '.' for decimals.
-	cleaned := strings.TrimSpace(s)
-	cleaned = strings.TrimLeftFunc(cleaned, func(r rune) bool {
-		return (r < '0' || r > '9') && r != '.'
-	})
-	cleaned = strings.TrimRightFunc(cleaned, func(r rune) bool {
-		return (r < '0' || r > '9') && r != '.'
-	})
-	if cleaned == "" {
-		return 0
+func parseOSReleasePrettyName(raw string) string {
+	for line := range strings.Lines(raw) {
+		value, ok := strings.CutPrefix(strings.TrimSpace(line), "PRETTY_NAME=")
+		if !ok {
+			continue
+		}
+		return strings.TrimSpace(strings.Trim(strings.TrimSpace(value), `"'`))
 	}
-	var num int
-	if _, err := fmt.Sscanf(cleaned, "%d", &num); err != nil {
-		return 0
+	return ""
+}
+
+func readTrimmed(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
 	}
-	return num
+	return strings.TrimSpace(string(data))
 }

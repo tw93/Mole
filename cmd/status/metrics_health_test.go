@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ func TestCalculateHealthScorePerfect(t *testing.T) {
 		[]DiskStatus{{UsedPercent: 30}},
 		DiskIOStatus{ReadRate: 5, WriteRate: 5},
 		ThermalStatus{CPUTemp: 40},
-		nil, 0,
+		nil, "",
 	)
 
 	if score != 100 {
@@ -30,7 +31,7 @@ func TestCalculateHealthScoreDetectsIssues(t *testing.T) {
 		[]DiskStatus{{UsedPercent: 98}},
 		DiskIOStatus{ReadRate: 120, WriteRate: 80},
 		ThermalStatus{CPUTemp: 90},
-		nil, 0,
+		nil, "",
 	)
 
 	if score >= 60 {
@@ -57,7 +58,7 @@ func TestCalculateHealthScoreCapsFailingSMARTAt44(t *testing.T) {
 		},
 		DiskIOStatus{ReadRate: 5, WriteRate: 5},
 		ThermalStatus{CPUTemp: 40},
-		nil, 0,
+		nil, "",
 	)
 
 	if score != 44 {
@@ -76,7 +77,7 @@ func TestCalculateHealthScoreDoesNotPenalizeUnavailableSMART(t *testing.T) {
 			[]DiskStatus{{UsedPercent: 30, SmartStatus: status}},
 			DiskIOStatus{ReadRate: 5, WriteRate: 5},
 			ThermalStatus{CPUTemp: 40},
-			nil, 0,
+			nil, "",
 		)
 		if score != 100 || msg != "Excellent" {
 			t.Fatalf("SMART %q changed health to %d %q", status, score, msg)
@@ -95,7 +96,7 @@ func TestCalculateHealthScoreMonotonicInCPU(t *testing.T) {
 			[]DiskStatus{{UsedPercent: 30}},
 			DiskIOStatus{ReadRate: 5, WriteRate: 5},
 			ThermalStatus{CPUTemp: 40},
-			nil, 0,
+			nil, "",
 		)
 		if score > prev {
 			t.Fatalf("health score rose from %d to %d as CPU usage increased to %.1f%%", prev, score, usage)
@@ -115,7 +116,7 @@ func TestCalculateHealthScoreMonotonicInMemory(t *testing.T) {
 			[]DiskStatus{{UsedPercent: 30}},
 			DiskIOStatus{ReadRate: 5, WriteRate: 5},
 			ThermalStatus{CPUTemp: 40},
-			nil, 0,
+			nil, "",
 		)
 		if score > prev {
 			t.Fatalf("health score rose from %d to %d as memory usage increased to %.1f%%", prev, score, usage)
@@ -239,7 +240,7 @@ func TestCalculateHealthScoreEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score, _ := calculateHealthScore(tt.cpu, tt.mem, tt.disks, tt.diskIO, tt.thermal, nil, 0)
+			score, _ := calculateHealthScore(tt.cpu, tt.mem, tt.disks, tt.diskIO, tt.thermal, nil, "")
 			if score < tt.wantMin || score > tt.wantMax {
 				t.Errorf("calculateHealthScore() = %d, want range [%d, %d]", score, tt.wantMin, tt.wantMax)
 			}
@@ -277,46 +278,112 @@ func TestBatteryHealthLabel(t *testing.T) {
 	}
 }
 
-func TestUptimeSeverity(t *testing.T) {
+func TestHealthScoreBatteryAndRestartPenalty(t *testing.T) {
+	base := func(batts []BatteryStatus, restart string) int {
+		s, _ := calculateHealthScore(
+			CPUStatus{Usage: 10}, MemoryStatus{UsedPercent: 20},
+			[]DiskStatus{{UsedPercent: 30}}, DiskIOStatus{ReadRate: 5, WriteRate: 5},
+			ThermalStatus{CPUTemp: 40}, batts, restart,
+		)
+		return s
+	}
+
+	perfect := base(nil, "")
+	if got := base([]BatteryStatus{{CycleCount: 950, Capacity: 75}}, ""); got >= perfect {
+		t.Errorf("old battery should reduce score: got %d vs perfect %d", got, perfect)
+	}
+	if got := base(nil, "running kernel was replaced by an update"); got >= perfect {
+		t.Errorf("pending restart should reduce score: got %d vs perfect %d", got, perfect)
+	}
+}
+
+// The reference VM from the Omarchy test box: 1.9 GB RAM, 72% used, swap
+// completely full. The macOS-derived formula scored it 98 "Excellent".
+func TestHealthScoreVMWithFullSwapIsClearlyLower(t *testing.T) {
+	vm := MemoryStatus{
+		Total: 1900 << 20, Used: 1368 << 20, UsedPercent: 72,
+		SwapTotal: 1 << 30, SwapUsed: 1 << 30,
+		Pressure: "normal",
+	}
+	healthy := MemoryStatus{Total: 1900 << 20, UsedPercent: 30, SwapTotal: 1 << 30}
+	score := func(mem MemoryStatus) (int, string) {
+		return calculateHealthScore(
+			CPUStatus{Usage: 5}, mem,
+			[]DiskStatus{{Mount: "/", UsedPercent: 40}}, DiskIOStatus{}, ThermalStatus{}, nil, "",
+		)
+	}
+
+	got, msg := score(vm)
+	base, _ := score(healthy)
+	if base < 98 {
+		t.Fatalf("idle machine scored %d, want >= 98", base)
+	}
+	if got > 80 || got < 60 {
+		t.Fatalf("72%% memory with full swap scored %d (%q), want 60..80", got, msg)
+	}
+	if base-got < 18 {
+		t.Fatalf("score drop = %d, want at least 18 against a healthy machine", base-got)
+	}
+	if !strings.Contains(msg, "Swap Full") {
+		t.Fatalf("message %q should name the full swap", msg)
+	}
+	if strings.HasPrefix(msg, "Excellent") {
+		t.Fatalf("message %q must not read Excellent", msg)
+	}
+}
+
+func TestSwapPenalty(t *testing.T) {
 	tests := []struct {
 		name string
-		secs uint64
-		want string
+		mem  MemoryStatus
+		want float64
 	}{
-		{"fresh restart", 3600, "ok"},
-		{"6 days", 6 * 86400, "ok"},
-		{"8 days", 8 * 86400, "warn"},
-		{"15 days", 15 * 86400, "danger"},
+		{"no swap configured", MemoryStatus{UsedPercent: 90}, 0},
+		{"swap barely used", MemoryStatus{UsedPercent: 90, SwapTotal: 100, SwapUsed: 10}, 0},
+		{"swap full, memory idle", MemoryStatus{UsedPercent: 20, SwapTotal: 100, SwapUsed: 100}, 0},
+		{"swap full, memory tight", MemoryStatus{UsedPercent: 70, SwapTotal: 100, SwapUsed: 100}, healthSwapWeight},
+		{"swap 60%, memory tight", MemoryStatus{UsedPercent: 60, SwapTotal: 100, SwapUsed: 60}, healthSwapWeight * 0.5},
+		{"swap full, memory half tight", MemoryStatus{UsedPercent: 45, SwapTotal: 100, SwapUsed: 100}, healthSwapWeight * 0.5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := uptimeSeverity(tt.secs)
-			if got != tt.want {
-				t.Errorf("uptimeSeverity(%d) = %q, want %q", tt.secs, got, tt.want)
+			if got := swapPenalty(tt.mem); math.Abs(got-tt.want) > 1e-9 {
+				t.Fatalf("swapPenalty() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestHealthScoreBatteryPenalty(t *testing.T) {
-	base := func(batts []BatteryStatus, uptime uint64) int {
-		s, _ := calculateHealthScore(
-			CPUStatus{Usage: 10}, MemoryStatus{UsedPercent: 20},
-			[]DiskStatus{{UsedPercent: 30}}, DiskIOStatus{ReadRate: 5, WriteRate: 5},
-			ThermalStatus{CPUTemp: 40}, batts, uptime,
-		)
+func TestHealthScoreMonotonicInSwapAndPressure(t *testing.T) {
+	score := func(mem MemoryStatus) int {
+		s, _ := calculateHealthScore(CPUStatus{}, mem, nil, DiskIOStatus{}, ThermalStatus{}, nil, "")
 		return s
 	}
-
-	perfect := base(nil, 0)
-	withOldBattery := base([]BatteryStatus{{CycleCount: 950, Capacity: 75}}, 0)
-	withLongUptime := base(nil, 15*86400)
-
-	if withOldBattery >= perfect {
-		t.Errorf("old battery should reduce score: got %d vs perfect %d", withOldBattery, perfect)
+	prev := 101
+	for used := uint64(0); used <= 100; used += 5 {
+		s := score(MemoryStatus{UsedPercent: 70, SwapTotal: 100, SwapUsed: used})
+		if s > prev {
+			t.Fatalf("score rose from %d to %d as swap use reached %d%%", prev, s, used)
+		}
+		prev = s
 	}
-	if withLongUptime >= perfect {
-		t.Errorf("long uptime should reduce score: got %d vs perfect %d", withLongUptime, perfect)
+	normal := score(MemoryStatus{UsedPercent: 50, Pressure: "normal"})
+	warn := score(MemoryStatus{UsedPercent: 50, Pressure: "warn"})
+	crit := score(MemoryStatus{UsedPercent: 50, Pressure: "critical"})
+	if !(normal > warn && warn > crit) {
+		t.Fatalf("pressure scores normal=%d warn=%d critical=%d, want strictly decreasing", normal, warn, crit)
+	}
+}
+
+func TestHealthScoreDoesNotPenalizeUptimeAlone(t *testing.T) {
+	// Uptime is no longer an input; only a concrete restart reason counts.
+	s, msg := calculateHealthScore(CPUStatus{}, MemoryStatus{}, nil, DiskIOStatus{}, ThermalStatus{}, nil, "")
+	if s != 100 || strings.Contains(msg, "Restart") {
+		t.Fatalf("score/message = %d %q, want 100 without a restart hint", s, msg)
+	}
+	_, msg = calculateHealthScore(CPUStatus{}, MemoryStatus{}, nil, DiskIOStatus{}, ThermalStatus{}, nil, "reboot required by pending updates")
+	if !strings.Contains(msg, "Restart Recommended") {
+		t.Fatalf("message %q should recommend a restart", msg)
 	}
 }
 

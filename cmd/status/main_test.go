@@ -290,11 +290,11 @@ func TestCollectorAppliesCachedEnrichmentToFastSnapshot(t *testing.T) {
 	collector := NewCollector(ProcessWatchOptions{})
 	collector.hasEnrichment = true
 	collector.enrichment = snapshotEnrichment{
-		cpuPCores:      8,
-		cpuECores:      4,
 		memoryCached:   512,
 		memoryPressure: "warn",
-		hardware:       HardwareInfo{Model: "MacBook Pro", CPUModel: "M3", OSVersion: "macOS 15", RefreshRate: "120Hz"},
+		hardware:       HardwareInfo{Model: "ThinkPad X1", CPUModel: "Core i7", OSVersion: "Arch Linux"},
+		memoryPSI:      &MemoryPressureStats{SomeAvg10: 12},
+		restartReason:  "kernel replaced",
 		gpu:            []GPUStatus{{Name: "Apple GPU", Usage: 12}},
 		trashSize:      42,
 		trashApprox:    true,
@@ -302,7 +302,6 @@ func TestCollectorAppliesCachedEnrichmentToFastSnapshot(t *testing.T) {
 		batteries:      []BatteryStatus{{Percent: 80, Capacity: 92}},
 		thermal:        ThermalStatus{CPUTemp: 45},
 		sensors:        []SensorReading{{Label: "Fan", Value: 1200, Unit: "rpm"}},
-		bluetooth:      []BluetoothDevice{{Name: "Keyboard", Connected: true}},
 	}
 	collector.cacheProcessEnrichment(MetricsSnapshot{
 		CollectedAt: time.Now(),
@@ -327,11 +326,11 @@ func TestCollectorAppliesCachedEnrichmentToFastSnapshot(t *testing.T) {
 
 	collector.applyEnrichment(&next, false)
 
-	if next.Hardware.Model != "MacBook Pro" {
+	if next.Hardware.Model != "ThinkPad X1" {
 		t.Fatalf("expected hardware details to be preserved, got %#v", next.Hardware)
 	}
-	if next.CPU.PCoreCount != 8 || next.CPU.ECoreCount != 4 {
-		t.Fatalf("expected CPU topology to be preserved, got %#v", next.CPU)
+	if next.Memory.PSI == nil || next.Memory.PSI.SomeAvg10 != 12 || next.RestartReason != "kernel replaced" {
+		t.Fatalf("expected PSI and restart reason to be preserved, got %#v / %q", next.Memory.PSI, next.RestartReason)
 	}
 	if next.Memory.Cached != 512 || next.Memory.Pressure != "warn" {
 		t.Fatalf("expected slow memory annotations to be preserved, got %#v", next.Memory)
@@ -350,9 +349,6 @@ func TestCollectorAppliesCachedEnrichmentToFastSnapshot(t *testing.T) {
 	}
 	if next.Thermal.CPUTemp != 45 {
 		t.Fatalf("expected thermal metadata to be preserved, got %#v", next.Thermal)
-	}
-	if len(next.Bluetooth) != 1 || next.Bluetooth[0].Name != "Keyboard" {
-		t.Fatalf("expected Bluetooth metadata to be preserved, got %#v", next.Bluetooth)
 	}
 	if len(next.TopProcesses) != 1 || next.TopProcesses[0].Name != "Xcode" {
 		t.Fatalf("expected top processes to be preserved, got %#v", next.TopProcesses)
@@ -463,6 +459,7 @@ func TestCollectorKeepsLiveProcessDataWhenApplyingEnrichment(t *testing.T) {
 
 func TestMetricsSnapshotFieldsHaveCollectionClassifications(t *testing.T) {
 	classified := map[string]string{
+		"RestartReason":         "enrichment",
 		"CollectedAt":           "fast",
 		"Host":                  "fast",
 		"Platform":              "fast",
@@ -485,7 +482,6 @@ func TestMetricsSnapshotFieldsHaveCollectionClassifications(t *testing.T) {
 		"Batteries":             "enrichment",
 		"Thermal":               "enrichment",
 		"Sensors":               "enrichment",
-		"Bluetooth":             "enrichment",
 		"TopProcesses":          "live-or-enrichment",
 		"ProcessCollectedAt":    "live-or-enrichment",
 		"ProcessStale":          "live-or-enrichment",

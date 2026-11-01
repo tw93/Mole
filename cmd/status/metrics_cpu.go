@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bufio"
-	"context"
 	"errors"
 	"runtime"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -60,23 +56,16 @@ func collectCPUWithOptions(includeSlowFallbacks bool) (CPUStatus, error) {
 	}
 	perCoreEstimated := false
 	if !sampled && (err != nil || len(percents) == 0) {
-		if !includeSlowFallbacks {
-			// Fast path: skip the expensive secondary sampling and just
-			// estimate zeroed per-core usage. The next full refresh corrects it.
-			percents = make([]float64, logical)
-			perCoreEstimated = true
-		} else {
-			fallbackUsage, fallbackPerCore, fallbackErr := fallbackCPUUtilization(logical)
-			if fallbackErr != nil {
-				if err != nil {
-					return CPUStatus{}, err
-				}
-				return CPUStatus{}, fallbackErr
+		if includeSlowFallbacks {
+			if err != nil {
+				return CPUStatus{}, err
 			}
-			totalPercent = fallbackUsage
-			percents = fallbackPerCore
-			perCoreEstimated = true
+			return CPUStatus{}, errors.New("no cpu times available")
 		}
+		// Fast path: estimate zeroed per-core usage. The next full refresh
+		// corrects it.
+		percents = make([]float64, logical)
+		perCoreEstimated = true
 	} else if !sampled {
 		for _, v := range percents {
 			totalPercent += v
@@ -84,21 +73,9 @@ func collectCPUWithOptions(includeSlowFallbacks bool) (CPUStatus, error) {
 		totalPercent /= float64(len(percents))
 	}
 
-	loadStats, loadErr := load.Avg()
 	var loadAvg load.AvgStat
-	if loadStats != nil {
+	if loadStats, _ := load.Avg(); loadStats != nil {
 		loadAvg = *loadStats
-	}
-	if includeSlowFallbacks && (loadErr != nil || isZeroLoad(loadAvg)) {
-		if fallback, err := fallbackLoadAvgFromUptime(); err == nil {
-			loadAvg = fallback
-		}
-	}
-
-	// P/E core counts for Apple Silicon.
-	var pCores, eCores int
-	if includeSlowFallbacks {
-		pCores, eCores = getCoreTopology()
 	}
 
 	return CPUStatus{
@@ -110,185 +87,7 @@ func collectCPUWithOptions(includeSlowFallbacks bool) (CPUStatus, error) {
 		Load15:           loadAvg.Load15,
 		CoreCount:        counts,
 		LogicalCPU:       logical,
-		PCoreCount:       pCores,
-		ECoreCount:       eCores,
 	}, nil
-}
-
-func isZeroLoad(avg load.AvgStat) bool {
-	return avg.Load1 == 0 && avg.Load5 == 0 && avg.Load15 == 0
-}
-
-var (
-	// Cache for core topology.
-	lastTopologyAt   time.Time
-	cachedP, cachedE int
-	topologyTTL      = 10 * time.Minute
-)
-
-// getCoreTopology returns P/E core counts on Apple Silicon.
-func getCoreTopology() (pCores, eCores int) {
-	if runtime.GOOS != "darwin" {
-		return 0, 0
-	}
-
-	now := time.Now()
-	if cachedP > 0 || cachedE > 0 {
-		if now.Sub(lastTopologyAt) < topologyTTL {
-			return cachedP, cachedE
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	out, err := runCmd(ctx, "/usr/sbin/sysctl", "-n",
-		"hw.perflevel0.logicalcpu",
-		"hw.perflevel1.logicalcpu")
-	if err != nil {
-		return 0, 0
-	}
-
-	pCores, eCores = parseCoreTopology(out)
-	if pCores == 0 && eCores == 0 {
-		return 0, 0
-	}
-
-	cachedP, cachedE = pCores, eCores
-	lastTopologyAt = now
-	return pCores, eCores
-}
-
-// parseCoreTopology reads `sysctl -n hw.perflevel0.logicalcpu
-// hw.perflevel1.logicalcpu` output as top tier then the tier below it.
-//
-// The level ORDER decides which bucket a count lands in, never the level name.
-// M5 names its two levels "Super" and "Performance" and ships no "Efficiency"
-// level at all, so matching the word "performance" put 12 efficiency cores in
-// the P bucket and reported e_core_count 0 on an 18-core M5 Pro, which also
-// dropped the "12P+4E" load line entirely. Apple documents perflevel0 as the
-// highest-performance level, and that survives the next rename.
-func parseCoreTopology(out string) (pCores, eCores int) {
-	var lines []string
-	for line := range strings.Lines(strings.TrimSpace(out)) {
-		lines = append(lines, line)
-	}
-	if len(lines) < 2 {
-		return 0, 0
-	}
-
-	pCores, errP := strconv.Atoi(strings.TrimSpace(lines[0]))
-	eCores, errE := strconv.Atoi(strings.TrimSpace(lines[1]))
-	if errP != nil || errE != nil || pCores <= 0 || eCores <= 0 {
-		return 0, 0
-	}
-	return pCores, eCores
-}
-
-func fallbackLoadAvgFromUptime() (load.AvgStat, error) {
-	if !commandExists("uptime") {
-		return load.AvgStat{}, errors.New("uptime command unavailable")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	out, err := runCmd(ctx, "uptime")
-	if err != nil {
-		return load.AvgStat{}, err
-	}
-
-	markers := []string{"load averages:", "load average:"}
-	idx := -1
-	for _, marker := range markers {
-		if pos := strings.LastIndex(out, marker); pos != -1 {
-			idx = pos + len(marker)
-			break
-		}
-	}
-	if idx == -1 {
-		return load.AvgStat{}, errors.New("load averages not found in uptime output")
-	}
-
-	segment := strings.TrimSpace(out[idx:])
-	fields := strings.Fields(segment)
-	var values []float64
-	for _, field := range fields {
-		field = strings.Trim(field, ",;")
-		if field == "" {
-			continue
-		}
-		val, err := strconv.ParseFloat(field, 64)
-		if err != nil {
-			continue
-		}
-		values = append(values, val)
-		if len(values) == 3 {
-			break
-		}
-	}
-	if len(values) < 3 {
-		return load.AvgStat{}, errors.New("could not parse load averages from uptime output")
-	}
-
-	return load.AvgStat{
-		Load1:  values[0],
-		Load5:  values[1],
-		Load15: values[2],
-	}, nil
-}
-
-func fallbackCPUUtilization(logical int) (float64, []float64, error) {
-	if logical <= 0 {
-		logical = runtime.NumCPU()
-	}
-	if logical <= 0 {
-		logical = 1
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	out, err := runCmd(ctx, "ps", "-Aceo", "pcpu")
-	if err != nil {
-		return 0, nil, err
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(out))
-	total := 0.0
-	lineIndex := 0
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		lineIndex++
-		if lineIndex == 1 && (strings.Contains(strings.ToLower(line), "cpu") || strings.Contains(line, "%")) {
-			continue
-		}
-
-		val, parseErr := strconv.ParseFloat(line, 64)
-		if parseErr != nil {
-			continue
-		}
-		total += val
-	}
-	if scanErr := scanner.Err(); scanErr != nil {
-		return 0, nil, scanErr
-	}
-
-	maxTotal := float64(logical * 100)
-	if total < 0 {
-		total = 0
-	} else if total > maxTotal {
-		total = maxTotal
-	}
-
-	avg := total / float64(logical)
-	perCore := make([]float64, logical)
-	for i := range perCore {
-		perCore[i] = avg
-	}
-	return avg, perCore, nil
 }
 
 func warmUpCPU() {

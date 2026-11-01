@@ -109,24 +109,3 @@ func TestPerCoreUsageClampsAndErrors(t *testing.T) {
 		t.Fatalf("negative busy delta should clamp to 0, got %.2f", percents[0])
 	}
 }
-
-func TestParseCoreTopologyUsesLevelOrderNotLevelNames(t *testing.T) {
-	// M5 Pro: perflevel0 is "Super" (6), perflevel1 is "Performance" (12), and
-	// there is no "Efficiency" level at all. Name matching reported 12P + 0E
-	// here, which also hid the "P+E" load line because it needs both non-zero.
-	if p, e := parseCoreTopology("6\n12\n"); p != 6 || e != 12 {
-		t.Fatalf("M5 Pro topology: expected 6P + 12E, got %dP + %dE", p, e)
-	}
-	// M4 Pro, where the names did work: 10 performance + 4 efficiency.
-	if p, e := parseCoreTopology("10\n4\n"); p != 10 || e != 4 {
-		t.Fatalf("M4 Pro topology: expected 10P + 4E, got %dP + %dE", p, e)
-	}
-
-	// A single-level machine, a short read, or garbage reports nothing rather
-	// than a half-filled topology.
-	for _, out := range []string{"", "10\n", "10\nnope\n", "0\n0\n", "-4\n2\n"} {
-		if p, e := parseCoreTopology(out); p != 0 || e != 0 {
-			t.Fatalf("unusable output %q: expected 0P + 0E, got %dP + %dE", out, p, e)
-		}
-	}
-}
