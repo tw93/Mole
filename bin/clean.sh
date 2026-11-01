@@ -496,6 +496,8 @@ clean_flatpak_unused() {
 report_system_flatpak_unused() {
     local label="Unused Flatpak runtimes (system)"
     mole_whitelisted "$label" "$SYSTEM_FLATPAK_DIR" && return 0
+    # Quiet when the system installation holds no runtime at all.
+    [[ -n "$(mole_c timeout 20 flatpak list --system --runtime --columns=ref 2> /dev/null)" ]] || return 0
     review_line "$label · ${GRAY}sudo flatpak uninstall --system --unused${NC}"
 }
 

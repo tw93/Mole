@@ -317,7 +317,7 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
 
 @test "the system Flatpak installation is only reported: nothing runs sudo flatpak, the prompt omits it" {
     mkdir -p "$TEST_ROOT/sysflatpak/repo" "$HOME/.local/share/flatpak/repo"
-    fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"'
+    fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"; [[ "$1" == list ]] && echo org.gnome.Platform/x86_64/48; exit 0'
     fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
     fake_command paccache 'exit 0'
     fake_command journalctl 'exit 0'
@@ -326,7 +326,7 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [[ "$output" == *"Unused Flatpak runtimes (system) · "*"sudo flatpak uninstall --system --unused"* ]]
     [[ "$output" != *"label=["*"Flatpak"* ]]
     [ -z "$(grep -- flatpak "$TEST_ROOT/sudo.log" 2> /dev/null)" ]
-    [ -z "$(grep -- --system "$TEST_ROOT/flatpak.log")" ]
+    [ -z "$(grep -- "uninstall.*--system" "$TEST_ROOT/flatpak.log")" ]
     grep -qx -- "uninstall --user --unused --noninteractive" "$TEST_ROOT/flatpak.log"
     mole_run clean 'SYSTEM_FLATPAK_DIR="'"$TEST_ROOT"'/sysflatpak"; DRY_RUN=true; clean_system'
     [[ "$output" == *"sudo flatpak uninstall --system --unused"* ]]
@@ -411,4 +411,12 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [[ "$output" == *"~/.cache/bigtool"*"MB"* ]]
     [[ "$output" != *"huggingface"* ]]
     [ -f "$HOME/.cache/bigtool/blob" ]
+}
+
+@test "the system Flatpak line stays quiet when the system installation has no runtime" {
+    mkdir -p "$TEST_ROOT/sysflatpak/repo"
+    fake_command flatpak 'exit 0'
+    mole_run clean 'SYSTEM_FLATPAK_DIR="'"$TEST_ROOT"'/sysflatpak"; report_system_flatpak_unused; echo done'
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Unused Flatpak runtimes (system)"* ]]
 }
