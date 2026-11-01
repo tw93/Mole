@@ -13,7 +13,7 @@ Use **Mole Mac**, **Mole for Windows**, **Mole CLI (macOS)**, **Mole CLI (Window
 Six commands: `clean`, `uninstall`, `optimize`, `analyze`, `status`, `purge`.
 
 - First target: Omarchy (Arch + Hyprland, Wayland). Other Arch-based systems come along. Debian/Ubuntu and Fedora rules come later; on those systems the package-manager items simply do not appear while user-level features work.
-- MVP (first public version): `analyze`, `status`, `clean`, `purge`, `uninstall` usable on Omarchy. `optimize` follows in the next version.
+- First public version (0.1.0): `clean`, `uninstall`, `analyze`, `status`, plus `update` and `remove` for Mole itself, usable on Omarchy. `purge` was moved out of it (maintainer 2026-11-01) and `optimize` follows later; both print "not in Mole CLI (Linux) yet".
 - Not built: GUI, paid tier, background agents, schedulers, notifications, package upgrades, `autoremove`, emptying whole package caches, kernel removal, CPU governor / EPP / turbo / `platform_profile` / sysctl / `drop_caches` tuning. When TLP, power-profiles-daemon, tuned or auto-cpufreq is active, Mole only reports it.
 
 ## Safety contract
@@ -39,13 +39,18 @@ Every rule below is a design requirement for code that does not exist yet; each 
 ## Test environment
 
 - LazyCat devbox (Debian 12 container, `linux-devbox` skill): run tests as the non-root user `mole` (`su mole -c "bats ..."`), since Mole refuses root. Go runs on the Mac: build with `GOOS=linux` (or `go test -c`) and execute the binary there.
-- Omarchy: the Try Omarchy VM on the ThinkPad (lease `thinkpad`), reached from the Mac with `ssh -F ~/.config/mole-omarchy/config mole-omarchy` through the ThinkPad hop. The guest runs a user-level sshd (systemd user unit `mole-sshd`, port 2222, key only); the host-side forward `127.0.0.1:2222` is a runtime QMP `hostfwd_add n0 tcp:127.0.0.1:2222-:2222` and must be re-sent after every VM restart. No sudo password is available there: tests run as the desktop user, bats lives in `~/.local/bin`, Go binaries are cross-compiled on the Mac. The guest locale is Chinese, which is the point: parsing must survive it.
+- Omarchy: the Try Omarchy VM on the ThinkPad (lease `thinkpad`), reached from the Mac with `ssh -F ~/.config/mole-omarchy/config mole-omarchy` through the ThinkPad hop. The guest runs a user-level sshd (systemd user unit `mole-sshd`, port 2222, key only); the host-side forward `127.0.0.1:2222` is a runtime QMP `hostfwd_add n0 tcp:127.0.0.1:2222-:2222` and must be re-sent after every VM restart. No sudo password is available there: tests run as the desktop user, bats lives in `~/.local/bin`, Go binaries are cross-compiled on the Mac. The guest locale is Chinese, which is the point: parsing must survive it. Its root is ext4 and `/tmp` is tmpfs; the devbox's overlay sits on btrfs. Go fixtures in `t.TempDir()` land on `/tmp` on both, where directories take no blocks, so a size that depends on a directory's own block only shows on the GitHub runner (ext4). Interactive screens are driven with tmux (`send-keys`, `capture-pane`), never over `ssh -tt`.
 - Bash tests: `tests/*.bats` (bats 1.x), each test in its own HOME with fakes for `flatpak`, `pgrep` and the Trash helper first on PATH. Run `bats tests/` as a normal user after `make build`.
 - CI: `.github/workflows/test.yml`, Linux runners only: shellcheck, `go test ./cmd/... ./internal/...` and bats inside an `archlinux` container as the user `mole`. No macOS jobs on this branch.
 
 ## Releases
 
-Tags use a `linux-v*` prefix so they never trigger `main`'s `V*` release workflow. No release, tag or announcement without the maintainer's explicit go-ahead.
+- Tags are `V<version>-linux` (first: `V0.1.0-linux`), the same shape as the `windows` branch's `V<version>-windows`. A tag runs only the workflows in its own commit, so `main`'s `V*` release workflow never sees it. `VERSION` holds the version; the workflow refuses a tag that disagrees.
+- `.github/workflows/release-linux.yml` runs the tests, builds `mole-<version>-linux-{x86_64,aarch64}.tar.gz` and `SHA256SUMS.txt` with `scripts/build-release.sh`, installs the archive for a fresh user, and creates a **draft** with `make_latest: false`: macOS installs read `releases/latest`, so a Linux release must never become it. The maintainer reads the draft and publishes it.
+- `install.sh` (served from this branch at `raw.githubusercontent.com/tw93/Mole/linux/install.sh`) takes the newest exact `V*-linux` tag from the releases list, checks the archive against `SHA256SUMS.txt`, unpacks into `~/.local/share/mole` beside the old copy, runs it, then swaps it in and links `~/.local/bin/mo`. `mo update` reruns a copy of it; `mo remove` deletes only that tree, the two links when they point at it, and Mole's own config, cache and state folders.
+- Before tagging: the Test and Secrets runs on the commit to be tagged are green (`gh run list --repo tw93/Mole --branch linux --commit <sha>`).
+- Publishing the draft: GitHub ignores `make_latest` while a release is a draft and defaults it to true when it is published, and the web page's "Set as the latest release" box can be ticked. Publish only with `gh release edit V<version>-linux --repo tw93/Mole --draft=false --latest=false`, then confirm `gh api repos/tw93/Mole/releases/latest --jq .tag_name` still names a macOS tag (no `-linux`); if it does not, run `gh release edit <that macOS tag> --repo tw93/Mole --latest` at once.
+- No tag, release or announcement without the maintainer's explicit go-ahead; publishing also changes README links and the reply on tw93/Mole#1371.
 
 ## Git
 

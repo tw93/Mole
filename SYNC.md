@@ -5,7 +5,7 @@ Mole CLI (Linux) re-implements Mole's product values and safety contracts for Li
 - Mole CLI (macOS) (`main`) and Mole CLI (Linux) (`linux`)
 - Mole CLI (Windows) (`windows`) and Mole CLI (Linux) (`linux`)
 
-Each row names the source (branch, commit or entry), the Linux status (`Pending`, `Implemented`, `Intentional difference` or `Not applicable`) with a reason, and the verification. Only a published `linux-v*` release proves `Released`.
+Each row names the source (branch, commit or entry), the Linux status (`Pending`, `Implemented`, `Intentional difference` or `Not applicable`) with a reason, and the verification. Only a published `V*-linux` release proves `Released`.
 
 ## Intentional differences
 
