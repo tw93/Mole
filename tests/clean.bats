@@ -199,3 +199,93 @@ start_owner() {
     [ ! -e "$base/cache/repos/v1" ]
     [ -f "$base/0123456789abcdef/execroot/entry/blob" ]
 }
+
+@test "browser profile caches never touch cookies, history, sessions or storage" {
+    p="$HOME/.config/chromium/Default"
+    mkdir -p "$p"
+    echo '{}' > "$p/Preferences"
+    for f in Cookies History "Login Data" "Web Data"; do echo x > "$p/$f"; done
+    for d in "Local Storage" "Session Storage" IndexedDB Sessions "Service Worker"; do make_cache "$p/$d"; done
+    make_cache "$p/GPUCache"
+    make_cache "$p/Code Cache"
+    make_cache "$HOME/.config/chromium/component_crx_cache"
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Chromium profile caches"* ]]
+    [ "$(grep -c "Chromium profile caches" <<< "$output")" -eq 1 ]
+    [ ! -e "$p/GPUCache/entry" ]
+    [ ! -e "$p/Code Cache/entry" ]
+    [ ! -e "$HOME/.config/chromium/component_crx_cache/entry" ]
+    for f in Cookies History "Login Data" "Web Data" Preferences; do [ -f "$p/$f" ]; done
+    for d in "Local Storage" "Session Storage" IndexedDB Sessions "Service Worker"; do [ -f "$p/$d/entry/blob" ]; done
+}
+
+@test "new rules wait for their owners: Chromium profiles and an Electron app on system electron" {
+    p="$HOME/.config/chromium/Default"
+    mkdir -p "$p"
+    echo '{}' > "$p/Preferences"
+    make_cache "$p/GPUCache"
+    start_owner chromium
+    mole_run clean 'clean_user_rules'
+    [[ "$output" == *"Chromium profile caches · skipped while chromium is running"* ]]
+    [ -f "$p/GPUCache/entry/blob" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+
+    make_cache "$HOME/.config/obsidian/Cache"
+    echo '{}' > "$HOME/.config/obsidian/obsidian.json"
+    start_owner electron37
+    mole_run clean 'clean_user_rules'
+    [[ "$output" == *"Obsidian cache · skipped while obsidian is running"* ]]
+    [ -f "$HOME/.config/obsidian/Cache/entry/blob" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+    mole_run clean 'clean_user_rules'
+    [ ! -e "$HOME/.config/obsidian/Cache/entry" ]
+    [ -f "$HOME/.config/obsidian/obsidian.json" ]
+}
+
+@test "old agent versions: the active one and the newest other stay" {
+    v="$HOME/.local/share/claude/versions"
+    mkdir -p "$v" "$HOME/.local/bin"
+    for n in 1.0.0 1.1.0 1.2.0 1.3.0; do head -c 65536 /dev/zero > "$v/$n"; done
+    touch -d '4 days ago' "$v/1.0.0"
+    touch -d '3 days ago' "$v/1.1.0"
+    touch -d '2 days ago' "$v/1.3.0"
+    touch -d '1 days ago' "$v/1.2.0"
+    ln -s "$v/1.3.0" "$HOME/.local/bin/claude"
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    [ -f "$v/1.3.0" ]
+    [ -f "$v/1.2.0" ]
+    [ ! -e "$v/1.1.0" ]
+    [ ! -e "$v/1.0.0" ]
+}
+
+@test "old agent versions are kept when the active link is missing" {
+    v="$HOME/.local/share/claude/versions"
+    mkdir -p "$v"
+    for n in 1.0.0 1.1.0 1.2.0; do head -c 65536 /dev/zero > "$v/$n"; done
+    mole_run clean 'clean_user_rules'
+    [ -f "$v/1.0.0" ] && [ -f "$v/1.1.0" ] && [ -f "$v/1.2.0" ]
+}
+
+@test "editor extensions go only when .obsolete lists them" {
+    e="$HOME/.vscode/extensions"
+    make_cache "$e/ms-python.python-1.0.0"
+    make_cache "$e/ms-python.python-2.0.0"
+    printf '{"ms-python.python-1.0.0":true,"../escape":true}' > "$e/.obsolete"
+    mole_run clean 'clean_user_rules'
+    [ ! -e "$e/ms-python.python-1.0.0" ]
+    [ -f "$e/ms-python.python-2.0.0/entry/blob" ]
+}
+
+@test "unknown large cache folders are listed with their size, never removed" {
+    mkdir -p "$HOME/.cache/bigtool" "$HOME/.cache/huggingface"
+    head -c 110000000 /dev/zero > "$HOME/.cache/bigtool/blob"
+    head -c 1000 /dev/zero > "$HOME/.cache/huggingface/small"
+    mole_run clean 'report_unknown_caches'
+    [[ "$output" == *"Not cleaned"* ]]
+    [[ "$output" == *"~/.cache/bigtool"*"MB"* ]]
+    [[ "$output" != *"huggingface"* ]]
+    [ -f "$HOME/.cache/bigtool/blob" ]
+}

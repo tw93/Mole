@@ -61,6 +61,13 @@ skip_line() {
     note_activity
 }
 
+# Something Mole leaves for the user, with the command that would act on it.
+review_line() {
+    stop_section_spinner
+    echo -e "  ${YELLOW}${ICON_REVIEW}${NC} $1"
+    note_activity
+}
+
 add_total() {
     TOTAL_KB=$((TOTAL_KB + $1))
     TOTAL_ITEMS=$((TOTAL_ITEMS + $2))
@@ -314,6 +321,38 @@ clean_trash() {
     end_section
 }
 
+# The largest ~/.cache folders no rule knows: listed with their size, never
+# selected. Folders that hold a rule's root (JetBrains, mozilla) are left out.
+report_unknown_caches() {
+    local c="$MOLE_CACHE_HOME"
+    [[ -d "$c" && ! -L "$c" ]] || return 0
+    cache_home_redirected && return 0
+    local -a roots=()
+    local section label root rest
+    while IFS='|' read -r section label root rest; do
+        [[ -n "$root" ]] && roots+=("$root")
+    done < <(mole_clean_rules)
+    local rows="" kb path known r
+    while IFS=$'\t' read -r -d '' kb path; do
+        [[ "$path" == "$c/"* && "${path#"$c/"}" != */* ]] || continue
+        [[ "$kb" =~ ^[0-9]+$ ]] || continue
+        ((kb >= 102400)) || continue
+        known=false
+        for r in "${roots[@]}"; do
+            [[ "$r" == "$path" || "$r" == "$path/"* ]] && known=true && break
+        done
+        [[ "$known" == false && "$path" != "$c/mole" ]] || continue
+        rows+="$kb"$'\t'"$path"$'\n'
+    done < <(mole_c du -xk -d 1 -0 -- "$c" 2> /dev/null)
+    [[ -n "$rows" ]] || return 0
+    start_section "Not cleaned"
+    while IFS=$'\t' read -r kb path; do
+        [[ -n "$path" ]] || continue
+        review_line "$(mole_display_path "$path") · $(colorize_human_size "$(bytes_to_human_kb "$kb")")"
+    done < <(printf '%s' "$rows" | sort -t $'\t' -k1,1 -rn | head -5)
+    end_section
+}
+
 # "421.20 MiB" / "225.0M" -> KB
 human_to_kb() {
     awk -v v="$1" 'BEGIN {
@@ -446,6 +485,7 @@ main() {
 
     clean_user_rules
     clean_trash
+    report_unknown_caches
     clean_system
 
     local heading size
