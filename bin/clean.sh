@@ -182,13 +182,20 @@ clean_rule_collect() {
         return 0
     fi
 
-    local kb=0
+    local kb=0 kept=0
     for child in "${children[@]}"; do
+        if mole_whitelist_keeps_child "$child"; then
+            kept=$((kept + 1))
+            continue
+        fi
         mole_cache_child_ok "$child" "$root" || continue
         eligible+=("$child")
         kb=$((kb + $(mole_path_kb "$child")))
     done
-    [[ ${#eligible[@]} -gt 0 ]] || return 0
+    if [[ ${#eligible[@]} -eq 0 ]]; then
+        ((kept > 0)) && group_note "$(whitelist_note "$label")"
+        return 0
+    fi
     ((kb >= 8)) || return 0
 
     # An owner that runs, or a probe that cannot tell, skips the rule.

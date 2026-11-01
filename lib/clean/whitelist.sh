@@ -5,8 +5,9 @@
 #   a rule's label exactly as clean prints it ("Chromium profile caches",
 #   "Trash"), which is what `mo clean --whitelist` writes, or
 #   a path or glob starting with / or ~ that keeps every rule whose folder is
-#   that path, sits below it, or matches the glob (Mole CLI (macOS)'s file
-#   takes paths the same way).
+#   that path, sits below it, or matches the glob, and inside a rule every
+#   child that does or that holds such a path (Mole CLI (macOS)'s file takes
+#   paths the same way, ~/.npm/_cacache/* included).
 # Whitelisted rules are skipped and shown as such, in dry runs too.
 
 MOLE_WHITELIST_FILE="$MOLE_CONFIG_HOME/mole/whitelist"
@@ -29,6 +30,18 @@ mole_whitelist_load() {
     return 0
 }
 
+# A path entry with ~ expanded and the trailing / dropped; empty for a label.
+_mole_whitelist_pattern() {
+    local entry="$1" pattern
+    case "$entry" in
+        \~ | \~/* | /*) ;;
+        *) return 0 ;;
+    esac
+    pattern="$entry"
+    [[ "$pattern" == "~"* ]] && pattern="$HOME${pattern#\~}"
+    printf '%s' "${pattern%/}"
+}
+
 # 0 when the rule (label, folder) is whitelisted.
 mole_whitelisted() {
     local label="$1" root="${2:-}" entry pattern
@@ -37,9 +50,7 @@ mole_whitelisted() {
         case "$entry" in
             \~ | \~/* | /*)
                 [[ -n "$root" ]] || continue
-                pattern="$entry"
-                [[ "$pattern" == "~"* ]] && pattern="$HOME${pattern#\~}"
-                pattern="${pattern%/}"
+                pattern=$(_mole_whitelist_pattern "$entry")
                 [[ -n "$pattern" ]] || continue
                 # shellcheck disable=SC2053  # The pattern is a glob on purpose.
                 if [[ "$root" == "$pattern" || "$root" == "$pattern/"* || "$root" == $pattern ]]; then
@@ -48,6 +59,24 @@ mole_whitelisted() {
                 ;;
             *) [[ "$entry" == "$label" ]] && return 0 ;;
         esac
+    done
+    return 1
+}
+
+# 0 when one child a rule would remove must stay: it is whitelisted itself
+# (path, below a path, or a glob such as Mole CLI (macOS)'s ~/.npm/_cacache/*),
+# or a whitelisted path lies inside it, which keeps the whole child.
+mole_whitelist_keeps_child() {
+    local child="$1" entry pattern
+    [[ ${#MOLE_WHITELIST[@]} -gt 0 ]] || return 1
+    for entry in "${MOLE_WHITELIST[@]}"; do
+        pattern=$(_mole_whitelist_pattern "$entry")
+        [[ -n "$pattern" ]] || continue
+        # shellcheck disable=SC2053  # The pattern is a glob on purpose.
+        if [[ "$child" == "$pattern" || "$child" == "$pattern/"* || "$child" == $pattern ]]; then
+            return 0
+        fi
+        [[ "$pattern" == "$child/"* ]] && return 0
     done
     return 1
 }

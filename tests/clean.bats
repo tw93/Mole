@@ -262,6 +262,37 @@ start_owner() {
     [ -f "$HOME/.local/share/Trash/files/old" ]
 }
 
+@test "a whitelisted path keeps single children: a folder under a rule, a Mac-style glob, a path inside" {
+    make_cache "$HOME/.cache/thumbnails/large"
+    make_cache "$HOME/.cache/thumbnails/normal"
+    make_cache "$HOME/.npm/_cacache/index-v5"
+    make_cache "$HOME/.npm/_cacache/content-v2"
+    make_cache "$HOME/.cache/moletool/keep/inner"
+    make_cache "$HOME/.cache/moletool/other"
+    mkdir -p "$HOME/.config/mole"
+    printf '%s\n' "~/.cache/thumbnails/large" "~/.npm/_cacache/*" "~/.cache/moletool/keep/inner" > "$HOME/.config/mole/whitelist"
+    run_three='mole_whitelist_load
+clean_rule "Thumbnails" "$HOME/.cache/thumbnails" "moletestowner"
+clean_rule "npm cache" "$HOME/.npm/_cacache" "moletestowner"
+clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
+    mole_run clean "DRY_RUN=true; $run_three"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Thumbnails · "*"KB dry"* ]]
+    [[ "$output" != *"Thumbnails · 2 items"* ]]
+    [[ "$output" == *"npm cache · would skip (whitelist)"* ]]
+    [[ "$output" == *"Mole tool cache · "*"KB dry"* ]]
+    [[ "$output" != *"Mole tool cache · 2 items"* ]]
+    mole_run clean "$run_three"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"npm cache · skipped (whitelist)"* ]]
+    [ -f "$HOME/.cache/thumbnails/large/entry/blob" ]
+    [ ! -e "$HOME/.cache/thumbnails/normal" ]
+    [ -f "$HOME/.npm/_cacache/index-v5/entry/blob" ]
+    [ -f "$HOME/.npm/_cacache/content-v2/entry/blob" ]
+    [ -f "$HOME/.cache/moletool/keep/inner/entry/blob" ]
+    [ ! -e "$HOME/.cache/moletool/other" ]
+}
+
 @test "an unreadable whitelist stops clean before anything is removed" {
     make_cache "$HOME/.cache/thumbnails"
     mkdir -p "$HOME/.config/mole/whitelist"
