@@ -916,7 +916,6 @@ pattern_for_row() {
 
 rows=(
     "pip Python package cache|pip cache"
-    "Yarn Berry package cache|Yarn Berry cache"
     "Yarn v1 package cache|Yarn v1 cache"
     "RubyGems package cache|gem package cache"
     "RubyGems spec cache|gem spec cache"
@@ -958,7 +957,7 @@ done
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$(grep -c '^OK|' <<< "$output")" == "6" ]] || { echo "$output"; return 1; }
+    [[ "$(grep -c '^OK|' <<< "$output")" == "5" ]] || { echo "$output"; return 1; }
 }
 
 # Rows whose path no cleanup consults must not come back: they invite the
@@ -976,7 +975,7 @@ EOF
     local dead
     # shellcheck disable=SC2016  # Literal $HOME spellings, as the inventory prints them.
     for dead in \
-        '$HOME/.cache/pip/' '$HOME/.cache/yarn/' '$HOME/.yarn/cache/' '$HOME/.gem/cache/' \
+        '$HOME/.cache/pip/' '$HOME/.cache/yarn/' '$HOME/.yarn/cache/' '$HOME/.yarn/berry/cache/' '$HOME/.gem/cache/' \
         '$HOME/.local/share/containers/cache/' \
         '$HOME/.rustup/toolchains/' '$HOME/.ccache/' '$HOME/.cache/sccache/' \
         '$HOME/.cache/flutter/' '$HOME/.cache/selenium/' '$HOME/.ollama/'; do
@@ -987,7 +986,7 @@ EOF
     # shellcheck disable=SC2016  # Literal $HOME spelling, as the inventory prints it.
     [[ "$output" == *'|$HOME/Library/Caches/pip/*|'* ]] || return 1
     # shellcheck disable=SC2016  # Literal $HOME spelling, as the inventory prints it.
-    [[ "$output" == *'|$HOME/.yarn/berry/cache/*|'* ]] || return 1
+    [[ "$output" == *'|$HOME/Library/Caches/Yarn/*|'* ]] || return 1
 }
 
 # The Toolbox cleaner only strips whitelist patterns that start at its own apps
@@ -1047,7 +1046,7 @@ EOF
     rm -rf "$test_home"
     mkdir -p "$(dirname "$whitelist_file")"
     # shellcheck disable=SC2088  # Saved whitelist files hold the literal ~/ spelling.
-    printf '%s\n' '~/.cache/pip/*' '~/.cache/yarn/*' '~/.gem/cache/*' \
+    printf '%s\n' '~/.cache/pip/*' '~/.cache/yarn/*' '~/.yarn/berry/cache/*' '~/.gem/cache/*' \
         '~/.ccache/*' '~/.ollama/models/*' > "$whitelist_file"
 
     local variant
@@ -1066,7 +1065,7 @@ manage_whitelist clean > /dev/null
 echo "MENU_DONE"
 load_mole_whitelist "$HOME"
 for probe in \
-    "$HOME/.cache/pip/http/a" "$HOME/.cache/yarn/v6/a" "$HOME/.gem/cache/a.gem" \
+    "$HOME/.cache/pip/http/a" "$HOME/.cache/yarn/v6/a" "$HOME/.yarn/berry/cache/a.zip" "$HOME/.gem/cache/a.gem" \
     "$HOME/.ccache/0/a.o" "$HOME/.ollama/models/blobs/sha256-a"; do
     if is_path_whitelisted "$probe"; then
         printf 'PROTECTED=%s\n' "${probe#"$HOME"/}"
@@ -1078,12 +1077,12 @@ EOF
         [ "$status" -eq 0 ] || { echo "$variant: $output"; return 1; }
         [[ "$output" == *"MENU_DONE"* ]] || { echo "$variant: $output"; return 1; }
         # The default list only ever carried the Ollama line; the saved file
-        # carried all five.
+        # carried all six.
         [[ "$output" == *"PROTECTED=.ollama/models/blobs/sha256-a"* ]] || { echo "$variant: $output"; return 1; }
         if [[ "$variant" == "saved-file" ]]; then
             [[ "$output" != *"EXPOSED="* ]] || { echo "$variant: $output"; return 1; }
             local saved
-            for saved in '.cache/pip/*' '.cache/yarn/*' '.gem/cache/*' '.ccache/*' '.ollama/models/*'; do
+            for saved in '.cache/pip/*' '.cache/yarn/*' '.yarn/berry/cache/*' '.gem/cache/*' '.ccache/*' '.ollama/models/*'; do
                 grep -Fq "$saved" "$whitelist_file" || { echo "lost $saved"; cat "$whitelist_file"; return 1; }
             done
         fi

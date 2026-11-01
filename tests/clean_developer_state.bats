@@ -102,6 +102,63 @@ EOF
     [[ "$output" == *"SAFE:$family:$boundary"* ]] || return 1
 }
 
+# Keep the real producer, policy and removal sink. Only unrelated package
+# commands and the final rm are substituted; the Classic control must reach rm.
+probe_yarn_berry_boundary() {
+    local variant="$1"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" VARIANT="$variant" \
+        MOLE_TEST_NO_AUTH=1 MO_NO_OPLOG=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+berry="$HOME/.yarn/berry/cache"
+classic="$HOME/Library/Caches/Yarn/v6/package.tgz"
+neighbor="$HOME/.yarn/berry/cache-backup/package.zip"
+mkdir -p "$berry/nested" "$(dirname "$classic")" "$(dirname "$neighbor")" "$HOME/.config/mole"
+printf 'installed PnP dependency\n' > "$berry/package.zip"
+printf 'installed PnP dependency\n' > "$berry/nested/package.zip"
+printf 'download cache\n' > "$classic"
+printf 'neighbor control\n' > "$neighbor"
+if [[ "$VARIANT" == custom ]]; then
+    printf '%s\n' "$HOME/keep-unrelated/*" > "$HOME/.config/mole/whitelist"
+fi
+load_mole_whitelist "$HOME"
+npm() { return 1; }
+run_with_timeout() { shift; "$@"; }
+clean_pnpm_stores() { :; }
+clean_corepack_cache() { :; }
+clean_bun_cache() { :; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+trace="$HOME/yarn-removal-trace"
+export trace
+: > "$trace"
+rm() { printf '%s\n' "${@: -1}" >> "$trace"; }
+clean_dev_npm
+# Direct callers cannot bypass the clean backstop, including the root itself.
+for target in "$berry" "$berry/package.zip" "$berry/nested/package.zip" "$neighbor"; do
+    safe_remove "$target" true || true
+done
+cat "$trace"
+grep -Fx -- "$(dirname "$classic")" "$trace" >/dev/null || exit 1
+grep -Fx -- "$neighbor" "$trace" >/dev/null || exit 1
+for target in "$berry" "$berry/package.zip" "$berry/nested/package.zip"; do
+    if grep -Fx -- "$target" "$trace" >/dev/null; then
+        echo "BERRY_REMOVED:$target"
+        exit 1
+    fi
+    should_protect_path "$target" || exit 1
+    if MOLE_UNINSTALL_MODE=1 should_protect_path "$target"; then
+        echo "UNINSTALL_BLOCKED:$target"
+        exit 1
+    fi
+done
+printf 'BERRY_SAFE:%s\n' "$VARIANT"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"BERRY_SAFE:$variant"* ]] || return 1
+}
+
 @test "developer cleanup never nominates Prometheus recovery WAL" {
     probe_developer_state wal candidate
 }
@@ -132,4 +189,12 @@ EOF
 
 @test "cleanup sink protects Jupyter runtime without blocking uninstall" {
     probe_developer_state jupyter sink
+}
+
+@test "Yarn Berry producer and sink preserve dependencies with the default whitelist" {
+    probe_yarn_berry_boundary default
+}
+
+@test "Yarn Berry producer and sink preserve dependencies with a custom whitelist" {
+    probe_yarn_berry_boundary custom
 }

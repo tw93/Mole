@@ -682,9 +682,9 @@ EOF
     [[ "$output" == *"npm prebuilds|$HOME/.npm/_prebuilds/*"* ]]
 }
 
-# Yarn Berry writes .yarn/cache inside each project and its global cache in
-# ~/.yarn/berry/cache; ~/.yarn/cache was a row that never held anything.
-@test "clean_dev_npm cleans the Yarn Berry global cache, not the unused ~/.yarn/cache" {
+# Berry archives are installed dependencies for Plug'n'Play projects, unlike
+# Classic's download cache. Check the producer independently of the sink.
+@test "clean_dev_npm keeps Yarn Berry dependencies and cleans only Yarn Classic" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -698,11 +698,12 @@ clean_bun_cache() { :; }
 safe_clean() { echo "$2|$1"; }
 note_activity() { :; }
 npm() { return 1; }
+run_with_timeout() { shift; "$@"; }
 clean_dev_npm
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$output" == *"Yarn Berry cache|$HOME/.yarn/berry/cache/*"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"$HOME/.yarn/berry/cache/"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"Yarn v1 cache|$HOME/Library/Caches/Yarn/*"* ]] || { echo "$output"; return 1; }
     [[ "$output" != *"|$HOME/.yarn/cache/"* ]]
 }

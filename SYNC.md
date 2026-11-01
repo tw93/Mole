@@ -40,6 +40,12 @@ Implemented in source (Mole CLI (macOS), `main`): `clean_dev_npm` keeps `~/.npm/
 - Mole Mac: it already guards running npx packages at its own sink; the private app-owned record owns the detailed comparison.
 - Mole CLI (Windows): npx, pnpm dlx and uv are Not applicable, because `lib/clean/dev.ps1:Clear-NpmCache` only runs `npm cache clean --force` (which leaves `_npx`) and `pnpm store prune`, and there is no uv cleanup. Bun is Implemented in source (`3d2db78f`): `Clear-NpmCache` uses Bun's confirmed root and owner command, checks `bun.exe`/`bunx.exe` before mutation, and retains failed or unknown targets. Direct removal of the default cache is limited to an unavailable/unusable Bun with a confirmed idle owner. The existing [CLI-SYNC-17](https://github.com/tw93/Mole/blob/windows/SYNC.md) owns verification and delivery; no Windows package release is implied.
 
+## 2026-11-01 Yarn Berry dependency retention
+
+Source-only repair of `21d44166` (included in V1.67.0): `clean_dev_npm` no longer automatically removes `~/.yarn/berry/cache`, whose archives Plug'n'Play projects load as installed dependencies. The existing clean-only shared protection also retains the root and descendants with default or custom whitelist files. Yarn Classic remains eligible, explicit uninstall keeps its separate reviewed-data policy, and saved Berry whitelist patterns remain custom entries after its unused menu row is removed. Producer and real-sink regressions fail on the old code; this is not a package release.
+
+Mole CLI (macOS): Implemented in source. Mole CLI (Windows): Implemented in source, owned by the [Windows branch synchronization record](https://github.com/tw93/Mole/blob/windows/SYNC.md); its platform-specific dependency roots are protected at the shared clean sink. Mole for Windows: Implemented by its existing review-only boundary. Mole Mac: Implemented by its existing review-only dependency boundary, verified against the current consumer. No private catalog or app implementation is transferred to this public record.
+
 ## Current disposition
 
 | Topic | Status | Source and next check |

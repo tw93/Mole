@@ -138,7 +138,6 @@ pip Python package cache|$HOME/Library/Caches/pip/*|package_manager
 uv Python package cache|$HOME/.cache/uv/*|package_manager
 tealdeer tldr pages cache|$HOME/Library/Caches/tealdeer/tldr-pages|package_manager
 Homebrew downloaded packages|$HOME/Library/Caches/Homebrew/*|package_manager
-Yarn Berry package cache|$HOME/.yarn/berry/cache/*|package_manager
 Yarn v1 package cache|$HOME/Library/Caches/Yarn/*|package_manager
 pnpm package store|$HOME/Library/pnpm/store/*|package_manager
 Bun package cache|$HOME/.bun/install/cache/*|package_manager
