@@ -8,7 +8,7 @@
   <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -480,7 +480,7 @@ Raycast 裝好後要手動設定一次：
 ## 支持專案
 
 - 購買 [Mole for Mac](https://mole.fit) 是支持 Mole 持續開發最直接的方式
-- 如果 Mole 幫到了你，歡迎給予 Star、[分享給朋友](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Mac.)，或在 GitHub 提交 Issue 和 PR
+- 如果 Mole 幫到了你，歡迎給予 Star、[分享給朋友](https://x.com/intent/tweet?url=https://github.com/tw93/Mole&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Mac.)，或在 GitHub 提交 Issue 和 PR
 - 我養了兩隻貓，湯圓和可樂，如果 Mole 用著順手，歡迎請她們吃一頓 <a href="https://cats.tw93.fun?name=Mole" target="_blank">罐頭 🥩</a>
 
 已經請客的好心人 🐱

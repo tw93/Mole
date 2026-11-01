@@ -8,7 +8,7 @@
   <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -480,7 +480,7 @@ X (Twitter)에 공유해 주신 사용자들의 생생한 후기:
 ## 후원 및 응원
 
 - [Mole for Mac](https://mole.fit)을 구매하시는 것이 Mole 개발을 지속하는 가장 직접적인 힘이 됩니다
-- Mole이 마음에 드셨다면 GitHub Star를 눌러주시고, [주변에 공유](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Mac.)해 주시거나 Issue/PR로 함께해 주세요
+- Mole이 마음에 드셨다면 GitHub Star를 눌러주시고, [주변에 공유](https://x.com/intent/tweet?url=https://github.com/tw93/Mole&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Mac.)해 주시거나 Issue/PR로 함께해 주세요
 - 제게는 '탕위안'과 '콜라'라는 고양이 두 마리가 있는데, Mole이 유용하셨다면 두 아이에게 <a href="https://cats.tw93.fun?name=Mole" target="_blank">맛있는 캔 🥩</a> 하나 선물해 주세요
 
 이미 고양이들에게 간식을 선물해 주신 분들 🐱
