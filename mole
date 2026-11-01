@@ -60,6 +60,7 @@ show_version() {
 MOLE_COMMANDS=(
     "clean:Free up disk space"
     "uninstall:Remove apps completely"
+    "optimize:Refresh caches and services"
     "analyze:Explore disk usage"
     "status:Monitor system health"
     "update:Update to the latest version"
@@ -86,6 +87,7 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --list" "$NC" "List apps mo uninstall accepts"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /mnt" "$NC" "Analyze another mount"
     echo
     printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
@@ -99,7 +101,7 @@ run_mole_command() {
     "$script" "$@"
 }
 
-readonly MENU_COMMANDS=(clean uninstall analyze status)
+readonly MENU_COMMANDS=(clean uninstall optimize analyze status)
 
 show_main_menu() {
     local selected="$1" line i
@@ -111,6 +113,7 @@ show_main_menu() {
     local -a labels=(
         "Clean        Free up disk space"
         "Uninstall    Remove apps completely"
+        "Optimize     Refresh caches and services"
         "Analyze      Explore disk usage"
         "Status       Monitor system health"
     )
@@ -157,7 +160,7 @@ interactive_main_menu() {
             UP) ((current > 1)) && current=$((current - 1)) ;;
             DOWN) ((current < ${#MENU_COMMANDS[@]})) && current=$((current + 1)) ;;
             ENTER) launch "${MENU_COMMANDS[current - 1]}" ;;
-            CHAR:[1-4]) launch "${MENU_COMMANDS[${key#CHAR:} - 1]}" ;;
+            CHAR:[1-5]) launch "${MENU_COMMANDS[${key#CHAR:} - 1]}" ;;
             MORE)
                 show_cursor
                 clear_screen
@@ -187,11 +190,12 @@ main() {
         fi
     done
     case "${args[0]:-}" in
-        clean | uninstall | analyze | status | update | remove)
+        clean | uninstall | optimize | analyze | status | update | remove)
             run_mole_command "$SCRIPT_DIR/bin/${args[0]}.sh" "${args[@]:1}"
             ;;
         analyse) run_mole_command "$SCRIPT_DIR/bin/analyze.sh" "${args[@]:1}" ;;
-        optimize | optimise | purge)
+        optimise) run_mole_command "$SCRIPT_DIR/bin/optimize.sh" "${args[@]:1}" ;;
+        purge)
             echo "mo ${args[0]} is not in Mole CLI (Linux) yet." >&2
             exit 1
             ;;

@@ -20,33 +20,69 @@ mole_desktop_field() {
     ' "$file" 2> /dev/null
 }
 
-# First word of Exec= without env assignments or a path, for the running check.
-mole_desktop_exec() {
-    local exec word
-    local -a words=()
-    exec=$(mole_desktop_field "$1" Exec)
-    # read -a splits on whitespace without glob expansion.
-    read -ra words <<< "$exec"
-    for word in "${words[@]}"; do
-        [[ "$word" == *=* && "$word" != /* ]] && continue
-        [[ "$word" == env ]] && continue
-        printf '%s' "$(basename -- "${word//\"/}")"
-        return 0
+# Words of an Exec= value, one per line, with the Desktop Entry quoting
+# removed: double quotes group a word, and inside them a backslash escapes the
+# next character. Nothing is glob-expanded or evaluated.
+mole_desktop_exec_words() {
+    local s="$1" word="" c i quoted=false have=false
+    for ((i = 0; i < ${#s}; i++)); do
+        c="${s:i:1}"
+        if [[ "$quoted" == true ]]; then
+            if [[ "$c" == $'\\' ]] && ((i + 1 < ${#s})); then
+                i=$((i + 1))
+                word+="${s:i:1}"
+            elif [[ "$c" == '"' ]]; then
+                quoted=false
+            else
+                word+="$c"
+            fi
+        elif [[ "$c" == '"' ]]; then
+            quoted=true
+            have=true
+        elif [[ "$c" == ' ' || "$c" == $'\t' ]]; then
+            [[ "$have" == true ]] && printf '%s\n' "$word"
+            word=""
+            have=false
+        else
+            word+="$c"
+            have=true
+        fi
     done
+    [[ "$have" == true ]] && printf '%s\n' "$word"
+    return 0
 }
 
-# Exec= program as written (quotes removed), for launchers that point at a file.
+# Exec= program as written: the first word that is not an env assignment, not
+# `env` itself and not one of env's options (-u NAME and -C DIR take a value).
 mole_desktop_exec_path() {
-    local exec word
     local -a words=()
-    exec=$(mole_desktop_field "$1" Exec)
-    read -ra words <<< "$exec"
-    for word in "${words[@]}"; do
-        [[ "$word" == *=* && "$word" != /* ]] && continue
-        [[ "$word" == env ]] && continue
-        printf '%s' "${word//\"/}"
-        return 0
+    local w i=0 in_env=false
+    mapfile -t words < <(mole_desktop_exec_words "$(mole_desktop_field "$1" Exec)")
+    while ((i < ${#words[@]})); do
+        w="${words[i]}"
+        if [[ "$w" == env && "$in_env" == false ]]; then
+            in_env=true
+        elif [[ "$in_env" == true && ("$w" == -u || "$w" == --unset || "$w" == -C || "$w" == --chdir) ]]; then
+            i=$((i + 1))
+        elif [[ "$in_env" == true && "$w" == -* ]]; then
+            :
+        elif [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            :
+        else
+            printf '%s' "$w"
+            return 0
+        fi
+        i=$((i + 1))
     done
+    return 0
+}
+
+# Program name of Exec=, for the running check.
+mole_desktop_exec() {
+    local prog
+    prog=$(mole_desktop_exec_path "$1")
+    [[ -n "$prog" ]] && printf '%s' "$(basename -- "$prog")"
+    return 0
 }
 
 # StartupWMClass is the name the app itself declares for its windows, and for

@@ -19,13 +19,14 @@ teardown() {
     rm -rf -- "$TEST_ROOT"
 }
 
-# Run bash code with Mole's libraries loaded. $1 is one of: core, clean, uninstall.
+# Run bash code with Mole's libraries loaded. $1 is one of: core, clean, uninstall, optimize.
 mole_run() {
     local what="$1" code="$2" prelude
     case "$what" in
         core) prelude='SCRIPT_DIR="$MOLE_TEST_REPO"; source "$MOLE_TEST_REPO/lib/core/common.sh"' ;;
         clean) prelude='SCRIPT_DIR="$MOLE_TEST_REPO"; source "$MOLE_TEST_REPO/bin/clean.sh"' ;;
         uninstall) prelude='SCRIPT_DIR="$MOLE_TEST_REPO"; source "$MOLE_TEST_REPO/bin/uninstall.sh"' ;;
+        optimize) prelude='SCRIPT_DIR="$MOLE_TEST_REPO"; source "$MOLE_TEST_REPO/lib/core/common.sh"; source "$MOLE_TEST_REPO/lib/uninstall/inventory.sh"; source "$MOLE_TEST_REPO/lib/optimize/tasks.sh"' ;;
     esac
     run bash -c "$prelude
 $code"

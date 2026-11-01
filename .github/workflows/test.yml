@@ -23,7 +23,7 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install tools
-        run: pacman -Syu --noconfirm --needed bash bats git go make procps-ng shellcheck sudo
+        run: pacman -Syu --noconfirm --needed bash bats git go make procps-ng shellcheck sqlite sudo
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Shellcheck
         run: shellcheck -x mole mo install.sh bin/*.sh lib/*/*.sh scripts/*.sh

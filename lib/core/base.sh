@@ -101,11 +101,11 @@ bytes_to_human_kb() {
 }
 
 mole_count_label() {
-    local count="${1:-0}" noun="$2"
+    local count="${1:-0}" noun="$2" plural="${3:-${2}s}"
     if [[ "$count" == "1" ]]; then
         printf '%s %s' "$count" "$noun"
     else
-        printf '%s %ss' "$count" "$noun"
+        printf '%s %s' "$count" "$plural"
     fi
 }
 
