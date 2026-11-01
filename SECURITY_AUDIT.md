@@ -4,7 +4,7 @@ This document describes Mole CLI (macOS), updated for V1.67.0 on 2026-10-31, wit
 
 ## 2026-11-01 Yarn Berry dependency boundary
 
-`e59e7d60` removes automatic cleanup of the global Berry archive store and protects it at shared clean sinks, including custom-whitelist runs and parent-target attempts. Classic cache cleanup and explicit uninstall keep their existing policies. The producer and real-sink regressions fail on the prior source; the full no-authorization check and test scripts pass, and an independent review found no production defect. This source repair is not a package release; the defect was present in V1.67.0.
+`e59e7d60` removes automatic cleanup of the global Berry archive store and protects it at shared clean sinks, including custom-whitelist runs and direct store-root/descendant attempts. Classic cache cleanup and explicit uninstall keep their existing policies. The producer and real-sink regressions fail on the prior source; the full no-authorization check and test scripts pass, and an independent review found no production defect. This source repair is not a package release; the defect was present in V1.67.0.
 
 ## Review Scope and Evidence
 
