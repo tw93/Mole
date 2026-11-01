@@ -1,0 +1,206 @@
+#!/bin/bash
+# Mole CLI (Linux) - entry point: routes subcommands and the main menu.
+
+set -euo pipefail
+
+if [[ "$EUID" -eq 0 ]]; then
+    printf '%s\n' 'Run Mole without sudo; it asks for sudo itself when a step needs it.' >&2
+    exit 1
+fi
+if ! /bin/pwd -P > /dev/null 2>&1; then
+    printf '%s\n' 'Cannot access the current directory. Run cd ~, then retry Mole.' >&2
+    exit 1
+fi
+
+SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname -- "$SCRIPT_PATH")"
+export SCRIPT_DIR
+
+source "$SCRIPT_DIR/lib/core/common.sh"
+
+VERSION="0.1.0"
+MOLE_TAGLINE="Deep clean your Linux desktop."
+
+show_brand_banner() {
+    cat << BANNER
+${GREEN} __  __       _      ${NC}
+${GREEN}|  \/  | ___ | | ___ ${NC}
+${GREEN}| |\/| |/ _ \| |/ _ \\${NC}
+${GREEN}| |  | | (_) | |  __/${NC}  ${BLUE}https://mole.fit${NC}
+${GREEN}|_|  |_|\___/|_|\___|${NC}  ${GREEN}${MOLE_TAGLINE}${NC}
+
+BANNER
+}
+
+show_version() {
+    local os="Unknown"
+    if [[ -r /etc/os-release ]]; then
+        os=$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-${NAME:-Linux}}")
+    fi
+    printf '\nMole version %s\n' "$VERSION" 2> /dev/null || return 0
+    printf 'OS: %s\n' "$os" 2> /dev/null || return 0
+    printf 'Architecture: %s\n' "$(uname -m)" 2> /dev/null || return 0
+    printf 'Kernel: %s\n' "$(uname -r)" 2> /dev/null || return 0
+    printf 'Session: %s\n' "${XDG_CURRENT_DESKTOP:-unknown}${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}" 2> /dev/null || return 0
+    printf 'Disk Free: %s\n' "$(bytes_to_human_kb "$(get_free_space_kb "$HOME")")" 2> /dev/null || return 0
+    printf 'Shell: %s\n\n' "${SHELL:-Unknown}" 2> /dev/null || return 0
+}
+
+MOLE_COMMANDS=(
+    "clean:Free up disk space"
+    "uninstall:Remove apps completely"
+    "analyze:Explore disk usage"
+    "status:Monitor system health"
+    "help:Show help"
+    "version:Show version"
+)
+
+show_help() {
+    show_brand_banner
+    echo
+    printf "%s%s%s\n" "$BLUE" "COMMANDS" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo" "$NC" "Main menu"
+    local entry name desc display
+    for entry in "${MOLE_COMMANDS[@]}"; do
+        name="${entry%%:*}"
+        desc="${entry#*:}"
+        display="mo $name"
+        [[ "$name" == "help" ]] && display="mo --help"
+        [[ "$name" == "version" ]] && display="mo --version"
+        printf "  %s%-28s%s %s\n" "$GREEN" "$display" "$NC" "$desc"
+    done
+    echo
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --list" "$NC" "List apps mo uninstall accepts"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /mnt" "$NC" "Analyze another mount"
+    echo
+    printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"
+    printf "  %s%-28s%s %s\n" "$GREEN" "--debug" "$NC" "Show detailed operation logs"
+    echo
+}
+
+run_mole_command() {
+    local script="$1"
+    shift
+    "$script" "$@"
+}
+
+readonly MENU_COMMANDS=(clean uninstall analyze status)
+
+show_main_menu() {
+    local selected="$1" line i
+    printf '\033[H\r\033[2K\n'
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        printf '\r\033[2K%s\n' "$line"
+    done <<< "$MAIN_MENU_BANNER"
+    printf '\r\033[2K\n'
+    local -a labels=(
+        "Clean        Free up disk space"
+        "Uninstall    Remove apps completely"
+        "Analyze      Explore disk usage"
+        "Status       Monitor system health"
+    )
+    for i in "${!labels[@]}"; do
+        printf '\r\033[2K%s\n' "$(show_menu_option $((i + 1)) "${labels[i]}" "$([[ $selected -eq $((i + 1)) ]] && echo true || echo false)")"
+    done
+    if [[ -t 0 ]]; then
+        printf '\r\033[2K\n'
+        printf '\r\033[2K%s\n' "${GRAY}↑↓  |  Enter  |  M More  |  V Version  |  Q Quit${NC}"
+        printf '\r\033[2K\n'
+    fi
+    printf '\033[J'
+}
+
+interactive_main_menu() {
+    local original_stty="" current=1 redraw=true key
+    [[ -t 0 ]] && original_stty=$(stty -g 2> /dev/null || true)
+    MAIN_MENU_BANNER="$(show_brand_banner)"
+
+    menu_exit() {
+        [[ -n "$original_stty" ]] && stty "$original_stty" 2> /dev/null
+        show_cursor
+        exit 0
+    }
+    launch() {
+        show_cursor
+        drain_pending_input 0.1
+        clear_screen
+        run_mole_command "$SCRIPT_DIR/bin/$1.sh"
+        exit $?
+    }
+
+    trap menu_exit INT
+    clear_screen
+    hide_cursor
+    while true; do
+        if [[ "$redraw" == "true" ]]; then
+            show_main_menu "$current"
+            redraw=false
+        fi
+        key=$(read_key 1) || continue
+        redraw=true
+        case "$key" in
+            UP) ((current > 1)) && current=$((current - 1)) ;;
+            DOWN) ((current < ${#MENU_COMMANDS[@]})) && current=$((current + 1)) ;;
+            ENTER) launch "${MENU_COMMANDS[current - 1]}" ;;
+            CHAR:[1-4]) launch "${MENU_COMMANDS[${key#CHAR:} - 1]}" ;;
+            MORE)
+                show_cursor
+                clear_screen
+                show_help
+                exit 0
+                ;;
+            VERSION)
+                show_cursor
+                clear_screen
+                show_version
+                exit 0
+                ;;
+            QUIT) menu_exit ;;
+        esac
+        drain_pending_input
+    done
+}
+
+main() {
+    local -a args=()
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == "--debug" ]]; then
+            export MO_DEBUG=1
+        else
+            args+=("$arg")
+        fi
+    done
+    case "${args[0]:-}" in
+        clean | uninstall | analyze | status)
+            run_mole_command "$SCRIPT_DIR/bin/${args[0]}.sh" "${args[@]:1}"
+            ;;
+        analyse) run_mole_command "$SCRIPT_DIR/bin/analyze.sh" "${args[@]:1}" ;;
+        optimize | optimise | purge)
+            echo "mo ${args[0]} is not in Mole CLI (Linux) yet." >&2
+            exit 1
+            ;;
+        help | --help | -h) show_help ;;
+        version | --version | -V) show_version ;;
+        "")
+            if [[ -t 0 && -t 1 ]]; then
+                interactive_main_menu
+            else
+                show_help
+            fi
+            ;;
+        *)
+            echo "Unknown command: ${args[0]}" >&2
+            echo "Use 'mole --help' for usage information." >&2
+            exit 1
+            ;;
+    esac
+}
+
+if [[ "${MOLE_TEST_MODE:-0}" == "1" && "${MOLE_SKIP_MAIN:-0}" == "1" ]]; then
+    :
+else
+    main "$@"
+fi

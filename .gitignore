@@ -96,3 +96,6 @@ mole_guidelines.md
 # Nix build output symlinks
 /result
 /result-*
+
+# Built Go helpers (make build)
+/bin/*-go
