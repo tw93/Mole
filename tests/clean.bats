@@ -333,6 +333,22 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [ -z "$(grep -- flatpak "$TEST_ROOT/sudo.log" 2> /dev/null)" ]
 }
 
+@test "container storage: podman is not asked before its storage exists, docker not without a socket" {
+    fake_command podman 'echo "$*" >> "'"$TEST_ROOT"'/podman.log"; printf "Images\t200MB (50%%)\n"'
+    fake_command docker 'echo "$*" >> "'"$TEST_ROOT"'/docker.log"; printf "Images\t300MB (50%%)\n"'
+    mole_run clean 'unset DOCKER_HOST; XDG_RUNTIME_DIR="'"$TEST_ROOT"'/run"; report_container_storage'
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_ROOT/podman.log" ]
+    [ ! -e "$HOME/.local/share/containers" ]
+    [ ! -e "$TEST_ROOT/docker.log" ]
+    mkdir -p "$HOME/.local/share/containers"
+    python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$TEST_ROOT/d.sock"
+    mole_run clean 'DOCKER_HOST="unix://'"$TEST_ROOT"'/d.sock"; report_container_storage'
+    grep -q "system df" "$TEST_ROOT/podman.log"
+    grep -q "system df" "$TEST_ROOT/docker.log"
+    [[ "$output" == *"Podman reclaimable"* && "$output" == *"Docker reclaimable"* ]]
+}
+
 @test "old agent versions: the active one and the newest other stay" {
     v="$HOME/.local/share/claude/versions"
     mkdir -p "$v" "$HOME/.local/bin"

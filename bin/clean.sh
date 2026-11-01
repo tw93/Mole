@@ -511,12 +511,32 @@ report_coredumps() {
     review_line "Core dumps · $(mole_count_label "$count" dump), $(colorize_human_size "$(bytes_to_human_kb "$kb")"), ${GRAY}sudo rm /var/lib/systemd/coredump/core.*${NC}"
 }
 
+# 0 when a Docker daemon socket exists to ask: DOCKER_HOST's unix path, else
+# the system and rootless sockets. A tcp DOCKER_HOST is the user's own choice.
+docker_daemon_present() {
+    local host="${DOCKER_HOST:-}"
+    if [[ -n "$host" ]]; then
+        [[ "$host" == unix://* ]] || return 0
+        [[ -S "${host#unix://}" ]]
+        return
+    fi
+    [[ -S /var/run/docker.sock || -S /run/docker.sock ]] && return 0
+    [[ -n "${XDG_RUNTIME_DIR:-}" && -S "$XDG_RUNTIME_DIR/docker.sock" ]]
+}
+
 # Report-only: what Docker or Podman says it could reclaim, when it answers
-# without sudo. Mole never prunes containers, images or volumes.
+# without sudo. Mole never prunes containers, images or volumes. Podman is
+# asked only when its storage exists (podman system df would create it), and
+# Docker only when a daemon socket is there.
 report_container_storage() {
     local tool out type reclaim total kb
     for tool in docker podman; do
         command -v "$tool" > /dev/null 2>&1 || continue
+        if [[ "$tool" == podman ]]; then
+            [[ -d "$MOLE_DATA_HOME/containers" ]] || continue
+        else
+            docker_daemon_present || continue
+        fi
         out=$(mole_c timeout 10 "$tool" system df --format '{{.Type}}\t{{.Reclaimable}}' 2> /dev/null) || continue
         total=0
         while IFS=$'\t' read -r type reclaim; do
