@@ -9,9 +9,9 @@ This is the Linux edition of [Mole](https://github.com/tw93/Mole). It lives on i
 
 ## Features
 
-- **Clean**: removes caches apps rebuild by themselves (browsers, thumbnails, shader caches, npm, pip, Go and other developer tools, Flatpak app caches), empties the Trash, and trims old pacman packages and journal logs through pacman's and systemd's own tools
-- **Uninstall**: removes pacman, AUR and Flatpak apps, Omarchy web apps and AppImages, then moves their leftovers to the Trash, matched by the app's exact ID only
-- **Optimize**: refreshes the font cache and the app launcher index, compacts browser databases while the browser is closed, and points out failed services, launchers and autostart entries whose program is gone, orphan packages, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
+- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, thumbnails, shader caches, about 50 developer tools, old versions of AI coding agents, Flatpak app caches), empties the Trash, removes unused Flatpak runtimes, trims old pacman packages and journal logs through pacman's and systemd's own tools, and reports core dumps, container space and large caches it does not know. Anything you want kept goes in `mo clean --whitelist`
+- **Uninstall**: removes pacman, AUR and Flatpak apps, Omarchy web and terminal apps and AppImages, shows each app's size and last use, stops its background services, then moves its leftovers to the Trash, matched by the app's exact ID only and never while the app is running
+- **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
 - **Analyze**: an interactive disk map of your volumes, home, caches and package cache; deleting from it moves items to the Trash
 - **Status**: live CPU, memory pressure, disks, network, temperatures, battery and processes, with a health score
 
@@ -25,6 +25,7 @@ Mole installs into `~/.local/share/mole` and links `mo` into `~/.local/bin`. It 
 
 ```bash
 mo update      # install the latest release
+mo update --force  # reinstall it
 mo remove      # remove Mole and its own files
 ```
 
@@ -34,6 +35,7 @@ mo remove      # remove Mole and its own files
 mo                         # main menu
 mo clean                   # clean caches and the Trash
 mo clean --dry-run         # preview, nothing removed
+mo clean --whitelist       # choose what clean keeps
 mo uninstall               # pick apps to remove
 mo uninstall --list        # apps and the names mo uninstall accepts
 mo uninstall --dry-run zoom
