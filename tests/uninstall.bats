@@ -280,6 +280,16 @@ desktop() {
     [[ "$output" == *"$HOME/.cache/waterfox=true"* ]]
 }
 
+@test "--with-data leaves Opera, Yandex, Cromite and Helium profiles unselected" {
+    mkdir -p "$HOME/.config/opera" "$HOME/.config/opera-beta" "$HOME/.config/yandex-browser-beta" "$HOME/.config/cromite" "$HOME/.config/net.imput.helium"
+    mole_run uninstall '
+        for p in opera opera-beta yandex-browser-beta cromite net.imput.helium; do
+            note=$(mole_leftover_holdback "$HOME/.config/$p") && echo "$p=$note" || echo "$p=selected"
+        done'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c "=browser profile" <<< "$output")" -eq 5 ]
+}
+
 @test "--with-data still leaves browser profiles and offline music unselected" {
     mkdir -p "$HOME/.config/chromium" "$HOME/.cache/chromium" "$HOME/.config/spotify" "$HOME/.cache/spotify"
     mole_run uninstall '

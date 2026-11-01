@@ -533,6 +533,8 @@ mole_leftover_holdback() {
     case "$1" in
         "$c/chromium" | "$c/google-chrome" | "$c/google-chrome-"* | "$c/BraveSoftware" | "$c/vivaldi" | "$c/vivaldi-"* | \
             "$c/microsoft-edge" | "$c/microsoft-edge-"* | "$HOME/.mozilla" | "$c/mozilla" | "$HOME/.zen" | "$c/zen" | \
+            "$c/opera" | "$c/opera-"* | "$c/yandex-browser" | "$c/yandex-browser-"* | "$c/cromite" | \
+            "$c/helium" | "$c/net.imput.helium" | \
             "$HOME/.librewolf" | "$c/librewolf")
             echo "browser profile"
             return 0
@@ -553,7 +555,8 @@ mole_leftover_holdback() {
             ;;
         "$v/net.waterfox.waterfox" | "$v/one.ablaze.floorp" | "$v/net.mullvad.MullvadBrowser" | \
             "$v/org.torproject.torbrowser-launcher" | "$v/com.github.Eloston.UngoogledChromium" | \
-            "$v/io.github.ungoogled_software.ungoogled_chromium")
+            "$v/io.github.ungoogled_software.ungoogled_chromium" | "$v/com.opera.Opera" | "$v/ru.yandex.Browser" | \
+            "$v/net.imput.helium")
             echo "browser profile"
             return 0
             ;;
