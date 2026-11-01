@@ -93,8 +93,7 @@ func startLiveScanCmd(id int64, path string, publication *scanPublication, files
 			return liveScanStartMsg{id: id, path: path, err: err}
 		}
 
-		noteScanRoot(path)
-		refreshMountTable()
+		beginScanMounts(path)
 		limiter := newScanLimiter(0)
 		initial, targets, err := readLiveScanInitialEntries(path, limiter)
 		if err != nil {

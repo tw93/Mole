@@ -39,19 +39,24 @@ func useMountTable(t *testing.T, table *mountTable) {
 }
 
 // useMountInfo serves mountinfo text through readMountInfo, which the real
-// loader reads on every refresh.
-func useMountInfo(t *testing.T, text *string) {
+// loader reads once per scan, and counts the reads.
+func useMountInfo(t *testing.T, text *string) *int32 {
 	t.Helper()
+	var reads int32
 	previous := readMountInfo
-	readMountInfo = func() (string, error) { return *text, nil }
+	readMountInfo = func() (string, error) {
+		atomic.AddInt32(&reads, 1)
+		return *text, nil
+	}
 	activeMountTable.Store(nil)
 	t.Cleanup(func() {
 		readMountInfo = previous
 		activeMountTable.Store(nil)
 	})
+	return &reads
 }
 
-func TestMountTableIsReadAgainForEachScanAndDuRun(t *testing.T) {
+func TestMountTableIsReadAgainForEachScan(t *testing.T) {
 	root := t.TempDir()
 	remote := filepath.Join(root, "remote")
 	if err := os.Mkdir(remote, 0o755); err != nil {
@@ -75,16 +80,39 @@ func TestMountTableIsReadAgainForEachScanAndDuRun(t *testing.T) {
 	if result.TotalSize >= 512*1024 {
 		t.Fatalf("a mount that appeared after start was walked: total %d", result.TotalSize)
 	}
-	text = "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
-	activeMountTable.Store(nil)
-	_ = currentMountTable()
-	text += "2 1 0:70 / " + remote + " rw,relatime - fuse.sshfs host:/srv rw\n"
+	// du inside the scan uses the scan's table.
 	size, err := getDirectorySizeFromDu(context.Background(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if size >= 512*1024 {
-		t.Fatalf("du counted a mount that appeared after the last read: %d", size)
+		t.Fatalf("du counted the mount the scan's table lists: %d", size)
+	}
+}
+
+func TestOneScanReadsTheMountTableOnce(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"a/node_modules/x", "b/node_modules/y", "c/.git/objects", "d/.git/refs", "plain/sub"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFileOfSize(t, filepath.Join(root, dir, "f.bin"), 16*1024)
+	}
+	text := "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
+	reads := useMountInfo(t, &text)
+	t.Setenv("HOME", t.TempDir())
+	var files, dirs, bytes int64
+	var current atomic.Value
+	if _, err := scanPathConcurrentAllEntries(context.Background(), root, &files, &dirs, &bytes, &current); err != nil {
+		t.Fatal(err)
+	}
+	for _, sub := range []string{"a", "c"} {
+		if _, err := scanPathConcurrentAllEntries(context.Background(), filepath.Join(root, sub), &files, &dirs, &bytes, &current); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := atomic.LoadInt32(reads); got != 3 {
+		t.Fatalf("three scans with folded node_modules and .git read mountinfo %d times, want 3 (once per scan)", got)
 	}
 }
 
@@ -106,11 +134,6 @@ func TestMountTableResolvesASymlinkedScanRoot(t *testing.T) {
 	writeFileOfSize(t, filepath.Join(remote, "big.bin"), 512*1024)
 	text := "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n2 1 0:70 / " + realRemote + " rw,relatime - fuse.sshfs host:/srv rw\n"
 	useMountInfo(t, &text)
-	t.Cleanup(func() {
-		rootAliasMu.Lock()
-		delete(rootAliases, link)
-		rootAliasMu.Unlock()
-	})
 	t.Setenv("HOME", t.TempDir())
 	var files, dirs, bytes int64
 	var current atomic.Value
