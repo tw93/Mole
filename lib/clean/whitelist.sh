@@ -12,34 +12,34 @@
 
 MOLE_WHITELIST_FILE="$MOLE_CONFIG_HOME/mole/whitelist"
 MOLE_WHITELIST=()
+# Path entries with ~ expanded and the trailing / dropped, worked out once in
+# mole_whitelist_load so the per-child checks run no subshell.
+MOLE_WHITELIST_PATTERNS=()
 
 # Load the file. Returns 1 when it exists but cannot be read, so a caller never
 # cleans (or saves over) a whitelist it could not see.
 mole_whitelist_load() {
     MOLE_WHITELIST=()
+    MOLE_WHITELIST_PATTERNS=()
     [[ -e "$MOLE_WHITELIST_FILE" ]] || return 0
     [[ -f "$MOLE_WHITELIST_FILE" && -r "$MOLE_WHITELIST_FILE" ]] || return 1
-    local line
+    local line pattern
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%$'\r'}"
         line="${line#"${line%%[![:space:]]*}"}"
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" == \#* ]] && continue
         MOLE_WHITELIST+=("$line")
+        case "$line" in
+            \~ | \~/* | /*)
+                pattern="$line"
+                [[ "$pattern" == "~"* ]] && pattern="$HOME${pattern#\~}"
+                pattern="${pattern%/}"
+                [[ -n "$pattern" ]] && MOLE_WHITELIST_PATTERNS+=("$pattern")
+                ;;
+        esac
     done < "$MOLE_WHITELIST_FILE"
     return 0
-}
-
-# A path entry with ~ expanded and the trailing / dropped; empty for a label.
-_mole_whitelist_pattern() {
-    local entry="$1" pattern
-    case "$entry" in
-        \~ | \~/* | /*) ;;
-        *) return 0 ;;
-    esac
-    pattern="$entry"
-    [[ "$pattern" == "~"* ]] && pattern="$HOME${pattern#\~}"
-    printf '%s' "${pattern%/}"
 }
 
 # 0 when the rule (label, folder) is whitelisted.
@@ -48,35 +48,46 @@ mole_whitelisted() {
     [[ ${#MOLE_WHITELIST[@]} -gt 0 ]] || return 1
     for entry in "${MOLE_WHITELIST[@]}"; do
         case "$entry" in
-            \~ | \~/* | /*)
-                [[ -n "$root" ]] || continue
-                pattern=$(_mole_whitelist_pattern "$entry")
-                [[ -n "$pattern" ]] || continue
-                # shellcheck disable=SC2053  # The pattern is a glob on purpose.
-                if [[ "$root" == "$pattern" || "$root" == "$pattern/"* || "$root" == $pattern ]]; then
-                    return 0
-                fi
-                ;;
+            \~ | \~/* | /*) ;;
             *) [[ "$entry" == "$label" ]] && return 0 ;;
         esac
+    done
+    [[ -n "$root" ]] || return 1
+    for pattern in ${MOLE_WHITELIST_PATTERNS[@]+"${MOLE_WHITELIST_PATTERNS[@]}"}; do
+        # shellcheck disable=SC2053  # The pattern is a glob on purpose.
+        if [[ "$root" == "$pattern" || "$root" == "$pattern/"* || "$root" == $pattern ]]; then
+            return 0
+        fi
     done
     return 1
 }
 
 # 0 when one child a rule would remove must stay: it is whitelisted itself
 # (path, below a path, or a glob such as Mole CLI (macOS)'s ~/.npm/_cacache/*),
-# or a whitelisted path lies inside it, which keeps the whole child.
+# or a whitelisted path lies inside it, which keeps the whole child. "Inside"
+# compares the child with the entry's leading segments, as many as the child
+# has, as a glob: ~/.cache/*/keep keeps ~/.cache/foo whole.
 mole_whitelist_keeps_child() {
-    local child="$1" entry pattern
-    [[ ${#MOLE_WHITELIST[@]} -gt 0 ]] || return 1
-    for entry in "${MOLE_WHITELIST[@]}"; do
-        pattern=$(_mole_whitelist_pattern "$entry")
-        [[ -n "$pattern" ]] || continue
+    local child="$1" pattern prefix slashes cn pn
+    [[ ${#MOLE_WHITELIST_PATTERNS[@]} -gt 0 ]] || return 1
+    slashes="${child//[!\/]/}"
+    cn=${#slashes}
+    for pattern in "${MOLE_WHITELIST_PATTERNS[@]}"; do
         # shellcheck disable=SC2053  # The pattern is a glob on purpose.
         if [[ "$child" == "$pattern" || "$child" == "$pattern/"* || "$child" == $pattern ]]; then
             return 0
         fi
         [[ "$pattern" == "$child/"* ]] && return 0
+        slashes="${pattern//[!\/]/}"
+        pn=${#slashes}
+        ((pn > cn)) || continue
+        prefix="$pattern"
+        while ((pn > cn)); do
+            prefix="${prefix%/*}"
+            pn=$((pn - 1))
+        done
+        # shellcheck disable=SC2053  # The leading segments are a glob on purpose.
+        [[ "$child" == $prefix ]] && return 0
     done
     return 1
 }

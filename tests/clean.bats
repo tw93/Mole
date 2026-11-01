@@ -269,8 +269,10 @@ start_owner() {
     make_cache "$HOME/.npm/_cacache/content-v2"
     make_cache "$HOME/.cache/moletool/keep/inner"
     make_cache "$HOME/.cache/moletool/other"
+    make_cache "$HOME/.cache/moletool/wild/keep"
+    make_cache "$HOME/.cache/moletool/wild2"
     mkdir -p "$HOME/.config/mole"
-    printf '%s\n' "~/.cache/thumbnails/large" "~/.npm/_cacache/*" "~/.cache/moletool/keep/inner" > "$HOME/.config/mole/whitelist"
+    printf '%s\n' "~/.cache/thumbnails/large" "~/.npm/_cacache/*" "~/.cache/moletool/keep/inner" "~/.cache/moletool/w*d/keep" > "$HOME/.config/mole/whitelist"
     run_three='mole_whitelist_load
 clean_rule "Thumbnails" "$HOME/.cache/thumbnails" "moletestowner"
 clean_rule "npm cache" "$HOME/.npm/_cacache" "moletestowner"
@@ -280,8 +282,7 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [[ "$output" == *"Thumbnails · "*"KB dry"* ]]
     [[ "$output" != *"Thumbnails · 2 items"* ]]
     [[ "$output" == *"npm cache · would skip (whitelist)"* ]]
-    [[ "$output" == *"Mole tool cache · "*"KB dry"* ]]
-    [[ "$output" != *"Mole tool cache · 2 items"* ]]
+    [[ "$output" == *"Mole tool cache · 2 items, "*"KB dry"* ]]
     mole_run clean "$run_three"
     [ "$status" -eq 0 ]
     [[ "$output" == *"npm cache · skipped (whitelist)"* ]]
@@ -291,6 +292,22 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [ -f "$HOME/.npm/_cacache/content-v2/entry/blob" ]
     [ -f "$HOME/.cache/moletool/keep/inner/entry/blob" ]
     [ ! -e "$HOME/.cache/moletool/other" ]
+    # A wildcard in the child's own segment: ~/.cache/moletool/w*d/keep keeps wild.
+    [ -f "$HOME/.cache/moletool/wild/keep/entry/blob" ]
+    [ ! -e "$HOME/.cache/moletool/wild2" ]
+}
+
+@test "whitelist checks per rule and per child start no subshell; patterns are worked out at load" {
+    mkdir -p "$HOME/.config/mole"
+    printf '%s\n' "Thumbnails" "~/.cache/a/" "/opt/b" > "$HOME/.config/mole/whitelist"
+    mole_run clean 'mole_whitelist_load; printf "%s\n" "${MOLE_WHITELIST_PATTERNS[@]}"; echo ---; declare -f mole_whitelisted mole_whitelist_keeps_child'
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "$HOME/.cache/a" ]
+    [ "${lines[1]}" = "/opt/b" ]
+    [ "${lines[2]}" = "---" ]
+    body="${output#*---}"
+    # $( ... ) or backticks would fork; $(( )) is arithmetic.
+    [ -z "$(grep -E '\$\([^(]|`' <<< "$body")" ]
 }
 
 @test "an unreadable whitelist stops clean before anything is removed" {
