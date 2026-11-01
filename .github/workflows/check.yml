@@ -21,24 +21,14 @@ concurrency:
 jobs:
   format:
     name: Format
-    runs-on: macos-latest
+    # Formatting needs only Go tools, so it runs on Linux and leaves the macOS
+    # concurrency slots to the jobs that need macOS.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Cache Homebrew
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          # Cache only the bottle download cache. Homebrew is under
-          # /opt/homebrew on the arm64 runners, and this repo has no Brewfile,
-          # so the old fixed key and /usr/local/Cellar paths restored nothing.
-          # The key follows check.yml, so changing the pinned tools refreshes it.
-          path: ~/Library/Caches/Homebrew
-          key: ${{ runner.os }}-brew-${{ hashFiles('.github/workflows/check.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-brew-
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -47,7 +37,6 @@ jobs:
 
       - name: Install tools
         run: |
-          brew install shellcheck
           go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
@@ -81,7 +70,6 @@ jobs:
     name: Check
     runs-on: macos-latest
     timeout-minutes: 20
-    needs: format
     permissions:
       contents: read
 
@@ -109,10 +97,16 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # A prebuilt binary instead of `go install`, which compiled it for about
+      # 68s; check.sh runs it, so the action only installs and keeps no cache.
+      # The binary reads export data only up to the Go it was built with, so a
+      # newer go.mod toolchain needs a golangci-lint release built with it.
       - name: Install golangci-lint
-        run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.12.2
+          install-only: true
+          skip-cache: true
 
       - name: Fetch the Windows CLI for the skill audit
         run: git fetch --no-tags --depth=1 origin windows:refs/remotes/origin/windows
