@@ -1,10 +1,15 @@
 name: Validation
 
+# Path filters skip changes that only touch files this workflow never reads;
+# scripts/release_workflow_gate.py mirrors them and tests/release_gate_test.py
+# locks the two together, so edit both in one change.
 on:
   push:
     branches: [main, dev]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!llms.txt', '!.claude/**', '!.agents/**', '!.cursor/**', '!.github/ISSUE_TEMPLATE/**', '!.github/CODEOWNERS', '!skills/**', '!plugins/**', 'README.md', 'CONTRIBUTING.md', 'docs/incidents.md', '.claude/hooks/**', '.agents/**', '.claude/skills/*', '.claude/skills/*/SKILL.md', '.claude/skills/release-notes/**', 'skills/mole/SKILL.md', '**.sh', '**.bash', '**.bats', '**.go', '**.nix', '**.py', '**.ps1', '**/mole', '**/mo']
   pull_request:
     branches: [main, dev]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!llms.txt', '!.claude/**', '!.agents/**', '!.cursor/**', '!.github/ISSUE_TEMPLATE/**', '!.github/CODEOWNERS', '!skills/**', '!plugins/**', 'README.md', 'CONTRIBUTING.md', 'docs/incidents.md', '.claude/hooks/**', '.agents/**', '.claude/skills/*', '.claude/skills/*/SKILL.md', '.claude/skills/release-notes/**', 'skills/mole/SKILL.md', '**.sh', '**.bash', '**.bats', '**.go', '**.nix', '**.py', '**.ps1', '**/mole', '**/mo']
   workflow_dispatch:
 
 permissions:
@@ -138,12 +143,6 @@ jobs:
             exit 1
           fi
           '
-
-      - name: Scan for secrets (gitleaks)
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
 
       - name: Run high-risk path regression tests
         env:

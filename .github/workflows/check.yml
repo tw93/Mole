@@ -1,9 +1,14 @@
 name: Check
 
+# Path filters skip changes that only touch files this workflow never reads;
+# scripts/release_workflow_gate.py mirrors them and tests/release_gate_test.py
+# locks the two together, so edit both in one change.
 on:
   push:
     branches: [main]
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!llms.txt', '!.claude/**', '!.agents/**', '!.cursor/**', '!.github/ISSUE_TEMPLATE/**', '!.github/CODEOWNERS', '!skills/**', '!plugins/**', 'README.md', 'CONTRIBUTING.md', 'docs/*.md', '.github/ISSUE_TEMPLATE/**', 'skills/**', 'plugins/**', '**.sh', '**.bash', '**.bats', '**.go', '**.nix', '**.py', '**.ps1', '**/mole', '**/mo']
   pull_request:
+    paths: ['**', '!**.md', '!docs/**', '!CONTRIBUTORS.svg', '!LICENSE', '!llms.txt', '!.claude/**', '!.agents/**', '!.cursor/**', '!.github/ISSUE_TEMPLATE/**', '!.github/CODEOWNERS', '!skills/**', '!plugins/**', 'README.md', 'CONTRIBUTING.md', 'docs/*.md', '.github/ISSUE_TEMPLATE/**', 'skills/**', 'plugins/**', '**.sh', '**.bash', '**.bats', '**.go', '**.nix', '**.py', '**.ps1', '**/mole', '**/mo']
   workflow_dispatch:
 
 permissions:

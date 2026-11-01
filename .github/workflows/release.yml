@@ -78,87 +78,25 @@ jobs:
       id-token: write
       actions: read
     steps:
-      # The runbook requires green Check/Validation/CodeQL/Nix on the tagged
+      # The runbook requires green Check/Validation/CodeQL/Nix/Secrets on the tagged
       # commit before tagging; enforce it here so a red or cancelled run can
-      # never publish. Missing and cancelled runs count as failures. CodeQL and
-      # Nix ignore docs-only pushes, so that one shape is allowed to lack them;
-      # every workflow now accepts workflow_dispatch for the other gaps.
+      # never publish. Those workflows skip commits that only touch files they
+      # never read, so the gate inherits a skipped workflow from its nearest
+      # green run only when every commit in between is skippable for it; the
+      # rules and their tests live in scripts/release_workflow_gate.py.
+      - name: Checkout the gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/release_workflow_gate.py
+          sparse-checkout-cone-mode: false
+
       - name: Verify required workflows passed for this commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ github.sha }}
           TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          required=(Check Validation CodeQL Nix)
-          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$TARGET_SHA" --limit 100 \
-            --json name,status,conclusion)
-          missing=()
-          for workflow in "${required[@]}"; do
-            passed=$(printf '%s' "$runs" | jq -r --arg name "$workflow" \
-              '[ .[] | select(.name == $name and .status == "completed" and .conclusion == "success") ] | length')
-            if [[ "$passed" -eq 0 ]]; then
-              missing+=("$workflow")
-            fi
-          done
-          if [[ ${#missing[@]} -gt 0 ]]; then
-            # A docs-only commit legitimately has no CodeQL/Nix run because
-            # those workflows carry paths-ignore. The commit API list is the
-            # evidence; an empty or unreadable list is not docs-only.
-            docs_only=false
-            changed_files=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}" \
-              --jq '.files[].filename' 2> /dev/null || true)
-            if [[ -n "$changed_files" ]] &&
-              ! printf '%s\n' "$changed_files" | grep -Ev '^(docs/|.*\.md$)' > /dev/null; then
-              docs_only=true
-            fi
-            # A docs-only commit inherits its CodeQL/Nix evidence from the
-            # nearest ancestor that changed code. Otherwise a failed Nix run on
-            # that ancestor could be hidden behind a later docs-only tag. The
-            # contributors bot commits only CONTRIBUTORS.svg with [skip ci], so
-            # it has no runs of its own and is walked past like docs.
-            code_ancestor=""
-            if [[ "$docs_only" == "true" ]]; then
-              commits=$(gh api "repos/${GITHUB_REPOSITORY}/commits?sha=${TARGET_SHA}&per_page=100" \
-                --jq '.[].sha' 2> /dev/null || true)
-              for candidate in $commits; do
-                [[ "$candidate" == "$TARGET_SHA" ]] && continue
-                candidate_files=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${candidate}" \
-                  --jq '.files[].filename' 2> /dev/null || true)
-                [[ -n "$candidate_files" ]] || continue
-                if printf '%s\n' "$candidate_files" | grep -Ev '^(docs/|.*\.md$|CONTRIBUTORS\.svg$)' > /dev/null; then
-                  code_ancestor="$candidate"
-                  break
-                fi
-              done
-            fi
-            remaining=()
-            for workflow in "${missing[@]}"; do
-              if [[ "$docs_only" == "true" && ( "$workflow" == "CodeQL" || "$workflow" == "Nix" ) ]]; then
-                if [[ -z "$code_ancestor" ]]; then
-                  remaining+=("$workflow (no code ancestor found)")
-                  continue
-                fi
-                inherited=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$code_ancestor" --limit 100 \
-                  --json name,status,conclusion | jq -r --arg name "$workflow" \
-                  '[ .[] | select(.name == $name and .status == "completed" and .conclusion == "success") ] | length') ||
-                  inherited=0
-                if [[ "${inherited:-0}" -eq 0 ]]; then
-                  remaining+=("$workflow on ${code_ancestor:0:12}")
-                else
-                  echo "Docs-only commit: ${workflow} inherits green from ${code_ancestor:0:12}"
-                fi
-              else
-                remaining+=("$workflow")
-              fi
-            done
-            if [[ ${#remaining[@]} -gt 0 ]]; then
-              echo "::error::Release blocked: no successful completed ${remaining[*]} run for ${TARGET_SHA}."
-              echo "Next action: run the missing workflow with workflow_dispatch on tag ${TAG} (or on a branch at ${TARGET_SHA}), wait for it to finish green at https://github.com/${GITHUB_REPOSITORY}/commit/${TARGET_SHA}/checks, then re-run this release workflow. A cancelled, skipped or missing run is not release evidence."
-              exit 1
-            fi
-          fi
-          echo "Required workflows all passed for ${TARGET_SHA} (docs-only skips allowed)"
+        run: python3 scripts/release_workflow_gate.py
 
       - name: Download all artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

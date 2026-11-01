@@ -433,6 +433,14 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "release gate inherits path-filtered workflows only through skippable commits" {
+    command -v python3 > /dev/null 2>&1 || skip "python3 not available"
+    run grep -F 'run: python3 scripts/release_workflow_gate.py' "$PROJECT_ROOT/.github/workflows/release.yml"
+    [ "$status" -eq 0 ]
+    run env PYTHONDONTWRITEBYTECODE=1 python3 "$PROJECT_ROOT/tests/release_gate_test.py"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "release workflow keeps Homebrew distribution on official core only" {
     run grep -q 'update-homebrew-core:' "$PROJECT_ROOT/.github/workflows/release.yml"
     [ "$status" -eq 0 ]

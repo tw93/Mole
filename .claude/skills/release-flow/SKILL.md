@@ -34,7 +34,7 @@ Resolve the latest published stable tag from GitHub before choosing the version 
 
 Use the Go version declared in `go.mod` for local release builds, matching `actions/setup-go` in CI, then run `scripts/check_release_minos.sh` on both architectures. A newer local Go can raise the minimum macOS version even with `CGO_ENABLED=0`; during V1.54.0 verification, Go 1.27 produced macOS 13 binaries while the declared Go 1.25 toolchain preserved macOS 12. Rebuild with the declared toolchain instead of relaxing the minimum-OS gate. Check the `make release-amd64 release-arm64` outputs, not `make build`: the local build links `status` with cgo against the host SDK, so its `status-go` reports the host macOS as its minimum and says nothing about the release binaries.
 
-Capture the test runner's exit status and structured summary, with skipped tests reported separately. After pushing the candidate commit, wait for its required Check, Validation, CodeQL, and Nix workflows to finish successfully before tagging that exact SHA. Nix must verify both Darwin architectures and the installed/profile lifecycle. A cancelled run or a green check on another commit is not release evidence.
+Capture the test runner's exit status and structured summary, with skipped tests reported separately. After pushing the candidate commit, wait for its required Check, Validation, CodeQL, Nix and Secrets workflows to finish successfully before tagging that exact SHA (a version bump changes `mole`, so all five run on it). Nix must verify both Darwin architectures and the installed/profile lifecycle. A cancelled run or a green check on another commit is not release evidence.
 
 ## Tag and publish
 
