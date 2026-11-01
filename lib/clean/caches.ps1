@@ -96,6 +96,11 @@ function Clear-AppCaches {
         }
     }
     
+    # Vesktop 1.6.8 Windows profile: keep settings and persistent session stores.
+    foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache')) {
+        Clear-MoleAppCache -Path "$env:APPDATA\vesktop\sessionData\$leaf" -Description "Vesktop cache" -Processes @('vesktop')
+    }
+
     # Slack
     $slackCachePaths = @(
         "$env:APPDATA\Slack\Cache"

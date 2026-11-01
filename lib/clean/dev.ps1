@@ -186,17 +186,10 @@ function Clear-NpmCache {
     Invoke-MoleOwnerCacheCleanup -Name 'npm' -Query @('config', 'get', 'cache') -Arguments @('cache', 'clean', '--force') -Description 'npm cache'
     Invoke-MoleOwnerCacheCleanup -Name 'pnpm' -Query @('store', 'path') -Arguments @('store', 'prune') -Description 'pnpm store'
 
-    # Yarn cache
-    $yarnCachePaths = @(
-        "$env:LOCALAPPDATA\Yarn\Cache"
-        "$env:USERPROFILE\.yarn\cache"
-    )
-    foreach ($path in $yarnCachePaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "Yarn cache"
-        }
-    }
-    
+    # Classic's download cache is rebuildable. Berry's archives are live
+    # dependencies and are protected by the shared clean path policy.
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Yarn\Cache" -Description 'Yarn cache' -Processes @('node')
+
     # A usable Bun owns its configured cache. Unknown roots and failed owner
     # commands must never fall back to deleting a guessed directory.
     if (Test-MoleCacheOwnerIdle -Names @('bun', 'bunx')) {

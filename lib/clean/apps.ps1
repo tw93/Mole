@@ -13,6 +13,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\..\core\base.ps1"
 . "$scriptDir\..\core\log.ps1"
 . "$scriptDir\..\core\file_ops.ps1"
+. "$PSScriptRoot\cache_guard.ps1"
 
 # ============================================================================
 # Orphaned App Data Detection
@@ -252,9 +253,15 @@ function Clear-AdobeData {
         Clean Adobe application caches and temp files
     #>
     
+    # These media caches are shared by the editors; keep them while any owner
+    # is active or unknown. The shared sink checks again after sizing.
+    foreach ($leaf in @('Media Cache Files', 'Peak Files')) {
+        Clear-MoleAppCache -Path "$env:APPDATA\Adobe\Common\$leaf" -Description 'Adobe cache' -Processes @(
+            'Adobe Premiere Pro', 'AfterFX', 'Adobe Media Encoder', 'Adobe Audition', 'Audition'
+        )
+    }
+
     $adobeCachePaths = @(
-        "$env:APPDATA\Adobe\Common\Media Cache Files"
-        "$env:APPDATA\Adobe\Common\Peak Files"
         "$env:LOCALAPPDATA\Adobe\*\Cache"
         "$env:LOCALAPPDATA\Adobe\*\CameraRaw\Cache"
         "$env:LOCALAPPDATA\Temp\Adobe"

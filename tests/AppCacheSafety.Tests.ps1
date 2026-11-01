@@ -76,6 +76,42 @@ Describe 'Application cache boundaries' {
         Test-Path -LiteralPath $insiders | Should -BeFalse
     }
 
+    It 'Cleans only the measured Vesktop disk caches and retains profile state' {
+        $root = "$env:APPDATA\vesktop"
+        $caches = @(foreach ($leaf in @('Cache','Code Cache','GPUCache')) { New-CacheFile "$root\sessionData\$leaf\entry" })
+        $state = @(foreach ($leaf in @('settings\settings.json','sessionData\Local Storage\entry','sessionData\Network\Cookies','sessionData\Shared Dictionary\entry','vencordFiles\plugin.js')) { New-CacheFile "$root\$leaf" })
+        Clear-AppCaches
+        foreach ($file in $caches) { Test-Path -LiteralPath $file | Should -BeFalse }
+        foreach ($file in $state) { Test-Path -LiteralPath $file | Should -BeTrue }
+    }
+
+    It 'Keeps Vesktop caches for <Owner> in preview <Preview>' -ForEach @(
+        @{Owner='vesktop';Preview=$false}, @{Owner='vesktop';Preview=$true},
+        @{Owner='unknown';Preview=$false}, @{Owner='unknown';Preview=$true}
+    ) {
+        $cache = New-CacheFile "$env:APPDATA\vesktop\sessionData\Cache\entry"
+        if ($Owner -eq 'unknown') { Mock Get-Process { throw 'incomplete inventory' } }
+        else { Mock Get-Process { [pscustomobject]@{ProcessName='vesktop'} } }
+        Set-DryRunMode -Enabled $Preview
+        Clear-AppCaches
+        Test-Path -LiteralPath $cache | Should -BeTrue
+        Test-Path -LiteralPath $script:ExportListFile | Should -BeFalse
+        (Get-CleanupStats).FilesCleaned | Should -Be 0
+    }
+
+    It 'Rechecks Vesktop after sizing in preview <Preview>' -ForEach @(@{Preview=$true},@{Preview=$false}) {
+        $cache = New-CacheFile "$env:APPDATA\vesktop\sessionData\Cache\package\entry"
+        $script:VesktopStarted = $false
+        Mock Get-Process { if ($script:VesktopStarted) { [pscustomobject]@{ProcessName='vesktop'} } }
+        Mock Get-ValidatedTreeSize { $script:VesktopStarted = $true; return 13 }
+        Set-DryRunMode -Enabled $Preview
+        Clear-AppCaches
+        Should -Invoke Get-ValidatedTreeSize -Times 1 -Exactly
+        Test-Path -LiteralPath $cache | Should -BeTrue
+        Test-Path -LiteralPath $script:ExportListFile | Should -BeFalse
+        (Get-CleanupStats).FilesCleaned | Should -Be 0
+    }
+
     It 'Keeps an unavailable Bun cache for a running or unknown owner: <Owner>' -ForEach @(
         @{Owner='bun'}, @{Owner='bunx'}, @{Owner='unknown'}
     ) {
@@ -163,6 +199,109 @@ Describe 'Application cache boundaries' {
         Test-Path -LiteralPath $local | Should -BeFalse
         Test-Path -LiteralPath $roaming | Should -BeFalse
         Test-Path -LiteralPath $settings | Should -BeTrue
+    }
+
+    It 'Keeps Adobe media caches for <Owner> in preview <Preview>' -ForEach @(
+        @{Owner='Adobe Premiere Pro';Preview=$false}, @{Owner='Adobe Premiere Pro';Preview=$true},
+        @{Owner='AfterFX';Preview=$false}, @{Owner='AfterFX';Preview=$true},
+        @{Owner='Adobe Media Encoder';Preview=$false}, @{Owner='Adobe Media Encoder';Preview=$true},
+        @{Owner='Adobe Audition';Preview=$false}, @{Owner='Adobe Audition';Preview=$true},
+        @{Owner='Audition';Preview=$false}, @{Owner='Audition';Preview=$true},
+        @{Owner='unknown';Preview=$false}, @{Owner='unknown';Preview=$true}
+    ) {
+        $media = New-CacheFile "$env:APPDATA\Adobe\Common\Media Cache Files\clip.cache"
+        $peak = New-CacheFile "$env:APPDATA\Adobe\Common\Peak Files\clip.pek"
+        if ($Owner -eq 'unknown') { Mock Get-Process { throw 'incomplete inventory' } }
+        else { Mock Get-Process { [pscustomobject]@{ProcessName=$Owner} } }
+        Set-DryRunMode -Enabled $Preview
+        Clear-AdobeData
+        foreach ($file in @($media,$peak)) { Test-Path -LiteralPath $file | Should -BeTrue }
+        (Get-CleanupStats).FilesCleaned | Should -Be 0
+    }
+
+    It 'Rechecks Adobe owners after sizing in preview <Preview>' -ForEach @(
+        @{Preview=$false}, @{Preview=$true}
+    ) {
+        $media = New-CacheFile "$env:APPDATA\Adobe\Common\Media Cache Files\clip\entry.cache"
+        $script:AdobeStarted = $false
+        Mock Get-Process { if ($script:AdobeStarted) { [pscustomobject]@{ProcessName='AfterFX'} } }
+        Mock Get-ValidatedTreeSize { $script:AdobeStarted = $true; return 10 }
+        Set-DryRunMode -Enabled $Preview
+        Clear-AdobeData
+        $script:AdobeStarted | Should -BeTrue
+        Test-Path -LiteralPath $media | Should -BeTrue
+        (Get-CleanupStats).FilesCleaned | Should -Be 0
+    }
+
+    It 'Cleans idle Adobe media and peak caches while retaining Team Projects' {
+        $media = New-CacheFile "$env:APPDATA\Adobe\Common\Media Cache Files\clip.cache"
+        $peak = New-CacheFile "$env:APPDATA\Adobe\Common\Peak Files\clip.pek"
+        $state = New-CacheFile "$env:APPDATA\Adobe\Common\Team Projects Cache\project.db"
+        Clear-AdobeData
+        Test-Path -LiteralPath $media | Should -BeFalse
+        Test-Path -LiteralPath $peak | Should -BeFalse
+        Test-Path -LiteralPath $state | Should -BeTrue
+    }
+
+    It 'Keeps Yarn Berry dependencies beside the idle Classic cache' {
+        $berry = New-CacheFile "$env:USERPROFILE\.yarn\cache\dependency.zip"
+        $global = New-CacheFile "$env:USERPROFILE\.yarn\berry\cache\dependency.zip"
+        $windowsGlobal = New-CacheFile "$env:LOCALAPPDATA\Yarn\Berry\cache\dependency.zip"
+        $classic = New-CacheFile "$env:LOCALAPPDATA\Yarn\Cache\entry"
+        Mock Invoke-MoleOwnerProcess { $null }
+        Clear-NpmCache
+        Test-Path -LiteralPath $berry | Should -BeTrue
+        Test-Path -LiteralPath $global | Should -BeTrue
+        Test-Path -LiteralPath $windowsGlobal | Should -BeTrue
+        Test-Path -LiteralPath $classic | Should -BeFalse
+    }
+
+    It 'Keeps Yarn Classic for <Owner> in preview <Preview>' -ForEach @(
+        @{Owner='node';Preview=$false}, @{Owner='node';Preview=$true},
+        @{Owner='unknown';Preview=$false}, @{Owner='unknown';Preview=$true}
+    ) {
+        $classic = New-CacheFile "$env:LOCALAPPDATA\Yarn\Cache\entry"
+        Mock Invoke-MoleOwnerProcess { $null }
+        if ($Owner -eq 'unknown') { Mock Get-Process { throw 'incomplete inventory' } }
+        else { Mock Get-Process { [pscustomobject]@{ProcessName=$Owner} } }
+        Set-DryRunMode -Enabled $Preview
+        Clear-NpmCache
+        Test-Path -LiteralPath $classic | Should -BeTrue
+        (Get-CleanupStats).FilesCleaned | Should -Be 0
+    }
+
+    It 'Rechecks Yarn Classic owners after sizing in preview <Preview>' -ForEach @(
+        @{Preview=$false}, @{Preview=$true}
+    ) {
+        $classic = New-CacheFile "$env:LOCALAPPDATA\Yarn\Cache\package\entry"
+        Mock Invoke-MoleOwnerProcess { $null }
+        $script:NodeStarted = $false
+        Mock Get-Process { if ($script:NodeStarted) { [pscustomobject]@{ProcessName='node'} } }
+        Mock Get-ValidatedTreeSize { $script:NodeStarted = $true; return 10 }
+        Set-DryRunMode -Enabled $Preview
+        Clear-NpmCache
+        $script:NodeStarted | Should -BeTrue
+        Test-Path -LiteralPath $classic | Should -BeTrue
+        (Get-CleanupStats).FilesCleaned | Should -Be 0
+    }
+
+    It 'Protects named Berry stores at the shared clean sink including parent sweeps' {
+        $project = New-CacheFile "$env:USERPROFILE\project\.yarn\cache\dependency.zip"
+        $global = New-CacheFile "$env:USERPROFILE\.yarn\berry\cache\dependency.zip"
+        $windowsGlobal = New-CacheFile "$env:LOCALAPPDATA\Yarn\Berry\cache\dependency.zip"
+        $neighbor = New-CacheFile "$env:USERPROFILE\project\.yarn\cache-backup\entry"
+        $berryNeighbor = New-CacheFile "$env:USERPROFILE\.yarn\berry\cache-backup\entry"
+        foreach ($file in @($project,$global,$windowsGlobal)) {
+            Remove-SafeItem -Path $file | Should -BeFalse
+            Test-Path -LiteralPath $file | Should -BeTrue
+        }
+        Remove-SafeItem -Path "$env:USERPROFILE\project\.yarn" -Recurse | Should -BeFalse
+        Remove-SafeItem -Path "$env:USERPROFILE\.yarn" -Recurse | Should -BeFalse
+        Remove-SafeItem -Path "$env:LOCALAPPDATA\Yarn\Berry" -Recurse | Should -BeFalse
+        Remove-SafeItem -Path $neighbor | Should -BeTrue
+        Remove-SafeItem -Path $berryNeighbor | Should -BeTrue
+        $script:MoleCleanPathGuard = $false
+        Remove-SafeItem -Path $project | Should -BeTrue
     }
 
     It 'Keeps Adobe Team Projects state beside rebuildable media caches' {
