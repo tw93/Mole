@@ -544,7 +544,7 @@ restore_package_units() {
 
 remove_packages() {
     local i
-    local -a pkgs=()
+    local -a pkgs=() no_admin=()
     for i in "${SELECTED[@]}"; do
         [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] && pkgs+=("${APP_ID[i]}")
     done
@@ -556,6 +556,8 @@ remove_packages() {
             if mole_sudo_ready; then
                 disable_package_units
                 sudo pacman -Rns -- "${pkgs[@]}" || true
+            else
+                no_admin+=("${pkgs[@]}")
             fi
         fi
     fi
@@ -581,9 +583,12 @@ remove_packages() {
                 # pacman. flatpak keeps its own confirmation (no -y).
                 local -a fp=(flatpak uninstall "$flag" -- "${APP_ID[i]}")
                 if [[ "$flag" != --user ]]; then
-                    echo -e "${PURPLE}${ICON_ADMIN}${NC} flatpak removes ${APP_ID[i]} from the ${APP_SCOPE[i]} installation"
+                    # After a failed prompt, no new line and no new prompt.
+                    if [[ "$MOLE_SUDO_FAILED" != true ]]; then
+                        echo -e "${PURPLE}${ICON_ADMIN}${NC} flatpak removes ${APP_ID[i]} from the ${APP_SCOPE[i]} installation"
+                    fi
                     if ! mole_sudo_ready; then
-                        log_error "${APP_NAME[i]}: needs sudo, not removed"
+                        no_admin+=("${APP_ID[i]}")
                         continue
                     fi
                     fp=(sudo "${fp[@]}")
@@ -615,6 +620,9 @@ remove_packages() {
                 ;;
         esac
     done
+    if [[ ${#no_admin[@]} -gt 0 ]]; then
+        echo -e "${YELLOW}${ICON_WARNING}${NC} Needs admin access, not removed: ${no_admin[*]}"
+    fi
     # One sudo session covers pacman and system Flatpaks; it ends here.
     mole_sudo_end
     # pacman kept a package (cancelled, failed): its units come back on.

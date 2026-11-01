@@ -311,16 +311,23 @@ desktop() {
     [[ "$output" == *"removed=0 1 3"* ]]
 }
 
-@test "a system Flatpak without sudo is left installed and the user one still goes" {
+@test "a failed sudo is asked once: pacman and system Flatpaks are skipped on one line, the user one still goes" {
     fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"; exit 0'
     fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; exit 1'
+    fake_command pacman '[[ "$1" == -Qq ]] && exit 0; exit 1'
     mole_run uninstall '
-        APP_KIND=(flatpak flatpak); APP_ID=(org.d.Four org.b.Two); APP_NAME=(Four Two); APP_SCOPE=(system user); SELECTED=(0 1)
+        APP_KIND=(pacman flatpak flatpak flatpak); APP_ID=(tool org.d.Four org.e.Five org.b.Two); APP_NAME=(Tool Four Five Two)
+        APP_DESKTOPS=(tool "" "" ""); APP_EXEC=("" "" "" ""); APP_SCOPE=("" system extra user); SELECTED=(0 1 2 3)
+        restore_package_units() { :; }
         remove_packages < /dev/null; echo "removed=${REMOVED[*]}"'
-    [ -z "$(grep -- org.d.Four "$TEST_ROOT/flatpak.log")" ]
+    [ "$status" -eq 0 ]
+    [ "$(wc -l < "$TEST_ROOT/sudo.log")" -eq 1 ]
+    [ -z "$(grep -E -- 'org.d.Four|org.e.Five' "$TEST_ROOT/flatpak.log")" ]
     grep -qx -- "uninstall --user -- org.b.Two" "$TEST_ROOT/flatpak.log"
-    [[ "$output" == *"Four: needs sudo, not removed"* ]]
-    [[ "$output" == *"removed=1"* ]]
+    [ "$(grep -c "Needs admin access" <<< "$output")" -eq 1 ]
+    [[ "$output" == *"Needs admin access, not removed: tool org.d.Four org.e.Five"* ]]
+    [[ "$output" != *"flatpak removes"* ]]
+    [[ "$output" == *"removed=3"* ]]
 }
 
 @test "a web app icon kept in its original format goes with it, a shared icon stays" {

@@ -20,15 +20,23 @@ mole_refuse_root() {
 # Ask for sudo with Mole's own prompt line. sudo still reads the password (and
 # any PAM method such as a fingerprint); Mole never holds it. Returns 0 when
 # sudo is usable, and keeps the timestamp fresh until mole_sudo_end.
+# A prompt that failed or was cancelled (or could not be shown) is not asked
+# again in the same run: MOLE_SUDO_FAILED makes every later call return 1.
 MOLE_SUDO_KEEPALIVE_PID=""
 MOLE_SUDO_OWNED=false
+MOLE_SUDO_FAILED=false
 mole_sudo_ready() {
+    [[ "$MOLE_SUDO_FAILED" == true ]] && return 1
     if ! sudo -n true 2> /dev/null; then
-        [[ -t 0 && -r /dev/tty && -w /dev/tty ]] || return 1
+        if [[ ! -t 0 || ! -r /dev/tty || ! -w /dev/tty ]]; then
+            MOLE_SUDO_FAILED=true
+            return 1
+        fi
         local prompt
         prompt=$(printf '%b' "${PURPLE}${ICON_ARROW}${NC} Password: ")
         if ! sudo -v -p "$prompt"; then
             echo -e "${YELLOW}${ICON_WARNING}${NC} Authentication failed"
+            MOLE_SUDO_FAILED=true
             return 1
         fi
         # Replace the password line with the result.
