@@ -13,12 +13,14 @@ mole_refuse_root
 DRY_RUN=false
 LIST_ONLY=false
 WITH_DATA=false
+ASSUME_YES=false
 declare -a NAMES=()
 for arg in "$@"; do
     case "$arg" in
         --dry-run | -n) DRY_RUN=true ;;
         --list) LIST_ONLY=true ;;
         --with-data) WITH_DATA=true ;;
+        --yes | -y) ASSUME_YES=true ;;
         --debug) export MO_DEBUG=1 ;;
         -h | --help)
             echo "Usage: mo uninstall [OPTIONS] [APP_NAME ...]"
@@ -36,6 +38,7 @@ for arg in "$@"; do
             echo "  --list            List installed apps with the name mo uninstall accepts"
             echo "  --dry-run, -n     Preview without making changes"
             echo "  --with-data       Start with settings and data selected"
+            echo "  --yes, -y         Do not ask Mole's confirmation (needed outside a terminal)"
             echo "  --debug           Show detailed operation logs"
             echo "  -h, --help        Show this help message"
             exit 0
@@ -88,25 +91,38 @@ print_list() {
     done
 }
 
-# Exact, case-insensitive match on the package/app ID or the display name.
+# Exact, case-insensitive match: an app ID first, then a display name. More
+# than one app at the same level is refused, never guessed.
 match_names() {
-    local want i lw lid lname found
+    local want i lw lid lname
+    local -a by_id=() by_name=() hits=()
     for want in "${NAMES[@]}"; do
         mole_ascii_lowercase lw "$want"
-        found=false
+        by_id=()
+        by_name=()
         for i in "${!APP_ID[@]}"; do
             mole_ascii_lowercase lid "${APP_ID[i]}"
             mole_ascii_lowercase lname "${APP_NAME[i]}"
-            if [[ "$lw" == "$lid" || "$lw" == "$lname" ]]; then
-                SELECTED+=("$i")
-                found=true
-                break
-            fi
+            [[ "$lw" == "$lid" ]] && by_id+=("$i")
+            [[ "$lw" == "$lname" ]] && by_name+=("$i")
         done
-        if [[ "$found" == false ]]; then
+        if [[ ${#by_id[@]} -gt 0 ]]; then
+            hits=("${by_id[@]}")
+        else
+            hits=("${by_name[@]+"${by_name[@]}"}")
+        fi
+        if [[ ${#hits[@]} -eq 0 || -z "${hits[0]:-}" ]]; then
             log_error "No installed app named \"$want\". Run mo uninstall --list to see the accepted names."
             return 1
         fi
+        if [[ ${#hits[@]} -gt 1 ]]; then
+            log_error "\"$want\" matches more than one app; name the one you mean:"
+            for i in "${hits[@]}"; do
+                echo "  mo uninstall ${APP_ID[i]}    # ${APP_NAME[i]}, $(kind_label "${APP_KIND[i]}")" >&2
+            done
+            return 1
+        fi
+        SELECTED+=("${hits[0]}")
     done
 }
 
@@ -228,14 +244,18 @@ running_apps() {
     local i rc
     RUNNING=()
     for i in "${SELECTED[@]}"; do
-        [[ -n "${APP_EXEC[i]}" ]] || continue
         rc=0
         case "${APP_KIND[i]}" in
             webapp | orphan) continue ;;
+            flatpak) mole_flatpak_running "${APP_ID[i]}" || rc=$? ;;
             appimage) mole_exe_running "${APP_EXEC[i]}" || rc=$? ;;
-            *) mole_process_running "${APP_EXEC[i]}" || rc=$? ;;
+            *)
+                [[ -n "${APP_EXEC[i]}" ]] || continue
+                mole_process_running "${APP_EXEC[i]}" || rc=$?
+                ;;
         esac
-        [[ $rc -eq 0 ]] && RUNNING+=("${APP_NAME[i]}")
+        # 1 is the only "not running"; a probe that cannot tell blocks too.
+        [[ $rc -ne 1 ]] && RUNNING+=("${APP_NAME[i]}")
     done
     [[ ${#RUNNING[@]} -gt 0 ]]
 }
@@ -280,11 +300,15 @@ remove_packages() {
                 for j in "${!LEFT_PATH[@]}"; do
                     [[ "${LEFT_APP[j]}" == "$i" && "${LEFT_CLASS[j]}" == app ]] && own+=("${LEFT_PATH[j]}")
                 done
-                if mole_trash uninstall "${own[@]}"; then
-                    REMOVED+=("$i")
-                else
+                [[ ${#own[@]} -gt 0 ]] || continue
+                if ! mole_trash uninstall "${own[@]}"; then
                     local err
                     for err in "${MOLE_TRASH_ERRORS[@]}"; do log_error "$err"; done
+                fi
+                # Gone once its first file (the launcher, or the orphan's
+                # folder) actually left; a stray icon does not undo that.
+                if [[ $MOLE_TRASH_MOVED -gt 0 && ! -e "${own[0]}" && ! -L "${own[0]}" ]]; then
+                    REMOVED+=("$i")
                 fi
                 ;;
         esac
@@ -331,7 +355,11 @@ main() {
         exit 1
     fi
 
-    if [[ -t 0 ]] && ! mole_confirm "Remove $(mole_count_label "${#SELECTED[@]}" app)?"; then
+    if [[ "$ASSUME_YES" != true && ! -t 0 ]]; then
+        echo "Run mo uninstall in a terminal, or pass --yes." >&2
+        exit 1
+    fi
+    if [[ "$ASSUME_YES" != true ]] && ! mole_confirm "Remove $(mole_count_label "${#SELECTED[@]}" app)?"; then
         echo "Cancelled."
         exit 0
     fi

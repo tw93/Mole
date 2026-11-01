@@ -77,12 +77,3 @@ mole_flatpak_cache_rules() {
         printf 'Flatpak apps|%s cache|%s|flatpak:%s\n' "$id" "$dir" "$id"
     done
 }
-
-# 0 when the Flatpak app runs, 1 when it does not, 2 when flatpak cannot say.
-mole_flatpak_running() {
-    local id="$1" out
-    command -v flatpak > /dev/null 2>&1 || return 2
-    out=$(mole_c flatpak ps --columns=application 2> /dev/null) || return 2
-    grep -qxF -- "$id" <<< "$out" && return 0
-    return 1
-}

@@ -23,8 +23,11 @@ mole_desktop_field() {
 # First word of Exec= without env assignments or a path, for the running check.
 mole_desktop_exec() {
     local exec word
+    local -a words=()
     exec=$(mole_desktop_field "$1" Exec)
-    for word in $exec; do
+    # read -a splits on whitespace without glob expansion.
+    read -ra words <<< "$exec"
+    for word in "${words[@]}"; do
         [[ "$word" == *=* && "$word" != /* ]] && continue
         [[ "$word" == env ]] && continue
         printf '%s' "$(basename -- "${word//\"/}")"
@@ -35,8 +38,10 @@ mole_desktop_exec() {
 # Exec= program as written (quotes removed), for launchers that point at a file.
 mole_desktop_exec_path() {
     local exec word
+    local -a words=()
     exec=$(mole_desktop_field "$1" Exec)
-    for word in $exec; do
+    read -ra words <<< "$exec"
+    for word in "${words[@]}"; do
         [[ "$word" == *=* && "$word" != /* ]] && continue
         [[ "$word" == env ]] && continue
         printf '%s' "${word//\"/}"
@@ -98,8 +103,10 @@ mole_desktop_hidden() {
 # launchers (uwsm's uuctl, fcitx5's configuration tool) but removing them
 # breaks login, input, sound or networking, so uninstall never lists them.
 mole_package_protected() {
+    [[ -n "${_MOLE_LOGIN_SHELL_PKG:-}" && "$1" == "$_MOLE_LOGIN_SHELL_PKG" ]] && return 0
     case "$1" in
         base | base-devel | linux | linux-* | systemd | systemd-* | pacman | pacman-* | sudo | bash | zsh | \
+            fish | nushell | dash | tcsh | ksh | mksh | xonsh | elvish | \
             omarchy | omarchy-* | uwsm | hyprland | hyprland-* | hypr* | xdg-desktop-portal* | waybar | walker | \
             walker-* | elephant | elephant-* | mako | swayosd | swaybg | swaync | fcitx5 | fcitx5-* | \
             pipewire | pipewire-* | wireplumber | networkmanager | network-manager-* | iwd | impala | \
@@ -112,6 +119,10 @@ mole_package_protected() {
 
 _inventory_pacman() {
     command -v pacman > /dev/null 2>&1 || return 0
+    # The package that provides the user's login shell, whatever it is.
+    local login_shell
+    login_shell=$(getent passwd "$(id -un)" 2> /dev/null | cut -d: -f7) || login_shell=""
+    [[ "$login_shell" == /* ]] && _MOLE_LOGIN_SHELL_PKG=$(mole_c pacman -Qoq -- "$login_shell" 2> /dev/null | head -1)
     local -a desktops=()
     local f
     for f in /usr/share/applications/*.desktop; do
@@ -227,8 +238,10 @@ mole_appimage_files() {
     local id="$1" target="$2" desktop="$MOLE_DATA_HOME/applications/$1.desktop" icon f
     printf '%s\n' "$desktop" "$target"
     icon=$(mole_desktop_field "$desktop" Icon)
-    if [[ "$icon" == "$HOME/"* ]]; then
-        [[ -f "$icon" ]] && printf '%s\n' "$icon"
+    # Only an icon file in the user's icon folders belongs to the app; a path
+    # anywhere else may be a photo or another launcher's icon.
+    if [[ "$icon" == "$MOLE_DATA_HOME/icons/"* && "$icon" != *"/../"* ]]; then
+        [[ -f "$icon" && ! -L "$icon" ]] && printf '%s\n' "$icon"
     elif [[ "$icon" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
         for f in "$MOLE_DATA_HOME/icons/hicolor"/*/apps/"$icon".{png,svg}; do
             [[ -f "$f" ]] && printf '%s\n' "$f"
@@ -272,6 +285,8 @@ mole_webapp_files() {
     icon_name=$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]\{1,\}/-/g; s/^-//; s/-$//')
     [[ -f "$icon_dir/$icon_name.png" ]] && printf '%s\n' "$icon_dir/$icon_name.png"
     [[ "$icon_name" != "$id" && -f "$icon_dir/$id.png" ]] && printf '%s\n' "$icon_dir/$id.png"
+    # Older Omarchy releases kept web app icons beside the launchers.
+    [[ -f "$MOLE_DATA_HOME/applications/icons/$id.png" ]] && printf '%s\n' "$MOLE_DATA_HOME/applications/icons/$id.png"
     return 0
 }
 

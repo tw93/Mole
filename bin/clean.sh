@@ -241,9 +241,11 @@ clean_system() {
             ((before > 0)) && skip_line "Journal logs older than 2 weeks · journal uses $(bytes_to_human_kb "$before") now"
         elif mole_c sudo journalctl --vacuum-time=2weeks > /dev/null 2>&1; then
             after=$(journal_usage_kb)
+            # The vacuum ran as root; it is logged even when the size could
+            # not be read before and after.
+            log_operation clean REMOVED /var/log/journal "journalctl --vacuum-time=2weeks, $(bytes_to_human_kb "$before") before, $(bytes_to_human_kb "$after") after"
             if ((before > after)); then
                 report_line "Journal logs older than 2 weeks" "$((before - after))" 1
-                log_operation clean REMOVED /var/log/journal "journalctl --vacuum-time=2weeks"
                 add_total "$((before - after))" 1
             fi
         fi

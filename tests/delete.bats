@@ -49,3 +49,16 @@ load helpers
         done; echo ok'
     [ "$output" = "ok" ]
 }
+
+@test "a cache child on another device (a mount point) is never removed" {
+    mkdir -p "$HOME/.cache/tool/mnt/inside" "$HOME/.cache/tool/plain"
+    real_stat="$(command -v stat)"
+    fake_command stat 'if [[ "${!#}" == */mnt ]]; then echo 99; else exec '"$real_stat"' "$@"; fi'
+    mole_run core '
+        rc=0; mole_remove_cache "$HOME/.cache/tool/mnt" "$HOME/.cache/tool" || rc=$?; echo "mnt=$rc"
+        rc=0; mole_remove_cache "$HOME/.cache/tool/plain" "$HOME/.cache/tool" || rc=$?; echo "plain=$rc"'
+    [[ "$output" == *"mnt=1"* ]]
+    [[ "$output" == *"plain=0"* ]]
+    [ -d "$HOME/.cache/tool/mnt/inside" ]
+    [ ! -e "$HOME/.cache/tool/plain" ]
+}

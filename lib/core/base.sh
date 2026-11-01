@@ -174,6 +174,15 @@ mole_process_running() {
     return "$rc"
 }
 
+# 0 when the Flatpak app runs, 1 when it does not, 2 when flatpak cannot say.
+mole_flatpak_running() {
+    local id="$1" out
+    command -v flatpak > /dev/null 2>&1 || return 2
+    out=$(mole_c flatpak ps --columns=application 2> /dev/null) || return 2
+    grep -qxF -- "$id" <<< "$out" && return 0
+    return 1
+}
+
 # 0 when one of the user's processes runs this exact executable file (an
 # AppImage's runtime keeps running as its FUSE server), 1 when none does.
 mole_exe_running() {

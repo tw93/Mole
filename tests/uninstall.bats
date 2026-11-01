@@ -85,3 +85,60 @@ desktop() {
     mole_run uninstall 'APP_KIND=(orphan); APP_ID=(org.b.Gone); APP_EXEC=(""); app_own_files 0'
     [ "$output" = "$HOME/.var/app/org.b.Gone" ]
 }
+
+@test "an exact ID wins over a display name, and a tie is refused" {
+    mole_run uninstall '
+        APP_KIND=(flatpak pacman); APP_ID=(org.mozilla.firefox firefox); APP_NAME=(Firefox Firefox)
+        NAMES=(firefox); SELECTED=(); match_names; echo "picked=${SELECTED[*]}"
+        APP_KIND=(flatpak aur); APP_ID=(org.a.Tool tool-bin); APP_NAME=(Tool Tool)
+        NAMES=(tool); SELECTED=(); rc=0; match_names || rc=$?; echo "rc=$rc picked=${SELECTED[*]:-}"'
+    [[ "$output" == *"picked=1"* ]]
+    [[ "$output" == *"matches more than one app"* ]]
+    [[ "$output" == *"rc=1 picked="* ]]
+}
+
+@test "a running Flatpak app, or one flatpak cannot answer for, blocks uninstall" {
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.test.App'
+    mole_run uninstall 'APP_KIND=(flatpak); APP_ID=(org.test.App); APP_NAME=(Test); APP_EXEC=(org.test.App); SELECTED=(0); running_apps && echo "running=${RUNNING[*]}"'
+    [ "$output" = "running=Test" ]
+    fake_command flatpak 'exit 1'
+    mole_run uninstall 'APP_KIND=(flatpak); APP_ID=(org.test.App); APP_NAME=(Test); APP_EXEC=(org.test.App); SELECTED=(0); running_apps && echo "running=${RUNNING[*]}"'
+    [ "$output" = "running=Test" ]
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
+    mole_run uninstall 'APP_KIND=(flatpak); APP_ID=(org.test.App); APP_NAME=(Test); APP_EXEC=(org.test.App); SELECTED=(0); running_apps || echo none'
+    [ "$output" = "none" ]
+}
+
+@test "outside a terminal, uninstall acts only with --yes" {
+    local apps="$HOME/.local/share/applications"
+    desktop "$apps/MoleWeb.desktop" "Name=MoleWeb" "Exec=omarchy-launch-webapp https://example.com"
+    run bash -c 'SCRIPT_DIR="$MOLE_TEST_REPO" bash "$MOLE_TEST_REPO/bin/uninstall.sh" MoleWeb < /dev/null'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"pass --yes"* ]]
+    [ -f "$apps/MoleWeb.desktop" ]
+}
+
+@test "Exec wildcards are not expanded into some other AppImage" {
+    local apps="$HOME/.local/share/applications"
+    mkdir -p "$HOME/Apps"
+    touch "$HOME/Apps/Other.AppImage"
+    desktop "$apps/glob.desktop" "Name=Glob" "Exec=$HOME/Apps/*.AppImage"
+    mole_run uninstall '_inventory_appimages'
+    [ -z "$output" ]
+}
+
+@test "an AppImage icon outside the icon folders stays" {
+    local apps="$HOME/.local/share/applications"
+    mkdir -p "$HOME/Apps" "$HOME/Pictures"
+    touch "$HOME/Apps/Tool.AppImage" "$HOME/Pictures/me.png"
+    desktop "$apps/tool.desktop" "Name=Tool" "Exec=$HOME/Apps/Tool.AppImage" "Icon=$HOME/Pictures/me.png"
+    mole_run uninstall 'mole_appimage_files tool "$HOME/Apps/Tool.AppImage"'
+    [[ "$output" != *me.png* ]]
+}
+
+@test "an old Omarchy web app icon beside the launchers goes with it" {
+    mkdir -p "$HOME/.local/share/applications/icons"
+    touch "$HOME/.local/share/applications/HEY.desktop" "$HOME/.local/share/applications/icons/HEY.png"
+    mole_run uninstall 'mole_webapp_files HEY'
+    [[ "$output" == *"applications/icons/HEY.png"* ]]
+}
