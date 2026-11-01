@@ -406,14 +406,14 @@ have_paccache() { command -v paccache > /dev/null 2>&1 && [[ -d /var/cache/pacma
 have_journal() { command -v journalctl > /dev/null 2>&1; }
 have_flatpak() { command -v flatpak > /dev/null 2>&1; }
 have_user_flatpak() { have_flatpak && [[ -d "$MOLE_DATA_HOME/flatpak/repo" ]]; }
-have_system_flatpak() { have_flatpak && [[ -d /var/lib/flatpak/repo ]]; }
+SYSTEM_FLATPAK_DIR=/var/lib/flatpak
+have_system_flatpak() { have_flatpak && [[ -d "$SYSTEM_FLATPAK_DIR/repo" ]]; }
 
 # What the sudo step covers on this machine, for the prompt and skip lines.
 sudo_items_label() {
     local -a items=()
     have_paccache && items+=("Package cache")
     have_journal && items+=("journal")
-    have_system_flatpak && items+=("system Flatpak runtimes")
     local IFS=','
     local joined="${items[*]}"
     joined="${joined//,/, }"
@@ -425,7 +425,7 @@ sudo_items_label() {
 # asks for the password, Space skips the sudo items, ESC cancels.
 prompt_for_system_clean() {
     [[ "$DRY_RUN" != "true" ]] || return 0
-    have_paccache || have_journal || have_system_flatpak || return 0
+    have_paccache || have_journal || return 0
     if sudo -n true 2> /dev/null; then
         mole_sudo_ready && SYSTEM_READY=true
         [[ -t 1 ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
@@ -463,39 +463,40 @@ prompt_for_system_clean() {
     done
 }
 
-# Unused Flatpak runtimes through flatpak itself (pinned runtimes and those an
-# app uses stay). The user installation needs no sudo; the system one runs in
-# the sudo step. $1 is user or system.
+# Unused Flatpak runtimes of the user installation, through flatpak itself
+# (pinned runtimes and those an app uses stay); no sudo.
 clean_flatpak_unused() {
-    local scope="$1" dir label="Unused Flatpak runtimes"
-    if [[ "$scope" == user ]]; then
-        dir="$MOLE_DATA_HOME/flatpak"
-    else
-        dir=/var/lib/flatpak
-        label+=" (system)"
-    fi
+    local dir="$MOLE_DATA_HOME/flatpak" label="Unused Flatpak runtimes"
     if mole_whitelisted "$label" "$dir"; then
         skip_line "$(whitelist_note "$label")"
         return 0
     fi
     if [[ "$DRY_RUN" == "true" ]]; then
-        skip_line "$label · would run flatpak uninstall --$scope --unused"
+        skip_line "$label · would run flatpak uninstall --user --unused"
         return 0
     fi
     local before after
     before=$(mole_path_kb "$dir")
-    local -a cmd=(flatpak uninstall "--$scope" --unused --noninteractive)
-    [[ "$scope" == system ]] && cmd=(sudo "${cmd[@]}")
-    if mole_c timeout 900 "${cmd[@]}" > /dev/null 2>&1; then
+    if mole_c timeout 900 flatpak uninstall --user --unused --noninteractive > /dev/null 2>&1; then
         after=$(mole_path_kb "$dir")
-        log_operation clean REMOVED "$dir" "flatpak uninstall --$scope --unused, $(bytes_to_human_kb "$before") before, $(bytes_to_human_kb "$after") after"
+        log_operation clean REMOVED "$dir" "flatpak uninstall --user --unused, $(bytes_to_human_kb "$before") before, $(bytes_to_human_kb "$after") after"
         if ((before > after)); then
             report_line "$label" "$((before - after))" 1
             add_total "$((before - after))" 1
         fi
     else
-        log_error "flatpak uninstall --$scope --unused failed"
+        log_error "flatpak uninstall --user --unused failed"
     fi
+}
+
+# Report-only: the system installation's unused runtimes. Under sudo, flatpak
+# may not see the desktop user's per-user apps and could remove a system
+# runtime they still use, so Mole runs nothing there. No read-only flatpak
+# query says which runtimes are unused, so the line names the command only.
+report_system_flatpak_unused() {
+    local label="Unused Flatpak runtimes (system)"
+    mole_whitelisted "$label" "$SYSTEM_FLATPAK_DIR" && return 0
+    review_line "$label · ${GRAY}sudo flatpak uninstall --system --unused${NC}"
 }
 
 # Report-only: core dumps systemd-coredump kept. Never removed by Mole.
@@ -536,15 +537,16 @@ clean_system() {
     have_system_flatpak && system_flatpak=true
 
     start_section "System"
-    [[ "$user_flatpak" == "true" ]] && clean_flatpak_unused user
+    [[ "$user_flatpak" == "true" ]] && clean_flatpak_unused
 
-    if [[ "$have_paccache" == "true" || "$have_journal" == "true" || "$system_flatpak" == "true" ]]; then
+    if [[ "$have_paccache" == "true" || "$have_journal" == "true" ]]; then
         if [[ "$DRY_RUN" != "true" && "$SYSTEM_READY" != "true" ]]; then
             skip_line "$(sudo_items_label) · skipped without sudo"
         else
-            clean_system_sudo_items "$have_paccache" "$have_journal" "$system_flatpak"
+            clean_system_sudo_items "$have_paccache" "$have_journal"
         fi
     fi
+    [[ "$system_flatpak" == "true" ]] && report_system_flatpak_unused
 
     report_coredumps
     report_container_storage
@@ -552,7 +554,7 @@ clean_system() {
 }
 
 clean_system_sudo_items() {
-    local have_paccache="$1" have_journal="$2" system_flatpak="$3"
+    local have_paccache="$1" have_journal="$2"
     if [[ "$have_paccache" == "true" ]]; then
         if mole_whitelisted "Package cache" /var/cache/pacman/pkg; then
             skip_line "$(whitelist_note "Package cache")"
@@ -601,7 +603,6 @@ clean_system_sudo_items() {
         fi
     fi
 
-    [[ "$system_flatpak" == "true" ]] && clean_flatpak_unused system
     return 0
 }
 

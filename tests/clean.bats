@@ -315,6 +315,24 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [ -z "$(grep -- "--system" "$TEST_ROOT/flatpak.log")" ]
 }
 
+@test "the system Flatpak installation is only reported: nothing runs sudo flatpak, the prompt omits it" {
+    mkdir -p "$TEST_ROOT/sysflatpak/repo" "$HOME/.local/share/flatpak/repo"
+    fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"'
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
+    fake_command paccache 'exit 0'
+    fake_command journalctl 'exit 0'
+    mole_run clean 'SYSTEM_FLATPAK_DIR="'"$TEST_ROOT"'/sysflatpak"; SYSTEM_READY=true; clean_system; echo "label=[$(sudo_items_label)]"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Unused Flatpak runtimes (system) · "*"sudo flatpak uninstall --system --unused"* ]]
+    [[ "$output" != *"label=["*"Flatpak"* ]]
+    [ -z "$(grep -- flatpak "$TEST_ROOT/sudo.log" 2> /dev/null)" ]
+    [ -z "$(grep -- --system "$TEST_ROOT/flatpak.log")" ]
+    grep -qx -- "uninstall --user --unused --noninteractive" "$TEST_ROOT/flatpak.log"
+    mole_run clean 'SYSTEM_FLATPAK_DIR="'"$TEST_ROOT"'/sysflatpak"; DRY_RUN=true; clean_system'
+    [[ "$output" == *"sudo flatpak uninstall --system --unused"* ]]
+    [ -z "$(grep -- flatpak "$TEST_ROOT/sudo.log" 2> /dev/null)" ]
+}
+
 @test "old agent versions: the active one and the newest other stay" {
     v="$HOME/.local/share/claude/versions"
     mkdir -p "$v" "$HOME/.local/bin"
