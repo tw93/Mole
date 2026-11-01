@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b></p>
+<p align="right"><a href="https://github.com/tw93/Mole">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux">Linux</a></p>
 
 <div align="center">
   <h1>Mole CLI for Windows</h1>
