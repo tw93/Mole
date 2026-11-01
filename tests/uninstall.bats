@@ -400,6 +400,36 @@ desktop() {
     [[ " ${lines[*]} " == *" none=2 "* ]]
 }
 
+@test "the comm fallback covers every executable of a package, and AppImages get it too" {
+    local me other pr
+    me=$(id -u); other=$((me + 1)); pr="$TEST_ROOT/proc"
+    mkdir -p "$TEST_ROOT/opt/tool" "$TEST_ROOT/apps"
+    printf '#!/bin/sh\n' > "$TEST_ROOT/opt/tool/ToolApp"; chmod +x "$TEST_ROOT/opt/tool/ToolApp"
+    echo data > "$TEST_ROOT/opt/tool/readme"
+    printf '#!/bin/sh\n' > "$TEST_ROOT/apps/Obsidian-1.5.3.AppImage"; chmod +x "$TEST_ROOT/apps/Obsidian-1.5.3.AppImage"
+    # A package executable outside */bin/, hidden by a non-dumpable process.
+    fake_proc "$pr/g" 100 "$me" ToolApp - ToolApp
+    fake_proc "$pr/h" 100 "$me" readme - readme
+    # AppImages: readable exe, hidden exe with the file's comm, another user's, other comm.
+    fake_proc "$pr/i" 100 "$me" Obsidian-1.5.3. "$TEST_ROOT/apps/Obsidian-1.5.3.AppImage"
+    fake_proc "$pr/j" 100 "$me" Obsidian-1.5.3. -
+    fake_proc "$pr/k" 100 "$other" Obsidian-1.5.3. "$TEST_ROOT/apps/Obsidian-1.5.3.AppImage"
+    fake_proc "$pr/l" 100 "$me" bash -
+    mole_run core '
+        list="'"$TEST_ROOT"'/opt/tool/ToolApp
+'"$TEST_ROOT"'/opt/tool/readme"
+        for r in g h; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_files_running "$list" || rc=$?; echo "$r=$rc"; done
+        for r in i j k l none; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_exe_running "'"$TEST_ROOT"'/apps/Obsidian-1.5.3.AppImage" || rc=$?; echo "$r=$rc"; done'
+    [ "$status" -eq 0 ]
+    [[ " ${lines[*]} " == *" g=2 "* ]]
+    [[ " ${lines[*]} " == *" h=1 "* ]]
+    [[ " ${lines[*]} " == *" i=0 "* ]]
+    [[ " ${lines[*]} " == *" j=2 "* ]]
+    [[ " ${lines[*]} " == *" k=1 "* ]]
+    [[ " ${lines[*]} " == *" l=1 "* ]]
+    [[ " ${lines[*]} " == *" none=2 "* ]]
+}
+
 @test "leftovers reach dot folders, known aliases, Flatpak overrides and AUR build folders" {
     mkdir -p "$HOME/.foo" "$HOME/.vscode-oss" "$HOME/.local/share/flatpak/overrides" "$HOME/.cache/yay/foo-base" "$HOME/.cache/paru/clone/foo-base" "$HOME/.cache/yay/foo"
     touch "$HOME/.local/share/flatpak/overrides/org.a.App" "$HOME/.cache/yay/foo-base/PKGBUILD" "$HOME/.cache/paru/clone/foo-base/PKGBUILD"

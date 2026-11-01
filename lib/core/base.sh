@@ -290,7 +290,9 @@ mole_files_running() {
             esac
         fi
         own[$line]=1
-        [[ "$line" == */bin/* ]] && short[${line##*/}]=1
+        # Every executable file of the package, wherever it lives
+        # (/opt/<app>/<App>, /usr/lib/<app>/<app>), and anything in a bin/.
+        [[ "$line" == */bin/* || (-f "$line" && -x "$line") ]] && short[${line##*/}]=1
     done <<< "$list"
     [[ ${#own[@]} -gt 0 ]] || return 1
     local name
@@ -327,14 +329,26 @@ mole_flatpak_running() {
 }
 
 # 0 when one of the user's processes runs this exact executable file (an
-# AppImage's runtime keeps running as its FUSE server), 1 when none does.
+# AppImage's runtime keeps running as its FUSE server), 1 when none does, 2
+# when /proc cannot be read or a hidden process carries the file's name.
 mole_exe_running() {
-    local want="$1" exe pid
+    local want="$1" exe pid comm short rc=1
+    short="${want##*/}"
+    short="${short:0:15}"
+    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
     for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
-        exe=$(readlink -- "$pid/exe" 2> /dev/null) || continue
-        [[ "$exe" == "$want" ]] && return 0
+        mole_pid_mine "$pid" || continue
+        if exe=$(readlink -- "$pid/exe" 2> /dev/null); then
+            [[ "${exe% (deleted)}" == "$want" ]] && return 0
+            continue
+        fi
+        # A non-dumpable process hides its executable; its comm carries the
+        # first 15 bytes of the file name, so the answer is "cannot tell".
+        comm=""
+        IFS= read -r comm 2> /dev/null < "$pid/comm" || true
+        [[ -n "$comm" && "$comm" == "$short" ]] && rc=2
     done
-    return 1
+    return "$rc"
 }
 
 mole_ascii_lowercase() {
