@@ -287,3 +287,46 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "a password authorization names mo touchid only when fingerprints are enrolled and sudo ignores them" {
+    local case_spec templates configured expected stub_dir="$BATS_TEST_TMPDIR/bioutil-stub"
+    mkdir -p "$stub_dir"
+    # templates : check_touchid_support status (1 = not configured) : hints
+    for case_spec in 3:1:2 10:1:2 0:1:0 3:0:0; do
+        IFS=: read -r templates configured expected <<< "$case_spec"
+        # run_with_timeout runs an executable, so a shell function cannot stand in.
+        printf '#!/bin/sh\nprintf "User 501:\\t%s biometric template(s)\\n"\n' "$templates" > "$stub_dir/bioutil"
+        chmod +x "$stub_dir/bioutil"
+        # shellcheck disable=SC2016 # The inner bash expands these, not this one.
+        run env PATH="$stub_dir:$PATH" /bin/bash -c '
+            unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+            source "'"$PROJECT_ROOT"'/lib/core/common.sh"
+            source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
+
+            tty_file="$(mktemp)"
+            chmod 600 "$tty_file"
+            sudo() {
+                case "$1" in
+                    -n) return 1 ;;
+                    *) return 0 ;;
+                esac
+            }
+            tty() { printf "%s\n" "$tty_file"; }
+            is_clamshell_mode() { return 1; }
+            check_touchid_support() { return "'"$configured"'"; }
+            _request_password() { return 0; }
+            safe_clear_lines() { :; }
+
+            # A configured Mac takes the Touch ID branch, which never calls the
+            # hint; the typed-password path below pins the configured guard.
+            if [[ "'"$configured"'" == "1" ]]; then
+                request_sudo_access "Admin access required" || exit 1
+            fi
+            echo "--- typed"
+            request_sudo_access_with_password "secret" "Admin access required" || exit 1
+        ' < /dev/null
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        local hints
+        hints=$(grep -c 'mo touchid' <<< "$output" || true)
+        [[ "$hints" == "$expected" ]] || { echo "case=$case_spec hints=$hints $output"; return 1; }
+    done
+}

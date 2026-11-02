@@ -84,6 +84,19 @@ _mole_tty_quiet() (
     "$@"
 )
 
+# A password just worked on a Mac whose user has enrolled fingerprints, while
+# sudo still ignores them: name the command that turns them on, once per
+# authorization (maintainer 2026-11-02). Mole never edits PAM on its own.
+_mole_touchid_hint() {
+    [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]] && return 0
+    check_touchid_support && return 0
+    command -v bioutil > /dev/null 2>&1 || return 0
+    local enrolled=""
+    enrolled=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" bioutil -c 2> /dev/null) || return 0
+    [[ "$enrolled" =~ [1-9][0-9]*\ biometric\ template ]] || return 0
+    echo -e "${GRAY}Tip: run ${NC}mo touchid${GRAY} to use Touch ID instead of the password${NC}"
+}
+
 _request_password() {
     local tty_path="$1"
 
@@ -169,6 +182,7 @@ request_sudo_access() {
         if _request_password "$tty_path"; then
             # Clear all prompt lines (use safe clearing method)
             safe_clear_lines 3 "$tty_path"
+            _mole_touchid_hint
             return 0
         fi
         return 1
@@ -180,6 +194,7 @@ request_sudo_access() {
         if _request_password "$tty_path"; then
             # Clear all prompt lines (use safe clearing method)
             safe_clear_lines 3 "$tty_path"
+            _mole_touchid_hint
             return 0
         fi
         return 1
@@ -221,6 +236,7 @@ request_sudo_access_with_password() {
 
     if printf '%s\n' "$password" | sudo -S -p "" -v > /dev/null 2>&1; then
         unset password
+        _mole_touchid_hint
         return 0
     fi
 
