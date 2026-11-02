@@ -13,7 +13,7 @@ import (
 
 func TestStatusViewFitsShortViewport(t *testing.T) {
 	cpu := CPUStatus{Usage: 25, LogicalCPU: 20}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		cpu.PerCore = append(cpu.PerCore, float64(i))
 	}
 	snapshot := MetricsSnapshot{CPU: cpu, Memory: MemoryStatus{Total: 16 << 30, Used: 8 << 30, Available: 8 << 30}, Disks: []DiskStatus{{Mount: "/", Device: "/dev/disk3s1", Total: 100 << 30, Used: 50 << 30, Fstype: "apfs"}}, Network: []NetworkStatus{{Name: "en0", RxRateMBs: 1, TxRateMBs: 0.5}}, Batteries: []BatteryStatus{{Percent: 70, Status: "Discharging"}}}
@@ -29,7 +29,7 @@ func TestStatusViewFitsShortViewport(t *testing.T) {
 				if !strings.Contains(stripANSI(view), "Network") && !strings.Contains(stripANSI(view), "Terminal too small") {
 					t.Fatal("neither dashboard nor resize guidance visible")
 				}
-				for _, line := range strings.Split(view, "\n") {
+				for line := range strings.SplitSeq(view, "\n") {
 					if lipgloss.Width(line) > width {
 						t.Fatal("frame exceeds terminal width")
 					}
@@ -58,7 +58,7 @@ func TestStatusHeightFallbackFitsTinyWidths(t *testing.T) {
 			if lipgloss.Height(view) != height {
 				t.Fatalf("%dx%d: rendered %d rows", width, height, lipgloss.Height(view))
 			}
-			for _, line := range strings.Split(view, "\n") {
+			for line := range strings.SplitSeq(view, "\n") {
 				if lipgloss.Width(line) > width {
 					t.Fatalf("%dx%d: line exceeds width: %q", width, height, line)
 				}
@@ -93,7 +93,7 @@ func TestStatusRendererShowsHeightFallback(t *testing.T) {
 	for _, height := range []int{10, 60} {
 		t.Run(fmt.Sprint(height), func(t *testing.T) {
 			cpu := CPUStatus{Usage: 25, LogicalCPU: 20}
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				cpu.PerCore = append(cpu.PerCore, 25)
 			}
 			m := model{width: 120, height: height, schedule: collectionSchedule{hasSnapshot: true}, metrics: MetricsSnapshot{CPU: cpu}, fullCollected: true}
