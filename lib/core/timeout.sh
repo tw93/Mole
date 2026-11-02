@@ -286,6 +286,8 @@ run_with_timeout() {
             $SIG{INT} = sub { $shutdown_status ||= 130; };
             $SIG{TERM} = sub { $shutdown_status ||= 143; };
             $SIG{HUP} = sub { $shutdown_status ||= 129; };
+            # Wakes the poll sleep on child exit. Not "IGNORE": that changes reaping.
+            $SIG{CHLD} = sub { };
 
             # The child is a separate process group so timeout cleanup can kill
             # its descendants. A tty only permits its foreground process group
