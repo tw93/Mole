@@ -134,7 +134,7 @@ exit 7
         finally { $env:MOLE_TEST_CAPTURE = $saved }
     }
     It 'Uses the PowerShell host that ran the installer' {
-        $expectedHost = Get-InstallerPowerShellPath
+        $expectedHost = Get-InstallerPowerShellPath -ForBatch
         $expectedHost | Should -Match ([regex]::Escape($(if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' })) + '$')
         foreach ($name in @('mo.cmd', 'mole.cmd')) {
             $content = Get-Content -LiteralPath (Join-Path $script:SourceDir $name) -Raw
@@ -157,6 +157,120 @@ exit 7
             Get-InstallerPowerShellPath | Should -Be $alias
         }
         finally { $env:PATH = $savedPath }
+    }
+
+    It 'Starts both launchers through a non-ASCII pwsh PATH entry without searching the current directory' {
+        # Windows PowerShell does not select pwsh; its existing host is the control.
+        if ($PSVersionTable.PSEdition -ne 'Core') {
+            Get-InstallerPowerShellPath | Should -Be (Join-Path $PSHOME 'powershell.exe')
+            return
+        }
+        $aliasDir = Join-Path $TestDrive ('host-' + [char]0x5F20 + [char]0x4E09 + '!')
+        $null = New-Item -ItemType Junction -Path $aliasDir -Target $PSHOME -ErrorAction Stop
+        $savedPath = $env:PATH
+        $savedCapture = $env:MOLE_TEST_CAPTURE
+        $capture = Join-Path $TestDrive 'unicode-host-args.json'
+        $shadowDir = Join-Path $TestDrive 'untrusted-working-folder'
+        $null = New-Item -ItemType Directory -Path $shadowDir -Force
+        Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\where.exe') -Destination (Join-Path $shadowDir 'pwsh.exe')
+        try {
+            $env:PATH = $aliasDir + ';' + $savedPath
+            $env:MOLE_TEST_CAPTURE = $capture
+            Get-InstallerPowerShellPath | Should -Be (Join-Path $aliasDir 'pwsh.exe')
+            Install-Mole 6>$null | Should -BeTrue
+            foreach ($name in @('mo.cmd', 'mole.cmd')) {
+                $start = New-Object System.Diagnostics.ProcessStartInfo
+                $start.FileName = $env:ComSpec
+                $start.UseShellExecute = $false
+                $start.WorkingDirectory = $shadowDir
+                $start.Arguments = '/d /s /c ""' + (Join-Path $script:SourceDir $name) + '" --version"'
+                $process = [System.Diagnostics.Process]::Start($start)
+                try {
+                    $process.WaitForExit()
+                    $process.ExitCode | Should -Be 7
+                }
+                finally { $process.Dispose() }
+                $actual = Get-Content -LiteralPath $capture -Raw | ConvertFrom-Json
+                @($actual).Count | Should -Be 1
+                ([string]$actual) | Should -Be '--version'
+            }
+        }
+        finally {
+            $env:PATH = $savedPath
+            $env:MOLE_TEST_CAPTURE = $savedCapture
+            [IO.Directory]::Delete($aliasDir, $false)
+        }
+    }
+
+    It 'Starts both launchers with a portable host outside PATH under a non-ASCII profile' {
+        if ($PSVersionTable.PSEdition -ne 'Core') {
+            Get-InstallerPowerShellPath | Should -Be (Join-Path $PSHOME 'powershell.exe')
+            return
+        }
+        $profile = Join-Path $TestDrive ('portable-' + [char]0x5F20 + [char]0x4E09 + '!')
+        $null = New-Item -ItemType Directory -Path $profile -Force
+        $hostDir = Join-Path $profile 'shell & %MOLE_MISSING_HOST_PART%'
+        $null = New-Item -ItemType Junction -Path $hostDir -Target $PSHOME -ErrorAction Stop
+        $script:PortableReviewHost = Join-Path $hostDir 'pwsh.exe'
+        $script:ReviewJoinPath = Get-Command Join-Path -CommandType Cmdlet
+        # Model a portable PSHOME without copying the whole runtime. The CMD
+        # execution below still starts the real host through the Unicode path.
+        Mock Get-Command { $null } -ParameterFilter { $Name -eq 'pwsh.exe' }
+        Mock Join-Path {
+            if ($Path -eq $PSHOME -and $ChildPath -eq 'pwsh.exe') { return $script:PortableReviewHost }
+            & $script:ReviewJoinPath -Path $Path -ChildPath $ChildPath
+        }
+        $savedPath = $env:PATH
+        $savedProfile = $env:USERPROFILE
+        $savedCapture = $env:MOLE_TEST_CAPTURE
+        try {
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+            $env:USERPROFILE = $profile
+            $env:MOLE_TEST_CAPTURE = Join-Path $TestDrive 'portable-host-args.json'
+            Get-InstallerPowerShellPath -ForBatch | Should -Be '%USERPROFILE%\shell & %%MOLE_MISSING_HOST_PART%%\pwsh.exe'
+            Install-Mole 6>$null | Should -BeTrue
+            foreach ($name in @('mo.cmd', 'mole.cmd')) {
+                $start = New-Object System.Diagnostics.ProcessStartInfo
+                $start.FileName = $env:ComSpec
+                $start.UseShellExecute = $false
+                $start.Arguments = '/d /s /c ""' + (Join-Path $script:SourceDir $name) + '" --version"'
+                $process = [System.Diagnostics.Process]::Start($start)
+                try {
+                    $process.WaitForExit()
+                    $process.ExitCode | Should -Be 7
+                }
+                finally { $process.Dispose() }
+                $actual = Get-Content -LiteralPath $env:MOLE_TEST_CAPTURE -Raw | ConvertFrom-Json
+                ([string]$actual) | Should -Be '--version'
+            }
+        }
+        finally {
+            $env:PATH = $savedPath
+            $env:USERPROFILE = $savedProfile
+            $env:MOLE_TEST_CAPTURE = $savedCapture
+            [IO.Directory]::Delete($hostDir, $false)
+        }
+    }
+
+    It 'Rejects an unrepresentable batch host before changing an installation' {
+        $savedProfile = $env:USERPROFILE
+        try {
+            $env:USERPROFILE = Join-Path $TestDrive ('user-' + [char]0x5F20)
+            $badHost = $env:USERPROFILE + '-sibling\pwsh.exe'
+            { ConvertTo-MoleBatchPath -Path $badHost } | Should -Throw '*ASCII launcher*'
+            $badHost = Join-Path $env:USERPROFILE ([string][char]0x4E09 + '\pwsh.exe')
+            { ConvertTo-MoleBatchPath -Path $badHost } | Should -Throw '*ASCII launcher*'
+            $before = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $script:SourceDir 'mo.cmd')))
+            Mock Get-InstallerPowerShellPath { throw 'PowerShell host path cannot be stored in an ASCII launcher.' }
+            { Install-Mole 6>$null } | Should -Throw '*ASCII launcher*'
+            [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $script:SourceDir 'mo.cmd'))) | Should -Be $before
+            # The only refresh was BeforeEach's successful install.
+            Should -Invoke Ensure-OptionalTuiTools -Times 1 -Exactly
+            $script:InstallDir = Join-Path $TestDrive 'uncreated-install'
+            { Install-Mole 6>$null } | Should -Throw '*ASCII launcher*'
+            $script:InstallDir | Should -Not -Exist
+        }
+        finally { $env:USERPROFILE = $savedProfile }
     }
 }
 

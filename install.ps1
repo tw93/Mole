@@ -325,10 +325,28 @@ function Remove-FromUserPath {
 # while the current pwsh host still runs. A Store or dotnet-tool pwsh runs from
 # a versioned $PSHOME that its next update deletes, so a pwsh host prefers the
 # pwsh.exe on PATH (the app execution alias or the MSI folder), which survives.
+function ConvertTo-MoleBatchPath {
+    param([string]$Path)
+    if ($Path -notmatch '[^\x00-\x7F]') { return $Path.Replace('%', '%%') }
+    foreach ($name in @('USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'ProgramFiles', 'ProgramW6432', 'SystemRoot')) {
+        $root = [Environment]::GetEnvironmentVariable($name)
+        if (-not $root) { continue }
+        $root = $root.TrimEnd('\')
+        if (-not $Path.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $suffix = $Path.Substring($root.Length)
+        if ($suffix -notmatch '[^\x00-\x7F]') { return '%' + $name + '%' + $suffix.Replace('%', '%%') }
+    }
+    throw 'PowerShell host path cannot be stored in an ASCII launcher. Add its folder to PATH and retry.'
+}
+
 function Get-InstallerPowerShellPath {
+    param([switch]$ForBatch)
     if ($PSVersionTable.PSEdition -eq 'Core') {
         $onPath = Get-Command pwsh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($onPath -and $onPath.Source) {
+            # CMD files stay ASCII. Resolve through PATH at launch instead of
+            # embedding a Store alias under a possibly non-ASCII user folder.
+            if ($ForBatch) { return 'pwsh.exe' }
             return $onPath.Source
         }
         $exeName = 'pwsh.exe'
@@ -338,6 +356,7 @@ function Get-InstallerPowerShellPath {
     }
     $path = Join-Path $PSHOME $exeName
     if (Test-Path -LiteralPath $path) {
+        if ($ForBatch) { return ConvertTo-MoleBatchPath -Path $path }
         return $path
     }
     throw "PowerShell host not found at $path"
@@ -474,6 +493,9 @@ function Install-Mole {
         return $false
     }
 
+    # Resolve the launcher before changing an existing installation.
+    $installerPowerShellPath = Get-InstallerPowerShellPath -ForBatch
+
     # Create install directory
     if (-not (Test-Path $InstallDir)) {
         try {
@@ -537,10 +559,17 @@ function Install-Mole {
 
     # Pass native arguments to -File, never interpolate them into PowerShell
     # source. Expand the invocation before ending the self-removing batch.
-    $installerPowerShellPath = Get-InstallerPowerShellPath
+    $batchHostSetup = ''
+    if ($installerPowerShellPath -eq 'pwsh.exe') {
+        # Search PATH explicitly so a pwsh.exe in the caller's working folder
+        # cannot replace the selected host. CMD expands the Unicode path.
+        $batchHostSetup = 'for %%P in (pwsh.exe) do set "_MOLE_POWERSHELL=%%~$PATH:P"'
+        $installerPowerShellPath = '%_MOLE_POWERSHELL%'
+    }
     $batchContent = @"
 @echo off
-setlocal DisableDelayedExpansion
+setlocal EnableExtensions DisableDelayedExpansion
+$batchHostSetup
 (goto) 2>nul & "$installerPowerShellPath" -ExecutionPolicy Bypass -NoLogo -NoProfile -File "%~dp0mole.ps1" %*
 "@
     $batchPath = Join-Path $InstallDir "mole.cmd"
