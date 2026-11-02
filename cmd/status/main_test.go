@@ -484,6 +484,7 @@ func TestMetricsSnapshotFieldsHaveCollectionClassifications(t *testing.T) {
 		"Thermal":               "enrichment",
 		"Sensors":               "enrichment",
 		"TopProcesses":          "live-or-enrichment",
+		"TopApps":               "live-or-enrichment",
 		"ProcessCollectedAt":    "live-or-enrichment",
 		"ProcessStale":          "live-or-enrichment",
 		"ZombieCount":           "live-or-enrichment",

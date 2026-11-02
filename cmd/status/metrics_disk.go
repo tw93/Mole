@@ -42,6 +42,9 @@ var (
 		return readMountinfo("/proc/self/mountinfo")
 	}
 	diskUsageFunc = disk.Usage
+	// sysRoot is the tree /sys/fs/btrfs and /sys/class/block are read from;
+	// tests point it at a fixture.
+	sysRoot = "/"
 )
 
 const (
@@ -93,7 +96,14 @@ func collectDisksFromMounts() ([]DiskStatus, error) {
 		if usage.Total < 1<<30 {
 			continue
 		}
+		var btrfs *BtrfsAlloc
+		if strings.EqualFold(part.Fstype, "btrfs") {
+			if a, ok := readBtrfsAlloc(sysRoot, part.Device); ok {
+				btrfs = &a
+			}
+		}
 		disks = append(disks, DiskStatus{
+			Btrfs:       btrfs,
 			Mount:       part.Mountpoint,
 			Device:      part.Device,
 			Used:        usage.Used,

@@ -17,6 +17,7 @@ import (
 type processSample struct {
 	processes        []ProcessInfo
 	parentsAvailable bool
+	root             string // the /proc tree these pids came from; "" for a synthetic sample
 }
 
 var collectProcessesFunc = collectProcesses
@@ -39,6 +40,7 @@ const procClockTicks = 100.0
 type procCPUPoint struct {
 	ticks     uint64
 	startTime uint64 // field 22 of stat; changes when the pid is reused
+	appID     string // from /proc/<pid>/cgroup; read once per pid, since a process does not change app
 }
 
 type procSampler struct {
@@ -153,10 +155,17 @@ func (s *procSampler) sample(root string, now time.Time) (processSample, error) 
 		if !ok {
 			continue
 		}
-		next[st.pid] = procCPUPoint{ticks: st.ticks, startTime: st.startTime}
+		prev, seen := s.prev[st.pid]
+		appID := ""
+		if seen && prev.startTime == st.startTime {
+			appID = prev.appID
+		} else {
+			appID = readAppID(dir)
+		}
+		next[st.pid] = procCPUPoint{ticks: st.ticks, startTime: st.startTime, appID: appID}
 
 		cpuPct := 0.0
-		if prev, seen := s.prev[st.pid]; usePrev && seen && prev.startTime == st.startTime && st.ticks >= prev.ticks {
+		if usePrev && seen && prev.startTime == st.startTime && st.ticks >= prev.ticks {
 			cpuPct = float64(st.ticks-prev.ticks) / procClockTicks / elapsed * 100
 		} else if life := uptime - float64(st.startTime)/procClockTicks; life > 0 {
 			cpuPct = float64(st.ticks) / procClockTicks / life * 100
@@ -176,13 +185,14 @@ func (s *procSampler) sample(root string, now time.Time) (processSample, error) 
 			CPU:         cpuPct,
 			Memory:      memPct,
 			MemoryBytes: rssBytes,
+			AppID:       appID,
 		})
 	}
 	if len(procs) == 0 {
 		return processSample{}, errors.New("no processes readable under /proc")
 	}
 	s.prev, s.prevAt = next, now
-	return processSample{processes: procs, parentsAvailable: true}, nil
+	return processSample{processes: procs, parentsAvailable: true, root: root}, nil
 }
 
 func isZombieState(state string) bool {

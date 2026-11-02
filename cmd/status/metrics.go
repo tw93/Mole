@@ -88,6 +88,7 @@ type MetricsSnapshot struct {
 	Thermal               ThermalStatus       `json:"thermal"`
 	Sensors               []SensorReading     `json:"sensors"`
 	TopProcesses          []ProcessInfo       `json:"top_processes"`
+	TopApps               []AppInfo           `json:"top_apps"`
 	ProcessCollectedAt    *time.Time          `json:"process_collected_at,omitempty"`
 	ProcessStale          *bool               `json:"process_stale,omitempty"`
 	ZombieCount           *int                `json:"zombie_count,omitempty"`
@@ -119,6 +120,11 @@ type ProcessInfo struct {
 	CPU         float64 `json:"cpu"`
 	Memory      float64 `json:"memory"` // Percent of physical memory, kept for compatibility.
 	MemoryBytes uint64  `json:"memory_bytes,omitempty"`
+	// GPUMemoryBytes is DRM fdinfo memory, filled only for the processes
+	// behind the rows on screen on machines with a GPU; 0 means not measured.
+	GPUMemoryBytes uint64 `json:"gpu_memory_bytes,omitempty"`
+	// AppID is the application id from the process's systemd app cgroup.
+	AppID string `json:"-"`
 }
 
 type ZombieParent struct {
@@ -196,6 +202,9 @@ type DiskStatus struct {
 	Fstype      string  `json:"fstype"`
 	External    bool    `json:"external"`
 	SmartStatus string  `json:"smart_status"`
+	// Btrfs is chunk allocation for a btrfs volume; nil for other filesystems
+	// or when /sys/fs/btrfs does not name the device.
+	Btrfs *BtrfsAlloc `json:"btrfs,omitempty"`
 }
 
 type NetworkStatus struct {
@@ -300,6 +309,7 @@ type collectedMetrics struct {
 	allProcs                []ProcessInfo
 	hasProcesses            bool
 	processParentsAvailable bool
+	topApps                 []AppInfo
 }
 
 type snapshotEnrichment struct {
@@ -324,6 +334,7 @@ type snapshotEnrichment struct {
 
 type processEnrichment struct {
 	topProcesses          []ProcessInfo
+	topApps               []AppInfo
 	collectedAt           time.Time
 	zombieCount           int
 	zombieParents         []ZombieParent
@@ -544,6 +555,7 @@ func collectProcessesInto(collected *collectedMetrics) error {
 		return err
 	}
 	collected.allProcs = sample.processes
+	collected.topApps = buildTopApps(sample.root, sample.processes, time.Now())
 	collected.hasProcesses = true
 	collected.processParentsAvailable = sample.parentsAvailable
 	return nil
@@ -623,6 +635,7 @@ func (c *Collector) snapshotFromMetrics(now time.Time, hostInfo *host.InfoStat, 
 		Thermal:               collected.thermalStats,
 		Sensors:               collected.sensorStats,
 		TopProcesses:          topProcs,
+		TopApps:               collected.topApps,
 		ProcessCollectedAt:    processCollectedAt,
 		ProcessStale:          processStale,
 		ZombieCount:           zombieCount,
@@ -657,6 +670,7 @@ func (c *Collector) cacheProcessEnrichment(snapshot MetricsSnapshot) {
 	}
 	c.processEnrichment = processEnrichment{
 		topProcesses:          slices.Clone(snapshot.TopProcesses),
+		topApps:               slices.Clone(snapshot.TopApps),
 		collectedAt:           collectedAt,
 		zombieCount:           *snapshot.ZombieCount,
 		zombieParents:         slices.Clone(snapshot.ZombieParents),
@@ -712,6 +726,7 @@ func (e snapshotEnrichment) apply(snapshot *MetricsSnapshot) {
 
 func (e processEnrichment) apply(snapshot *MetricsSnapshot) {
 	snapshot.TopProcesses = slices.Clone(e.topProcesses)
+	snapshot.TopApps = slices.Clone(e.topApps)
 	collectedAt := e.collectedAt
 	stale := true
 	snapshot.ProcessCollectedAt = &collectedAt

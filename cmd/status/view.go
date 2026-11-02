@@ -511,6 +511,11 @@ func renderDiskCard(disks []DiskStatus, io DiskIOStatus, _ uint64, _ bool) cardD
 		} else if len(disks) == 1 {
 			lines = append(lines, formatDiskMetaLine(disks[0]))
 		}
+		for _, d := range disks {
+			if line := formatBtrfsLine(d); line != "" {
+				lines = append(lines, line)
+			}
+		}
 		if smartLine := formatDiskSMARTLine(disks); smartLine != "" {
 			lines = append(lines, smartLine)
 		}
@@ -593,6 +598,27 @@ func formatDiskSMARTLine(disks []DiskStatus) string {
 	return fmt.Sprintf("%-*s %s", metricLabelWidth, "SMART", strings.Join(failingLabels, " · "))
 }
 
+// formatBtrfsLine shows chunk allocation for a btrfs disk, which the used/free
+// line above cannot: "BTRFS  data 412G/480G · meta 1.2G/2.0G". Allocation is
+// the claimed chunk space, so data 412G/480G means 480G is handed to data and
+// files fill 412G of it. When metadata is tight (see btrfsMetadataTight) the
+// line turns into the warning, since that state ends in ENOSPC with free space
+// still reported above.
+func formatBtrfsLine(d DiskStatus) string {
+	b := d.Btrfs
+	if b == nil {
+		return ""
+	}
+	if b.MetadataTight {
+		pct := float64(b.MetadataUsed) / float64(b.MetadataTotal) * 100
+		return fmt.Sprintf("%-*s %s", metricLabelWidth, "BTRFS",
+			dangerStyle.Render(fmt.Sprintf("meta %.0f%% full · %s unallocated", pct, humanBytesShort(b.Unallocated))))
+	}
+	return fmt.Sprintf("%-*s data %s/%s · meta %s/%s", metricLabelWidth, "BTRFS",
+		humanBytesShort(b.DataUsed), humanBytesShort(b.DataTotal),
+		humanBytesShort(b.MetadataUsed), humanBytesShort(b.MetadataTotal))
+}
+
 func formatDiskIOLine(io DiskIOStatus) string {
 	text := fmt.Sprintf("%s R %s · %s W %s MB/s",
 		ioBar(io.ReadRate),
@@ -633,7 +659,14 @@ func renderProcessCard(procs []ProcessInfo, cardWidth int) cardData {
 			processMemoryWidth,
 			processMemoryText(p),
 		)
-		if nameWidth := remainingLineWidth(cardWidth, line); nameWidth > 0 {
+		gpu := ""
+		if p.GPUMemoryBytes > 0 {
+			gpu = " " + subtleStyle.Render("GPU "+humanBytesCompact(p.GPUMemoryBytes))
+		}
+		// The name keeps priority: GPU memory appears only if 10 columns of name remain.
+		if nameWidth := remainingLineWidth(cardWidth, line) - lipgloss.Width(gpu); nameWidth >= 10 {
+			line += " " + shorten(p.Name, nameWidth) + gpu
+		} else if nameWidth := remainingLineWidth(cardWidth, line); nameWidth > 0 {
 			line += " " + shorten(p.Name, nameWidth)
 		}
 		lines = append(lines, strings.TrimRight(line, " "))
@@ -642,6 +675,29 @@ func renderProcessCard(procs []ProcessInfo, cardWidth int) cardData {
 		lines = append(lines, subtleStyle.Render("Collecting..."))
 	}
 	return cardData{icon: iconProcs, title: "Processes", lines: lines}
+}
+
+// processRows is what the Processes card lists: one row per desktop app, with
+// its processes summed ("Firefox ×14"), and one row per process that belongs to
+// no app cgroup. The Mac app lists one row per app the same way. Snapshots from
+// before grouping (a retained process sample, watch streams) fall back to the
+// plain process list; --json keeps both top_apps and top_processes.
+func processRows(m MetricsSnapshot) []ProcessInfo {
+	if len(m.TopApps) == 0 {
+		return m.TopProcesses
+	}
+	rows := make([]ProcessInfo, 0, len(m.TopApps))
+	for _, a := range m.TopApps {
+		name := a.Name
+		if a.Kind == appKindApp && a.Processes > 1 {
+			name = fmt.Sprintf("%s ×%d", name, a.Processes)
+		}
+		rows = append(rows, ProcessInfo{
+			PID: a.PID, Name: name, CPU: a.CPU, Memory: a.Memory,
+			MemoryBytes: a.MemoryBytes, GPUMemoryBytes: a.GPUMemoryBytes,
+		})
+	}
+	return rows
 }
 
 func processBar(percent float64, cardWidth int) string {
@@ -669,8 +725,9 @@ func buildCards(m MetricsSnapshot, width int, cpuCores int, batteryProbed bool) 
 	// card: a reaped-child backlog is kernel vocabulary a reader cannot act
 	// on, the Mac app's own Status surface never showed it, and the row was
 	// spending one of three process slots to say it.
-	processCard := renderProcessCard(m.TopProcesses, width)
-	hasRenderedProcessData := len(m.TopProcesses) > 0
+	rows := processRows(m)
+	processCard := renderProcessCard(rows, width)
+	hasRenderedProcessData := len(rows) > 0
 	hasActiveProcessAlert := len(activeAlerts(m.ProcessAlerts)) > 0
 	switch {
 	case processSnapshotFresh(m.ProcessStale):
@@ -1139,7 +1196,12 @@ func shorten(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-1] + "…"
+	// Cut on a rune boundary; names such as "Firefox ×14" are not ASCII.
+	r := []rune(s)
+	if len(r) <= maxLen {
+		return s
+	}
+	return string(r[:maxLen-1]) + "…"
 }
 
 func remainingLineWidth(width int, prefix string) int {
