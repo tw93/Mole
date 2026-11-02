@@ -364,6 +364,10 @@ func isProtectedAnalyzeDeletePath(path string) bool {
 			return true
 		}
 
+		if isICloudStructuralPath(cleanPath, homeRoot) {
+			return true
+		}
+
 		groupContainers := filepath.Join(homeRoot, "Library", "Group Containers")
 		if entries, err := os.ReadDir(groupContainers); err == nil {
 			for _, entry := range entries {
@@ -469,6 +473,50 @@ func isCriticalAnalyzeDeletePath(path string) bool {
 		}
 	}
 	return false
+}
+
+// isICloudStructuralPath reports iCloud Drive's own folders: Mobile Documents,
+// each app container in it (com~apple~CloudDocs is iCloud Drive itself) and a
+// container's Documents folder. Trashing one of them removes that whole store
+// from every device signed in to the account. Files and folders inside them
+// stay the user's to remove, as Mole Mac's Analyze allows inside an app's
+// Documents.
+func isICloudStructuralPath(path, homeRoot string) bool {
+	mobileDocuments := filepath.Join(homeRoot, "Library", "Mobile Documents")
+	rel, err := filepath.Rel(strings.ToLower(mobileDocuments), strings.ToLower(path))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return isICloudStructuralByIdentity(path, mobileDocuments)
+	}
+	if rel == "." {
+		return true
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	switch len(parts) {
+	case 1:
+		return true
+	case 2:
+		return parts[1] == "documents"
+	}
+	return false
+}
+
+// isICloudStructuralByIdentity applies the same depth rule when the path names
+// Mobile Documents another way (/System/Volumes/Data/Users/..., a symlinked
+// parent): it compares the path and its two parents with the real folder by
+// file identity.
+func isICloudStructuralByIdentity(path, mobileDocuments string) bool {
+	if _, err := os.Stat(mobileDocuments); err != nil {
+		return false
+	}
+	if isSameExistingPath(path, mobileDocuments) {
+		return true
+	}
+	parent := filepath.Dir(path)
+	if isSameExistingPath(parent, mobileDocuments) {
+		return true
+	}
+	return strings.EqualFold(filepath.Base(path), "Documents") &&
+		isSameExistingPath(filepath.Dir(parent), mobileDocuments)
 }
 
 func protectedAnalyzeHomeRoots() []string {

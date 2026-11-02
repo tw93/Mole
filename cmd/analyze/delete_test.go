@@ -750,3 +750,56 @@ func TestMoveToTrashViaBinaryUsesAbsolutePathWithoutSeparator(t *testing.T) {
 		t.Error(`moveToTrashViaBinary must not pass "--" to trash(8); it trashes the target but exits non-zero`)
 	}
 }
+
+func TestAnalyzeDeleteRefusesICloudStructuralFoldersButNotTheirContents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	mobile := filepath.Join(home, "Library", "Mobile Documents")
+	for _, refused := range []string{
+		mobile,
+		filepath.Join(mobile, "com~apple~CloudDocs"),
+		filepath.Join(mobile, "com~apple~Keynote"),
+		filepath.Join(mobile, "com~apple~Keynote", "Documents"),
+		filepath.Join(home, "library", "mobile documents", "COM~APPLE~PAGES", "documents"),
+	} {
+		if !isProtectedAnalyzeDeletePath(refused) {
+			t.Errorf("iCloud structural folder not refused: %s", refused)
+		}
+	}
+	for _, allowed := range []string{
+		filepath.Join(mobile, "com~apple~CloudDocs", "Downloads"),
+		filepath.Join(mobile, "com~apple~CloudDocs", "big.mov"),
+		filepath.Join(mobile, "com~apple~Keynote", "Documents", "Deck.key"),
+		filepath.Join(mobile, "com~apple~Keynote", "Documents", "Old", "a.key"),
+		filepath.Join(home, "Library", "Mobile Documents Backup"),
+	} {
+		if isProtectedAnalyzeDeletePath(allowed) {
+			t.Errorf("iCloud content refused: %s", allowed)
+		}
+	}
+}
+
+func TestAnalyzeDeleteRefusesICloudStructuralFoldersReachedThroughAnotherPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	container := filepath.Join(home, "Library", "Mobile Documents", "com~apple~Keynote", "Documents")
+	if err := os.MkdirAll(container, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "icloud")
+	if err := os.Symlink(filepath.Join(home, "Library", "Mobile Documents"), alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, refused := range []string{
+		alias,
+		filepath.Join(alias, "com~apple~Keynote"),
+		filepath.Join(alias, "com~apple~Keynote", "Documents"),
+	} {
+		if !isICloudStructuralPath(refused, home) {
+			t.Errorf("iCloud structural folder reached through an alias not refused: %s", refused)
+		}
+	}
+	if isICloudStructuralPath(filepath.Join(alias, "com~apple~Keynote", "Documents", "Deck.key"), home) {
+		t.Errorf("file inside an app's iCloud Documents refused through an alias")
+	}
+}
