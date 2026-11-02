@@ -41,7 +41,7 @@ Released: tag `V0.1.0-linux` on `417e4c2d`, x86_64 and aarch64 archives with `SH
 
 ## Implemented on `linux` for 0.4.0: Debian and Ubuntu (maintainer 2026-11-02, not released)
 
-Mole CLI (macOS) and Mole CLI (Windows) have no counterpart; every row is Linux only. Learned from ubuntu-cleaner, mostly what not to do (study ledger in `docs/oss-research.md`).
+Mole CLI (macOS) and Mole CLI (Windows) have no counterpart; every row is Linux only. Learned from ubuntu-cleaner, mostly what not to do (study ledger in `docs/oss-research.md`). Real tools on 2026-11-02, `real-tools.yml` run 41404562979 on Ubuntu 24.04 (`c65db7c4`): a local two-revision snap was reported as `sudo snap remove mole-probe --revision=x1` and kept, `--yes` refused it while `~/snap/mole-probe` held a file and removed it once empty; xterm was listed, removed through apt and then reported as an `rc` package; optimize also found the runner's own unneeded LLDB libraries, `apport-core-dump-handler` left as `rc` and `/etc/ca-certificates.conf.dpkg-old`.
 
 | Contract | Source | Status | Verification |
 | --- | --- | --- | --- |
