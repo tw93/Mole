@@ -146,12 +146,20 @@ function Invoke-GitCommand {
 }
 
 function Get-PowerShellCommand {
-    if (Get-Command powershell.exe -ErrorAction SilentlyContinue) {
-        return "powershell.exe"
+    # Reuse the host that is already running. Get-Command only proves the file
+    # exists; policy can block powershell.exe while this pwsh host still runs.
+    $exeName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+    $currentHost = Join-Path $PSHOME $exeName
+    if (Test-Path -LiteralPath $currentHost) {
+        return $currentHost
     }
 
-    if (Get-Command pwsh -ErrorAction SilentlyContinue) {
-        return "pwsh"
+    if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) {
+        return "pwsh.exe"
+    }
+
+    if (Get-Command powershell.exe -ErrorAction SilentlyContinue) {
+        return "powershell.exe"
     }
 
     throw "PowerShell executable not found"

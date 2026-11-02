@@ -320,6 +320,29 @@ function Remove-FromUserPath {
     }
 }
 
+# Reuse the host that is running the installer for the generated launchers and
+# shortcut. Get-Command only proves powershell.exe exists; policy can block it
+# while the current pwsh host still runs. A Store or dotnet-tool pwsh runs from
+# a versioned $PSHOME that its next update deletes, so a pwsh host prefers the
+# pwsh.exe on PATH (the app execution alias or the MSI folder), which survives.
+function Get-InstallerPowerShellPath {
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $onPath = Get-Command pwsh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($onPath -and $onPath.Source) {
+            return $onPath.Source
+        }
+        $exeName = 'pwsh.exe'
+    }
+    else {
+        $exeName = 'powershell.exe'
+    }
+    $path = Join-Path $PSHOME $exeName
+    if (Test-Path -LiteralPath $path) {
+        return $path
+    }
+    throw "PowerShell host not found at $path"
+}
+
 function New-StartMenuShortcut {
     param(
         [string]$TargetPath,
@@ -334,7 +357,7 @@ function New-StartMenuShortcut {
     try {
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = "powershell.exe"
+        $shortcut.TargetPath = Get-InstallerPowerShellPath
         $shortcut.Arguments = "-NoExit -ExecutionPolicy Bypass -File `"$TargetPath`""
         $shortcut.Description = $Description
         $shortcut.WorkingDirectory = Split-Path -Parent $TargetPath
@@ -514,11 +537,12 @@ function Install-Mole {
 
     # Pass native arguments to -File, never interpolate them into PowerShell
     # source. Expand the invocation before ending the self-removing batch.
-    $batchContent = @'
+    $installerPowerShellPath = Get-InstallerPowerShellPath
+    $batchContent = @"
 @echo off
 setlocal DisableDelayedExpansion
-(goto) 2>nul & "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -NoLogo -NoProfile -File "%~dp0mole.ps1" %*
-'@
+(goto) 2>nul & "$installerPowerShellPath" -ExecutionPolicy Bypass -NoLogo -NoProfile -File "%~dp0mole.ps1" %*
+"@
     $batchPath = Join-Path $InstallDir "mole.cmd"
     Assert-InstallPhysicalPath -Path $batchPath
     Set-Content -LiteralPath $batchPath -Value $batchContent -Encoding ASCII
@@ -677,6 +701,7 @@ function Get-MoleInstallNestedFiles {
         "docs\oss-research.md"
         "docs\img\analyze-windows.png"
         "docs\img\clean-windows.png"
+        "docs\img\mole-logo.png"
         "docs\img\mole-windows.png"
         "docs\img\optimize-windows.png"
         "docs\img\status-windows.png"

@@ -133,6 +133,46 @@ exit 7
         }
         finally { $env:MOLE_TEST_CAPTURE = $saved }
     }
+    It 'Uses the PowerShell host that ran the installer' {
+        $expectedHost = Get-InstallerPowerShellPath
+        $expectedHost | Should -Match ([regex]::Escape($(if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' })) + '$')
+        foreach ($name in @('mo.cmd', 'mole.cmd')) {
+            $content = Get-Content -LiteralPath (Join-Path $script:SourceDir $name) -Raw
+            $content | Should -Match ([regex]::Escape($expectedHost))
+        }
+    }
+    It 'Keeps launchers on a PowerShell path that survives host updates' {
+        if ($PSVersionTable.PSEdition -ne 'Core') {
+            Get-InstallerPowerShellPath | Should -Be (Join-Path $PSHOME 'powershell.exe')
+            return
+        }
+        # A Store pwsh runs from a versioned $PSHOME; the alias on PATH is stable.
+        $aliasDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $aliasDir -Force | Out-Null
+        $alias = Join-Path $aliasDir 'pwsh.exe'
+        [System.IO.File]::WriteAllBytes($alias, [byte[]]@())
+        $savedPath = $env:PATH
+        try {
+            $env:PATH = $aliasDir + ';' + $savedPath
+            Get-InstallerPowerShellPath | Should -Be $alias
+        }
+        finally { $env:PATH = $savedPath }
+    }
+}
+
+Describe 'Quick installer host selection' {
+    It 'Runs install.ps1 with the PowerShell host that is already running' {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:RepoRoot 'quick-install.ps1'), [ref]$null, [ref]$null)
+        $definition = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-PowerShellCommand'
+            }, $true)
+        if (-not $definition) { throw 'Get-PowerShellCommand not found in quick-install.ps1' }
+        . ([scriptblock]::Create($definition.Extent.Text))
+
+        $exeName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+        Get-PowerShellCommand | Should -Be (Join-Path $PSHOME $exeName)
+    }
 }
 
 Describe 'Copied installation ownership' {
