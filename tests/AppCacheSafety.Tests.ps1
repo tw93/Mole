@@ -5,6 +5,7 @@ BeforeAll {
     . "$repo\lib\clean\dev.ps1"
     . "$repo\lib\clean\user.ps1"
     . "$repo\lib\clean\apps.ps1"
+    . "$repo\lib\clean\system.ps1"
     $script:SavedCacheEnvironment = @{}
     foreach ($name in @('USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'MO_NO_OPLOG')) {
         $script:SavedCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
@@ -83,6 +84,71 @@ Describe 'Application cache boundaries' {
         Clear-AppCaches
         foreach ($file in $caches) { Test-Path -LiteralPath $file | Should -BeFalse }
         foreach ($file in $state) { Test-Path -LiteralPath $file | Should -BeTrue }
+    }
+
+    It 'Cleans the measured <Name> leaves and keeps the state beside them' -ForEach @(
+        @{ Name='Trae'; Root='APPDATA'; Base='Trae'; Caches=@('Cache','Code Cache','GPUCache','CachedData','DawnGraphiteCache','DawnWebGPUCache'); State=@('User\settings.json','Local Storage\leveldb\x','Session Storage\x','logs\s1\main.log') }
+        @{ Name='Qoder'; Root='APPDATA'; Base='Qoder'; Caches=@('Cache','Code Cache','GPUCache','CachedData'); State=@('User\settings.json','Backups\x') }
+        @{ Name='Kiro'; Root='APPDATA'; Base='Kiro'; Caches=@('Cache','Code Cache','GPUCache'); State=@('User\settings.json') }
+        @{ Name='Discord PTB'; Root='APPDATA'; Base='discordptb'; Caches=@('Cache','Code Cache','GPUCache','DawnGraphiteCache','DawnWebGPUCache','ShaderCache','GrShaderCache'); State=@('Local Storage\leveldb\x','1.0.1229\modules\x') }
+        @{ Name='QQ'; Root='APPDATA'; Base='QQ'; Caches=@('Cache','Code Cache'); State=@('global\nt_data\x','Local Storage\x') }
+        @{ Name='Feishu'; Root='APPDATA'; Base='LarkShell'; Caches=@('aha\users\global\profile_global\Cache','aha\users\global\profile_global\DawnWebGPUCache','ShaderCache','GraphiteDawnCache'); State=@('aha\users\global\profile_global\Login Data','sdk_storage\x','aha\users\1234\profile\Cache\x') }
+        @{ Name='CapCut'; Root='LOCALAPPDATA'; Base='CapCut\User Data'; Caches=@('CEF\Cache\Cache','CEF\Cache\DawnCache','CEF\ShaderCache'); State=@('Cache\effect\model.bin','Projects\draft\draft.json','CEF\Cache\Local Storage\x') }
+        @{ Name='Chrome Beta'; Root='LOCALAPPDATA'; Base='Google\Chrome Beta\User Data'; Caches=@('Default\Cache','Default\DawnGraphiteCache','Profile 1\Code Cache','GrShaderCache'); State=@('Default\Cookies','Default\Local Storage\x','Default\Service Worker\CacheStorage\x') }
+        @{ Name='360 Chrome'; Root='LOCALAPPDATA'; Base='360Chrome\Chrome\User Data'; Caches=@('Default\Cache','GraphiteDawnCache'); State=@('Default\Bookmarks','v3update\x') }
+    ) {
+        $base = Join-Path ([Environment]::GetEnvironmentVariable($Root)) $Base
+        $caches = @(foreach ($leaf in $Caches) { New-CacheFile (Join-Path $base "$leaf\entry") })
+        $state = @(foreach ($leaf in $State) { New-CacheFile (Join-Path $base $leaf) })
+        Clear-BrowserCaches
+        Clear-AppCaches
+        foreach ($file in $caches) { Test-Path -LiteralPath $file | Should -BeFalse }
+        foreach ($file in $state) { Test-Path -LiteralPath $file | Should -BeTrue }
+    }
+
+    It 'Keeps the new app caches while their owner runs or is unknown: <Owner>' -ForEach @(
+        @{ Owner='Trae'; Path='Trae\Cache\entry' }, @{ Owner='Feishu'; Path='LarkShell\ShaderCache\entry' },
+        @{ Owner='Qoder'; Path='Qoder\CachedData\entry' }, @{ Owner='Qoder IDE'; Path='Qoder\Cache\entry' },
+        @{ Owner='Lark'; Path='LarkInternational\GraphiteDawnCache\entry' }, @{ Owner='CodeBuddy'; Path='CodeBuddy\GPUCache\entry' },
+        @{ Owner='DiscordCanary'; Path='discordcanary\GPUCache\entry' }, @{ Owner='unknown'; Path='Kiro\Cache\entry' }
+    ) {
+        $cache = New-CacheFile (Join-Path $env:APPDATA $Path)
+        if ($Owner -eq 'unknown') { Mock Get-Process { throw 'incomplete inventory' } }
+        else { $script:RunningOwner = $Owner; Mock Get-Process { [pscustomobject]@{ProcessName=$script:RunningOwner} } }
+        foreach ($preview in @($true, $false)) {
+            Set-DryRunMode -Enabled $preview
+            Clear-AppCaches
+            Test-Path -LiteralPath $cache | Should -BeTrue
+        }
+    }
+
+    It 'A running <Owner> keeps the <Path> cache' -ForEach @(
+        @{ Owner='msedge'; Path='Microsoft\Edge Dev\User Data\Default\Cache\entry' }
+        @{ Owner='msedge'; Path='Microsoft\Edge Beta\User Data\GrShaderCache\entry' }
+        @{ Owner='chrome'; Path='Google\Chrome SxS\User Data\Default\DawnWebGPUCache\entry' }
+        @{ Owner='quark'; Path='Quark\User Data\Default\Cache\entry' }
+        @{ Owner='360chrome'; Path='360Chrome\Chrome\User Data\GraphiteDawnCache\entry' }
+        @{ Owner='JianyingPro'; Path='JianyingPro\User Data\CEF\Cache\Cache\entry' }
+    ) {
+        $cache = New-CacheFile (Join-Path $env:LOCALAPPDATA $Path)
+        $script:RunningOwner = $Owner
+        Mock Get-Process { [pscustomobject]@{ProcessName=$script:RunningOwner} }
+        Clear-BrowserCaches
+        Clear-AppCaches
+        Test-Path -LiteralPath $cache | Should -BeTrue
+    }
+
+    It 'Takes only week-old top-level app log files' {
+        $old = New-CacheFile "$env:LOCALAPPDATA\Tencent\Wemeet\logs\old.log"
+        $recent = New-CacheFile "$env:LOCALAPPDATA\Tencent\Wemeet\logs\today.log"
+        $data = New-CacheFile "$env:LOCALAPPDATA\Tencent\Wemeet\Global\Data\db.sqlite"
+        $wsl = New-CacheFile "$env:LOCALAPPDATA\Docker\wsl\disk\docker_data.vhdx"
+        (Get-Item -LiteralPath $old).LastWriteTime = (Get-Date).AddDays(-10)
+        (Get-Item -LiteralPath $data).LastWriteTime = (Get-Date).AddDays(-10)
+        (Get-Item -LiteralPath $wsl).LastWriteTime = (Get-Date).AddDays(-10)
+        Clear-AppCaches
+        Test-Path -LiteralPath $old | Should -BeFalse
+        foreach ($file in @($recent, $data, $wsl)) { Test-Path -LiteralPath $file | Should -BeTrue }
     }
 
     It 'Keeps Vesktop caches for <Owner> in preview <Preview>' -ForEach @(
@@ -539,5 +605,194 @@ Describe 'Native cache-owner process evidence' {
         $current = Get-Process -Id $PID
         Test-MoleCacheOwnerIdle -Names @($current.ProcessName) | Should -BeFalse
         Test-MoleCacheOwnerIdle -Names @('mole-fixture-' + [guid]::NewGuid().ToString('N')) | Should -BeTrue
+    }
+}
+
+Describe 'Delivery Optimization files' {
+    BeforeEach {
+        $env:USERPROFILE = Join-Path $TestDrive ([guid]::NewGuid().ToString('N').Substring(0,8))
+        $env:MO_NO_OPLOG = '1'
+        $script:Config.WhitelistFile = Join-Path $env:USERPROFILE 'whitelist.txt'
+        New-Item -ItemType Directory -Path $env:USERPROFILE -Force | Out-Null
+        $script:ExportListFile = Join-Path $env:USERPROFILE 'preview.txt'
+        Set-DryRunMode -Enabled $false
+        Reset-CleanupStats
+        Mock Write-MoleOperation {}
+        $script:DoRoot = 'C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache'
+        $script:DoFiles = @(
+            [pscustomobject]@{ FileId='aa11'; Status=1; IsPinned=$false; FileSizeInCache=1048576 }
+            [pscustomobject]@{ FileId='bb22'; Status=2; IsPinned=$false; FileSizeInCache=2097152 }
+            [pscustomobject]@{ FileId='cc33'; Status=0; IsPinned=$false; FileSizeInCache=4194304 }
+            [pscustomobject]@{ FileId='dd44'; Status=3; IsPinned=$false; FileSizeInCache=4194304 }
+            [pscustomobject]@{ FileId='ee55'; Status=1; IsPinned=$true; FileSizeInCache=4194304 }
+            [pscustomobject]@{ FileId="ff66' OR 1=1"; Status=1; IsPinned=$false; FileSizeInCache=4194304 }
+        )
+        $script:DoDeleted = New-Object 'System.Collections.Generic.List[string]'
+        Mock Get-CimInstance { @($script:DoFiles | Where-Object { -not $script:DoDeleted.Contains($_.FileId) }) } -ParameterFilter { $ClassName -eq 'MSFT_DeliveryOptimizationFile' }
+        Mock Get-CimInstance { [pscustomobject]@{ WorkingDirectory = $script:DoRoot } } -ParameterFilter { $ClassName -eq 'MSFT_DeliveryOptimizationExtendedConfig' }
+        Mock Invoke-CimMethod { $script:DoDeleted.Add($Arguments.fileId) }
+    }
+
+    It 'Asks the service to delete only finished, unpinned files and counts what it no longer lists' {
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 2 -Exactly
+        Should -Invoke Invoke-CimMethod -Times 2 -Exactly -ParameterFilter { $Arguments.deletePinned -eq $false -and $Arguments.fileId -in @('aa11', 'bb22') }
+        (Get-CleanupStats).TotalSizeKB | Should -Be 3072
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'OWNER' -and $Path -eq $script:DoRoot }
+    }
+
+    It 'Counts nothing the service still lists after its delete' {
+        Mock Invoke-CimMethod { }
+        Clear-DeliveryOptimizationFiles
+        (Get-CleanupStats).TotalSizeKB | Should -Be 0
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'FAILED' }
+    }
+
+    It 'Previews the finished files without asking the service to delete' {
+        Set-DryRunMode -Enabled $true
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+        (Get-CleanupStats).TotalSizeKB | Should -Be 3072
+        Get-Content -LiteralPath $script:ExportListFile | Should -Contain $script:DoRoot
+    }
+
+    It 'Keeps everything when the provider does not answer' {
+        Mock Get-CimInstance { throw 'provider unavailable' } -ParameterFilter { $ClassName -eq 'MSFT_DeliveryOptimizationFile' }
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
+    It 'Keeps everything when the user whitelists a folder inside the cache root' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value "$script:DoRoot\Downloads"
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
+    It 'Leaves files the provider describes in another shape' {
+        $script:DoFiles = @(
+            [pscustomobject]@{ FileId='aa11'; Status='Complete'; IsPinned=$false; FileSizeInCache=1048576 }
+            [pscustomobject]@{ FileId='bb22'; Status=1; IsPinned=$null; FileSizeInCache=1048576 }
+        )
+        { Clear-DeliveryOptimizationFiles } | Should -Not -Throw
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
+    It 'Keeps everything when the user whitelists the cache root' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value $script:DoRoot
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
+    It 'Keeps everything for a wildcard whitelist row that reaches into the cache: <Pattern>' -ForEach @(
+        @{ Pattern = 'C:\Windows\ServiceProfiles\*\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\x' }
+        @{ Pattern = 'C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\a*' }
+        @{ Pattern = '*\DeliveryOptimization\*' }
+    ) {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value $Pattern
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
+    It 'Still clears when an unrelated wildcard row is whitelisted' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value "$env:USERPROFILE\Downloads\*.iso"
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 2 -Exactly
+    }
+
+    It 'Keeps everything when protection appears right before the delete' {
+        $script:DoWhitelistReads = 0
+        Mock Get-WhitelistState {
+            $script:DoWhitelistReads++
+            @{ RetainAll = ($script:DoWhitelistReads -gt 1); Patterns = @(); Roots = @(); Prefixes = @(); Wild = @() }
+        }
+        Clear-DeliveryOptimizationFiles
+        $script:DoWhitelistReads | Should -BeGreaterThan 1
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
+    It 'Leaves a file whose size the provider reports in another shape' {
+        $script:DoFiles = @([pscustomobject]@{ FileId='aa11'; Status=1; IsPinned=$false; FileSizeInCache='1 MB' })
+        { Clear-DeliveryOptimizationFiles } | Should -Not -Throw
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+}
+
+Describe 'NVIDIA driver installers' {
+    BeforeEach {
+        $env:USERPROFILE = Join-Path $TestDrive ([guid]::NewGuid().ToString('N').Substring(0,8))
+        $env:MO_NO_OPLOG = '1'
+        $script:Config.WhitelistFile = Join-Path $env:USERPROFILE 'whitelist.txt'
+        $script:SavedSystemDrive = $env:SystemDrive
+        $env:SystemDrive = Join-Path $env:USERPROFILE 'drive'
+        $script:MoleCleanPathGuard = $true
+        Set-DryRunMode -Enabled $false
+        Reset-CleanupStats
+        Mock Test-IsAdmin { $true }
+        $script:NvidiaProcesses = @([pscustomobject]@{ ExecutablePath = "$env:WINDIR\explorer.exe" }, [pscustomobject]@{ ExecutablePath = $null })
+        Mock Get-CimInstance -ParameterFilter { $ClassName -eq 'Win32_Process' } { $script:NvidiaProcesses }
+        function Set-Age([string]$Path, [int]$Days) {
+            foreach ($item in @(Get-Item -LiteralPath $Path -Force) + @(Get-ChildItem -LiteralPath $Path -Recurse -Force)) {
+                $item.LastWriteTime = (Get-Date).AddDays(-$Days); $item.CreationTime = (Get-Date).AddDays(-$Days)
+            }
+        }
+    }
+    AfterEach { $env:SystemDrive = $script:SavedSystemDrive }
+
+    It 'Removes only week-old version folders and never the rest of the NVIDIA folder' {
+        $root = Join-Path $env:SystemDrive 'NVIDIA'
+        $old = New-CacheFile "$root\DisplayDriver\560.94\Win11_x64\setup.exe"
+        $fresh = New-CacheFile "$root\DisplayDriver\581.57\Win11_x64\setup.exe"
+        $mixed = New-CacheFile "$root\DisplayDriver\572.16\Win11_x64\setup.exe"
+        $other = New-CacheFile "$root\GameReady\notes.txt"
+        Set-Age "$root\DisplayDriver\560.94" 30
+        Set-Age "$root\DisplayDriver\572.16" 30
+        (Get-Item -LiteralPath $mixed).LastWriteTime = Get-Date
+        Set-Age "$root\GameReady" 30
+        Clear-NvidiaDriverInstallers
+        Test-Path -LiteralPath "$root\DisplayDriver\560.94" | Should -BeFalse
+        foreach ($file in @($fresh, $mixed, $other)) { Test-Path -LiteralPath $file | Should -BeTrue }
+        Test-Path -LiteralPath "$root\DisplayDriver" | Should -BeTrue
+    }
+
+    It 'Keeps every version folder while a process runs from the folder or the process list is unknown: <Case>' -ForEach @(
+        @{ Case = 'installer running' }, @{ Case = 'unknown' }, @{ Case = 'empty' }
+    ) {
+        $root = Join-Path $env:SystemDrive 'NVIDIA'
+        $file = New-CacheFile "$root\DisplayDriver\560.94\Win11_x64\setup.exe"
+        Set-Age "$root\DisplayDriver\560.94" 30
+        $script:NvidiaSetup = $file
+        switch ($Case) {
+            'unknown' { Mock Get-CimInstance -ParameterFilter { $ClassName -eq 'Win32_Process' } { throw 'incomplete inventory' } }
+            'empty' { Mock Get-CimInstance -ParameterFilter { $ClassName -eq 'Win32_Process' } { @() } }
+            default { $script:NvidiaProcesses += [pscustomobject]@{ ExecutablePath = $script:NvidiaSetup } }
+        }
+        Clear-NvidiaDriverInstallers
+        Test-Path -LiteralPath $file | Should -BeTrue
+    }
+
+    It 'Keeps the folder when an installer starts from it after the first check' {
+        $root = Join-Path $env:SystemDrive 'NVIDIA'
+        $file = New-CacheFile "$root\DisplayDriver\560.94\Win11_x64\setup.exe"
+        Set-Age "$root\DisplayDriver\560.94" 30
+        $script:NvidiaSetup = $file
+        $script:NvidiaCalls = 0
+        Mock Get-CimInstance -ParameterFilter { $ClassName -eq 'Win32_Process' } {
+            $script:NvidiaCalls++
+            if ($script:NvidiaCalls -gt 1) { [pscustomobject]@{ ExecutablePath = $script:NvidiaSetup } }
+            else { [pscustomobject]@{ ExecutablePath = "$env:WINDIR\explorer.exe" } }
+        }
+        Clear-NvidiaDriverInstallers
+        $script:NvidiaCalls | Should -BeGreaterThan 1
+        Test-Path -LiteralPath $file | Should -BeTrue
+    }
+
+    It 'Keeps a version folder that changes after sizing' {
+        $root = Join-Path $env:SystemDrive 'NVIDIA'
+        $file = New-CacheFile "$root\DisplayDriver\560.94\setup.exe"
+        Set-Age "$root\DisplayDriver\560.94" 30
+        $script:Touched = $false
+        Mock Get-ValidatedTreeSize { if (-not $script:Touched) { $script:Touched = $true; (Get-Item -LiteralPath $file).LastWriteTime = Get-Date }; return 13 }
+        Clear-NvidiaDriverInstallers
+        Test-Path -LiteralPath $file | Should -BeTrue
     }
 }

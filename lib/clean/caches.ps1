@@ -27,17 +27,28 @@ function Clear-BrowserCaches {
     
     Start-Section "Browser caches"
     
+    # Preview channels run as the stable browser's image, so a running stable
+    # browser also keeps their caches. The channel rows, 360 Chrome and Quark
+    # are the leaves read on Windows 2026-10-24; storage and cookies stay.
+    $chromium = @('Cache', 'Code Cache', 'GPUCache')
+    $dawn = $chromium + @('DawnGraphiteCache', 'DawnWebGPUCache')
     $browsers = @(
-        @{ Name = 'Chrome'; Root = 'Google\Chrome\User Data'; Processes = @('chrome'); RootCaches = @('ShaderCache', 'GrShaderCache') }
-        @{ Name = 'Edge'; Root = 'Microsoft\Edge\User Data'; Processes = @('msedge'); RootCaches = @('ShaderCache') }
-        @{ Name = 'Brave'; Root = 'BraveSoftware\Brave-Browser\User Data'; Processes = @('brave'); RootCaches = @() }
-        @{ Name = 'Vivaldi'; Root = 'Vivaldi\User Data'; Processes = @('vivaldi'); RootCaches = @() }
+        @{ Name = 'Chrome'; Root = 'Google\Chrome\User Data'; Processes = @('chrome'); ProfileCaches = $chromium; RootCaches = @('ShaderCache', 'GrShaderCache') }
+        @{ Name = 'Chrome Beta'; Root = 'Google\Chrome Beta\User Data'; Processes = @('chrome'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache') }
+        @{ Name = 'Chrome Canary'; Root = 'Google\Chrome SxS\User Data'; Processes = @('chrome'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache') }
+        @{ Name = 'Edge'; Root = 'Microsoft\Edge\User Data'; Processes = @('msedge'); ProfileCaches = $chromium; RootCaches = @('ShaderCache') }
+        @{ Name = 'Edge Beta'; Root = 'Microsoft\Edge Beta\User Data'; Processes = @('msedge'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache') }
+        @{ Name = 'Edge Dev'; Root = 'Microsoft\Edge Dev\User Data'; Processes = @('msedge'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache') }
+        @{ Name = 'Brave'; Root = 'BraveSoftware\Brave-Browser\User Data'; Processes = @('brave'); ProfileCaches = $chromium; RootCaches = @() }
+        @{ Name = 'Vivaldi'; Root = 'Vivaldi\User Data'; Processes = @('vivaldi'); ProfileCaches = $chromium; RootCaches = @() }
+        @{ Name = '360 Chrome'; Root = '360Chrome\Chrome\User Data'; Processes = @('360chrome'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
+        @{ Name = 'Quark'; Root = 'Quark\User Data'; Processes = @('quark'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
     )
     foreach ($browser in $browsers) {
         $root = Join-Path $env:LOCALAPPDATA $browser.Root
         $lock = Join-Path $root 'lockfile'
         foreach ($profile in @(Get-MoleCacheProfiles $root)) {
-            foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache')) {
+            foreach ($leaf in $browser.ProfileCaches) {
                 Clear-MoleAppCache -Path (Join-Path $profile.FullName $leaf) -Description "$($browser.Name) $leaf" -Processes $browser.Processes -LockPath $lock
             }
         }
@@ -132,10 +143,43 @@ function Clear-AppCaches {
         }
     }
 
-    foreach ($app in @('Cursor', 'Windsurf', 'Obsidian', 'Notion')) {
+    foreach ($app in @('Cursor', 'Windsurf', 'Obsidian', 'Notion', 'Kiro', 'CodeBuddy')) {
         foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache')) {
             Clear-MoleAppCache -Path "$env:APPDATA\$app\$leaf" -Description "$app cache" -Processes @($app)
         }
+    }
+
+    # Electron and CEF leaves read on Windows (2026-10-21 to 10-24) beside
+    # storage, session and project folders that stay: each app's own image holds
+    # them. Feishu and Lark keep the signed-out profile under aha; a signed-in
+    # user's own profiles are not targets. Jianying and CapCut downloads in
+    # User Data\Cache are effects and models, not rebuildable cache.
+    $electron = @(
+        @{ Name = 'Qoder'; Root = "$env:APPDATA\Qoder"; Processes = @('Qoder', 'Qoder IDE'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'CachedData') }
+        @{ Name = 'Trae'; Root = "$env:APPDATA\Trae"; Processes = @('Trae'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'CachedData', 'DawnGraphiteCache', 'DawnWebGPUCache') }
+        @{ Name = 'Discord PTB'; Root = "$env:APPDATA\discordptb"; Processes = @('DiscordPTB'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache', 'GrShaderCache') }
+        @{ Name = 'Discord Canary'; Root = "$env:APPDATA\discordcanary"; Processes = @('DiscordCanary'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache', 'GrShaderCache') }
+        @{ Name = 'QQ'; Root = "$env:APPDATA\QQ"; Processes = @('QQ'); Leaves = @('Cache', 'Code Cache') }
+        @{ Name = 'Feishu'; Root = "$env:APPDATA\LarkShell"; Processes = @('Feishu'); Leaves = @('aha\users\global\profile_global\Cache', 'aha\users\global\profile_global\Code Cache', 'aha\users\global\profile_global\GPUCache', 'aha\users\global\profile_global\DawnGraphiteCache', 'aha\users\global\profile_global\DawnWebGPUCache', 'ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
+        @{ Name = 'Lark'; Root = "$env:APPDATA\LarkInternational"; Processes = @('Lark'); Leaves = @('aha\users\global\profile_global\Cache', 'aha\users\global\profile_global\Code Cache', 'aha\users\global\profile_global\GPUCache', 'aha\users\global\profile_global\DawnGraphiteCache', 'aha\users\global\profile_global\DawnWebGPUCache', 'ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
+        @{ Name = 'Jianying Pro'; Root = "$env:LOCALAPPDATA\JianyingPro\User Data\CEF"; Processes = @('JianyingPro'); Leaves = @('Cache\Cache', 'Cache\Code Cache', 'Cache\GPUCache', 'Cache\DawnCache', 'ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
+        @{ Name = 'CapCut'; Root = "$env:LOCALAPPDATA\CapCut\User Data\CEF"; Processes = @('CapCut'); Leaves = @('Cache\Cache', 'Cache\Code Cache', 'Cache\GPUCache', 'Cache\DawnCache', 'ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
+    )
+    foreach ($app in $electron) {
+        foreach ($leaf in $app.Leaves) {
+            Clear-MoleAppCache -Path (Join-Path $app.Root $leaf) -Description "$($app.Name) cache" -Processes $app.Processes
+        }
+    }
+
+    # Week-old app logs read on Windows; only top-level log files, never the
+    # data folders beside them (Docker's wsl images stay out of reach).
+    foreach ($log in @(
+        @{ Name = 'Tencent Meeting'; Path = "$env:LOCALAPPDATA\Tencent\Wemeet\logs" }
+        @{ Name = 'Baidu Netdisk'; Path = "$env:APPDATA\BaiduYunGuanjia\logs" }
+        @{ Name = 'Docker Desktop'; Path = "$env:LOCALAPPDATA\Docker\log" }
+        @{ Name = 'WPS Office'; Path = "$env:APPDATA\Kingsoft\office6\log" }
+    )) {
+        Remove-OldFiles -Path $log.Path -DaysOld 7 -Description "$($log.Name) logs"
     }
 
     # VS Code

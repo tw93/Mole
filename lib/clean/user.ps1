@@ -124,20 +124,20 @@ function Clear-RecycleBin {
 # A report is retained as a whole when any descendant is recent or unreadable.
 # The same bounded check runs after sizing and at the removal boundary.
 function Test-MoleOldErrorReport {
-    param([string]$Path, [datetime]$Cutoff)
+    param([string]$Path, [datetime]$Cutoff, [int]$MaxEntries = 4096, [double]$Seconds = 2)
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $pending = New-Object 'System.Collections.Generic.Stack[string]'
     $pending.Push($Path)
     $seen = 0
     try {
         while ($pending.Count -gt 0) {
-            if (++$seen -gt 4096 -or $timer.Elapsed.TotalSeconds -gt 2) { return $false }
+            if (++$seen -gt $MaxEntries -or $timer.Elapsed.TotalSeconds -gt $Seconds) { return $false }
             $item = Get-Item -LiteralPath $pending.Pop() -Force -ErrorAction Stop
             if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
                 $item.LastWriteTime -ge $Cutoff -or $item.CreationTime -ge $Cutoff) { return $false }
             if ($item.PSIsContainer) {
                 foreach ($child in [IO.Directory]::EnumerateFileSystemEntries($item.FullName)) {
-                    if ($pending.Count + $seen -ge 4096 -or $timer.Elapsed.TotalSeconds -gt 2) { return $false }
+                    if ($pending.Count + $seen -ge $MaxEntries -or $timer.Elapsed.TotalSeconds -gt $Seconds) { return $false }
                     $pending.Push($child)
                 }
             }

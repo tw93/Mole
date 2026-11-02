@@ -34,12 +34,6 @@ function Clear-SystemTempFiles {
     if (Test-Path $winTemp) {
         Remove-OldFiles -Path $winTemp -DaysOld 7 -Description "Windows temp files"
     }
-
-    # System temp (different from Windows temp)
-    $systemTemp = "$env:SYSTEMROOT\Temp"
-    if ((Test-Path $systemTemp) -and ($systemTemp -ne $winTemp)) {
-        Remove-OldFiles -Path $systemTemp -DaysOld 7 -Description "System temp files"
-    }
 }
 
 # ============================================================================
@@ -300,6 +294,10 @@ function Invoke-SystemCleanup {
     # Memory dumps
     Clear-MemoryDumps
 
+    # NVIDIA driver installer extraction folders and Delivery Optimization files
+    Clear-NvidiaDriverInstallers
+    Clear-DeliveryOptimizationFiles
+
     # Optional: Component Store (can take a long time)
     if ($IncludeComponentStore) {
         Invoke-ComponentStoreCleanup
@@ -311,6 +309,175 @@ function Invoke-SystemCleanup {
     }
 
     Stop-Section
+}
+
+# ============================================================================
+# NVIDIA driver installers
+# ============================================================================
+
+# NVIDIA's driver package unpacks each version into C:\NVIDIA\DisplayDriver
+# before it checks the hardware and never removes it; the installed driver does
+# not read it again. Only version folders whose every entry is a week old go,
+# never the rest of C:\NVIDIA, and nothing while a process runs from the folder.
+# Both checks run again at the removal boundary.
+# A process started from the folder is an installer at work; an unreadable
+# process list cannot rule one out. CIM reports image paths across bitness,
+# where Process.Path from 32-bit PowerShell is empty for 64-bit processes.
+# Only protected system processes come back without a path, and none of
+# them runs from C:\NVIDIA.
+function Test-MoleNvidiaInstallerRunning {
+    param([string]$Root)
+    try { $processes = @(Get-CimInstance -ClassName Win32_Process -Property ExecutablePath -OperationTimeoutSec 10 -ErrorAction Stop) }
+    catch { return $true }
+    if ($processes.Count -eq 0) { return $true }
+    $prefix = $Root.TrimEnd('\') + '\'
+    foreach ($process in $processes) {
+        $path = [string]$process.ExecutablePath
+        if ($path -and $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+function Clear-NvidiaDriverInstallers {
+    param([int]$DaysOld = 7)
+    if (-not (Test-IsAdmin)) { return }
+    $root = Join-Path $env:SystemDrive 'NVIDIA\DisplayDriver'
+    $snapshot = Get-MolePathSnapshot -Path $root
+    if (-not $snapshot) { return }
+    $cutoff = (Get-Date).AddDays(-$DaysOld)
+    try { $versions = @([IO.Directory]::EnumerateDirectories($root) | Select-Object -First 64) }
+    catch { return }
+    if (-not (Test-MolePathSnapshot $snapshot)) { return }
+    if (Test-MoleNvidiaInstallerRunning -Root $root) { return }
+    foreach ($version in $versions) {
+        $versionPath = $version
+        if (-not (Test-MoleOldErrorReport -Path $versionPath -Cutoff $cutoff -MaxEntries 50000 -Seconds 10)) { continue }
+        $guard = { (Test-MolePathSnapshot $snapshot) -and -not (Test-MoleNvidiaInstallerRunning -Root $root) -and (Test-MoleOldErrorReport -Path $versionPath -Cutoff $cutoff -MaxEntries 50000 -Seconds 10) }
+        Remove-SafeItems -Paths @($versionPath) -Description 'NVIDIA driver installers' -CanRemove $guard
+    }
+}
+
+# ============================================================================
+# Delivery Optimization files
+# ============================================================================
+
+# Windows Update, Store and Edge downloads the Delivery Optimization service
+# keeps to share with other PCs; Disk Cleanup calls them safe to delete. The
+# files belong to the service, so Mole never deletes them itself: it asks the
+# service, file by file, for finished, unpinned files only, and counts what the
+# service no longer lists afterwards. A user whitelist on the cache root, an
+# unanswered provider or an incomplete listing keeps everything.
+$script:MoleDeliveryOptimizationNamespace = 'root/Microsoft/Windows/DeliveryOptimization'
+
+function Get-MoleDeliveryOptimizationFiles {
+    try {
+        return ,@(Get-CimInstance -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationFile -OperationTimeoutSec 10 -ErrorAction Stop)
+    }
+    catch { return $null }
+}
+
+function Get-MoleDeliveryOptimizationRoot {
+    try {
+        $config = @(Get-CimInstance -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationExtendedConfig -OperationTimeoutSec 10 -ErrorAction Stop)
+        foreach ($item in $config) {
+            $folder = [string]$item.WorkingDirectory
+            if ($folder) { return $folder }
+        }
+    }
+    catch { }
+    return $null
+}
+
+function Test-MoleDeliveryOptimizationClearable {
+    param($File)
+    # SwarmStatus 1 Complete and 2 Caching are finished downloads; 0 and 3 are not.
+    # A value the provider returns in another shape is not clearable.
+    $id = [string]$File.FileId
+    $status = 0; $size = 0L
+    if (-not [int]::TryParse([string]$File.Status, [ref]$status)) { return $false }
+    if (-not [long]::TryParse([string]$File.FileSizeInCache, [ref]$size)) { return $false }
+    return ($id -match '^[A-Za-z0-9+/=_-]{1,128}$' -and $status -in @(1, 2) -and
+        $File.IsPinned -eq $false -and $size -gt 0)
+}
+
+# The service deletes inside its root, so a whitelist row on the root, above
+# it, or anywhere below it keeps every file; unknown protection keeps them too.
+# A wildcard row counts when its fixed directory part sits above or below the
+# root, or when it matches a child of the root.
+function Test-MoleDeliveryOptimizationProtected {
+    param([string]$Root)
+    $state = Get-WhitelistState
+    $roots = @($Root.TrimEnd('\'))
+    $info = Resolve-MoleExistingPathInfo -Path $Root
+    if ($info.Exists -and $info.Path -and -not [string]::Equals($info.Path.TrimEnd('\'), $roots[0], [StringComparison]::OrdinalIgnoreCase)) {
+        $roots += $info.Path.TrimEnd('\')
+    }
+    foreach ($candidate in $roots) {
+        if (Test-Whitelisted -Path $candidate -State $state) { return $true }
+        $prefix = $candidate + '\'
+        foreach ($entry in @($state.Patterns)) {
+            $pattern = [string]$entry
+            if (-not $pattern) { continue }
+            if ($pattern.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+            $wildcard = $pattern.IndexOfAny([char[]]@('*', '?', '[', '`'))
+            if ($wildcard -lt 0) { continue }
+            if (($prefix + 'x') -like $pattern) { return $true }
+            $fixed = $pattern.Substring(0, $pattern.LastIndexOf('\', [Math]::Max($wildcard - 1, 0)) + 1)
+            if ($fixed.Length -gt 3 -and ($fixed.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+                    $prefix.StartsWith($fixed, [StringComparison]::OrdinalIgnoreCase))) { return $true }
+        }
+    }
+    return $false
+}
+
+function Clear-DeliveryOptimizationFiles {
+    $files = Get-MoleDeliveryOptimizationFiles
+    if ($null -eq $files) { return }
+    $clearable = @($files | Where-Object { Test-MoleDeliveryOptimizationClearable $_ })
+    if ($clearable.Count -eq 0) { return }
+    $root = Get-MoleDeliveryOptimizationRoot
+    if (-not $root) { return }
+    if (Test-MoleDeliveryOptimizationProtected -Root $root) { return }
+    $bytes = 0L
+    foreach ($file in $clearable) { $bytes += [long]$file.FileSizeInCache }
+    $description = 'Delivery Optimization files'
+    if (Test-DryRunMode) {
+        Add-DryRunListEntries -Description $description -Paths @($root)
+        $script:TotalSizeCleaned += [Math]::Floor($bytes / 1024)
+        $script:FilesCleaned += $clearable.Count
+        $script:TotalItems++
+        Write-DryRun "$description $($script:Colors.Yellow)($(Format-ByteSize -Bytes $bytes) dry)$($script:Colors.NC)"
+        Set-SectionActivity
+        return
+    }
+    if (Test-MoleDeliveryOptimizationProtected -Root $root) { return }
+    foreach ($file in $clearable) {
+        try {
+            $null = Invoke-CimMethod -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationFile -MethodName Delete -Arguments @{ fileId = [string]$file.FileId; deletePinned = $false } -OperationTimeoutSec 10 -ErrorAction Stop
+        }
+        catch { Write-Debug "Delivery Optimization delete failed: $_" }
+    }
+    $after = Get-MoleDeliveryOptimizationFiles
+    if ($null -eq $after) {
+        Write-MoleOperation -Action "FAILED" -Path $root -Detail "MSFT_DeliveryOptimizationFile.Delete: listing unavailable afterwards"
+        return
+    }
+    $left = @{}
+    foreach ($file in $after) { $left[[string]$file.FileId] = $true }
+    $removed = @($clearable | Where-Object { -not $left.ContainsKey([string]$_.FileId) })
+    $freed = 0L
+    foreach ($file in $removed) { $freed += [long]$file.FileSizeInCache }
+    if ($removed.Count -eq 0) {
+        Write-MoleOperation -Action "FAILED" -Path $root -Detail "MSFT_DeliveryOptimizationFile.Delete: nothing removed"
+        return
+    }
+    Write-MoleOperation -Action "OWNER" -Path $root -Detail "MSFT_DeliveryOptimizationFile.Delete: $($removed.Count) of $($clearable.Count) files"
+    $script:OwnerCleanups++
+    $script:TotalSizeCleaned += [Math]::Floor($freed / 1024)
+    $script:FilesCleaned += $removed.Count
+    $script:TotalItems++
+    Write-Success "$description $($script:Colors.Green)($(Format-ByteSize -Bytes $freed))$($script:Colors.NC)"
+    Set-SectionActivity
 }
 
 # ============================================================================
