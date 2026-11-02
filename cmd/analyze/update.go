@@ -257,6 +257,12 @@ func (m *model) flushLiveEntryUpdates() {
 }
 
 func (m *model) finishLiveScan(result scanResult) {
+	// Disk validation needs the complete bounded listing, including empty
+	// directories and files. UI/history still hide those rows below. Clone
+	// both slices before the asynchronous writer can share mutable view data.
+	diskResult := result
+	diskResult.Entries = slices.Clone(result.Entries)
+	diskResult.LargeFiles = slices.Clone(result.LargeFiles)
 	pinFirstRow := m.liveSortMode == liveSortFreezeOnMove && m.autoSortLiveEntries
 	m.scanning = false
 	m.liveScanID = 0
@@ -287,10 +293,6 @@ func (m *model) finishLiveScan(result scanResult) {
 	}
 	cached := historyEntryFromScanResult(m.path, result, m.cache[m.path], false)
 	m.cache[m.path] = cached
-	// The view mutates its backing arrays when rows are removed. The writer
-	// shares the immutable history snapshot instead of racing those changes.
-	result.Entries = cached.Entries
-	result.LargeFiles = cached.LargeFiles
 	publication := m.newBackgroundCacheWrite(context.Background(), m.path)
 	if m.scanState == scanComplete && m.totalSize > 0 {
 		if m.overviewSizeCache == nil {
@@ -303,7 +305,7 @@ func (m *model) finishLiveScan(result scanResult) {
 	}
 	go func(path string, scan scanResult) {
 		_ = saveCacheToDiskWithOptions(publication, path, scan, false)
-	}(m.path, result)
+	}(m.path, diskResult)
 	m.status = scanSummary(m.totalSize, m.scanState)
 }
 
@@ -1259,7 +1261,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 		if m.currentPath != nil {
 			m.currentPath.Store("")
 		}
-		cmd := tea.Batch(m.scanFreshCmd(m.path), m.startTick())
+		cmd := tea.Batch(m.scanBypassingCacheCmd(m.path), m.startTick())
 		return m, cmd
 	}
 	m.status = scanSummary(m.totalSize, m.scanState)
@@ -1362,7 +1364,7 @@ func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
 				if m.totalFiles > 0 {
 					m.lastTotalFiles = m.totalFiles
 				}
-				cmd := tea.Batch(m.scanFreshCmd(m.path), m.startTick())
+				cmd := tea.Batch(m.scanBypassingCacheCmd(m.path), m.startTick())
 				return m, cmd
 			}
 			m.status = fmt.Sprintf("Cached view for %s", displayPath(m.path))

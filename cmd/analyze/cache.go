@@ -34,7 +34,8 @@ import (
 // v8: APFS clones that share every block count once, so v7 totals can be inflated.
 // v9: mixed clone/hardlink groups deduplicate together; bounded lists use path ties.
 // v10: shortened directory listings must refresh before they are browsed.
-const cacheSchemaVersion = 10
+// v11: live disk snapshots retain zero-size children for content validation.
+const cacheSchemaVersion = 11
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`
@@ -632,12 +633,9 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 	}
 
 	// Entries were added, removed, or renamed here since the scan, so the
-	// recorded listing and total no longer describe the directory. Every caller
-	// of this loader treats its result as current, including a parent scan that
-	// folds it into its own total, so a changed directory is refused however
-	// recent the scan. The TUI still paints it at once through
-	// loadStaleCacheFromDisk and refreshes behind it, and the rescan reuses the
-	// unchanged subtrees below, so refusing costs one level, not a full scan.
+	// recorded listing and total no longer describe the directory. Refuse it
+	// however recent the scan; the TUI can still paint a stale snapshot while
+	// its cache-bypassing refresh measures the current contents.
 	if info.ModTime().After(entry.ModTime) {
 		return nil, fmt.Errorf("cache expired: directory modified")
 	}
@@ -653,8 +651,8 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 // cachedFileSizesUnchanged never walks a subtree. Disk snapshots hold at most
 // maxEntries rows, so validation performs at most that many metadata reads.
 // A directory row or a listing already marked for refresh cannot prove a
-// recursive total current. A saturated listing may have omitted empty directories
-// even when its cached file count and byte total still match.
+// recursive total current. A saturated listing may have omitted children even
+// when its cached file count and byte total still match.
 func cachedFileSizesUnchanged(entry *cacheEntry) bool {
 	if entry.NeedsRefresh || len(entry.Entries) >= maxEntries {
 		return false
