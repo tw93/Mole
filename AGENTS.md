@@ -2,7 +2,7 @@
 
 This is the `linux` branch of `tw93/Mole`: **Mole CLI (Linux)**, a terminal cleaner for Linux desktops used by developers. It is developed like the `windows` branch (Mole CLI (Windows)): its own code, its own tests, its own release tags. Nothing here is shared with `main` (Mole CLI (macOS)) at runtime; the Go TUIs under `cmd/` were forked from `main` at the branch point and evolve independently. Rules, product values and safety contracts transfer by deliberate re-implementation, recorded in `SYNC.md`, never by importing macOS code (maintainer 2026-11-01: the two platforms clean different things and shared code breaks easily).
 
-Status: released. `V0.1.0-linux` was published on 2026-11-02, with the README status line and a reply on tw93/Mole#1371 in the same step; the README keeps its "Under construction" framing while the product is early. Flatpak paths are still verified only against a fake `flatpak` (see `SYNC.md`). Version 0.2.0 is on the branch and unreleased; its btrfs and snapper paths were run on real btrfs with Omarchy's snapper config on 2026-11-02 (see Test environment).
+Status: released. `V0.1.0-linux` was published on 2026-11-02, with the README status line and a reply on tw93/Mole#1371 in the same step; the README keeps its "Under construction" framing while the product is early. Flatpak paths are still verified only against a fake `flatpak` (see `SYNC.md`). `V0.2.0-linux` (titled Candid) followed on 2026-11-02 on `30e358d7`; its btrfs and snapper paths were run on real btrfs with Omarchy's snapper config on 2026-11-02 (see Test environment).
 
 ## Product names
 

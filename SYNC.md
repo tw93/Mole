@@ -39,7 +39,9 @@ Released: tag `V0.1.0-linux` on `417e4c2d`, x86_64 and aarch64 archives with `SH
 | status: power draw, zram, CPU clock, P/E cores, peripheral batteries, per-card NVIDIA, sleeping dGPU left asleep, Intel busy | `main` `cmd/status` | Implemented | Peripherals also shown on the Power card (Mac: JSON only). |
 | update: `--force`, prerelease skip, installed-copy guard, menu notice | `main` `mole` update notice, `bin/update` | Implemented | Versions compare by their X.Y.Z core, so a prerelease updates to its stable release and a broken VERSION is repaired; no downgrade, `--force` included; the notice shows only in the installed tree. `--nightly` not applicable (no Linux nightly channel); `completion` and `history` left out (maintainer 2026-11-01). |
 
-## Implemented on `linux` for 0.2.0 (unreleased)
+## Implemented on `linux` for 0.2.0 (released in V0.2.0-linux on 2026-11-02)
+
+Released: tag `V0.2.0-linux` on `30e358d7`, x86_64 and aarch64 archives with `SHA256SUMS.txt` (the release workflow installed each for a fresh user); `mo update` on the Omarchy VM moved its 0.1.0 install to 0.2.0 after verifying the archive. A manual fresh install from the public `install.sh` was cut off when the ThinkPad dropped off the network.
 
 Learned from xdg-ninja, pacutils `pacreport`, rebuild-detector, lostfiles, cleansys, Spruce, Cleanr and Omarchy's own update script (study clones in `~/www/mole/.artifacts/oss-linux/`). Every row was tested on the Omarchy VM (ext4). btrfs and snapper were also run for real on 2026-11-02 in a throwaway VM with Omarchy's layout and snapper config: the clean row, the freed total, the uninstall line, the analyze note, the status allocation (matching `btrfs fi df`) and a separate `@pkg` (no note) all behaved as designed. Snap and real GPU fdinfo are still verified only against fixtures.
 
