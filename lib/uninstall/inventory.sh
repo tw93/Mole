@@ -646,6 +646,10 @@ mole_leftover_holdback() {
             echo "offline music"
             return 0
             ;;
+        "$HOME/.ViberPC")
+            echo "chat history"
+            return 0
+            ;;
         "$v/net.waterfox.waterfox" | "$v/one.ablaze.floorp" | "$v/net.mullvad.MullvadBrowser" | \
             "$v/org.torproject.torbrowser-launcher" | "$v/com.github.Eloston.UngoogledChromium" | \
             "$v/io.github.ungoogled_software.ungoogled_chromium" | "$v/com.opera.Opera" | "$v/ru.yandex.Browser" | \

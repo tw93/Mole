@@ -302,6 +302,15 @@ desktop() {
     [[ "$output" == *"$HOME/.config/spotify=true"* ]]
 }
 
+@test "--with-data still leaves Viber chat history unselected" {
+    mkdir -p "$HOME/.ViberPC"
+    mole_run uninstall '
+        APP_KIND=(pacman); APP_ID=(viber); APP_NAME=(Viber); APP_DESKTOPS=(viber); APP_EXEC=(""); SELECTED=(0); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}=${LEFT_ON[j]}"; done'
+    [[ "$output" == *"$HOME/.ViberPC=false"* ]]
+}
+
 @test "a Flatpak is removed from its own installation, system and custom ones through sudo" {
     fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"; exit 0'
     fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
