@@ -2186,7 +2186,9 @@ find_app_files() {
             fi
             [[ "$duplicate_path" == "true" ]] || unique_files_to_clean+=("$candidate_path")
         done
-        printf '%s\n' "${unique_files_to_clean[@]}"
+        if [[ ${#unique_files_to_clean[@]} -gt 0 ]]; then
+            printf '%s\n' "${unique_files_to_clean[@]}"
+        fi
     fi
     rm -f -- "$discovery_scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
     return 0

@@ -578,6 +578,22 @@ EOF
     [[ "$result" == *"Caches/dev.zed.Zed"* ]]
 }
 
+@test "find_app_files accepts an empty family-filtered result under Bash 3.2 nounset" {
+    local apps="$HOME/apps"
+    mkdir -p "$apps/Zed.app" "$apps/Zed Nightly.app" "$HOME/Library/Application Support/Zed"
+
+    # shellcheck disable=SC2016 # Expand fixture paths in the Bash 3.2 child.
+    run env MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$apps" /bin/bash -u -c '
+        source "$PROJECT_ROOT/lib/core/base.sh"
+        source "$PROJECT_ROOT/lib/core/log.sh"
+        source "$PROJECT_ROOT/lib/core/app_protection.sh"
+        find_app_files dev.zed.Zed-Nightly "Zed Nightly" "$HOME/apps/Zed Nightly.app"
+    '
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -d "$HOME/Library/Application Support/Zed" ]
+}
+
 @test "find_app_files still takes the family's folders when no other build is installed" {
     local apps="$HOME/apps"
     mkdir -p "$apps/Zed Nightly.app" "$apps/Zedit.app"
@@ -616,6 +632,7 @@ EOF
 }
 
 @test "find_app_files never lets a look-alike name claim a sibling product's folders" {
+    # shellcheck disable=SC2030 # Bats runs each test in its own subshell.
     export MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps"
     mkdir -p "$HOME/apps"
     local support="$HOME/Library/Application Support"
@@ -638,6 +655,7 @@ EOF
 
 @test "find_app_system_files leaves the family's system folders to another installed build" {
     [[ -d "/Library/Application Support/Apple" ]] || skip "needs /Library/Application Support/Apple"
+    # shellcheck disable=SC2031 # No export from another Bats test reaches this test.
     export MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps"
     mkdir -p "$HOME/apps"
 
