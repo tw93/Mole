@@ -45,9 +45,6 @@ RULES
     mole_browser_profile_rules
     cat << RULES
 User caches|Thumbnails|$c/thumbnails|
-User caches|Mesa shader cache|$c/mesa_shader_cache|
-User caches|Mesa shader cache (DB)|$c/mesa_shader_cache_db|
-User caches|NVIDIA shader cache|$c/nvidia|
 RULES
     mole_webkitgtk_rules
     mole_electron_app_rules
@@ -58,6 +55,7 @@ RULES
 Package builds|yay build cache|$c/yay|yay,makepkg,pacman
 Package builds|paru build cache|$c/paru|paru,makepkg,pacman
 RULES
+    mole_gpu_shader_rules
     mole_flatpak_cache_rules
     mole_snap_cache_rules
 }
@@ -119,26 +117,38 @@ mole_app_cache_rules() {
     printf 'Apps|GNOME Software cache|%s|gnome-software\n' "$c/gnome-software"
 }
 
-# Game launchers. Steam's per-game shader caches are compiled again (or
-# downloaded pre-compiled) on the next launch; steamapps/common, compatdata,
-# userdata and config are never rules.
-mole_game_cache_rules() {
+# GPU shader caches, cleaned only with mo clean --gpu-shaders: every game
+# compiles its shaders again on its next launch, one to five minutes each
+# (Mole CLI (Windows) made the same caches opt-in after a player's report).
+# Steam may download pre-compiled ones again instead.
+mole_gpu_shader_rules() {
     local c="$MOLE_CACHE_HOME" base dir
     local steam='steam,steamwebhelper,fossilize_replay'
+    printf 'GPU shaders|Mesa shader cache|%s|\n' "$c/mesa_shader_cache"
+    printf 'GPU shaders|Mesa shader cache (DB)|%s|\n' "$c/mesa_shader_cache_db"
+    printf 'GPU shaders|NVIDIA shader cache|%s|\n' "$c/nvidia"
     # Debian and Ubuntu install into ~/.steam/debian-installation; whichever of
     # these is a link resolves elsewhere and is skipped.
     for base in "$MOLE_DATA_HOME/Steam" "$HOME/.steam/debian-installation" "$HOME/.steam/steam"; do
         dir="$base/steamapps/shadercache"
         mole_rule_root_plain "$dir" || continue
-        printf 'Games|Steam shader cache|%s|%s\n' "$dir" "$steam"
+        printf 'GPU shaders|Steam shader cache|%s|%s\n' "$dir" "$steam"
     done
     dir="$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache"
-    mole_rule_root_plain "$dir" && printf 'Games|Steam shader cache|%s|flatpak:com.valvesoftware.Steam\n' "$dir"
+    mole_rule_root_plain "$dir" && printf 'GPU shaders|Steam shader cache|%s|flatpak:com.valvesoftware.Steam\n' "$dir"
+    printf 'GPU shaders|Lutris cache|%s|lutris,wineserver\n' "$c/lutris/shaders"
+}
+
+# Game launchers. steamapps/common, compatdata, userdata and config are never
+# rules; their shader caches are in mole_gpu_shader_rules.
+mole_game_cache_rules() {
+    local c="$MOLE_CACHE_HOME"
     # ~/.cache/lutris also holds GOG and Epic sign-in tokens, library lists and
     # save-sync state (lutris/services/gog.py, egs.py, util/savesync.py), so
-    # only its per-runner shader caches and the per-game installer download
-    # folders (interpreter.py: "for the duration of the installation") go.
-    printf 'Games|Lutris cache|%s|lutris,wineserver\n' "$c/lutris/shaders" "$c/lutris/installer"
+    # only the per-game installer download folders (interpreter.py: "for the
+    # duration of the installation") go here, and its shaders with the GPU
+    # shader caches.
+    printf 'Games|Lutris cache|%s|lutris,wineserver\n' "$c/lutris/installer"
     # Wine Gecko and Mono installers Wine downloaded for new prefixes
     # (appwiz.cpl), fetched again from WineHQ. Only the .msi files.
     printf 'Games|Wine downloads|%s|wineserver,wine,wine64,wine-preloader,wine64-preloader|suffix:.msi\n' "$c/wine"

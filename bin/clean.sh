@@ -12,10 +12,12 @@ mole_refuse_root
 
 DRY_RUN=false
 WHITELIST_MODE=false
+GPU_SHADERS=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run | -n) DRY_RUN=true ;;
         --whitelist) WHITELIST_MODE=true ;;
+        --gpu-shaders) GPU_SHADERS=true ;;
         --debug) export MO_DEBUG=1 ;;
         -h | --help)
             echo "Usage: mo clean [OPTIONS]"
@@ -26,6 +28,7 @@ for arg in "$@"; do
             echo "Options:"
             echo "  --dry-run, -n     Preview cleanup without making changes"
             echo "  --whitelist       Choose what clean keeps"
+            echo "  --gpu-shaders     Also clean GPU shader caches (games compile them again on next launch)"
             echo "  --debug           Show detailed operation logs"
             echo "  -h, --help        Show this help message"
             exit 0
@@ -294,6 +297,7 @@ clean_user_rules() {
     cache_home_redirected && redirected=true
     while IFS='|' read -r section label root owners selector; do
         [[ -n "$section" ]] || continue
+        [[ "$section" == "GPU shaders" && "$GPU_SHADERS" != true ]] && continue
         if [[ "$section" != "$current" ]]; then
             group_flush
             if [[ -n "$current" ]]; then

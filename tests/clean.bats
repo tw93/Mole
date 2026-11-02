@@ -571,15 +571,21 @@ pkg_cache_run() {
     mkdir -p "$HOME/.steam"
     ln -s "$HOME/.local/share/Steam" "$HOME/.steam/steam"
     make_cache "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache/730"
-    mole_run clean 'mole_game_cache_rules | grep Steam'
+    mole_run clean 'mole_gpu_shader_rules | grep Steam'
     [ "$status" -eq 0 ]
     [ "$(grep -c . <<< "$output")" -eq 2 ]
     [[ "$output" == *"|$s/shadercache|steam,steamwebhelper,fossilize_replay"* ]]
     [[ "$output" == *"|$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache|flatpak:com.valvesoftware.Steam"* ]]
 
+    # Without --gpu-shaders the shader caches are not even looked at.
+    mole_run clean 'clean_user_rules'
+    [[ "$output" != *"Steam shader cache"* ]]
+    [[ "$output" != *"GPU shaders"* ]]
+    [ -f "$s/shadercache/570/entry/blob" ]
+
     start_owner steamwebhelper
     fake_command flatpak '[[ "$1" == ps ]] && echo com.valvesoftware.Steam'
-    mole_run clean 'clean_user_rules'
+    mole_run clean 'GPU_SHADERS=true; clean_user_rules'
     [[ "$output" == *"Steam shader cache · skipped while"*"is running"* ]]
     [ -f "$s/shadercache/570/entry/blob" ]
     [ -f "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache/730/entry/blob" ]
@@ -587,7 +593,7 @@ pkg_cache_run() {
     OWNER_PID=""
 
     fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
-    mole_run clean 'clean_user_rules'
+    mole_run clean 'GPU_SHADERS=true; clean_user_rules'
     [ "$(grep -c "Steam shader cache" <<< "$output")" -eq 1 ]
     [ ! -e "$s/shadercache/570" ]
     [ ! -e "$s/shadercache/999" ]
@@ -603,7 +609,7 @@ pkg_cache_run() {
     make_cache "$TEST_ROOT/elsewhere/steamapps/shadercache/570"
     mkdir -p "$HOME/.local/share"
     ln -s "$TEST_ROOT/elsewhere" "$HOME/.local/share/Steam"
-    mole_run clean 'mole_game_cache_rules | grep -c Steam || true'
+    mole_run clean 'mole_gpu_shader_rules | grep -c Steam || true'
     [ "$output" = "0" ]
 }
 
@@ -680,7 +686,7 @@ pkg_cache_run() {
     [ -f "$h/config.json" ]
 }
 
-@test "Lutris and Wine: shader and installer caches and .msi downloads go, sign-in tokens stay" {
+@test "Lutris and Wine: installer caches and .msi downloads go, shaders only with --gpu-shaders, sign-in tokens stay" {
     l="$HOME/.cache/lutris"
     make_cache "$l/shaders/wine"
     make_cache "$l/installer/some-game"
@@ -701,6 +707,9 @@ pkg_cache_run() {
 
     mole_run clean 'clean_user_rules'
     [ "$(grep -c "Lutris cache" <<< "$output")" -eq 1 ]
+    [ -f "$l/shaders/wine/entry/blob" ]
+    mole_run clean 'GPU_SHADERS=true; clean_user_rules'
+    [[ "$output" == *"GPU shaders"*"Lutris cache"* ]]
     [ ! -e "$l/shaders/wine" ]
     [ ! -e "$l/installer/some-game" ]
     [ ! -e "$HOME/.cache/wine/wine-gecko-2.47.4-x86_64.msi" ]
