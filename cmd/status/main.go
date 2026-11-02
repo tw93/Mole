@@ -214,14 +214,17 @@ func (m model) View() string {
 	}
 
 	// Every extra core is another card row, and the frame has no scrollback: on
-	// a 20-core Mac "all" adds ~18 lines and pushes the lower cards off a short
-	// window. Step the preference back down until the frame fits; the stored
+	// a 20-core Mac "all" adds ~18 lines and can overflow a short window.
+	// Step the preference back down until the frame fits; the stored
 	// preference is untouched, so a taller window gets it back.
 	cpuCores := m.cpuCores
 	output := renderFrame(cpuCores)
 	for m.height > 0 && lipgloss.Height(output) > m.height && cpuCores != cpuCoresCycle[0] {
 		cpuCores = smallerCPUCores(cpuCores)
 		output = renderFrame(cpuCores)
+	}
+	if m.height > 0 && lipgloss.Height(output) > m.height {
+		output = renderTerminalTooSmall(termWidth, m.height)
 	}
 	return padViewToHeight(output, m.height)
 }
