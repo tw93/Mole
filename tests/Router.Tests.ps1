@@ -104,6 +104,15 @@ param([switch]$Json, [switch]$Watch, [string]$Interval)
         $script:MoleExitCode | Should -Be 0
     }
 
+    It "Returns the uninstall result as the exit code" {
+        Set-Content -LiteralPath (Join-Path $script:MOLE_BIN "uninstall.ps1") -Value 'exit 1'
+        Invoke-MoleCommand -CommandName "uninstall" -Arguments @()
+        $script:MoleExitCode | Should -Be 1
+        Set-Content -LiteralPath (Join-Path $script:MOLE_BIN "uninstall.ps1") -Value '& $env:ComSpec /d /c exit 9; exit 0'
+        Invoke-MoleCommand -CommandName "uninstall" -Arguments @()
+        $script:MoleExitCode | Should -Be 0
+    }
+
     It "Maps <Flag> to <Expected> on the real <Name> command" -ForEach @(
         @{ Name = "uninstall"; Flag = "list"; Expected = "List" },
         @{ Name = "analyze"; Flag = "json"; Expected = "Json" }

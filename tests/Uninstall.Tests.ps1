@@ -337,20 +337,29 @@ Describe "Uninstalling registry apps" {
     BeforeEach {
         Set-DryRunMode -Enabled $false
         Mock Write-Host {}
-        Mock Invoke-MoleUninstallProcess { [PSCustomObject]@{ ExitCode = 1 } }
         Mock Remove-SafeItem { $true }
         Mock Get-MoleInstallOwners { @{ Complete = $true; Owners = @() } }
+        # The launch recheck has its own Describe.
+        Mock Test-UninstallLaunchCurrent { $true }
         Mock Remove-AppxPackage { throw "Remove-AppxPackage must not run" }
 
         $script:AppFolder = New-TestFolder -Name "Contoso Tool"
         $script:Uninstaller = Join-Path $script:AppFolder "uninstall.exe"
         Set-Content -Path $script:Uninstaller -Value "not an installer we recognise"
         $script:PresentKey = New-TestUninstallKey -Name "contoso" -Values @{ DisplayName = "Contoso Tool"; UninstallString = $script:Uninstaller }
-        $script:GoneKey = "$((Get-Item -LiteralPath $script:RegistryRoot).PSPath)\removed-by-uninstaller"
+        # Registered at launch; the uninstaller removes it, as a real one would.
+        $script:GoneKey = New-TestUninstallKey -Name "removed-by-uninstaller" -Values @{ DisplayName = "Contoso Tool"; UninstallString = $script:Uninstaller }
+        Mock Invoke-MoleUninstallProcess {
+            if (Test-Path -LiteralPath $script:GoneKey) { Remove-Item -LiteralPath $script:GoneKey -Recurse -Force }
+            [PSCustomObject]@{ ExitCode = 1 }
+        }
     }
 
     It "Stops the batch on an uninstaller timeout even after registration disappears" {
-        Mock Invoke-MoleUninstallProcess { throw [TimeoutException]::new('test timeout') }
+        Mock Invoke-MoleUninstallProcess {
+            Remove-Item -LiteralPath $script:GoneKey -Recurse -Force
+            throw [TimeoutException]::new('test timeout')
+        }
         Mock Start-Process { [pscustomobject]@{ ExitCode = 0 } }
         $app = [pscustomobject]@{
             Name = 'Resident'; Source = 'Registry'; UninstallString = "`"$script:Uninstaller`""
@@ -386,6 +395,18 @@ Describe "Uninstalling registry apps" {
 
         Should -Invoke Remove-SafeItem -Times 0 -Exactly
         Should -Invoke Write-Host -ParameterFilter { "$Object" -like "*still installed, exit code 1*" }
+        $script:MoleUninstallIncomplete | Should -BeTrue
+    }
+
+    It "Reports a complete batch once every uninstall entry is gone" {
+        $app = [PSCustomObject]@{
+            Name = "Contoso Tool"; Source = "Registry"; UninstallString = "`"$script:Uninstaller`""
+            InstallLocation = $script:AppFolder; RegistryKey = $script:GoneKey; PackageFullName = $null
+        }
+
+        Uninstall-SelectedApps -Apps @($app)
+
+        $script:MoleUninstallIncomplete | Should -BeFalse
     }
 
     It "Recycles the install folder once the uninstall entry is gone" {
@@ -399,20 +420,19 @@ Describe "Uninstalling registry apps" {
         Should -Invoke Remove-SafeItem -Times 1 -Exactly -ParameterFilter { $Path -eq $script:AppFolder -and $Recycle }
     }
 
-    It "Never removes a profile or system folder named as the install location" {
-        $apps = @(
-            [PSCustomObject]@{
-                Name = "Profile App"; Source = "Registry"; UninstallString = "`"$script:Uninstaller`""
-                InstallLocation = $env:USERPROFILE; RegistryKey = $script:GoneKey; PackageFullName = $null
-            },
-            [PSCustomObject]@{
-                Name = "Program Files App"; Source = "Registry"; UninstallString = "`"$script:Uninstaller`""
-                InstallLocation = $env:ProgramFiles; RegistryKey = $script:GoneKey; PackageFullName = $null
-            }
-        )
+    It "Never removes a profile or system folder named as the install location: <Label>" -TestCases @(
+        @{ Label = 'profile'; Variable = 'USERPROFILE' }
+        @{ Label = 'Program Files'; Variable = 'ProgramFiles' }
+    ) {
+        # One app per run, so each reaches the removal decision after its own uninstaller.
+        $app = [PSCustomObject]@{
+            Name = "$Label App"; Source = "Registry"; UninstallString = "`"$script:Uninstaller`""
+            InstallLocation = [Environment]::GetEnvironmentVariable($Variable); RegistryKey = $script:GoneKey; PackageFullName = $null
+        }
 
-        Uninstall-SelectedApps -Apps $apps
+        Uninstall-SelectedApps -Apps @($app)
 
+        Should -Invoke Invoke-MoleUninstallProcess -Times 1 -Exactly
         Should -Invoke Remove-SafeItem -Times 0 -Exactly
     }
 
@@ -529,6 +549,88 @@ Describe "Uninstalling registry apps" {
 
         Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
         Should -Invoke Remove-SafeItem -Times 0 -Exactly
+    }
+}
+
+Describe "Uninstall command recheck before launch" {
+    BeforeEach {
+        Set-DryRunMode -Enabled $false
+        Mock Write-Host {}
+        Mock Write-MoleOperation {}
+        Mock Remove-SafeItem { $true }
+        Mock Get-MoleInstallOwners { @{ Complete = $true; Owners = @() } }
+        $script:AppFolder = New-TestFolder -Name "Recheck Tool"
+        $script:Uninstaller = Join-Path $script:AppFolder "uninstall.exe"
+        Set-Content -Path $script:Uninstaller -Value "not an installer we recognise"
+        $script:RecheckKey = New-TestUninstallKey -Name "recheck" -Values @{ DisplayName = "Recheck Tool"; UninstallString = $script:Uninstaller }
+        $script:RecheckApp = [PSCustomObject]@{
+            Name = "Recheck Tool"; Source = "Registry"; UninstallString = "`"$script:Uninstaller`""
+            InstallLocation = $script:AppFolder; RegistryKey = $script:RecheckKey; PackageFullName = $null
+        }
+        # The vendor uninstaller removes its own registration.
+        Mock Invoke-MoleUninstallProcess { Remove-Item -LiteralPath $script:RecheckKey -Recurse -Force; [PSCustomObject]@{ ExitCode = 0 } }
+    }
+
+    It "Runs the reviewed command when the registration still names it" {
+        Uninstall-SelectedApps -Apps @($script:RecheckApp)
+        Should -Invoke Invoke-MoleUninstallProcess -Times 1 -Exactly -ParameterFilter { $FilePath -eq $script:Uninstaller }
+        $script:MoleUninstallIncomplete | Should -BeFalse
+    }
+
+    It "Does not run a command rewritten after review: <Case>" -ForEach @(
+        @{ Case = 'other program'; Name = 'UninstallString'; Value = 'OTHER' }
+        @{ Case = 'added arguments'; Name = 'UninstallString'; Value = 'UNINSTALLER --wipe' }
+        @{ Case = 'new quiet command'; Name = 'QuietUninstallString'; Value = 'OTHER /S' }
+    ) {
+        # The rewritten command names a program that exists, so it would really run.
+        $other = Join-Path $script:AppFolder 'other.exe'
+        Set-Content -Path $other -Value 'another program'
+        $value = $Value.Replace('UNINSTALLER', "`"$script:Uninstaller`"").Replace('OTHER', "`"$other`"")
+        Set-ItemProperty -LiteralPath $script:RecheckKey -Name $Name -Value $value
+        Uninstall-SelectedApps -Apps @($script:RecheckApp)
+        Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'FAILED' -and $Detail -like 'uninstall command changed since review*' }
+        $script:MoleUninstallIncomplete | Should -BeTrue
+    }
+
+    It "Counts an entry an earlier row's uninstaller removed as done without running it" {
+        $script:SiblingKey = New-TestUninstallKey -Name "recheck-sibling" -Values @{ DisplayName = "Recheck Tool Helper"; UninstallString = $script:Uninstaller }
+        $sibling = [PSCustomObject]@{
+            Name = "Recheck Tool Helper"; Source = "Registry"; UninstallString = "`"$script:Uninstaller`""
+            InstallLocation = $null; RegistryKey = $script:SiblingKey; PackageFullName = $null
+        }
+        # The suite uninstaller removes both registrations.
+        Mock Invoke-MoleUninstallProcess {
+            Remove-Item -LiteralPath $script:RecheckKey, $script:SiblingKey -Recurse -Force; [PSCustomObject]@{ ExitCode = 0 }
+        }
+        Uninstall-SelectedApps -Apps @($script:RecheckApp, $sibling)
+        Should -Invoke Invoke-MoleUninstallProcess -Times 1 -Exactly
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'UNINSTALLED' -and $Detail -like 'already removed*' }
+        $script:MoleUninstallIncomplete | Should -BeFalse
+    }
+
+    It "Does not count an entry gone before anything ran as uninstalled: <Case>" -ForEach @(
+        @{ Case = 'key removed' }, @{ Case = 'blank name' }, @{ Case = 'blank commands' }
+    ) {
+        switch ($Case) {
+            'key removed' { Remove-Item -LiteralPath $script:RecheckKey -Recurse -Force }
+            'blank name' { Set-ItemProperty -LiteralPath $script:RecheckKey -Name DisplayName -Value '' }
+            'blank commands' { Set-ItemProperty -LiteralPath $script:RecheckKey -Name UninstallString -Value '' }
+        }
+        Uninstall-SelectedApps -Apps @($script:RecheckApp)
+        Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
+        Should -Invoke Remove-SafeItem -Times 0 -Exactly
+        Should -Invoke Write-MoleOperation -Times 0 -Exactly -ParameterFilter { $Action -eq 'UNINSTALLED' }
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'SKIPPED' -and $Detail -like 'no longer registered*' }
+        $script:MoleUninstallIncomplete | Should -BeTrue
+    }
+
+    It "Does not run a command whose registration can no longer be read" {
+        Mock Get-ItemProperty { throw [UnauthorizedAccessException]::new('denied') } -ParameterFilter { $LiteralPath -eq $script:RecheckKey }
+        Uninstall-SelectedApps -Apps @($script:RecheckApp)
+        Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'FAILED' }
+        $script:MoleUninstallIncomplete | Should -BeTrue
     }
 }
 
@@ -853,6 +955,9 @@ Describe 'Leftover install folder ownership' {
         if (-not (Get-Command Get-MoleInstallOwners -ErrorAction SilentlyContinue)) {
             function Get-MoleInstallOwners { @{ Complete = $true; Owners = @() } }
         }
+        if (-not (Get-Command Test-UninstallLaunchCurrent -ErrorAction SilentlyContinue)) {
+            function Test-UninstallLaunchCurrent { $true }
+        }
     }
     BeforeEach {
         $script:SharedFolder = New-TestFolder -Name 'Shared Vendor'
@@ -863,8 +968,11 @@ Describe 'Leftover install folder ownership' {
         $script:Owners = @()
         Mock Get-MoleInstallOwners { @{ Complete = $true; Owners = $script:Owners } }
         Mock Get-UninstallLaunch { @{ FilePath = 'mock.exe'; Arguments = '' } }
-        Mock Invoke-MoleUninstallProcess { [pscustomobject]@{ ExitCode = 0 } }
-        Mock Test-UninstallEntryGone { $true }
+        Mock Test-UninstallLaunchCurrent { $true }
+        # The entry disappears once the uninstaller has run, not before.
+        $script:UninstallerRan = $false
+        Mock Invoke-MoleUninstallProcess { $script:UninstallerRan = $true; [pscustomobject]@{ ExitCode = 0 } }
+        Mock Test-UninstallEntryGone { $script:UninstallerRan }
         Mock Remove-SafeItem { $true }
         Mock Write-Host {}
         Set-DryRunMode -Enabled $false
@@ -1267,7 +1375,10 @@ Describe 'Store package eligibility at the removal boundary' {
             Should -Invoke Write-MoleOperation -Times 0 -Exactly
             Should -Invoke Show-SummaryBlock -Times 1 -Exactly -ParameterFilter { $Details -contains 'Would uninstall: 0' }
         }
-        else { Should -Invoke Write-MoleOperation -Times 0 -Exactly -ParameterFilter { $Action -eq 'UNINSTALLED' } }
+        else {
+            Should -Invoke Write-MoleOperation -Times 0 -Exactly -ParameterFilter { $Action -eq 'UNINSTALLED' }
+            $script:MoleUninstallIncomplete | Should -BeTrue
+        }
     }
     It 'Retains a stale Store selection when current evidence is <State>' -TestCases @(@{State='missing'},@{State='unreadable'},@{State='system'},@{State='different version'}) {
         param($State)

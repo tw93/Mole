@@ -304,7 +304,7 @@ function Invoke-MoleCommand {
     }
 
     # A previous native command must not make a help-only invocation fail.
-    if ($CommandName -in @("analyze", "status", "history")) { $global:LASTEXITCODE = 0 }
+    if ($CommandName -in @("analyze", "status", "history", "uninstall")) { $global:LASTEXITCODE = 0 }
 
     # Execute the command script with arguments using splatting
     # This properly handles switch parameters passed as strings
@@ -380,7 +380,7 @@ function Invoke-MoleCommand {
     finally {
         if ($debugSession) { Complete-MoleDebugSession }
     }
-    if ($CommandName -in @("analyze", "status", "history")) {
+    if ($CommandName -in @("analyze", "status", "history", "uninstall")) {
         $script:MoleExitCode = $LASTEXITCODE
     }
 }

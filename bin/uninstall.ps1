@@ -676,6 +676,29 @@ function Test-SteamClientUninstaller {
 # What to start to remove an app, run once: msiexec for MSI products, the vendor's quiet
 # command when registered, Inno or NSIS silent switches only when the uninstaller is
 # recognised as one, otherwise the registered command as is. $null when nothing runnable.
+# The registration is read again right before launch: a command rewritten
+# since the user reviewed the list is not run. An unreadable key cannot be
+# confirmed and is not run either.
+function Test-UninstallLaunchCurrent {
+    param($App, $Launch)
+
+    $key = [string](Get-MoleProperty $App 'RegistryKey')
+    if ([string]::IsNullOrWhiteSpace($key) -or -not $Launch) { return $false }
+    try { $values = Get-ItemProperty -LiteralPath $key -ErrorAction Stop }
+    catch { return $false }
+    $fresh = $App.PSObject.Copy()
+    foreach ($name in @('UninstallString', 'QuietUninstallString')) {
+        $text = ([string](Get-MoleProperty $values $name)).Trim()
+        $value = $(if ($text) { $text } else { $null })
+        if ($fresh.PSObject.Properties[$name]) { $fresh.$name = $value }
+        else { $fresh | Add-Member -NotePropertyName $name -NotePropertyValue $value }
+    }
+    $current = Get-UninstallLaunch -App $fresh
+    if (-not $current) { return $false }
+    return ([string]$current.FilePath -eq [string]$Launch.FilePath -and
+        [string]$current.Arguments -ceq [string]$Launch.Arguments)
+}
+
 function Get-UninstallLaunch {
     param($App)
 
@@ -1319,10 +1342,13 @@ function Uninstall-SelectedApps {
     $successCount = 0
     $failCount = 0
     $remainingCount = 0
+    $ranUninstaller = $false
 
     foreach ($app in $Apps) {
         if ($app.Source -eq "WindowsStore" -and -not (Test-MoleStoreRemovalAllowed -PackageFullName ([string](Get-MoleProperty $app 'PackageFullName')))) {
             Write-MoleOperation -Action "SKIPPED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome "current Store package not eligible")
+            Write-Host "$esc[33m$($script:Icons.Arrow)$esc[0m Kept: $($app.Name) $esc[33m(current Store package not eligible)$esc[0m"
+            $remainingCount++
             continue
         }
         Write-Host "$esc[34m$($script:Icons.Arrow)$esc[0m Uninstalling: $($app.Name)" -NoNewline
@@ -1348,11 +1374,34 @@ function Uninstall-SelectedApps {
                 $failCount++
                 continue
             }
+            # An uninstaller an earlier row ran may already have removed this
+            # entry; that is done, not a changed command. Without one, the app
+            # may have moved to a new entry (a self-update), so it is not done.
+            if (Test-UninstallEntryGone -KeyPath ([string](Get-MoleProperty $app 'RegistryKey'))) {
+                if ($ranUninstaller) {
+                    Write-MoleOperation -Action "UNINSTALLED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome "already removed, not run" -Launch $launch)
+                    Write-Host " $esc[32m$($script:Icons.Success)$esc[0m $esc[90m(already removed)$esc[0m"
+                    $successCount++
+                }
+                else {
+                    Write-MoleOperation -Action "SKIPPED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome "no longer registered, not run" -Launch $launch)
+                    Write-Host " $esc[33m(no longer registered, not run)$esc[0m"
+                    $remainingCount++
+                }
+                continue
+            }
+            if (-not (Test-UninstallLaunchCurrent -App $app -Launch $launch)) {
+                Write-MoleOperation -Action "FAILED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome "uninstall command changed since review, not run" -Launch $launch)
+                Write-Host " $esc[31m(uninstall command changed since review, not run)$esc[0m"
+                $failCount++
+                continue
+            }
 
             $startArgs = @{ FilePath = $launch.FilePath }
             if ($launch.Arguments) {
                 $startArgs.ArgumentList = $launch.Arguments
             }
+            $ranUninstaller = $true
             $process = Invoke-MoleUninstallProcess @startArgs
             $exitCode = Get-MoleProperty $process 'ExitCode'
 
@@ -1395,7 +1444,8 @@ function Uninstall-SelectedApps {
     $details = @("Successfully uninstalled: $successCount")
     if ($remainingCount -gt 0) { $details += "Still installed: $remainingCount" }
     if ($failCount -gt 0) { $details += "Failed: $failCount" }
-    $heading = if ($remainingCount -gt 0 -or $failCount -gt 0) { 'Uninstall incomplete' } else { 'Uninstall complete' }
+    $script:MoleUninstallIncomplete = ($remainingCount -gt 0 -or $failCount -gt 0)
+    $heading = if ($script:MoleUninstallIncomplete) { 'Uninstall incomplete' } else { 'Uninstall complete' }
     Show-SummaryBlock -Heading $heading -Details $details
 
     # Clear cache
@@ -1481,5 +1531,9 @@ function Main {
     }
 }
 
-# Run main
+# Run main. An app still installed or failed exits 1; the explicit 0 keeps a
+# vendor uninstaller's exit code from becoming Mole's.
+$script:MoleUninstallIncomplete = $false
 try { Main } finally { Stop-Spinner }
+if ($script:MoleUninstallIncomplete) { exit 1 }
+exit 0
