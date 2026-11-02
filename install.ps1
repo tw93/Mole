@@ -690,6 +690,7 @@ function Get-MoleInstallNestedFiles {
         "docs\oss-research.md"
         "docs\img\analyze-windows.png"
         "docs\img\clean-windows.png"
+        "docs\img\mole-logo.png"
         "docs\img\mole-windows.png"
         "docs\img\optimize-windows.png"
         "docs\img\status-windows.png"
