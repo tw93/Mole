@@ -369,16 +369,18 @@ function Clear-NvidiaDriverInstallers {
 # unanswered provider or an incomplete listing keeps everything.
 $script:MoleDeliveryOptimizationNamespace = 'root/Microsoft/Windows/DeliveryOptimization'
 
+# The provider warns "No active Delivery Optimization download or upload jobs"
+# on an empty cache; that is not a Mole result line.
 function Get-MoleDeliveryOptimizationFiles {
     try {
-        return ,@(Get-CimInstance -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationFile -OperationTimeoutSec 10 -ErrorAction Stop)
+        return ,@(Get-CimInstance -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationFile -OperationTimeoutSec 10 -ErrorAction Stop -WarningAction SilentlyContinue)
     }
     catch { return $null }
 }
 
 function Get-MoleDeliveryOptimizationRoot {
     try {
-        $config = @(Get-CimInstance -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationExtendedConfig -OperationTimeoutSec 10 -ErrorAction Stop)
+        $config = @(Get-CimInstance -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationExtendedConfig -OperationTimeoutSec 10 -ErrorAction Stop -WarningAction SilentlyContinue)
         foreach ($item in $config) {
             $folder = [string]$item.WorkingDirectory
             if ($folder) { return $folder }
@@ -481,7 +483,7 @@ function Clear-DeliveryOptimizationFiles {
     if (Test-MoleDeliveryOptimizationProtected -Root $root) { return }
     foreach ($file in $clearable) {
         try {
-            $null = Invoke-CimMethod -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationFile -MethodName Delete -Arguments @{ fileId = [string]$file.FileId; deletePinned = $false } -OperationTimeoutSec 10 -ErrorAction Stop
+            $null = Invoke-CimMethod -Namespace $script:MoleDeliveryOptimizationNamespace -ClassName MSFT_DeliveryOptimizationFile -MethodName Delete -Arguments @{ fileId = [string]$file.FileId; deletePinned = $false } -OperationTimeoutSec 10 -ErrorAction Stop -WarningAction SilentlyContinue
         }
         catch { Write-Debug "Delivery Optimization delete failed: $_" }
     }

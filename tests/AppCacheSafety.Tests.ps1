@@ -772,6 +772,16 @@ Describe 'Delivery Optimization files' {
         Should -Invoke Invoke-CimMethod -Times 0 -Exactly
     }
 
+    It 'Keeps the provider warning about an empty cache out of the output' {
+        Mock Get-CimInstance {
+            Write-Warning 'No active Delivery Optimization download or upload jobs'
+            @()
+        } -ParameterFilter { $ClassName -eq 'MSFT_DeliveryOptimizationFile' }
+        $warnings = @(Clear-DeliveryOptimizationFiles 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+        $warnings.Count | Should -Be 0
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    }
+
     It 'Leaves a file whose size the provider reports in another shape' {
         $script:DoFiles = @([pscustomobject]@{ FileId='aa11'; Status=1; IsPinned=$false; FileSizeInCache='1 MB' })
         { Clear-DeliveryOptimizationFiles } | Should -Not -Throw
