@@ -1863,7 +1863,7 @@ func TestBatteryCardUnknownCapacityPreservesCycles(t *testing.T) {
 		{"capacity unavailable", 0, 100, "100 cycles"},
 		{"known healthy capacity", 98, 100, "Healthy"},
 		{"known worn capacity", 20, 50, "Service Soon"},
-		{"known cycle warning", 0, 950, "Service Soon"},
+		{"known cycle warning", 0, 1001, "Fair"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			card := renderBatteryCard([]BatteryStatus{{Percent: 50, Capacity: tc.capacity, CycleCount: tc.cycles, Status: "Discharging"}}, ThermalStatus{}, true)

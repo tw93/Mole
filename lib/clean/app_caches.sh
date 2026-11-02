@@ -1172,12 +1172,29 @@ _adobe_media_cache_running() {
         -f '/Adobe (Premiere Pro|After Effects|Media Encoder|Audition|Prelude|Character Animator|Premiere Elements|Premiere Rush)[^/]*[.]app/'
 }
 
+# Caches/Adobe and com.adobe.* hold caches Adobe's apps share (Camera Raw
+# serves Photoshop, Bridge and Lightroom Classic), so no single owner name
+# covers them. Hold them while any Adobe app the user opened runs: those live
+# in /Applications as "Adobe <X>/Adobe <X>.app" or "Adobe <X>.app". Creative
+# Cloud's resident parts (Creative Cloud, CCXProcess, Core Sync, Adobe Desktop
+# Service) sit under /Applications/Utilities or /Library and run all day, so
+# they never hold the rows, or the rows would never clean.
+_adobe_app_running() {
+    mole_pgrep_any \
+        -f '^/Applications/Adobe [^/]+(/Adobe [^/]+)?[.]app/Contents/MacOS/'
+}
+
 # Design and creative tools.
 clean_design_tools() {
     safe_clean ~/Library/Caches/com.bohemiancoding.sketch3/* "Sketch cache"
     safe_clean ~/Library/Application\ Support/com.bohemiancoding.sketch3/cache/* "Sketch app cache"
-    safe_clean ~/Library/Caches/Adobe/* "Adobe cache"
-    safe_clean ~/Library/Caches/com.adobe.*/* "Adobe app caches"
+    local adobe_rc=0
+    _dev_safe_clean_process_guarded _adobe_app_running "Adobe" "Adobe cache" \
+        ~/Library/Caches/Adobe/* "Adobe cache" || adobe_rc=$?
+    [[ $adobe_rc -le 1 ]] || return "$adobe_rc"
+    _dev_safe_clean_process_guarded _adobe_app_running "Adobe" "Adobe app caches" \
+        ~/Library/Caches/com.adobe.*/* "Adobe app caches" || adobe_rc=$?
+    [[ $adobe_rc -le 1 ]] || return "$adobe_rc"
     safe_clean ~/Library/Caches/com.figma.Desktop/* "Figma cache"
     local adobe_media_rc=0
     _dev_safe_clean_process_guarded _adobe_media_cache_running "Adobe" "Adobe media cache files" \

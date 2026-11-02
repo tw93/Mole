@@ -167,6 +167,44 @@ macos_installer_process_is_idle() {
     return 1
 }
 
+# Only Apple's own installer may go: the bundle is com.apple.InstallAssistant
+# (or a seed suffix of it) and its code is signed by Apple itself, so a folder
+# or app merely named "Install macOS ..." is never removed. Resources are not
+# rehashed: the seal over the 13 GB SharedSupport image would outlast the
+# section budget, and the identity, not integrity, is what this proves.
+# 0 Apple's installer, 1 unproven, 124 or a signal status when cut short.
+macos_installer_is_apple_signed() {
+    local path="$1"
+    local deadline_seconds="$2"
+    local info_plist="$path/Contents/Info.plist"
+    [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
+    local probe_timeout="" probe_rc=0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+        "$deadline_seconds") || return $?
+    local bundle_id=""
+    bundle_id=$(run_with_timeout "$probe_timeout" /usr/bin/plutil -extract CFBundleIdentifier raw \
+        -o - "$info_plist" < /dev/null 2> /dev/null) || probe_rc=$?
+    if mole_rc_timeout_or_signal "$probe_rc"; then
+        return "$probe_rc"
+    fi
+    [[ $probe_rc -eq 0 ]] || return 1
+    case "$bundle_id" in
+        com.apple.InstallAssistant) ;;
+        com.apple.InstallAssistant.?*) ;;
+        *) return 1 ;;
+    esac
+    [[ -x /usr/bin/codesign ]] || return 1
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
+        "$deadline_seconds") || return $?
+    probe_rc=0
+    run_with_timeout "$probe_timeout" /usr/bin/codesign --verify --ignore-resources \
+        -R='anchor apple' "$path" < /dev/null > /dev/null 2>&1 || probe_rc=$?
+    if mole_rc_timeout_or_signal "$probe_rc"; then
+        return "$probe_rc"
+    fi
+    [[ $probe_rc -eq 0 ]]
+}
+
 macos_installer_candidate_still_eligible() {
     local path="$1"
     local expected_identity="$2"
@@ -205,6 +243,7 @@ macos_installer_candidate_still_eligible() {
         installer_version="${installer_version%%.*}"
         [[ -n "$installer_version" && "$installer_version" != "$current_macos_version" ]] || return 1
     fi
+    macos_installer_is_apple_signed "$path" "$deadline_seconds" || return $?
 
     # The size probe between the caller's two eligibility checks can race with
     # Software Update or an installer launch. Repeat active-state checks and

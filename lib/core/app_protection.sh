@@ -947,20 +947,39 @@ find_shared_app_paths() {
     shift 2
     local _MOLE_UNINSTALL_DISCOVERY_DEADLINE="${_MOLE_UNINSTALL_DISCOVERY_DEADLINE:-$((SECONDS + MOLE_TIMEOUT_DISK_VERIFY_SEC))}"
 
-    [[ -n "$app_name" && ${#app_name} -ge 5 ]] || return 0
-    _mole_uninstall_is_common_app_name "$app_name" && return 0
-
     local product_token=""
     local token_pair
     if token_pair=$(_mole_uninstall_vendor_product_tokens "$bundle_id" 2> /dev/null); then
         IFS='|' read -r _ product_token <<< "$token_pair"
     fi
 
-    local app_lower nospace_lower hyphen_lower underscore_lower product_lower
-    app_lower=$(_mole_uninstall_lower "$app_name")
-    nospace_lower=$(_mole_uninstall_lower "${app_name// /}")
-    hyphen_lower=$(_mole_uninstall_lower "${app_name// /-}")
-    underscore_lower=$(_mole_uninstall_lower "${app_name// /_}")
+    # A localized display name can be short or non-Latin ("UU远程", four
+    # characters) while the folder carries the unlocalized product name
+    # (/Users/Shared/UURemote, bundle id com.netease.uuremote), which an
+    # English locale already reached through the name. Such a name still
+    # reaches the folder through the product token alone, held to the same
+    # length and common-name gate (Mole Mac alternateIdentityPatterns).
+    local name_usable=true
+    if [[ -z "$app_name" || ${#app_name} -lt 5 ]] || _mole_uninstall_is_common_app_name "$app_name"; then
+        name_usable=false
+    fi
+    if [[ "$name_usable" != "true" ]]; then
+        [[ ${#product_token} -ge 5 ]] || return 0
+        _mole_uninstall_is_common_app_name "$product_token" && return 0
+        # Platform words name no product on their own (com.thebrowser.Browser,
+        # com.vendor.desktop), so they never stand in for the display name.
+        case "$(_mole_uninstall_lower "$product_token")" in
+            browser | desktop | macos | application | mac-app | macapp | osx-app) return 0 ;;
+        esac
+    fi
+
+    local app_lower="" nospace_lower="" hyphen_lower="" underscore_lower="" product_lower
+    if [[ "$name_usable" == "true" ]]; then
+        app_lower=$(_mole_uninstall_lower "$app_name")
+        nospace_lower=$(_mole_uninstall_lower "${app_name// /}")
+        hyphen_lower=$(_mole_uninstall_lower "${app_name// /-}")
+        underscore_lower=$(_mole_uninstall_lower "${app_name// /_}")
+    fi
     product_lower=$(_mole_uninstall_lower "$product_token")
 
     local scan_file=""
@@ -979,6 +998,12 @@ find_shared_app_paths() {
         while IFS= read -r -d '' candidate; do
             base="${candidate##*/}"
             lower_base=$(_mole_uninstall_lower "$base")
+            if [[ "$name_usable" != "true" ]]; then
+                # The product token alone names only its exact folder, never
+                # "<token> Data" or "<token>-cache" (com.vendor.player).
+                [[ "$lower_base" == "$product_lower" ]] && matched_paths+=("$candidate")
+                continue
+            fi
             if _mole_uninstall_name_variant_matches "$lower_base" \
                 "$app_lower" "$nospace_lower" "$hyphen_lower" "$underscore_lower" "$product_lower"; then
                 matched_paths+=("$candidate")
@@ -1212,6 +1237,77 @@ mole_playcover_alias_target() {
         return 1
     done
     printf '%s\n' "$target"
+}
+
+# Whether another build of an app family is installed: the stable app
+# ("Zed.app"), a channel ("Zed Nightly.app") or a second copy of the same name
+# in /Applications or ~/Applications, other than the app being removed. Its
+# name-derived folders ("Application Support/Zed") are that build's data too,
+# so an uninstall must not take them (Mole Mac RemnantScanner
+# markingDefaultSelectableData). Only ever narrows what is removed.
+_mole_app_family_sibling_installed() {
+    local family="$1"
+    local app_path="${2:-}"
+    local suffixes="$3"
+    [[ -n "$family" ]] || return 1
+    local -a roots=("/Applications" "$HOME/Applications")
+    # Test-only: Bats exports BATS_TEST_FILENAME, so a suite never reads the
+    # host's /Applications (tests/helpers/common.bash sets an empty root).
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ||
+        -n "${BATS_TEST_FILENAME:-}" ]] && [[ -n "${MOLE_TEST_APP_FAMILY_ROOT:-}" ]]; then
+        roots=("$MOLE_TEST_APP_FAMILY_ROOT")
+    fi
+    local root candidate stem channel
+    for root in "${roots[@]}"; do
+        [[ -d "$root" ]] || continue
+        for candidate in "$root/$family".[aA][pP][pP] "$root/$family "*.[aA][pP][pP]; do
+            [[ -d "$candidate" ]] || continue
+            if [[ -n "$app_path" && -e "$app_path" && "$candidate" -ef "$app_path" ]]; then
+                continue
+            fi
+            stem="${candidate##*/}"
+            stem="${stem%.*}"
+            [[ "$stem" == "$family" ]] && return 0
+            channel="${stem#"$family" }"
+            [[ "$channel" != "$stem" && "$channel" =~ ^(${suffixes})$ ]] && return 0
+        done
+    done
+    return 1
+}
+
+# The base name an app's family shares: "Zed Nightly" and "Zed" are both "Zed".
+_mole_app_family_suffixes="Nightly|Beta|Alpha|Dev|Canary|Preview|Insider|Edge|Stable|Release|RC|LTS"
+_mole_app_family_suffixes+="|Developer Edition|Technology Preview"
+
+# Print the lowercase name leaves ("zed", "zed-nightly"...) of the family that
+# another installed build still uses, or nothing when no other build is
+# installed. While one is, those name-derived leaves are its data too.
+_mole_app_family_shared_leaves() {
+    local app_name="$1" app_path="${2:-}"
+    local base_name="$app_name"
+    if [[ "$app_name" =~ ^(.+)[[:space:]]+(${_mole_app_family_suffixes})$ ]]; then
+        base_name="${BASH_REMATCH[1]}"
+    fi
+    _mole_app_family_sibling_installed "$base_name" "$app_path" "$_mole_app_family_suffixes" || return 0
+    local variant
+    for variant in "$base_name" "${base_name// /}" "${base_name// /-}" "${base_name// /_}"; do
+        printf '%s\n' "$variant" | /usr/bin/tr '[:upper:]' '[:lower:]'
+    done
+}
+
+# 0 when the path's leaf, minus .plist or .savedState, is one of the leaves.
+_mole_path_is_family_leaf() {
+    local candidate_leaf="${1%/}"
+    shift
+    candidate_leaf="${candidate_leaf##*/}"
+    candidate_leaf="${candidate_leaf%.plist}"
+    candidate_leaf="${candidate_leaf%.savedState}"
+    candidate_leaf=$(printf '%s' "$candidate_leaf" | /usr/bin/tr '[:upper:]' '[:lower:]')
+    local family_leaf
+    for family_leaf in "$@"; do
+        [[ "$candidate_leaf" == "$family_leaf" ]] && return 0
+    done
+    return 1
 }
 
 find_app_files() {
@@ -2054,6 +2150,18 @@ find_app_files() {
         done
     fi
 
+    # While another build of the family is installed, the family's
+    # name-derived leaves ("Zed", "zed", ".plist", ".savedState") are its data
+    # too: a channel build never takes the stable app's folders, and the stable
+    # app never takes folders a channel still uses. Bundle-id leaves stay.
+    local family_shared=false
+    local -a family_leaves=()
+    local family_leaf_line
+    while IFS= read -r family_leaf_line; do
+        [[ -n "$family_leaf_line" ]] && family_leaves+=("$family_leaf_line")
+    done < <(_mole_app_family_shared_leaves "$app_name" "$app_path")
+    [[ ${#family_leaves[@]} -gt 0 ]] && family_shared=true
+
     # Preserve discovery order while collapsing exact duplicates. A leftover
     # can be found first through a bundle-id prefix and again through an
     # embedded extension id; it should be previewed and removed only once.
@@ -2064,6 +2172,10 @@ find_app_files() {
         local duplicate_path=false
         for candidate_path in "${files_to_clean[@]}"; do
             duplicate_path=false
+            if [[ "$family_shared" == "true" ]] &&
+                _mole_path_is_family_leaf "$candidate_path" "${family_leaves[@]}"; then
+                continue
+            fi
             if [[ ${#unique_files_to_clean[@]} -gt 0 ]]; then
                 for seen_path in "${unique_files_to_clean[@]}"; do
                     if [[ "$candidate_path" == "$seen_path" ]]; then
@@ -2074,7 +2186,9 @@ find_app_files() {
             fi
             [[ "$duplicate_path" == "true" ]] || unique_files_to_clean+=("$candidate_path")
         done
-        printf '%s\n' "${unique_files_to_clean[@]}"
+        if [[ ${#unique_files_to_clean[@]} -gt 0 ]]; then
+            printf '%s\n' "${unique_files_to_clean[@]}"
+        fi
     fi
     rm -f -- "$discovery_scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
     return 0
@@ -2153,6 +2267,7 @@ get_diagnostic_report_paths_for_app() {
 find_app_system_files() {
     local bundle_id="$1"
     local app_name="$2"
+    local app_path="${3:-}"
     local _MOLE_UNINSTALL_DISCOVERY_DEADLINE="${_MOLE_UNINSTALL_DISCOVERY_DEADLINE:-$((SECONDS + MOLE_TIMEOUT_DISK_VERIFY_SEC))}"
     local -a system_files=()
     local system_scan_file=""
@@ -2403,9 +2518,22 @@ find_app_system_files() {
         return "$system_scan_rc"
     fi
 
-    local combined_files=""
+    # Same family rule as find_app_files: /Library/Application Support/Firefox
+    # stays while Firefox Developer Edition is installed.
+    local -a family_leaves=()
+    local family_leaf_line
+    while IFS= read -r family_leaf_line; do
+        [[ -n "$family_leaf_line" ]] && family_leaves+=("$family_leaf_line")
+    done < <(_mole_app_family_shared_leaves "$app_name" "$app_path")
+    local combined_files="" system_file
     if [[ ${#system_files[@]} -gt 0 ]]; then
-        combined_files=$(printf '%s\n' "${system_files[@]}")
+        for system_file in "${system_files[@]}"; do
+            if [[ ${#family_leaves[@]} -gt 0 ]] &&
+                _mole_path_is_family_leaf "$system_file" "${family_leaves[@]}"; then
+                continue
+            fi
+            combined_files+="${combined_files:+$'\n'}$system_file"
+        done
     fi
 
     if [[ -n "$receipt_files" ]]; then

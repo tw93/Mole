@@ -61,7 +61,9 @@ setup() {
     echo "test" > "$HOME/.config/zed/settings.json"
     echo "test" > "$HOME/Library/Application Support/Zed/cache.db"
 
-    result=$(find_app_files "dev.zed.Zed-Nightly" "Zed Nightly")
+    # An empty app root, so a Zed installed on the test machine cannot count as a sibling.
+    mkdir -p "$HOME/apps"
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps" find_app_files "dev.zed.Zed-Nightly" "Zed Nightly")
 
     [[ "$result" =~ .config/zed ]] || return 1
     [[ "$result" =~ "Library/Application Support/Zed" ]]
@@ -545,4 +547,122 @@ EOF
     result=$(find_app_files "$id" "Starry Night")
 
     [[ "$result" != *"darwin-cache"* ]] || return 1
+}
+
+# Mole Mac markingDefaultSelectableData: a family's name-derived folders are
+# every installed build's data. The CLI removes everything it lists, so it
+# leaves them out of the list while another build of the family is installed.
+@test "find_app_files leaves the stable app's base-name folders to it while it is installed" {
+    local apps="$HOME/apps"
+    mkdir -p "$apps/Zed.app" "$apps/Zed Nightly.app"
+    mkdir -p "$HOME/.config/zed" "$HOME/Library/Application Support/Zed" "$HOME/Library/Caches/dev.zed.Zed-Nightly"
+
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$apps" find_app_files "dev.zed.Zed-Nightly" "Zed Nightly" "$apps/Zed Nightly.app")
+
+    [[ "$result" != *"Application Support/Zed"* ]] || return 1
+    [[ "$result" != *".config/zed"* ]] || return 1
+    [[ "$result" == *"Caches/dev.zed.Zed-Nightly"* ]]
+}
+
+@test "find_app_files leaves the family's name folders to a channel build still installed" {
+    local apps="$HOME/apps"
+    mkdir -p "$apps/Zed.app" "$apps/Zed Preview.app"
+    mkdir -p "$HOME/.config/zed" "$HOME/Library/Application Support/Zed" "$HOME/Library/Caches/dev.zed.Zed" "$HOME/Library/Preferences"
+    touch "$HOME/Library/Preferences/Zed.plist"
+
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$apps" find_app_files "dev.zed.Zed" "Zed" "$apps/Zed.app")
+
+    [[ "$result" != *"Application Support/Zed"* ]] || return 1
+    [[ "$result" != *".config/zed"* ]] || return 1
+    [[ "$result" != *"Preferences/Zed.plist"* ]] || return 1
+    [[ "$result" == *"Caches/dev.zed.Zed"* ]]
+}
+
+@test "find_app_files accepts an empty family-filtered result under Bash 3.2 nounset" {
+    local apps="$HOME/apps"
+    mkdir -p "$apps/Zed.app" "$apps/Zed Nightly.app" "$HOME/Library/Application Support/Zed"
+
+    # shellcheck disable=SC2016 # Expand fixture paths in the Bash 3.2 child.
+    run env MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$apps" /bin/bash -u -c '
+        source "$PROJECT_ROOT/lib/core/base.sh"
+        source "$PROJECT_ROOT/lib/core/log.sh"
+        source "$PROJECT_ROOT/lib/core/app_protection.sh"
+        find_app_files dev.zed.Zed-Nightly "Zed Nightly" "$HOME/apps/Zed Nightly.app"
+    '
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -d "$HOME/Library/Application Support/Zed" ]
+}
+
+@test "find_app_files still takes the family's folders when no other build is installed" {
+    local apps="$HOME/apps"
+    mkdir -p "$apps/Zed Nightly.app" "$apps/Zedit.app"
+    mkdir -p "$HOME/.config/zed" "$HOME/Library/Application Support/Zed"
+
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$apps" find_app_files "dev.zed.Zed-Nightly" "Zed Nightly" "$apps/Zed Nightly.app")
+
+    [[ "$result" == *"Application Support/Zed"* ]] || return 1
+    [[ "$result" == *".config/zed"* ]]
+}
+
+@test "find_shared_app_paths reaches a localized short name's folder through the bundle product token" {
+    local shared="$HOME/Shared"
+    mkdir -p "$shared/UURemote" "$shared/UURemote Data" "$shared/UUPlayer" "$shared/Other"
+
+    # Under the C locale Bash counts bytes, and the 8-byte name passed the old
+    # gate; the reported failure is a UTF-8 terminal, where it is 4 characters.
+    result=$(export LC_ALL=en_US.UTF-8; find_shared_app_paths "com.netease.uuremote" "UU远程" "$shared")
+
+    [[ "$result" == *"/Shared/UURemote"* ]] || return 1
+    [[ "$result" != *"UURemote Data"* ]] || return 1
+    [[ "$result" != *"UUPlayer"* ]] || return 1
+    [[ "$result" != *"Other"* ]]
+}
+
+@test "find_shared_app_paths stays silent for a short name whose product token is short or generic" {
+    local shared="$HOME/Shared"
+    mkdir -p "$shared/Line" "$shared/Browser" "$shared/Helper Data"
+
+    result=$(find_shared_app_paths "jp.naver.line.mac" "LINE" "$shared")
+    [[ -z "$result" ]] || return 1
+    result=$(find_shared_app_paths "com.thebrowser.Browser" "Arc" "$shared")
+    [[ -z "$result" ]] || return 1
+    result=$(find_shared_app_paths "com.vendor.helper" "Hlp" "$shared")
+    [[ -z "$result" ]]
+}
+
+@test "find_app_files never lets a look-alike name claim a sibling product's folders" {
+    # shellcheck disable=SC2030 # Bats runs each test in its own subshell.
+    export MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps"
+    mkdir -p "$HOME/apps"
+    local support="$HOME/Library/Application Support"
+    mkdir -p "$support/Code" "$support/Code - Insiders" "$support/Cleaner for Xcode" \
+        "$support/Xcodes" "$support/Thunderbird" "$support/login" "$support/Logic"
+
+    result=$(find_app_files "com.microsoft.VSCode" "Visual Studio Code")
+    [[ "$result" == *"/Application Support/Code"* ]] || return 1
+    [[ "$result" != *"Code - Insiders"* ]] || return 1
+    result=$(find_app_files "com.microsoft.VSCodeInsiders" "Visual Studio Code - Insiders")
+    [[ "$result" == *"Code - Insiders"* ]] || return 1
+    [[ "$result" != *"/Application Support/Code"$'\n'* && "$result" != *"/Application Support/Code" ]] || return 1
+    result=$(find_app_files "com.apple.dt.Xcode" "Xcode")
+    [[ "$result" != *"Cleaner for Xcode"* && "$result" != *"Xcodes"* ]] || return 1
+    result=$(find_app_files "org.mozilla.firefox" "Firefox")
+    [[ "$result" != *"Thunderbird"* ]] || return 1
+    result=$(find_app_files "com.logi.optionsplus" "Logi Options+")
+    [[ "$result" != *"login"* && "$result" != *"Logic"* ]]
+}
+
+@test "find_app_system_files leaves the family's system folders to another installed build" {
+    [[ -d "/Library/Application Support/Apple" ]] || skip "needs /Library/Application Support/Apple"
+    # shellcheck disable=SC2031 # No export from another Bats test reaches this test.
+    export MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps"
+    mkdir -p "$HOME/apps"
+
+    result=$(find_app_system_files "com.example.apple" "Apple" "/Applications/Apple.app")
+    [[ "$result" == *"/Library/Application Support/Apple"* ]] || return 1
+
+    mkdir -p "$HOME/apps/Apple Beta.app"
+    result=$(find_app_system_files "com.example.apple" "Apple" "/Applications/Apple.app")
+    [[ "$result" != *"/Library/Application Support/Apple"* ]]
 }

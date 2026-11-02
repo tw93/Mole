@@ -2299,6 +2299,55 @@ EOF
     [[ "$output" != *"ACCEPTED"* ]]
 }
 
+@test "macos_installer_is_apple_signed takes only Apple-signed InstallAssistant bundles" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+installer="$HOME/Install macOS Test.app"
+mkdir -p "$installer/Contents"
+touch "$installer/Contents/Info.plist"
+deadline=$((SECONDS + 10))
+BUNDLE_ID=com.apple.InstallAssistant.Seed
+CODESIGN_RC=0
+run_with_timeout() {
+    local _duration="$1"
+    shift
+    case "${1:-}" in
+        /usr/bin/plutil) printf '%s\n' "$BUNDLE_ID" ;;
+        /usr/bin/codesign)
+            [[ "$*" == *"anchor apple"* ]] || return 99
+            echo "$*" >> "$HOME/codesign.calls"
+            return "$CODESIGN_RC"
+            ;;
+        *) "$@" ;;
+    esac
+}
+
+macos_installer_is_apple_signed "$installer" "$deadline" || { echo 'SIGNED_REJECTED'; exit 1; }
+CODESIGN_RC=3
+if macos_installer_is_apple_signed "$installer" "$deadline"; then echo 'UNSIGNED_ACCEPTED'; exit 1; fi
+CODESIGN_RC=0
+for BUNDLE_ID in com.example.InstallAssistant com.apple.InstallAssistantX com.apple.InstallAssistant. ''; do
+    rm -f "$HOME/codesign.calls"
+    if macos_installer_is_apple_signed "$installer" "$deadline"; then echo "ID_ACCEPTED:$BUNDLE_ID"; exit 1; fi
+    [[ ! -e "$HOME/codesign.calls" ]] || { echo "CODESIGN_RAN:$BUNDLE_ID"; exit 1; }
+done
+BUNDLE_ID=com.apple.InstallAssistant
+CODESIGN_RC=124
+rc=0
+macos_installer_is_apple_signed "$installer" "$deadline" || rc=$?
+[[ $rc -eq 124 ]] || { echo "TIMEOUT_RC:$rc"; exit 1; }
+rm -f "$installer/Contents/Info.plist"
+if macos_installer_is_apple_signed "$installer" "$deadline"; then echo 'NO_PLIST_ACCEPTED'; exit 1; fi
+echo 'APPLE_INSTALLER_ONLY'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"APPLE_INSTALLER_ONLY"* ]]
+}
+
 @test "macos_installer_candidate_still_eligible rejects invalid age replacement active and pending races" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2314,6 +2363,7 @@ expected_mtime="${expected##*:}"
 get_epoch_seconds() { echo "$((expected_mtime + 15 * 86400))"; }
 software_update_pending_or_unknown() { return 1; }
 macos_installer_process_is_idle() { return 0; }
+macos_installer_is_apple_signed() { return 0; }
 run_with_timeout() {
     local _duration="$1"
     shift
@@ -2325,6 +2375,12 @@ run_with_timeout() {
 }
 
 macos_installer_candidate_still_eligible "$installer" "$expected" 14 "$deadline"
+macos_installer_is_apple_signed() { return 1; }
+if macos_installer_candidate_still_eligible "$installer" "$expected" 14 "$deadline"; then
+    echo 'UNSIGNED_ACCEPTED'
+    exit 1
+fi
+macos_installer_is_apple_signed() { return 0; }
 
 macos_installer_candidate_identity() { printf '1:2:0\n'; }
 if macos_installer_candidate_still_eligible "$installer" '1:2:0' 14 "$deadline"; then
@@ -2334,6 +2390,7 @@ fi
 unset -f macos_installer_candidate_identity
 source "$PROJECT_ROOT/lib/clean/system.sh"
 software_update_pending_or_unknown() { return 1; }
+macos_installer_is_apple_signed() { return 0; }
 
 replacement="$HOME/installer-replacement"
 mkdir -p "$replacement/Contents"

@@ -2536,6 +2536,40 @@ EOF
     }
 }
 
+@test "official_uninstaller_vendor routes TeamViewer and the antivirus apps to their own uninstallers" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+expect() {
+    local got=""
+    got=$(official_uninstaller_vendor "$1" "${3:-}" "") || got=""
+    [[ "$got" == "$2" ]] || echo "MISMATCH|$1|$got|want $2"
+}
+expect com.teamviewer.TeamViewer TeamViewer
+expect com.teamviewer.TeamViewerQS TeamViewer
+expect com.avast.avast Avast
+expect com.avg.hub AVG
+expect com.example.app AVG "AVG AntiVirus"
+expect com.malwarebytes.mbam.frontend.application Malwarebytes
+expect com.bitdefender.antivirusformac Bitdefender
+expect com.intego.virusbarrier.app Intego
+expect com.kaspersky.kav.gui Kaspersky
+expect com.symantec.nfm Norton
+expect com.trendmicro.tmsm.mainui "Trend Micro"
+expect com.adobe.gcclient "Adobe Genuine Service"
+# The same vendors' ordinary apps stay ordinary.
+expect com.kaspersky.passwordmanager ""
+expect com.intego.washingmachine ""
+expect com.bitdefender.virusscanner ""
+expect com.adobe.Photoshop ""
+echo DONE
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"MISMATCH|"* ]] || { echo "$output"; return 1; }
+}
+
 @test "batch_uninstall_applications blocks official-uninstaller apps" {
     mkdir -p "$HOME/Applications/Falcon.app"
 
@@ -4666,6 +4700,45 @@ actual=$(cat "$trace_file")
 INNER
 
     [ "$status" -eq 0 ]
+}
+
+@test "interactive uninstall still exits 1 when an app failed before the user quits with q" {
+    for failed in 1 0; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FAILED="$failed" TERM=xterm-256color \
+            /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+app_cache_file="$HOME/apps-cache.txt"
+touch "$app_cache_file"
+log_operation_session_start() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+clear_screen() { :; }
+start_uninstall_interactive_screen() { :; }
+stop_uninstall_interactive_screen() { :; }
+drain_pending_input() { :; }
+mole_tty_is_foreground() { return 0; }
+scan_applications() { printf '%s\n' "$app_cache_file"; }
+load_applications() { return 0; }
+select_calls=0
+select_apps_for_uninstall() {
+    select_calls=$((select_calls + 1))
+    if [[ $select_calls -eq 1 ]]; then
+        selected_apps=("1700000000|/Applications/Test.app|Test|com.example.Test|1MB|Today|1024")
+        return 0
+    fi
+    _MOLE_MENU_USER_QUIT=1
+    return 1
+}
+batch_uninstall_applications() { MOLE_UNINSTALL_FAILED_APPS=$((MOLE_UNINSTALL_FAILED_APPS + FAILED)); }
+# Enter returns to the list after the batch; the second selection quits.
+printf '\n' | main
+INNER
+        [ "$status" -eq "$failed" ] || {
+            echo "failed=$failed status=$status $output"
+            return 1
+        }
+    done
 }
 
 @test "main keeps scan and selector on one alternate screen until cancel (#1194)" {
@@ -7017,6 +7090,29 @@ EOF
     [[ "$output" == *"Matched 1 app(s)"* ]] || return 1
     [[ "$output" == *"BATCH_CALLED"* ]] || return 1
     [[ "$output" != *"Proceed with uninstallation"* ]]
+}
+
+@test "by-name uninstall exits 1 when an app fails and 0 when none did" {
+    for failed in 1 0; do
+        run env NO_COLOR=1 HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" \
+            FAILED="$failed" MOLE_UNINSTALL_FAILED_APPS=7 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+log_operation_session_start() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+clear_screen() { :; }
+scan_applications() { printf 'fixture\n' > "$HOME/apps.list"; printf '%s\n' "$HOME/apps.list"; }
+load_applications() { apps_data=(); return 0; }
+match_apps_by_name() { selected_apps=("1700000000|/Applications/Test.app|Test|com.example.Test|1MB|Today|1024"); }
+batch_uninstall_applications() { MOLE_UNINSTALL_FAILED_APPS=$((MOLE_UNINSTALL_FAILED_APPS + FAILED)); }
+main TestApp < /dev/null
+EOF
+        [ "$status" -eq "$failed" ] || {
+            echo "failed=$failed status=$status $output"
+            return 1
+        }
+    done
 }
 
 @test "by-name matched list renders control characters as placeholders" {

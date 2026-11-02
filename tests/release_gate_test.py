@@ -9,10 +9,12 @@ for every tracked file, so neither side can drift alone.
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +44,15 @@ def secrets_only() -> list[dict]:
     return [{"name": "Secrets", **GREEN}]
 
 
+def commit_response(args, payload):
+    # The old client asks gh to select only filenames; emulate that response
+    # too, so the red run fails on the lost old path, not the parent shape.
+    if "--jq" in args:
+        return json.dumps({"files": [f["filename"] for f in payload["files"]],
+                           "parent": payload["parents"][0]["sha"]})
+    return json.dumps(payload)
+
+
 class FakeApi:
     """First-parent history newest first: each entry is (sha, files, runs)."""
 
@@ -63,6 +74,25 @@ def evaluate(history):
 
 
 class GateDecisions(unittest.TestCase):
+    def test_commit_paths_include_both_sides_of_a_rename(self):
+        payload = {"files": [{"filename": "docs/archive/entry.md", "previous_filename": "mole", "status": "renamed"}],
+                   "parents": [{"sha": "old"}]}
+        with patch.object(gate, "_gh", side_effect=lambda args: commit_response(args, payload)):
+            files, parent = gate.commit_for("tw93/Mole", "new")
+        self.assertEqual(parent, "old")
+        self.assertEqual(files, ["docs/archive/entry.md", "mole"])
+        notes, problems = evaluate([("new", files, secrets_only()), ("old", ["mole"], all_green())])
+        self.assertEqual(notes, [])
+        self.assertEqual(len(problems), 4, problems)
+
+    def test_commit_paths_accept_ordinary_files_but_refuse_incomplete_renames(self):
+        for status, extra, expected in [("modified", {}, ["SYNC.md"]), ("renamed", {}, None)]:
+            payload = {"files": [{"filename": "SYNC.md", "status": status, **extra}], "parents": [{"sha": "old"}]}
+            with self.subTest(status=status), patch.object(gate, "_gh", side_effect=lambda args: commit_response(args, payload)):
+                files, parent = gate.commit_for("tw93/Mole", "new")
+                self.assertEqual(files, expected)
+                self.assertEqual(parent, "old")
+
     def test_green_runs_on_the_tag_pass_without_walking(self):
         notes, problems = evaluate([("t", ["mole"], all_green())])
         self.assertEqual(problems, [])
@@ -258,6 +288,12 @@ class FiltersMatchTheGate(unittest.TestCase):
         self.assertRegex(text, r"(?m)^name: Secrets$")
         for path in self.sample_paths():
             self.assertFalse(gate.skippable("Secrets", path))
+
+    def test_secrets_does_not_share_a_cancellation_group_between_pushes(self):
+        text = (ROOT / ".github" / "workflows" / "secrets.yml").read_text()
+        # GitHub replaces a pending run even with cancel-in-progress: false.
+        # Each push scans its own range, so every push must remain eligible.
+        self.assertNotRegex(text, r"(?m)^\s*concurrency:")
 
     def test_filters_and_gate_agree_on_every_path(self):
         paths = self.sample_paths()

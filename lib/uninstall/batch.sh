@@ -2262,7 +2262,7 @@ _batch_scan_app_details_impl() {
                 _batch_scan_stage="system leftover scan"
                 local system_rc=0
                 system_files=$(find_app_system_files \
-                    "$bundle_id" "$discovery_app_name") || system_rc=$?
+                    "$bundle_id" "$discovery_app_name" "$app_path") || system_rc=$?
                 if mole_rc_timeout "$system_rc"; then
                     system_files=""
                     debug_log "System leftover scan timed out for $app_name"
@@ -3578,5 +3578,8 @@ batch_uninstall_applications() {
     unset -f _restore_uninstall_traps
 
     total_size_cleaned=$((total_size_cleaned + total_size_freed))
+    # Callers turn this into the exit status, so a script that runs
+    # `mo uninstall` sees a failed app (Mole CLI (Windows) exits 1 the same way).
+    MOLE_UNINSTALL_FAILED_APPS=$((${MOLE_UNINSTALL_FAILED_APPS:-0} + failed_count))
     unset failed_items
 }

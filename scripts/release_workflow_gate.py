@@ -110,15 +110,30 @@ def commit_for(repo: str, sha: str) -> tuple[list[str] | None, str | None]:
     merge or an empty commit), or cut at the API's 300-file limit.
     """
     try:
-        out = _gh(["api", f"repos/{repo}/commits/{sha}", "--jq",
-                   "{files: [.files[].filename], parent: (.parents[0].sha // null)}"])
+        out = _gh(["api", f"repos/{repo}/commits/{sha}"])
     except RuntimeError:
         return None, None
     data = json.loads(out or "{}")
-    files = data.get("files") or []
-    parent = data.get("parent")
-    if not files or len(files) >= 300:
+    rows = data.get("files") or []
+    parents = data.get("parents") or []
+    parent = parents[0].get("sha") if parents else None
+    if not rows or len(rows) >= 300:
         return None, parent
+    files = []
+    for row in rows:
+        filename = row.get("filename")
+        previous = row.get("previous_filename")
+        if not isinstance(filename, str) or not filename:
+            return None, parent
+        files.append(filename)
+        # Removing code needs its workflow just as adding code does. GitHub
+        # supplies the old name separately when a file crosses path filters.
+        if row.get("status") == "renamed" and (not isinstance(previous, str) or not previous):
+            return None, parent
+        if previous:
+            if not isinstance(previous, str):
+                return None, parent
+            files.append(previous)
     return files, parent
 
 

@@ -901,9 +901,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus, probed bool
 
 		if b.CycleCount > 0 {
 			cycleText := fmt.Sprintf("%d cycles", b.CycleCount)
-			if b.CycleCount > batteryCycleDanger {
-				cycleText = dangerStyle.Render(cycleText)
-			} else if b.CycleCount > batteryCycleWarn {
+			if b.CycleCount > batteryCycleWarn {
 				cycleText = warnStyle.Render(cycleText)
 			}
 			healthParts = append(healthParts, cycleText)

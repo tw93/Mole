@@ -953,6 +953,56 @@ EOF
 # their bundle names carry a year. Each holder in the list must keep the row;
 # an unrelated Adobe app must not, and the sibling Media Cache database is
 # never a target.
+@test "clean_design_tools holds shared Adobe caches while an Adobe app runs but not for Creative Cloud residents" {
+    mkdir -p "$HOME/Library/Caches/Adobe/Camera Raw 2" "$HOME/Library/Caches/com.adobe.dunamis"
+    touch "$HOME/Library/Caches/Adobe/Camera Raw 2/cache.dat" "$HOME/Library/Caches/com.adobe.dunamis/blob"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "SAFE_CLEAN:${!#}|$*"; }
+defer_cleanup_family() { echo "DEFER:$1"; }
+note_activity() { :; }
+FAKE_PROCESS=""
+pgrep() {
+    [[ "$1" == "-f" ]] || return 1
+    [[ -n "$FAKE_PROCESS" ]] || return 1
+    printf '%s\n' "$FAKE_PROCESS" | grep -Eq -- "$2"
+}
+holders=(
+    "/Applications/Adobe Photoshop 2025/Adobe Photoshop 2025.app/Contents/MacOS/Adobe Photoshop 2025"
+    "/Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app/Contents/MacOS/Adobe Lightroom Classic"
+    "/Applications/Adobe Bridge 2025/Adobe Bridge 2025.app/Contents/MacOS/Adobe Bridge 2025"
+    "/Applications/Adobe Acrobat Reader.app/Contents/MacOS/AdobeReader"
+)
+for FAKE_PROCESS in "${holders[@]}"; do
+    out=$(clean_design_tools)
+    if [[ "$out" == *"SAFE_CLEAN:Adobe cache"* || "$out" == *"SAFE_CLEAN:Adobe app caches"* ]]; then
+        echo "NOT_HELD|$FAKE_PROCESS"
+    fi
+done
+residents=(
+    "/Applications/Utilities/Adobe Creative Cloud/ACC/Creative Cloud.app/Contents/MacOS/Creative Cloud"
+    "/Applications/Utilities/Adobe Creative Cloud Experience/CCXProcess/CCXProcess.app/Contents/MacOS/CCXProcess"
+    "/Library/Application Support/Adobe/Adobe Desktop Common/ADS/Adobe Desktop Service.app/Contents/MacOS/Adobe Desktop Service"
+)
+for FAKE_PROCESS in "${residents[@]}"; do
+    out=$(clean_design_tools)
+    if [[ "$out" != *"SAFE_CLEAN:Adobe cache|"*"Camera Raw 2"* || "$out" != *"SAFE_CLEAN:Adobe app caches|"*"com.adobe.dunamis"* ]]; then
+        echo "HELD_BY_RESIDENT|$FAKE_PROCESS"
+    fi
+done
+echo DONE
+EOF
+    rm -rf "$HOME/Library/Caches/Adobe" "$HOME/Library/Caches/com.adobe.dunamis"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"NOT_HELD|"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"HELD_BY_RESIDENT|"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_design_tools holds Adobe media cache files while an Adobe video app runs" {
     mkdir -p "$HOME/Library/Application Support/Adobe/Common/Media Cache Files" \
         "$HOME/Library/Application Support/Adobe/Common/Media Cache"
