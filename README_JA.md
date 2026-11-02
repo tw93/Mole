@@ -116,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 Moleはファイルを削除できるため、パスを検証し、システム領域とユーザープロファイルの場所を保護します。`uninstall`、`purge`、`remove` は、削除の前に必ず確認を求めます。安全に変更できると確認できない項目は、スキップします。
 
 - `clean`、`uninstall`、`purge` はファイル削除を伴うため、事前に `--dry-run` で確認し、必要に応じて `--debug` を併用してください
-- `clean` と `purge` は完全に削除します。確認済みの `uninstall` の残存ファイルはごみ箱へ移動し、アプリ自身のアンインストーラーは元の動作を保ちます。`mo analyze` で削除したファイルもごみ箱へ移動されます
+- `clean` と `purge` は完全に削除します。確認済みの `uninstall` の残存ファイルはごみ箱へ移動し、アプリ自身のアンインストーラーは元の動作を保ちます。`mo analyze` で削除したファイルもごみ箱へ移動されます。ごみ箱に入らない大きな項目は、完全に削除するかを Windows が先に確認します
 - Moleは通常のユーザーとして実行してください。システム領域の処理は、PowerShellを管理者として実行しない限りスキップされます
 - `mo clean --whitelist` で保護するパスを設定できます
 - クリーンアップ履歴は `%USERPROFILE%\.config\mole\operations.log` に記録され、`mo history` で確認するか、`MO_NO_OPLOG=1` で無効化できます

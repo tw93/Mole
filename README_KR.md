@@ -116,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 Mole은 파일을 삭제할 수 있으므로 경로를 검증하고, 시스템 및 프로필 위치를 보호합니다. `uninstall`, `purge`, `remove` 명령은 삭제 전에 확인을 요청합니다. 안전하게 변경할 수 있다고 확인할 수 없는 항목은 건너뜁니다.
 
 - `clean`, `uninstall`, `purge` 명령은 파일을 삭제할 수 있으므로 먼저 `--dry-run`으로 확인하고 필요 시 `--debug`를 함께 사용하세요
-- `clean`과 `purge`는 영구 삭제하며, 검증된 `uninstall` 잔여 파일은 휴지통으로 이동하고 앱 자체의 제거 프로그램은 기존 동작을 유지합니다. `mo analyze`에서 삭제한 파일도 휴지통으로 이동됩니다
+- `clean`과 `purge`는 영구 삭제하며, 검증된 `uninstall` 잔여 파일은 휴지통으로 이동하고 앱 자체의 제거 프로그램은 기존 동작을 유지합니다. `mo analyze`에서 삭제한 파일도 휴지통으로 이동됩니다. 휴지통에 들어가지 않는 큰 항목은 Windows가 영구 삭제할지 먼저 묻습니다
 - Mole은 일반 사용자 권한으로 실행하세요. PowerShell을 관리자 권한으로 실행하지 않으면 시스템 수준 단계는 건너뜁니다
 - `mo clean --whitelist`로 보호할 경로를 지정하세요
 - 정리 내역은 `%USERPROFILE%\.config\mole\operations.log`에 기록되며, `mo history`로 확인하거나 `MO_NO_OPLOG=1`로 비활성화할 수 있습니다

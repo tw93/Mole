@@ -116,7 +116,7 @@ Add `-CreateShortcut` for a Start Menu entry. To uninstall, run `mo remove`.
 Mole can delete files, so it validates paths and protects system and profile locations. `uninstall`, `purge`, and `remove` ask for confirmation before removing anything. When Mole cannot prove an item is safe to change, it skips it.
 
 - `clean`, `uninstall`, and `purge` can delete files, so review them with `--dry-run` first and add `--debug` when needed
-- `clean` and `purge` delete permanently; verified `uninstall` leftovers go to the Recycle Bin, the app's own uninstaller keeps its own behavior, and files deleted in `mo analyze` go to the Recycle Bin
+- `clean` and `purge` delete permanently; verified `uninstall` leftovers go to the Recycle Bin, the app's own uninstaller keeps its own behavior, and files deleted in `mo analyze` go to the Recycle Bin, except items too large for it, which Windows offers to delete permanently
 - Run Mole as your normal user; system-level steps are skipped unless PowerShell runs as administrator
 - Protect paths with `mo clean --whitelist`
 - Cleanup activity is recorded in `%USERPROFILE%\.config\mole\operations.log`; review it with `mo history` or disable it with `MO_NO_OPLOG=1`

@@ -116,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 Mole 会删除文件，所以会先校验路径、保护系统和用户配置目录，`uninstall`、`purge` 与 `remove` 删除前都会请你确认，无法确认安全的项目一律跳过。
 
 - `clean`、`uninstall` 与 `purge` 会删除文件，可先用 `--dry-run` 预览，需要时加上 `--debug`
-- `clean` 与 `purge` 是永久删除，已核实的 `uninstall` 残留会放进回收站，应用自身的卸载器保留其原有行为，`mo analyze` 中删除的文件也会放进回收站
+- `clean` 与 `purge` 是永久删除，已核实的 `uninstall` 残留会放进回收站，应用自身的卸载器保留其原有行为，`mo analyze` 中删除的文件也会放进回收站，放不进回收站的大项目 Windows 会先询问是否永久删除
 - 用普通用户身份运行 Mole 即可，系统级步骤只有以管理员身份运行 PowerShell 时才会执行，否则跳过
 - 可通过 `mo clean --whitelist` 保护指定路径
 - 清理操作记录在 `%USERPROFILE%\.config\mole\operations.log` 中，可通过 `mo history` 查看，或设置 `MO_NO_OPLOG=1` 禁用
