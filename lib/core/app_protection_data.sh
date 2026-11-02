@@ -206,7 +206,11 @@ readonly OFFICIAL_UNINSTALLER_RULES=(
 # caches under /private/var/folders must never be deleted: removing anything
 # inside a sensor's container trips tamper detection (e.g. CrowdStrike
 # "MacFalconSensorTamper", MITRE T1562.001) that corporate security reports as
-# malware. Keep in sync with the vendors in OFFICIAL_UNINSTALLER_RULES above.
+# malware. Keep in sync with the EDR/MDM vendors in the first block of
+# OFFICIAL_UNINSTALLER_RULES above (ESET through Alibaba Cloud Security). The
+# consumer antivirus, TeamViewer and Adobe rows below them only route uninstall
+# to the vendor tool, and several of their ids are unconfirmed leads, so they
+# are not evidence for protecting caches.
 # Consumed by is_endpoint_security_cache_path() in app_protection.sh.
 readonly ENDPOINT_SECURITY_BUNDLE_PREFIXES=(
     "com.crowdstrike."
