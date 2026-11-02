@@ -1,7 +1,7 @@
 <p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
-  <img src="https://cdn.tw93.fun/pic/cole.png" alt="Mole logo" width="120" height="120" />
+  <img src="https://cdn.tw93.fun/pic/cole.png" alt="Mole logo" width="120" />
   <h1>Mole CLI for Windows</h1>
   <p><b>Глибоке очищення, видалення застосунків, оптимізація, аналіз диска й моніторинг вашого ПК з Windows. Безкоштовний CLI з відкритим кодом.</b></p>
   <p><a href="README.md">English</a> · <a href="README_CN.md">中文</a> · <a href="README_TW.md">繁體</a> · <a href="README_JA.md">日本語</a> · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · Українська · <a href="README_RU.md">Русский</a></p>
