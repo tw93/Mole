@@ -6,6 +6,12 @@
 # command a test must never run for real turns a forgotten mock into a red
 # test instead of a host-dependent pass. See mole_test_install_unstubbed_path.
 
+# find_app_files treats another installed build of an app's family as the
+# owner of the family's name folders. Point that probe at a folder that never
+# exists, so results never depend on the host's /Applications; a test that
+# needs a sibling sets its own root.
+export MOLE_TEST_APP_FAMILY_ROOT="${MOLE_TEST_APP_FAMILY_ROOT:-${BATS_RUN_TMPDIR:-/tmp}/mole-test-no-app-family}"
+
 # PROJECT_ROOT for files that need nothing else from the shared setup.
 mole_test_setup_project_root() {
 	PROJECT_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"

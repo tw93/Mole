@@ -2262,7 +2262,7 @@ _batch_scan_app_details_impl() {
                 _batch_scan_stage="system leftover scan"
                 local system_rc=0
                 system_files=$(find_app_system_files \
-                    "$bundle_id" "$discovery_app_name") || system_rc=$?
+                    "$bundle_id" "$discovery_app_name" "$app_path") || system_rc=$?
                 if mole_rc_timeout "$system_rc"; then
                     system_files=""
                     debug_log "System leftover scan timed out for $app_name"
