@@ -21,11 +21,11 @@ This branch has its own code, written for Linux paths and tools. The look, the k
 
 ## Features
 
-- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, thumbnails, shader caches, about 50 developer tools, old versions of AI coding agents, Flatpak app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages and journal logs through pacman's and systemd's own tools, and reports core dumps, container space and large caches it does not know. Anything you want kept goes in `mo clean --whitelist`
+- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Steam, Lutris and other shader caches, Thunderbird, Telegram, thumbnails, about 50 developer tools, old versions of AI coding agents, Flatpak and Snap app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages and journal logs through pacman's and systemd's own tools (on a snapper btrfs root it says the package space comes back only as snapshots rotate), and reports core dumps, container space and large caches it does not know. Anything you want kept goes in `mo clean --whitelist`
 - **Uninstall**: removes pacman, AUR and Flatpak apps, Omarchy web and terminal apps and AppImages, shows each app's size and last use, stops its background services, then moves its leftovers to the Trash, matched by the app's exact ID only and never while the app is running
-- **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
+- **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, pending `.pacnew` merges, AUR packages that need a rebuild, files no package owns, broken links in your home folder, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
 - **Analyze**: an interactive disk map of your volumes, home, caches and package cache that stays on local disks and follows btrfs subvolumes; deleting from it moves items to the Trash
-- **Status**: live CPU, memory pressure and zram, disks, network, temperatures, GPU, battery and power draw, peripherals and processes, with a health score
+- **Status**: live CPU, memory pressure and zram, disks, network, temperatures, GPU, battery and power draw, peripherals, btrfs allocation and the busiest apps with their GPU memory, with a health score
 
 ## Install
 
@@ -122,7 +122,7 @@ mo status
 
 <img src="./docs/img/status-linux.png" alt="mo status dashboard" width="1000" />
 
-A live dashboard with a health score, CPU, memory, disk, power, network, and the busiest processes. `mo status --json` prints one snapshot for scripts.
+A live dashboard with a health score, CPU, memory, disk, power, network, and the busiest apps, with processes grouped by app. `mo status --json` prints one snapshot for scripts.
 
 ## Community
 
