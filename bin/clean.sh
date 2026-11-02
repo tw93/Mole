@@ -409,7 +409,8 @@ journal_usage_kb() {
     human_to_kb "${usage:-0}"
 }
 
-have_paccache() { command -v paccache > /dev/null 2>&1 && [[ -d /var/cache/pacman/pkg ]]; }
+PACMAN_CACHE_DIR=/var/cache/pacman/pkg
+have_paccache() { command -v paccache > /dev/null 2>&1 && [[ -d "$PACMAN_CACHE_DIR" ]]; }
 have_journal() { command -v journalctl > /dev/null 2>&1; }
 have_flatpak() { command -v flatpak > /dev/null 2>&1; }
 have_user_flatpak() { have_flatpak && [[ -d "$MOLE_DATA_HOME/flatpak/repo" ]]; }
@@ -592,7 +593,7 @@ clean_system() {
 clean_system_sudo_items() {
     local have_paccache="$1" have_journal="$2"
     if [[ "$have_paccache" == "true" ]]; then
-        if mole_whitelisted "Package cache" /var/cache/pacman/pkg; then
+        if mole_whitelisted "Package cache" "$PACMAN_CACHE_DIR"; then
             skip_line "$(whitelist_note "Package cache")"
         elif [[ -e /var/lib/pacman/db.lck ]]; then
             skip_line "Package cache · skipped while pacman is running"
@@ -604,13 +605,23 @@ clean_system_sudo_items() {
                 kb=$(human_to_kb "${BASH_REMATCH[2]}")
             fi
             if ((count > 0)); then
+                # On a subvolume snapper snapshots (Omarchy snapshots / before
+                # each update), the old packages stay in those snapshots: the
+                # space comes back only as they rotate, so it is not counted as
+                # freed. A probe that cannot tell keeps the plain row.
+                local note=" ${GRAY}(keeps 2)${NC}" freed_kb="$kb" state=0
+                mole_snapshot_state "$PACMAN_CACHE_DIR" || state=$?
+                if ((state == 0)); then
+                    note=" ${GRAY}(keeps 2, freed as snapshots rotate)${NC}"
+                    freed_kb=0
+                fi
                 if [[ "$DRY_RUN" == "true" ]]; then
-                    report_line "Package cache, older versions" "$kb" "$count" " ${GRAY}(keeps 2)${NC}"
-                    add_total "$kb" "$count"
+                    report_line "Package cache, older versions" "$kb" "$count" "$note"
+                    add_total "$freed_kb" "$count"
                 elif mole_c sudo paccache -rk2 > /dev/null 2>&1; then
-                    report_line "Package cache, older versions" "$kb" "$count" " ${GRAY}(keeps 2)${NC}"
-                    log_operation clean REMOVED /var/cache/pacman/pkg "paccache -rk2, $count files"
-                    add_total "$kb" "$count"
+                    report_line "Package cache, older versions" "$kb" "$count" "$note"
+                    log_operation clean REMOVED "$PACMAN_CACHE_DIR" "paccache -rk2, $count files"
+                    add_total "$freed_kb" "$count"
                 else
                     log_error "paccache -rk2 failed"
                 fi

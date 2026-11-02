@@ -472,3 +472,46 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [ "$status" -eq 0 ]
     [[ "$output" != *"Unused Flatpak runtimes (system)"* ]]
 }
+
+# A btrfs root at $TEST_ROOT/sys that snapper snapshots, holding the package cache.
+snapshotted_pkg_cache() {
+    mkdir -p "$TEST_ROOT/sys/var/cache/pacman/pkg" "$TEST_ROOT/snapper/configs"
+    printf '1 0 0:1 / / rw - ext4 /dev/vda1 rw\n2 1 0:2 / %s rw - %s /dev/vda2 rw\n' "$TEST_ROOT/sys" "$1" > "$TEST_ROOT/mountinfo"
+    printf 'SUBVOLUME="%s"\n' "$TEST_ROOT/sys" > "$TEST_ROOT/snapper/configs/root"
+    fake_command paccache 'echo "$*" >> "'"$TEST_ROOT"'/paccache.log"; echo "==> finished dry run: 3 candidates (disk space saved: 2.00 MiB)"'
+    fake_command sudo '[[ "$1" == -* ]] && exit 0; exec "$@"'
+}
+
+pkg_cache_run() {
+    mole_run clean '_MOLE_MOUNTINFO="'"$TEST_ROOT"'/mountinfo"
+        _MOLE_SNAPPER_CONFIGS="'"$TEST_ROOT"'/snapper/configs"; _MOLE_SNAPPER_SYSCONFIGS=()
+        PACMAN_CACHE_DIR="'"$TEST_ROOT"'/sys/var/cache/pacman/pkg"; SYSTEM_READY=true; '"$1"'
+        clean_system_sudo_items true false; echo "total=$TOTAL_KB items=$TOTAL_ITEMS"'
+}
+
+@test "package cache on a snapshotted subvolume: removed, shown as held, not counted as freed" {
+    snapshotted_pkg_cache btrfs
+    pkg_cache_run 'DRY_RUN=true;'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Package cache, older versions · 3 items, 2.1MB"*"(keeps 2, freed as snapshots rotate)"* ]]
+    [[ "$output" == *"total=0 items=3"* ]]
+    [ -z "$(grep -- '-rk2' "$TEST_ROOT/paccache.log")" ]
+    pkg_cache_run ''
+    [[ "$output" == *"(keeps 2, freed as snapshots rotate)"* ]]
+    [[ "$output" == *"total=0 items=3"* ]]
+    grep -qx -- '-rk2' "$TEST_ROOT/paccache.log"
+    grep -q "paccache -rk2, 3 files" "$HOME/.local/state/mole/operations.log"
+}
+
+@test "package cache off snapshots, or when the probe cannot tell, counts as freed" {
+    snapshotted_pkg_cache ext4
+    pkg_cache_run 'DRY_RUN=true;'
+    [[ "$output" != *"snapshots"* ]]
+    [[ "$output" == *"(keeps 2)"* ]]
+    [[ "$output" == *"total=2048 items=3"* ]]
+    snapshotted_pkg_cache btrfs
+    rm "$TEST_ROOT/mountinfo"
+    pkg_cache_run 'DRY_RUN=true;'
+    [[ "$output" != *"snapshots"* ]]
+    [[ "$output" == *"total=2048 items=3"* ]]
+}
