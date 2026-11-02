@@ -281,3 +281,80 @@ func TestOverviewViewOmitsSnapshotNoticeWhenNoneDetected(t *testing.T) {
 		t.Fatalf("expected no snapshot notice, got:\n%s", view)
 	}
 }
+
+func TestCountSnapshotsInReportsAStoreItCannotList(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 directory")
+	}
+	store := filepath.Join(t.TempDir(), ".snapshots")
+	if err := os.MkdirAll(filepath.Join(store, "1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(store, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(store, 0o755) })
+
+	got, err := countSnapshotsIn(context.Background(), []string{store, filepath.Join(t.TempDir(), "absent")})
+	if !errors.Is(err, errSnapshotsUnreadable) || got != 0 {
+		t.Fatalf("countSnapshotsIn = %d, %v; want 0, errSnapshotsUnreadable", got, err)
+	}
+}
+
+func TestCountSnapshotsInKeepsTheCountBesideAnUnreadableStore(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 directory")
+	}
+	root := t.TempDir()
+	hidden := filepath.Join(root, ".snapshots")
+	readable := filepath.Join(root, "timeshift", "snapshots")
+	for _, dir := range []string{hidden, filepath.Join(readable, "2026-08-26_09-15-00")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(hidden, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(hidden, 0o755) })
+
+	got, err := countSnapshotsIn(context.Background(), []string{hidden, readable})
+	if err != nil || got != 1 {
+		t.Fatalf("countSnapshotsIn = %d, %v; want 1, nil", got, err)
+	}
+}
+
+func TestOverviewShowsSnapshotsItCannotCount(t *testing.T) {
+	m := model{path: "/", isOverview: true, localSnapshotCount: 2,
+		entries: []dirEntry{{Name: "Home", Path: "/tmp/home", Size: 1, IsDir: true}}}
+	updated, _ := m.Update(localSnapshotMsg{err: errSnapshotsUnreadable})
+	got := updated.(model)
+	if !got.localSnapshotsHidden || got.localSnapshotCount != 0 || !got.localSnapshotFresh {
+		t.Fatalf("unreadable store left model %+v", got)
+	}
+	view := got.View()
+	if !strings.Contains(view, "Local snapshots exist · snapshot-only space is not listed below") {
+		t.Fatalf("expected unreadable snapshot notice, got:\n%s", view)
+	}
+	if strings.Contains(view, "0 local") || strings.Contains(view, "last successful check") {
+		t.Fatalf("unreadable snapshot notice carries a count, got:\n%s", view)
+	}
+
+	updated, _ = got.Update(localSnapshotMsg{count: 3})
+	counted := updated.(model)
+	if counted.localSnapshotsHidden {
+		t.Fatal("a readable count left the unreadable notice on")
+	}
+	if view := counted.View(); !strings.Contains(view, "3 local snapshots") || strings.Contains(view, "Local snapshots exist") {
+		t.Fatalf("expected the counted notice only, got:\n%s", view)
+	}
+}
+
+func TestOverviewKeepsSilentWhenTheProbeFailsOtherwise(t *testing.T) {
+	m := model{path: "/", isOverview: true,
+		entries: []dirEntry{{Name: "Home", Path: "/tmp/home", Size: 1, IsDir: true}}}
+	updated, _ := m.Update(localSnapshotMsg{err: errors.New("io error")})
+	if view := updated.(model).View(); strings.Contains(view, "napshot") {
+		t.Fatalf("expected no snapshot notice, got:\n%s", view)
+	}
+}

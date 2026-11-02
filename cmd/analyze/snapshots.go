@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"time"
 
@@ -28,15 +30,26 @@ var snapshotStores = []string{
 	"/run/timeshift/backup/timeshift/snapshots",
 }
 
+// errSnapshotsUnreadable means a snapshot store exists but the user may not
+// list it (snapper keeps /.snapshots root-only), so snapshots are present and
+// their number is unknown.
+var errSnapshotsUnreadable = errors.New("snapshot store exists but is not readable")
+
 func countSnapshotsIn(ctx context.Context, stores []string) (int, error) {
 	count := 0
 	var firstErr error
+	hidden := false
 	for _, store := range stores {
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
 		entries, err := os.ReadDir(store)
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				if info, statErr := os.Stat(store); statErr == nil && info.IsDir() {
+					hidden = true
+				}
+			}
 			if !os.IsNotExist(err) && firstErr == nil {
 				firstErr = err
 			}
@@ -47,6 +60,9 @@ func countSnapshotsIn(ctx context.Context, stores []string) (int, error) {
 				count++
 			}
 		}
+	}
+	if count == 0 && hidden {
+		return 0, errSnapshotsUnreadable
 	}
 	if count == 0 && firstErr != nil {
 		return 0, firstErr

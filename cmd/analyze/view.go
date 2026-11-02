@@ -38,6 +38,9 @@ func (m model) View() string {
 			}
 			fmt.Fprintf(&b, "%s%d local %s · snapshot-only space is not listed below%s%s\n",
 				colorGray, m.localSnapshotCount, snapshotLabel, freshnessLabel, colorReset)
+		} else if m.localSnapshotsHidden {
+			fmt.Fprintf(&b, "%sLocal snapshots exist · snapshot-only space is not listed below%s\n",
+				colorGray, colorReset)
 		}
 		if m.overviewScanning {
 			if allOverviewEntriesPending(m.entries) {

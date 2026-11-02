@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -596,6 +597,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err == nil {
 				m.localSnapshotCount = msg.count
 				m.localSnapshotFresh = true
+				m.localSnapshotsHidden = false
+			} else if errors.Is(msg.err, errSnapshotsUnreadable) {
+				m.localSnapshotCount = 0
+				m.localSnapshotFresh = true
+				m.localSnapshotsHidden = true
 			} else {
 				m.localSnapshotFresh = false
 			}
