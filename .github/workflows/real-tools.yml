@@ -142,7 +142,8 @@ jobs:
           # snap remove deletes ~/snap/<name>: with data there, --yes refuses.
           mkdir -p ~/snap/mole-probe/common
           echo keep > ~/snap/mole-probe/common/settings
-          timeout 300 ./mo uninstall --yes mole-probe < /dev/null 2>&1 | tee /tmp/snkeep.txt
+          # Nothing removed is exit 1; the output and snap's own list say what happened.
+          timeout 300 ./mo uninstall --yes mole-probe < /dev/null 2>&1 | tee /tmp/snkeep.txt || true
           grep -q 'keeps data in' /tmp/snkeep.txt
           snap list mole-probe
           rm -rf ~/snap/mole-probe
