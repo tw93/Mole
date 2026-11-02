@@ -2536,6 +2536,40 @@ EOF
     }
 }
 
+@test "official_uninstaller_vendor routes TeamViewer and the antivirus apps to their own uninstallers" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+expect() {
+    local got=""
+    got=$(official_uninstaller_vendor "$1" "${3:-}" "") || got=""
+    [[ "$got" == "$2" ]] || echo "MISMATCH|$1|$got|want $2"
+}
+expect com.teamviewer.TeamViewer TeamViewer
+expect com.teamviewer.TeamViewerQS TeamViewer
+expect com.avast.avast Avast
+expect com.avg.hub AVG
+expect com.example.app AVG "AVG AntiVirus"
+expect com.malwarebytes.mbam.frontend.application Malwarebytes
+expect com.bitdefender.antivirusformac Bitdefender
+expect com.intego.virusbarrier.app Intego
+expect com.kaspersky.kav.gui Kaspersky
+expect com.symantec.nfm Norton
+expect com.trendmicro.tmsm.mainui "Trend Micro"
+expect com.adobe.gcclient "Adobe Genuine Service"
+# The same vendors' ordinary apps stay ordinary.
+expect com.kaspersky.passwordmanager ""
+expect com.intego.washingmachine ""
+expect com.bitdefender.virusscanner ""
+expect com.adobe.Photoshop ""
+echo DONE
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"MISMATCH|"* ]] || { echo "$output"; return 1; }
+}
+
 @test "batch_uninstall_applications blocks official-uninstaller apps" {
     mkdir -p "$HOME/Applications/Falcon.app"
 
