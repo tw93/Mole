@@ -231,9 +231,11 @@ type shFileOpStructW struct {
 }
 
 var (
-	shell32                = windows.NewLazySystemDLL("shell32.dll")
-	procSHFileOperationW   = shell32.NewProc("SHFileOperationW")
-	procSHQueryRecycleBinW = shell32.NewProc("SHQueryRecycleBinW")
+	kernel32                   = windows.NewLazySystemDLL("kernel32.dll")
+	procGetCompressedFileSizeW = kernel32.NewProc("GetCompressedFileSizeW")
+	shell32                    = windows.NewLazySystemDLL("shell32.dll")
+	procSHFileOperationW       = shell32.NewProc("SHFileOperationW")
+	procSHQueryRecycleBinW     = shell32.NewProc("SHQueryRecycleBinW")
 )
 
 // shQueryRBInfo mirrors SHQUERYRBINFO with its 64-bit natural alignment.
@@ -327,4 +329,29 @@ func requireRecycleBinVolume(absPath string) ([]uint16, error) {
 		return nil, fmt.Errorf("the Recycle Bin is not available for %s", absPath)
 	}
 	return volume, nil
+}
+
+// diskSize reads the attributes FindNextFile already returned; only a
+// placeholder, sparse or compressed file costs one extra metadata query.
+func diskSize(path string, info fs.FileInfo) int64 {
+	data, ok := info.Sys().(*syscall.Win32FileAttributeData)
+	if !ok {
+		return info.Size()
+	}
+	return onDiskSize(path, info.Size(), data.FileAttributes, compressedFileSize)
+}
+
+// compressedFileSize asks for the allocated bytes of a sparse, compressed or
+// partly downloaded file. It reads metadata only and recalls no file data.
+func compressedFileSize(path string) (int64, error) {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	var high uint32
+	low, _, callErr := procGetCompressedFileSizeW.Call(uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(&high)))
+	if uint32(low) == 0xFFFFFFFF && callErr != windows.ERROR_SUCCESS {
+		return 0, callErr
+	}
+	return int64(high)<<32 | int64(uint32(low)), nil
 }

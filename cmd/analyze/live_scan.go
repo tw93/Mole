@@ -201,7 +201,7 @@ func readLiveScanInitialEntries(root string) (scanResult, []liveScanTarget, erro
 			transient = transient || isTransientFailure(err)
 			continue
 		}
-		size := info.Size()
+		size := diskSize(fullPath, info)
 		totalSize += size
 		totalFiles++
 		entries = append(entries, dirEntry{

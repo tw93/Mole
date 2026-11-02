@@ -334,7 +334,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 			noteFailure(err)
 			continue
 		}
-		size := info.Size()
+		size := diskSize(fullPath, info)
 		atomic.AddInt64(&total, size)
 		localFilesScanned++
 		localBytesScanned += size
@@ -523,7 +523,7 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 				failures.record(err)
 				continue
 			}
-			localBytes += info.Size()
+			localBytes += diskSize(filepath.Join(dirPath, entry.Name()), info)
 			localFiles++
 		}
 

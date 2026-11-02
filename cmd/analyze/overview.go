@@ -133,7 +133,7 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 			failures.record(err)
 			total += size
 		} else {
-			total += info.Size()
+			total += diskSize(filepath.Join(dir, entry.Name()), info)
 		}
 	}
 
