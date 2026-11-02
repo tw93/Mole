@@ -465,6 +465,53 @@ desktop() {
     [[ "$output" != *"$HOME/.config/Code"* ]]
 }
 
+@test "xdg-ninja rows are offered with their class, caches selected and data not" {
+    mkdir -p "$HOME/.nvim" "$HOME/.MakeMKV"
+    touch "$HOME/.nvimlog" "$HOME/.nviminfo" "$HOME/MakeMKV_log.txt" "$HOME/.alacritty.yml"
+    mole_run uninstall 'mole_app_leftovers pacman neovim neovim; mole_app_leftovers aur makemkv makemkv; mole_app_leftovers pacman alacritty Alacritty'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"data	$HOME/.nvim"$'\n'* ]]
+    [[ "$output" == *"data	$HOME/.nviminfo"* ]]
+    [[ "$output" == *"cache	$HOME/.nvimlog"* ]]
+    [[ "$output" == *"data	$HOME/.MakeMKV"* ]]
+    [[ "$output" == *"cache	$HOME/MakeMKV_log.txt"* ]]
+    [[ "$output" == *"data	$HOME/.alacritty.yml"* ]]
+    [ -z "$(grep -x "data	$HOME/.nvimlog" <<< "$output")" ]
+    mole_run uninstall '
+        APP_KIND=(pacman); APP_ID=(neovim); APP_NAME=(Neovim); APP_DESKTOPS=(nvim); APP_EXEC=(""); SELECTED=(0); WITH_DATA=false
+        package_wants_links() { :; }; collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}=${LEFT_ON[j]}"; done'
+    [[ "$output" == *"$HOME/.nvimlog=true"* ]]
+    [[ "$output" == *"$HOME/.nvim=false"* ]]
+}
+
+@test "an xdg-ninja path another installed app maps to stays, and ~/.mozilla waits for the whole Mozilla family" {
+    mkdir -p "$HOME/.mozilla/firefox"
+    touch "$HOME/.vimrc"
+    mole_run uninstall '
+        APP_KIND=(pacman pacman); APP_ID=(vim gvim); APP_NAME=(Vim GVim); APP_DESKTOPS=(vim gvim); APP_EXEC=("" ""); SELECTED=(0); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers; printf "%s\n" "${LEFT_PATH[@]}"'
+    [ "$status" -eq 0 ]
+    [ -z "$(grep -xF "$HOME/.vimrc" <<< "$output")" ]
+    mole_run uninstall '
+        APP_KIND=(pacman aur); APP_ID=(firefox icecat); APP_NAME=(Firefox IceCat); APP_DESKTOPS=(firefox icecat); APP_EXEC=("" ""); SELECTED=(0); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers; printf "%s\n" "${LEFT_PATH[@]}"'
+    [ -z "$(grep -xF "$HOME/.mozilla" <<< "$output")" ]
+    mole_run uninstall '
+        APP_KIND=(pacman); APP_ID=(firefox); APP_NAME=(Firefox); APP_DESKTOPS=(firefox); APP_EXEC=(""); SELECTED=(0); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}=${LEFT_ON[j]}=${LEFT_NOTE[j]}"; done'
+    [[ "$output" == *"$HOME/.mozilla=false=browser profile"* ]]
+}
+
+@test "xdg-ninja paths that are shared, credentials or another program's are never offered" {
+    mkdir -p "$HOME/.purple" "$HOME/.vnc" "$HOME/.sane" "$HOME/.arduino15" "$HOME/Zotero" "$HOME/.claude"
+    touch "$HOME/.steampid" "$HOME/.notmuch-config" "$HOME/.claude.json"
+    mole_run uninstall 'for p in pidgin tigervnc xsane arduino zotero claude-code steam notmuch; do mole_app_leftovers pacman "$p" "$p"; done'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
 @test "the plan shows each leftover's size and the total" {
     mkdir -p "$HOME/.cache/tool"
     head -c 200000 /dev/zero > "$HOME/.cache/tool/blob"

@@ -424,9 +424,97 @@ mole_app_alias_paths() {
         visual-studio-code-bin | visual-studio-code-insiders-bin) printf '%s\n' "$HOME/.vscode" ;;
         vscodium | vscodium-bin) printf '%s\n' "$HOME/.vscode-oss" "$MOLE_CONFIG_HOME/VSCodium" ;;
         cursor-bin | cursor) printf '%s\n' "$HOME/.cursor" "$MOLE_CONFIG_HOME/Cursor" ;;
-        firefox | firefox-esr | firefox-developer-edition) printf '%s\n' "$HOME/.mozilla" "$MOLE_CONFIG_HOME/mozilla" ;;
+        firefox | firefox-esr | firefox-developer-edition | firefox-bin | firefox-esr-bin | firefox-beta-bin | \
+            firefox-nightly | firefox-nightly-bin) printf '%s\n' "$HOME/.mozilla" "$MOLE_CONFIG_HOME/mozilla" ;;
+        # GNU IceCat and SeaMonkey keep their profiles inside ~/.mozilla too,
+        # so each one claims it while installed.
+        icecat | icecat-bin | seamonkey | seamonkey-bin) printf '%s\n' "$HOME/.mozilla" ;;
         thunderbird) printf '%s\n' "$HOME/.thunderbird" ;;
         zen-browser-bin | zen-browser) printf '%s\n' "$HOME/.zen" ;;
+    esac
+    local class path
+    while IFS=$'\t' read -r class path; do
+        [[ -n "$path" ]] && printf '%s\n' "$path"
+    done < <(mole_app_xdg_ninja_paths "$1")
+    return 0
+}
+
+# Home paths from xdg-ninja's catalog (MIT, see THIRD-PARTY-NOTICES.md),
+# proposed by scripts/xdg-ninja-aliases.py and kept only after review: the
+# package ships a launcher (uninstall lists nothing else), the path is that
+# program's alone, and it is no credential store. One row per line:
+# class<TAB>path, class as in mole_app_leftovers (cache: logs, pid and lock
+# files the app rewrites; everything else data).
+mole_app_xdg_ninja_paths() {
+    local h="$HOME"
+    case "$1" in
+        # xdg-ninja, official repositories.
+        alacritty) printf 'data\t%s\n' "$h/.alacritty.yml" ;;
+        amule) printf 'data\t%s\n' "$h/.aMule" ;;
+        antimicrox) printf 'data\t%s\n' "$h/.antimicro" ;;
+        arandr) printf 'data\t%s\n' "$h/.screenlayout" ;;
+        audacity) printf 'data\t%s\n' "$h/.audacity-data" ;;
+        boinc) printf 'data\t%s\n' "$h/.BOINC" "$h/.BOINC Manager" ;;
+        bpython) printf 'data\t%s\n' "$h/.pythonhist" ;;
+        conky) printf 'data\t%s\n' "$h/.conkyrc" ;;
+        dropbox) printf 'cache\t%s\n' "$h/.dropbox-dist" ;;
+        emacs | emacs-wayland | emacs-nox | emacs-git) printf 'data\t%s\n' "$h/.emacs.d" ;;
+        feh) printf 'data\t%s\n' "$h/.fehbg" ;;
+        fontforge) printf 'data\t%s\n' "$h/.FontForge" "$h/.PfaEdit" ;;
+        gvim | vim) printf 'data\t%s\n' "$h/.vimrc" ;;
+        htop) printf 'data\t%s\n' "$h/.htoprc" ;;
+        jgmenu) printf 'cache\t%s\n' "$h/.jgmenu-lockfile" ;;
+        lmms) printf 'data\t%s\n' "$h/.lmmsrc.xml" ;;
+        milkytracker) printf 'data\t%s\n' "$h/.milkytracker_config" ;;
+        neovim) printf 'data\t%s\n' "$h/.nvim" "$h/.nviminfo" && printf 'cache\t%s\n' "$h/.nvimlog" ;;
+        nvidia-settings) printf 'data\t%s\n' "$h/.nvidia-settings-rc" ;;
+        octave) printf 'data\t%s\n' "$h/.octaverc" "$h/.octave_hist" "$h/.octave_packages" ;;
+        r) printf 'data\t%s\n' "$h/.Rprofile" "$h/.Rhistory" ;;
+        racket) printf 'data\t%s\n' "$h/.racketrc" ;;
+        rofi) printf 'cache\t%s\n' "$h/.rofi.pid" ;;
+        scite) printf 'data\t%s\n' "$h/.SciTE.session" "$h/.SciTEUser.properties" ;;
+        scummvm) printf 'data\t%s\n' "$h/.scummvmrc" ;;
+        teamspeak3) printf 'data\t%s\n' "$h/.ts3client" ;;
+        virtualbox) printf 'data\t%s\n' "$h/.VirtualBox" ;;
+        visidata) printf 'data\t%s\n' "$h/.visidatarc" ;;
+        xpdf) printf 'data\t%s\n' "$h/.xpdfrc" ;;
+        # xdg-ninja, AUR.
+        anydesk-bin) printf 'data\t%s\n' "$h/.anydesk" ;;
+        asunder) printf 'cache\t%s\n' "$h/.asunder_album_artist" "$h/.asunder_album_genre" "$h/.asunder_album_title" ;;
+        burpsuite) printf 'data\t%s\n' "$h/.BurpSuite" ;;
+        bytecode-viewer) printf 'data\t%s\n' "$h/.Bytecode-Viewer" ;;
+        citra) printf 'data\t%s\n' "$h/.citra-emu" ;;
+        cryptomator) printf 'data\t%s\n' "$h/.Cryptomator" ;;
+        dia-git) printf 'data\t%s\n' "$h/.dia" ;;
+        emulationstation-de) printf 'data\t%s\n' "$h/.emulationstation" "$h/ES-DE" ;;
+        gitkraken) printf 'data\t%s\n' "$h/.gk" ;;
+        gliv) printf 'data\t%s\n' "$h/.glivrc" ;;
+        google-earth-pro) printf 'data\t%s\n' "$h/.googleearth" ;;
+        icaclient) printf 'data\t%s\n' "$h/.ICAClient" ;;
+        itch-bin) printf 'data\t%s\n' "$h/.itch" ;;
+        jameica) printf 'data\t%s\n' "$h/.jameica.properties" ;;
+        lens-bin) printf 'data\t%s\n' "$h/.k8slens" ;;
+        logseq-desktop-bin) printf 'data\t%s\n' "$h/.logseq" ;;
+        lunar-client) printf 'data\t%s\n' "$h/.lunarclient" ;;
+        makemkv) printf 'data\t%s\n' "$h/.MakeMKV" && printf 'cache\t%s\n' "$h/MakeMKV_log.txt" ;;
+        maptool) printf 'data\t%s\n' "$h/.maptool-rptools" ;;
+        mathematica) printf 'data\t%s\n' "$h/.Mathematica" ;;
+        minetest-git) printf 'data\t%s\n' "$h/.minetest" ;;
+        neverball) printf 'data\t%s\n' "$h/.neverball-dev" ;;
+        openshot) printf 'data\t%s\n' "$h/.openshot_qt" ;;
+        osmos) printf 'data\t%s\n' "$h/.Osmos" ;;
+        parsec-bin) printf 'data\t%s\n' "$h/.parsec" ;;
+        portfolio-performance) printf 'data\t%s\n' "$h/.PortfolioPerformance" ;;
+        proxyman-bin) printf 'data\t%s\n' "$h/.proxyman" "$h/.proxyman-data" ;;
+        scilab) printf 'data\t%s\n' "$h/.Scilab" ;;
+        simplescreenrecorder) printf 'data\t%s\n' "$h/.ssr" ;;
+        stremio) printf 'data\t%s\n' "$h/.stremio-server" ;;
+        texmacs) printf 'data\t%s\n' "$h/.TeXmacs" ;;
+        viber) printf 'data\t%s\n' "$h/.ViberPC" ;;
+        visual-studio-code-insiders-bin) printf 'data\t%s\n' "$h/.vscode-insiders" ;;
+        vmware-workstation) printf 'data\t%s\n' "$h/.vmware" ;;
+        weasis-bin) printf 'data\t%s\n' "$h/.weasis" ;;
+        x3270) printf 'data\t%s\n' "$h/.x3270pro" "$h/.x3270connect" ;;
     esac
     return 0
 }
@@ -508,6 +596,11 @@ mole_app_leftovers() {
         emit data "$MOLE_CONFIG_HOME/systemd/user/$d.socket"
         [[ "$kind" == appimage ]] || emit cache "$MOLE_DATA_HOME/applications/$d.desktop"
     done
+    # xdg-ninja rows first, so their class wins over the alias table's data.
+    local class
+    while IFS=$'\t' read -r class d; do
+        [[ -n "$d" ]] && emit "$class" "$d"
+    done < <(mole_app_xdg_ninja_paths "$id")
     while IFS= read -r d; do
         [[ -n "$d" ]] && emit data "$d"
     done < <(mole_app_alias_paths "$id")
