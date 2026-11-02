@@ -280,8 +280,6 @@ Developer tools|Parcel cache|$HOME/.parcel-cache|parcel,node
 Developer tools|TypeScript cache|$c/typescript|tsserver,node
 Developer tools|Prisma engines cache|$c/prisma|prisma,node
 Developer tools|Puppeteer browsers|$c/puppeteer|node,chrome,chrome-headless-shell
-Developer tools|Playwright browsers|$c/ms-playwright|node,cmd:/ms-playwright/
-Developer tools|Cypress binaries|$c/Cypress|Cypress,node
 Developer tools|sccache|$c/sccache|sccache
 Developer tools|pip cache|$c/pip|pip,pip3,python,python3
 Developer tools|uv cache|$c/uv|uv,uvx|tool:uv

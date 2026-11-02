@@ -516,30 +516,14 @@ pkg_cache_run() {
     [[ "$output" == *"total=2048 items=3"* ]]
 }
 
-# pgrep that never sees a node process, so a node the test machine happens to
-# run cannot decide a test; every other question goes to the real pgrep.
-pgrep_without_node() {
-    local real
-    real=$(command -v pgrep)
-    fake_command pgrep 'for a in "$@"; do [[ "$a" == node ]] && exit 1; done; exec '"$real"' "$@"'
-}
-
-@test "Playwright, Cypress and sccache wait for their owners and go when idle" {
-    pgrep_without_node
+@test "sccache waits for its server and goes when idle; Playwright and Cypress browsers are never cleaned" {
     make_cache "$HOME/.cache/ms-playwright/chromium-1140"
     make_cache "$HOME/.cache/Cypress/13.6.0"
     make_cache "$HOME/.cache/sccache/a"
     start_owner sccache
-    # A browser Playwright started carries its folder on the command line.
-    bash -c 'sleep 30; :' "$HOME/.cache/ms-playwright/chromium-1140/chrome-linux/chrome" &
-    PW_PID=$!
     mole_run clean 'clean_user_rules'
-    kill "$PW_PID"; wait "$PW_PID" 2> /dev/null || true
     [[ "$output" == *"sccache · skipped while sccache is running"* ]]
-    [[ "$output" == *"Playwright browsers · skipped while"*"is running"* ]]
     [ -f "$HOME/.cache/sccache/a/entry/blob" ]
-    [ -f "$HOME/.cache/ms-playwright/chromium-1140/entry/blob" ]
-    [ ! -e "$HOME/.cache/Cypress/13.6.0" ]
     kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
     OWNER_PID=""
 
@@ -548,8 +532,13 @@ pgrep_without_node() {
     mole_run clean 'mole_whitelist_load; clean_user_rules'
     [[ "$output" == *"sccache · skipped (whitelist)"* ]]
     [ -f "$HOME/.cache/sccache/a/entry/blob" ]
-    [ ! -e "$HOME/.cache/ms-playwright/chromium-1140" ]
-    [ -d "$HOME/.cache/ms-playwright" ]
+    rm "$HOME/.config/mole/whitelist"
+    mole_run clean 'clean_user_rules'
+    [ ! -e "$HOME/.cache/sccache/a" ]
+    # Like Mole CLI (macOS): a browser revision is a 100-500 MB re-download
+    # and nothing proves the user is done with it.
+    [ -f "$HOME/.cache/ms-playwright/chromium-1140/entry/blob" ]
+    [ -f "$HOME/.cache/Cypress/13.6.0/entry/blob" ]
 }
 
 @test "Steam: only shadercache children go, once, never through ~/.steam/steam or out of the root" {
