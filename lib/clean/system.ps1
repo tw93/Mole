@@ -400,10 +400,37 @@ function Test-MoleDeliveryOptimizationClearable {
         $File.IsPinned -eq $false -and $size -gt 0)
 }
 
+# A wildcard row whose literal prefix may overlap the root is resolved against
+# what is on disk: every ancestor and every entry below the root is checked,
+# without entering links. A match, a link, an unreadable entry or a walk that
+# does not finish keeps every file.
+function Test-MoleDeliveryOptimizationTreeWhitelisted {
+    param([string]$Root, $State)
+    # A trimmed drive root such as D: means the current folder on that drive.
+    if ($Root -match '^[A-Za-z]:$') { $Root += '\' }
+    try {
+        $parent = Split-Path -Path $Root -Parent
+        while ($parent) {
+            if (Test-Whitelisted -Path $parent -State $State) { return $true }
+            $next = Split-Path -Path $parent -Parent
+            if (-not $next -or $next -eq $parent) { break }
+            $parent = $next
+        }
+        foreach ($item in @(Get-TreeItemsNoFollow -Path $Root)) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $true }
+            if (Test-Whitelisted -Path $item.FullName -State $State) { return $true }
+        }
+        return $false
+    }
+    catch {
+        Write-Debug "Delivery Optimization tree unverified: $_"
+        return $true
+    }
+}
+
 # The service deletes inside its root, so a whitelist row on the root, above
 # it, or anywhere below it keeps every file; unknown protection keeps them too.
-# A wildcard can cover an unknown descendant. Retain the root whenever the
-# literal prefix before its first wildcard can overlap this subtree.
+# A wildcard row that may reach this subtree is checked against the tree.
 function Test-MoleDeliveryOptimizationProtected {
     param([string]$Root)
     $state = Get-WhitelistState
@@ -415,6 +442,7 @@ function Test-MoleDeliveryOptimizationProtected {
     foreach ($candidate in $roots) {
         if (Test-Whitelisted -Path $candidate -State $state) { return $true }
         $prefix = $candidate + '\'
+        $walk = $false
         foreach ($entry in @($state.Patterns)) {
             $pattern = [string]$entry
             if (-not $pattern) { continue }
@@ -423,8 +451,9 @@ function Test-MoleDeliveryOptimizationProtected {
             if ($wildcard -lt 0) { continue }
             $fixed = $pattern.Substring(0, $wildcard)
             if (-not $fixed -or $fixed.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
-                    $prefix.StartsWith($fixed, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+                    $prefix.StartsWith($fixed, [StringComparison]::OrdinalIgnoreCase)) { $walk = $true }
         }
+        if ($walk -and (Test-MoleDeliveryOptimizationTreeWhitelisted -Root $candidate -State $state)) { return $true }
     }
     return $false
 }

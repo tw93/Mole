@@ -683,35 +683,76 @@ Describe 'Delivery Optimization files' {
         Should -Invoke Invoke-CimMethod -Times 0 -Exactly
     }
 
-    It 'Keeps everything for a wildcard whitelist row that reaches into the cache: <Pattern>' -ForEach @(
-        @{ Pattern = 'C:\Windows\ServiceProfiles\*\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\x' }
-        @{ Pattern = 'C:\Windows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache\a*' }
-        @{ Pattern = '*\DeliveryOptimization\*' }
-    ) {
-        Set-Content -LiteralPath $script:Config.WhitelistFile -Value $Pattern
-        Clear-DeliveryOptimizationFiles
-        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+    Context 'wildcard rows that may reach the cache, checked against a fixture tree' {
+        BeforeEach {
+            $script:DoBase = Join-Path $TestDrive ('do' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+            $script:DoRoot = Join-Path $script:DoBase 'NetworkService\DeliveryOptimization\Cache'
+            New-Item -ItemType Directory -Path (Join-Path $script:DoRoot 'Downloads') -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $script:DoRoot 'ab') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $script:DoRoot 'ab\payload') -Value 'x'
+            Set-Content -LiteralPath (Join-Path $script:DoRoot 'x') -Value 'x'
+        }
+
+        It 'Keeps everything when the row matches an entry on disk in preview <Preview>: <Pattern>' -ForEach @(
+            @{ Pattern = '{base}\*\DeliveryOptimization\Cache\x'; Preview = $false }
+            @{ Pattern = '{root}\a*'; Preview = $false }
+            @{ Pattern = '*\DeliveryOptimization\*'; Preview = $false }
+            @{ Pattern = '{base}\*\DeliveryOptimization\Cache\Downloads'; Preview = $false }
+            @{ Pattern = '{base}\*\DeliveryOptimization\Cache\Downloads'; Preview = $true }
+            @{ Pattern = '*\DeliveryOptimization\Cache\??*'; Preview = $false }
+            @{ Pattern = '*\DeliveryOptimization\Cache\??*'; Preview = $true }
+            @{ Pattern = '*\DeliveryOptimization\Cache\[a-z]*\payload'; Preview = $false }
+            @{ Pattern = '*\DeliveryOptimization\Cache\[a-z]*\payload'; Preview = $true }
+            @{ Pattern = '{base}\Net?orkService'; Preview = $false }
+        ) {
+            Set-DryRunMode -Enabled $Preview
+            Set-Content -LiteralPath $script:Config.WhitelistFile -Value $Pattern.Replace('{base}', $script:DoBase).Replace('{root}', $script:DoRoot)
+            Clear-DeliveryOptimizationFiles
+            Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+            (Get-CleanupStats).TotalSizeKB | Should -Be 0
+        }
+
+        It 'Still clears when the row matches nothing in the tree in preview <Preview>: <Pattern>' -ForEach @(
+            @{ Pattern = '*\node_modules'; Preview = $false }
+            @{ Pattern = '*\node_modules'; Preview = $true }
+            @{ Pattern = '{base}\*\DeliveryOptimization\Cache\missing'; Preview = $false }
+            @{ Pattern = '*.iso'; Preview = $false }
+        ) {
+            Set-DryRunMode -Enabled $Preview
+            Set-Content -LiteralPath $script:Config.WhitelistFile -Value $Pattern.Replace('{base}', $script:DoBase)
+            Clear-DeliveryOptimizationFiles
+            (Get-CleanupStats).TotalSizeKB | Should -Be 3072
+            if (-not $Preview) { Should -Invoke Invoke-CimMethod -Times 2 -Exactly }
+        }
+
+        It 'Keeps everything when the tree cannot be read' {
+            Remove-Item -LiteralPath $script:DoBase -Recurse -Force
+            Set-Content -LiteralPath $script:Config.WhitelistFile -Value '*\node_modules'
+            Clear-DeliveryOptimizationFiles
+            Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+        }
+
+        It 'Keeps everything when the tree holds a link' {
+            $target = Join-Path $script:DoBase 'elsewhere'
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+            New-Item -ItemType Junction -Path (Join-Path $script:DoRoot 'link') -Target $target | Out-Null
+            Set-Content -LiteralPath $script:Config.WhitelistFile -Value '*\node_modules'
+            Clear-DeliveryOptimizationFiles
+            Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+        }
+
+        It 'Keeps everything when the walk does not finish' {
+            Mock Get-TreeItemsNoFollow { throw 'Cleanup walk timed out' }
+            Set-Content -LiteralPath $script:Config.WhitelistFile -Value '*\node_modules'
+            Clear-DeliveryOptimizationFiles
+            Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+        }
     }
 
     It 'Still clears when an unrelated wildcard row is whitelisted' {
         Set-Content -LiteralPath $script:Config.WhitelistFile -Value "$env:USERPROFILE\Downloads\*.iso"
         Clear-DeliveryOptimizationFiles
         Should -Invoke Invoke-CimMethod -Times 2 -Exactly
-    }
-
-    It 'Keeps wildcard-protected descendants without probing a single child in preview <Preview>: <Pattern>' -ForEach @(
-        @{ Pattern = 'C:\*\DeliveryOptimization\Cache\Downloads'; Preview = $false }
-        @{ Pattern = 'C:\*\DeliveryOptimization\Cache\Downloads'; Preview = $true }
-        @{ Pattern = '*\DeliveryOptimization\Cache\??*'; Preview = $false }
-        @{ Pattern = '*\DeliveryOptimization\Cache\??*'; Preview = $true }
-        @{ Pattern = '*\DeliveryOptimization\Cache\[a-z]*\payload'; Preview = $false }
-        @{ Pattern = '*\DeliveryOptimization\Cache\[a-z]*\payload'; Preview = $true }
-    ) {
-        Set-DryRunMode -Enabled $Preview
-        Set-Content -LiteralPath $script:Config.WhitelistFile -Value $Pattern
-        Clear-DeliveryOptimizationFiles
-        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
-        (Get-CleanupStats).TotalSizeKB | Should -Be 0
     }
 
     It 'Still clears beside an unrelated partial directory wildcard' {
