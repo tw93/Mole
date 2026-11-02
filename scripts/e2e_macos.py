@@ -446,7 +446,7 @@ def analyze(run):
         term.expect(r"Filter: " + re.escape(run.token) + r"\s+\(1 matches\)", 15)
         mark = len(term.buf)
         term.send(b"\x7f")
-        confirm = term.expect(r"Delete: ([^\n]*?), ", 15, since=mark).group(1)
+        confirm = term.expect(r"Move to Trash: ([^\n]*?), ", 15, since=mark).group(1)
         if run.token not in confirm:
             term.send(b"\x1b")
             raise StepFailed(f"the delete prompt targets {confirm!r}; cancelled")
