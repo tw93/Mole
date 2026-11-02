@@ -158,6 +158,40 @@ function Test-MoleDiskPowerReady {
     catch { return $false }
 }
 
+function Get-MoleExtraTrimVolumes {
+    # Other fixed NTFS/ReFS drives Windows reports as Healthy, only on a disk
+    # Windows reports as a Healthy SSD. A hard disk is never defragmented here, and unknown media or health
+    # keeps the drive untouched. A failed disk or volume inventory adds nothing.
+    # A property a provider leaves out reads as unknown and skips only that drive.
+    param([string]$SystemDriveLetter)
+    $read = { param($Object, $Name) $p = $Object.PSObject.Properties[$Name]; if ($p) { [string]$p.Value } else { '' } }
+    try {
+        $physical = @(Get-PhysicalDisk -ErrorAction Stop)
+        $letters = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($volume in @(Get-Volume -ErrorAction Stop)) {
+            $letter = & $read $volume 'DriveLetter'
+            if ($letter -notmatch '^[A-Za-z]$' -or $letter -eq $SystemDriveLetter) { continue }
+            if ((& $read $volume 'DriveType') -ne 'Fixed' -or (& $read $volume 'FileSystemType') -notin @('NTFS', 'ReFS')) { continue }
+            if ((& $read $volume 'HealthStatus') -ne 'Healthy') { continue }
+            # A volume whose partition or disk cannot be read is skipped on its own.
+            try {
+                $partitions = @(Get-Partition -DriveLetter $letter -ErrorAction Stop)
+                if ($partitions.Count -ne 1) { continue }
+                $diskNumber = & $read $partitions[0] 'DiskNumber'
+                if ($diskNumber -notmatch '^\d+$') { continue }
+                $disks = @(Get-Disk -Number ([uint32]$diskNumber) -ErrorAction Stop)
+            }
+            catch { continue }
+            if ($disks.Count -ne 1 -or (& $read $disks[0] 'HealthStatus') -ne 'Healthy') { continue }
+            $match = @($physical | Where-Object { (& $read $_ 'DeviceId') -eq $diskNumber })
+            if ($match.Count -ne 1 -or (& $read $match[0] 'MediaType') -ne 'SSD' -or (& $read $match[0] 'HealthStatus') -ne 'Healthy') { continue }
+            $letters.Add($letter.ToUpperInvariant())
+        }
+        return $letters.ToArray()
+    }
+    catch { return @() }
+}
+
 function Optimize-DiskDrive {
     <#
     .SYNOPSIS
@@ -182,6 +216,9 @@ function Optimize-DiskDrive {
     if ($script:DryRun) {
         Write-Host "  $esc[33m$($script:Icons.DryRun)$esc[0m Would optimize $env:SystemDrive"
         $script:OptimizationsApplied++
+        foreach ($letter in @(Get-MoleExtraTrimVolumes -SystemDriveLetter (Get-SystemDriveLetter))) {
+            Write-Host "  $esc[33m$($script:Icons.DryRun)$esc[0m Would retrim ${letter}:"
+        }
         return
     }
 
@@ -203,6 +240,7 @@ function Optimize-DiskDrive {
         Write-MoleOperation -Action "OPTIMIZED" -Path "${systemDriveLetter}:" -Detail "Optimize-Volume"
         Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Drive optimization completed"
         $script:OptimizationsApplied++
+        Invoke-MoleExtraRetrim -SystemDriveLetter $systemDriveLetter
     }
     catch {
         $message = $_.Exception.Message
@@ -215,6 +253,23 @@ function Optimize-DiskDrive {
         $volumeLabel = if ($env:SystemDrive) { $env:SystemDrive } else { "system drive" }
         Write-MoleOperation -Action "FAILED" -Path $volumeLabel -Detail "Optimize-Volume: $message"
         Write-Host "  $esc[31m$($script:Icons.Error)$esc[0m Disk optimization failed: $message"
+    }
+}
+
+function Invoke-MoleExtraRetrim {
+    param([string]$SystemDriveLetter)
+    $esc = [char]27
+    foreach ($letter in @(Get-MoleExtraTrimVolumes -SystemDriveLetter $SystemDriveLetter)) {
+        try {
+            Start-Spinner "Retrimming drive ${letter}:..."
+            try { $null = Optimize-Volume -DriveLetter $letter -ReTrim -ErrorAction Stop } finally { Stop-Spinner }
+            Write-MoleOperation -Action "OPTIMIZED" -Path "${letter}:" -Detail "Optimize-Volume -ReTrim"
+            Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Retrimmed drive ${letter}:"
+        }
+        catch {
+            Write-MoleOperation -Action "FAILED" -Path "${letter}:" -Detail "Optimize-Volume -ReTrim: $($_.Exception.Message)"
+            Write-Host "  $esc[31m$($script:Icons.Error)$esc[0m Retrim of drive ${letter}: failed: $($_.Exception.Message)"
+        }
     }
 }
 

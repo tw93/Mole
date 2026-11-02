@@ -28,8 +28,8 @@ BeforeAll {
     function script:Get-PhysicalDisk { }
     function script:Get-Volume { param($DriveLetter) }
     function script:Get-Partition { param($DriveLetter) }
-    function script:Get-Disk { }
-    function script:Optimize-Volume { param($DriveLetter) }
+    function script:Get-Disk { param($Number) }
+    function script:Optimize-Volume { param($DriveLetter, [switch]$ReTrim) }
     function script:Clear-DnsClientCache { }
     function script:Repair-WindowsImage { param([switch]$Online, [switch]$CheckHealth, [switch]$RestoreHealth) }
 }
@@ -146,6 +146,97 @@ Describe "mo optimize steps" {
         Main 6>$null
         Should -Invoke Get-Disk -Times 1 -Exactly
         Should -Invoke Optimize-Volume -Times $Writes -Exactly
+    }
+
+    It 'Retrims only other fixed drives on a known healthy SSD and never defragments them' {
+        $DryRun = $false; $ShowHelp = $false; $DebugMode = $false
+        Mock Get-PhysicalDisk { @(
+            [pscustomobject]@{ DeviceId='0'; FriendlyName='System SSD'; MediaType='SSD'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DeviceId='1'; FriendlyName='Data SSD'; MediaType='SSD'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DeviceId='2'; FriendlyName='Data HDD'; MediaType='HDD'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DeviceId='3'; FriendlyName='Old SSD'; MediaType='SSD'; HealthStatus='Warning' },
+            [pscustomobject]@{ DeviceId='4'; FriendlyName='USB'; MediaType='Unspecified'; HealthStatus='Healthy' }
+        ) }
+        Mock Get-Volume { @(
+            [pscustomobject]@{ DriveLetter='C'; DriveType='Fixed'; FileSystemType='NTFS' },
+            [pscustomobject]@{ DriveLetter='D'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='E'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='F'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='G'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='H'; DriveType='Fixed'; FileSystemType='FAT32'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='J'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Warning' },
+            [pscustomobject]@{ DriveLetter='K'; DriveType='Fixed'; FileSystemType='NTFS' },
+            [pscustomobject]@{ DriveLetter='I'; DriveType='Removable'; FileSystemType='NTFS' }
+        ) } -ParameterFilter { -not $DriveLetter }
+        Mock Get-Partition { [pscustomobject]@{ DiskNumber = @{C=0;D=1;E=2;F=3;G=4;H=1;I=1;J=1;K=1}[$DriveLetter]; DriveLetter=$DriveLetter } }
+        Mock Get-Disk { [pscustomobject]@{ Number=$Number; HealthStatus = $(if ($Number -eq 3) { 'Warning' } else { 'Healthy' }) } } -ParameterFilter { $null -ne $Number }
+        Main 6>$null
+        Should -Invoke Optimize-Volume -Times 1 -Exactly -ParameterFilter { $DriveLetter -eq 'C' -and -not $ReTrim }
+        Should -Invoke Optimize-Volume -Times 1 -Exactly -ParameterFilter { $DriveLetter -eq 'D' -and $ReTrim }
+        Should -Invoke Optimize-Volume -Times 2 -Exactly
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'OPTIMIZED' -and $Path -eq 'D:' -and $Detail -eq 'Optimize-Volume -ReTrim' }
+    }
+
+    It 'Lists the extra drive it would retrim in a dry run and retrims nothing' {
+        $DryRun = $true; $ShowHelp = $false; $DebugMode = $false
+        Mock Get-PhysicalDisk { @(
+            [pscustomobject]@{ DeviceId='0'; FriendlyName='System SSD'; MediaType='SSD'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DeviceId='1'; FriendlyName='Data SSD'; MediaType='SSD'; HealthStatus='Healthy' }
+        ) }
+        Mock Get-Volume { @(
+            [pscustomobject]@{ DriveLetter='C'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='D'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' }
+        ) } -ParameterFilter { -not $DriveLetter }
+        Mock Get-Partition { [pscustomobject]@{ DiskNumber = @{C=0;D=1}[$DriveLetter] } }
+        Mock Get-Disk { [pscustomobject]@{ Number=$Number; HealthStatus='Healthy' } } -ParameterFilter { $null -ne $Number }
+        $output = Main 6>&1 | Out-String
+        $output | Should -Match 'Would retrim D:'
+        Should -Invoke Optimize-Volume -Times 0 -Exactly
+    }
+
+    It 'Skips only a volume whose partition cannot be read and still retrims the others' {
+        $DryRun = $false; $ShowHelp = $false; $DebugMode = $false
+        Mock Get-PhysicalDisk { @(
+            [pscustomobject]@{ DeviceId='0'; FriendlyName='System SSD'; MediaType='SSD'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DeviceId='1'; FriendlyName='Data SSD'; MediaType='SSD'; HealthStatus='Healthy' }
+        ) }
+        Mock Get-Volume { @(
+            [pscustomobject]@{ DriveLetter='C'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='L'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DriveLetter='D'; DriveType='Fixed'; FileSystemType='NTFS'; HealthStatus='Healthy' }
+        ) } -ParameterFilter { -not $DriveLetter }
+        Mock Get-Partition { [pscustomobject]@{ DiskNumber = @{C=0;D=1}[$DriveLetter] } }
+        Mock Get-Partition { throw 'no partition for this volume' } -ParameterFilter { "$DriveLetter" -eq 'L' }
+        Mock Get-Disk { [pscustomobject]@{ Number=$Number; HealthStatus='Healthy' } } -ParameterFilter { $null -ne $Number }
+        Main 6>$null
+        Should -Invoke Optimize-Volume -Times 1 -Exactly -ParameterFilter { $DriveLetter -eq 'D' -and $ReTrim }
+        Should -Invoke Optimize-Volume -Times 0 -Exactly -ParameterFilter { $DriveLetter -eq 'L' }
+    }
+
+    It 'Adds no extra drive when the volume inventory fails' {
+        $DryRun = $false; $ShowHelp = $false; $DebugMode = $false
+        Mock Get-Volume { throw 'storage provider unavailable' } -ParameterFilter { -not $DriveLetter }
+        Main 6>$null
+        Should -Invoke Optimize-Volume -Times 1 -Exactly
+        Should -Invoke Optimize-Volume -Times 0 -Exactly -ParameterFilter { $ReTrim }
+    }
+
+    It 'Reports a failed extra retrim as failed' {
+        $DryRun = $false; $ShowHelp = $false; $DebugMode = $false
+        Mock Get-PhysicalDisk { @(
+            [pscustomobject]@{ DeviceId='0'; FriendlyName='System SSD'; MediaType='SSD'; HealthStatus='Healthy' },
+            [pscustomobject]@{ DeviceId='1'; FriendlyName='Data SSD'; MediaType='SSD'; HealthStatus='Healthy' }
+        ) }
+        Mock Get-Volume { @(
+            [pscustomobject]@{ DriveLetter='C'; DriveType='Fixed'; FileSystemType='NTFS' },
+            [pscustomobject]@{ DriveLetter='D'; DriveType='Fixed'; FileSystemType='ReFS'; HealthStatus='Healthy' }
+        ) } -ParameterFilter { -not $DriveLetter }
+        Mock Get-Partition { [pscustomobject]@{ DiskNumber = @{C=0;D=1}[$DriveLetter] } }
+        Mock Get-Disk { [pscustomobject]@{ Number=$Number; HealthStatus='Healthy' } } -ParameterFilter { $null -ne $Number }
+        Mock Optimize-Volume { throw 'retrim refused' } -ParameterFilter { $ReTrim }
+        $output = Main 6>&1 | Out-String
+        $output | Should -Match 'Retrim of drive D: failed'
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'FAILED' -and $Path -eq 'D:' }
     }
 
     It 'Unknown disk health does not invent a critical failure' {
