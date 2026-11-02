@@ -322,9 +322,20 @@ function Remove-FromUserPath {
 
 # Reuse the host that is running the installer for the generated launchers and
 # shortcut. Get-Command only proves powershell.exe exists; policy can block it
-# while the current pwsh host still runs.
+# while the current pwsh host still runs. A Store or dotnet-tool pwsh runs from
+# a versioned $PSHOME that its next update deletes, so a pwsh host prefers the
+# pwsh.exe on PATH (the app execution alias or the MSI folder), which survives.
 function Get-InstallerPowerShellPath {
-    $exeName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $onPath = Get-Command pwsh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($onPath -and $onPath.Source) {
+            return $onPath.Source
+        }
+        $exeName = 'pwsh.exe'
+    }
+    else {
+        $exeName = 'powershell.exe'
+    }
     $path = Join-Path $PSHOME $exeName
     if (Test-Path -LiteralPath $path) {
         return $path

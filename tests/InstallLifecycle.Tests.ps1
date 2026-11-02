@@ -134,12 +134,29 @@ exit 7
         finally { $env:MOLE_TEST_CAPTURE = $saved }
     }
     It 'Uses the PowerShell host that ran the installer' {
-        $exeName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
-        $expectedHost = Join-Path $PSHOME $exeName
+        $expectedHost = Get-InstallerPowerShellPath
+        $expectedHost | Should -Match ([regex]::Escape($(if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' })) + '$')
         foreach ($name in @('mo.cmd', 'mole.cmd')) {
             $content = Get-Content -LiteralPath (Join-Path $script:SourceDir $name) -Raw
             $content | Should -Match ([regex]::Escape($expectedHost))
         }
+    }
+    It 'Keeps launchers on a PowerShell path that survives host updates' {
+        if ($PSVersionTable.PSEdition -ne 'Core') {
+            Get-InstallerPowerShellPath | Should -Be (Join-Path $PSHOME 'powershell.exe')
+            return
+        }
+        # A Store pwsh runs from a versioned $PSHOME; the alias on PATH is stable.
+        $aliasDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $aliasDir -Force | Out-Null
+        $alias = Join-Path $aliasDir 'pwsh.exe'
+        [System.IO.File]::WriteAllBytes($alias, [byte[]]@())
+        $savedPath = $env:PATH
+        try {
+            $env:PATH = $aliasDir + ';' + $savedPath
+            Get-InstallerPowerShellPath | Should -Be $alias
+        }
+        finally { $env:PATH = $savedPath }
     }
 }
 
