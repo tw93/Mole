@@ -1,7 +1,7 @@
 <p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <a href="https://github.com/tw93/Mole/tree/windows#readme">Windows</a> · <b>Linux</b></p>
 
 <div align="center">
-  <img src="https://cdn.tw93.fun/pic/cole.png" alt="Mole logo" width="120" />
+  <img src="./docs/img/mole-logo.png" alt="Mole logo" width="120" />
   <h1>Mole CLI for Linux</h1>
   <p><b>Deep clean, uninstall apps, optimize, analyze disk, and monitor your Linux desktop. Free open-source CLI.</b></p>
   <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
