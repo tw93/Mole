@@ -3578,5 +3578,8 @@ batch_uninstall_applications() {
     unset -f _restore_uninstall_traps
 
     total_size_cleaned=$((total_size_cleaned + total_size_freed))
+    # Callers turn this into the exit status, so a script that runs
+    # `mo uninstall` sees a failed app (Mole CLI (Windows) exits 1 the same way).
+    MOLE_UNINSTALL_FAILED_APPS=$((${MOLE_UNINSTALL_FAILED_APPS:-0} + failed_count))
     unset failed_items
 }
