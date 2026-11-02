@@ -489,7 +489,7 @@ func TestDeleteProgressPartialFailureRemovesSucceededPathsAndRefreshes(t *testin
 	if len(got.entries) != 1 || got.entries[0].Path != failed || got.totalSize != 20 {
 		t.Fatalf("entries=%+v total=%d, want only the failed path and 20", got.entries, got.totalSize)
 	}
-	if !strings.Contains(got.status, "Moved 1 items to Recycle Bin, some failed") {
+	if !strings.Contains(got.status, "Removed 1 items, some failed") {
 		t.Fatalf("status = %q", got.status)
 	}
 	if !got.cache[parent].NeedsRefresh {
@@ -520,6 +520,46 @@ func TestAnalyzeRowsFitNarrowTerminal(t *testing.T) {
 					t.Errorf("%s %dx%d row width %d: %q", mode, width, height, got, row)
 				}
 			}
+		}
+	}
+}
+
+// A successful shell operation can recycle, permanently delete after the
+// shell's prompt, or leave recycling unverified. Completion must not promise
+// recoverability when the message carries only the removal count.
+func TestDeleteCompletionDoesNotPromiseRecycling(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		for _, withPath := range []bool{false, true} {
+			t.Run(fmt.Sprintf("partial=%v/path=%v", partial, withPath), func(t *testing.T) {
+				var files, dirs, bytes int64
+				var current atomic.Value
+				parent := t.TempDir()
+				target := filepath.Join(parent, "removed")
+				m := model{path: parent, deleting: true, filesScanned: &files,
+					dirsScanned: &dirs, bytesScanned: &bytes, currentPath: &current}
+				msg := deleteProgressMsg{done: true, count: 1}
+				if withPath {
+					msg.removedPaths = []string{target}
+				}
+				if partial {
+					msg.err = fmt.Errorf("access denied")
+				}
+				updated, _ := m.Update(msg)
+				status := updated.(model).status
+				if partial && !withPath {
+					if !strings.HasPrefix(status, "Failed to move to Recycle Bin:") {
+						t.Fatalf("failed operation status = %q", status)
+					}
+					return
+				}
+				want := "Removed 1 items"
+				if partial {
+					want += ", some failed: access denied"
+				}
+				if status != want {
+					t.Fatalf("completion = %q, want %q", status, want)
+				}
+			})
 		}
 	}
 }

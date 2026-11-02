@@ -318,9 +318,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancelLiveScan()
 				m.cancelOverviewScans(removedPaths)
 				if msg.err != nil {
-					m.status = fmt.Sprintf("Moved %d items to Recycle Bin, some failed: %v", msg.count, msg.err)
+					m.status = fmt.Sprintf("Removed %d items, some failed: %v", msg.count, msg.err)
 				} else {
-					m.status = fmt.Sprintf("Moved %d items to Recycle Bin", msg.count)
+					m.status = fmt.Sprintf("Removed %d items", msg.count)
 				}
 
 				// Selective invalidation: only views whose size the delete
@@ -359,7 +359,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err != nil {
 				m.status = fmt.Sprintf("Failed to move to Recycle Bin: %v", msg.err)
 			} else {
-				m.status = fmt.Sprintf("Moved %d items to Recycle Bin", msg.count)
+				m.status = fmt.Sprintf("Removed %d items", msg.count)
 			}
 		}
 		return m, nil
