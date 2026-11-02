@@ -905,6 +905,13 @@ clean_orphaned_app_data() {
     rm -f "$installed_bundles"
 }
 
+# The bare-helper pass runs only where this root exists. A function rather
+# than an inline test so Bats can reach the pass on runners without the
+# folder (GitHub's); the scan root itself stays the literal system path.
+_privileged_helper_root_exists() {
+    [[ -d /Library/PrivilegedHelperTools ]]
+}
+
 # A helper an app shipped validates as Developer ID. One a user built on this
 # Mac (clang plus a hand-written LaunchDaemon, an ad-hoc or self-signed
 # signature, a personal Apple Development certificate) has no parent app to
@@ -1661,7 +1668,7 @@ clean_orphaned_system_services() {
     fi
 
     # Scan PrivilegedHelperTools
-    if [[ $service_scan_status -eq 0 && -d /Library/PrivilegedHelperTools ]]; then
+    if [[ $service_scan_status -eq 0 ]] && _privileged_helper_root_exists; then
         local helper_scan_rc=0
         local helper_scan_timeout=""
         helper_scan_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" \

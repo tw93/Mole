@@ -2203,9 +2203,9 @@ safe_sudo_remove() {
 }
 
 # Routed through /Library/LaunchDaemons, which exists on every macOS box. The
-# PrivilegedHelperTools scan is guarded by [[ -d /Library/PrivilegedHelperTools ]]
-# in lib/clean/apps.sh, and that directory is absent on GitHub runners, so a
-# helper fixture makes this case find nothing and pass vacuously in CI.
+# PrivilegedHelperTools scan is guarded by _privileged_helper_root_exists in
+# lib/clean/apps.sh, and that directory is absent on GitHub runners, so a
+# helper fixture without that stub finds nothing and passes vacuously in CI.
 tmp_dir="$(mktemp -d)"
 tmp_helper="$tmp_dir/org.amnezia.awg.plist"
 cat > "$tmp_helper" <<PLIST
@@ -2464,9 +2464,8 @@ EOF
 @test "clean_orphaned_system_services lists a bare helper only when it is Developer ID signed" {
     # Straight from PrivilegedHelperTools: an unsigned binary and a helper-root
     # .plist beside one stay; a signed vendor helper whose app is gone is
-    # still offered. The bare-helper pass only runs when the real
-    # /Library/PrivilegedHelperTools exists, and GitHub runners have none.
-    [[ -d /Library/PrivilegedHelperTools ]] || skip "/Library/PrivilegedHelperTools is absent on this runner"
+    # still offered. GitHub runners have no /Library/PrivilegedHelperTools,
+    # so the root check is stubbed and the listing comes from the sudo mock.
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
         DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2480,6 +2479,7 @@ debug_log() { :; }
 should_protect_path() { return 1; }
 bundle_has_installed_app() { return 1; }
 _privileged_helper_is_developer_id_signed() { [[ "$1" == *com.vendor.gone.helper ]]; }
+_privileged_helper_root_exists() { return 0; }
 
 tmp_dir="$(mktemp -d)"
 helpers=("$tmp_dir/com.local.spare" "$tmp_dir/com.local.lid.helper" "$tmp_dir/com.local.lid.helper.plist"
