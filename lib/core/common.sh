@@ -243,8 +243,10 @@ update_via_homebrew() {
         echo ""
         echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, ${new_version:-$current_version}"
         echo ""
-        mole_print_release_highlights "${new_version:-}"
+        # Record the update before the network highlights fetch, so Ctrl-C
+        # during that fetch cannot drop the row for a change already made.
         log_operation "update" "REBUILT" "Homebrew mole" "updated to ${new_version:-unknown}"
+        mole_print_release_highlights "${new_version:-}"
     fi
 
     # Both success shapes can leave a stale foreign launcher shadowing the
