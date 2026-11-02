@@ -736,9 +736,13 @@ GREEN='' BLUE='' YELLOW='' RED='' NC=''
 ICON_SUCCESS='ok' ICON_ERROR='err' ICON_ADMIN='adm'
 MOLE_ASSUME_SUDO_AUTH=1
 
-mkdir -p "$CONFIG_DIR" "$SOURCE_DIR"
+mkdir -p "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/core" "$SOURCE_DIR/lib/core"
 printf '#!/bin/bash\nVERSION="9.9.9"\n' > "$SOURCE_DIR/mole"
 printf '#!/bin/bash\n' > "$SOURCE_DIR/mo"
+# A refused sudo must leave the old modules whole, not an old launcher over
+# new ones, so the gate has to run before the module copy.
+printf 'new lib\n' > "$SOURCE_DIR/lib/core/common.sh"
+printf 'old lib\n' > "$CONFIG_DIR/lib/core/common.sh"
 # Non-writable install dir: needs_sudo must answer true for a plain user.
 mkdir -m 555 "$INSTALL_DIR"
 
@@ -753,10 +757,12 @@ sudo() {
 
 # Reproduce the exact caller shape from the update flow.
 install_files || echo "HANDLED_FAILURE"
+echo "CONFIG_LIB:$(cat "$CONFIG_DIR/lib/core/common.sh")"
 EOF
 
 	[ "$status" -eq 0 ] || return 1
 	[[ "$output" == *"HANDLED_FAILURE"* ]] || return 1
+	[[ "$output" == *"CONFIG_LIB:old lib"* ]] || { echo "$output"; return 1; }
 	[[ "$output" == *"sudo -v && mo update"* ]] || return 1
 	[[ "$output" != *"SUCCESS:Installed mole"* ]] || return 1
 	[[ "$output" != *"DOWNLOAD_CALLED"* ]] || return 1

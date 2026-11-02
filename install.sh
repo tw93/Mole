@@ -1477,7 +1477,7 @@ report_config_copy_failure() {
     if [[ "$CONFIG_DIR" == "$HOME/.config/mole" ]]; then
         log_error "Take ownership, then retry: sudo chown -R $user $quoted && mo update"
     else
-        log_error "Fix the owner of the files this lists, then retry: find $quoted ! -user $user"
+        log_error "Fix the owner of the files this lists, then run mo update: find $quoted ! -user $user"
     fi
 }
 
@@ -1491,6 +1491,33 @@ install_files() {
     source_dir_abs="$(cd "$SOURCE_DIR" && pwd)"
     install_dir_abs="$(cd "$INSTALL_DIR" && pwd)"
     config_dir_abs="$(cd "$CONFIG_DIR" && pwd)"
+
+    if [[ ! -f "$SOURCE_DIR/mole" ]]; then
+        log_error "mole executable not found in ${SOURCE_DIR:-unknown}"
+        exit 1
+    fi
+
+    # Every refusal that does not depend on the copy happens here, before
+    # anything in $CONFIG_DIR changes, so a missing sudo ticket leaves the old
+    # install whole instead of an old launcher over new modules.
+    if [[ "$source_dir_abs" != "$install_dir_abs" ]] && needs_sudo; then
+        log_admin "Admin access required for /usr/local/bin"
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            log_error "Admin access required, blocked in test mode"
+            return 1
+        fi
+        # Explicit failure checks throughout this function: callers run
+        # `install_files || {...}`, and bash disables errexit inside a
+        # function invoked that way, so a failed sudo would otherwise be
+        # swallowed and the install would report success while leaving
+        # the old entry script in place (the 1.45.0 -> 1.47.0 fake
+        # "Updated to latest version" incident).
+        if ! ensure_sudo_ready; then
+            log_error "Admin access to $INSTALL_DIR is required but not available"
+            log_error "Cache credentials first, then retry: sudo -v && mo update"
+            return 1
+        fi
+    fi
 
     # Copy the modules before the launcher is replaced. A refused copy then
     # returns while the old launcher is still in place and pinned to this
@@ -1532,40 +1559,15 @@ install_files() {
         fi
     fi
 
-    if [[ -f "$SOURCE_DIR/mole" ]]; then
-        if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
-            if needs_sudo; then
-                log_admin "Admin access required for /usr/local/bin"
-                if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-                    log_error "Admin access required, blocked in test mode"
-                    return 1
-                fi
-                # Explicit failure checks throughout this function: callers run
-                # `install_files || {...}`, and bash disables errexit inside a
-                # function invoked that way, so a failed sudo would otherwise be
-                # swallowed and the install would report success while leaving
-                # the old entry script in place (the 1.45.0 -> 1.47.0 fake
-                # "Updated to latest version" incident).
-                if ! ensure_sudo_ready; then
-                    log_error "Admin access to $INSTALL_DIR is required but not available"
-                    log_error "Cache credentials first, then retry: sudo -v && mo update"
-                    return 1
-                fi
-            fi
-
-            # Atomic update: copy to temporary name first, then move
-            if ! maybe_sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new" ||
-                ! maybe_sudo chmod +x "$INSTALL_DIR/mole.new" ||
-                ! maybe_sudo mv -f "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"; then
-                log_error "Failed to install mole to $INSTALL_DIR (admin access missing or denied)"
-                log_error "Cache credentials first, then retry: sudo -v && mo update"
-                return 1
-            fi
-
+    if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
+        # Atomic update: copy to temporary name first, then move
+        if ! maybe_sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new" ||
+            ! maybe_sudo chmod +x "$INSTALL_DIR/mole.new" ||
+            ! maybe_sudo mv -f "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"; then
+            log_error "Failed to install mole to $INSTALL_DIR (admin access missing or denied)"
+            log_error "Cache credentials first, then retry: sudo -v && mo update"
+            return 1
         fi
-    else
-        log_error "mole executable not found in ${SOURCE_DIR:-unknown}"
-        exit 1
     fi
 
     if [[ -f "$SOURCE_DIR/mo" && "$source_dir_abs" != "$install_dir_abs" ]]; then
