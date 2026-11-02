@@ -1,7 +1,7 @@
 <p align="right"><a href="https://github.com/tw93/Mole#readme">macOS</a> · <b>Windows</b> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
-  <img src="https://cdn.tw93.fun/pic/cole.png" alt="Mole logo" width="120" />
+  <img src="./docs/img/mole-logo.png" alt="Mole logo" width="120" />
   <h1>Mole CLI for Windows</h1>
   <p><b>Windows 電腦深度清理、應用程式解除安裝、系統最佳化、磁碟分析與狀態監控，免費開源命令列</b></p>
   <p><a href="README.md">English</a> · <a href="README_CN.md">中文</a> · 繁體 · <a href="README_JA.md">日本語</a> · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
