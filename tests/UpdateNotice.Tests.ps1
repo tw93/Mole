@@ -174,3 +174,52 @@ Describe 'Automatic update notices' {
         Test-MoleUpdateNoticeAllowed -CommandName $CommandName -Arguments @($Argument) | Should -BeFalse
     }
 }
+
+Describe 'Release highlights after mo update' {
+    BeforeAll {
+        $script:ReleaseBody = @(
+            '<div align="center">', '### Changelog', '',
+            '1. Browse complete large directories in Analyze: Full entry lists remain available.',
+            '2. No duplicate WinMerge entry: Context-menu extensions are no longer listed.',
+            '3. Stop waiting indefinitely: A wait longer than 30 minutes stops the batch.',
+            '4. Tell same-named projects apart: mo purge shows project paths.',
+            '5. Cleaner command output: Singular counts use the correct wording.',
+            '', '### Translated changelog', '', '1. Translated title: translated detail.'
+        ) -join "`r`n"
+    }
+
+    It 'Takes the first changelog titles, cut at the first colon, and stops at the next section' {
+        $titles = @(Get-MoleReleaseHighlightTitles -Body $script:ReleaseBody -Limit 4)
+        $titles | Should -Be @('Browse complete large directories in Analyze', 'No duplicate WinMerge entry', 'Stop waiting indefinitely', 'Tell same-named projects apart')
+        @(Get-MoleReleaseHighlightTitles -Body (($script:ReleaseBody -split "`r`n")[0..4] -join "`n") -Limit 4) | Should -Be @('Browse complete large directories in Analyze', 'No duplicate WinMerge entry')
+        @(Get-MoleReleaseHighlightTitles -Body "### Install`n1. Run the installer: once" -Limit 4).Count | Should -Be 0
+    }
+
+    It 'Prints the titles and the Windows release link for a published version' {
+        Mock Test-MoleReleaseHighlightOutput { $true }
+        Mock Invoke-RestMethod { [pscustomobject]@{ tag_name = 'V1.41.0-windows'; body = $script:ReleaseBody } }
+        Mock Write-Host { }
+        Show-MoleReleaseHighlights -Version '1.41.0'
+        Should -Invoke Invoke-RestMethod -Exactly 1 -ParameterFilter { $Uri -eq 'https://api.github.com/repos/tw93/Mole/releases/tags/V1.41.0-windows' -and $TimeoutSec -eq 3 }
+        Should -Invoke Write-Host -Exactly 1 -ParameterFilter { "$Object" -eq "What's new in 1.41.0" }
+        Should -Invoke Write-Host -Exactly 4 -ParameterFilter { "$Object" -like ('  ' + [char]0x2022 + ' *') }
+        Should -Invoke Write-Host -Exactly 1 -ParameterFilter { "$Object" -eq '  https://github.com/tw93/Mole/releases/tag/V1.41.0-windows' }
+    }
+
+    It 'Prints nothing and never fails for <Case>' -ForEach @(
+        @{ Case = 'redirected output'; Terminal = $false; Version = '1.41.0'; Fails = $false; Body = 'list' }
+        @{ Case = 'a version that is not x.y.z'; Terminal = $true; Version = '1.41.0-dev'; Fails = $false; Body = 'list' }
+        @{ Case = 'an unpublished tag or no network'; Terminal = $true; Version = '1.41.0'; Fails = $true; Body = 'list' }
+        @{ Case = 'a body without the changelog list'; Terminal = $true; Version = '1.41.0'; Fails = $false; Body = 'none' }
+    ) {
+        $script:CaseFails = $Fails
+        $script:CaseTerminal = $Terminal
+        $script:CaseBody = if ($Body -eq 'list') { $script:ReleaseBody } else { "### Install`nRun the installer." }
+        Mock Test-MoleReleaseHighlightOutput { $script:CaseTerminal }
+        Mock Invoke-RestMethod { if ($script:CaseFails) { throw '404 Not Found' }; [pscustomobject]@{ body = $script:CaseBody } }
+        Mock Write-Host { }
+        { Show-MoleReleaseHighlights -Version $Version } | Should -Not -Throw
+        Should -Invoke Write-Host -Exactly 0
+        if (-not $Terminal -or $Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { Should -Invoke Invoke-RestMethod -Exactly 0 }
+    }
+}

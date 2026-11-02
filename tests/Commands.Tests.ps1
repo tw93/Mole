@@ -341,6 +341,87 @@ switch -Regex ($commandLine) {
             }
         }
 
+        It "Should show what changed only after a pull that moved to a new version" {
+            $fixtureRoot = Join-Path $TestDrive "highlights-update-fixture"
+            $fixtureBin = Join-Path $fixtureRoot "bin"
+            $fixtureCore = Join-Path $fixtureRoot "lib\core"
+            $fakeTools = Join-Path $fixtureRoot "fake-tools"
+            $fixtureUpdater = Join-Path $fixtureBin "update.ps1"
+            $highlightCapture = Join-Path $fixtureRoot "highlights.txt"
+
+            New-Item -ItemType Directory -Path $fixtureBin, $fixtureCore, $fakeTools, (Join-Path $fixtureRoot ".git") -Force | Out-Null
+            Copy-Item (Join-Path $script:BinDir "update.ps1") $fixtureUpdater
+            Set-Content (Join-Path $fixtureRoot "VERSION") "1.40.0"
+            Set-Content (Join-Path $fixtureRoot "head.txt") "abc123"
+
+            @'
+param([string]$InstallDir, [switch]$AddToPath, [Parameter(ValueFromRemainingArguments = $true)][object[]]$RemainingArguments)
+if ($env:MOLE_INSTALL_FAIL -eq "1") { exit 1 }
+'@ | Set-Content (Join-Path $fixtureRoot "install.ps1")
+
+            @'
+function Show-MoleReleaseHighlights { param([string]$Version) Add-Content -LiteralPath $env:MOLE_HIGHLIGHT_CAPTURE -Value $Version }
+'@ | Set-Content (Join-Path $fixtureCore "update_check.ps1")
+
+            # The pull writes the next revision and version the test staged.
+            @'
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GitArgs)
+$commandArgs = @($GitArgs)
+if ($commandArgs.Count -ge 3 -and $commandArgs[0] -eq "-C") { $commandArgs = @($commandArgs[2..($commandArgs.Count - 1)]) }
+while ($commandArgs.Count -ge 3 -and $commandArgs[0] -eq "-c") { $commandArgs = @($commandArgs[2..($commandArgs.Count - 1)]) }
+$root = $env:MOLE_FIXTURE_ROOT
+$commandLine = $commandArgs -join " "
+$global:LASTEXITCODE = 0
+switch -Regex ($commandLine) {
+    '^config --get https?\.proxy$' { $global:LASTEXITCODE = 1; break }
+    '^status --porcelain --untracked-files=no$' { break }
+    '^remote get-url origin$' { "https://github.com/tw93/Mole.git"; break }
+    '^branch --show-current$' { "windows"; break }
+    '^rev-parse --short HEAD$' { (Get-Content -LiteralPath (Join-Path $root "head.txt") -Raw).Trim(); break }
+    '^rev-parse --git-path mole-refreshed-revision$' { ".git/mole-refreshed-revision"; break }
+    '^pull --ff-only --tags origin windows$' {
+        Set-Content -LiteralPath (Join-Path $root "head.txt") -Value $env:MOLE_NEXT_HEAD
+        Set-Content -LiteralPath (Join-Path $root "VERSION") -Value $env:MOLE_NEXT_VERSION
+        break
+    }
+    default { Write-Error "Unexpected git command: $commandLine"; $global:LASTEXITCODE = 1 }
+}
+'@ | Set-Content (Join-Path $fakeTools "git.ps1")
+
+            $saved = @{}
+            foreach ($name in 'PATH', 'MOLE_FIXTURE_ROOT', 'MOLE_HIGHLIGHT_CAPTURE', 'MOLE_NEXT_HEAD', 'MOLE_NEXT_VERSION', 'MOLE_INSTALL_FAIL') {
+                $saved[$name] = [Environment]::GetEnvironmentVariable($name)
+            }
+            try {
+                $env:PATH = "$fakeTools;$($saved['PATH'])"
+                $env:MOLE_FIXTURE_ROOT = $fixtureRoot
+                $env:MOLE_HIGHLIGHT_CAPTURE = $highlightCapture
+                $env:MOLE_INSTALL_FAIL = $null
+
+                # A new revision with the same version shows nothing.
+                $env:MOLE_NEXT_HEAD = "bcd234"; $env:MOLE_NEXT_VERSION = "1.40.0"
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                $highlightCapture | Should -Not -Exist
+
+                # A failed refresh at a new version shows nothing.
+                $env:MOLE_NEXT_HEAD = "cde345"; $env:MOLE_NEXT_VERSION = "1.41.0"; $env:MOLE_INSTALL_FAIL = "1"
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 1
+                $highlightCapture | Should -Not -Exist
+
+                # A refresh that lands a new version shows that version once.
+                Set-Content (Join-Path $fixtureRoot "VERSION") "1.40.0"
+                $env:MOLE_NEXT_HEAD = "def456"; $env:MOLE_INSTALL_FAIL = $null
+                & $fixtureUpdater
+                $LASTEXITCODE | Should -Be 0
+                @(Get-Content -LiteralPath $highlightCapture) | Should -Be @("1.41.0")
+            }
+            finally {
+                foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+            }
+        }
+
         It "Should end a successful install with an explicit zero exit code" {
             $tokens = $null
             $errors = $null

@@ -273,6 +273,14 @@ if ($beforeResult.ExitCode -ne 0 -or -not $before) {
     exit 1
 }
 
+# The version file before and after the pull decides whether to show what the new
+# version changed; an unreadable file reads as empty and shows nothing.
+function Get-InstalledVersionText {
+    try { return (Get-Content -LiteralPath (Join-Path $windowsDir "VERSION") -Raw -ErrorAction Stop).Trim() }
+    catch { return '' }
+}
+$beforeVersion = Get-InstalledVersionText
+
 Write-Host "Updating source from $(Mask-GitText -Text $remote) ($branch)..." -ForegroundColor Cyan
 
 $pullResult = Invoke-GitCommand -WorkingDirectory $windowsDir -Arguments @("pull", "--ff-only", "--tags", "origin", $branch)
@@ -346,4 +354,14 @@ try {
 }
 catch {
     # Without the marker the next unchanged update refreshes again.
+}
+
+$afterVersion = Get-InstalledVersionText
+if ($after -ne $before -and $afterVersion -and $afterVersion -ne $beforeVersion) {
+    $highlights = Join-Path $windowsDir "lib\core\update_check.ps1"
+    try {
+        . $highlights
+        Show-MoleReleaseHighlights -Version $afterVersion
+    }
+    catch { }
 }

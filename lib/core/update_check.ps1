@@ -136,3 +136,49 @@ function Show-MoleUpdateNotice {
     }
     catch { }
 }
+
+# The first items of a release's "### Changelog" list, each cut to its title:
+# the release notes write every item as "Title: detail".
+function Get-MoleReleaseHighlightTitles {
+    param([string]$Body, [int]$Limit = 4)
+    $titles = New-Object 'System.Collections.Generic.List[string]'
+    $inList = $false
+    foreach ($line in ($Body -split "`r?`n")) {
+        if ($line.StartsWith('### Changelog')) { $inList = $true; continue }
+        if (-not $inList) { continue }
+        if ($line.StartsWith('### ')) { break }
+        if ($line -notmatch '^[0-9]+\.\s+(.+)$') { continue }
+        $item = $Matches[1]
+        $cut = $item.IndexOf(': ')
+        if ($cut -gt 0) { $item = $item.Substring(0, $cut) }
+        $titles.Add($item)
+        if ($titles.Count -ge $Limit) { break }
+    }
+    return $titles.ToArray()
+}
+
+function Test-MoleReleaseHighlightOutput { -not [Console]::IsOutputRedirected }
+
+# After `mo update` moved the source to a new version, a few lines on what that
+# version changed, read from its published release (maintainer 2026-11-01).
+# Best effort and terminal only: offline, a rate limit, an unpublished tag or a
+# body without the list prints nothing and never changes the update's result.
+function Show-MoleReleaseHighlights {
+    param([string]$Version)
+    try {
+        if (-not (Test-MoleReleaseHighlightOutput)) { return }
+        if ($Version -notmatch '^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$') { return }
+        $headers = @{ 'User-Agent' = 'Mole-CLI-Windows'; Accept = 'application/vnd.github+json' }
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/tw93/Mole/releases/tags/V$Version-windows" -TimeoutSec 3 -Headers $headers -ErrorAction Stop
+        $body = $release.PSObject.Properties['body']
+        if (-not $body) { return }
+        $titles = @(Get-MoleReleaseHighlightTitles -Body ([string]$body.Value) -Limit 4)
+        if ($titles.Count -eq 0) { return }
+        Write-Host ""
+        Write-Host "What's new in $Version"
+        foreach ($title in $titles) { Write-Host ("  " + [char]0x2022 + " " + $title) }
+        Write-Host "  https://github.com/tw93/Mole/releases/tag/V$Version-windows" -ForegroundColor DarkGray
+        Write-Host ""
+    }
+    catch { }
+}
