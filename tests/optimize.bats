@@ -337,3 +337,227 @@ systemd_up() { mkdir -p "$TEST_ROOT/run-systemd"; export OPT_SYSTEMD_RUN_DIR="$T
     grep -qx -- "-q -f $HOME/.local/share/icons/MyTheme" "$TEST_ROOT/gtk.log"
     [ -z "$(grep hicolor "$TEST_ROOT/gtk.log")" ]
 }
+
+# ---- report-only checks: pacnew, broken links, rebuilds, unowned files ----
+
+# Every file under $1 with its content hash, to prove a task changed nothing.
+tree_state() { (cd "$1" && find . -print0 | sort -z | xargs -0 stat -c '%n %F %Y %s %N' 2> /dev/null); }
+
+@test "pending .pacnew, .pacsave and .pacorig files are listed and left alone" {
+    local etc="$TEST_ROOT/etc"
+    mkdir -p "$etc/ssh" "$etc/pacman.d"
+    : > "$etc/pacman.conf"; : > "$etc/pacman.conf.pacnew"
+    : > "$etc/ssh/sshd_config.pacsave"; : > "$etc/pacman.d/mirrorlist.pacorig"
+    : > "$etc/fstab"; : > "$etc/notes.pacnew.txt"
+    export OPT_ETC_DIR="$etc"
+    local before
+    before=$(tree_state "$etc")
+    mole_run optimize 'task_pacnew; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3 config files in $etc waiting for you to merge (1 .pacnew, 1 .pacsave, 1 .pacorig)"* ]]
+    [[ "$output" == *"pacman.conf.pacnew"* && "$output" == *"sshd_config.pacsave"* && "$output" == *"mirrorlist.pacorig"* ]]
+    [[ "$output" != *"notes.pacnew.txt"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+    [ "$(tree_state "$etc")" = "$before" ]
+    # a dry run says the same thing
+    local normal="$output"
+    mole_run optimize 'DRY_RUN=true; task_pacnew; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "${output//$'\n'/|}" != "" ]
+    [[ "${output//[^a-z]/}" == "${normal//[^a-z]/}" ]]
+}
+
+@test "no pending config files reads as clean, folders only root can read are said so" {
+    local etc="$TEST_ROOT/etc"
+    mkdir -p "$etc/secret" "$etc/open"
+    : > "$etc/open/a.conf"
+    export OPT_ETC_DIR="$etc"
+    mole_run optimize 'task_pacnew; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"No pending config merges"* ]]
+    [[ "$output" == *"outcome=unchanged"* ]]
+    [ "$(id -u)" -ne 0 ] || skip "root can read every folder"
+    : > "$etc/secret/x.pacnew"
+    chmod 000 "$etc/secret"
+    mole_run optimize 'task_pacnew; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    chmod 755 "$etc/secret"
+    [[ "$output" == *"in the folders Mole can read"* ]]
+    [[ "$output" == *"1 folder in $etc can only be read by root"* ]]
+    [[ "$output" != *"x.pacnew"* ]]
+}
+
+@test "broken links in the home folder are listed, never removed, and normal places are skipped" {
+    mkdir -p "$HOME/Documents" "$HOME/.cache/app" "$HOME/.local/share/Trash/files" "$HOME/proj/node_modules/x" \
+        "$HOME/proj/.git" "$HOME/.var/app/org.x/data" "$HOME/.mozilla/firefox/p" "$HOME/.config/chromium" \
+        "$HOME/.local/share/Steam/steamapps" "$HOME/py/.venv/bin" "$HOME/.wine/dosdevices" "$HOME/ok"
+    ln -s /nonexistent/target "$HOME/Documents/dead-link"
+    ln -s /nonexistent/target "$HOME/dead-top"
+    ln -s "$HOME/ok" "$HOME/live-link"
+    local p
+    for p in .cache/app/l .local/share/Trash/files/l proj/node_modules/x/l proj/.git/l .var/app/org.x/data/l \
+        .mozilla/firefox/p/lock .config/chromium/SingletonLock .local/share/Steam/steamapps/l py/.venv/bin/python .wine/dosdevices/d::; do
+        ln -s /nonexistent/target "$HOME/$p"
+    done
+    mole_run optimize 'task_broken_symlinks; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"2 links point at something that is gone"* ]]
+    [[ "$output" == *"~/Documents/dead-link"* && "$output" == *"~/dead-top"* ]]
+    [[ "$output" != *"live-link"* && "$output" != *".cache"* && "$output" != *"Trash"* && "$output" != *"node_modules"* ]]
+    [[ "$output" != *".git"* && "$output" != *".var"* && "$output" != *".mozilla"* && "$output" != *"Singleton"* ]]
+    [[ "$output" != *"Steam"* && "$output" != *".venv"* && "$output" != *"dosdevices"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+    [ -L "$HOME/Documents/dead-link" ] && [ -L "$HOME/dead-top" ] && [ -L "$HOME/.cache/app/l" ]
+}
+
+@test "a home folder with no broken links reads as clean" {
+    mkdir -p "$HOME/ok"
+    ln -s "$HOME/ok" "$HOME/live"
+    mole_run optimize 'task_broken_symlinks; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"No broken links in your home folder"* ]]
+    [[ "$output" == *"outcome=unchanged"* ]]
+}
+
+@test "a packages needing a rebuild: stale runtime folders of foreign packages only" {
+    local lib="$TEST_ROOT/usr/lib"
+    mkdir -p "$lib/python3.14" "$lib/python3.13" "$lib/python3.12" "$lib/python3.11" "$lib/python3.9junk"
+    export OPT_USR_LIB="$lib"
+    fake_command python3 'echo 3.14'
+    fake_command python3.11 'exit 0'
+    fake_command readelf 'exit 1'
+    fake_command ldconfig 'exit 0'
+    fake_command ldd 'echo "ldd $*" >> "'"$TEST_ROOT"'/ldd.log"'
+    fake_command pacman '
+case "$*" in
+    "-Qmq") printf "%s\n" auraur aurold python312 aurfine ;;
+    "-Qq pacman") echo pacman ;;
+    "-Qqo -- "*/python3.13) printf "%s\n" auraur repopkg ;;
+    "-Qqo -- "*/python3.12) printf "%s\n" python312 ;;
+    "-Qqo -- "*/python3.11) printf "%s\n" aurold ;;
+    "-Ql -- "*) ;;
+    *) exit 1 ;;
+esac'
+    mole_run optimize 'task_rebuild; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 package from outside the repositories was built for something that has changed since"* ]]
+    [[ "$output" == *"auraur"* && "$output" == *"python files in python3.13, python is now 3.14"* ]]
+    # not foreign (repopkg), the old runtime's own package (python312), an interpreter still installed (aurold)
+    [[ "$output" != *"repopkg"* && "$output" != *"python312"* && "$output" != *"aurold"* && "$output" != *"aurfine"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+    [ ! -e "$TEST_ROOT/ldd.log" ]
+}
+
+@test "a foreign package whose shared library is gone is reported, bundled and cached ones are not" {
+    local extra="$TEST_ROOT/extra"
+    mkdir -p "$extra" "$TEST_ROOT/usr/lib"
+    : > "$extra/libviarunpath.so.1"
+    export OPT_USR_LIB="$TEST_ROOT/usr/lib" OPT_ELF_PATHS_RE='^/'
+    fake_command python3 'echo 3.14'
+    fake_command ldd 'echo "ldd $*" >> "'"$TEST_ROOT"'/ldd.log"'
+    fake_command ldconfig 'printf "2 libs found in cache\n\tlibc.so.6 (libc6,x86-64) => /usr/lib/libc.so.6\n"'
+    fake_command pacman '
+case "$*" in
+    "-Qmq") printf "%s\n" brokenpkg okpkg bundledpkg runpathpkg ;;
+    "-Qq pacman") echo pacman ;;
+    "-Qqo -- "*) ;;
+    "-Ql -- "*)
+        printf "%s\n" "brokenpkg /opt/broken/bin/app" "okpkg /opt/ok/bin/app" "bundledpkg /opt/bundled/bin/app" \
+            "bundledpkg /opt/bundled/lib/libbundled.so.2" "runpathpkg /opt/rp/bin/app" "okpkg /opt/ok/share/readme.txt" "okpkg /opt/ok/share/" ;;
+    *) exit 1 ;;
+esac'
+    fake_command readelf '
+for f in "$@"; do
+    case "$f" in
+        /opt/broken/bin/app) printf "\nFile: %s\n 0x01 (NEEDED)  Shared library: [libgone.so.1]\n 0x01 (NEEDED)  Shared library: [libc.so.6]\n" "$f" ;;
+        /opt/ok/bin/app) printf "\nFile: %s\n 0x01 (NEEDED)  Shared library: [libc.so.6]\n" "$f" ;;
+        /opt/bundled/bin/app) printf "\nFile: %s\n 0x01 (NEEDED)  Shared library: [libbundled.so.2]\n" "$f" ;;
+        /opt/rp/bin/app) printf "\nFile: %s\n 0x01 (NEEDED)  Shared library: [libviarunpath.so.1]\n 0x01 (RUNPATH)  Library runpath: [%s]\n" "$f" "'"$extra"'" ;;
+        /dev/null) printf "\nFile: /dev/null\nreadelf: Error: Not an ELF file\n" ;;
+    esac
+done'
+    mole_run optimize 'task_rebuild; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 package from outside the repositories was built for something that has changed since"* ]]
+    [[ "$output" == *"brokenpkg"* && "$output" == *"libgone.so.1 is missing for app"* ]]
+    [[ "$output" != *"okpkg"* && "$output" != *"bundledpkg"* && "$output" != *"runpathpkg"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+    # readelf only reads; ldd would run the file's own loader
+    [ ! -e "$TEST_ROOT/ldd.log" ]
+}
+
+@test "a system with no foreign packages, or a pacman that cannot answer, is not reported as needing rebuilds" {
+    fake_command pacman '[[ "$*" == "-Qq pacman" ]] && { echo pacman; exit 0; }; exit 1'
+    mole_run optimize 'task_rebuild; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"No packages from outside the repositories"* ]]
+    [[ "$output" == *"outcome=unchanged"* ]]
+    fake_command pacman 'exit 1'
+    mole_run optimize 'task_rebuild; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"outcome=unavailable"* ]]
+}
+
+@test "unowned files: generated content is skipped and an unowned folder is reported once" {
+    export TEST_ROOT
+    mkdir -p "$TEST_ROOT/all"
+    printf '%s\n' /usr/bin /usr/bin/owned /usr/share/mime /usr/share/mime/foo /usr/lib/python3.14 > "$TEST_ROOT/all/owned"
+    printf '%s\n' \
+        "d /usr/bin" "f /usr/bin/owned" "f /usr/bin/handmade" \
+        "d /usr/share/mime" "f /usr/share/mime/mime.cache" \
+        "d /usr/share/tool" "f /usr/share/tool/a" "f /usr/share/tool/b" "d /usr/share/tool/sub" "f /usr/share/tool/sub/c" \
+        "d /usr/lib/python3.14" "f /usr/lib/python3.14/__pycache__/x.pyc" \
+        "f /usr/share/icons/Adwaita/icon-theme.cache" "f /usr/lib/locale/locale-archive" "f /usr/lib/udev/hwdb.bin" \
+        "f /usr/share/glib-2.0/schemas/gschemas.compiled" "f /usr/lib/gtk-3.0/3.0.0/immodules.cache" \
+        "f /usr/share/applications/mimeinfo.cache" "f /usr/share/info/dir" "d /empty-unowned" > "$TEST_ROOT/all/all"
+    mole_run optimize 'opt_unowned_collapse "$TEST_ROOT/all" 2> "$TEST_ROOT/total"; echo "total=$(cat "$TEST_ROOT/total")"'
+    [ "$status" -eq 0 ]
+    [ "$output" = "/usr/bin/handmade"$'\n'"/usr/share/tool"$'\n'"total=4" ]
+}
+
+@test "unowned files under /usr and /opt are found root-free and report only" {
+    local u="$TEST_ROOT/usr" o="$TEST_ROOT/opt"
+    mkdir -p "$u/bin" "$u/lib/modules/6.1.0-arch1" "$u/lib/modules/5.0.0-old" "$u/lib/modules/4.9.0-kept" "$u/lib/python3.14/__pycache__" "$u/share/tool" "$o/app"
+    : > "$u/bin/owned"; : > "$u/bin/handmade"; : > "$u/share/tool/a"; : > "$u/share/tool/b"
+    : > "$u/lib/modules/6.1.0-arch1/modules.dep"; : > "$u/lib/modules/5.0.0-old/modules.dep"
+    : > "$u/lib/modules/4.9.0-kept/vmlinuz"; : > "$u/lib/modules/4.9.0-kept/modules.dep"
+    : > "$u/lib/python3.14/__pycache__/x.pyc"; : > "$o/app/run"
+    printf '%s\n' "$u/" "$u/share/" "$u/bin/" "$u/bin/owned" "$u/lib/" "$u/lib/modules/" "$u/lib/python3.14/" "$o/" > "$TEST_ROOT/owned.list"
+    export OPT_UNOWNED_ROOTS="$u $o" OPT_USR_LIB="$u/lib"
+    fake_command uname '[[ "$1" == -r ]] && echo 6.1.0-arch1'
+    fake_command pacman '[[ "$*" == "-Qlq" ]] && { cat "'"$TEST_ROOT"'/owned.list"; exit 0; }; echo "pacman $*" >> "'"$TEST_ROOT"'/pacman.log"; exit 1'
+    local before
+    before=$(tree_state "$TEST_ROOT/usr")$(tree_state "$TEST_ROOT/opt")
+    mole_run optimize 'task_unowned; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"5 files under /usr and /opt belong to no package"* ]]
+    [[ "$output" == *"usr/bin/handmade"* && "$output" == *"usr/share/tool"* && "$output" == *"usr/lib/modules/5.0.0-old"* && "$output" == *"opt/app"* ]]
+    [[ "$output" != *"6.1.0-arch1"* && "$output" != *"4.9.0-kept"* && "$output" != *"__pycache__"* && "$output" != *"usr/bin/owned"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+    [ "$(tree_state "$TEST_ROOT/usr")$(tree_state "$TEST_ROOT/opt")" = "$before" ]
+    [ ! -e "$TEST_ROOT/pacman.log" ]
+}
+
+@test "unowned files: a package list that cannot be read is never read as everything unowned" {
+    mkdir -p "$TEST_ROOT/usr/bin"
+    : > "$TEST_ROOT/usr/bin/x"
+    export OPT_UNOWNED_ROOTS="$TEST_ROOT/usr"
+    fake_command pacman 'exit 0'
+    mole_run optimize 'task_unowned; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"outcome=unavailable"* ]]
+    [[ "$output" != *"belong to no package"* ]]
+    fake_command pacman 'exit 1'
+    mole_run optimize 'task_unowned; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"outcome=unavailable"* ]]
+}
+
+@test "the report-only checks print the same in a dry run and change nothing" {
+    local etc="$TEST_ROOT/etc"
+    mkdir -p "$etc" "$TEST_ROOT/usr/bin"
+    : > "$etc/a.pacnew"; : > "$TEST_ROOT/usr/bin/handmade"
+    ln -s /nonexistent "$HOME/dead"
+    export OPT_ETC_DIR="$etc" OPT_UNOWNED_ROOTS="$TEST_ROOT/usr" OPT_USR_LIB="$TEST_ROOT/usr/lib"
+    fake_command pacman 'case "$*" in "-Qlq") echo /usr/;; "-Qmq") exit 1;; "-Qq pacman") echo pacman;; *) exit 1;; esac'
+    local code='for t in task_pacnew task_rebuild task_unowned task_broken_symlinks; do $t; done; echo "${OPT_TASK_OUTCOMES[*]}"'
+    mole_run optimize "$code"
+    local live="$output"
+    mole_run optimize "DRY_RUN=true; $code"
+    [ "$status" -eq 0 ]
+    [ "${output//[^[:alnum:] ]/}" = "${live//[^[:alnum:] ]/}" ]
+    [[ "$output" == *"attention unchanged attention attention"* ]]
+    [ -L "$HOME/dead" ] && [ -e "$etc/a.pacnew" ] && [ -e "$TEST_ROOT/usr/bin/handmade" ]
+}

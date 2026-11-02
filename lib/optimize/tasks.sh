@@ -713,3 +713,500 @@ task_power() {
         opt_outcome unchanged
     fi
 }
+
+# ---------------------------------------------------------------------------
+# Report-only checks. None of them changes, moves or deletes anything.
+# ---------------------------------------------------------------------------
+
+OPT_ETC_DIR="${OPT_ETC_DIR:-/etc}"             # tests point these elsewhere
+OPT_USR_LIB="${OPT_USR_LIB:-/usr/lib}"
+OPT_UNOWNED_ROOTS="${OPT_UNOWNED_ROOTS:-/usr /opt}"
+OPT_SCAN_SECONDS="${OPT_SCAN_SECONDS:-20}"       # one bounded search, never open-ended
+OPT_ELF_PATHS_RE="${OPT_ELF_PATHS_RE:-^(/usr/bin/|/usr/lib/|/usr/libexec/|/opt/)}"
+
+# A search that may run into folders it cannot read. Prints the hits; the
+# exit status is 124 when the time limit cut it short, 0 otherwise (a
+# permission error is not a failure here, the caller reads the stderr file).
+opt_bounded_find() {
+    local errfile="$1" rc=0
+    shift
+    timeout "$OPT_SCAN_SECONDS" find "$@" 2> "$errfile" || rc=$?
+    [[ $rc -eq 124 ]] && return 124
+    return 0
+}
+
+# Configuration files pacman set aside during upgrades and removals:
+# .pacnew (the package's new default, yours kept), .pacsave (your file kept
+# after the package was removed), .pacorig (yours replaced by the package's).
+# Found with find, as pacman's own pacdiff does, so it needs no root; folders
+# that only root can read (sudoers.d, ssl/private) cannot be looked into and
+# are said so, never reported as clean.
+task_pacnew() {
+    local errfile out rc=0 unreadable=0
+    errfile=$(mktemp) || {
+        opt_gray "Config merge check skipped, no temporary file"
+        opt_outcome unavailable
+        return
+    }
+    out=$(opt_bounded_find "$errfile" "$OPT_ETC_DIR" -xdev -type f \( -name '*.pacnew' -o -name '*.pacsave' -o -name '*.pacorig' \) ! -path $'*\n*' -print) || rc=$?
+    unreadable=$(grep -c . "$errfile" 2> /dev/null) || unreadable=0
+    rm -f -- "$errfile"
+    local -a files=()
+    [[ -n "$out" ]] && mapfile -t files <<< "$out"
+    if [[ ${#files[@]} -eq 0 ]]; then
+        if [[ $rc -eq 124 ]]; then
+            opt_gray "Config merge check stopped after ${OPT_SCAN_SECONDS}s, ${OPT_ETC_DIR} was not fully searched"
+            opt_outcome unavailable
+        elif ((unreadable > 0)); then
+            opt_line "No pending config merges in the folders Mole can read"
+            opt_gray "$(mole_count_label "$unreadable" folder) in ${OPT_ETC_DIR} can only be read by root"
+            opt_outcome unchanged
+        else
+            opt_line "No pending config merges"
+            opt_outcome unchanged
+        fi
+        return
+    fi
+    local nnew=0 nsave=0 norig=0 f
+    for f in "${files[@]}"; do
+        case "$f" in
+            *.pacnew) nnew=$((nnew + 1)) ;;
+            *.pacsave) nsave=$((nsave + 1)) ;;
+            *.pacorig) norig=$((norig + 1)) ;;
+        esac
+    done
+    local -a kinds=()
+    ((nnew > 0)) && kinds+=("$nnew .pacnew")
+    ((nsave > 0)) && kinds+=("$nsave .pacsave")
+    ((norig > 0)) && kinds+=("$norig .pacorig")
+    local kind_list="${kinds[0]}" k
+    for k in "${kinds[@]:1}"; do kind_list+=", $k"; done
+    opt_warn "$(mole_count_label "${#files[@]}" "config file" "config files") in ${OPT_ETC_DIR} waiting for you to merge ($kind_list)"
+    mapfile -t files < <(printf '%s\n' "${files[@]}" | LC_ALL=C sort)
+    opt_list_paths "${files[@]}"
+    if command -v pacdiff > /dev/null 2>&1; then
+        opt_hint "Merge them with sudo pacdiff, or compare one with diff -u <file> <file>.pacnew"
+    else
+        opt_hint "Compare each with diff -u <file> <file>.pacnew, sudo pacdiff (package pacman-contrib) walks through them"
+    fi
+    [[ $rc -eq 124 ]] && opt_gray "The search stopped after ${OPT_SCAN_SECONDS}s, there may be more"
+    ((unreadable > 0)) && opt_gray "$(mole_count_label "$unreadable" folder) in ${OPT_ETC_DIR} can only be read by root"
+    opt_outcome attention
+}
+
+# Broken symlinks in the home folder. Trees where a dangling link is normal
+# or not the user's to tidy are skipped: caches and the Trash (the Trash
+# holds links whose target was trashed too), Steam, Wine prefixes (dosdevices
+# letters point at devices that are not there), Flatpak and container stores,
+# toolchain and package-manager stores, browser profiles (Firefox's lock and
+# Chromium's Singleton* links point at "host-pid" strings that are never
+# paths), and anything named node_modules, .git, a Python virtualenv or
+# site-packages (a venv's python link breaks with every interpreter upgrade
+# and is rebuilt, not repaired). Depth 8 and a time limit keep it quick on a
+# home with millions of files; -xdev stays on the home's filesystem.
+opt_glob_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\*/\\*}"
+    s="${s//\?/\\?}"
+    s="${s//\[/\\[}"
+    printf '%s' "$s"
+}
+
+opt_broken_symlinks() {
+    local errfile="$1" h rel
+    h=$(opt_glob_escape "$HOME")
+    local -a prune=(
+        -path "$(opt_glob_escape "$MOLE_CACHE_HOME")"
+        -o -path "$(opt_glob_escape "$MOLE_TRASH_DIR")"
+        -o -path "$(opt_glob_escape "$MOLE_DATA_HOME")/Steam"
+        -o -path "$(opt_glob_escape "$MOLE_DATA_HOME")/flatpak"
+        -o -path "$(opt_glob_escape "$MOLE_DATA_HOME")/containers"
+        -o -path "$(opt_glob_escape "$MOLE_DATA_HOME")/docker"
+        -o -path "$(opt_glob_escape "$MOLE_DATA_HOME")/wineprefixes"
+        -o -path "$(opt_glob_escape "$MOLE_DATA_HOME")/pnpm"
+        -o -path "$(opt_glob_escape "$MOLE_CONFIG_HOME")/mozilla"
+    )
+    for rel in .cache .steam .var .wine .mozilla .zen .thunderbird .rustup .cargo .npm .pnpm-store .gradle .m2 .nvm .pyenv .tox snap; do
+        prune+=(-o -path "$h/$rel")
+    done
+    prune+=(-o -name node_modules -o -name .git -o -name .venv -o -name venv -o -name site-packages
+        -o -name dosdevices -o -name 'Singleton*' -o -name __pycache__)
+    opt_bounded_find "$errfile" -H "$HOME" -xdev -maxdepth 8 \( "${prune[@]}" \) -prune -o -xtype l ! -path $'*\n*' -print
+}
+
+task_broken_symlinks() {
+    local errfile out rc=0
+    errfile=$(mktemp) || {
+        opt_gray "Broken link check skipped, no temporary file"
+        opt_outcome unavailable
+        return
+    }
+    out=$(opt_broken_symlinks "$errfile") || rc=$?
+    rm -f -- "$errfile"
+    local -a links=()
+    [[ -n "$out" ]] && mapfile -t links < <(printf '%s\n' "$out" | LC_ALL=C sort)
+    if [[ ${#links[@]} -eq 0 ]]; then
+        if [[ $rc -eq 124 ]]; then
+            opt_gray "Broken link check stopped after ${OPT_SCAN_SECONDS}s, your home folder was not fully searched"
+            opt_outcome unavailable
+        else
+            opt_line "No broken links in your home folder"
+            opt_outcome unchanged
+        fi
+        return
+    fi
+    opt_warn "$(mole_count_label "${#links[@]}" "link points" "links point") at something that is gone"
+    opt_list_paths "${links[@]}"
+    opt_hint "Check one with ls -l <path>, remove it with rm <path> once you know it is not needed"
+    [[ $rc -eq 124 ]] && opt_gray "The search stopped after ${OPT_SCAN_SECONDS}s, there may be more"
+    opt_outcome attention
+}
+
+# AUR (foreign) packages built against a runtime or library that has since
+# moved on. The approach follows rebuild-detector (ISC, Jelle van der Waa):
+# files a package put under a versioned runtime folder that no longer
+# matches the installed interpreter, and executables or libraries whose
+# shared libraries are gone. The code is Mole's own.
+#
+# Libraries: the NEEDED entries come from readelf -d, which only reads the
+# file; ldd runs the dynamic loader, which can execute code from the very
+# file being inspected, so it is never used. A library counts as present
+# when the ld.so cache lists it, when the same package ships a file of that
+# name (bundled libraries and wrapper-scripted apps), or when a RUNPATH or
+# RPATH folder of that file holds it. Only files of foreign packages are
+# read, under /usr/bin, /usr/lib, /usr/libexec and /opt.
+
+# Version folders of one runtime that are not the installed version and whose
+# own interpreter is not installed beside it (python311 from the AUR keeps
+# /usr/lib/python3.11 valid). $1 folder pattern prefix, $2 installed version,
+# $3 interpreter name template with %s for the version, empty when none.
+opt_stale_runtime_dirs() {
+    local glob="$1" current="$2" interp="$3" d ver
+    for d in $glob; do
+        [[ -d "$d" && ! -L "$d" ]] || continue
+        ver="${d##*/}"
+        ver="${ver#python}"
+        [[ "$ver" == "$current" ]] && continue
+        [[ "$ver" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || continue
+        # shellcheck disable=SC2059 # the template is ours
+        [[ -n "$interp" ]] && command -v "$(printf "$interp" "$ver")" > /dev/null 2>&1 && continue
+        printf '%s\n' "$d"
+    done
+}
+
+# Foreign packages that own one of the stale folders, one "name<TAB>reason"
+# per line. $1 foreign package list file (sorted), $2 label, $3 current
+# version, then the stale folders.
+opt_stale_runtime_owners() {
+    local foreign="$1" label="$2" current="$3" d owners p
+    shift 3
+    for d in "$@"; do
+        owners=$(mole_c pacman -Qqo -- "$d" 2> /dev/null) || continue
+        while IFS= read -r p; do
+            [[ -n "$p" ]] || continue
+            # the old runtime's own package (python311) is not broken
+            [[ "$label" == python && "$p" =~ ^python3[0-9]+$ ]] && continue
+            grep -qxF -- "$p" "$foreign" || continue
+            printf '%s\t%s files in %s, %s is now %s\n' "$p" "$label" "${d##*/}" "$label" "$current"
+        done <<< "$owners"
+    done
+}
+
+# Missing-library scan. $1 foreign package list file. Prints
+# "name<TAB>libfoo.so.1 is missing" lines. Returns 3 when readelf or
+# ldconfig is not there, 124 when the time limit cut it short.
+opt_missing_library_pkgs() {
+    local foreign="$1" tmp rc=0 ldconfig_bin
+    command -v readelf > /dev/null 2>&1 || return 3
+    ldconfig_bin=$(command -v ldconfig 2> /dev/null || true)
+    if [[ -z "$ldconfig_bin" ]]; then
+        [[ -x /sbin/ldconfig ]] && ldconfig_bin=/sbin/ldconfig
+    fi
+    [[ -n "$ldconfig_bin" ]] || return 3
+    tmp=$(mktemp -d) || return 3
+    local -a pkgs=()
+    mapfile -t pkgs < "$foreign"
+    [[ ${#pkgs[@]} -gt 0 ]] || { rm -rf -- "$tmp"; return 0; }
+    mole_c pacman -Ql -- "${pkgs[@]}" 2> /dev/null > "$tmp/ql" || true
+    mole_c "$ldconfig_bin" -p 2> /dev/null | awk 'NF >= 3 && $1 ~ /\.so/ { print $1 }' > "$tmp/cache" || true
+    # candidate files: not folders, in the places programs live
+    OPT_RE="$OPT_ELF_PATHS_RE" awk 'BEGIN { re = ENVIRON["OPT_RE"] } { p = substr($0, index($0, " ") + 1) } p !~ /\/$/ && p ~ re && p !~ /\.(py|pyc|png|svg|json|xml|h|a|txt|md|js|html|css)$/ { print p }' "$tmp/ql" | LC_ALL=C sort -u | head -n 30000 > "$tmp/files"
+    local -a batch=()
+    local f n=0
+    : > "$tmp/readelf"
+    local started=$SECONDS
+    while IFS= read -r f; do
+        batch+=("$f")
+        n=$((n + 1))
+        if ((${#batch[@]} == 400)); then
+            # /dev/null keeps readelf printing "File:" headers for a batch of one
+            mole_c readelf -d -W -- "${batch[@]}" /dev/null >> "$tmp/readelf" 2> /dev/null || true
+            batch=()
+            if ((SECONDS - started >= OPT_SCAN_SECONDS)); then rc=124; break; fi
+        fi
+    done < "$tmp/files"
+    if [[ $rc -eq 0 && ${#batch[@]} -gt 0 ]]; then
+        mole_c readelf -d -W -- "${batch[@]}" /dev/null >> "$tmp/readelf" 2> /dev/null || true
+    fi
+    # name<TAB>soname<TAB>file<TAB>runpath for each NEEDED the cache and the
+    # package's own files cannot answer
+    awk -v cachef="$tmp/cache" -v qlf="$tmp/ql" '
+        FILENAME == cachef { cache[$1] = 1; next }
+        FILENAME == qlf {
+            name = $1; path = substr($0, length($1) + 2)
+            owner[path] = name
+            b = path; sub(/.*\//, "", b)
+            have[name SUBSEP b] = 1
+            next
+        }
+        /^File: / { file = substr($0, 7); rp = ""; next }
+        /\((RUNPATH|RPATH)\)/ { s = $0; sub(/.*\[/, "", s); sub(/\].*/, "", s); rp = s; runpath[file] = s; next }
+        /\(NEEDED\)/ {
+            s = $0; sub(/.*\[/, "", s); sub(/\].*/, "", s)
+            need[++nn] = file SUBSEP s
+        }
+        END {
+            for (i = 1; i <= nn; i++) {
+                split(need[i], a, SUBSEP)
+                f = a[1]; so = a[2]
+                if (!(f in owner) || (so in cache)) continue
+                # the optional tracing provider of dotnet asks for lttng-ust, loaded only when tracing is on
+                if (f ~ /\/libcoreclrtraceptprovider\.so$/) continue
+                if ((owner[f] SUBSEP so) in have) continue
+                printf "%s\t%s\t%s\t%s\n", owner[f], so, f, runpath[f]
+            }
+        }' "$tmp/cache" "$tmp/ql" "$tmp/readelf" | LC_ALL=C sort -u > "$tmp/missing"
+    local name so file rpath dir found part
+    local -A seen=()
+    while IFS=$'\t' read -r name so file rpath; do
+        found=false
+        local -a dirs=()
+        IFS=':' read -ra dirs <<< "$rpath"
+        dirs+=("$(dirname -- "$file")")
+        for part in "${dirs[@]}"; do
+            [[ -n "$part" ]] || continue
+            dir="${part//\$\{ORIGIN\}/$(dirname -- "$file")}"
+            dir="${dir//\$ORIGIN/$(dirname -- "$file")}"
+            dir="${dir//\$\{LIB\}/lib}"
+            dir="${dir//\$LIB/lib}"
+            dir="${dir//\$\{PLATFORM\}/$(uname -m)}"
+            dir="${dir//\$PLATFORM/$(uname -m)}"
+            [[ -e "$dir/$so" ]] && { found=true; break; }
+        done
+        [[ "$found" == true ]] && continue
+        [[ -n "${seen[$name]:-}" ]] && continue
+        seen[$name]=1
+        printf '%s\t%s is missing for %s\n' "$name" "$so" "${file##*/}"
+    done < "$tmp/missing"
+    rm -rf -- "$tmp"
+    return "$rc"
+}
+
+task_rebuild() {
+    local out rc=0
+    out=$(mole_c pacman -Qmq 2> /dev/null) || rc=$?
+    if [[ $rc -eq 1 && -z "$out" ]] && mole_c pacman -Qq pacman > /dev/null 2>&1; then
+        opt_line "No packages from outside the repositories"
+        opt_outcome unchanged
+        return
+    fi
+    if [[ $rc -ne 0 || -z "$out" ]]; then
+        opt_gray "Rebuild check skipped, pacman could not be asked"
+        opt_outcome unavailable
+        return
+    fi
+    local foreign
+    foreign=$(mktemp) || {
+        opt_gray "Rebuild check skipped, no temporary file"
+        opt_outcome unavailable
+        return
+    }
+    printf '%s\n' "$out" | LC_ALL=C sort -u > "$foreign"
+    local -a hits=() dirs=()
+    local cur line
+    # python: /usr/lib/python3.X
+    if command -v python3 > /dev/null 2>&1; then
+        cur=$(mole_c timeout 5 python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2> /dev/null) || cur=""
+        if [[ "$cur" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            mapfile -t dirs < <(opt_stale_runtime_dirs "$OPT_USR_LIB/python3.*" "$cur" "python%s")
+            [[ ${#dirs[@]} -gt 0 ]] && while IFS= read -r line; do hits+=("$line"); done < <(opt_stale_runtime_owners "$foreign" python "$cur" "${dirs[@]}")
+        fi
+    fi
+    # perl: /usr/lib/perl5/X.Y
+    if command -v perl > /dev/null 2>&1; then
+        cur=$(mole_c timeout 5 perl -e 'printf "%d.%d", $^V->{version}[0], $^V->{version}[1]' 2> /dev/null) || cur=""
+        if [[ "$cur" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            mapfile -t dirs < <(opt_stale_runtime_dirs "$OPT_USR_LIB/perl5/*" "$cur" "")
+            [[ ${#dirs[@]} -gt 0 ]] && while IFS= read -r line; do hits+=("$line"); done < <(opt_stale_runtime_owners "$foreign" perl "$cur" "${dirs[@]}")
+        fi
+    fi
+    # ruby: /usr/lib/ruby/gems/X.Y.0
+    if command -v ruby > /dev/null 2>&1; then
+        cur=$(mole_c timeout 5 ruby -e 'print RbConfig::CONFIG["ruby_version"]' 2> /dev/null) || cur=""
+        if [[ "$cur" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            mapfile -t dirs < <(opt_stale_runtime_dirs "$OPT_USR_LIB/ruby/gems/*" "$cur" "")
+            [[ ${#dirs[@]} -gt 0 ]] && while IFS= read -r line; do hits+=("$line"); done < <(opt_stale_runtime_owners "$foreign" ruby "$cur" "${dirs[@]}")
+        fi
+    fi
+    local lib_rc=0 lib_out
+    lib_out=$(opt_missing_library_pkgs "$foreign") || lib_rc=$?
+    rm -f -- "$foreign"
+    [[ -n "$lib_out" ]] && while IFS= read -r line; do hits+=("$line"); done <<< "$lib_out"
+    if [[ ${#hits[@]} -eq 0 ]]; then
+        if [[ $lib_rc -eq 3 ]]; then
+            opt_gray "Library check skipped, readelf (binutils) or ldconfig is missing"
+            opt_outcome unavailable
+        elif [[ $lib_rc -ne 0 ]]; then
+            opt_gray "Library check stopped after ${OPT_SCAN_SECONDS}s, not every file was read"
+            opt_outcome unavailable
+        else
+            opt_line "No packages from outside the repositories need a rebuild"
+            opt_outcome unchanged
+        fi
+        return
+    fi
+    # one line per package: the first reason found
+    local -a names=() reasons=()
+    local -A got=()
+    local n reason
+    while IFS=$'\t' read -r n reason; do
+        [[ -n "${got[$n]:-}" ]] && continue
+        got[$n]=1
+        names+=("$n")
+        reasons+=("$reason")
+    done < <(printf '%s\n' "${hits[@]}" | LC_ALL=C sort)
+    opt_warn "$(mole_count_label "${#names[@]}" package) from outside the repositories $(opt_agree "${#names[@]}" "was" "were") built for something that has changed since"
+    local i
+    for i in "${!names[@]}"; do
+        if ((i == 5)); then
+            opt_sub "and $((${#names[@]} - 5)) more"
+            break
+        fi
+        opt_sub "${names[i]}  ${GRAY}${reasons[i]}${NC}"
+    done
+    opt_hint "Rebuild with your AUR helper, for example yay -S --rebuild <name>"
+    [[ $lib_rc -eq 3 ]] && opt_gray "Library check skipped, readelf (binutils) or ldconfig is missing"
+    [[ $lib_rc -eq 124 ]] && opt_gray "The library check stopped after ${OPT_SCAN_SECONDS}s, there may be more"
+    opt_outcome attention
+}
+
+# Files under /usr and /opt that no package lists, root-free: the package
+# file lists from pacman -Qlq against one find. The approach follows pacreport
+# (pacutils) and lostfiles (a find against pacman -Ql); the skips below are
+# Mole's own list of content that is legitimately not in any package:
+#   /usr/local                 where the admin installs by hand
+#   /usr/share/mime            update-mime-database output
+#   /usr/lib/node_modules      global npm packages (npm -g with prefix /usr)
+#   /usr/lib/modules/<kernel>  generated module indexes and DKMS modules of
+#                              the running kernel and of any installed one
+#                              (a folder of a kernel that is gone IS reported)
+#   __pycache__                bytecode written when root ran a script
+#   caches and databases a package's own hook builds: icon-theme.cache,
+#   mimeinfo.cache, gschemas.compiled, giomodule.cache, gconv-modules.cache,
+#   immodules.cache and gdk-pixbuf loaders.cache, locale-archive, hwdb.bin,
+#   /usr/share/info/dir, fonts.dir/fonts.scale/.uuid, graphviz config*,
+#   vlc plugins.dat, ghc package.cache
+# An unowned folder is reported once instead of each file in it. Report only:
+# a person decides what to do with each, since manual installs, pip --user-less
+# installs and leftovers all look the same from here.
+readonly OPT_UNOWNED_GENERATED='(^/usr/share/mime(/|$))|(^/usr/lib/node_modules(/|$))|(/__pycache__(/|$))|(/icon-theme\.cache$)|(^/usr/share/applications/mimeinfo\.cache$)|(^/usr/share/glib-2\.0/schemas/gschemas\.compiled$)|(^/usr/lib/gio/modules/giomodule\.cache$)|(^/usr/lib/gconv/gconv-modules\.cache$)|(/(immodules|loaders)\.cache$)|(^/usr/lib/locale/locale-archive(\.tmpl)?$)|(^/usr/lib/udev/hwdb\.bin$)|(^/usr/share/info/dir$)|(^/usr/share/fonts/.*/(fonts\.dir|fonts\.scale|\.uuid)$)|(^/usr/lib/graphviz/config[0-9]*$)|(^/usr/lib/vlc/plugins/plugins\.dat$)|(/package\.cache(\.lock)?$)'
+
+# The kernel module folders to leave out: the running kernel and every
+# kernel that still has its image (the generated files of a kernel whose
+# package was removed are real leftovers).
+opt_kernel_module_dirs() {
+    local d running
+    running=$(mole_c uname -r 2> /dev/null) || running=""
+    [[ -n "$running" ]] && printf '%s\n' "$OPT_USR_LIB/modules/$running"
+    for d in "$OPT_USR_LIB"/modules/*/; do
+        [[ -e "${d}vmlinuz" ]] && printf '%s\n' "${d%/}"
+    done
+    return 0
+}
+
+# Unowned entries as "path" lines, collapsed to the topmost unowned folder.
+# $1 temp dir (holds "owned" and "all"), prints nothing when all is owned.
+opt_unowned_collapse() {
+    OPT_RE="$OPT_UNOWNED_GENERATED" awk -v ownedf="$1/owned" '
+        BEGIN { re = ENVIRON["OPT_RE"] }
+        FILENAME == ownedf { owned[$0] = 1; next }
+        {
+            t = substr($0, 1, 1); p = substr($0, 3)
+            if (p in owned) next
+            if (t == "d") { udir[p] = 1; next }
+            if (p ~ re) next
+            files[++n] = p
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                top = files[i]; a = files[i]
+                while (sub(/\/[^\/]*$/, "", a) && a != "") if (a in udir) top = a
+                total++
+                if (!(top in shown)) { shown[top] = 1; print top }
+            }
+            print total + 0 > "/dev/stderr"
+        }' "$1/owned" "$1/all"
+}
+
+task_unowned() {
+    local tmp rc=0 root
+    tmp=$(mktemp -d) || {
+        opt_gray "Unowned file check skipped, no temporary folder"
+        opt_outcome unavailable
+        return
+    }
+    if ! mole_c pacman -Qlq 2> /dev/null | sed 's|/$||' | LC_ALL=C sort -u > "$tmp/owned" || [[ ! -s "$tmp/owned" ]]; then
+        rm -rf -- "$tmp"
+        opt_gray "Unowned file check skipped, pacman could not list its files"
+        opt_outcome unavailable
+        return
+    fi
+    local -a roots=() skip=()
+    for root in $OPT_UNOWNED_ROOTS; do
+        [[ -d "$root" && ! -L "$root" ]] && roots+=("$root")
+    done
+    if [[ ${#roots[@]} -eq 0 ]]; then
+        rm -rf -- "$tmp"
+        opt_line "No unowned file check needed, no /usr or /opt"
+        opt_outcome unchanged
+        return
+    fi
+    local d
+    skip=(-path /usr/local -o -path /usr/share/mime -o -path "$OPT_USR_LIB/node_modules" -o -name __pycache__)
+    while IFS= read -r d; do
+        [[ -n "$d" ]] && skip+=(-o -path "$(opt_glob_escape "$d")")
+    done < <(opt_kernel_module_dirs)
+    opt_bounded_find "$tmp/err" "${roots[@]}" -xdev \( "${skip[@]}" \) -prune -o \( -type f -o -type l -o -type d \) ! -path $'*\n*' -printf '%y %p\n' > "$tmp/all" || rc=$?
+    if [[ $rc -eq 124 ]]; then
+        rm -rf -- "$tmp"
+        opt_gray "Unowned file check stopped after ${OPT_SCAN_SECONDS}s, not every file was read"
+        opt_outcome unavailable
+        return
+    fi
+    local out total
+    out=$(opt_unowned_collapse "$tmp" 2> "$tmp/total") || out=""
+    total=$(cat "$tmp/total" 2> /dev/null) || total=0
+    if [[ -z "$out" ]]; then
+        rm -rf -- "$tmp"
+        opt_line "Every file under /usr and /opt belongs to a package"
+        opt_outcome unchanged
+        return
+    fi
+    # the biggest first, with sizes
+    local -a sized=()
+    mapfile -t sized < <(printf '%s\n' "$out" | head -n 300 | tr '\n' '\0' | xargs -0 -r du -sb -- 2> /dev/null | LC_ALL=C sort -rn | head -n 5)
+    rm -rf -- "$tmp"
+    local entries
+    entries=$(printf '%s\n' "$out" | grep -c .) || entries=0
+    opt_warn "$(mole_count_label "$total" file) under /usr and /opt $(opt_agree "$total" "belongs" "belong") to no package"
+    local line size path
+    for line in "${sized[@]}"; do
+        size="${line%%$'\t'*}"
+        path="${line#*$'\t'}"
+        opt_sub "$(mole_display_path "$path")  ${GRAY}$(bytes_to_human "$size")${NC}"
+    done
+    ((entries > ${#sized[@]})) && opt_sub "and $((entries - ${#sized[@]})) more places"
+    opt_hint "See what owns a path with pacman -Qo <path>; a manual install or an old leftover is yours to keep or remove with sudo"
+    opt_outcome attention
+}

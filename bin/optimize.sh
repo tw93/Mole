@@ -3,8 +3,10 @@
 # caches, compact browser databases while the browser is closed, and report
 # what a person should act on (failed services, broken launchers, autostart
 # entries, Hyprland start commands and user services, orphan packages, a stale
-# pacman lock, TRIM, power-manager conflicts, root-owned files in the home). It never uses sudo and never changes CPU, power or sysctl
-# settings, which belong to TLP, power-profiles-daemon and the like.
+# pacman lock, pending .pacnew merges, AUR packages that need a rebuild, files
+# no package owns, broken links in the home folder, TRIM, power-manager
+# conflicts, root-owned files in the home). It never uses sudo and never
+# changes CPU, power or sysctl settings, which belong to TLP, power-profiles-daemon and the like.
 
 set -euo pipefail
 
@@ -178,11 +180,15 @@ main() {
     if command -v pacman > /dev/null 2>&1; then
         run_task "Orphan Packages" task_orphans
         run_task "Package Database Lock" task_pacman_lock
+        run_task "Pending Config Merges" task_pacnew
+        run_task "Packages To Rebuild" task_rebuild
+        run_task "Unowned Files" task_unowned
     fi
     run_task "Browser Databases" task_browser_dbs
     run_task "Disk TRIM" task_trim
     run_task "Power Management" task_power
     run_task "Home Folder Ownership" task_home_ownership
+    run_task "Broken Links" task_broken_symlinks
 
     show_summary
     echo ""
