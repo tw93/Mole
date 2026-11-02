@@ -614,6 +614,34 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "install_files replaces read-only files an earlier sudo install left in the config tree" {
+	# A root-owned bin/ or lib/ file inside a user-owned directory cannot be
+	# opened for writing by plain cp -r. The copy failed, install_files carried
+	# on, and mo update printed success beside a stale file (1.67.0 update).
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+mole_source_installer
+SOURCE_DIR="$HOME/source"
+INSTALL_DIR="$HOME/install"
+CONFIG_DIR="$HOME/config"
+mkdir -p "$SOURCE_DIR/bin" "$SOURCE_DIR/lib/manage" "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/manage" "$INSTALL_DIR"
+printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="old"' > "$SOURCE_DIR/mole"
+printf '%s\n' 'new bin' > "$SOURCE_DIR/bin/clean.sh"
+printf '%s\n' 'new lib' > "$SOURCE_DIR/lib/manage/remove.sh"
+printf '%s\n' 'stale bin' > "$CONFIG_DIR/bin/clean.sh"
+printf '%s\n' 'stale lib' > "$CONFIG_DIR/lib/manage/remove.sh"
+chmod 444 "$CONFIG_DIR/bin/clean.sh" "$CONFIG_DIR/lib/manage/remove.sh"
+resolve_source_dir() { :; }
+needs_sudo() { return 1; }
+maybe_sudo() { "$@"; }
+download_binary() { return 0; }
+install_files > /dev/null 2>&1 || true
+[[ "$(cat "$CONFIG_DIR/bin/clean.sh")" == "new bin" ]] || { echo "bin file stayed stale"; exit 1; }
+[[ "$(cat "$CONFIG_DIR/lib/manage/remove.sh")" == "new lib" ]] || { echo "lib file stayed stale"; exit 1; }
+EOF
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "get_installed_version fallback reads VERSION past a pinned line that is not UTF-8" {
 	# A UTF-8 printf %q pinned non-ASCII config paths as raw lead bytes plus \NNN
 	# escapes. A UTF-8 sed stops at that line, before the VERSION line the

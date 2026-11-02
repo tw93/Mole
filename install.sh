@@ -1521,7 +1521,7 @@ install_files() {
         if [[ "$source_bin_abs" != "$config_bin_abs" ]]; then
             local -a bin_files=("$SOURCE_DIR/bin"/*)
             if [[ ${#bin_files[@]} -gt 0 ]]; then
-                cp -r "${bin_files[@]}" "$CONFIG_DIR/bin/"
+                cp -rf "${bin_files[@]}" "$CONFIG_DIR/bin/"
                 for file in "$CONFIG_DIR/bin/"*; do
                     [[ -e "$file" ]] && chmod +x "$file"
                 done
@@ -1535,7 +1535,7 @@ install_files() {
         if [[ "$source_lib_abs" != "$config_lib_abs" ]]; then
             local -a lib_files=("$SOURCE_DIR/lib"/*)
             if [[ ${#lib_files[@]} -gt 0 ]]; then
-                cp -r "${lib_files[@]}" "$CONFIG_DIR/lib/"
+                cp -rf "${lib_files[@]}" "$CONFIG_DIR/lib/"
             fi
         fi
     fi

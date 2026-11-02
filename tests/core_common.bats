@@ -1581,3 +1581,42 @@ printf '%s:%s\n' \"\$rc\" \"\$MOLE_HAS_FDA\"
     [ "$status" -eq 0 ] || return 1
     [ "$output" = "1 dir|0 items|12 items" ]
 }
+
+@test "mole_applescript_escape leaves no bare quote or trailing backslash in an AppleScript literal" {
+    cat > "$HOME/escape_probe.sh" << 'PROBE'
+source "$1/lib/core/base.sh"
+bad=0
+samples=('plain' 'a"b' 'a\b' 'x\"; do shell script "id"' $'two\nlines' 'ends\' '')
+for sample in "${samples[@]}"; do
+    mole_applescript_escape out "$sample"
+    # Drop every escaped pair; a surviving quote or backslash would end the literal early.
+    rest=${out//\\\\/}
+    rest=${rest//\\\"/}
+    case "$rest" in
+        *'"'* | *'\'*)
+            bad=1
+            printf 'unsafe: %s\n' "$out"
+            ;;
+    esac
+done
+mole_applescript_escape out 'a"b\c'
+[[ "$out" == 'a\"b\\c' ]] || {
+    bad=1
+    printf 'wrong: %s\n' "$out"
+}
+exit "$bad"
+PROBE
+    run /bin/bash --noprofile --norc "$HOME/escape_probe.sh" "$PROJECT_ROOT"
+    echo "$output"
+    [ "$status" -eq 0 ]
+}
+
+@test "AppleScript string literals built from bundle names use mole_applescript_escape" {
+    for f in lib/core/sudo.sh lib/core/app_protection.sh lib/uninstall/batch.sh; do
+        run grep -c '^[^#]*mole_applescript_escape ' "$PROJECT_ROOT/$f"
+        [ "$status" -eq 0 ]
+        [ "$output" -ge 1 ]
+        run grep -nE '^[^#]*\$\{[a-z_]+//\\\\"/' "$PROJECT_ROOT/$f"
+        [ "$status" -ne 0 ]
+    done
+}

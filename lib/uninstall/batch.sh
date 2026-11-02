@@ -672,8 +672,8 @@ remove_login_item() {
         # Skip AppleScript during tests to avoid permission dialogs
         if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
             # Escape double quotes and backslashes for AppleScript
-            local escaped_name="${clean_name//\\/\\\\}"
-            escaped_name="${escaped_name//\"/\\\"}"
+            local escaped_name=""
+            mole_applescript_escape escaped_name "$clean_name"
 
             local login_item_rc=0 deleted_count=""
             deleted_count=$(
