@@ -959,8 +959,11 @@ find_shared_app_paths() {
     # English locale already reached through the name. Such a name still
     # reaches the folder through the product token alone, held to the same
     # length and common-name gate (Mole Mac alternateIdentityPatterns).
+    # A common display name ("Music", "Files") stops discovery instead: its
+    # product token is just as generic and /Users/Shared/Audio is not its own.
+    _mole_uninstall_is_common_app_name "$app_name" && return 0
     local name_usable=true
-    if [[ -z "$app_name" || ${#app_name} -lt 5 ]] || _mole_uninstall_is_common_app_name "$app_name"; then
+    if [[ -z "$app_name" || ${#app_name} -lt 5 ]]; then
         name_usable=false
     fi
     if [[ "$name_usable" != "true" ]]; then

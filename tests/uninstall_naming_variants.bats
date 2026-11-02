@@ -631,6 +631,18 @@ EOF
     [[ -z "$result" ]]
 }
 
+@test "find_shared_app_paths stays silent for a common display name even with a usable product token" {
+    local shared="$HOME/Shared"
+    mkdir -p "$shared/Audio" "$shared/Projects"
+
+    # The product token only stands in for a short name; a common word such
+    # as "Music" must not reach /Users/Shared/Audio through com.vendor.audio.
+    result=$(find_shared_app_paths "com.vendor.audio" "Music" "$shared")
+    [[ -z "$result" ]] || return 1
+    result=$(find_shared_app_paths "com.acme.projects" "Files" "$shared")
+    [[ -z "$result" ]]
+}
+
 @test "find_app_files never lets a look-alike name claim a sibling product's folders" {
     # shellcheck disable=SC2030 # Bats runs each test in its own subshell.
     export MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps"
