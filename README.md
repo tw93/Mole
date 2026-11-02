@@ -21,10 +21,12 @@ This branch has its own code, written for Linux paths and tools. The look, the k
 
 ## Features
 
-- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Steam, Lutris and other shader caches, Thunderbird, Telegram, thumbnails, about 50 developer tools, old versions of AI coding agents, Flatpak and Snap app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages and journal logs through pacman's and systemd's own tools (on a snapper btrfs root it says the package space comes back only as snapshots rotate), and reports core dumps, container space and large caches it does not know. Anything you want kept goes in `mo clean --whitelist`
+- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, thumbnails, about 50 developer tools, old versions of AI coding agents, Flatpak and Snap app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages and journal logs through pacman's and systemd's own tools (on a snapper btrfs root it says the package space comes back only as snapshots rotate), and reports core dumps, container space and large caches it does not know. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch. Anything you want kept goes in `mo clean --whitelist`
 - **Uninstall**: removes pacman, AUR and Flatpak apps, Omarchy web and terminal apps and AppImages, shows each app's size and last use, stops its background services, then moves its leftovers to the Trash, matched by the app's exact ID only and never while the app is running
 - **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, pending `.pacnew` merges, AUR packages that need a rebuild, files no package owns, broken links in your home folder, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
 - **Analyze**: an interactive disk map of your volumes, home, caches and package cache that stays on local disks and follows btrfs subvolumes; deleting from it moves items to the Trash
+- **Purge**: removes build output of projects you have not touched for a week (`node_modules`, `target`, `build`, `.venv` and about 30 others), only next to the project file of the tool that rebuilds it, never with files git tracks inside and never while a program works in that project
+- **History**: lists what Mole removed, moved to the Trash or skipped, by run, with `--json` for scripts
 - **Status**: live CPU, memory pressure and zram, disks, network, temperatures, GPU, battery and power draw, peripherals, btrfs allocation and the busiest apps with their GPU memory, with a health score
 
 ## Install
@@ -57,6 +59,11 @@ mo analyze                 # disk map
 mo analyze /mnt/data
 mo status                  # live system status
 mo status --json           # one machine-readable snapshot
+mo purge                   # pick project build output to remove
+mo purge --dry-run         # preview
+mo purge --paths           # folders purge scans
+mo history                 # what Mole changed, by run
+mo history --json
 ```
 
 In the menus: arrow keys or `j`/`k` to move, `Space` to select, `Enter` to confirm, `/` to filter, `q` to quit.
@@ -67,7 +74,8 @@ In the menus: arrow keys or `j`/`k` to move, `Space` to select, `Enter` to confi
 - A cache is skipped while the app that owns it is running, and when Mole cannot tell whether it runs.
 - Uninstall leftovers are matched by the app's exact ID, never by part of a name. Caches are selected by default; settings and data are not, and browser profiles are never preselected.
 - Mole refuses to run as root, never removes system folders, mount points or other users' files, and never runs `pacman -Scc`, `--noconfirm` or `autoremove`.
-- Every change is written to `~/.local/state/mole/operations.log`.
+- Purge removes build output directly, after checking each folder again right before it goes: still the same folder, below the project folder through real folders only, yours, and not a mount point.
+- Every change is written to `~/.local/state/mole/operations.log`, and `mo history` reads it back.
 
 ## Features in Detail
 
@@ -123,6 +131,15 @@ mo status
 <img src="./docs/img/status-linux.png" alt="mo status dashboard" width="1000" />
 
 A live dashboard with a health score, CPU, memory, disk, power, network, and the busiest apps, with processes grouped by app. `mo status --json` prints one snapshot for scripts.
+
+### Purge
+
+```bash
+mo purge
+mo purge --paths
+```
+
+Scans `~/www`, `~/dev`, `~/Projects`, `~/code` and similar folders, plus any home folder that holds a project, or only the folders listed in `~/.config/mole/purge_paths`. Folders changed in the last 7 days and projects a program works in start unselected; the rest start selected. Outside a terminal, `--yes` removes only what is older than 7 days.
 
 ## Community
 

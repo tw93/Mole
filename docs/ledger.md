@@ -14,6 +14,7 @@ What has been decided, shipped, verified and left open for Mole CLI (Linux), in 
 | 2026-11-02 | Publish V0.1.0-linux with Flatpak verified only against a fake `flatpak` as a known residual. | Waiting for a machine with real Flatpak (it was verified later in CI). |
 | 2026-11-02 | 0.2.0: everything from the second study round (snapshot honesty, cache rules, xdg-ninja leftovers, optimize reports, status grouping). | Splitting it over several minor versions. |
 | 2026-11-02 | No logo on the macOS README (it already has a large header image); the Windows and Linux READMEs show the round app logo. | Adding the logo to all three. |
+| 2026-11-02 | 0.3.0 aligns with Mole CLI (Windows): purge, history, GPU shader caches only with `--gpu-shaders`, `--debug` session log. | Shipping purge alone; keeping shader caches in the default clean. |
 | 2026-11-02 | AUR package `mole-cli-bin`: prepared, then held because AUR registration is paused. | Homebrew on Linux (the `mole` formula is macOS-only), AUR names `mole` and `mole-bin` (taken by an unrelated SSH tunnel tool that ships `/usr/bin/mole`). |
 
 ## Releases
@@ -32,6 +33,7 @@ Both are published with `--latest=false`; `releases/latest` stays a macOS tag. R
 - **Real btrfs and snapper** (2026-11-02, throwaway VM with Omarchy's subvolumes and snapper config): 231 MB of old packages freed 0 MiB until the snapshot holding them was deleted, then 220 MiB; clean, uninstall, analyze and status all said so; a separate `@pkg` subvolume showed no note.
 - **Real Flatpak and Snap** (2026-11-02, `real-tools.yml` on Ubuntu 24.04): a user Flatpak app listed, removed through flatpak with its data kept and then listed as an orphan, its cache cleaned, 2.11 GB of unused runtime freed; Snap's `hello-world` cache found, skipped while running in its snap scope, cleaned afterwards. Runs again whenever clean, uninstall or delete code changes.
 - **CI** (`test.yml`): shellcheck, Go tests and bats in an `archlinux` container, plus a release archive installed, run and removed for a fresh user; aarch64 archive checked on an ARM runner.
+- **0.3.0 source** (2026-11-02, devbox as the user `mole`): 189 bats tests and the Go tests pass, shellcheck clean; `mo purge` driven in tmux (picker, confirm, 150 MB of `node_modules` and `target` removed, project files kept). An independent review in three rounds found 22 issues (1 high: a git failure read as "nothing tracked"); 20 fixed with tests, two kept as known gaps (non-dumpable processes, below; a debug line naming the home mid-line, which no caller writes today). The Omarchy VM run was cut off when the UU link to it dropped.
 - Not yet on real hardware: per-process GPU memory on a real GPU, AMD GPU sysfs names, every battery driver's fields.
 
 ## Measurements (2026-11-01)
@@ -50,8 +52,9 @@ Both are published with `--latest=false`; `releases/latest` stays a macOS tag. R
 ## Open
 
 - AUR `mole-cli-bin`, once registration reopens.
-- Purge, waiting for the maintainer.
 - apt, dnf and zypper rules.
 - `mo uninstall --yes` run outside a terminal cannot remove a Flatpak app, because flatpak answers its own prompt with "n"; Mole reports it as not removed. Kept, since package managers keep their own confirmation.
 - Hardware checks listed under Verification record.
+- Purge's in-use check cannot read the working folder of a non-dumpable process (KeePassXC, ssh-agent and the like); such a process counts as working nowhere. Refusing every purge whenever one runs was judged worse, since those are not dev servers.
+- 0.3.0 on the Omarchy VM and its release, once the maintainer says go.
 - Networks that reset github.com release downloads (seen 2026-11-02 from the ThinkPad's network, API reachable) make `install.sh` and `mo update` fail; the installer's `--archive`/`--sums` is the workaround.

@@ -15,8 +15,8 @@ Mole CLI (Linux) learns rules and facts from other Linux tools, never their code
 | `disktree` | tobi/disktree | 2026-11-01 | `9b18b27` | MIT | analyze | Followed for volume, snapshot and removal guards |
 | `czkawka` | qarmin/czkawka | 2026-11-01 | `d776b0a` | mixed | analyze | Reference |
 | `rmlint` | sahib/rmlint | 2026-11-01 | `3a44e63` | GPL-3.0 | analyze | Reference |
-| `npkill` | voidcosmos/npkill | 2026-11-01 | `56cbc39` | MIT | purge | Reference; purge deferred |
-| `kondo` | tbillington/kondo | 2026-11-01 | `1d351ca` | MIT | purge | Reference; purge deferred |
+| `npkill` | voidcosmos/npkill | 2026-11-01 | `56cbc39` | MIT | purge | Reference for target names (0.3.0) |
+| `kondo` | tbillington/kondo | 2026-11-01 | `1d351ca` | MIT | purge | Target-to-project-file pairing (0.3.0) |
 | `btop` | aristocratos/btop | 2026-11-01 | `fd1d292` | Apache-2.0 | status | Followed for sysfs discovery |
 | `TLP` | linrunner/TLP | 2026-11-01 | `40b02a6` | GPL-2.0 | optimize | Defines what Mole never touches |
 | `auto-cpufreq` | AdnanHodzic/auto-cpufreq | 2026-11-01 | `fe7b13b` | GPL-3.0 | optimize | Counterexample (stops other daemons); detection only |
@@ -42,6 +42,7 @@ Mole CLI (Linux) learns rules and facts from other Linux tools, never their code
 - **optimize.** Report-only checks for pending `.pacnew`/`.pacsave`/`.pacorig` under `/etc` and files no package owns (pacutils `pacreport`), foreign packages that need a rebuild, read with `readelf -d` rather than `ldd` (rebuild-detector), broken links in the home folder (cylon), with lostfiles' exclusions as fixtures of "unowned but legitimate" (`03052016`). Power managers are detected and reported, never changed (TLP, auto-cpufreq).
 - **analyze.** Volumes from `/proc/self/mountinfo` (gdu); device-backed filesystems only, mount points refused, snapshots counted but not scanned (disktree); same filesystem decided by mount source and type, since every btrfs subvolume has its own `st_dev` (the reason dua-cli's rule was not taken).
 - **status.** Battery, temperature and GPU sources from sysfs (btop); apps grouped by their systemd cgroup and per-process GPU memory from DRM fdinfo (mission-center ideas, `5331fcdb`); btrfs allocation from `/sys/fs/btrfs` without root.
+- **purge.** kondo's model of pairing each build folder with the project file of the tool that made it, applied to every target; extra Linux targets from kondo (`_build`, `.stack-work`, `cmake-build-*`); Mole CLI (macOS)'s authored-content probe, node_modules install-record rule and 7-day activity (0.3.0).
 - **Trash.** `.trashinfo` reserved with `O_EXCL` before the move and rolled back on failure, per-volume `.Trash-$uid`, cross-device moves refused (gdu, disktree, and one community port's sink).
 
 ## Refused, and why
@@ -67,6 +68,5 @@ Ten ports were read on 2026-11-01, nothing executed. None was forked from or cop
 
 ## Open
 
-- Purge (project build folders) waits for the maintainer; kondo and npkill hold the target list.
 - apt, dnf and zypper rules come with Debian/Ubuntu and Fedora support.
 - Not verified on hardware: AMD GPU sysfs names, every battery driver's field names, per-process GPU memory on a real GPU.
