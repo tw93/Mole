@@ -642,7 +642,41 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 		return nil, fmt.Errorf("cache expired: directory modified")
 	}
 
+	// Directory mtimes cannot validate in-place file writes or descendant
+	// changes. Only a complete, bounded file listing can be checked cheaply.
+	// Other snapshots remain useful for first paint, then refresh in the TUI.
+	entry.contentVerified = cachedFileSizesUnchanged(entry)
+	entry.NeedsRefresh = entry.NeedsRefresh || !entry.contentVerified
 	return entry, nil
+}
+
+// cachedFileSizesUnchanged never walks a subtree. Disk snapshots hold at most
+// maxEntries rows, so validation performs at most that many metadata reads.
+// A directory row or a listing already marked for refresh cannot prove a
+// recursive total current. A saturated listing may have omitted empty directories
+// even when its cached file count and byte total still match.
+func cachedFileSizesUnchanged(entry *cacheEntry) bool {
+	if entry.NeedsRefresh || len(entry.Entries) >= maxEntries {
+		return false
+	}
+	var total, files int64
+	for _, child := range entry.Entries {
+		if child.IsDir {
+			// A denial-only partial scan intentionally retains unavailable rows;
+			// they contribute no bytes and do not trigger repeated denied scans.
+			if entry.State == scanPartial && child.State == scanUnavailable && child.Size <= 0 {
+				continue
+			}
+			return false
+		}
+		info, err := os.Lstat(child.Path)
+		if err != nil || !info.Mode().IsRegular() || info.ModTime().After(entry.ScanTime) || getActualFileSize(child.Path, info) != child.Size {
+			return false
+		}
+		total += child.Size
+		files++
+	}
+	return files == entry.TotalFiles && total == entry.TotalSize
 }
 
 // loadStaleCacheFromDisk loads cache without strict freshness checks.

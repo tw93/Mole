@@ -632,7 +632,7 @@ func loadCachedSubdirResult(ctx context.Context, path string, largeFileChan chan
 		return scanResult{}, false
 	}
 	cached, err := loadCacheFromDisk(path)
-	if err != nil {
+	if err != nil || !cached.contentVerified {
 		return scanResult{}, false
 	}
 

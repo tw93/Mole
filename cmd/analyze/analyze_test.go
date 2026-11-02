@@ -1578,12 +1578,11 @@ func TestScanPathConcurrentUsesChildCacheLargeFiles(t *testing.T) {
 		t.Fatalf("saveCacheToDisk(child): %v", err)
 	}
 
-	if err := os.Chmod(child, 0o000); err != nil {
-		t.Fatalf("chmod child unreadable: %v", err)
+	// Reuse now requires readable file metadata, rather than accepting an
+	// unreadable subtree's old size as current.
+	if _, ok := loadCachedSubdirResult(context.Background(), child, make(chan fileEntry, maxLargeFiles)); !ok {
+		t.Fatal("unchanged child cache was not reused")
 	}
-	defer func() {
-		_ = os.Chmod(child, 0o755)
-	}()
 
 	var filesScanned, dirsScanned, bytesScanned int64
 	current := &atomic.Value{}
@@ -2296,8 +2295,8 @@ func TestManualRefreshBypassesNestedSubdirCache(t *testing.T) {
 	if reused.err != nil {
 		t.Fatalf("cached scan: %v", reused.err)
 	}
-	if reused.result.TotalSize != warmed.result.TotalSize {
-		t.Fatalf("expected ordinary scan to reuse nested cache size %d, got %d", warmed.result.TotalSize, reused.result.TotalSize)
+	if reused.result.TotalSize >= warmed.result.TotalSize {
+		t.Fatalf("ordinary scan reused stale nested cache size %d, got %d", warmed.result.TotalSize, reused.result.TotalSize)
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})

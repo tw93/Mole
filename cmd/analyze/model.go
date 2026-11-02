@@ -120,6 +120,8 @@ type cacheEntry struct {
 	// with different sizing semantics. Entries not at cacheSchemaVersion are
 	// rejected on load. Old caches decode this as 0.
 	SchemaVersion int
+	// contentVerified is computed on load, never persisted by gob.
+	contentVerified bool
 }
 
 type historyEntry struct {

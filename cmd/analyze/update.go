@@ -486,7 +486,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentPath != nil {
 				m.currentPath.Store("")
 			}
-			cmd := tea.Batch(m.scanFreshCmd(m.path), m.startTick())
+			// Revalidate every descendant, including overview snapshots: an
+			// unchanged directory mtime cannot establish their freshness.
+			cmd := tea.Batch(m.scanBypassingCacheCmd(m.path), m.startTick())
 			return m, cmd
 		}
 
