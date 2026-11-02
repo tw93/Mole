@@ -563,7 +563,8 @@ function Install-Mole {
     if ($installerPowerShellPath -eq 'pwsh.exe') {
         # Search PATH explicitly so a pwsh.exe in the caller's working folder
         # cannot replace the selected host. CMD expands the Unicode path.
-        $batchHostSetup = 'for %%P in (pwsh.exe) do set "_MOLE_POWERSHELL=%%~$PATH:P"'
+        $batchHostSetup = 'for %%P in (pwsh.exe) do set "_MOLE_POWERSHELL=%%~$PATH:P"' + "`n" +
+            'if not defined _MOLE_POWERSHELL (1>&2 echo Mole: pwsh.exe is not on PATH. Reinstall PowerShell 7 or rerun install.ps1.& exit /b 9009)'
         $installerPowerShellPath = '%_MOLE_POWERSHELL%'
     }
     $batchContent = @"

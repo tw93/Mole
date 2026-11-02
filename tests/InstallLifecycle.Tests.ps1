@@ -202,6 +202,40 @@ exit 7
         }
     }
 
+    It 'Names the missing host when pwsh has left PATH since installation' {
+        if ($PSVersionTable.PSEdition -ne 'Core') {
+            Get-InstallerPowerShellPath | Should -Be (Join-Path $PSHOME 'powershell.exe')
+            return
+        }
+        $aliasDir = Join-Path $TestDrive ('gone-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        $null = New-Item -ItemType Junction -Path $aliasDir -Target $PSHOME -ErrorAction Stop
+        $savedPath = $env:PATH
+        try {
+            try {
+                $env:PATH = $aliasDir + ';' + $savedPath
+                Install-Mole 6>$null | Should -BeTrue
+            }
+            finally { $env:PATH = $savedPath }
+            foreach ($name in @('mo.cmd', 'mole.cmd')) {
+                $start = New-Object System.Diagnostics.ProcessStartInfo
+                $start.FileName = $env:ComSpec
+                $start.UseShellExecute = $false
+                $start.RedirectStandardError = $true
+                $start.EnvironmentVariables['PATH'] = Join-Path $env:SystemRoot 'System32'
+                $start.Arguments = '/d /s /c ""' + (Join-Path $script:SourceDir $name) + '" --version"'
+                $process = [System.Diagnostics.Process]::Start($start)
+                try {
+                    $stderr = $process.StandardError.ReadToEnd()
+                    $process.WaitForExit()
+                    $process.ExitCode | Should -Be 9009
+                    $stderr | Should -Match 'pwsh\.exe is not on PATH'
+                }
+                finally { $process.Dispose() }
+            }
+        }
+        finally { [IO.Directory]::Delete($aliasDir, $false) }
+    }
+
     It 'Starts both launchers with a portable host outside PATH under a non-ASCII profile' {
         if ($PSVersionTable.PSEdition -ne 'Core') {
             Get-InstallerPowerShellPath | Should -Be (Join-Path $PSHOME 'powershell.exe')
