@@ -3617,6 +3617,21 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "decode_file_list keeps non-UTF-8 paths under a UTF-8 locale" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=en_US.UTF-8 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+
+encoded=$(printf '/Users/test/caf\xe9/data' | base64 | tr -d '\n')
+result=$(decode_file_list "$encoded" "TestApp" 2>&1)
+[[ "$result" != *"null bytes"* ]] || exit 1
+[[ "$result" == "/Users/test/caf"*"/data" ]] || exit 1
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "login item helper discovery discards partial results and preserves cancellation" {
     local app="$HOME/Applications/PartialHelpers.app"
     local helper="$app/Contents/Library/LoginItems/Partial.app"

@@ -79,7 +79,7 @@ decode_file_list() {
     # Bash variables cannot safely carry NUL bytes, and Bash 3.2 expands
     # $'\0' to an empty regex. Compare the decoded bytes before reading them.
     # shellcheck disable=SC2094 # cmp only reads the exact scratch file.
-    if ! tr -d '\000' < "$decoded_file" | cmp -s - "$decoded_file"; then
+    if ! LC_ALL=C tr -d '\000' < "$decoded_file" | cmp -s - "$decoded_file"; then
         log_warning "File list for $app_name contains null bytes, rejecting" >&2
         rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
         echo ""
@@ -136,7 +136,7 @@ decode_bundle_id_list() {
     # Keep this check byte-oriented for Bash 3.2 compatibility; NUL cannot be
     # represented in a shell variable and $'\0' becomes an empty regex there.
     # shellcheck disable=SC2094 # cmp only reads the exact scratch file.
-    if ! tr -d '\000' < "$decoded_file" | cmp -s - "$decoded_file"; then
+    if ! LC_ALL=C tr -d '\000' < "$decoded_file" | cmp -s - "$decoded_file"; then
         log_warning "Helper id list for $app_name contains null bytes, rejecting" >&2
         rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
         echo ""
