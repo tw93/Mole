@@ -27,7 +27,7 @@ Both are published with `--latest=false`; `releases/latest` stays a macOS tag. R
 
 ## Verification record
 
-- **Omarchy VM** (Try Omarchy, Arch, ext4, Chinese locale): every 0.1.0 and 0.2.0 command run for real, each safety guard red-run, the full bats and Go gates run natively; 0.1.0 installed from the public `install.sh` into a fresh home, and `mo update` moved it to 0.2.0.
+- **Omarchy VM** (Try Omarchy, Arch, ext4, Chinese locale): every 0.1.0 and 0.2.0 command run for real, each safety guard red-run, the full bats and Go gates run natively; 0.1.0 installed from the public `install.sh` into a fresh home, and `mo update` moved it to 0.2.0; 0.2.0 installed the same way on 2026-11-02 (archive passed in with `--archive`, since github.com release downloads were reset on the ThinkPad's network), every command exiting 0 through `mo remove --yes`.
 - **Devbox** (Debian 12 container): GNU tool behaviour and sudo password flows with a throwaway sudoers entry.
 - **Real btrfs and snapper** (2026-11-02, throwaway VM with Omarchy's subvolumes and snapper config): 231 MB of old packages freed 0 MiB until the snapshot holding them was deleted, then 220 MiB; clean, uninstall, analyze and status all said so; a separate `@pkg` subvolume showed no note.
 - **Real Flatpak and Snap** (2026-11-02, `real-tools.yml` on Ubuntu 24.04): a user Flatpak app listed, removed through flatpak with its data kept and then listed as an orphan, its cache cleaned, 2.11 GB of unused runtime freed; Snap's `hello-world` cache found, skipped while running in its snap scope, cleaned afterwards. Runs again whenever clean, uninstall or delete code changes.
@@ -54,3 +54,4 @@ Both are published with `--latest=false`; `releases/latest` stays a macOS tag. R
 - apt, dnf and zypper rules.
 - `mo uninstall --yes` run outside a terminal cannot remove a Flatpak app, because flatpak answers its own prompt with "n"; Mole reports it as not removed. Kept, since package managers keep their own confirmation.
 - Hardware checks listed under Verification record.
+- Networks that reset github.com release downloads (seen 2026-11-02 from the ThinkPad's network, API reachable) make `install.sh` and `mo update` fail; the installer's `--archive`/`--sums` is the workaround.
