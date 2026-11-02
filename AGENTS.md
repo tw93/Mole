@@ -4,6 +4,8 @@ This is the `linux` branch of `tw93/Mole`: **Mole CLI (Linux)**, a terminal clea
 
 Status: released. `V0.1.0-linux` was published on 2026-11-02, with the README status line and a reply on tw93/Mole#1371 in the same step; the README keeps its "Under construction" framing while the product is early. Flatpak paths shipped verified only against a fake `flatpak`; since 2026-11-02 `real-tools.yml` runs them against real flatpak (see `SYNC.md`). `V0.2.0-linux` (titled Candid) followed on 2026-11-02 on `30e358d7`; its btrfs and snapper paths were run on real btrfs with Omarchy's snapper config on 2026-11-02 (see Test environment).
 
+Records: `docs/ledger.md` (decisions, releases, verification, measurements, open items), `docs/oss-research.md` (what was learned from which open-source tool), `SYNC.md` (rows against the macOS and Windows CLIs). Study clones and raw notes are in the ignored `.artifacts/`.
+
 ## Product names
 
 Use **Mole Mac**, **Mole for Windows**, **Mole CLI (macOS)**, **Mole CLI (Windows)** and **Mole CLI (Linux)** exactly. Never an unqualified "CLI" or "Linux version" where the product is ambiguous.
