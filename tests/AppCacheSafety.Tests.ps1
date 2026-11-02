@@ -699,6 +699,27 @@ Describe 'Delivery Optimization files' {
         Should -Invoke Invoke-CimMethod -Times 2 -Exactly
     }
 
+    It 'Keeps wildcard-protected descendants without probing a single child in preview <Preview>: <Pattern>' -ForEach @(
+        @{ Pattern = 'C:\*\DeliveryOptimization\Cache\Downloads'; Preview = $false }
+        @{ Pattern = 'C:\*\DeliveryOptimization\Cache\Downloads'; Preview = $true }
+        @{ Pattern = '*\DeliveryOptimization\Cache\??*'; Preview = $false }
+        @{ Pattern = '*\DeliveryOptimization\Cache\??*'; Preview = $true }
+        @{ Pattern = '*\DeliveryOptimization\Cache\[a-z]*\payload'; Preview = $false }
+        @{ Pattern = '*\DeliveryOptimization\Cache\[a-z]*\payload'; Preview = $true }
+    ) {
+        Set-DryRunMode -Enabled $Preview
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value $Pattern
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 0 -Exactly
+        (Get-CleanupStats).TotalSizeKB | Should -Be 0
+    }
+
+    It 'Still clears beside an unrelated partial directory wildcard' {
+        Set-Content -LiteralPath $script:Config.WhitelistFile -Value 'C:\Unrelated*\Cache\*'
+        Clear-DeliveryOptimizationFiles
+        Should -Invoke Invoke-CimMethod -Times 2 -Exactly
+    }
+
     It 'Keeps everything when protection appears right before the delete' {
         $script:DoWhitelistReads = 0
         Mock Get-WhitelistState {

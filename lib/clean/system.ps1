@@ -402,8 +402,8 @@ function Test-MoleDeliveryOptimizationClearable {
 
 # The service deletes inside its root, so a whitelist row on the root, above
 # it, or anywhere below it keeps every file; unknown protection keeps them too.
-# A wildcard row counts when its fixed directory part sits above or below the
-# root, or when it matches a child of the root.
+# A wildcard can cover an unknown descendant. Retain the root whenever the
+# literal prefix before its first wildcard can overlap this subtree.
 function Test-MoleDeliveryOptimizationProtected {
     param([string]$Root)
     $state = Get-WhitelistState
@@ -421,10 +421,9 @@ function Test-MoleDeliveryOptimizationProtected {
             if ($pattern.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $true }
             $wildcard = $pattern.IndexOfAny([char[]]@('*', '?', '[', '`'))
             if ($wildcard -lt 0) { continue }
-            if (($prefix + 'x') -like $pattern) { return $true }
-            $fixed = $pattern.Substring(0, $pattern.LastIndexOf('\', [Math]::Max($wildcard - 1, 0)) + 1)
-            if ($fixed.Length -gt 3 -and ($fixed.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
-                    $prefix.StartsWith($fixed, [StringComparison]::OrdinalIgnoreCase))) { return $true }
+            $fixed = $pattern.Substring(0, $wildcard)
+            if (-not $fixed -or $fixed.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+                    $prefix.StartsWith($fixed, [StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
     }
     return $false
