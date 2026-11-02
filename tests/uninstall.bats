@@ -7115,6 +7115,58 @@ EOF
     done
 }
 
+@test "batch_uninstall_applications adds a failed app removal to MOLE_UNINSTALL_FAILED_APPS" {
+    local fixture_home
+    fixture_home=$(mktemp -d "$HOME/failed-count-fixture.XXXXXX")
+    HOME="$fixture_home" create_app_artifacts
+
+    run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+brew() { :; }
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+force_kill_app() { return 0; }
+sudo() { return 0; }
+
+app_bundle="$HOME/Applications/TestApp.app"
+mkdir -p "$app_bundle"
+# The real batch runs; only the bundle's own removal fails, as a permission
+# error would, so the counter has to come from the batch's failure branch.
+eval "$(declare -f mole_delete | sed '1s/mole_delete/_real_mole_delete/')"
+mole_delete() {
+    [[ "$1" == "$app_bundle" ]] && return 1
+    _real_mole_delete "$@"
+}
+
+selected_apps=("0|$app_bundle|TestApp|com.example.TestApp|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+MOLE_UNINSTALL_FAILED_APPS=0
+mole_test_select_all_uninstall_data
+# Not a pipe: the batch must run in this shell for the counter to be visible.
+MOLE_TEST_MODE=1 batch_uninstall_applications < <(printf 'd\n') > "$HOME/batch_output.log" 2>&1 || true
+[[ -d "$app_bundle" ]] || { echo "bundle removed despite failing sink"; cat "$HOME/batch_output.log"; exit 1; }
+printf 'FAILED_APPS=%s\n' "$MOLE_UNINSTALL_FAILED_APPS"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"FAILED_APPS=1"* ]]
+}
+
 @test "by-name matched list renders control characters as placeholders" {
     run env NO_COLOR=1 HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
