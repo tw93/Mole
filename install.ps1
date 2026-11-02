@@ -674,6 +674,7 @@ function Get-MoleInstallNestedFiles {
         "docs\development-pitfalls.md"
         "docs\development-record.md"
         "docs\incidents.md"
+        "docs\oss-research.md"
         "docs\img\analyze-windows.png"
         "docs\img\clean-windows.png"
         "docs\img\mole-windows.png"

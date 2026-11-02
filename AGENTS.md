@@ -40,6 +40,8 @@ Start resumed Windows CLI work with [the development record](docs/development-re
 
 Read [development pitfalls](docs/development-pitfalls.md) only when working on the matching PowerShell, launcher, Git, asynchronous TUI or Windows test boundary. Current policy stays in this guide; the reference explains failure mechanisms and points to regression tests. Add only a verified, non-obvious lesson or rejected alternative, preferably under an existing topic. Do not copy every small fix or successful check into permanent rules.
 
+[Open-source research](docs/oss-research.md) lists the studied Windows tools with the upstream commit last read, the rejected directions and the open CLI candidates; read it before studying a tool again, read only the increment after its commit, and move the row when done.
+
 [SECURITY_AUDIT.md](SECURITY_AUDIT.md) describes the Windows CLI safety model and verification limits. Update affected claims when deletion, ownership, privilege or distribution boundaries change. Keep CI, VM, physical-machine and signed-release evidence separate in the development record; an observed remote desktop or attempted command is not a completed hardware test. Machine connection details and raw diagnostics stay out of public documents.
 
 Interactive size lists use `Format-SizeListEntry` for display-cell truncation and padding; .NET format widths and Windows ConsoleHost's width helper do not reliably count CJK cells. Store app display sizes use their read-only measurement, never deletion snapshots or elevated access. Neither a display measurement nor its cache grants deletion authority. Regression and ordinary-user evidence are in the development record.
