@@ -15,15 +15,15 @@
   <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="600" />
 </p>
 
-**Under construction.** Mole CLI for Linux is still early: the latest release is [V0.3.0-linux](https://github.com/tw93/Mole/releases/tag/V0.3.0-linux), and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; on other distributions the user-level parts work and the pacman items do not appear.
+**Under construction.** Mole CLI for Linux is still early: the latest release is [V0.3.0-linux](https://github.com/tw93/Mole/releases/tag/V0.3.0-linux), and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; Debian and Ubuntu are covered too (apt and Snap), and on other distributions the user-level parts work while the package-manager items do not appear.
 
 This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole#readme).
 
 ## Features
 
-- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, thumbnails, about 50 developer tools, old versions of AI coding agents, Flatpak and Snap app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages and journal logs through pacman's and systemd's own tools (on a snapper btrfs root it says the package space comes back only as snapshots rotate), and reports core dumps, container space and large caches it does not know. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch. Anything you want kept goes in `mo clean --whitelist`
-- **Uninstall**: removes pacman, AUR and Flatpak apps, Omarchy web and terminal apps and AppImages, shows each app's size and last use, stops its background services, then moves its leftovers to the Trash, matched by the app's exact ID only and never while the app is running
-- **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, pending `.pacnew` merges, AUR packages that need a rebuild, files no package owns, broken links in your home folder, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
+- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, thumbnails, about 50 developer tools, old versions of AI coding agents, Flatpak and Snap app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages, apt package files that can no longer be downloaded and journal logs through pacman's, apt's and systemd's own tools (on a snapper btrfs root it says the package space comes back only as snapshots rotate), reports the space Snap keeps for rolling back, and reports core dumps, container space and large caches it does not know. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch. Anything you want kept goes in `mo clean --whitelist`
+- **Uninstall**: removes pacman, AUR, apt, Snap and Flatpak apps, Omarchy web and terminal apps and AppImages, shows each app's size and last use, stops its background services, then moves its leftovers to the Trash, matched by the app's exact ID only and never while the app is running
+- **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan and unneeded packages, configuration that removed apt packages left behind, pending `.pacnew`, `.dpkg-dist` and `.ucf-dist` merges, AUR packages that need a rebuild, files no package owns, broken links in your home folder, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
 - **Analyze**: an interactive disk map of your volumes, home, caches and package cache that stays on local disks and follows btrfs subvolumes; deleting from it moves items to the Trash
 - **Purge**: removes build output of projects you have not touched for a week (`node_modules`, `target`, `build`, `.venv` and about 30 others), only next to the project file of the tool that rebuilds it, never with files git tracks inside and never while a program works in that project
 - **History**: lists what Mole removed, moved to the Trash or skipped, by run, with `--json` for scripts
@@ -35,7 +35,7 @@ This branch has its own code, written for Linux paths and tools. The look, the k
 curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
 ```
 
-Mole installs into `~/.local/share/mole` and links `mo` into `~/.local/bin`. It needs no sudo to install and runs as your own user; the only steps that ask for sudo are `paccache` and `journalctl` in `mo clean` and the package removal in `mo uninstall`, and pacman keeps its own confirmation there.
+Mole installs into `~/.local/share/mole` and links `mo` into `~/.local/bin`. It needs no sudo to install and runs as your own user; the only steps that ask for sudo are `paccache`, `apt-get autoclean` and `journalctl` in `mo clean` and the package removal in `mo uninstall`, where pacman and apt keep their own confirmation.
 
 ```bash
 mo update          # install the latest release
@@ -73,7 +73,7 @@ In the menus: arrow keys or `j`/`k` to move, `Space` to select, `Enter` to confi
 - Files you could want back go to the freedesktop Trash, with a `.trashinfo` so your file manager can restore them. Only caches from a fixed list are removed directly, since moving a cache to the Trash frees nothing.
 - A cache is skipped while the app that owns it is running, and when Mole cannot tell whether it runs.
 - Uninstall leftovers are matched by the app's exact ID, never by part of a name. Caches are selected by default; settings and data are not, and browser profiles are never preselected.
-- Mole refuses to run as root, never removes system folders, mount points or other users' files, and never runs `pacman -Scc`, `--noconfirm` or `autoremove`.
+- Mole refuses to run as root, never removes system folders, mount points or other users' files, and never runs `pacman -Scc`, `apt-get clean`, `--noconfirm`, `-y` or `autoremove`.
 - Purge removes build output directly, after checking each folder again right before it goes: still the same folder, below the project folder through real folders only, yours, and not a mount point.
 - Every change is written to `~/.local/state/mole/operations.log`, and `mo history` reads it back.
 
@@ -99,7 +99,7 @@ mo uninstall
 
 <img src="./docs/img/uninstall-linux.png" alt="mo uninstall app list" width="736" />
 
-Lists pacman, AUR, Flatpak, AppImage, Omarchy web and terminal apps with their size and last use. Picked apps are removed by their own package manager, with its own confirmation, and their leftovers go to the Trash. `mo uninstall --dry-run` shows everything that would happen without running anything.
+Lists pacman, AUR, apt, Snap, Flatpak, AppImage, Omarchy web and terminal apps with their size and last use. Picked apps are removed by their own package manager, with its own confirmation where it has one (Snap has none, so Mole's confirmation is the last step), and their leftovers go to the Trash. Before apt runs, Mole names any other package apt would remove with it, such as a desktop metapackage. `mo uninstall --dry-run` shows everything that would happen without running anything.
 
 ### Optimize
 

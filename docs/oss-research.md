@@ -33,6 +33,7 @@ Mole CLI (Linux) learns rules and facts from other Linux tools, never their code
 | `sweeper` | KDE/sweeper | 2026-11-02 | `963af37` | LGPL-2.1-or-later | clean | Out of scope (privacy, not disk) |
 | `dua-cli` | Byron/dua-cli | 2026-11-02 | `bc03fed` | MIT | analyze | Nothing taken; its `st_dev` rule breaks btrfs |
 | `mission-center` | mission-center-devs/mission-center (GitLab) | 2026-11-02 | `7a86367` | GPL-3.0 | status | App grouping and per-process GPU memory as ideas |
+| `ubuntu-cleaner` | gerardpuig/ubuntu-cleaner | 2026-11-02 | `fc90eb2` | GPL-3.0 | clean, optimize | What its janitor plugins cover on Ubuntu; the removals themselves refused |
 | `community/` | ten community Linux ports of Mole | 2026-11-01 | one shallow commit each | mixed | all | See below |
 
 ## Taken, by command
@@ -43,9 +44,12 @@ Mole CLI (Linux) learns rules and facts from other Linux tools, never their code
 - **analyze.** Volumes from `/proc/self/mountinfo` (gdu); device-backed filesystems only, mount points refused, snapshots counted but not scanned (disktree); same filesystem decided by mount source and type, since every btrfs subvolume has its own `st_dev` (the reason dua-cli's rule was not taken).
 - **status.** Battery, temperature and GPU sources from sysfs (btop); apps grouped by their systemd cgroup and per-process GPU memory from DRM fdinfo (mission-center ideas, `5331fcdb`); btrfs allocation from `/sys/fs/btrfs` without root.
 - **purge.** kondo's model of pairing each build folder with the project file of the tool that made it, applied to every target; extra Linux targets from kondo (`_build`, `.stack-work`, `cmake-build-*`); Mole CLI (macOS)'s authored-content probe, node_modules install-record rule and 7-day activity (0.3.0).
+- **Debian and Ubuntu.** The list of what an Ubuntu cleaner looks at (ubuntu-cleaner's plugins: apt cache, autoremovable packages, `rc` configurations, old kernels, thumbnails), each turned into the distribution's own bounded command or a report: `apt-get autoclean`, `apt-get -s autoremove` and `rc` packages reported, Snap revisions reported (0.4.0).
 - **Trash.** `.trashinfo` reserved with `O_EXCL` before the move and rolled back on failure, per-volume `.Trash-$uid`, cross-device moves refused (gdu, disktree, and one community port's sink).
 
 ## Refused, and why
+
+- Deleting `/var/cache/apt/archives` files as root, removing old kernels and running autoremove from a list (ubuntu-cleaner): root `rm`, kernel removal and `autoremove` are out of scope; apt's own `autoclean` and reports cover them.
 
 - Emptying archived journals by size (`journalctl --vacuum-size=1`, BleachBit; `--vacuum-size=100M`, cylon): Mole vacuums by time with a floor.
 - `paccache -rk0`, `pacman -Scc`/`-Sc`, `--noconfirm`, `-y`, `autoremove` (BleachBit, Kudu and several ports): they leave no downgrade path or remove packages the user never picked.
@@ -68,5 +72,5 @@ Ten ports were read on 2026-11-01, nothing executed. None was forked from or cop
 
 ## Open
 
-- apt, dnf and zypper rules come with Debian/Ubuntu and Fedora support.
+- dnf and zypper rules come with Fedora and openSUSE support. ncdu (code.blicky.net) could not be cloned on 2026-11-02 (TLS reset); gdu, dust and dua already cover what it would add.
 - Not verified on hardware: AMD GPU sysfs names, every battery driver's field names, per-process GPU memory on a real GPU.

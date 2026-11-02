@@ -184,6 +184,11 @@ main() {
         run_task "Packages To Rebuild" task_rebuild
         run_task "Unowned Files" task_unowned
     fi
+    if command -v apt-get > /dev/null 2>&1 && command -v dpkg-query > /dev/null 2>&1; then
+        run_task "Unneeded Packages" task_apt_autoremove
+        run_task "Leftover Package Configs" task_apt_residual
+        run_task "Pending Config Merges" task_dpkg_merges
+    fi
     run_task "Browser Databases" task_browser_dbs
     run_task "Disk TRIM" task_trim
     run_task "Power Management" task_power

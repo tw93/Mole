@@ -1,6 +1,6 @@
 name: Real Flatpak and Snap
 
-# The Flatpak and Snap paths against the real tools on a stock Ubuntu runner,
+# The Flatpak, Snap and apt paths against the real tools on a stock Ubuntu runner,
 # where tests/ only has fakes. Each run pulls about 2 GB of Flatpak runtime, so
 # it runs only when the code behind those paths changes.
 on:
@@ -9,7 +9,10 @@ on:
     paths:
       - bin/clean.sh
       - bin/uninstall.sh
+      - bin/optimize.sh
       - lib/clean/**
+      - lib/core/base.sh
+      - lib/optimize/**
       - lib/core/delete.sh
       - lib/uninstall/**
       - .github/workflows/real-tools.yml
@@ -109,3 +112,63 @@ jobs:
           timeout 300 ./mo clean 2>&1 | tee /tmp/sclean.txt
           test ! -e ~/snap/hello-world/common/.cache/blob
           test -d ~/snap/hello-world/common
+      - name: Snap app and revisions through Mole
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y -qq squashfs-tools > /dev/null
+          # A local snap with a launcher; installed twice, so the first
+          # revision stays as the disabled one snap revert would use.
+          d=$(mktemp -d)
+          mkdir -p "$d/probe/meta/gui" "$d/probe/bin"
+          printf 'name: mole-probe\nversion: "1"\nsummary: probe\ndescription: probe\nbase: bare\nconfinement: strict\ngrade: devel\napps:\n  probe:\n    command: bin/probe\n' > "$d/probe/meta/snap.yaml"
+          printf '#!/bin/sh\necho probe\n' > "$d/probe/bin/probe"
+          chmod +x "$d/probe/bin/probe"
+          head -c 2000000 /dev/urandom > "$d/probe/bin/blob"
+          printf '[Desktop Entry]\nType=Application\nName=Mole Probe\nExec=mole-probe.probe\n' > "$d/probe/meta/gui/probe.desktop"
+          snap pack "$d/probe" "$d"
+          sudo snap install --dangerous "$d"/mole-probe_1_*.snap
+          sudo snap install --dangerous "$d"/mole-probe_1_*.snap
+          snap list --all mole-probe
+          ls /var/lib/snapd/desktop/applications/ | grep mole-probe
+          timeout 300 ./mo uninstall --list | tee /tmp/snlist.txt
+          grep -q '"uninstall_name": "mole-probe".*"kind": "snap"' /tmp/snlist.txt
+          timeout 300 ./mo clean --dry-run 2>&1 | tee /tmp/sndry.txt
+          grep -q 'Snap previous revisions' /tmp/sndry.txt
+          grep -q 'sudo snap remove mole-probe --revision=x1' /tmp/sndry.txt
+          timeout 300 ./mo clean 2>&1 | tee /tmp/snclean.txt
+          # Reported, never removed: the disabled revision is still there.
+          snap list --all mole-probe | grep -q disabled
+          # snap remove deletes ~/snap/<name>: with data there, --yes refuses.
+          mkdir -p ~/snap/mole-probe/common
+          echo keep > ~/snap/mole-probe/common/settings
+          timeout 300 ./mo uninstall --yes mole-probe < /dev/null 2>&1 | tee /tmp/snkeep.txt
+          grep -q 'keeps data in' /tmp/snkeep.txt
+          snap list mole-probe
+          rm -rf ~/snap/mole-probe
+          timeout 300 ./mo uninstall --yes mole-probe < /dev/null 2>&1 | tee /tmp/snun.txt
+          if snap list mole-probe > /dev/null 2>&1; then exit 1; fi
+          grep -n 'snap:mole-probe' ~/.local/state/mole/operations.log
+      - name: apt package through Mole
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          sudo apt-get install -y -qq --no-install-recommends xterm > /dev/null
+          apt-mark showmanual | grep -x xterm
+          timeout 300 ./mo uninstall --list | tee /tmp/alist.txt
+          grep -q '"uninstall_name": "xterm".*"kind": "apt"' /tmp/alist.txt
+          timeout 300 ./mo clean --dry-run 2>&1 | tee /tmp/adry.txt
+          timeout 300 ./mo optimize --dry-run 2>&1 | tee /tmp/aopt.txt
+          grep -q 'Unneeded Packages' /tmp/aopt.txt
+          # Off a terminal apt answers its own prompt with "no"; a shim adds
+          # -y to remove only and passes everything else through.
+          mkdir -p /tmp/ashim
+          printf '#!/bin/sh\nif [ "$1" = remove ]; then shift; exec /usr/bin/apt-get remove -y "$@"; fi\nexec /usr/bin/apt-get "$@"\n' > /tmp/ashim/apt-get
+          chmod +x /tmp/ashim/apt-get
+          sudo install -m 755 /tmp/ashim/apt-get /usr/local/sbin/apt-get
+          timeout 300 ./mo uninstall --yes xterm < /dev/null 2>&1 | tee /tmp/aun.txt
+          sudo rm -f /usr/local/sbin/apt-get
+          dpkg-query -W -f='${db:Status-Abbrev}\n' xterm | grep -q '^rc'
+          grep -n 'apt:xterm' ~/.local/state/mole/operations.log
+          timeout 300 ./mo optimize --dry-run 2>&1 | tee /tmp/aopt2.txt
+          grep -A3 'Leftover Package Configs' /tmp/aopt2.txt | grep -q xterm

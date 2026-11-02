@@ -15,6 +15,7 @@ What has been decided, shipped, verified and left open for Mole CLI (Linux), in 
 | 2026-11-02 | 0.2.0: everything from the second study round (snapshot honesty, cache rules, xdg-ninja leftovers, optimize reports, status grouping). | Splitting it over several minor versions. |
 | 2026-11-02 | No logo on the macOS README (it already has a large header image); the Windows and Linux READMEs show the round app logo. | Adding the logo to all three. |
 | 2026-11-02 | 0.3.0 aligns with Mole CLI (Windows): purge, history, GPU shader caches only with `--gpu-shaders`, `--debug` session log. | Shipping purge alone; keeping shader caches in the default clean. |
+| 2026-11-02 | 0.4.0 covers Debian and Ubuntu: apt autoclean as a sudo item, Snap revisions reported, apt and Snap apps in uninstall, apt reports in optimize (decide 1102-26). | Deleting apt's cache as root, removing old kernels or autoremoving (ubuntu-cleaner's way); removing Snap's rollback revisions. |
 | 2026-11-02 | AUR package `mole-cli-bin`: prepared, then held because AUR registration is paused. | Homebrew on Linux (the `mole` formula is macOS-only), AUR names `mole` and `mole-bin` (taken by an unrelated SSH tunnel tool that ships `/usr/bin/mole`). |
 
 ## Releases
@@ -55,7 +56,7 @@ All are published with `--latest=false`; `releases/latest` stays a macOS tag. Re
 ## Open
 
 - AUR `mole-cli-bin`, once registration reopens.
-- apt, dnf and zypper rules.
+- dnf and zypper rules (Fedora, openSUSE). Debian and Ubuntu are in 0.4.0, not released; Snap and apt run for real only in `real-tools.yml`, never on an Ubuntu desktop.
 - `mo uninstall --yes` run outside a terminal cannot remove a Flatpak app, because flatpak answers its own prompt with "n"; Mole reports it as not removed. Kept, since package managers keep their own confirmation.
 - Hardware checks listed under Verification record.
 - Purge's in-use check cannot read the working folder of a non-dumpable process (KeePassXC, ssh-agent and the like); such a process counts as working nowhere. Refusing every purge whenever one runs was judged worse, since those are not dev servers.

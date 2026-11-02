@@ -390,29 +390,6 @@ mole_snap_cache_rules() {
     done
 }
 
-# 0 when one of the user's processes belongs to the snap: snapd runs its apps
-# in snap.<name>.<app>-<uuid>.scope (or .service) cgroups, and an executable
-# under /snap/<name>/ counts too. 1 when none does; 2 when /proc cannot be
-# read or a live process's cgroup cannot be read.
-mole_snap_running() {
-    local name="$1" pid line exe readable rc=1
-    [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || return 2
-    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
-    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
-        mole_pid_mine "$pid" || continue
-        readable=false
-        while IFS= read -r line; do
-            readable=true
-            [[ "$line" == *"/snap.$name."* ]] && return 0
-        done 2> /dev/null < "$pid/cgroup" || true
-        if exe=$(readlink -- "$pid/exe" 2> /dev/null); then
-            [[ "$exe" == "/snap/$name/"* ]] && return 0
-        fi
-        [[ "$readable" == false && -d "$pid" ]] && rc=2
-    done
-    return "$rc"
-}
-
 # Children of root that a rule selects, NUL-separated.
 mole_rule_children() {
     local root="$1" selector="${2:-}"

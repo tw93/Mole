@@ -561,3 +561,47 @@ done'
     [[ "$output" == *"attention unchanged attention attention"* ]]
     [ -L "$HOME/dead" ] && [ -e "$etc/a.pacnew" ] && [ -e "$TEST_ROOT/usr/bin/handmade" ]
 }
+
+# ---- Debian and Ubuntu ----
+
+@test "dpkg and ucf config files waiting to merge are listed by suffix and left alone" {
+    local etc="$TEST_ROOT/etc"
+    mkdir -p "$etc/default" "$etc/ssh"
+    : > "$etc/default/grub.ucf-dist"; : > "$etc/ssh/sshd_config.dpkg-dist"; : > "$etc/ssh/sshd_config.dpkg-old"
+    : > "$etc/fstab"; : > "$etc/x.pacnew"; : > "$etc/notes.dpkg-dist.txt"
+    export OPT_ETC_DIR="$etc"
+    local before
+    before=$(tree_state "$etc")
+    mole_run optimize 'task_dpkg_merges; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"3 config files in $etc waiting for you to merge (1 .dpkg-dist, 1 .dpkg-old, 1 .ucf-dist)"* ]]
+    [[ "$output" != *"x.pacnew"* && "$output" != *"notes.dpkg-dist.txt"* ]]
+    [[ "$output" == *"diff -u <file> <file>.dpkg-dist"* ]]
+    [[ "$output" == *"outcome=attention"* ]]
+    [ "$(tree_state "$etc")" = "$before" ]
+}
+
+@test "apt: unneeded packages come from apt's own autoremove simulation, a failed apt is unavailable" {
+    fake_command apt-get '[[ "$1 $2" == "-s autoremove" ]] && { echo "Remv libnl-3-200 [3.7]"; echo "Remv linux-image-6.8.0-40-generic [6.8]"; echo "0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded."; exit 0; }; exit 1'
+    mole_run optimize 'task_apt_autoremove; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"2 packages were installed as dependencies that nothing needs any more"* ]]
+    [[ "$output" == *"libnl-3-200 linux-image-6.8.0-40-generic"* ]]
+    [[ "$output" == *"sudo apt autoremove"* && "$output" == *"outcome=attention"* ]]
+    fake_command apt-get 'echo "0 upgraded, 0 newly installed, 0 to remove and 3 not upgraded."; exit 0'
+    mole_run optimize 'task_apt_autoremove; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"No packages apt would remove as unneeded"* && "$output" == *"outcome=unchanged"* ]]
+    fake_command apt-get 'echo "E: Could not open lock file"; exit 100'
+    mole_run optimize 'task_apt_autoremove; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"apt could not be asked"* && "$output" == *"outcome=unavailable"* ]]
+}
+
+@test "apt: packages removed with their configuration left behind are listed with apt purge" {
+    fake_command dpkg-query '[[ "$1" == -W ]] && printf "ii |bash\nrc |old-app\nrc |gimp\nii |gimp-data\n"; exit 0'
+    mole_run optimize 'task_apt_residual; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"2 packages were removed but left their system configuration"* ]]
+    [[ "$output" == *"old-app gimp"* && "$output" != *"gimp-data"* ]]
+    [[ "$output" == *"sudo apt purge <name>"* && "$output" == *"outcome=attention"* ]]
+    fake_command dpkg-query 'printf "ii |bash\n"; exit 0'
+    mole_run optimize 'task_apt_residual; echo "outcome=${OPT_TASK_OUTCOMES[*]}"'
+    [[ "$output" == *"No removed packages left configuration behind"* ]]
+}

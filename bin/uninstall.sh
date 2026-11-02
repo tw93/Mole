@@ -25,8 +25,9 @@ for arg in "$@"; do
         -h | --help)
             echo "Usage: mo uninstall [OPTIONS] [APP_NAME ...]"
             echo ""
-            echo "Remove apps and their leftover files. Packages are removed by pacman or"
-            echo "flatpak, which ask for their own confirmation; leftovers go to the Trash."
+            echo "Remove apps and their leftover files. Packages are removed by pacman, apt,"
+            echo "flatpak or snap; the first three ask for their own confirmation. Leftovers"
+            echo "go to the Trash."
             echo ""
             echo "Examples:"
             echo "  mo uninstall                   Open interactive app selector"
@@ -62,6 +63,8 @@ kind_label() {
     case "$1" in
         pacman) echo "pacman" ;;
         aur) echo "AUR" ;;
+        apt) echo "apt" ;;
+        snap) echo "Snap" ;;
         flatpak) echo "Flatpak" ;;
         webapp) echo "Web app" ;;
         tui) echo "TUI" ;;
@@ -80,6 +83,7 @@ app_last_used() {
     local -a dirs=() ids=()
     case "${APP_KIND[i]}" in
         flatpak | orphan) dirs+=("$HOME/.var/app/${APP_ID[i]}") ;;
+        snap) [[ -d "$HOME/snap/${APP_ID[i]}" && ! -L "$HOME/snap/${APP_ID[i]}" ]] && dirs+=("$HOME/snap/${APP_ID[i]}") ;;
         webapp | tui) ;;
         *)
             ids=("${APP_ID[i]}")
@@ -109,7 +113,7 @@ app_last_used() {
     prog=""
     case "${APP_KIND[i]}" in
         appimage) prog="${APP_EXEC[i]}" ;;
-        pacman | aur)
+        pacman | aur | apt)
             if [[ -n "${APP_EXEC[i]}" ]]; then
                 prog=$(command -v -- "${APP_EXEC[i]}" 2> /dev/null) || prog=""
             fi
@@ -380,9 +384,13 @@ choose_data() {
 show_plan() {
     local i j label total_kb=0 total_n=0
     echo ""
-    local -a pkgs=()
+    local -a pkgs=() apkgs=() snaps=()
     for i in "${SELECTED[@]}"; do
-        [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] && pkgs+=("${APP_ID[i]}")
+        case "${APP_KIND[i]}" in
+            pacman | aur) pkgs+=("${APP_ID[i]}") ;;
+            apt) apkgs+=("${APP_ID[i]}") ;;
+            snap) snaps+=("${APP_ID[i]}") ;;
+        esac
     done
     for i in "${SELECTED[@]}"; do
         echo -e "${PURPLE_BOLD}${ICON_ARROW}${NC} ${APP_NAME[i]} ${GRAY}$(kind_label "${APP_KIND[i]}") · $(bytes_to_human_kb "${APP_KB[i]}")${NC}"
@@ -411,6 +419,18 @@ show_plan() {
         extra=$(mole_c pacman -Rsp --print-format '%n' -- "${pkgs[@]}" 2> /dev/null | grep -vxF -f <(printf '%s\n' "${pkgs[@]}") | paste -sd ' ') || extra=""
         [[ -n "$extra" ]] && echo -e "  ${GRAY}pacman also removes the dependencies only these use: ${extra}${NC}"
     fi
+    # apt's own answer: packages that depend on the picked ones go with them
+    # (a metapackage such as ubuntu-desktop), so they are named before sudo.
+    if [[ ${#apkgs[@]} -gt 0 ]]; then
+        local extra
+        extra=$(mole_c apt-get -s remove -- "${apkgs[@]}" 2> /dev/null | awk '/^Remv [^ ]+/ {print $2}' | grep -vxF -f <(printf '%s\n' "${apkgs[@]}") | paste -sd ' ') || extra=""
+        [[ -n "$extra" ]] && echo -e "  ${YELLOW}${ICON_WARNING}${NC} ${GRAY}apt also removes the packages that depend on these: ${extra}${NC}"
+    fi
+    local sn
+    for sn in "${snaps[@]+"${snaps[@]}"}"; do
+        snap_home_has_data "$sn" || continue
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} snap deletes $(mole_display_path "$HOME/snap/$sn") with ${sn} ($(bytes_to_human_kb "$(snap_home_kb "$sn")")), where it keeps its profile and data; $(snap_snapshot_note)"
+    done
     echo ""
 }
 
@@ -423,7 +443,8 @@ running_apps() {
             webapp | tui | orphan) continue ;;
             flatpak) mole_flatpak_running "${APP_ID[i]}" || rc=$? ;;
             appimage) mole_exe_running "${APP_EXEC[i]}" || rc=$? ;;
-            pacman | aur)
+            snap) mole_snap_running "${APP_ID[i]}" || rc=$? ;;
+            pacman | aur | apt)
                 rc=1
                 if [[ -n "${APP_EXEC[i]}" ]]; then
                     rc=0
@@ -434,7 +455,7 @@ running_apps() {
                 # file of the package counts too.
                 if [[ $rc -eq 1 ]]; then
                     rc=0
-                    mole_package_running "${APP_ID[i]}" || rc=$?
+                    mole_package_running "${APP_KIND[i]}" "${APP_ID[i]}" || rc=$?
                 fi
                 ;;
             *) continue ;;
@@ -445,12 +466,43 @@ running_apps() {
     [[ ${#RUNNING[@]} -gt 0 ]]
 }
 
-# 0 when any process of the user runs a file of this pacman package, 1 when
-# none does, 2 when the package's file list cannot be read.
+# 0 when ~/snap/<name> holds anything: snap remove deletes it.
+# A folder Mole cannot read, or a symlink, counts as holding data.
+snap_home_has_data() {
+    local dir="$HOME/snap/$1" out
+    [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]] || return 0
+    [[ -L "$dir" ]] && return 0
+    [[ -d "$dir" ]] || return 1
+    out=$(find "$dir" -mindepth 1 -print -quit 2> /dev/null) || return 0
+    [[ -n "$out" ]]
+}
+
+snap_home_kb() {
+    local kb
+    kb=$(du -sk -- "$HOME/snap/$1" 2> /dev/null | cut -f1) || kb=0
+    [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
+    echo "$kb"
+}
+
+# What snap keeps after remove: an automatic snapshot (snap saved, snap
+# restore) unless the system turned them off.
+snap_snapshot_note() {
+    local keep
+    keep=$(mole_c timeout 10 snap get system snapshots.automatic.retention 2> /dev/null) || keep=""
+    if [[ "$keep" == no ]]; then
+        echo "this system keeps no snapshot of it"
+    elif [[ "$keep" =~ ^[0-9]+[a-z]+$ ]]; then
+        echo "snap keeps a snapshot for $keep (snap saved, snap restore)"
+    else
+        echo "snap keeps a snapshot, 31 days by default (snap saved, snap restore)"
+    fi
+}
+
+# 0 when any process of the user runs a file of this package, 1 when none
+# does, 2 when the package's file list cannot be read.
 mole_package_running() {
     local out
-    mole_valid_package_name "$1" || return 2
-    out=$(mole_c pacman -Qlq -- "$1" 2> /dev/null) || return 2
+    out=$(mole_pkg_files "$1" "$2") || return 2
     [[ -n "$out" ]] || return 2
     mole_files_running "$out"
 }
@@ -475,12 +527,12 @@ selected_user_units() {
     return 0
 }
 
-# Unit names a pacman package ships for the user's systemd.
+# Unit names a native package ships for the user's systemd (Debian may still
+# use /lib, merged into /usr on current releases).
 package_user_units() {
-    local pkg="$1"
-    mole_valid_package_name "$pkg" || return 0
-    mole_c pacman -Qlq -- "$pkg" 2> /dev/null | awk -F/ '
-        /^\/usr\/lib\/systemd\/user\/[^\/]+\.(service|timer|socket)$/ { print $NF }' || true
+    local kind="$1" pkg="$2"
+    { mole_pkg_files "$kind" "$pkg" || true; } | awk -F/ '
+        /^(\/usr)?\/lib\/systemd\/user\/[^\/]+\.(service|timer|socket)$/ { print $NF }' || true
 }
 
 # The user's enablement links (~/.config/systemd/user/*.wants/<unit>) for
@@ -488,13 +540,13 @@ package_user_units() {
 # takes the unit files, so none is left dangling.
 package_wants_links() {
     local i="$1" unit link
-    [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] || return 0
+    mole_native_kind "${APP_KIND[i]}" || return 0
     while IFS= read -r unit; do
         [[ -n "$unit" ]] || continue
         for link in "$MOLE_CONFIG_HOME/systemd/user"/*.wants/"$unit"; do
             [[ -L "$link" ]] && printf '%s\n' "$link"
         done
-    done < <(package_user_units "${APP_ID[i]}")
+    done < <(package_user_units "${APP_KIND[i]}" "${APP_ID[i]}")
     return 0
 }
 
@@ -544,9 +596,12 @@ restore_package_units() {
 
 remove_packages() {
     local i
-    local -a pkgs=() no_admin=()
+    local -a pkgs=() apkgs=() no_admin=()
     for i in "${SELECTED[@]}"; do
-        [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] && pkgs+=("${APP_ID[i]}")
+        case "${APP_KIND[i]}" in
+            pacman | aur) pkgs+=("${APP_ID[i]}") ;;
+            apt) apkgs+=("${APP_ID[i]}") ;;
+        esac
     done
     if [[ ${#pkgs[@]} -gt 0 ]]; then
         if [[ -e /var/lib/pacman/db.lck ]]; then
@@ -561,15 +616,59 @@ remove_packages() {
             fi
         fi
     fi
+    if [[ ${#apkgs[@]} -gt 0 ]]; then
+        local busy=0
+        mole_apt_busy || busy=$?
+        if [[ $busy -ne 1 ]]; then
+            log_error "apt or dpkg is running; try again when it finishes"
+        else
+            # apt keeps its own confirmation (no -y); remove, not purge, so the
+            # system configuration under /etc stays as apt leaves it.
+            echo -e "${PURPLE}${ICON_ADMIN}${NC} apt removes ${apkgs[*]}"
+            if mole_sudo_ready; then
+                disable_package_units
+                sudo apt-get remove -- "${apkgs[@]}" || true
+            else
+                no_admin+=("${apkgs[@]}")
+            fi
+        fi
+    fi
     local kept_pkg=false
     for i in "${SELECTED[@]}"; do
         case "${APP_KIND[i]}" in
-            pacman | aur)
-                if ! mole_c pacman -Qq -- "${APP_ID[i]}" > /dev/null 2>&1; then
+            pacman | aur | apt)
+                # Only a manager that says "gone" counts; one that cannot be
+                # asked leaves the app installed, its leftovers untouched.
+                local st=0
+                mole_pkg_installed "${APP_KIND[i]}" "${APP_ID[i]}" || st=$?
+                if [[ $st -eq 1 ]]; then
                     REMOVED+=("$i")
-                    log_operation uninstall REMOVED "pacman:${APP_ID[i]}"
+                    log_operation uninstall REMOVED "${APP_KIND[i]/aur/pacman}:${APP_ID[i]}"
                 else
                     kept_pkg=true
+                fi
+                ;;
+            snap)
+                # snap has no confirmation of its own and deletes the snap's
+                # data in ~/snap with it, so a snap that holds data there is
+                # removed only after Mole's own confirmation, never on --yes.
+                if [[ "$ASSUME_YES" == true ]] && snap_home_has_data "${APP_ID[i]}"; then
+                    echo -e "${YELLOW}${ICON_WARNING}${NC} ${APP_NAME[i]} keeps data in $(mole_display_path "$HOME/snap/${APP_ID[i]}"), which snap deletes too; run mo uninstall ${APP_ID[i]} in a terminal to confirm"
+                    continue
+                fi
+                if [[ "$MOLE_SUDO_FAILED" != true ]]; then
+                    echo -e "${PURPLE}${ICON_ADMIN}${NC} snap removes ${APP_ID[i]}"
+                fi
+                if ! mole_sudo_ready; then
+                    no_admin+=("${APP_ID[i]}")
+                    continue
+                fi
+                sudo snap remove -- "${APP_ID[i]}" || true
+                local sst=0
+                mole_pkg_installed snap "${APP_ID[i]}" || sst=$?
+                if [[ $sst -eq 1 ]]; then
+                    REMOVED+=("$i")
+                    log_operation uninstall REMOVED "snap:${APP_ID[i]}"
                 fi
                 ;;
             flatpak)
@@ -639,7 +738,7 @@ PACKAGES_SNAPSHOT_NOTE="Package files are freed as snapshots rotate"
 packages_held_by_snapshots() {
     local i any=false
     for i in "$@"; do
-        [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] && any=true
+        mole_native_kind "${APP_KIND[i]}" && any=true
     done
     [[ "$any" == true ]] && mole_snapshot_state "$PACKAGE_ROOT"
 }

@@ -23,7 +23,7 @@ for arg in "$@"; do
             echo "Usage: mo clean [OPTIONS]"
             echo ""
             echo "Remove caches that apps rebuild by themselves, empty the Trash, and trim"
-            echo "old package files and journal logs through pacman's and systemd's own tools."
+            echo "old package files and journal logs through pacman's, apt's and systemd's own tools."
             echo ""
             echo "Options:"
             echo "  --dry-run, -n     Preview cleanup without making changes"
@@ -421,6 +421,9 @@ journal_usage_kb() {
 PACMAN_CACHE_DIR=/var/cache/pacman/pkg
 have_paccache() { command -v paccache > /dev/null 2>&1 && [[ -d "$PACMAN_CACHE_DIR" ]]; }
 have_journal() { command -v journalctl > /dev/null 2>&1; }
+APT_ARCHIVES_DIR="${APT_ARCHIVES_DIR:-/var/cache/apt/archives}"
+have_apt_cache() { command -v apt-get > /dev/null 2>&1 && command -v dpkg > /dev/null 2>&1 && [[ -d "$APT_ARCHIVES_DIR" ]]; }
+SNAPD_SNAPS_DIR="${SNAPD_SNAPS_DIR:-/var/lib/snapd/snaps}"
 have_flatpak() { command -v flatpak > /dev/null 2>&1; }
 have_user_flatpak() { have_flatpak && [[ -d "$MOLE_DATA_HOME/flatpak/repo" ]]; }
 SYSTEM_FLATPAK_DIR=/var/lib/flatpak
@@ -429,7 +432,7 @@ have_system_flatpak() { have_flatpak && [[ -d "$SYSTEM_FLATPAK_DIR/repo" ]]; }
 # What the sudo step covers on this machine, for the prompt and skip lines.
 sudo_items_label() {
     local -a items=()
-    have_paccache && items+=("Package cache")
+    if have_paccache || have_apt_cache; then items+=("Package cache"); fi
     have_journal && items+=("journal")
     local IFS=','
     local joined="${items[*]}"
@@ -449,7 +452,7 @@ sudo_items_phrase() {
 # asks for the password, Space skips the sudo items, ESC cancels.
 prompt_for_system_clean() {
     [[ "$DRY_RUN" != "true" ]] || return 0
-    have_paccache || have_journal || return 0
+    have_paccache || have_apt_cache || have_journal || return 0
     if sudo -n true 2> /dev/null; then
         mole_sudo_ready && SYSTEM_READY=true
         [[ -t 1 ]] && echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access already available"
@@ -583,8 +586,9 @@ report_container_storage() {
 }
 
 clean_system() {
-    local have_paccache=false have_journal=false user_flatpak=false system_flatpak=false
+    local have_paccache=false have_apt=false have_journal=false user_flatpak=false system_flatpak=false
     have_paccache && have_paccache=true
+    have_apt_cache && have_apt=true
     have_journal && have_journal=true
     have_user_flatpak && user_flatpak=true
     have_system_flatpak && system_flatpak=true
@@ -592,14 +596,15 @@ clean_system() {
     start_section "System"
     [[ "$user_flatpak" == "true" ]] && clean_flatpak_unused
 
-    if [[ "$have_paccache" == "true" || "$have_journal" == "true" ]]; then
+    if [[ "$have_paccache" == "true" || "$have_apt" == "true" || "$have_journal" == "true" ]]; then
         if [[ "$DRY_RUN" != "true" && "$SYSTEM_READY" != "true" ]]; then
             skip_line "$(sudo_items_label) · skipped without sudo"
         else
-            clean_system_sudo_items "$have_paccache" "$have_journal"
+            clean_system_sudo_items "$have_paccache" "$have_journal" "$have_apt"
         fi
     fi
     [[ "$system_flatpak" == "true" ]] && report_system_flatpak_unused
+    report_snap_revisions
 
     report_coredumps
     report_container_storage
@@ -607,7 +612,7 @@ clean_system() {
 }
 
 clean_system_sudo_items() {
-    local have_paccache="$1" have_journal="$2"
+    local have_paccache="$1" have_journal="$2" have_apt="${3:-false}"
     if [[ "$have_paccache" == "true" ]]; then
         if mole_whitelisted "Package cache" "$PACMAN_CACHE_DIR"; then
             skip_line "$(whitelist_note "Package cache")"
@@ -645,6 +650,8 @@ clean_system_sudo_items() {
         fi
     fi
 
+    [[ "$have_apt" == "true" ]] && clean_apt_cache
+
     if [[ "$have_journal" == "true" ]]; then
         local before after
         if mole_whitelisted "Journal logs" /var/log/journal; then
@@ -667,6 +674,82 @@ clean_system_sudo_items() {
     fi
 
     return 0
+}
+
+# apt's own answer to what autoclean would delete: "Del <pkg> <ver> [<size>]"
+# per package file that can no longer be downloaded. Prints "<count> <kb>".
+apt_autoclean_preview() {
+    # apt prints sizes in powers of 1000 (300 kB is 300000 bytes).
+    mole_c apt-get -s autoclean 2> /dev/null | LC_ALL=C awk '
+        /^Del [^ ]+ [^ ]+ \[[0-9.,]+ ?[kKMGT]?B\]$/ {
+            s = $NF; sub(/\]$/, "", s); v = $(NF - 1); sub(/^\[/, "", v); gsub(/,/, "", v)
+            if (v ~ /B\]?$/) { s = v; v = v + 0; sub(/^[0-9.]+/, "", s) }
+            u = toupper(substr(s, 1, 1)); m = 1
+            if (u == "K") m = 1e3; else if (u == "M") m = 1e6; else if (u == "G") m = 1e9; else if (u == "T") m = 1e12
+            n++; bytes += v * m
+        }
+        END { printf "%d %d\n", n, bytes / 1024 }'
+}
+
+# Debian and Ubuntu: apt-get autoclean deletes only the package files apt can
+# no longer download, the counterpart of paccache -rk2; apt-get clean, which
+# empties the cache, is never run. Skipped while apt or dpkg runs.
+clean_apt_cache() {
+    if mole_whitelisted "Package cache" "$APT_ARCHIVES_DIR"; then
+        skip_line "$(whitelist_note "Package cache")"
+        return 0
+    fi
+    local busy=0
+    mole_apt_busy || busy=$?
+    if [[ $busy -ne 1 ]]; then
+        skip_line "Package cache · skipped while apt or dpkg is running"
+        return 0
+    fi
+    local count kb
+    read -r count kb < <(apt_autoclean_preview) || { count=0; kb=0; }
+    ((count > 0)) || return 0
+    local note=" ${GRAY}(no longer downloadable)${NC}" freed_kb="$kb" state=0
+    mole_snapshot_state "$APT_ARCHIVES_DIR" || state=$?
+    if ((state == 0)); then
+        note=" ${GRAY}(no longer downloadable, freed as snapshots rotate)${NC}"
+        freed_kb=0
+    fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+        report_line "Package cache, old package files" "$kb" "$count" "$note"
+        add_total "$freed_kb" "$count"
+    elif mole_c sudo apt-get autoclean > /dev/null 2>&1; then
+        report_line "Package cache, old package files" "$kb" "$count" "$note"
+        log_operation clean REMOVED "$APT_ARCHIVES_DIR" "apt-get autoclean, $count files"
+        add_total "$freed_kb" "$count"
+    else
+        log_error "apt-get autoclean failed"
+    fi
+}
+
+# Snap keeps the previous revision of each snap (refresh.retain, at least 2)
+# so snap revert can roll back; Mole never removes them, it only says how much
+# they take and the command, the same choice as keeping two versions in
+# paccache. Sizes are the .snap files, which every user can stat.
+report_snap_revisions() {
+    command -v snap > /dev/null 2>&1 || return 0
+    local label="Snap previous revisions"
+    mole_whitelisted "$label" "$SNAPD_SNAPS_DIR" && return 0
+    local out line name rev notes bytes total=0 apps=0 first=""
+    out=$(mole_c timeout 20 snap list --all 2> /dev/null) || return 0
+    declare -A seen=()
+    while IFS= read -r line; do
+        read -r name _ rev _ _ notes <<< "$line"
+        [[ "$name" == Name || -z "$rev" ]] && continue
+        [[ ",$notes," == *",disabled,"* ]] || continue
+        [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ && "$rev" =~ ^x?[0-9]+$ ]] || continue
+        bytes=$(stat -c %s -- "$SNAPD_SNAPS_DIR/${name}_${rev}.snap" 2> /dev/null) || continue
+        total=$((total + bytes))
+        [[ -n "${seen[$name]:-}" ]] || apps=$((apps + 1))
+        seen[$name]=1
+        [[ -n "$first" ]] || first="$name --revision=$rev"
+    done <<< "$out"
+    ((total >= 1048576)) || return 0
+    review_line "$label · $(colorize_human_size "$(bytes_to_human_kb "$((total / 1024))")"), $(mole_count_label "$apps" app) keep one for snap revert · ${GRAY}sudo snap remove $first${NC}"
 }
 
 main() {

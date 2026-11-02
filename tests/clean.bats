@@ -785,10 +785,78 @@ fake_snap_proc() {
 
 @test "the sudo prompt agrees in number: one item needs, two need" {
     fake_command journalctl 'exit 0'
-    mole_run clean 'PACMAN_CACHE_DIR=/nonexistent; sudo_items_phrase'
+    mole_run clean 'PACMAN_CACHE_DIR=/nonexistent; APT_ARCHIVES_DIR=/nonexistent; sudo_items_phrase'
     [ "$output" = "Journal needs sudo" ]
     fake_command paccache 'exit 0'
     mkdir -p "$TEST_ROOT/pkg"
-    mole_run clean 'PACMAN_CACHE_DIR="'"$TEST_ROOT"'/pkg"; sudo_items_phrase'
+    mole_run clean 'PACMAN_CACHE_DIR="'"$TEST_ROOT"'/pkg"; APT_ARCHIVES_DIR=/nonexistent; sudo_items_phrase'
     [ "$output" = "Package cache and journal need sudo" ]
+}
+
+@test "apt: autoclean's own preview gives the count and size, the real run is apt-get autoclean under sudo, never apt-get clean" {
+    mkdir -p "$TEST_ROOT/archives"
+    fake_command pgrep 'exit 1'
+    fake_command apt-get 'echo "$*" >> "'"$TEST_ROOT"'/apt.log"
+        [[ "$1" == -s && "$2" == autoclean ]] && { echo "Reading package lists..."; echo "Del molefake 0.1-1 [300 kB]"; echo "Del other 2.0 [1,024 kB]"; echo "Del big 3 [2.5 MB]"; }
+        exit 0'
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
+    mole_run clean 'APT_ARCHIVES_DIR="'"$TEST_ROOT"'/archives"; DRY_RUN=true; clean_apt_cache; echo "total=$TOTAL_KB items=$TOTAL_ITEMS"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Package cache, old package files · 3 items, "*"no longer downloadable"* ]]
+    [[ "$output" == *"total=3734 items=3"* ]]
+    [ ! -e "$TEST_ROOT/sudo.log" ]
+    mole_run clean 'APT_ARCHIVES_DIR="'"$TEST_ROOT"'/archives"; SYSTEM_READY=true; clean_apt_cache'
+    grep -qx -- "apt-get autoclean" "$TEST_ROOT/sudo.log"
+    [ -z "$(grep -E -- '(^| )clean( |$)' "$TEST_ROOT/apt.log")" ]
+    grep -q "REMOVED $TEST_ROOT/archives (apt-get autoclean, 3 files)" "$HOME/.local/state/mole/operations.log"
+}
+
+@test "apt: the package cache waits while apt or dpkg runs, or when Mole cannot tell" {
+    mkdir -p "$TEST_ROOT/archives"
+    fake_command apt-get 'echo "$*" >> "'"$TEST_ROOT"'/apt.log"; exit 0'
+    for probe in 'case "$*" in *dpkg*) exit 0 ;; esac; exit 1' 'exit 3'; do
+        fake_command pgrep "$probe"
+        mole_run clean 'APT_ARCHIVES_DIR="'"$TEST_ROOT"'/archives"; DRY_RUN=true; clean_apt_cache'
+        [[ "$output" == *"Package cache · skipped while apt or dpkg is running"* ]]
+    done
+    [ ! -e "$TEST_ROOT/apt.log" ]
+}
+
+@test "snap: previous revisions are reported with their size and the command, never removed" {
+    local snaps="$TEST_ROOT/snaps"
+    mkdir -p "$snaps"
+    head -c 3145728 /dev/zero > "$snaps/firefox_4800.snap"
+    head -c 1048576 /dev/zero > "$snaps/core22_1500.snap"
+    head -c 9999999 /dev/zero > "$snaps/firefox_4848.snap"
+    fake_command snap 'echo "$*" >> "'"$TEST_ROOT"'/snap.log"
+        [[ "$1 $2" == "list --all" ]] && printf "Name Version Rev Tracking Publisher Notes\nfirefox 130 4848 latest/stable mozilla -\nfirefox 129 4800 latest/stable mozilla disabled\ncore22 2024 1500 latest/stable canonical base,disabled\ncore22 2024 1564 latest/stable canonical base\n"
+        exit 0'
+    mole_run clean 'SNAPD_SNAPS_DIR="'"$snaps"'"; report_snap_revisions; echo "total=$TOTAL_KB"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Snap previous revisions · 4."*"MB, 2 apps keep one for snap revert"*"sudo snap remove firefox --revision=4800"* ]]
+    [[ "$output" == *"total=0"* ]]
+    [ -z "$(grep -v -x -- "list --all" "$TEST_ROOT/snap.log")" ]
+}
+
+@test "apt: Ubuntu's resident unattended-upgrade-shutdown is not apt running; unattended-upgrade itself is, and hidden /proc cannot tell" {
+    local proc="$TEST_ROOT/proc"
+    mkdir -p "$proc/1" "$proc/700" "$proc/800"
+    : > "$proc/1/stat"
+    printf '/usr/bin/python3\0/usr/share/unattended-upgrades/unattended-upgrade-shutdown\0--wait-for-signal\0' > "$proc/700/cmdline"
+    printf '/usr/bin/python3\0/usr/bin/unattended-upgrade\0' > "$proc/800/cmdline"
+    fake_command pgrep '[[ "$*" == *unattended-upgr* ]] && { echo 700; exit 0; }; exit 1'
+    mole_run core '_MOLE_PROC_ROOT="'"$proc"'"; rc=0; mole_apt_busy || rc=$?; echo "rc=$rc"'
+    [[ "$output" == *"rc=1"* ]]
+    fake_command pgrep '[[ "$*" == *unattended-upgr* ]] && { printf "700\n800\n"; exit 0; }; exit 1'
+    mole_run core '_MOLE_PROC_ROOT="'"$proc"'"; rc=0; mole_apt_busy || rc=$?; echo "rc=$rc"'
+    [[ "$output" == *"rc=0"* ]]
+    fake_command pgrep 'exit 1'
+    if [ "$(id -u)" -ne 0 ]; then
+        chmod 000 "$proc/1/stat"
+        mole_run core '_MOLE_PROC_ROOT="'"$proc"'"; rc=0; mole_apt_busy || rc=$?; echo "rc=$rc"'
+        [[ "$output" == *"rc=2"* ]]
+    fi
+    rm -rf "$proc/1"
+    mole_run core '_MOLE_PROC_ROOT="'"$proc"'"; rc=0; mole_apt_busy || rc=$?; echo "rc=$rc"'
+    [[ "$output" == *"rc=2"* ]]
 }

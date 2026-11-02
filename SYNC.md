@@ -39,6 +39,17 @@ Released: tag `V0.1.0-linux` on `417e4c2d`, x86_64 and aarch64 archives with `SH
 | status: power draw, zram, CPU clock, P/E cores, peripheral batteries, per-card NVIDIA, sleeping dGPU left asleep, Intel busy | `main` `cmd/status` | Implemented | Peripherals also shown on the Power card (Mac: JSON only). |
 | update: `--force`, prerelease skip, installed-copy guard, menu notice | `main` `mole` update notice, `bin/update` | Implemented | Versions compare by their X.Y.Z core, so a prerelease updates to its stable release and a broken VERSION is repaired; no downgrade, `--force` included; the notice shows only in the installed tree. `--nightly` not applicable (no Linux nightly channel); `completion` and `history` left out (maintainer 2026-11-01). |
 
+## Implemented on `linux` for 0.4.0: Debian and Ubuntu (maintainer 2026-11-02, not released)
+
+Mole CLI (macOS) and Mole CLI (Windows) have no counterpart; every row is Linux only. Learned from ubuntu-cleaner, mostly what not to do (study ledger in `docs/oss-research.md`).
+
+| Contract | Source | Status | Verification |
+| --- | --- | --- | --- |
+| clean: apt package files that can no longer be downloaded | ubuntu-cleaner `aptcache_plugin` (it deletes the files as root; refused) | Implemented, Linux only | `sudo apt-get autoclean` as a sudo item, counted from `apt-get -s autoclean`, skipped while apt, dpkg or unattended-upgrade runs or that cannot be told. `tests/clean.bats`; real run on the devbox (Debian 12) removed a stale `.deb`. |
+| clean: Snap's previous revisions reported, never removed | none | Implemented, Linux only | They are what `snap revert` uses, like the second version paccache keeps. `tests/clean.bats`; real snap in `real-tools.yml`. |
+| optimize: `apt-get -s autoremove`, `rc` packages, `.dpkg-*` and `.ucf-*` merges | ubuntu-cleaner `autoremoval_plugin`, `packageconfigs_plugin` (both remove; Mole reports) | Implemented, Linux only | `lib/optimize/tasks.sh`, report only. `tests/optimize.bats`; real run on the devbox after uninstalling xterm reported its `rc` configuration and the unneeded `xbitmaps`. |
+| uninstall: apt and Snap apps | Mole's pacman path | Implemented, Linux only | `apt-mark showmanual` packages owning a launcher, `sudo apt-get remove` with apt's own prompt, dependents named first; snaps with a launcher, `sudo snap remove`. `tests/uninstall.bats`; tmux run on the devbox removed xterm through Mole's password line and apt's `[Y/n]`; real snap and apt in `real-tools.yml`. |
+
 ## Implemented on `linux` for 0.3.0 (aligned with Mole CLI (Windows), maintainer 2026-11-02; released in V0.3.0-linux on 2026-11-02)
 
 | Contract | Source | Status | Verification |

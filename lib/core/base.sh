@@ -319,6 +319,67 @@ mole_files_running() {
     return "$rc"
 }
 
+# 0 when one of the user's processes belongs to the snap: snapd runs its apps
+# in snap.<name>.<app>-<uuid>.scope (or .service) cgroups, and an executable
+# under /snap/<name>/ counts too. 1 when none does; 2 when /proc cannot be
+# read or a live process's cgroup cannot be read.
+mole_snap_running() {
+    local name="$1" pid line exe readable rc=1
+    [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || return 2
+    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
+    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
+        mole_pid_mine "$pid" || continue
+        readable=false
+        while IFS= read -r line; do
+            readable=true
+            [[ "$line" == *"/snap.$name."* ]] && return 0
+        done 2> /dev/null < "$pid/cgroup" || true
+        if exe=$(readlink -- "$pid/exe" 2> /dev/null); then
+            [[ "$exe" == "/snap/$name/"* ]] && return 0
+        fi
+        [[ "$readable" == false && -d "$pid" ]] && rc=2
+    done
+    return "$rc"
+}
+
+# 0 when apt, dpkg or a frontend runs (as root, so any user), 1 when none
+# does, 2 when it cannot tell. apt's lock files exist whether or not apt runs,
+# so the processes are asked instead. unattended-upgrade is a python script
+# whose process the kernel names "unattended-upgr", which is also the name of
+# its -shutdown helper that Ubuntu keeps running for the whole session; only
+# a process whose argv names .../unattended-upgrade itself counts. With /proc
+# mounted hidepid, root's processes are hidden or unreadable, so idle cannot
+# be told.
+mole_apt_busy() {
+    local name probe rc=1 pid word pids seen
+    command -v pgrep > /dev/null 2>&1 || return 2
+    # hidepid=1 leaves /proc/1 visible but unreadable.
+    [[ -d "$_MOLE_PROC_ROOT/1" && -r "$_MOLE_PROC_ROOT/1/stat" ]] || return 2
+    for name in apt apt-get aptitude dpkg synaptic; do
+        probe=0
+        pgrep -x -- "$name" > /dev/null 2>&1 || probe=$?
+        [[ $probe -eq 0 ]] && return 0
+        [[ $probe -eq 1 ]] || rc=2
+    done
+    probe=0
+    pids=$(pgrep -x -- unattended-upgr 2> /dev/null) || probe=$?
+    if [[ $probe -eq 0 ]]; then
+        for pid in $pids; do
+            [[ "$pid" =~ ^[0-9]+$ ]] || continue
+            seen=false
+            while IFS= read -r -d '' word; do
+                seen=true
+                [[ "$word" == */unattended-upgrade ]] && return 0
+            done 2> /dev/null < "$_MOLE_PROC_ROOT/$pid/cmdline" || true
+            # Gone meanwhile is fine; there but unreadable is not.
+            [[ "$seen" == false && -d "$_MOLE_PROC_ROOT/$pid" ]] && rc=2
+        done
+    elif [[ $probe -ne 1 ]]; then
+        rc=2
+    fi
+    return "$rc"
+}
+
 # 0 when the Flatpak app runs, 1 when it does not, 2 when flatpak cannot say.
 mole_flatpak_running() {
     local id="$1" out

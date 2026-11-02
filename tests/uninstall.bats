@@ -605,3 +605,188 @@ snapshot_run_once() {
     [[ "$output" == *"Removed: Tool"* ]]
     [[ "$output" != *"snapshots"* ]]
 }
+
+# ---- Debian and Ubuntu: apt and Snap ----
+
+@test "apt: manual packages with a launcher are listed with their size; automatic, protected and shared launchers are not" {
+    local apps="$TEST_ROOT/apps"
+    mkdir -p "$apps"
+    for id in gimp debian-xterm debian-uxterm gnome-control-center libfoo-tool shared; do
+        printf '[Desktop Entry]\nName=%s\nExec=%s\n' "$id" "$id" > "$apps/$id.desktop"
+    done
+    printf '[Desktop Entry]\nName=Hidden\nNoDisplay=true\n' > "$apps/hidden.desktop"
+    fake_command apt-get 'exit 0'
+    fake_command apt-mark '[[ "$1" == showmanual ]] && printf "gimp\nxterm\ngnome-control-center\nhidden-pkg\n"; exit 0'
+    fake_command dpkg-query '
+        if [[ "$1" == -S ]]; then
+            shift; [[ "$1" == -- ]] && shift
+            for f in "$@"; do case "${f##*/}" in
+                gimp.desktop) echo "gimp: $f" ;;
+                debian-xterm.desktop | debian-uxterm.desktop) echo "xterm:amd64: $f" ;;
+                gnome-control-center.desktop) echo "gnome-control-center: $f" ;;
+                libfoo-tool.desktop) echo "libfoo-tool: $f" ;;
+                shared.desktop) echo "gimp, xterm: $f" ;;
+            esac; done; exit 0
+        fi
+        [[ "$1" == -W ]] && { printf "gimp\t20480\nxterm:amd64\t1024\n"; exit 0; }
+        exit 1'
+    mole_run uninstall 'MOLE_SYS_APPS_DIR="'"$apps"'"; _inventory_apt | sort'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c . <<< "$output")" -eq 2 ]
+    grep -qxF $'apt\tgimp\tgimp\t20480\tgimp\tgimp\tsystem' <<< "$output"
+    grep -qE $'^apt\txterm\tdebian-xterm\t1024\tdebian-uxterm,debian-xterm\tdebian-xterm\t' <<< "$output"
+}
+
+@test "apt: dpkg's bare folders are marked like pacman's, so /usr never counts as the app's own file" {
+    mkdir -p "$TEST_ROOT/usr/bin"
+    : > "$TEST_ROOT/usr/bin/tool"
+    fake_command dpkg-query '[[ "$1" == -L ]] && { echo /.; echo "'"$TEST_ROOT"'/usr"; echo "'"$TEST_ROOT"'/usr/bin"; echo "'"$TEST_ROOT"'/usr/bin/tool"; exit 0; }; exit 1'
+    mole_run uninstall 'mole_pkg_files apt tool'
+    [ "$status" -eq 0 ]
+    [ "$output" = "$TEST_ROOT/usr/
+$TEST_ROOT/usr/bin/
+$TEST_ROOT/usr/bin/tool" ]
+    mole_run uninstall 'mole_pkg_files apt "-rf"'
+    [ "$status" -ne 0 ]
+}
+
+@test "apt: removal keeps apt's own confirmation, names dependents first, and a package left as rc counts as removed" {
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
+    fake_command pgrep 'exit 1'
+    fake_command apt-get 'echo "$*" >> "'"$TEST_ROOT"'/apt.log"
+        [[ "$1" == -s ]] && { echo "Remv gimp [2.10]"; echo "Remv ubuntu-desktop [1.5]"; echo "Remv xterm [1]"; }
+        exit 0'
+    fake_command dpkg-query '[[ "$1" == -W ]] && { case "$4" in gimp) echo -n "rc " ;; xterm) echo -n "ii " ;; esac; exit 0; }; exit 1'
+    mole_run uninstall '
+        APP_KIND=(apt apt); APP_ID=(gimp xterm); APP_NAME=(GIMP XTerm); APP_KB=(1 1)
+        APP_DESKTOPS=(gimp xterm); APP_EXEC=("" ""); APP_SCOPE=(system system); SELECTED=(0 1)
+        LEFT_PATH=(); show_plan
+        restore_package_units() { echo restored; }
+        remove_packages < /dev/null; echo "removed=${REMOVED[*]}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"apt also removes the packages that depend on these: ubuntu-desktop"* ]]
+    grep -qx -- "apt-get remove -- gimp xterm" "$TEST_ROOT/sudo.log"
+    [ -z "$(grep -E -- '(^| )(-y|--yes|--assume-yes|purge)( |$)' "$TEST_ROOT/apt.log")" ]
+    [[ "$output" == *"removed=0"* ]]
+    [[ "$output" == *"restored"* ]]
+    grep -q 'REMOVED apt:gimp' "$HOME/.local/state/mole/operations.log"
+}
+
+@test "apt: nothing runs while apt or dpkg is busy, or when Mole cannot tell" {
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; exit 0'
+    fake_command apt-get 'exit 0'
+    fake_command dpkg-query 'echo -n "ii "; exit 0'
+    for probe in 'case "$*" in *dpkg*) exit 0 ;; esac; exit 1' 'exit 3'; do
+        fake_command pgrep "$probe"
+        mole_run uninstall '
+            APP_KIND=(apt); APP_ID=(gimp); APP_NAME=(GIMP); APP_SCOPE=(system); SELECTED=(0)
+            restore_package_units() { :; }
+            remove_packages < /dev/null; echo "removed=${REMOVED[*]-}"'
+        [[ "$output" == *"apt or dpkg is running"* ]]
+        [[ "$output" == *"removed="* && "$output" != *"removed=0"* ]]
+    done
+    [ ! -e "$TEST_ROOT/sudo.log" ]
+}
+
+@test "snap: launchers name the snap, size is the current revision, bases without launchers never show" {
+    local desk="$TEST_ROOT/snapdesk" snaps="$TEST_ROOT/snaps"
+    mkdir -p "$desk" "$snaps"
+    printf '[Desktop Entry]\nName=Firefox\nExec=firefox\n' > "$desk/firefox_firefox.desktop"
+    printf '[Desktop Entry]\nName=Store\nExec=snap-store\n' > "$desk/snapd-desktop-integration_x.desktop"
+    printf '[Desktop Entry]\nName=Odd\n' > "$desk/nounderscore.desktop"
+    head -c 2048000 /dev/zero > "$snaps/firefox_4848.snap"
+    fake_command snap '[[ "$1" == list ]] && { printf "Name Version Rev Tracking Publisher Notes\nfirefox 130.0 4848 latest/stable mozilla -\ncore22 2024 1564 latest/stable canonical base\nsnapd-desktop-integration 0.9 178 latest/stable canonical -\n"; exit 0; }; exit 1'
+    mole_run uninstall 'MOLE_SNAP_DESKTOP_DIR="'"$desk"'"; MOLE_SNAP_SNAPS_DIR="'"$snaps"'"; _inventory_snap'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c . <<< "$output")" -eq 1 ]
+    grep -qxF $'snap\tfirefox\tFirefox\t2000\tfirefox_firefox\tfirefox\tsystem' <<< "$output"
+}
+
+@test "snap: removal goes through sudo snap remove after Mole's own confirmation, and a running snap blocks it" {
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
+    fake_command snap 'echo "$*" >> "'"$TEST_ROOT"'/snap.log"; [[ "$1" == remove ]] && { : > "'"$TEST_ROOT"'/gone"; exit 0; }; [[ "$1" == list ]] && { echo "Name Version Rev Tracking Publisher Notes"; [[ -e "'"$TEST_ROOT"'/gone" ]] || echo "firefox 130 4848 latest/stable mozilla -"; exit 0; }; exit 1'
+    mole_run uninstall '
+        APP_KIND=(snap); APP_ID=(firefox); APP_NAME=(Firefox); APP_SCOPE=(system); SELECTED=(0)
+        remove_packages < /dev/null; echo "removed=${REMOVED[*]-}"'
+    [ "$status" -eq 0 ]
+    grep -qx -- "snap remove -- firefox" "$TEST_ROOT/sudo.log"
+    [[ "$output" == *"removed=0"* ]]
+    grep -q 'REMOVED snap:firefox' "$HOME/.local/state/mole/operations.log"
+    # Leftovers: snap deletes ~/snap/<name> itself.
+    mkdir -p "$HOME/snap/firefox" "$HOME/.config/firefox"
+    mole_run uninstall 'mole_app_leftovers snap firefox firefox_firefox'
+    [ -z "$output" ]
+    # A process in the snap's cgroup is the snap running.
+    mkdir -p "$TEST_ROOT/proc/self" "$TEST_ROOT/proc/4242"
+    printf 'Uid:\t%s\t%s\t%s\t%s\n' "$(id -u)" "$(id -u)" "$(id -u)" "$(id -u)" > "$TEST_ROOT/proc/4242/status"
+    echo "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.firefox.firefox-1234.scope" > "$TEST_ROOT/proc/4242/cgroup"
+    mole_run uninstall '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/proc"; APP_KIND=(snap); APP_ID=(firefox); APP_NAME=(Firefox); SELECTED=(0); running_apps && echo "running=${RUNNING[*]}"'
+    [[ "$output" == *"running=Firefox"* ]]
+}
+
+@test "apt: a held package or a removal cut short is still installed, a purged or rc one is gone, an unreadable one cannot tell" {
+    for st in "hi " "rH " "ii " "iU "; do
+        fake_command dpkg-query '[[ "$1" == -W ]] && { printf "%s" "'"$st"'"; exit 0; }; exit 1'
+        mole_run uninstall 'rc=0; mole_pkg_installed apt gimp || rc=$?; echo "rc=$rc"'
+        [[ "$output" == *"rc=0"* ]]
+    done
+    for st in "rc " "un " "pn "; do
+        fake_command dpkg-query '[[ "$1" == -W ]] && { printf "%s" "'"$st"'"; exit 0; }; exit 1'
+        mole_run uninstall 'rc=0; mole_pkg_installed apt gimp || rc=$?; echo "rc=$rc"'
+        [[ "$output" == *"rc=1"* ]]
+    done
+    fake_command dpkg-query '[[ "$*" == *" dpkg" ]] && exit 0; exit 1'
+    mole_run uninstall 'rc=0; mole_pkg_installed apt gimp || rc=$?; echo "rc=$rc"'
+    [[ "$output" == *"rc=1"* ]]
+    fake_command dpkg-query 'exit 2'
+    mole_run uninstall 'rc=0; mole_pkg_installed apt gimp || rc=$?; echo "rc=$rc"'
+    [[ "$output" == *"rc=2"* ]]
+    # A held package apt kept is not logged as removed, and its units return.
+    fake_command sudo '[[ "$1" == -* ]] && exit 0; exec "$@"'
+    fake_command pgrep 'exit 1'
+    fake_command apt-get 'exit 0'
+    fake_command dpkg-query '[[ "$1" == -W ]] && { printf "hi "; exit 0; }; exit 1'
+    mole_run uninstall '
+        APP_KIND=(apt); APP_ID=(gimp); APP_NAME=(GIMP); APP_SCOPE=(system); SELECTED=(0)
+        restore_package_units() { echo restored; }
+        remove_packages < /dev/null; echo "removed=${REMOVED[*]-}"'
+    [[ "$output" == *"restored"* && "$output" != *"removed=0"* ]]
+    [ ! -e "$HOME/.local/state/mole/operations.log" ] || ! grep -q 'REMOVED apt:gimp' "$HOME/.local/state/mole/operations.log"
+}
+
+@test "snap: data in ~/snap/<name> is named in the plan, and --yes never removes a snap that holds data" {
+    fake_command sudo 'echo "$*" >> "'"$TEST_ROOT"'/sudo.log"; [[ "$1" == -* ]] && exit 0; exec "$@"'
+    fake_command snap '[[ "$1" == get ]] && { echo 31d; exit 0; }; [[ "$1" == list ]] && { echo "firefox 130 4848 latest/stable mozilla -"; exit 0; }; echo "$*" >> "'"$TEST_ROOT"'/snap.log"; exit 0'
+    mkdir -p "$HOME/snap/firefox/common/.mozilla"
+    head -c 4096 /dev/zero > "$HOME/snap/firefox/common/.mozilla/places.sqlite"
+    mole_run uninstall '
+        APP_KIND=(snap); APP_ID=(firefox); APP_NAME=(Firefox); APP_KB=(1); SELECTED=(0); LEFT_PATH=()
+        show_plan'
+    [[ "$output" == *"snap deletes ~/snap/firefox with firefox"*"profile and data; snap keeps a snapshot for 31d"* ]]
+    mole_run uninstall '
+        ASSUME_YES=true; APP_KIND=(snap); APP_ID=(firefox); APP_NAME=(Firefox); SELECTED=(0)
+        remove_packages < /dev/null; echo "removed=${REMOVED[*]-}"'
+    [[ "$output" == *"Firefox keeps data in ~/snap/firefox"*"run mo uninstall firefox in a terminal"* ]]
+    [ ! -e "$TEST_ROOT/snap.log" ]
+    fake_command snap '[[ "$1" == get ]] && { echo no; exit 0; }; exit 0'
+    mole_run uninstall '
+        APP_KIND=(snap); APP_ID=(firefox); APP_NAME=(Firefox); APP_KB=(1); SELECTED=(0); LEFT_PATH=()
+        show_plan'
+    [[ "$output" == *"this system keeps no snapshot of it"* ]]
+    # A symlinked or unreadable ~/snap/<name> counts as holding data.
+    rm -rf "$HOME/snap/firefox"
+    mole_run uninstall 'snap_home_has_data firefox && echo data || echo none'
+    [[ "$output" == *none* ]]
+    mkdir -p "$TEST_ROOT/elsewhere"
+    ln -s "$TEST_ROOT/elsewhere" "$HOME/snap/firefox"
+    mole_run uninstall 'snap_home_has_data firefox && echo data || echo none'
+    [[ "$output" == *data* ]]
+    rm "$HOME/snap/firefox"
+    if [ "$(id -u)" -ne 0 ]; then
+        mkdir -p "$HOME/snap/firefox"
+        chmod 000 "$HOME/snap/firefox"
+        mole_run uninstall 'snap_home_has_data firefox && echo data || echo none'
+        chmod 755 "$HOME/snap/firefox"
+        [[ "$output" == *data* ]]
+    fi
+}

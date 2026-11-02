@@ -149,6 +149,10 @@ mole_package_protected() {
             bluez | bluez-* | blueberry | bluetui | polkit | polkit-* | gnome-keyring | sddm | gdm | plymouth | \
             mesa | mesa-* | vulkan-* | nvidia | nvidia-* | yay | yay-* | paru | paru-* | flatpak | \
             gnome-shell | gnome-session | plasma-* | kwin | kde-cli-tools | xorg-* | wayland) return 0 ;;
+        # Debian and Ubuntu: the package tools, the session and the updaters.
+        apt | apt-* | dpkg | dpkg-* | snapd | snapd-* | gdm3 | ubuntu-* | gnome-shell-* | gnome-session-* | \
+            gnome-control-center | policykit-1 | xwayland | software-properties-* | update-manager* | \
+            update-notifier* | unattended-upgrades | packagekit | packagekit-* | firmware-updater) return 0 ;;
     esac
     return 1
 }
@@ -161,7 +165,7 @@ _inventory_pacman() {
     [[ "$login_shell" == /* ]] && _MOLE_LOGIN_SHELL_PKG=$(mole_c pacman -Qoq -- "$login_shell" 2> /dev/null | head -1)
     local -a desktops=()
     local f
-    for f in /usr/share/applications/*.desktop; do
+    for f in "$MOLE_SYS_APPS_DIR"/*.desktop; do
         [[ -f "$f" ]] || continue
         mole_desktop_hidden "$f" && continue
         desktops+=("$f")
@@ -217,6 +221,170 @@ _inventory_pacman() {
             "${pkg_desktops[$pkg]}" "${pkg_exec[$pkg]:-}" system
     done
 }
+
+MOLE_SYS_APPS_DIR="${MOLE_SYS_APPS_DIR:-/usr/share/applications}" # tests point it elsewhere
+# Debian and Ubuntu: packages that ship a launcher in /usr/share/applications
+# and that the user (or the installer) asked for, by apt-mark showmanual;
+# dpkg-query -S names the owner. A launcher two packages claim, or a
+# diversion line, is skipped.
+_inventory_apt() {
+    command -v dpkg-query > /dev/null 2>&1 && command -v apt-get > /dev/null 2>&1 || return 0
+    local login_shell owner
+    login_shell=$(getent passwd "$(id -un)" 2> /dev/null | cut -d: -f7) || login_shell=""
+    if [[ "$login_shell" == /* ]]; then
+        # dpkg records /bin/bash on releases before the /usr merge reached its
+        # database, /usr/bin/bash after; ask for the path as written first.
+        owner=$(mole_c dpkg-query -S -- "$login_shell" 2> /dev/null | head -1) ||
+            owner=$(mole_c dpkg-query -S -- "$(readlink -f -- "$login_shell")" 2> /dev/null | head -1) || owner=""
+        owner="${owner%%:*}"
+        [[ -n "$owner" ]] && _MOLE_LOGIN_SHELL_PKG="$owner"
+    fi
+    local -a desktops=()
+    local f
+    for f in "$MOLE_SYS_APPS_DIR"/*.desktop; do
+        [[ -f "$f" ]] || continue
+        mole_desktop_hidden "$f" && continue
+        desktops+=("$f")
+    done
+    [[ ${#desktops[@]} -gt 0 ]] || return 0
+    local manual
+    manual=$(mole_c apt-mark showmanual 2> /dev/null) || return 0
+    [[ -n "$manual" ]] || return 0
+
+    # "<pkg>[:<arch>]: <path>"
+    declare -A pkg_desktops=() pkg_name=() pkg_exec=() pkg_best=()
+    local line path pkg id cls owned_re='^([a-z0-9][a-z0-9.+-]*)(:[a-z0-9_-]+)?: (/.+)$'
+    while IFS= read -r line; do
+        [[ "$line" =~ $owned_re ]] || continue
+        pkg="${BASH_REMATCH[1]}"
+        path="${BASH_REMATCH[3]}"
+        grep -qxF -- "$pkg" <<< "$manual" || continue
+        mole_package_protected "$pkg" && continue
+        id="$(basename -- "$path" .desktop)"
+        pkg_desktops[$pkg]="${pkg_desktops[$pkg]:+${pkg_desktops[$pkg]},}$id"
+        cls=$(mole_desktop_wmclass_id "$path")
+        [[ -n "$cls" ]] && pkg_desktops[$pkg]+=",$cls"
+        # The launcher named like the package gives the name, then Debian's
+        # debian-<pkg> (debian-xterm over debian-uxterm), then the first one.
+        if [[ -z "${pkg_name[$pkg]:-}" || "$id" == "$pkg" || ("$id" == "debian-$pkg" && "${pkg_best[$pkg]:-}" != "$pkg") ]]; then
+            pkg_name[$pkg]="$(mole_desktop_field "$path" Name)"
+            pkg_exec[$pkg]="$(mole_desktop_exec "$path")"
+            pkg_best[$pkg]="$id"
+        fi
+    done < <(mole_c dpkg-query -S -- "${desktops[@]}" 2> /dev/null)
+    [[ ${#pkg_desktops[@]} -gt 0 ]] || return 0
+
+    # Installed-Size is in KiB.
+    declare -A pkg_kb=()
+    local name value
+    # shellcheck disable=SC2016 # dpkg-query's own format fields
+    while IFS=$'\t' read -r name value; do
+        [[ "$value" =~ ^[0-9]+$ ]] && pkg_kb[${name%%:*}]="$value"
+    done < <(mole_c dpkg-query -W -f='${Package}\t${Installed-Size}\n' -- "${!pkg_desktops[@]}" 2> /dev/null)
+
+    for pkg in "${!pkg_desktops[@]}"; do
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' apt "$pkg" "${pkg_name[$pkg]:-$pkg}" "${pkg_kb[$pkg]:-0}" \
+            "${pkg_desktops[$pkg]}" "${pkg_exec[$pkg]:-}" system
+    done
+}
+
+# Snaps with a launcher: snapd writes them as
+# /var/lib/snapd/desktop/applications/<snap>_<app>.desktop, so bases, the
+# core snaps and themes, which have none, never show. Size is the current
+# revision's .snap file.
+MOLE_SNAP_DESKTOP_DIR="${MOLE_SNAP_DESKTOP_DIR:-/var/lib/snapd/desktop/applications}"
+MOLE_SNAP_SNAPS_DIR="${MOLE_SNAP_SNAPS_DIR:-/var/lib/snapd/snaps}"
+_inventory_snap() {
+    command -v snap > /dev/null 2>&1 || return 0
+    [[ -d "$MOLE_SNAP_DESKTOP_DIR" ]] || return 0
+    local out line name rev notes
+    out=$(mole_c timeout 20 snap list 2> /dev/null) || return 0
+    declare -A cur=()
+    while IFS= read -r line; do
+        read -r name _ rev _ _ notes <<< "$line"
+        [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ && "$rev" =~ ^x?[0-9]+$ ]] || continue
+        cur[$name]="$rev"
+    done <<< "$out"
+    declare -A snap_ids=() label=() exe=()
+    local f base snap
+    for f in "$MOLE_SNAP_DESKTOP_DIR"/*.desktop; do
+        [[ -f "$f" ]] || continue
+        mole_desktop_hidden "$f" && continue
+        base="$(basename -- "$f" .desktop)"
+        snap="${base%%_*}"
+        [[ "$base" == *_* && -n "${cur[$snap]:-}" ]] || continue
+        mole_package_protected "$snap" && continue
+        snap_ids[$snap]="${snap_ids[$snap]:+${snap_ids[$snap]},}$base"
+        [[ -n "${label[$snap]:-}" ]] || label[$snap]="$(mole_desktop_field "$f" Name)"
+        [[ -n "${exe[$snap]:-}" ]] || exe[$snap]="$snap"
+    done
+    local kb bytes
+    for snap in "${!snap_ids[@]}"; do
+        bytes=$(stat -c %s -- "$MOLE_SNAP_SNAPS_DIR/${snap}_${cur[$snap]}.snap" 2> /dev/null) || bytes=0
+        kb=$((bytes / 1024))
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' snap "$snap" "${label[$snap]:-$snap}" "$kb" "${snap_ids[$snap]}" "${exe[$snap]}" system
+    done
+}
+
+# The files a native package installed, one path per line, folders ending in
+# "/" as pacman prints them (dpkg prints them bare, so they are marked here),
+# for mole_files_running and the unit lookups. Fails when the manager cannot
+# list the package.
+mole_pkg_files() {
+    local kind="$1" pkg="$2" out p
+    mole_valid_package_name "$pkg" || return 1
+    case "$kind" in
+        pacman | aur) mole_c pacman -Qlq -- "$pkg" 2> /dev/null ;;
+        apt)
+            out=$(mole_c dpkg-query -L -- "$pkg" 2> /dev/null) || return 1
+            while IFS= read -r p; do
+                [[ "$p" == /* && "$p" != "/." ]] || continue
+                if [[ -d "$p" && ! -L "$p" ]]; then printf '%s/\n' "$p"; else printf '%s\n' "$p"; fi
+            done <<< "$out"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# 0 while the package is still installed, 1 once it is gone, 2 when the
+# package manager cannot be asked (counted as still installed by callers, so
+# nothing is logged as removed on a guess). dpkg's second status letter is
+# the state: n (not installed) and c (configuration only, what remove leaves)
+# are gone; a hold or a removal cut short (hi, rH) is still there.
+mole_pkg_installed() {
+    local kind="$1" pkg="$2" st rc=0 out
+    case "$kind" in
+        pacman | aur)
+            mole_c pacman -Qq -- "$pkg" > /dev/null 2>&1 || rc=$?
+            ((rc == 0)) && return 0
+            mole_c pacman -Qq pacman > /dev/null 2>&1 && return 1
+            return 2
+            ;;
+        apt)
+            # shellcheck disable=SC2016 # dpkg-query's own format field
+            st=$(mole_c dpkg-query -W -f='${db:Status-Abbrev}' -- "$pkg" 2> /dev/null) || rc=$?
+            # dpkg-query exits 1 with nothing printed for a package it no
+            # longer knows (purged); any other failure is "cannot tell".
+            if ((rc != 0)); then
+                [[ $rc -eq 1 && -z "$st" ]] && mole_c dpkg-query -W -- dpkg > /dev/null 2>&1 && return 1
+                return 2
+            fi
+            [[ ${#st} -ge 2 ]] || return 2
+            case "${st:1:1}" in
+                n | c) return 1 ;;
+                *) return 0 ;;
+            esac
+            ;;
+        snap)
+            out=$(mole_c timeout 20 snap list 2> /dev/null) || return 2
+            awk -v n="$pkg" '$1 == n { f = 1 } END { exit !f }' <<< "$out" && return 0
+            return 1
+            ;;
+        *) return 2 ;;
+    esac
+}
+
+mole_native_kind() { [[ "$1" == pacman || "$1" == aur || "$1" == apt ]]; }
 
 # A Flatpak installation name as `flatpak list` prints it: user, system, or
 # the name of a custom installation (/etc/flatpak/installations.d).
@@ -350,6 +518,8 @@ _inventory_flatpak_orphans() {
 mole_list_apps() {
     {
         _inventory_pacman
+        _inventory_apt
+        _inventory_snap
         _inventory_flatpak
         _inventory_webapps
         _inventory_appimages
@@ -571,7 +741,9 @@ mole_app_leftovers() {
     # A web app or terminal app launcher is only its launcher and icon
     # (mole_webapp_files): the program a TUI launcher starts is still
     # installed, so its config, dot folder, state and cache are not leftovers.
-    [[ "$kind" == orphan || "$kind" == webapp || "$kind" == tui ]] && return 0
+    # snap remove deletes the snap's data (~/snap/<name>) itself, after saving
+    # a snapshot of it for 31 days (snap saved), so nothing is left to list.
+    [[ "$kind" == orphan || "$kind" == webapp || "$kind" == tui || "$kind" == snap ]] && return 0
     if [[ "$kind" == flatpak ]]; then
         emit data "$HOME/.var/app/$id"
         # Permissions the user gave the app with flatpak override --user.

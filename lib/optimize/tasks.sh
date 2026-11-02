@@ -741,14 +741,27 @@ opt_bounded_find() {
 # Found with find, as pacman's own pacdiff does, so it needs no root; folders
 # that only root can read (sudoers.d, ssl/private) cannot be looked into and
 # are said so, never reported as clean.
-task_pacnew() {
-    local errfile out rc=0 unreadable=0
+task_pacnew() { opt_config_merges pacman; }
+
+# Debian and Ubuntu: dpkg and ucf keep the package's new default beside your
+# changed file (.dpkg-dist, .ucf-dist; .dpkg-new and .ucf-new when a run was
+# cut off) and the replaced one (.dpkg-old, .ucf-old).
+task_dpkg_merges() { opt_config_merges dpkg; }
+
+opt_config_merges() {
+    local kind="$1" errfile out rc=0 unreadable=0
+    local -a names=()
+    if [[ "$kind" == pacman ]]; then
+        names=(-name '*.pacnew' -o -name '*.pacsave' -o -name '*.pacorig')
+    else
+        names=(-name '*.dpkg-dist' -o -name '*.dpkg-new' -o -name '*.dpkg-old' -o -name '*.ucf-dist' -o -name '*.ucf-new' -o -name '*.ucf-old')
+    fi
     errfile=$(mktemp) || {
         opt_gray "Config merge check skipped, no temporary file"
         opt_outcome unavailable
         return
     }
-    out=$(opt_bounded_find "$errfile" "$OPT_ETC_DIR" -xdev -type f \( -name '*.pacnew' -o -name '*.pacsave' -o -name '*.pacorig' \) ! -path $'*\n*' -print) || rc=$?
+    out=$(opt_bounded_find "$errfile" "$OPT_ETC_DIR" -xdev -type f \( "${names[@]}" \) ! -path $'*\n*' -print) || rc=$?
     unreadable=$(grep -c . "$errfile" 2> /dev/null) || unreadable=0
     rm -f -- "$errfile"
     local -a files=()
@@ -767,30 +780,82 @@ task_pacnew() {
         fi
         return
     fi
-    local nnew=0 nsave=0 norig=0 f
+    # Count per suffix, listed in the order of the names above.
+    local f suffix kind_list=""
+    declare -A per=()
     for f in "${files[@]}"; do
-        case "$f" in
-            *.pacnew) nnew=$((nnew + 1)) ;;
-            *.pacsave) nsave=$((nsave + 1)) ;;
-            *.pacorig) norig=$((norig + 1)) ;;
-        esac
+        suffix=".${f##*.}"
+        per[$suffix]=$((${per[$suffix]:-0} + 1))
     done
-    local -a kinds=()
-    ((nnew > 0)) && kinds+=("$nnew .pacnew")
-    ((nsave > 0)) && kinds+=("$nsave .pacsave")
-    ((norig > 0)) && kinds+=("$norig .pacorig")
-    local kind_list="${kinds[0]}" k
-    for k in "${kinds[@]:1}"; do kind_list+=", $k"; done
+    local -a known=()
+    if [[ "$kind" == pacman ]]; then known=(.pacnew .pacsave .pacorig); else known=(.dpkg-dist .dpkg-new .dpkg-old .ucf-dist .ucf-new .ucf-old); fi
+    for suffix in "${known[@]}"; do
+        [[ -n "${per[$suffix]:-}" ]] && kind_list+="${kind_list:+, }${per[$suffix]} $suffix"
+    done
     opt_warn "$(mole_count_label "${#files[@]}" "config file" "config files") in ${OPT_ETC_DIR} waiting for you to merge ($kind_list)"
     mapfile -t files < <(printf '%s\n' "${files[@]}" | LC_ALL=C sort)
     opt_list_paths "${files[@]}"
-    if command -v pacdiff > /dev/null 2>&1; then
+    if [[ "$kind" == dpkg ]]; then
+        opt_hint "Compare each with diff -u <file> <file>.dpkg-dist, keep the one you want, then delete the other with sudo"
+    elif command -v pacdiff > /dev/null 2>&1; then
         opt_hint "Merge them with sudo pacdiff, or compare one with diff -u <file> <file>.pacnew"
     else
         opt_hint "Compare each with diff -u <file> <file>.pacnew, sudo pacdiff (package pacman-contrib) walks through them"
     fi
     [[ $rc -eq 124 ]] && opt_gray "The search stopped after ${OPT_SCAN_SECONDS}s, there may be more"
     ((unreadable > 0)) && opt_gray "$(mole_count_label "$unreadable" folder) in ${OPT_ETC_DIR} can only be read by root"
+    opt_outcome attention
+}
+
+# Debian and Ubuntu: what apt-get autoremove would take, read from apt's own
+# simulation ("Remv <pkg> [<ver>]"); Mole only reports it, as with pacman
+# orphans. On Ubuntu older kernels show up here too, by apt's own rule.
+task_apt_autoremove() {
+    local out rc=0
+    out=$(mole_c apt-get -s autoremove 2> /dev/null) || rc=$?
+    if [[ $rc -ne 0 ]] || ! grep -qE '^[0-9]+ upgraded, ' <<< "$out"; then
+        opt_gray "Unneeded package check skipped, apt could not be asked"
+        opt_outcome unavailable
+        return
+    fi
+    local -a pkgs=()
+    mapfile -t pkgs < <(awk '/^Remv [^ ]+/ {print $2}' <<< "$out")
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        opt_line "No packages apt would remove as unneeded"
+        opt_outcome unchanged
+        return
+    fi
+    local list="${pkgs[*]:0:6}"
+    [[ ${#pkgs[@]} -gt 6 ]] && list+=" and $((${#pkgs[@]} - 6)) more"
+    opt_warn "$(mole_count_label "${#pkgs[@]}" package) $(opt_agree "${#pkgs[@]}" "was installed as a dependency that nothing needs" "were installed as dependencies that nothing needs") any more"
+    opt_sub "$list"
+    opt_hint "Review with apt-get -s autoremove, remove with sudo apt autoremove"
+    opt_outcome attention
+}
+
+# Debian and Ubuntu: packages removed without --purge leave their system
+# configuration behind (dpkg status "rc").
+task_apt_residual() {
+    local out rc=0
+    # shellcheck disable=SC2016 # dpkg-query's own format fields
+    out=$(mole_c dpkg-query -W -f='${db:Status-Abbrev}|${Package}\n' 2> /dev/null) || rc=$?
+    if [[ $rc -ne 0 || -z "$out" ]]; then
+        opt_gray "Leftover config check skipped, dpkg could not be asked"
+        opt_outcome unavailable
+        return
+    fi
+    local -a pkgs=()
+    mapfile -t pkgs < <(awk -F'|' '$1 ~ /^rc/ && $2 ~ /^[a-z0-9][a-z0-9.+-]*$/ {print $2}' <<< "$out")
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        opt_line "No removed packages left configuration behind"
+        opt_outcome unchanged
+        return
+    fi
+    local list="${pkgs[*]:0:6}"
+    [[ ${#pkgs[@]} -gt 6 ]] && list+=" and $((${#pkgs[@]} - 6)) more"
+    opt_warn "$(mole_count_label "${#pkgs[@]}" package) $(opt_agree "${#pkgs[@]}" "was removed but left its system configuration" "were removed but left their system configuration")"
+    opt_sub "$list"
+    opt_hint "Remove the configuration with sudo apt purge <name>"
     opt_outcome attention
 }
 
