@@ -53,6 +53,24 @@ make_cache() {
     [ ! -e "$HOME/.var/app/org.test.App/cache/entry" ]
 }
 
+@test "Flatpak and Snap app caches keep Spotify's offline music and model stores" {
+    v="$HOME/.var/app/com.spotify.Client/cache"
+    make_cache "$v/spotify/Storage"
+    make_cache "$v/fontconfig"
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
+    mole_run clean 'clean_rule "com.spotify.Client cache" "'"$v"'" "flatpak:com.spotify.Client"'
+    [ -f "$v/spotify/Storage/entry/blob" ]
+    [ ! -e "$v/fontconfig" ]
+    s="$HOME/snap/spotify/common/.cache"
+    make_cache "$s/spotify"
+    make_cache "$s/huggingface"
+    make_cache "$s/lm-studio"
+    make_cache "$s/mesa_shader_cache"
+    mole_run clean 'for c in spotify huggingface lm-studio mesa_shader_cache; do mole_cache_child_ok "'"$s"'/$c" "'"$s"'" && echo "$c=ok" || echo "$c=kept"; done'
+    [[ "$output" == *"spotify=kept"* && "$output" == *"huggingface=kept"* && "$output" == *"lm-studio=kept"* ]]
+    [[ "$output" == *"mesa_shader_cache=ok"* ]]
+}
+
 @test "only a Flatpak app's cache folder becomes a rule, never its data" {
     mkdir -p "$HOME/.var/app/org.test.App/cache" "$HOME/.var/app/org.test.App/data" "$HOME/.var/app/org.nocache.App/config"
     mole_run clean 'mole_flatpak_cache_rules'
@@ -603,6 +621,17 @@ pkg_cache_run() {
     [ ! -e "$w/WebKitCache/entry" ]
     [ ! -e "$w/MediaCache/entry" ]
     for d in CacheStorage HSTS AlternativeServices; do [ -f "$w/$d/entry/blob" ]; done
+}
+
+@test "Thunderbird's network cache waits for Betterbird too, which shares it" {
+    make_cache "$HOME/.cache/thunderbird/abc.default/cache2"
+    start_owner betterbird
+    mole_run clean 'clean_user_rules'
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+    # The note names the rule's first owner, as for every multi-owner rule.
+    [[ "$output" == *"Thunderbird cache · skipped while"* ]]
+    [ -f "$HOME/.cache/thunderbird/abc.default/cache2/entry/blob" ]
 }
 
 @test "Thunderbird, Telegram, Heroic and GNOME Software: caches go, profiles, keys and settings stay" {

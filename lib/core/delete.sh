@@ -112,6 +112,16 @@ mole_cache_child_ok() {
     local path="$1" root="$2"
     [[ "$path" == "$root/"* ]] || return 1
     mole_path_is_plain_home_item "$path" || return 1
+    # A Flatpak or Snap app's whole cache folder is a rule root, and inside it
+    # the same names that are never rules in ~/.cache stay: Spotify's offline
+    # music and the model stores.
+    case "$root" in
+        "$HOME/.var/app/"*/cache | "$HOME/snap/"*/.cache)
+            case "${path#"$root/"}" in
+                spotify | spotify/* | huggingface | huggingface/* | lm-studio | lm-studio/*) return 1 ;;
+            esac
+            ;;
+    esac
     # rm --one-file-system stays on the device of the path it is given, so a
     # child that is itself a mount point (sshfs, a bind mount) would lose its
     # contents. Only children on the cache root's own device are removed.

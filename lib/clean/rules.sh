@@ -100,7 +100,7 @@ mole_app_cache_rules() {
     for dir in "$c"/thunderbird/*/cache2; do
         [[ -d "$dir" && ! -L "$dir" ]] || continue
         mole_rule_path_ok "$dir" || continue
-        printf 'Apps|Thunderbird cache|%s|thunderbird,thunderbird-bin\n' "$dir"
+        printf 'Apps|Thunderbird cache|%s|thunderbird,thunderbird-bin,betterbird\n' "$dir"
     done
     # Telegram Desktop (Qt): each account's database folder tdata/user_<data
     # name>/ holds "cache" and "media_cache" (storage_account.cpp cachePath,
