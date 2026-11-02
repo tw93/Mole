@@ -23,8 +23,9 @@ What has been decided, shipped, verified and left open for Mole CLI (Linux), in 
 |---|---|---|---|---|
 | `V0.1.0-linux` | `417e4c2d` | 2026-11-02 | (tag name only) | clean, uninstall, optimize, analyze, status, update and remove; x86_64 and aarch64 archives with `SHA256SUMS.txt`. |
 | `V0.2.0-linux` | `30e358d7` | 2026-11-02 | Candid | btrfs snapshot honesty, new cache rules, about 60 more apps' leftovers, optimize reports, app grouping and btrfs allocation in status. |
+| `V0.3.0-linux` | `2ab9ac6b` | 2026-11-02 | Tidy | `mo purge`, `mo history`, GPU shader caches only with `--gpu-shaders`, `--debug` session log, install source in `--version`. |
 
-Both are published with `--latest=false`; `releases/latest` stays a macOS tag. Release notes follow the macOS and Windows format (header, numbered Changelog, 更新日志 with one sentence per item, Install).
+All are published with `--latest=false`; `releases/latest` stays a macOS tag. Release notes follow the macOS and Windows format (header, numbered Changelog, 更新日志 with one sentence per item, Install).
 
 ## Verification record
 
@@ -58,5 +59,5 @@ Both are published with `--latest=false`; `releases/latest` stays a macOS tag. R
 - `mo uninstall --yes` run outside a terminal cannot remove a Flatpak app, because flatpak answers its own prompt with "n"; Mole reports it as not removed. Kept, since package managers keep their own confirmation.
 - Hardware checks listed under Verification record.
 - Purge's in-use check cannot read the working folder of a non-dumpable process (KeePassXC, ssh-agent and the like); such a process counts as working nowhere. Refusing every purge whenever one runs was judged worse, since those are not dev servers.
-- 0.3.0 on the Omarchy VM and its release, once the maintainer says go.
+- 0.3.0 was released without an Omarchy VM run (the Mac was off the home LAN and the UU mapping was down); purge on real Omarchy is still unrun. Uninstall code is unchanged since 0.2.0, which ran there.
 - Networks that reset github.com release downloads (seen 2026-11-02 from the ThinkPad's network, API reachable) make `install.sh` and `mo update` fail; the installer's `--archive`/`--sums` is the workaround.

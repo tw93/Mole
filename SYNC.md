@@ -39,7 +39,7 @@ Released: tag `V0.1.0-linux` on `417e4c2d`, x86_64 and aarch64 archives with `SH
 | status: power draw, zram, CPU clock, P/E cores, peripheral batteries, per-card NVIDIA, sleeping dGPU left asleep, Intel busy | `main` `cmd/status` | Implemented | Peripherals also shown on the Power card (Mac: JSON only). |
 | update: `--force`, prerelease skip, installed-copy guard, menu notice | `main` `mole` update notice, `bin/update` | Implemented | Versions compare by their X.Y.Z core, so a prerelease updates to its stable release and a broken VERSION is repaired; no downgrade, `--force` included; the notice shows only in the installed tree. `--nightly` not applicable (no Linux nightly channel); `completion` and `history` left out (maintainer 2026-11-01). |
 
-## Implemented on `linux` for 0.3.0 (aligned with Mole CLI (Windows), maintainer 2026-11-02)
+## Implemented on `linux` for 0.3.0 (aligned with Mole CLI (Windows), maintainer 2026-11-02; released in V0.3.0-linux on 2026-11-02)
 
 | Contract | Source | Status | Verification |
 | --- | --- | --- | --- |
