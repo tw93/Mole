@@ -133,6 +133,29 @@ exit 7
         }
         finally { $env:MOLE_TEST_CAPTURE = $saved }
     }
+    It 'Uses the PowerShell host that ran the installer' {
+        $exeName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+        $expectedHost = Join-Path $PSHOME $exeName
+        foreach ($name in @('mo.cmd', 'mole.cmd')) {
+            $content = Get-Content -LiteralPath (Join-Path $script:SourceDir $name) -Raw
+            $content | Should -Match ([regex]::Escape($expectedHost))
+        }
+    }
+}
+
+Describe 'Quick installer host selection' {
+    It 'Runs install.ps1 with the PowerShell host that is already running' {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:RepoRoot 'quick-install.ps1'), [ref]$null, [ref]$null)
+        $definition = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-PowerShellCommand'
+            }, $true)
+        if (-not $definition) { throw 'Get-PowerShellCommand not found in quick-install.ps1' }
+        . ([scriptblock]::Create($definition.Extent.Text))
+
+        $exeName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
+        Get-PowerShellCommand | Should -Be (Join-Path $PSHOME $exeName)
+    }
 }
 
 Describe 'Copied installation ownership' {
