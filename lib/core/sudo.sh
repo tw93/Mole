@@ -84,19 +84,6 @@ _mole_tty_quiet() (
     "$@"
 )
 
-# Poll a background Touch ID sudo for up to 5 seconds: 0 once it exited,
-# 1 when it is still waiting.
-_mole_touchid_poll() {
-    local sudo_pid="$1"
-    local elapsed=0
-    while ((elapsed < 50)); do
-        kill -0 "$sudo_pid" 2> /dev/null || return 0
-        sleep 0.1
-        elapsed=$((elapsed + 1))
-    done
-    return 1
-}
-
 _request_password() {
     local tty_path="$1"
 
@@ -105,10 +92,6 @@ _request_password() {
     local stty_orig
     stty_orig=$(stty -g < "$tty_path" 2> /dev/null || echo "")
     trap '[[ -n "${stty_orig:-}" ]] && stty "${stty_orig:-}" < "$tty_path" 2> /dev/null || true' RETURN
-
-    if check_touchid_support; then
-        echo -e "${GRAY}Note: Touch ID dialog may appear once more, just cancel it${NC}" > "$tty_path"
-    fi
 
     echo -e "${PURPLE}${ICON_ARROW}${NC} Enter your credentials:" > "$tty_path"
 
@@ -182,14 +165,10 @@ request_sudo_access() {
 
     # Check if in clamshell mode - if yes, skip Touch ID entirely
     if is_clamshell_mode; then
-        local clear_lines=3
-        if check_touchid_support; then
-            clear_lines=4
-        fi
         echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg}"
         if _request_password "$tty_path"; then
             # Clear all prompt lines (use safe clearing method)
-            safe_clear_lines "$clear_lines" "$tty_path"
+            safe_clear_lines 3 "$tty_path"
             return 0
         fi
         return 1
@@ -206,50 +185,19 @@ request_sudo_access() {
         return 1
     fi
 
-    # Touch ID is available and not in clamshell mode
+    # Touch ID is available and not in clamshell mode. One sudo owns the
+    # whole exchange: the system dialog takes the fingerprint or, on macOS 27,
+    # the password; Cancel there falls back to sudo's own terminal prompt.
+    # Killing it after a few seconds and starting another sudo opened the
+    # same dialog twice and threw away a password typed into the first.
     echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg} ${GRAY}, Touch ID or password${NC}"
 
-    # Start sudo in background so we can monitor and control it
-    sudo -v < /dev/null > /dev/null 2>&1 &
-    local sudo_pid=$!
-
-    # Wait for sudo to complete or timeout (5 seconds). People often type the
-    # password instead of touching the sensor; keep it off the screen while
-    # it waits for the password prompt that reads it.
-    local poll_rc=0
-    _mole_tty_quiet "$tty_path" _mole_touchid_poll "$sudo_pid" || poll_rc=$?
-    if [[ $poll_rc -eq 0 ]]; then
-        local exit_code=0
-        wait "$sudo_pid" 2> /dev/null || exit_code=$?
-        if [[ $exit_code -eq 0 ]] && sudo -n true 2> /dev/null; then
-            # Touch ID succeeded - clear the prompt line
-            safe_clear_lines 1 "$tty_path"
-            return 0
-        fi
-    fi
-
-    # Touch ID failed/cancelled - clean up thoroughly before password input
-
-    # Kill the sudo process if still running
-    if kill -0 "$sudo_pid" 2> /dev/null; then
-        kill -9 "$sudo_pid" 2> /dev/null
-        wait "$sudo_pid" 2> /dev/null || true
-    fi
-
-    # Clear sudo state immediately
-    sudo -k 2> /dev/null
-
-    # IMPORTANT: Wait longer for macOS to fully close Touch ID UI and SecurityAgent
-    # Without this delay, subsequent sudo calls may re-trigger Touch ID
-    _mole_tty_quiet "$tty_path" sleep 1 || true
-
-    # Clear any leftover prompts on the screen
-    safe_clear_line "$tty_path"
-
-    # Now use our password input (this should not trigger Touch ID again)
-    if _request_password "$tty_path"; then
-        # Clear all prompt lines (use safe clearing method)
-        safe_clear_lines 3 "$tty_path"
+    # Text typed into the terminal while the dialog is up stays off the screen.
+    # shellcheck disable=SC2024,SC2094
+    # Intentionally route sudo's native prompt to the same TTY device it reads from.
+    if _mole_tty_quiet "$tty_path" sudo -v < "$tty_path" > /dev/null 2> "$tty_path" &&
+        sudo -n true 2> /dev/null; then
+        safe_clear_lines 1 "$tty_path"
         return 0
     fi
     return 1
