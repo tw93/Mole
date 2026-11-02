@@ -4,8 +4,10 @@
 #                      bin/trash-go (internal/xdgtrash), restorable.
 #   mole_remove_cache  regenerable caches from Clean's allowlist: removed
 #                      directly, since moving a cache to Trash frees nothing.
-# Both refuse anything outside the user's home or a protected location, and
-# neither ever runs as root.
+#   mole_remove_artifact  project build output purge picked: removed
+#                      directly after its identity and scan root are checked
+#                      again, since build output in the Trash frees nothing.
+# All refuse protected locations, and none ever runs as root.
 
 set -euo pipefail
 
@@ -146,4 +148,56 @@ mole_remove_cache() {
     # Partially removed (permission on a nested file): report what is left.
     log_operation "$command" FAILED "$path" "$detail"
     return 1
+}
+
+# Remove one purge candidate. $2 is the physical scan root it was found under,
+# $3 the device:inode it had when it was reviewed. The folder must still be
+# that folder, below the root through real folders only, the user's, on its
+# parent's filesystem (never a mount point), and not protected. The caller has
+# already rechecked activity and authored content.
+mole_artifact_path_ok() {
+    local path="$1" root="$2" identity="$3" parent real_parent now dev parent_dev
+    [[ "$path" == /* && "$root" == /* && "$root" != / ]] || return 1
+    [[ "$path" != *"/../"* && "$path" != *"/./"* && "$path" != */.. && "$path" != */. ]] || return 1
+    [[ "$path" == "$root/"* ]] || return 1
+    [[ -d "$path" && ! -L "$path" && -O "$path" ]] || return 1
+    parent="${path%/*}"
+    real_parent=$(readlink -e -- "$parent" 2> /dev/null) || return 1
+    [[ "$real_parent" == "$parent" ]] || return 1
+    [[ "$(readlink -e -- "$root" 2> /dev/null)" == "$root" ]] || return 1
+    now=$(stat -c '%d:%i' -- "$path" 2> /dev/null) || return 1
+    [[ -n "$identity" && "$now" == "$identity" ]] || return 1
+    dev="${now%%:*}"
+    parent_dev=$(stat -c %d -- "$parent" 2> /dev/null) || return 1
+    [[ "$dev" == "$parent_dev" ]] || return 1
+    # Below a home under /var (Fedora Atomic's /var/home) the protected list
+    # is read on the home's logical spelling, as the scan did.
+    local home_real check="$path"
+    home_real=$(readlink -e -- "$HOME" 2> /dev/null) || home_real="$HOME"
+    [[ "$path" == "$home_real/"* ]] && check="$HOME/${path#"$home_real"/}"
+    mole_is_protected_path "$check" && return 1
+    mole_is_protected_path "${check%/*}" && return 1
+    return 0
+}
+
+# Returns 0 when removed, 1 when refused (nothing touched), 2 when rm ran but
+# left something behind. MOLE_REMOVING names the folder while rm runs, so an
+# interrupt handler can log it.
+MOLE_REMOVING=""
+mole_remove_artifact() {
+    local path="$1" root="$2" identity="$3" detail="${4:-}"
+    mole_artifact_path_ok "$path" "$root" "$identity" || {
+        log_operation purge SKIPPED "$path" "refused"
+        return 1
+    }
+    [[ "${DRY_RUN:-false}" == "true" ]] && return 0
+    MOLE_REMOVING="$path"
+    if rm -rf --one-file-system -- "$path" 2> /dev/null; then
+        MOLE_REMOVING=""
+        log_operation purge REMOVED "$path" "$detail"
+        return 0
+    fi
+    MOLE_REMOVING=""
+    log_operation purge FAILED "$path" "partly removed"
+    return 2
 }

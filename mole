@@ -55,7 +55,35 @@ show_version() {
     printf 'Kernel: %s\n' "$(uname -r)" 2> /dev/null || return 0
     printf 'Session: %s\n' "${XDG_CURRENT_DESKTOP:-unknown}${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}" 2> /dev/null || return 0
     printf 'Disk Free: %s\n' "$(bytes_to_human_kb "$(get_free_space_kb "$HOME")")" 2> /dev/null || return 0
-    printf 'Shell: %s\n\n' "${SHELL:-Unknown}" 2> /dev/null || return 0
+    printf 'Shell: %s\n' "${SHELL:-Unknown}" 2> /dev/null || return 0
+    printf 'Install: %s\n\n' "$(mole_install_source)" 2> /dev/null || return 0
+}
+
+# Where this copy came from: the tree install.sh manages, or a source checkout
+# with its commit, or a copy placed by hand.
+mole_install_source() {
+    if mole_runs_installed_tree; then
+        echo "Release"
+    elif [[ -d "$SCRIPT_DIR/.git" ]] && command -v git > /dev/null 2>&1; then
+        echo "Source ($(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2> /dev/null || echo unknown))"
+    else
+        echo "Manual"
+    fi
+}
+
+# mo <command> --debug keeps the whole session in one file the user can attach
+# to a report: a header without user or machine names, then every debug line.
+mole_debug_session_start() {
+    local command="$1" log="$MOLE_STATE_DIR/mole_debug_session.log"
+    mkdir -p "$MOLE_STATE_DIR" 2> /dev/null || return 0
+    {
+        printf '# Mole debug session %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+        printf '# Command: mo %s\n' "${command%% *}"
+        printf '# Version: %s, Install: %s\n' "$VERSION" "$(mole_install_source)"
+        printf '# Kernel: %s %s\n' "$(uname -r)" "$(uname -m)"
+        printf '# Session: %s\n' "${XDG_CURRENT_DESKTOP:-unknown}${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}"
+    } > "$log" 2> /dev/null || return 0
+    export MOLE_DEBUG_LOG="$log"
 }
 
 MOLE_COMMANDS=(
@@ -64,6 +92,8 @@ MOLE_COMMANDS=(
     "optimize:Refresh caches and services"
     "analyze:Explore disk usage"
     "status:Monitor system health"
+    "purge:Remove old project build output"
+    "history:Review cleanup activity"
     "update:Update to latest version"
     "remove:Remove Mole from system"
     "help:Show help"
@@ -86,9 +116,14 @@ show_help() {
     done
     echo
     printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --dry-run" "$NC" "Preview cleanup"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --whitelist" "$NC" "Manage protected caches"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo clean --gpu-shaders" "$NC" "Also clean GPU shader caches"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --dry-run" "$NC" "Preview app uninstall"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo uninstall --list" "$NC" "List apps mo uninstall accepts"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo optimize --dry-run" "$NC" "Preview optimization"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --dry-run" "$NC" "Preview project purge"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo purge --paths" "$NC" "Configure scan directories"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo history --json" "$NC" "Export cleanup history"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /mnt" "$NC" "Analyze another mount"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest version"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "Preview Mole removal"
@@ -99,9 +134,13 @@ show_help() {
 }
 
 run_mole_command() {
-    local script="$1"
+    local script="$1" rc=0
     shift
-    "$script" "$@"
+    "$script" "$@" || rc=$?
+    if [[ -n "${MOLE_DEBUG_LOG:-}" && -s "$MOLE_DEBUG_LOG" ]]; then
+        echo -e "${GRAY}Debug log: $(mole_display_path "$MOLE_DEBUG_LOG")${NC}" >&2
+    fi
+    return "$rc"
 }
 
 readonly MENU_COMMANDS=(clean uninstall optimize analyze status)
@@ -201,14 +240,17 @@ main() {
         fi
     done
     case "${args[0]:-}" in
-        clean | uninstall | optimize | analyze | status | update | remove)
+        clean | uninstall | optimize | analyze | status | purge | history | update | remove)
+            [[ "${MO_DEBUG:-}" == 1 ]] && mole_debug_session_start "${args[0]}"
             run_mole_command "$SCRIPT_DIR/bin/${args[0]}.sh" "${args[@]:1}"
             ;;
-        analyse) run_mole_command "$SCRIPT_DIR/bin/analyze.sh" "${args[@]:1}" ;;
-        optimise) run_mole_command "$SCRIPT_DIR/bin/optimize.sh" "${args[@]:1}" ;;
-        purge)
-            echo "mo ${args[0]} is not in Mole CLI (Linux) yet." >&2
-            exit 1
+        analyse)
+            [[ "${MO_DEBUG:-}" == 1 ]] && mole_debug_session_start analyze
+            run_mole_command "$SCRIPT_DIR/bin/analyze.sh" "${args[@]:1}"
+            ;;
+        optimise)
+            [[ "${MO_DEBUG:-}" == 1 ]] && mole_debug_session_start optimize
+            run_mole_command "$SCRIPT_DIR/bin/optimize.sh" "${args[@]:1}"
             ;;
         help | --help | -h) show_help ;;
         version | --version | -V) show_version ;;

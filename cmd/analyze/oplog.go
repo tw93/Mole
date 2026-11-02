@@ -184,9 +184,13 @@ func (a *deleteAudit) record(path string, err error) {
 	var line, status string
 	if err == nil {
 		line = fmt.Sprintf("[%s] [%s] TRASHED %s", stamp, a.commandField(), escapeLogValue(path))
+		// Every row ends in one "(detail)", "-" when there is none, so
+		// mo history can split it from a path that holds parentheses.
+		detail := "-"
 		if size > 0 {
-			line += " (" + logSizeText(size) + ")"
+			detail = logSizeText(size)
 		}
+		line += " (" + detail + ")"
 		status = "ok"
 		a.items++
 		a.bytes += max(size, 0)
