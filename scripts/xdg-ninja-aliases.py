@@ -64,6 +64,11 @@ SECRET = re.compile(
     re.I,
 )
 
+# Folders whose names say nothing but which hold identity keys or account
+# tokens (TeamSpeak identities, AnyDesk ID and unattended-access hash, Lens's
+# copied kubeconfigs, Lunar Client and Parsec session tokens): never offered.
+CREDENTIAL_DIRS = {".ts3client", ".anydesk", ".k8slens", ".lunarclient", ".parsec"}
+
 # Display names whose package is not the lowercased name, checked by hand.
 HAND_MAP = {
     "Dolphin Emulator": "dolphin-emu",
@@ -147,7 +152,7 @@ def classify(rel, pkg):
         return "reject", "nested path"
     if leaf.lstrip(".").lower() in MOLE_SHARED or leaf in SHARED:
         return "reject", "shared dotfile"
-    if SECRET.search(leaf):
+    if SECRET.search(leaf) or leaf in CREDENTIAL_DIRS:
         return "reject", "credential or keyring"
     if not pkg:
         return "reject", "no verified package"

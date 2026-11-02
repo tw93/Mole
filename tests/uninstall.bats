@@ -507,6 +507,10 @@ desktop() {
         package_wants_links() { :; }; collect_leftovers; printf "%s\n" "${LEFT_PATH[@]}"'
     [ -z "$(grep -xF "$HOME/.mozilla" <<< "$output")" ]
     mole_run uninstall '
+        APP_KIND=(pacman aur); APP_ID=(firefox firefox-beta); APP_NAME=(Firefox "Firefox Beta"); APP_DESKTOPS=(firefox firefox-beta); APP_EXEC=("" ""); SELECTED=(0); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers; printf "%s\n" "${LEFT_PATH[@]}"'
+    [ -z "$(grep -xF "$HOME/.mozilla" <<< "$output")" ]
+    mole_run uninstall '
         APP_KIND=(pacman); APP_ID=(firefox); APP_NAME=(Firefox); APP_DESKTOPS=(firefox); APP_EXEC=(""); SELECTED=(0); WITH_DATA=true
         package_wants_links() { :; }; collect_leftovers
         for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}=${LEFT_ON[j]}=${LEFT_NOTE[j]}"; done'
@@ -514,9 +518,10 @@ desktop() {
 }
 
 @test "xdg-ninja paths that are shared, credentials or another program's are never offered" {
-    mkdir -p "$HOME/.purple" "$HOME/.vnc" "$HOME/.sane" "$HOME/.arduino15" "$HOME/Zotero" "$HOME/.claude"
+    mkdir -p "$HOME/.purple" "$HOME/.vnc" "$HOME/.sane" "$HOME/.arduino15" "$HOME/Zotero" "$HOME/.claude" \
+        "$HOME/.ts3client" "$HOME/.anydesk" "$HOME/.k8slens" "$HOME/.lunarclient" "$HOME/.parsec"
     touch "$HOME/.steampid" "$HOME/.notmuch-config" "$HOME/.claude.json"
-    mole_run uninstall 'for p in pidgin tigervnc xsane arduino zotero claude-code steam notmuch; do mole_app_leftovers pacman "$p" "$p"; done'
+    mole_run uninstall 'for p in pidgin tigervnc xsane arduino zotero claude-code steam notmuch teamspeak3 anydesk-bin lens-bin lunar-client parsec-bin; do mole_app_leftovers pacman "$p" "$p"; done'
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }

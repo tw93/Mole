@@ -424,8 +424,9 @@ mole_app_alias_paths() {
         visual-studio-code-bin | visual-studio-code-insiders-bin) printf '%s\n' "$HOME/.vscode" ;;
         vscodium | vscodium-bin) printf '%s\n' "$HOME/.vscode-oss" "$MOLE_CONFIG_HOME/VSCodium" ;;
         cursor-bin | cursor) printf '%s\n' "$HOME/.cursor" "$MOLE_CONFIG_HOME/Cursor" ;;
-        firefox | firefox-esr | firefox-developer-edition | firefox-bin | firefox-esr-bin | firefox-beta-bin | \
-            firefox-nightly | firefox-nightly-bin) printf '%s\n' "$HOME/.mozilla" "$MOLE_CONFIG_HOME/mozilla" ;;
+        # Every Firefox build, add-on and language pack claims ~/.mozilla, so
+        # it is offered only once none of them stays.
+        firefox | firefox-*) printf '%s\n' "$HOME/.mozilla" "$MOLE_CONFIG_HOME/mozilla" ;;
         # GNU IceCat and SeaMonkey keep their profiles inside ~/.mozilla too,
         # so each one claims it while installed.
         icecat | icecat-bin | seamonkey | seamonkey-bin) printf '%s\n' "$HOME/.mozilla" ;;
@@ -474,12 +475,10 @@ mole_app_xdg_ninja_paths() {
         rofi) printf 'cache\t%s\n' "$h/.rofi.pid" ;;
         scite) printf 'data\t%s\n' "$h/.SciTE.session" "$h/.SciTEUser.properties" ;;
         scummvm) printf 'data\t%s\n' "$h/.scummvmrc" ;;
-        teamspeak3) printf 'data\t%s\n' "$h/.ts3client" ;;
         virtualbox) printf 'data\t%s\n' "$h/.VirtualBox" ;;
         visidata) printf 'data\t%s\n' "$h/.visidatarc" ;;
         xpdf) printf 'data\t%s\n' "$h/.xpdfrc" ;;
         # xdg-ninja, AUR.
-        anydesk-bin) printf 'data\t%s\n' "$h/.anydesk" ;;
         asunder) printf 'cache\t%s\n' "$h/.asunder_album_artist" "$h/.asunder_album_genre" "$h/.asunder_album_title" ;;
         burpsuite) printf 'data\t%s\n' "$h/.BurpSuite" ;;
         bytecode-viewer) printf 'data\t%s\n' "$h/.Bytecode-Viewer" ;;
@@ -493,9 +492,7 @@ mole_app_xdg_ninja_paths() {
         icaclient) printf 'data\t%s\n' "$h/.ICAClient" ;;
         itch-bin) printf 'data\t%s\n' "$h/.itch" ;;
         jameica) printf 'data\t%s\n' "$h/.jameica.properties" ;;
-        lens-bin) printf 'data\t%s\n' "$h/.k8slens" ;;
         logseq-desktop-bin) printf 'data\t%s\n' "$h/.logseq" ;;
-        lunar-client) printf 'data\t%s\n' "$h/.lunarclient" ;;
         makemkv) printf 'data\t%s\n' "$h/.MakeMKV" && printf 'cache\t%s\n' "$h/MakeMKV_log.txt" ;;
         maptool) printf 'data\t%s\n' "$h/.maptool-rptools" ;;
         mathematica) printf 'data\t%s\n' "$h/.Mathematica" ;;
@@ -503,7 +500,6 @@ mole_app_xdg_ninja_paths() {
         neverball) printf 'data\t%s\n' "$h/.neverball-dev" ;;
         openshot) printf 'data\t%s\n' "$h/.openshot_qt" ;;
         osmos) printf 'data\t%s\n' "$h/.Osmos" ;;
-        parsec-bin) printf 'data\t%s\n' "$h/.parsec" ;;
         portfolio-performance) printf 'data\t%s\n' "$h/.PortfolioPerformance" ;;
         proxyman-bin) printf 'data\t%s\n' "$h/.proxyman" "$h/.proxyman-data" ;;
         scilab) printf 'data\t%s\n' "$h/.Scilab" ;;
