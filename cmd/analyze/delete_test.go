@@ -803,3 +803,61 @@ func TestAnalyzeDeleteRefusesICloudStructuralFoldersReachedThroughAnotherPath(t 
 		t.Errorf("file inside an app's iCloud Documents refused through an alias")
 	}
 }
+
+func TestAnalyzeDeleteAllowsICloudFilesAtStructuralDepths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	mobile := filepath.Join(home, "Library", "Mobile Documents")
+	cloud := filepath.Join(mobile, "com~apple~CloudDocs")
+	if err := os.MkdirAll(cloud, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "icloud")
+	if err := os.Symlink(mobile, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{"report.txt", "com~apple~CloudDocs/Documents"} {
+		path := filepath.Join(mobile, relative)
+		if err := os.WriteFile(path, []byte("keep user control"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range []string{path, filepath.Join(alias, relative)} {
+			if err := validateTrashTarget(candidate); err != nil {
+				t.Errorf("ordinary iCloud file refused: %s: %v", candidate, err)
+			}
+		}
+	}
+	if err := validateTrashTarget(cloud); err == nil {
+		t.Fatal("real iCloud container directory was accepted")
+	}
+}
+
+func TestAnalyzeDeleteRefusesParentsOfExistingICloudState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	library := filepath.Join(home, "Library")
+	if err := os.MkdirAll(library, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateTrashTarget(library); err != nil {
+		t.Fatalf("Library without protected state was refused: %v", err)
+	}
+	mobile := filepath.Join(library, "Mobile Documents")
+	if err := os.MkdirAll(filepath.Join(mobile, "com~apple~Keynote", "Documents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "library")
+	if err := os.Symlink(library, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{library, alias} {
+		if err := validateTrashTarget(path); err == nil {
+			t.Errorf("ancestor of iCloud state accepted: %s", path)
+		}
+	}
+	for _, path := range []string{filepath.Join(library, "Caches"), filepath.Join(mobile, "com~apple~Keynote", "Documents", "Deck.key")} {
+		if err := validateTrashTarget(path); err != nil {
+			t.Errorf("unrelated directory or user content refused: %s: %v", path, err)
+		}
+	}
+}

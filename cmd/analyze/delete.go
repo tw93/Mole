@@ -483,6 +483,16 @@ func isCriticalAnalyzeDeletePath(path string) bool {
 // Documents.
 func isICloudStructuralPath(path, homeRoot string) bool {
 	mobileDocuments := filepath.Join(homeRoot, "Library", "Mobile Documents")
+	// A recursive move of an existing ancestor includes the same protected
+	// stores. Keep absent-state Library folders eligible, as with runtimes.
+	if containsProtectedRoot(path, mobileDocuments) {
+		return true
+	}
+	// These are directory boundaries, not reserved names for ordinary files.
+	// Unknown metadata keeps the conservative lexical/identity policy below.
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return false
+	}
 	rel, err := filepath.Rel(strings.ToLower(mobileDocuments), strings.ToLower(path))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return isICloudStructuralByIdentity(path, mobileDocuments)
