@@ -2829,8 +2829,8 @@ force_kill_app() {
         else
             # Escape embedded double quotes in app_name before passing into
             # the AppleScript literal.
-            local escaped_name="${app_name//\\/\\\\}"
-            escaped_name="${escaped_name//\"/\\\"}"
+            local escaped_name=""
+            mole_applescript_escape escaped_name "$app_name"
             quit_target="\"$escaped_name\""
         fi
         run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" osascript -e "tell application $quit_target to quit" > /dev/null 2>&1 < /dev/null &

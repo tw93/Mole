@@ -150,10 +150,9 @@ request_sudo_access() {
         # app display names (batch uninstall builds it from ${sudo_apps[*]}),
         # so escape backslashes and double quotes before embedding it in the
         # AppleScript string literal, or an app named with an embedded quote
-        # could break out and run `do shell script`. Same escaping as
-        # force_kill_app and remove_login_item.
-        local escaped_msg="${prompt_msg//\\/\\\\}"
-        escaped_msg="${escaped_msg//\"/\\\"}"
+        # could break out and run `do shell script`.
+        local escaped_msg=""
+        mole_applescript_escape escaped_msg "$prompt_msg"
         local password
         password=$(osascript -e "display dialog \"$escaped_msg\" default answer \"\" with title \"Mole\" with icon caution with hidden answer" -e 'text returned of result' 2> /dev/null)
 

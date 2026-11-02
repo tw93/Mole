@@ -1109,6 +1109,15 @@ format_free_space_delta_kb() {
     printf '%s%s\n' "$sign" "$(bytes_to_human_kb "$abs_kb")"
 }
 
+# Escape a value for embedding inside a double-quoted AppleScript string
+# literal: `\` first, then `"`.
+mole_applescript_escape() {
+    local _as_value="${2:-}"
+    _as_value="${_as_value//\\/\\\\}"
+    _as_value="${_as_value//\"/\\\"}"
+    printf -v "$1" '%s' "$_as_value"
+}
+
 mole_is_reverse_dns_bundle_id() {
     local bundle_id="${1:-}"
 
