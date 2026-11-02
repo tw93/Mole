@@ -17,13 +17,14 @@ BeforeAll {
 }
 
 Describe "PowerShell host compatibility" {
-    It "Does not use Get-WmiObject, which re-invokes powershell.exe under PowerShell 7" {
+    # wmic.exe is not installed by default on current Windows 11, so a call to it fails on a healthy system.
+    It "Does not use Get-WmiObject, gwmi or wmic, which PowerShell 7 or current Windows lack" {
         $files = @(
             Get-ChildItem -Path (Join-Path $script:WindowsDir "lib"), (Join-Path $script:WindowsDir "bin") -Filter *.ps1 -File -Recurse
             Get-Item -LiteralPath (Join-Path $script:WindowsDir "mole.ps1")
         )
         $offenders = @($files | Where-Object {
-                (Get-Content -LiteralPath $_.FullName -Raw) -match '(?i)\bGet-WmiObject\b'
+                (Get-Content -LiteralPath $_.FullName -Raw) -match '(?i)\b(Get-WmiObject|gwmi|wmic(\.exe)?)\b'
             } | ForEach-Object { $_.FullName })
         $offenders | Should -BeNullOrEmpty
     }
