@@ -2464,7 +2464,9 @@ EOF
 @test "clean_orphaned_system_services lists a bare helper only when it is Developer ID signed" {
     # Straight from PrivilegedHelperTools: an unsigned binary and a helper-root
     # .plist beside one stay; a signed vendor helper whose app is gone is
-    # still offered.
+    # still offered. The bare-helper pass only runs when the real
+    # /Library/PrivilegedHelperTools exists, and GitHub runners have none.
+    [[ -d /Library/PrivilegedHelperTools ]] || skip "/Library/PrivilegedHelperTools is absent on this runner"
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
         DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
