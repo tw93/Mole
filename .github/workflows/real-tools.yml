@@ -1,0 +1,111 @@
+name: Real Flatpak and Snap
+
+# The Flatpak and Snap paths against the real tools on a stock Ubuntu runner,
+# where tests/ only has fakes. Each run pulls about 2 GB of Flatpak runtime, so
+# it runs only when the code behind those paths changes.
+on:
+  push:
+    branches: [linux]
+    paths:
+      - bin/clean.sh
+      - bin/uninstall.sh
+      - lib/clean/**
+      - lib/core/delete.sh
+      - lib/uninstall/**
+      - .github/workflows/real-tools.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build helpers
+        run: make build
+      - name: Flatpak app, runtime and data
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak > /dev/null
+          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y --noninteractive flathub org.freedesktop.Platform//25.08
+          b=$(mktemp -d)
+          flatpak build-init "$b/app" org.mole.Probe org.freedesktop.Platform org.freedesktop.Platform 25.08
+          mkdir -p "$b/app/files/bin"
+          printf '#!/bin/sh\necho probe\n' > "$b/app/files/bin/probe"
+          chmod +x "$b/app/files/bin/probe"
+          mkdir -p "$b/app/files/share/applications"
+          printf '[Desktop Entry]\nType=Application\nName=Mole Probe\nExec=probe\n' > "$b/app/files/share/applications/org.mole.Probe.desktop"
+          flatpak build-finish --command=probe "$b/app"
+          flatpak build-export "$b/repo" "$b/app" 25.08
+          flatpak --user remote-add --no-gpg-verify probe "$b/repo"
+          flatpak --user install -y --noninteractive probe org.mole.Probe//25.08
+          # An explicitly installed runtime is pinned and --unused keeps it;
+          # a user's runtime comes in as an app's dependency, unpinned.
+          flatpak --user pin
+          flatpak --user pin --remove "runtime/org.freedesktop.Platform/$(flatpak --default-arch)/25.08"
+          flatpak --user pin
+          flatpak list --user --columns=application,installation
+          # The sandbox home flatpak creates on first run (bwrap is not
+          # usable on the runner, so it is laid out by hand).
+          mkdir -p ~/.var/app/org.mole.Probe/{cache,config,data}
+          head -c 3000000 /dev/urandom > ~/.var/app/org.mole.Probe/cache/blob
+          echo keep > ~/.var/app/org.mole.Probe/config/settings
+      - name: Flatpak through Mole
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          timeout 300 ./mo uninstall --list | tee /tmp/list.txt
+          grep -q 'org.mole.Probe' /tmp/list.txt
+          timeout 300 ./mo clean --dry-run 2>&1 | tee /tmp/dry.txt
+          grep -q 'org.mole.Probe' /tmp/dry.txt
+          timeout 300 ./mo uninstall --dry-run org.mole.Probe 2>&1 | tee /tmp/udry.txt
+          # Off a terminal flatpak answers its own prompt with "n"; a shim
+          # adds -y to uninstall only and passes everything else through.
+          mkdir -p /tmp/shim
+          printf '#!/bin/sh\nif [ "$1" = uninstall ]; then shift; exec /usr/bin/flatpak uninstall -y "$@"; fi\nexec /usr/bin/flatpak "$@"\n' > /tmp/shim/flatpak
+          chmod +x /tmp/shim/flatpak
+          PATH=/tmp/shim:$PATH timeout 300 ./mo uninstall --yes org.mole.Probe < /dev/null 2>&1 | tee /tmp/un.txt
+          if flatpak list --user --app --columns=application | grep -qx org.mole.Probe; then exit 1; fi
+          # App data is not selected by default; it stays and is now an orphan.
+          test -f ~/.var/app/org.mole.Probe/config/settings
+          timeout 300 ./mo uninstall --list | tee /tmp/list2.txt
+          grep -q 'org.mole.Probe' /tmp/list2.txt
+          flatpak list --user --runtime --columns=ref | tee /tmp/rt-before.txt
+          grep -q 'org.freedesktop.Platform/' /tmp/rt-before.txt
+          timeout 300 ./mo clean 2>&1 | tee /tmp/clean.txt
+          flatpak list --user --runtime --columns=ref | tee /tmp/rt-after.txt
+          if grep -q 'org.freedesktop.Platform/' /tmp/rt-after.txt; then exit 1; fi
+          grep -n 'flatpak' ~/.local/state/mole/operations.log
+      - name: Snap cache through Mole
+        timeout-minutes: 8
+        run: |
+          set -euxo pipefail
+          sudo snap install hello-world
+          hello-world
+          ls -la ~/snap/hello-world/
+          mkdir -p ~/snap/hello-world/common/.cache
+          head -c 2000000 /dev/urandom > ~/snap/hello-world/common/.cache/blob
+          timeout 300 ./mo clean --dry-run 2>&1 | tee /tmp/sdry.txt
+          grep -q 'hello-world snap cache' /tmp/sdry.txt
+          # A process inside the snap: the cache waits.
+          hello-world.sh -c 'sleep 120' &
+          snap_pid=$!
+          sleep 3
+          cat /proc/$snap_pid/cgroup || true
+          ps -eo pid,args | grep -E 'sleep 120' | grep -v grep || true
+          timeout 300 ./mo clean --dry-run 2>&1 | tee /tmp/srun.txt
+          grep 'hello-world' /tmp/srun.txt
+          pkill -f -x 'sleep 120' || true
+          kill "$snap_pid" 2> /dev/null || true
+          wait "$snap_pid" || true
+          timeout 300 ./mo clean 2>&1 | tee /tmp/sclean.txt
+          test ! -e ~/snap/hello-world/common/.cache/blob
+          test -d ~/snap/hello-world/common
