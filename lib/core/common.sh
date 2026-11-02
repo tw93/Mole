@@ -8,6 +8,7 @@ source "$_MOLE_COMMON_DIR/base.sh"
 source "$_MOLE_COMMON_DIR/ui.sh"
 source "$_MOLE_COMMON_DIR/log.sh"
 source "$_MOLE_COMMON_DIR/delete.sh"
+source "$_MOLE_COMMON_DIR/snapshots.sh"
 
 # Refuse root: user state must never be touched with inherited privileges.
 mole_refuse_root() {
