@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -301,6 +302,147 @@ func TestCollectDisksFastSkipsSlowCorrections(t *testing.T) {
 	}
 	if got[0].SmartStatus != smartStatusUnknown {
 		t.Fatalf("collectDisksFast() smart status = %q, want unknown", got[0].SmartStatus)
+	}
+}
+
+// APFS volumes (including snapshot devices such as disk8s1s1) in one
+// container share a diskN base. Independent containers have distinct bases,
+// even when their filesystem types and capacities match.
+func TestCollectDisksDeduplicatesByDevice(t *testing.T) {
+	origPartitions, origUsage := diskPartitionsFunc, diskUsageFunc
+	origRunCmd, origCommandExists := runCmd, commandExists
+	origCache, origCacheAt := diskMetadataCache, lastDiskCacheAt
+	t.Cleanup(func() {
+		diskPartitionsFunc, diskUsageFunc = origPartitions, origUsage
+		runCmd, commandExists = origRunCmd, origCommandExists
+		diskMetadataCache, lastDiskCacheAt = origCache, origCacheAt
+	})
+
+	type volume struct {
+		device, mount, fstype string
+		gib                   uint64
+	}
+	tests := []struct {
+		name    string
+		volumes []volume
+		want    []string
+	}{
+		{
+			name: "independent equal capacity APFS containers",
+			volumes: []volume{
+				{"/dev/disk8s1", "/Volumes/One", "apfs", 100},
+				{"/dev/disk9s1", "/Volumes/Two", "apfs", 100},
+			},
+			want: []string{"/dev/disk8s1", "/dev/disk9s1"},
+		},
+		{
+			name: "independent equal capacity exFAT disks",
+			volumes: []volume{
+				{"/dev/disk8s1", "/Volumes/One", "exfat", 100},
+				{"/dev/disk9s1", "/Volumes/Two", "exfat", 100},
+			},
+			want: []string{"/dev/disk8s1", "/dev/disk9s1"},
+		},
+		{
+			name: "independent different capacity disks",
+			volumes: []volume{
+				{"/dev/disk8s1", "/Volumes/One", "apfs", 101},
+				{"/dev/disk9s1", "/Volumes/Two", "apfs", 100},
+			},
+			want: []string{"/dev/disk8s1", "/dev/disk9s1"},
+		},
+		{
+			name: "shared APFS container with equal volume totals",
+			volumes: []volume{
+				{"/dev/disk8s1s1", "/", "apfs", 100},
+				{"/dev/disk8s2", "/Volumes/Shared", "apfs", 100},
+			},
+			want: []string{"/dev/disk8s1s1"},
+		},
+		{
+			name: "shared APFS container with snapshot and different volume totals",
+			volumes: []volume{
+				{"/dev/disk8s1s1", "/", "apfs", 100},
+				{"/dev/disk8s2", "/Volumes/Shared", "apfs", 101},
+				{"/dev/disk9s1", "/Volumes/Independent", "apfs", 100},
+			},
+			want: []string{"/dev/disk8s1s1", "/dev/disk9s1"},
+		},
+		{
+			name: "internal first then largest external with three disk cap",
+			volumes: []volume{
+				{"/dev/disk8s1", "/Volumes/Small", "apfs", 100},
+				{"/dev/disk9s1", "/Volumes/Large", "apfs", 300},
+				{"/dev/disk3s1s1", "/", "apfs", 100},
+				{"/dev/disk10s1", "/Volumes/Medium", "apfs", 200},
+			},
+			want: []string{"/dev/disk3s1s1", "/dev/disk9s1", "/dev/disk10s1"},
+		},
+	}
+	for _, mode := range []string{"fast", "diskutil unavailable", "diskutil failed", "diskutil available"} {
+		for _, tt := range tests {
+			t.Run(mode+"/"+tt.name, func(t *testing.T) {
+				if mode != "fast" && mode != "diskutil unavailable" && runtime.GOOS != "darwin" {
+					t.Skip("diskutil corrections are macOS-only")
+				}
+				diskMetadataCache = make(map[string]diskMetadata)
+				var parts []disk.PartitionStat
+				for _, v := range tt.volumes {
+					parts = append(parts, disk.PartitionStat{Device: v.device, Mountpoint: v.mount, Fstype: v.fstype})
+				}
+				diskPartitionsFunc = func(bool) ([]disk.PartitionStat, error) { return parts, nil }
+				diskUsageFunc = func(path string) (*disk.UsageStat, error) {
+					for _, v := range tt.volumes {
+						if v.mount == path {
+							total := v.gib << 30
+							return &disk.UsageStat{Total: total, Used: total / 2, Free: total / 2, UsedPercent: 50}, nil
+						}
+					}
+					t.Fatalf("unexpected usage path %q", path)
+					return nil, errors.New("unexpected usage path")
+				}
+				commandExists = func(name string) bool {
+					if mode == "fast" {
+						t.Fatalf("fast collection checked external command %q", name)
+					}
+					return name == "diskutil" && mode != "diskutil unavailable"
+				}
+				runCmd = func(_ context.Context, name string, args ...string) (string, error) {
+					if mode == "fast" || mode == "diskutil unavailable" || name != "diskutil" {
+						t.Fatalf("unexpected command %q %q", name, args)
+					}
+					if mode == "diskutil failed" {
+						return "", errors.New("diskutil failed")
+					}
+					if len(args) == 3 && args[1] == "-plist" {
+						usage, _ := diskUsageFunc(args[2])
+						return fmt.Sprintf("<plist><dict><key>TotalSize</key><integer>%d</integer></dict></plist>", usage.Total), nil
+					}
+					if args[1] == "disk3" {
+						return "Internal: Yes", nil
+					}
+					return "Internal: No", nil
+				}
+				want := tt.want
+				if mode == "diskutil unavailable" && len(tt.volumes) > 3 {
+					// Without metadata all entries retain their existing External=false
+					// default, so only capacity determines their order.
+					want = []string{"/dev/disk9s1", "/dev/disk10s1", "/dev/disk8s1"}
+				}
+				got, err := collectDisksWithCorrections(mode != "fast")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(got) != len(want) {
+					t.Fatalf("got %d disks, want %d: %#v", len(got), len(want), got)
+				}
+				for i, device := range want {
+					if got[i].Device != device {
+						t.Errorf("disk %d = %q, want %q", i, got[i].Device, device)
+					}
+				}
+			})
+		}
 	}
 }
 
