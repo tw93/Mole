@@ -642,6 +642,39 @@ EOF
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "install_files fails and names chown when a config directory refuses the copy" {
+	# cp -f cannot unlink inside a directory the user cannot write, which is
+	# what a root-owned lib/<subdir> from an earlier sudo install looks like.
+	# The copy fails there, and install_files must say so instead of letting
+	# mo update print success beside the stale file.
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+mole_source_installer
+SOURCE_DIR="$HOME/source"
+INSTALL_DIR="$HOME/install"
+CONFIG_DIR="$HOME/config"
+mkdir -p "$SOURCE_DIR/bin" "$SOURCE_DIR/lib/manage" "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/manage" "$INSTALL_DIR"
+printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="old"' > "$SOURCE_DIR/mole"
+printf '%s\n' 'new bin' > "$SOURCE_DIR/bin/clean.sh"
+printf '%s\n' 'new lib' > "$SOURCE_DIR/lib/manage/remove.sh"
+printf '%s\n' 'stale lib' > "$CONFIG_DIR/lib/manage/remove.sh"
+chmod 444 "$CONFIG_DIR/lib/manage/remove.sh"
+chmod 555 "$CONFIG_DIR/lib/manage"
+resolve_source_dir() { :; }
+needs_sudo() { return 1; }
+maybe_sudo() { "$@"; }
+download_binary() { return 0; }
+rc=0
+install_files 2>&1 || rc=$?
+chmod 755 "$CONFIG_DIR/lib/manage"
+echo "rc=$rc"
+EOF
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"rc=1"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"Could not replace Mole files in $HOME/config/lib"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"sudo chown -R $(id -un) $HOME/config/lib"* ]] || { echo "$output"; return 1; }
+}
+
 @test "get_installed_version fallback reads VERSION past a pinned line that is not UTF-8" {
 	# A UTF-8 printf %q pinned non-ASCII config paths as raw lead bytes plus \NNN
 	# escapes. A UTF-8 sed stops at that line, before the VERSION line the

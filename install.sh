@@ -1520,8 +1520,16 @@ install_files() {
         local config_bin_abs="$(cd "$CONFIG_DIR/bin" && pwd)"
         if [[ "$source_bin_abs" != "$config_bin_abs" ]]; then
             local -a bin_files=("$SOURCE_DIR/bin"/*)
-            if [[ ${#bin_files[@]} -gt 0 ]]; then
-                cp -rf "${bin_files[@]}" "$CONFIG_DIR/bin/"
+            if [[ -e "${bin_files[0]}" ]]; then
+                # -f replaces a read-only file in a writable directory; a
+                # directory an earlier sudo install left root-owned still
+                # refuses, and without this check the update reported success
+                # beside the stale files.
+                if ! cp -rf "${bin_files[@]}" "$CONFIG_DIR/bin/"; then
+                    log_error "Could not replace Mole files in $CONFIG_DIR/bin, an earlier sudo install may own them"
+                    log_error "Take ownership, then retry: sudo chown -R $(id -un) $CONFIG_DIR/bin"
+                    return 1
+                fi
                 for file in "$CONFIG_DIR/bin/"*; do
                     [[ -e "$file" ]] && chmod +x "$file"
                 done
@@ -1534,8 +1542,12 @@ install_files() {
         local config_lib_abs="$(cd "$CONFIG_DIR/lib" && pwd)"
         if [[ "$source_lib_abs" != "$config_lib_abs" ]]; then
             local -a lib_files=("$SOURCE_DIR/lib"/*)
-            if [[ ${#lib_files[@]} -gt 0 ]]; then
-                cp -rf "${lib_files[@]}" "$CONFIG_DIR/lib/"
+            if [[ -e "${lib_files[0]}" ]]; then
+                if ! cp -rf "${lib_files[@]}" "$CONFIG_DIR/lib/"; then
+                    log_error "Could not replace Mole files in $CONFIG_DIR/lib, an earlier sudo install may own them"
+                    log_error "Take ownership, then retry: sudo chown -R $(id -un) $CONFIG_DIR/lib"
+                    return 1
+                fi
             fi
         fi
     fi
