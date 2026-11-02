@@ -438,6 +438,13 @@ sudo_items_label() {
     printf '%s' "${joined^}" | sed -E 's/, ([^,]+)$/ and \1/'
 }
 
+# The label with its verb: "Journal needs sudo", "Package cache and journal need sudo".
+sudo_items_phrase() {
+    local what
+    what=$(sudo_items_label)
+    if [[ "$what" == *" and "* ]]; then echo "$what need sudo"; else echo "$what needs sudo"; fi
+}
+
 # Ask for sudo once, before anything is cleaned, like Mole CLI (macOS): Enter
 # asks for the password, Space skips the sudo items, ESC cancels.
 prompt_for_system_clean() {
@@ -450,9 +457,9 @@ prompt_for_system_clean() {
     fi
     [[ -t 0 ]] || return 0
     local key attempt=0 what
-    what=$(sudo_items_label)
+    what=$(sudo_items_phrase)
     while true; do
-        echo -ne "${PURPLE}${ICON_ARROW}${NC} $what need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
+        echo -ne "${PURPLE}${ICON_ARROW}${NC} $what. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
         key=$(read_key) || key="QUIT"
         case "$key" in
             ENTER)
@@ -472,7 +479,7 @@ prompt_for_system_clean() {
                 attempt=$((attempt + 1))
                 printf '\r\033[K'
                 if ((attempt >= 2)); then
-                    echo -e "${PURPLE}${ICON_ARROW}${NC} $what need sudo. ${GRAY}Skipped${NC}"
+                    echo -e "${PURPLE}${ICON_ARROW}${NC} $what. ${GRAY}Skipped${NC}"
                     break
                 fi
                 ;;

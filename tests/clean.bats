@@ -782,3 +782,13 @@ fake_snap_proc() {
     [ -d "$f/common/.cache" ]
     [ -f "$f/1234/.mozilla/entry/blob" ]
 }
+
+@test "the sudo prompt agrees in number: one item needs, two need" {
+    fake_command journalctl 'exit 0'
+    mole_run clean 'PACMAN_CACHE_DIR=/nonexistent; sudo_items_phrase'
+    [ "$output" = "Journal needs sudo" ]
+    fake_command paccache 'exit 0'
+    mkdir -p "$TEST_ROOT/pkg"
+    mole_run clean 'PACMAN_CACHE_DIR="'"$TEST_ROOT"'/pkg"; sudo_items_phrase'
+    [ "$output" = "Package cache and journal need sudo" ]
+}
