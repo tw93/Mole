@@ -499,3 +499,48 @@ desktop() {
         a=$(app_last_used 0); b=$(app_last_used 1); echo "$(last_used_label "$a") $(last_used_label "$b")"'
     [ "$output" = "3d ago Unknown" ]
 }
+
+# /usr stand-in on a btrfs subvolume snapper snapshots ($1 = btrfs or ext4).
+snapshotted_usr() {
+    mkdir -p "$TEST_ROOT/sys/usr" "$TEST_ROOT/snapper/configs"
+    printf '1 0 0:1 / / rw - ext4 /dev/vda1 rw\n2 1 0:2 / %s rw - %s /dev/vda2 rw\n' "$TEST_ROOT/sys" "$1" > "$TEST_ROOT/mountinfo"
+    printf 'SUBVOLUME="%s"\n' "$TEST_ROOT/sys" > "$TEST_ROOT/snapper/configs/root"
+}
+
+# run_once with the scan, prompts and removal stubbed; $1 = DRY_RUN, $2 = kinds.
+snapshot_run_once() {
+    mole_run uninstall '_MOLE_MOUNTINFO="'"$TEST_ROOT"'/mountinfo"
+        _MOLE_SNAPPER_CONFIGS="'"$TEST_ROOT"'/snapper/configs"; _MOLE_SNAPPER_SYSCONFIGS=()
+        PACKAGE_ROOT="'"$TEST_ROOT"'/sys/usr"; DRY_RUN='"$1"'; ASSUME_YES=true
+        load_apps() { APP_KIND=('"$2"'); APP_ID=(tool); APP_NAME=(Tool); APP_DESKTOPS=(tool); APP_EXEC=(""); APP_KB=(10); }
+        match_names() { SELECTED=(0); }
+        collect_leftovers() { :; }; choose_data() { :; }; show_plan() { :; }; running_apps() { return 1; }
+        remove_packages() { REMOVED=(0); }; plan_leftover_trash() { LEFTOVER_PATHS=(); }
+        refresh_after_removal() { :; }; stale_mime_associations() { :; }; get_free_space_kb() { echo 0; }
+        run_once false'
+}
+
+@test "uninstall: removed packages on a snapshotted subvolume say their space returns as snapshots rotate" {
+    snapshotted_usr btrfs
+    snapshot_run_once false pacman
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Removed: Tool"* ]]
+    [[ "$output" == *"Package files are freed as snapshots rotate"* ]]
+    snapshot_run_once true aur
+    [[ "$output" == *"Would remove: 1 app"* ]]
+    [[ "$output" == *"Package files are freed as snapshots rotate"* ]]
+}
+
+@test "uninstall: no snapshot line off snapshots, for non-packages, or when the probe cannot tell" {
+    snapshotted_usr ext4
+    snapshot_run_once false pacman
+    [[ "$output" == *"Removed: Tool"* ]]
+    [[ "$output" != *"snapshots"* ]]
+    snapshotted_usr btrfs
+    snapshot_run_once false webapp
+    [[ "$output" != *"snapshots"* ]]
+    rm "$TEST_ROOT/mountinfo"
+    snapshot_run_once false pacman
+    [[ "$output" == *"Removed: Tool"* ]]
+    [[ "$output" != *"snapshots"* ]]
+}

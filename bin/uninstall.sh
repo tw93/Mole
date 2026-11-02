@@ -630,6 +630,20 @@ remove_packages() {
     return 0
 }
 
+# pacman installs under /usr; on a subvolume snapper snapshots, a removed
+# package's files stay in those snapshots until they rotate.
+PACKAGE_ROOT=/usr
+PACKAGES_SNAPSHOT_NOTE="Package files are freed as snapshots rotate"
+# 0 when any of the given app indexes is a pacman or AUR package and its files
+# sit on a snapshotted subvolume; a probe that cannot tell says nothing.
+packages_held_by_snapshots() {
+    local i any=false
+    for i in "$@"; do
+        [[ "${APP_KIND[i]}" == pacman || "${APP_KIND[i]}" == aur ]] && any=true
+    done
+    [[ "$any" == true ]] && mole_snapshot_state "$PACKAGE_ROOT"
+}
+
 # Leftover paths of removed apps that are selected, minus the user units when
 # systemd cannot stop them first.
 LEFTOVER_PATHS=()
@@ -765,8 +779,9 @@ run_once() {
     show_plan
 
     if [[ "$DRY_RUN" == true ]]; then
-        print_summary_block "Dry run complete - no changes made" \
-            "Would remove: $(mole_count_label "${#SELECTED[@]}" app)"
+        local -a dry=("Would remove: $(mole_count_label "${#SELECTED[@]}" app)")
+        packages_held_by_snapshots "${SELECTED[@]}" && dry+=("$PACKAGES_SNAPSHOT_NOTE")
+        print_summary_block "Dry run complete - no changes made" "${dry[@]}"
         return 0
     fi
 
@@ -813,6 +828,9 @@ run_once() {
     fi
     if [[ ${#REMOVED[@]} -lt ${#SELECTED[@]} ]]; then
         details+=("Not removed: $(mole_count_label $((${#SELECTED[@]} - ${#REMOVED[@]})) app)")
+    fi
+    if [[ ${#REMOVED[@]} -gt 0 ]] && packages_held_by_snapshots "${REMOVED[@]}"; then
+        details+=("$PACKAGES_SNAPSHOT_NOTE")
     fi
     ((trashed > 0)) && details+=("Leftovers moved to Trash: $(mole_count_label "$trashed" item)")
     ((failed > 0)) && details+=("Leftovers not moved: $(mole_count_label "$failed" item)")
