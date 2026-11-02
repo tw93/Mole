@@ -905,6 +905,29 @@ clean_orphaned_app_data() {
     rm -f "$installed_bundles"
 }
 
+# A helper an app shipped validates as Developer ID. One a user built on this
+# Mac (clang plus a hand-written LaunchDaemon, an ad-hoc or self-signed
+# signature, a personal Apple Development certificate) has no parent app to
+# go missing, so it is never an orphan. A Team ID alone is not proof:
+# development certificates carry one too. 0 signed, 1 unproven, 124 or a
+# signal status when the probe was cut short.
+_privileged_helper_is_developer_id_signed() {
+    local binary="$1"
+    local deadline_seconds="${2:-}"
+    local verify_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
+    local verify_rc=0
+    verify_timeout=$(_mole_timeout_with_deadline "$verify_timeout" "$deadline_seconds") || verify_rc=$?
+    [[ $verify_rc -eq 0 ]] || return "$verify_rc"
+    [[ -x /usr/bin/codesign ]] || return 1
+    run_with_timeout "$verify_timeout" /usr/bin/codesign --verify \
+        -R='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' \
+        "$binary" < /dev/null > /dev/null 2>&1 || verify_rc=$?
+    if mole_rc_timeout_or_signal "$verify_rc"; then
+        return "$verify_rc"
+    fi
+    [[ $verify_rc -eq 0 ]]
+}
+
 _privileged_helper_bundle_id_from_binary() {
     local binary="$1"
     local deadline_seconds="${2:-}"
@@ -1309,7 +1332,14 @@ clean_orphaned_system_services() {
                 elif [[ $helper_resolver_rc -ge 128 ]]; then
                     return "$helper_resolver_rc"
                 fi
-                # Parent app is gone, binary is orphaned, so plist is orphaned
+                # Parent app is gone; only a vendor's signed helper is orphaned.
+                local helper_signed_rc=0
+                _privileged_helper_is_developer_id_signed "$binary" \
+                    "$service_cleanup_deadline" || helper_signed_rc=$?
+                if mole_rc_timeout_or_signal "$helper_signed_rc"; then
+                    return "$helper_signed_rc"
+                fi
+                [[ $helper_signed_rc -eq 0 ]] || return 1
                 return 0
             fi
             return 1 # Binary exists and not in PrivilegedHelperTools, plist is healthy
@@ -1706,6 +1736,23 @@ clean_orphaned_system_services() {
                         service_scan_status=$helper_resolver_rc
                         break
                     elif [[ $helper_resolver_rc -eq 1 ]]; then
+                        # Judge the binary itself; a helper-root .plist follows
+                        # its same-named binary when that binary is present.
+                        local helper_binary="$helper"
+                        [[ "$filename" == *.plist ]] && helper_binary="${helper%.plist}"
+                        if [[ "$helper_binary" != "$helper" && ! -e "$helper_binary" ]]; then
+                            helper_binary=""
+                        fi
+                        if [[ -n "$helper_binary" ]]; then
+                            local helper_signed_rc=0
+                            _privileged_helper_is_developer_id_signed "$helper_binary" \
+                                "$service_cleanup_deadline" || helper_signed_rc=$?
+                            if mole_rc_timeout_or_signal "$helper_signed_rc"; then
+                                service_scan_status=$helper_signed_rc
+                                break
+                            fi
+                            [[ $helper_signed_rc -eq 0 ]] || continue
+                        fi
                         local helper_record_rc=0
                         _record_orphan_service_candidate "$helper" || helper_record_rc=$?
                         if mole_rc_timeout_or_signal "$helper_record_rc"; then

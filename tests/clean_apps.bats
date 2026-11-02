@@ -2392,6 +2392,147 @@ EOF
     [[ "$output" != *"Orphaned services · cleaned"* ]]
 }
 
+@test "clean_orphaned_system_services keeps a live helper built on this Mac" {
+    # A user compiled a helper with clang into /Library/PrivilegedHelperTools/
+    # com.local.lid.helper and registered it as a LaunchDaemon itself. There is
+    # no parent app, so "parent app gone" proved nothing and the running
+    # daemon was offered as orphaned (Mole Mac field report 2026-11-02). Only a
+    # Developer ID signed helper, one an app shipped, can outlive its app.
+    local signed
+    for signed in 0 1; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
+            DRY_RUN=false MOLE_DRY_RUN=0 SIGNED="$signed" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+should_protect_path() { return 1; }
+bundle_has_installed_app() { return 1; }
+_privileged_helper_is_developer_id_signed() {
+    printf 'SIGNATURE_CHECK:%s\n' "$1"
+    [[ "$SIGNED" == "1" ]]
+}
+
+tmp_dir=$(mktemp -d)
+tmp_plist="$tmp_dir/com.local.lid.plist"
+helper_binary="/Library/PrivilegedHelperTools/com.local.lid.helper"
+/usr/libexec/PlistBuddy -c "Add :Program string $helper_binary" "$tmp_plist" > /dev/null 2>&1
+
+_mole_materialize_bounded_sudo_find() {
+    if [[ "$3" == "/Library/LaunchDaemons" ]]; then
+        printf '%s\0' "$tmp_plist" > "$1"
+    else
+        : > "$1"
+    fi
+}
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        test)
+            [[ "${2:-}" == "-e" && "${3:-}" == "$helper_binary" ]] || return 1
+            return 0
+            ;;
+        /usr/libexec/PlistBuddy | /usr/bin/stat) command "$@" ;;
+        du) printf '4\n' ;;
+        launchctl) return 0 ;;
+        *) return 0 ;;
+    esac
+}
+safe_sudo_remove() {
+    printf 'REMOVE:%s\n' "$1"
+    return 0
+}
+
+clean_orphaned_system_services
+EOF
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"SIGNATURE_CHECK:/Library/PrivilegedHelperTools/com.local.lid.helper"* ]] || { echo "$output"; return 1; }
+        if [[ "$signed" == "0" ]]; then
+            [[ "$output" != *"REMOVE:"* ]] || { echo "$output"; return 1; }
+            [[ "$output" != *"Orphaned services · cleaned"* ]] || { echo "$output"; return 1; }
+        else
+            [[ "$output" == *"REMOVE:"*"com.local.lid.plist"* ]] || { echo "signed vendor helper was not offered: $output"; return 1; }
+        fi
+    done
+}
+
+@test "clean_orphaned_system_services lists a bare helper only when it is Developer ID signed" {
+    # Straight from PrivilegedHelperTools: an unsigned binary and a helper-root
+    # .plist beside one stay; a signed vendor helper whose app is gone is
+    # still offered.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
+        DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+should_protect_path() { return 1; }
+bundle_has_installed_app() { return 1; }
+_privileged_helper_is_developer_id_signed() { [[ "$1" == *com.vendor.gone.helper ]]; }
+
+tmp_dir="$(mktemp -d)"
+helpers=("$tmp_dir/com.local.spare" "$tmp_dir/com.local.lid.helper" "$tmp_dir/com.local.lid.helper.plist"
+    "$tmp_dir/com.vendor.gone.helper")
+touch "${helpers[@]}"
+
+safe_sudo_remove() {
+    echo "removed:$1"
+    return 0
+}
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        find)
+            case "${2:-}" in
+                /Library/PrivilegedHelperTools) printf '%s\0' "${helpers[@]}" ;;
+                *) : ;;
+            esac
+            return 0
+            ;;
+        du) echo "4 ${3:-}"; return 0 ;;
+        launchctl) return 0 ;;
+        *) command "$@" ;;
+    esac
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"removed:"*"com.vendor.gone.helper"* ]] || { echo "$output"; return 1; }
+    local kept
+    for kept in com.local.spare com.local.lid.helper; do
+        [[ "$output" != *"/$kept"* ]] || { echo "offered $kept: $output"; return 1; }
+    done
+}
+
+@test "_privileged_helper_is_developer_id_signed refuses Apple platform and missing binaries" {
+    [[ "$(uname -s)" == "Darwin" ]] || skip "codesign is macOS only"
+    run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+for binary in /bin/ls /nonexistent/helper; do
+    rc=0
+    _privileged_helper_is_developer_id_signed "$binary" || rc=$?
+    printf 'RC:%s:%s\n' "$binary" "$rc"
+done
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC:/bin/ls:1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC:/nonexistent/helper:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_orphaned_system_services keeps a standalone helper app plist during an executable update gap" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
         DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
