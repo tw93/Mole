@@ -642,37 +642,47 @@ EOF
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "install_files fails and names chown when a config directory refuses the copy" {
+@test "install_files keeps the pinned launcher and names a safe next step when a config directory refuses the copy" {
 	# cp -f cannot unlink inside a directory the user cannot write, which is
 	# what a root-owned lib/<subdir> from an earlier sudo install looks like.
-	# The copy fails there, and install_files must say so instead of letting
-	# mo update print success beside the stale file.
+	# The copy must fail before the launcher is replaced, so the old pinned
+	# launcher keeps working, and the next step must quote the path and only
+	# suggest a recursive chown on the default config root, never on a shared
+	# custom one such as ~/.local.
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -uo pipefail
 mole_source_installer
-SOURCE_DIR="$HOME/source"
-INSTALL_DIR="$HOME/install"
-CONFIG_DIR="$HOME/config"
-mkdir -p "$SOURCE_DIR/bin" "$SOURCE_DIR/lib/manage" "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/manage" "$INSTALL_DIR"
-printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="old"' > "$SOURCE_DIR/mole"
-printf '%s\n' 'new bin' > "$SOURCE_DIR/bin/clean.sh"
-printf '%s\n' 'new lib' > "$SOURCE_DIR/lib/manage/remove.sh"
-printf '%s\n' 'stale lib' > "$CONFIG_DIR/lib/manage/remove.sh"
-chmod 444 "$CONFIG_DIR/lib/manage/remove.sh"
-chmod 555 "$CONFIG_DIR/lib/manage"
 resolve_source_dir() { :; }
 needs_sudo() { return 1; }
 maybe_sudo() { "$@"; }
 download_binary() { return 0; }
-rc=0
-install_files 2>&1 || rc=$?
-chmod 755 "$CONFIG_DIR/lib/manage"
-echo "rc=$rc"
+SOURCE_DIR="$HOME/source"
+mkdir -p "$SOURCE_DIR/bin" "$SOURCE_DIR/lib/manage"
+printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="$(dirname "$0")"' 'new launcher' > "$SOURCE_DIR/mole"
+printf '%s\n' 'new bin' > "$SOURCE_DIR/bin/clean.sh"
+printf '%s\n' 'new lib' > "$SOURCE_DIR/lib/manage/remove.sh"
+for CONFIG_DIR in "$HOME/.config/mole" "$HOME/shared root"; do
+    INSTALL_DIR="$HOME/install"
+    rm -rf "$INSTALL_DIR"
+    mkdir -p "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/manage" "$INSTALL_DIR"
+    printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR=/pinned/config' 'old launcher' > "$INSTALL_DIR/mole"
+    printf '%s\n' 'stale lib' > "$CONFIG_DIR/lib/manage/remove.sh"
+    chmod 444 "$CONFIG_DIR/lib/manage/remove.sh"
+    chmod 555 "$CONFIG_DIR/lib/manage"
+    rc=0
+    out=$(install_files 2>&1) || rc=$?
+    chmod 755 "$CONFIG_DIR/lib/manage"
+    printf 'config=%s rc=%s\n%s\n' "$CONFIG_DIR" "$rc" "$out"
+    [[ "$rc" -eq 1 ]] || exit 1
+    grep -q '^old launcher$' "$INSTALL_DIR/mole" || { echo "launcher was replaced"; exit 1; }
+    grep -q '^SCRIPT_DIR=/pinned/config$' "$INSTALL_DIR/mole" || { echo "launcher lost its pin"; exit 1; }
+    [[ "$out" == *"Could not replace Mole files in $CONFIG_DIR/lib"* ]] || exit 1
+done
 EOF
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
-	[[ "$output" == *"rc=1"* ]] || { echo "$output"; return 1; }
-	[[ "$output" == *"Could not replace Mole files in $HOME/config/lib"* ]] || { echo "$output"; return 1; }
-	[[ "$output" == *"sudo chown -R $(id -un) $HOME/config/lib"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"sudo chown -R $(id -un) $HOME/.config/mole/lib && mo update"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *'find '*'shared\ root/lib ! -user '* ]] || { echo "$output"; return 1; }
+	[[ "$output" != *"chown -R $(id -un) $HOME/shared"* ]] || { echo "$output"; return 1; }
 }
 
 @test "get_installed_version fallback reads VERSION past a pinned line that is not UTF-8" {

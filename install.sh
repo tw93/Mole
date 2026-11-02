@@ -1459,6 +1459,28 @@ download_binary() {
 }
 
 # File installation (bin/lib/scripts + go helpers).
+# A module directory refused the copy, usually because an earlier sudo install
+# left it root-owned. The default config root belongs to Mole alone, so a
+# recursive chown there is safe; a custom --config root such as ~/.local is
+# shared with other software, so only list what the user cannot replace.
+report_config_copy_failure() {
+    local dir="$1" quoted user
+    user="$(id -un)"
+    # C locale for the same reason as the SCRIPT_DIR pin below: bash 3.2 %q
+    # then escapes every non-ASCII byte instead of leaving lead bytes raw.
+    # shellcheck disable=SC2030 # scoped to this command substitution on purpose
+    quoted=$(
+        export LC_ALL=C
+        printf '%q' "$dir"
+    )
+    log_error "Could not replace Mole files in $dir, an earlier sudo install may own them"
+    if [[ "$CONFIG_DIR" == "$HOME/.config/mole" ]]; then
+        log_error "Take ownership, then retry: sudo chown -R $user $quoted && mo update"
+    else
+        log_error "Fix the owner of the files this lists, then retry: find $quoted ! -user $user"
+    fi
+}
+
 install_files() {
 
     resolve_source_dir
@@ -1469,6 +1491,46 @@ install_files() {
     source_dir_abs="$(cd "$SOURCE_DIR" && pwd)"
     install_dir_abs="$(cd "$INSTALL_DIR" && pwd)"
     config_dir_abs="$(cd "$CONFIG_DIR" && pwd)"
+
+    # Copy the modules before the launcher is replaced. A refused copy then
+    # returns while the old launcher is still in place and pinned to this
+    # config directory, so `mo` keeps working and the retry can run. Copying
+    # after the launcher swap left a new launcher whose SCRIPT_DIR was never
+    # pinned, and every `mo` call failed to source lib/core/common.sh.
+    if [[ -d "$SOURCE_DIR/bin" ]]; then
+        local source_bin_abs="$(cd "$SOURCE_DIR/bin" && pwd)"
+        local config_bin_abs="$(cd "$CONFIG_DIR/bin" && pwd)"
+        if [[ "$source_bin_abs" != "$config_bin_abs" ]]; then
+            local -a bin_files=("$SOURCE_DIR/bin"/*)
+            if [[ -e "${bin_files[0]}" ]]; then
+                # -f replaces a read-only file in a writable directory; a
+                # directory an earlier sudo install left root-owned still
+                # refuses, and without this check the update reported success
+                # beside the stale files.
+                if ! cp -rf "${bin_files[@]}" "$CONFIG_DIR/bin/"; then
+                    report_config_copy_failure "$CONFIG_DIR/bin"
+                    return 1
+                fi
+                for file in "$CONFIG_DIR/bin/"*; do
+                    [[ -e "$file" ]] && chmod +x "$file"
+                done
+            fi
+        fi
+    fi
+
+    if [[ -d "$SOURCE_DIR/lib" ]]; then
+        local source_lib_abs="$(cd "$SOURCE_DIR/lib" && pwd)"
+        local config_lib_abs="$(cd "$CONFIG_DIR/lib" && pwd)"
+        if [[ "$source_lib_abs" != "$config_lib_abs" ]]; then
+            local -a lib_files=("$SOURCE_DIR/lib"/*)
+            if [[ -e "${lib_files[0]}" ]]; then
+                if ! cp -rf "${lib_files[@]}" "$CONFIG_DIR/lib/"; then
+                    report_config_copy_failure "$CONFIG_DIR/lib"
+                    return 1
+                fi
+            fi
+        fi
+    fi
 
     if [[ -f "$SOURCE_DIR/mole" ]]; then
         if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
@@ -1515,43 +1577,6 @@ install_files() {
         fi
     fi
 
-    if [[ -d "$SOURCE_DIR/bin" ]]; then
-        local source_bin_abs="$(cd "$SOURCE_DIR/bin" && pwd)"
-        local config_bin_abs="$(cd "$CONFIG_DIR/bin" && pwd)"
-        if [[ "$source_bin_abs" != "$config_bin_abs" ]]; then
-            local -a bin_files=("$SOURCE_DIR/bin"/*)
-            if [[ -e "${bin_files[0]}" ]]; then
-                # -f replaces a read-only file in a writable directory; a
-                # directory an earlier sudo install left root-owned still
-                # refuses, and without this check the update reported success
-                # beside the stale files.
-                if ! cp -rf "${bin_files[@]}" "$CONFIG_DIR/bin/"; then
-                    log_error "Could not replace Mole files in $CONFIG_DIR/bin, an earlier sudo install may own them"
-                    log_error "Take ownership, then retry: sudo chown -R $(id -un) $CONFIG_DIR/bin"
-                    return 1
-                fi
-                for file in "$CONFIG_DIR/bin/"*; do
-                    [[ -e "$file" ]] && chmod +x "$file"
-                done
-            fi
-        fi
-    fi
-
-    if [[ -d "$SOURCE_DIR/lib" ]]; then
-        local source_lib_abs="$(cd "$SOURCE_DIR/lib" && pwd)"
-        local config_lib_abs="$(cd "$CONFIG_DIR/lib" && pwd)"
-        if [[ "$source_lib_abs" != "$config_lib_abs" ]]; then
-            local -a lib_files=("$SOURCE_DIR/lib"/*)
-            if [[ -e "${lib_files[0]}" ]]; then
-                if ! cp -rf "${lib_files[@]}" "$CONFIG_DIR/lib/"; then
-                    log_error "Could not replace Mole files in $CONFIG_DIR/lib, an earlier sudo install may own them"
-                    log_error "Take ownership, then retry: sudo chown -R $(id -un) $CONFIG_DIR/lib"
-                    return 1
-                fi
-            fi
-        fi
-    fi
-
     if [[ "$config_dir_abs" != "$source_dir_abs" ]]; then
         for file in README.md LICENSE install.sh; do
             if [[ -f "$SOURCE_DIR/$file" ]]; then
@@ -1573,6 +1598,7 @@ install_files() {
         # in a UTF-8 locale it leaves lead bytes raw and escapes only some
         # continuation bytes, so the pinned line is not valid UTF-8.
         local config_word config_replacement
+        # shellcheck disable=SC2031 # each command substitution sets its own C locale
         config_word=$(
             export LC_ALL=C
             printf '%q' "$config_dir_abs"
