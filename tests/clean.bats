@@ -515,3 +515,243 @@ pkg_cache_run() {
     [[ "$output" != *"snapshots"* ]]
     [[ "$output" == *"total=2048 items=3"* ]]
 }
+
+# pgrep that never sees a node process, so a node the test machine happens to
+# run cannot decide a test; every other question goes to the real pgrep.
+pgrep_without_node() {
+    local real
+    real=$(command -v pgrep)
+    fake_command pgrep 'for a in "$@"; do [[ "$a" == node ]] && exit 1; done; exec '"$real"' "$@"'
+}
+
+@test "Playwright, Cypress and sccache wait for their owners and go when idle" {
+    pgrep_without_node
+    make_cache "$HOME/.cache/ms-playwright/chromium-1140"
+    make_cache "$HOME/.cache/Cypress/13.6.0"
+    make_cache "$HOME/.cache/sccache/a"
+    start_owner sccache
+    # A browser Playwright started carries its folder on the command line.
+    bash -c 'sleep 30; :' "$HOME/.cache/ms-playwright/chromium-1140/chrome-linux/chrome" &
+    PW_PID=$!
+    mole_run clean 'clean_user_rules'
+    kill "$PW_PID"; wait "$PW_PID" 2> /dev/null || true
+    [[ "$output" == *"sccache · skipped while sccache is running"* ]]
+    [[ "$output" == *"Playwright browsers · skipped while"*"is running"* ]]
+    [ -f "$HOME/.cache/sccache/a/entry/blob" ]
+    [ -f "$HOME/.cache/ms-playwright/chromium-1140/entry/blob" ]
+    [ ! -e "$HOME/.cache/Cypress/13.6.0" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+
+    mkdir -p "$HOME/.config/mole"
+    echo "~/.cache/sccache" > "$HOME/.config/mole/whitelist"
+    mole_run clean 'mole_whitelist_load; clean_user_rules'
+    [[ "$output" == *"sccache · skipped (whitelist)"* ]]
+    [ -f "$HOME/.cache/sccache/a/entry/blob" ]
+    [ ! -e "$HOME/.cache/ms-playwright/chromium-1140" ]
+    [ -d "$HOME/.cache/ms-playwright" ]
+}
+
+@test "Steam: only shadercache children go, once, never through ~/.steam/steam or out of the root" {
+    s="$HOME/.local/share/Steam/steamapps"
+    make_cache "$s/shadercache/570"
+    make_cache "$s/common/Game"
+    make_cache "$s/compatdata/570"
+    make_cache "$HOME/.local/share/Steam/userdata/1"
+    make_cache "$HOME/.local/share/Steam/config"
+    make_cache "$TEST_ROOT/outside"
+    ln -s "$TEST_ROOT/outside" "$s/shadercache/999"
+    mkdir -p "$HOME/.steam"
+    ln -s "$HOME/.local/share/Steam" "$HOME/.steam/steam"
+    make_cache "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache/730"
+    mole_run clean 'mole_game_cache_rules | grep Steam'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c . <<< "$output")" -eq 2 ]
+    [[ "$output" == *"|$s/shadercache|steam,steamwebhelper,fossilize_replay"* ]]
+    [[ "$output" == *"|$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache|flatpak:com.valvesoftware.Steam"* ]]
+
+    start_owner steamwebhelper
+    fake_command flatpak '[[ "$1" == ps ]] && echo com.valvesoftware.Steam'
+    mole_run clean 'clean_user_rules'
+    [[ "$output" == *"Steam shader cache · skipped while"*"is running"* ]]
+    [ -f "$s/shadercache/570/entry/blob" ]
+    [ -f "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache/730/entry/blob" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
+    mole_run clean 'clean_user_rules'
+    [ "$(grep -c "Steam shader cache" <<< "$output")" -eq 1 ]
+    [ ! -e "$s/shadercache/570" ]
+    [ ! -e "$s/shadercache/999" ]
+    [ ! -e "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache/730" ]
+    [ -d "$s/shadercache" ]
+    [ -f "$TEST_ROOT/outside/entry/blob" ]
+    for d in "$s/common/Game" "$s/compatdata/570" "$HOME/.local/share/Steam/userdata/1" "$HOME/.local/share/Steam/config"; do
+        [ -f "$d/entry/blob" ]
+    done
+}
+
+@test "Steam: a Steam folder that is a link out of the home is no rule" {
+    make_cache "$TEST_ROOT/elsewhere/steamapps/shadercache/570"
+    mkdir -p "$HOME/.local/share"
+    ln -s "$TEST_ROOT/elsewhere" "$HOME/.local/share/Steam"
+    mole_run clean 'mole_game_cache_rules | grep -c Steam || true'
+    [ "$output" = "0" ]
+}
+
+@test "WebKitGTK: only the HTTP and media caches go; CacheStorage and HSTS stay" {
+    w="$HOME/.cache/webkitgtk"
+    for d in WebKitCache MediaCache CacheStorage HSTS AlternativeServices; do make_cache "$w/$d"; done
+    start_owner WebKitNetworkProcess
+    mole_run clean 'clean_user_rules'
+    [[ "$output" == *"WebKitGTK cache · skipped while WebKitNetworkProcess is running"* ]]
+    [ -f "$w/WebKitCache/entry/blob" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+    mole_run clean 'clean_user_rules'
+    [ "$(grep -c "WebKitGTK cache" <<< "$output")" -eq 1 ]
+    [ ! -e "$w/WebKitCache/entry" ]
+    [ ! -e "$w/MediaCache/entry" ]
+    for d in CacheStorage HSTS AlternativeServices; do [ -f "$w/$d/entry/blob" ]; done
+}
+
+@test "Thunderbird, Telegram, Heroic and GNOME Software: caches go, profiles, keys and settings stay" {
+    tb="$HOME/.cache/thunderbird/ab12.default-release"
+    make_cache "$tb/cache2"
+    make_cache "$tb/startupCache"
+    make_cache "$HOME/.thunderbird/ab12.default-release/ImapMail"
+    tg="$HOME/.local/share/TelegramDesktop/tdata"
+    make_cache "$tg/user_data/cache/0"
+    make_cache "$tg/user_data/media_cache/0"
+    make_cache "$tg/user_data#2/cache/0"
+    make_cache "$tg/user_data/settings"
+    make_cache "$tg/D877F783D5D3EF8C"
+    echo key > "$tg/key_datas"
+    h="$HOME/.config/heroic"
+    make_cache "$h/Cache"
+    make_cache "$h/GPUCache"
+    make_cache "$h/store_cache"
+    echo '{}' > "$h/config.json"
+    make_cache "$HOME/.cache/gnome-software/icons"
+
+    start_owner telegram-desktop
+    TG_PID=$OWNER_PID
+    start_owner heroic
+    mole_run clean 'clean_user_rules'
+    kill "$TG_PID"; wait "$TG_PID" 2> /dev/null || true
+    [[ "$output" == *"Telegram cache · skipped while telegram-desktop is running"* ]]
+    [[ "$output" == *"Heroic cache · skipped while heroic is running"* ]]
+    [ -f "$tg/user_data/cache/0/entry/blob" ]
+    [ -f "$h/Cache/entry/blob" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+
+    mole_run clean 'clean_user_rules'
+    [ ! -e "$tb/cache2/entry" ]
+    [ ! -e "$tg/user_data/cache/0" ]
+    [ ! -e "$tg/user_data/media_cache/0" ]
+    [ ! -e "$tg/user_data#2/cache/0" ]
+    [ ! -e "$h/Cache/entry" ]
+    [ ! -e "$h/GPUCache/entry" ]
+    [ ! -e "$HOME/.cache/gnome-software/icons" ]
+    for d in "$tb/startupCache" "$HOME/.thunderbird/ab12.default-release/ImapMail" "$tg/user_data/settings" "$tg/D877F783D5D3EF8C" "$h/store_cache"; do
+        [ -f "$d/entry/blob" ]
+    done
+    [ -f "$tg/key_datas" ]
+    [ -f "$h/config.json" ]
+}
+
+@test "Lutris and Wine: shader and installer caches and .msi downloads go, sign-in tokens stay" {
+    l="$HOME/.cache/lutris"
+    make_cache "$l/shaders/wine"
+    make_cache "$l/installer/some-game"
+    make_cache "$l/gogdl"
+    echo token > "$l/.gog.token"
+    echo token > "$l/gogdl-auth.json"
+    mkdir -p "$HOME/.cache/wine"
+    head -c 65536 /dev/zero > "$HOME/.cache/wine/wine-gecko-2.47.4-x86_64.msi"
+    make_cache "$HOME/.cache/wine/other"
+    start_owner wineserver
+    mole_run clean 'clean_user_rules'
+    [[ "$output" == *"Lutris cache · skipped while"*"is running"* ]]
+    [[ "$output" == *"Wine downloads · skipped while"*"is running"* ]]
+    [ -f "$l/shaders/wine/entry/blob" ]
+    [ -f "$HOME/.cache/wine/wine-gecko-2.47.4-x86_64.msi" ]
+    kill "$OWNER_PID"; wait "$OWNER_PID" 2> /dev/null || true
+    OWNER_PID=""
+
+    mole_run clean 'clean_user_rules'
+    [ "$(grep -c "Lutris cache" <<< "$output")" -eq 1 ]
+    [ ! -e "$l/shaders/wine" ]
+    [ ! -e "$l/installer/some-game" ]
+    [ ! -e "$HOME/.cache/wine/wine-gecko-2.47.4-x86_64.msi" ]
+    [ -f "$l/.gog.token" ]
+    [ -f "$l/gogdl-auth.json" ]
+    [ -f "$l/gogdl/entry/blob" ]
+    [ -f "$HOME/.cache/wine/other/entry/blob" ]
+}
+
+@test "snap caches: common and revision .cache become rules, never a linked revision, another folder or a linked .cache" {
+    f="$HOME/snap/firefox"
+    make_cache "$f/common/.cache/mozilla"
+    make_cache "$f/1234/.cache/fontconfig"
+    make_cache "$f/1234/.mozilla"
+    ln -s 1234 "$f/current"
+    ln -s 1234 "$f/9999"
+    make_cache "$f/notarevision/.cache/x"
+    mkdir -p "$f/1235"
+    ln -s ../common/.cache "$f/1235/.cache"
+    make_cache "$HOME/snap/Bad_Name/common/.cache/x"
+    mole_run clean 'mole_snap_cache_rules'
+    [ "$status" -eq 0 ]
+    [ "$output" = "Snap apps|firefox snap cache|$f/1234/.cache|snap:firefox
+Snap apps|firefox snap cache|$f/common/.cache|snap:firefox" ]
+}
+
+# fake_snap_proc <proc root> <pid> <cgroup line or -> <exe or ->
+fake_snap_proc() {
+    fake_proc "$1" "$2" "$(id -u)" app "$4"
+    [[ "$3" == - ]] || printf '%s\n' "$3" > "$1/$2/cgroup"
+}
+
+@test "snap owner: a process in the snap's cgroup or running from /snap/<name>/ blocks; an unreadable cgroup cannot tell" {
+    p="$TEST_ROOT/proc"
+    scope="0::/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice"
+    fake_snap_proc "$p" 100 "$scope/snap.firefox.firefox-1b2c.scope" -
+    mole_run clean '_MOLE_PROC_ROOT="'"$p"'"; rc=0; mole_snap_running firefox || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=0" ]
+    mole_run clean '_MOLE_PROC_ROOT="'"$p"'"; rc=0; mole_snap_running fire || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=1" ]
+
+    rm -rf "$p"
+    fake_snap_proc "$p" 100 "$scope/app-foot.scope" /snap/firefox/1234/usr/lib/firefox/firefox
+    mole_run clean '_MOLE_PROC_ROOT="'"$p"'"; rc=0; mole_snap_running firefox || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=0" ]
+
+    rm -rf "$p"
+    fake_snap_proc "$p" 100 "$scope/app-foot.scope" /usr/bin/foot
+    fake_snap_proc "$p" 101 - -
+    mole_run clean '_MOLE_PROC_ROOT="'"$p"'"; rc=0; mole_snap_running firefox || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=2" ]
+    mole_run clean '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/noproc"; rc=0; mole_snap_running firefox || rc=$?; echo "rc=$rc"'
+    [ "$output" = "rc=2" ]
+}
+
+@test "snap caches wait for the snap and go when it is not running" {
+    f="$HOME/snap/firefox"
+    make_cache "$f/common/.cache/mozilla"
+    make_cache "$f/1234/.mozilla"
+    p="$TEST_ROOT/proc"
+    fake_snap_proc "$p" 100 "0::/user.slice/app.slice/snap.firefox.firefox-1b2c.scope" -
+    mole_run clean '_MOLE_PROC_ROOT="'"$p"'"; clean_user_rules'
+    [[ "$output" == *"firefox snap cache · skipped while firefox is running"* ]]
+    [ -f "$f/common/.cache/mozilla/entry/blob" ]
+
+    printf '%s\n' "0::/user.slice/app.slice/app-foot.scope" > "$p/100/cgroup"
+    mole_run clean '_MOLE_PROC_ROOT="'"$p"'"; clean_user_rules'
+    [[ "$output" == *"firefox snap cache"* ]]
+    [ ! -e "$f/common/.cache/mozilla" ]
+    [ -d "$f/common/.cache" ]
+    [ -f "$f/1234/.mozilla/entry/blob" ]
+}

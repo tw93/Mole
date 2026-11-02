@@ -8,7 +8,8 @@
 #             process name (pgrep -x, so `electron[0-9]*` covers versioned
 #             system Electron); "cmd:<ERE>" matches the full command line
 #             (pgrep -f), for runtimes whose process is only `java`;
-#             "flatpak:<app id>" asks flatpak whether that sandboxed app runs.
+#             "flatpak:<app id>" asks flatpak whether that sandboxed app runs;
+#             "snap:<name>" asks /proc whether a process of that snap runs.
 #   selector  which children go (default: all of them):
 #             versions:<link>  keep the version <link> points at and the
 #                              newest other one; nothing when <link> is not a
@@ -48,18 +49,99 @@ User caches|Mesa shader cache|$c/mesa_shader_cache|
 User caches|Mesa shader cache (DB)|$c/mesa_shader_cache_db|
 User caches|NVIDIA shader cache|$c/nvidia|
 RULES
+    mole_webkitgtk_rules
     mole_electron_app_rules
+    mole_app_cache_rules
     mole_developer_rules
+    mole_game_cache_rules
     cat << RULES
 Package builds|yay build cache|$c/yay|yay,makepkg,pacman
 Package builds|paru build cache|$c/paru|paru,makepkg,pacman
 RULES
     mole_flatpak_cache_rules
+    mole_snap_cache_rules
 }
 
 # A path is usable as a rule field when it cannot break the line format.
 mole_rule_path_ok() {
     [[ "$1" != *"|"* && "$1" != *$'\n'* ]]
+}
+
+# 0 when path is a folder under HOME that no symlink below HOME leads to: it
+# resolves to itself. ~/.steam/steam is normally a link to ~/.local/share/Steam,
+# so only the real folder becomes a rule and nothing is counted twice.
+mole_rule_root_plain() {
+    local path="$1" real home_real
+    [[ "$path" == "$HOME/"* && -d "$path" ]] || return 1
+    mole_rule_path_ok "$path" || return 1
+    real=$(readlink -f -- "$path" 2> /dev/null) || return 1
+    home_real=$(readlink -f -- "$HOME" 2> /dev/null) || return 1
+    [[ "$real" == "$home_real${path#"$HOME"}" ]]
+}
+
+# WebKitGTK's shared data store (apps that set no folder of their own):
+# ~/.cache/webkitgtk (WebsiteDataStoreGLib.cpp programName()). Only its HTTP
+# cache (WebKitCache) and media cache go. CacheStorage stays: WebKit itself
+# calls it "really data, not cache" (WebsiteDataStore.cpp), and HSTS and
+# AlternativeServices are security and connection state. Any WebKitGTK app's
+# network or web process may hold it.
+mole_webkitgtk_rules() {
+    local c="$MOLE_CACHE_HOME" leaf
+    for leaf in WebKitCache MediaCache; do
+        printf 'User caches|WebKitGTK cache|%s|WebKitNetworkProcess,WebKitWebProcess\n' "$c/webkitgtk/$leaf"
+    done
+}
+
+# Desktop apps whose cache is not Electron's layout.
+mole_app_cache_rules() {
+    local c="$MOLE_CACHE_HOME" dir
+    # Thunderbird keeps profiles in ~/.thunderbird and each profile's network
+    # cache in ~/.cache/thunderbird/<profile>/cache2; mail stays in the profile.
+    for dir in "$c"/thunderbird/*/cache2; do
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+        mole_rule_path_ok "$dir" || continue
+        printf 'Apps|Thunderbird cache|%s|thunderbird,thunderbird-bin\n' "$dir"
+    done
+    # Telegram Desktop (Qt): each account's database folder tdata/user_<data
+    # name>/ holds "cache" and "media_cache" (storage_account.cpp cachePath,
+    # cacheBigFilePath), opened with clearOnWrongKey, so Telegram itself treats
+    # them as disposable. Messages live on the server; tdata's keys and
+    # settings files stay.
+    for dir in "$MOLE_DATA_HOME"/TelegramDesktop/tdata/user_data*/cache \
+        "$MOLE_DATA_HOME"/TelegramDesktop/tdata/user_data*/media_cache; do
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+        mole_rule_path_ok "$dir" || continue
+        printf 'Apps|Telegram cache|%s|telegram-desktop,Telegram\n' "$dir"
+    done
+    # gs_utils_get_cache_filename(): icons, screenshots, ratings, firmware
+    # metadata, all fetched again. GNOME starts it as a background service, so
+    # on GNOME it is usually running and skipped.
+    printf 'Apps|GNOME Software cache|%s|gnome-software\n' "$c/gnome-software"
+}
+
+# Game launchers. Steam's per-game shader caches are compiled again (or
+# downloaded pre-compiled) on the next launch; steamapps/common, compatdata,
+# userdata and config are never rules.
+mole_game_cache_rules() {
+    local c="$MOLE_CACHE_HOME" base dir
+    local steam='steam,steamwebhelper,fossilize_replay'
+    # Debian and Ubuntu install into ~/.steam/debian-installation; whichever of
+    # these is a link resolves elsewhere and is skipped.
+    for base in "$MOLE_DATA_HOME/Steam" "$HOME/.steam/debian-installation" "$HOME/.steam/steam"; do
+        dir="$base/steamapps/shadercache"
+        mole_rule_root_plain "$dir" || continue
+        printf 'Games|Steam shader cache|%s|%s\n' "$dir" "$steam"
+    done
+    dir="$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache"
+    mole_rule_root_plain "$dir" && printf 'Games|Steam shader cache|%s|flatpak:com.valvesoftware.Steam\n' "$dir"
+    # ~/.cache/lutris also holds GOG and Epic sign-in tokens, library lists and
+    # save-sync state (lutris/services/gog.py, egs.py, util/savesync.py), so
+    # only its per-runner shader caches and the per-game installer download
+    # folders (interpreter.py: "for the duration of the installation") go.
+    printf 'Games|Lutris cache|%s|lutris,wineserver\n' "$c/lutris/shaders" "$c/lutris/installer"
+    # Wine Gecko and Mono installers Wine downloaded for new prefixes
+    # (appwiz.cpl), fetched again from WineHQ. Only the .msi files.
+    printf 'Games|Wine downloads|%s|wineserver,wine,wine64,wine-preloader,wine64-preloader|suffix:.msi\n' "$c/wine"
 }
 
 # Chromium-family profile caches (Mac: lib/clean/user.sh clean_browsers and
@@ -131,7 +213,8 @@ mole_electron_app_rules() {
         "discord|Discord|Discord,discord|app" \
         "Slack|Slack|slack|app" \
         "Signal|Signal|signal-desktop,$e|app" \
-        "Typora|Typora|Typora,typora|app"; do
+        "Typora|Typora|Typora,typora|app" \
+        "heroic|Heroic|heroic,$e|app"; do
         IFS='|' read -r dir label owners kind <<< "$spec"
         dir="$g/$dir"
         [[ -d "$dir" && ! -L "$dir" ]] || continue
@@ -197,6 +280,9 @@ Developer tools|Parcel cache|$HOME/.parcel-cache|parcel,node
 Developer tools|TypeScript cache|$c/typescript|tsserver,node
 Developer tools|Prisma engines cache|$c/prisma|prisma,node
 Developer tools|Puppeteer browsers|$c/puppeteer|node,chrome,chrome-headless-shell
+Developer tools|Playwright browsers|$c/ms-playwright|node,cmd:/ms-playwright/
+Developer tools|Cypress binaries|$c/Cypress|Cypress,node
+Developer tools|sccache|$c/sccache|sccache
 Developer tools|pip cache|$c/pip|pip,pip3,python,python3
 Developer tools|uv cache|$c/uv|uv,uvx|tool:uv
 Developer tools|Poetry cache|$c/pypoetry/cache|poetry
@@ -274,6 +360,49 @@ mole_flatpak_cache_rules() {
         [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || continue
         printf 'Flatpak apps|%s cache|%s|flatpak:%s\n' "$id" "$dir" "$id"
     done
+}
+
+# Snap user caches: each snap's $SNAP_USER_COMMON/.cache and the per-revision
+# $SNAP_USER_DATA/.cache, the snap's XDG cache like a Flatpak app's cache.
+# The "current" link and a revision's .cache that snapcraft's desktop helpers
+# turned into a link to common/.cache are skipped, so nothing counts twice.
+mole_snap_cache_rules() {
+    local base="$HOME/snap" app name sub dir
+    [[ -d "$base" && ! -L "$base" ]] || return 0
+    for app in "$base"/*; do
+        name="${app##*/}"
+        [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ && -d "$app" && ! -L "$app" ]] || continue
+        for sub in "$app"/*; do
+            [[ "${sub##*/}" == common || "${sub##*/}" =~ ^x?[0-9]+$ ]] || continue
+            [[ -d "$sub" && ! -L "$sub" ]] || continue
+            dir="$sub/.cache"
+            [[ -d "$dir" && ! -L "$dir" ]] || continue
+            printf 'Snap apps|%s snap cache|%s|snap:%s\n' "$name" "$dir" "$name"
+        done
+    done
+}
+
+# 0 when one of the user's processes belongs to the snap: snapd runs its apps
+# in snap.<name>.<app>-<uuid>.scope (or .service) cgroups, and an executable
+# under /snap/<name>/ counts too. 1 when none does; 2 when /proc cannot be
+# read or a live process's cgroup cannot be read.
+mole_snap_running() {
+    local name="$1" pid line exe readable rc=1
+    [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || return 2
+    [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
+    for pid in "$_MOLE_PROC_ROOT"/[0-9]*; do
+        mole_pid_mine "$pid" || continue
+        readable=false
+        while IFS= read -r line; do
+            readable=true
+            [[ "$line" == *"/snap.$name."* ]] && return 0
+        done 2> /dev/null < "$pid/cgroup" || true
+        if exe=$(readlink -- "$pid/exe" 2> /dev/null); then
+            [[ "$exe" == "/snap/$name/"* ]] && return 0
+        fi
+        [[ "$readable" == false && -d "$pid" ]] && rc=2
+    done
+    return "$rc"
 }
 
 # Children of root that a rule selects, NUL-separated.

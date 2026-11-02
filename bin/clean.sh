@@ -93,6 +93,10 @@ rule_owner_state() {
         mole_flatpak_running "${owners#flatpak:}"
         return
     fi
+    if [[ "$owners" == snap:* ]]; then
+        mole_snap_running "${owners#snap:}"
+        return
+    fi
     local -a tokens=() names=()
     IFS=',' read -ra tokens <<< "$owners"
     for token in "${tokens[@]}"; do
@@ -120,6 +124,7 @@ rule_owner_state() {
 rule_owner_name() {
     local first="${1%%,*}"
     first="${first#flatpak:}"
+    first="${first#snap:}"
     printf '%s' "${first#cmd:}"
 }
 
