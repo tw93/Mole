@@ -41,7 +41,7 @@ Released: tag `V0.1.0-linux` on `417e4c2d`, x86_64 and aarch64 archives with `SH
 
 ## Implemented on `linux` for 0.2.0 (unreleased)
 
-Learned from xdg-ninja, pacutils `pacreport`, rebuild-detector, lostfiles, cleansys, Spruce, Cleanr and Omarchy's own update script (study clones in `~/www/mole/.artifacts/oss-linux/`). Every row was tested on the Omarchy VM (ext4); btrfs and snapper only against fixtures, Snap and real GPU fdinfo only against fixtures.
+Learned from xdg-ninja, pacutils `pacreport`, rebuild-detector, lostfiles, cleansys, Spruce, Cleanr and Omarchy's own update script (study clones in `~/www/mole/.artifacts/oss-linux/`). Every row was tested on the Omarchy VM (ext4). btrfs and snapper were also run for real on 2026-11-02 in a throwaway VM with Omarchy's layout and snapper config: the clean row, the freed total, the uninstall line, the analyze note, the status allocation (matching `btrfs fi df`) and a separate `@pkg` (no note) all behaved as designed. Snap and real GPU fdinfo are still verified only against fixtures.
 
 | Contract | Source | Status | Verification |
 | --- | --- | --- | --- |
