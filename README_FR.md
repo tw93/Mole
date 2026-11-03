@@ -156,6 +156,25 @@ Mole peut supprimer des fichiers ; il valide donc les chemins, protège les empl
 
 Consultez [SECURITY.md](SECURITY.md) et [SECURITY_AUDIT.md](SECURITY_AUDIT.md) pour la marche à suivre en cas de vulnérabilité, les limites de sécurité et les restrictions actuelles.
 
+## Configuration
+
+Mole fonctionne sans configuration. Ces variables d'environnement l'adaptent aux disques lents, aux montages réseau ou cloud bloqués ; n'augmentez un délai que lorsqu'un scan signale `exit 124`.
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2) — sondes de disponibilité des commandes
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3) — requêtes légères comme `df` et `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5) — sondes qui parcourent une arborescence ou accèdent au réseau
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10) — listes de gestionnaires de paquets comme `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20) — nettoyages de cache qui parcourent le disque
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30) — vérification et réparation du système de fichiers
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15) — scans non bornés du répertoire utilisateur ; augmentez d'abord cette valeur quand `mo clean` signale un délai dépassé
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300) — budget global de la section de nettoyage cloud et Office
+
+Le nombre entre parenthèses est la valeur par défaut en secondes. Par exemple, laisser plus de temps aux scans sur un disque lent :
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
+
 ## Détail des fonctionnalités
 
 Les exemples suivants sont abrégés. Les éléments détectés, les tailles et les raisons d'omission dépendent de votre Mac.

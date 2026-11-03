@@ -156,6 +156,25 @@ Mole 會刪除檔案，所以會先檢查路徑、保護共用和系統目錄，
 
 漏洞回報方式、安全邊界與目前限制見 [SECURITY.md](SECURITY.md) 與 [SECURITY_AUDIT.md](SECURITY_AUDIT.md)。
 
+## 設定
+
+Mole 無需設定即可執行。以下環境變數可用於因應慢速磁碟、卡住的網路或雲端掛載；僅在某項掃描回報 `exit 124` 時才需要調大逾時。
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2) — 指令可用性探測
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3) — 輕量查詢，如 `df` 與 `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5) — 走訪目錄樹或存取網路的探測
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10) — 套件管理器列表，如 `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20) — 走訪磁碟的快取清理
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30) — 檔案系統校驗與修復
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15) — 無上限的使用者目錄掃描；`mo clean` 回報逾時時優先調大此項
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300) — 雲端與 Office 清理環節的總預算
+
+括號中的數字為預設秒數。例如，在慢速磁碟上給掃描更多時間：
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
+
 ## 功能說明
 
 以下展示為縮減範例，具體顯示項目、大小與略過原因取決於你的 Mac 實際環境。
