@@ -133,9 +133,9 @@ truncate_by_display_width() {
         # How to detect byte size without switching locale?
         # printf %s "$char" | wc -c ? Slow.
         # Check against ASCII range?
-        # Fast ASCII check: if [[ "$char" < $'\x7f' ]]; then ...
-
-        if [[ "$char" =~ [[:ascii:]] ]]; then
+        # Bash's own pattern matcher knows [:ascii:]; a regex hands it to
+        # regcomp, where glibc rejects it (#1918) and macOS never matches.
+        if [[ "$char" == [[:ascii:]] ]]; then
             char_width=1
         else
             # Assume wide for non-ascii in this context (simplified)

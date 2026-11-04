@@ -1292,6 +1292,12 @@ EOF
     [ "$output" = $'-n\n-e' ]
 }
 
+@test "truncate_by_display_width counts ASCII as one column (#1918)" {
+    run /bin/bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; truncate_by_display_width 'abcdefghijklmnop' 10; truncate_by_display_width '中文abcdefghij' 10"
+    [ "$status" -eq 0 ]
+    [ "$output" = $'abcdefg...\n中文abc...' ]
+}
+
 @test "read_key respects MOLE_READ_KEY_FORCE_CHAR" {
     run /bin/bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "CHAR:j" ]
