@@ -9,6 +9,12 @@ desktop() {
     { echo "[Desktop Entry]"; echo "Type=Application"; printf '%s\n' "$@"; } > "$file"
 }
 
+@test "truncate_by_display_width counts ASCII as one column without regex errors (#1918)" {
+    mole_run core "truncate_by_display_width 'abcdefghijklmnop' 10; truncate_by_display_width '中文abcdefghij' 10"
+    [ "$status" -eq 0 ]
+    [ "$output" = $'abcdefg...\n中文abc...' ]
+}
+
 @test "leftovers match the exact ID, never a longer name" {
     mkdir -p "$HOME/.config/foo" "$HOME/.config/foobar" "$HOME/.cache/foo" "$HOME/.local/share/foo-extra"
     mole_run uninstall 'mole_app_leftovers pacman foo foo'
