@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -1023,11 +1024,15 @@ func formatRateCompact(mb float64) string {
 	return fmt.Sprintf("%.0f", mb)
 }
 
+// shorten fits s into maxLen terminal cells, ending a cut with "…". It counts
+// display width rather than bytes, so a multi-byte name (CJK, accents, the
+// curly apostrophe in "Kevin’s") is not cut in the middle of a character or
+// shortened while it still fits.
 func shorten(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if ansi.StringWidth(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-1] + "…"
+	return ansi.Truncate(s, maxLen, "…")
 }
 
 func remainingLineWidth(width int, prefix string) int {
