@@ -415,6 +415,7 @@ Describe "System image and file checks" {
                 [pscustomobject]@{ ExitCode = 0 }
             }
             Mock Remove-Item { [IO.File]::Delete($LiteralPath) }
+            Mock Get-CbsLogLength { $null }
             $script:ExpectedSfcAction = $Action
             $output = Test-SystemFiles 6>&1 | Out-String
             $output | Should -Match ([regex]::Escape($Expect))
@@ -422,6 +423,90 @@ Describe "System image and file checks" {
             Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq $script:ExpectedSfcAction -and $Path -eq "System files" -and $Detail -like "sfc /scannow exit code 0: *" }
         }
         finally { $env:TEMP = $savedTemp }
+    }
+}
+
+Describe 'SFC verdict from CBS.log (#1915)' {
+    BeforeAll {
+        $script:CbsHeader = "2026-11-04 13:40:01, Info                  CBS    Starting TrustedInstaller initialization."
+        $script:CbsClean = @(
+            "2026-11-04 13:44:05, Info                  CSI    00000008 [SR] Verifying 100 components"
+            "2026-11-04 13:44:05, Info                  CSI    00000009 [SR] Beginning Verify and Repair transaction"
+            "2026-11-04 13:44:09, Info                  CSI    0000000b [SR] Verify complete"
+            "2026-11-04 13:44:09, Info                  CSI    0000000c [SR] Repairing 0 components"
+            "2026-11-04 13:44:09, Info                  CSI    0000000d [SR] Beginning Verify and Repair transaction"
+            "2026-11-04 13:44:09, Info                  CSI    0000000f [SR] Repair complete"
+        )
+    }
+
+    It 'Reads <Expect> from [SR] lines' -ForEach @(
+        @{ Name = 'clean'; Extra = @(); Expect = 'no integrity violations' }
+        @{ Name = 'repaired'; Extra = @('2026-11-04 13:45:01, Info  CSI  00000020 [SR] Repairing 1 components', '2026-11-04 13:45:02, Info  CSI  00000021 [SR] Repairing corrupted file \??\C:\Windows\System32\x.dll', '2026-11-04 13:45:03, Info  CSI  00000022 [SR] Repair complete'); Expect = 'repaired corrupt files' }
+        @{ Name = 'unrepairable'; Extra = @('2026-11-04 13:45:01, Info  CSI  00000020 [SR] Repairing 1 components', '2026-11-04 13:45:02, Info  CSI  00000021 [SR] Cannot repair member file [l:10]"x.dll" of Example', '2026-11-04 13:45:03, Info  CSI  00000022 [SR] Repair complete'); Expect = 'found corrupt files it could not repair' }
+    ) {
+        ConvertTo-SfcCbsVerdict (@($script:CbsClean) + @($Extra)) | Should -Be $Expect
+    }
+
+    It 'Proves nothing without a finished repair pass' {
+        ConvertTo-SfcCbsVerdict @() | Should -BeNullOrEmpty
+        ConvertTo-SfcCbsVerdict @($script:CbsClean[0..3]) | Should -BeNullOrEmpty
+        ConvertTo-SfcCbsVerdict @("2026-11-04 13:44:09, Info  CSI  0000000f [SR] Repair complete") | Should -BeNullOrEmpty
+    }
+
+    It 'Reads only the lines written after the scan started' {
+        $path = Join-Path $TestDrive 'CBS.log'
+        $old = @($script:CbsHeader, "2026-11-01 09:00:00, Info  CSI  00000002 [SR] Cannot repair member file [l:10]`"old.dll`"") -join "`r`n"
+        [IO.File]::WriteAllText($path, "$old`r`n")
+        $start = Get-CbsLogLength -Path $path
+        [IO.File]::AppendAllText($path, (($script:CbsClean) -join "`r`n") + "`r`n")
+        Read-SfcCbsVerdict -StartLength $start -Path $path | Should -Be 'no integrity violations'
+        Read-SfcCbsVerdict -StartLength 0 -Path $path | Should -Be 'found corrupt files it could not repair'
+    }
+
+    It 'Returns nothing when the log rotated, is missing or the start is unknown' {
+        $path = Join-Path $TestDrive 'CBS-rotated.log'
+        [IO.File]::WriteAllText($path, (($script:CbsClean) -join "`r`n"))
+        Read-SfcCbsVerdict -StartLength 1000000 -Path $path | Should -BeNullOrEmpty
+        Read-SfcCbsVerdict -StartLength 0 -Path (Join-Path $TestDrive 'missing.log') | Should -BeNullOrEmpty
+        Read-SfcCbsVerdict -StartLength $null -Path $path | Should -BeNullOrEmpty
+        Get-CbsLogLength -Path (Join-Path $TestDrive 'missing.log') | Should -BeNullOrEmpty
+    }
+
+    It 'Records a localized clean scan as optimized from CBS.log' {
+        $script:DryRun = $false
+        $script:IssuesFound = 0
+        $script:IssuesFixed = 0
+        Mock Test-IsAdmin { $true }
+        Mock Write-MoleOperation {}
+        Mock Get-CbsLogLength { 42 }
+        Mock Read-SfcCbsVerdict { 'no integrity violations' }
+        Mock Start-Process {
+            [IO.File]::WriteAllBytes($RedirectStandardOutput, [Text.Encoding]::Unicode.GetBytes('Windows Resource Protection localized text without the English phrase'))
+            [pscustomobject]@{ ExitCode = 0 }
+        }
+        $output = Test-SystemFiles 6>&1 | Out-String
+        $output | Should -Match 'No integrity violations found'
+        Should -Invoke Read-SfcCbsVerdict -Times 1 -Exactly -ParameterFilter { $StartLength -eq 42 }
+        Should -Invoke Write-MoleOperation -Times 1 -Exactly -ParameterFilter { $Action -eq 'OPTIMIZED' -and $Detail -eq 'sfc /scannow exit code 0: no integrity violations' }
+    }
+
+    It 'Does not consult CBS.log when SFC exits nonzero or stdout is already read' -ForEach @(
+        @{ Text = 'localized'; Exit = 5 }
+        @{ Text = 'Windows Resource Protection did not find any integrity violations.'; Exit = 0 }
+    ) {
+        $script:DryRun = $false
+        Mock Test-IsAdmin { $true }
+        Mock Write-MoleOperation {}
+        Mock Get-CbsLogLength { 42 }
+        Mock Read-SfcCbsVerdict { 'no integrity violations' }
+        $script:SfcFixtureText = $Text
+        $script:SfcFixtureExit = $Exit
+        Mock Start-Process {
+            [IO.File]::WriteAllBytes($RedirectStandardOutput, [Text.Encoding]::Unicode.GetBytes($script:SfcFixtureText))
+            [pscustomobject]@{ ExitCode = $script:SfcFixtureExit }
+        }
+        Test-SystemFiles 6>$null
+        Should -Invoke Read-SfcCbsVerdict -Times 0 -Exactly
     }
 }
 

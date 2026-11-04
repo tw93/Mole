@@ -407,6 +407,7 @@ function Test-SystemFiles {
     try {
         # Atomically reserve our own scratch file, never a shared fixed filename.
         $outputPath = [System.IO.Path]::GetTempFileName()
+        $cbsStartLength = Get-CbsLogLength
         $sfcResult = Start-Process -FilePath "sfc.exe" -ArgumentList "/scannow" `
             -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outputPath -ErrorAction Stop
 
@@ -416,7 +417,10 @@ function Test-SystemFiles {
         $verdict = if ($output -match "did not find any integrity violations") { "no integrity violations" }
         elseif ($output -match "found corrupt files and successfully repaired") { "repaired corrupt files" }
         elseif ($output -match "found corrupt files but was unable to fix") { "found corrupt files it could not repair" }
-        else { "result not read, see CBS.log" }
+        else { $null }
+        # A localized Windows prints its own words (#1915); CBS.log is never localized.
+        if (-not $verdict -and $sfcExit -eq 0) { $verdict = Read-SfcCbsVerdict -StartLength $cbsStartLength }
+        if (-not $verdict) { $verdict = "result not read, see CBS.log" }
         $completed = $sfcExit -eq 0 -and $verdict -in @("no integrity violations", "repaired corrupt files")
         $action = if ($completed) { "OPTIMIZED" } else { "FAILED" }
         Write-MoleOperation -Action $action -Path "System files" -Detail "sfc /scannow exit code ${sfcExit}: $verdict"
@@ -425,21 +429,23 @@ function Test-SystemFiles {
             return
         }
 
-        if ($output -match "did not find any integrity violations") {
-            Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m No integrity violations found"
-        }
-        elseif ($output -match "found corrupt files and successfully repaired") {
-            Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Corrupt files were repaired"
-            $script:IssuesFixed++
-        }
-        elseif ($output -match "found corrupt files but was unable to fix") {
-            Write-Host "  $esc[31m$($script:Icons.Error)$esc[0m Found corrupt files that could not be repaired"
-            Write-Host "  $esc[90mRun 'DISM /Online /Cleanup-Image /RestoreHealth' then retry SFC$esc[0m"
-            $script:IssuesFound++
-        }
-        else {
-            # A localized Windows prints its own words; an unread result is never shown as clean.
-            Write-Host "  $esc[90m$($script:Icons.Empty)$esc[0m Scan finished; details are in $env:WINDIR\Logs\CBS\CBS.log"
+        switch ($verdict) {
+            "no integrity violations" {
+                Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m No integrity violations found"
+            }
+            "repaired corrupt files" {
+                Write-Host "  $esc[32m$($script:Icons.Success)$esc[0m Corrupt files were repaired"
+                $script:IssuesFixed++
+            }
+            "found corrupt files it could not repair" {
+                Write-Host "  $esc[31m$($script:Icons.Error)$esc[0m Found corrupt files that could not be repaired"
+                Write-Host "  $esc[90mRun 'DISM /Online /Cleanup-Image /RestoreHealth' then retry SFC$esc[0m"
+                $script:IssuesFound++
+            }
+            default {
+                # An unread result is never shown as clean.
+                Write-Host "  $esc[90m$($script:Icons.Empty)$esc[0m Scan finished; details are in $env:WINDIR\Logs\CBS\CBS.log"
+            }
         }
     }
     catch {
@@ -462,6 +468,75 @@ function Read-SfcOutput {
     if (-not (Test-Path -LiteralPath $Path)) { return "" }
     $bytes = [System.IO.File]::ReadAllBytes($Path)
     return [System.Text.Encoding]::Unicode.GetString($bytes)
+}
+
+function Get-CbsLogLength {
+    <#
+    .SYNOPSIS
+        Length of CBS.log before a scan, so the scan's own [SR] lines can be read afterwards; $null when unreadable.
+    #>
+    param([string]$Path = (Join-Path $env:WINDIR 'Logs\CBS\CBS.log'))
+
+    try { return ([System.IO.FileInfo]::new($Path)).Length } catch { return $null }
+}
+
+function Read-SfcCbsVerdict {
+    <#
+    .SYNOPSIS
+        Read SFC's verdict from the [SR] lines CBS.log gained since StartLength. Microsoft documents
+        these lines (findstr /c:"[SR]") and they stay English on every display language, unlike
+        sfc.exe's console text (#1915). $null when the log is unreadable, rotated during the scan,
+        or proves nothing.
+    #>
+    param($StartLength, [string]$Path = (Join-Path $env:WINDIR 'Logs\CBS\CBS.log'))
+
+    if ($null -eq $StartLength) { return $null }
+    $lines = New-Object System.Collections.Generic.List[string]
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+            ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+        # A shorter log was rotated mid-scan: the earlier [SR] lines are gone, so nothing is proven.
+        if ($stream.Length -lt [long]$StartLength) { return $null }
+        [void]$stream.Seek([long]$StartLength, [System.IO.SeekOrigin]::Begin)
+        $reader = New-Object System.IO.StreamReader($stream)
+        while ($null -ne ($line = $reader.ReadLine())) {
+            if ($line.Contains('[SR]')) { $lines.Add($line) }
+        }
+    }
+    catch { return $null }
+    finally { if ($stream) { $stream.Dispose() } }
+
+    return ConvertTo-SfcCbsVerdict $lines.ToArray()
+}
+
+function ConvertTo-SfcCbsVerdict {
+    <#
+    .SYNOPSIS
+        Map one scan's CBS.log [SR] lines to a verdict. SFC verifies in batches, each ending with
+        "Repairing N components" and "Repair complete"; an unrepairable file logs "Cannot repair member file".
+    #>
+    param([string[]]$Lines)
+
+    if (-not $Lines -or $Lines.Count -eq 0) { return $null }
+    foreach ($line in $Lines) {
+        if ($line -match '\[SR\] (Cannot repair member file|Could not reproject corrupted file)') {
+            return "found corrupt files it could not repair"
+        }
+    }
+    $repairCompleted = $false
+    $batches = 0
+    $repairing = 0
+    foreach ($line in $Lines) {
+        if ($line -match '\[SR\] Repair complete') { $repairCompleted = $true }
+        if ($line -match '\[SR\] Repairing (\d+) components') {
+            $batches++
+            $repairing += [int]$Matches[1]
+        }
+    }
+    if (-not $repairCompleted -or $batches -eq 0) { return $null }
+    if ($repairing -gt 0) { return "repaired corrupt files" }
+    return "no integrity violations"
 }
 
 function Test-SystemImage {
