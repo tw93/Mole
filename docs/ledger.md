@@ -16,6 +16,7 @@ What has been decided, shipped, verified and left open for Mole CLI (Linux), in 
 | 2026-11-02 | No logo on the macOS README (it already has a large header image); the Windows and Linux READMEs show the round app logo. | Adding the logo to all three. |
 | 2026-11-02 | 0.3.0 aligns with Mole CLI (Windows): purge, history, GPU shader caches only with `--gpu-shaders`, `--debug` session log. | Shipping purge alone; keeping shader caches in the default clean. |
 | 2026-11-02 | 0.4.0 covers Debian and Ubuntu: apt autoclean as a sudo item, Snap revisions reported, apt and Snap apps in uninstall, apt reports in optimize (decide 1102-26). | Deleting apt's cache as root, removing old kernels or autoremoving (ubuntu-cleaner's way); removing Snap's rollback revisions. |
+| 2026-11-04 | `mo update --nightly` installs the newest `linux` commit from source like Mole CLI (macOS), building the Go helpers; when the user has no usable Go, Mole downloads a checksum-checked Go into its own cache for the nightly only, never for stable installs. | A rolling `nightly-linux` prerelease of built archives (a permanent entry on the repository's Releases page); installing Go through the package manager (needs sudo). |
 | 2026-11-02 | AUR package `mole-cli-bin`: prepared, then held because AUR registration is paused. | Homebrew on Linux (the `mole` formula is macOS-only), AUR names `mole` and `mole-bin` (taken by an unrelated SSH tunnel tool that ships `/usr/bin/mole`). |
 
 ## Releases

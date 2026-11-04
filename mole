@@ -62,7 +62,9 @@ show_version() {
 # Where this copy came from: the tree install.sh manages, or a source checkout
 # with its commit, or a copy placed by hand.
 mole_install_source() {
-    if mole_runs_installed_tree; then
+    if mole_runs_installed_tree && [[ -f "$SCRIPT_DIR/NIGHTLY" ]]; then
+        echo "Nightly ($(head -c 7 "$SCRIPT_DIR/NIGHTLY" 2> /dev/null || echo unknown))"
+    elif mole_runs_installed_tree; then
         echo "Release"
     elif [[ -d "$SCRIPT_DIR/.git" ]] && command -v git > /dev/null 2>&1; then
         echo "Source ($(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2> /dev/null || echo unknown))"
@@ -126,6 +128,7 @@ show_help() {
     printf "  %s%-28s%s %s\n" "$GREEN" "mo history --json" "$NC" "Export cleanup history"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo analyze /mnt" "$NC" "Analyze another mount"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo update --force" "$NC" "Force reinstall latest version"
+    printf "  %s%-28s%s %s\n" "$GREEN" "mo update --nightly" "$NC" "Install latest unreleased build"
     printf "  %s%-28s%s %s\n" "$GREEN" "mo remove --dry-run" "$NC" "Preview Mole removal"
     echo
     printf "%s%s%s\n" "$BLUE" "OPTIONS" "$NC"

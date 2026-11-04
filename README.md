@@ -39,9 +39,10 @@ curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
 Mole runs on x86_64 and aarch64, installs into `~/.local/share/mole` and links `mo` into `~/.local/bin`, with no sudo. Only `paccache`, `apt-get autoclean` and `journalctl` in `mo clean` and the package removal in `mo uninstall` ask for sudo, and pacman and apt keep their own confirmation.
 
 ```bash
-mo update          # install the latest release
-mo update --force  # reinstall it
-mo remove          # remove Mole and its own files
+mo update            # install the latest release
+mo update --force    # reinstall it
+mo update --nightly  # install the latest unreleased build
+mo remove            # remove Mole and its own files
 ```
 
 ## Usage

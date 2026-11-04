@@ -84,7 +84,8 @@ mole_update_notice_message() {
     local latest=""
     # The cache file has no trailing newline, so read reports failure on a good value.
     { read -r latest < "$(mole_update_notice_dir)/update_latest"; } 2> /dev/null || [[ -n "$latest" ]] || return 0
-    # The same verdict mo update acts on, so the line never offers a no-op.
-    [[ "$(mole_update_verdict "$latest" "${VERSION:-unknown}")" == install ]] || return 0
+    # The same verdict mo update acts on, so the line never offers a no-op. A
+    # nightly is compared by its release core: only a newer release is news.
+    [[ "$(mole_update_verdict "$latest" "${VERSION%-nightly.*}")" == install ]] || return 0
     printf 'Update %s available, run mo update' "$latest"
 }
