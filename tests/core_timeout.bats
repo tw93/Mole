@@ -629,6 +629,73 @@ EOF
     done
 }
 
+@test "run_with_timeout shell fallback traps INT before the command starts" {
+    # A Ctrl-C between the command's start and the trap took bash's default
+    # exit and left the command, which ignores INT in the background, running
+    # until the killer's deadline (CI 2026-11-04, ORPHANED:plain above). The
+    # shim waits for the command's marker when the INT trap is set: present
+    # means the command started first.
+    run env PROJECT_ROOT="${BATS_TEST_DIRNAME}/.." MARKER="$HOME/started-before-trap" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+MO_TIMEOUT_BIN="" MO_TIMEOUT_PERL_BIN=""
+rm -f "$MARKER" # SAFE: test-owned scratch file
+trap() {
+    if [[ "${1:-}" != "-p" && "${1:-}" != "-" && "${*: -1}" == "INT" && -z "${TRAP_SEEN:-}" ]]; then
+        TRAP_SEEN=1
+        local ticks=0
+        while [[ ! -e "$MARKER" && $ticks -lt 20 ]]; do
+            sleep 0.05
+            ticks=$((ticks + 1))
+        done
+        if [[ -e "$MARKER" ]]; then echo "ORDER=command-first"; else echo "ORDER=trap-first"; fi
+    fi
+    builtin trap "$@"
+}
+run_with_timeout 5 /bin/sh -c 'touch "$1"' sh "$MARKER"
+echo "RC=$?"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ORDER=trap-first"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+}
+
+@test "run_with_timeout shell fallback never starts a command after an early interrupt" {
+    # The shim delivers Ctrl-C the moment the INT trap is in place, before the
+    # command is forked. The command must not run at all, the caller's own INT
+    # trap must come back, and the call must return 130 at once.
+    run env PROJECT_ROOT="${BATS_TEST_DIRNAME}/.." MARKER="$HOME/started-after-interrupt" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+MO_TIMEOUT_BIN="" MO_TIMEOUT_PERL_BIN=""
+rm -f "$MARKER" # SAFE: test-owned scratch file
+builtin trap 'echo CALLER_TRAP' INT
+# An ignored TERM is inherited across fork and exec, so a command that was
+# started at all leaves its marker instead of dying to the follow-up TERM.
+builtin trap '' TERM
+trap() {
+    builtin trap "$@"
+    if [[ "${1:-}" != "-p" && "${1:-}" != "-" && "${*: -1}" == "INT" && -z "${INT_SENT:-}" ]]; then
+        INT_SENT=1
+        kill -INT $$
+    fi
+}
+start=$SECONDS
+rc=0
+run_with_timeout 10 /bin/sh -c 'touch "$1"; exec /bin/sleep 8' sh "$MARKER" || rc=$?
+echo "RC=$rc ELAPSED=$((SECONDS - start))"
+sleep 0.3
+[[ -e "$MARKER" ]] && echo "COMMAND_STARTED"
+builtin trap -p INT
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130 ELAPSED="[0-2]* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"COMMAND_STARTED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"echo CALLER_TRAP"* ]] || { echo "$output"; return 1; }
+}
+
 @test "run_with_timeout passes the caller's stdin through every backend" {
     # The simulator metadata check feeds awk and the Finder and login item
     # paths feed osascript through stdin; the shell backend used to hand them

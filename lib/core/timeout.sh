@@ -381,12 +381,35 @@ run_with_timeout() {
         _mole_timeout_debug "[TIMEOUT] Shell fallback, ${duration}s: $*"
     fi
 
+    local interrupted=0 cmd_pid="" killer_pid=""
+    local previous_int_trap
+    previous_int_trap=$(trap -p INT || true)
+
+    # Stop the command on SIGINT while preserving the caller's trap. A background
+    # command ignores SIGINT when job control is off, so forwarding INT left it
+    # running with no deadline once the killer was gone; send TERM, as the perl
+    # backend does. The trap goes in before the command starts: a Ctrl-C between
+    # the start and a later trap took the shell's default exit and left the
+    # command running until the killer's deadline.
+    trap 'interrupted=1; if [[ -n "$cmd_pid" ]]; then kill -TERM "$cmd_pid" 2>/dev/null || true; fi; if [[ -n "$killer_pid" ]]; then _mole_cleanup_timeout_killer "$killer_pid"; fi' INT
+
+    # A Ctrl-C already pressed never starts the command: callers run rm -rf here.
+    if [[ $interrupted -eq 1 ]]; then
+        if [[ -n "$previous_int_trap" ]]; then
+            # eval: restore previous trap captured by $(trap -p INT)
+            eval "$previous_int_trap"
+        else
+            trap - INT
+        fi
+        return 130
+    fi
+
     # Start command in background. Without job control bash gives a background
     # command /dev/null as stdin, so pass the caller's stdin on explicitly, as
     # the timeout binary and perl backends do: callers feed osascript and awk
     # through a here-document.
     "$@" <&0 &
-    local cmd_pid=$!
+    cmd_pid=$!
 
     # Start timeout killer in background.
     # Redirect all FDs to /dev/null so orphaned child processes (e.g. sleep $duration)
@@ -411,17 +434,13 @@ run_with_timeout() {
             fi
         fi
     ) < /dev/null > /dev/null 2>&1 &
-    local killer_pid=$!
+    killer_pid=$!
 
-    local interrupted=0
-    local previous_int_trap
-    previous_int_trap=$(trap -p INT || true)
-
-    # Stop the command on SIGINT while preserving the caller's trap. A background
-    # command ignores SIGINT when job control is off, so forwarding INT left it
-    # running with no deadline once the killer was gone; send TERM, as the perl
-    # backend does.
-    trap 'interrupted=1; kill -TERM "$cmd_pid" 2>/dev/null || true; _mole_cleanup_timeout_killer "$killer_pid"' INT
+    # An interrupt that landed before both PIDs were known reached neither.
+    if [[ $interrupted -eq 1 ]]; then
+        kill -TERM "$cmd_pid" 2> /dev/null || true
+        _mole_cleanup_timeout_killer "$killer_pid"
+    fi
 
     # Wait for command to complete
     local exit_code=0
