@@ -16,19 +16,19 @@
   <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="600" />
 </p>
 
-Mole CLI for Linux is an early version: the latest release is [V0.4.0-linux](https://github.com/tw93/Mole/releases/tag/V0.4.0-linux), and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; Debian and Ubuntu are covered too (apt and Snap), and on other distributions the user-level parts work while the package-manager items do not appear.
+Mole CLI for Linux is an early version, and the latest release is [V0.4.0-linux](https://github.com/tw93/Mole/releases/tag/V0.4.0-linux). Issues and feedback are welcome. It is built first for [Omarchy](https://omarchy.org) and other Arch-based systems, and covers Debian and Ubuntu with apt and Snap. On other distributions the user-level parts work and the package-manager items do not appear.
 
 This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole#readme).
 
 ## Features
 
-- **Clean**: removes caches apps rebuild by themselves (browser and browser-profile caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, thumbnails, about 50 developer tools, old versions of AI coding agents, Flatpak and Snap app caches), empties the Trash, removes unused runtimes of your own Flatpak installation, trims old pacman packages, apt package files that can no longer be downloaded and journal logs through pacman's, apt's and systemd's own tools (on a snapper btrfs root it says the package space comes back only as snapshots rotate), reports the space Snap keeps for rolling back, and reports core dumps, container space and large caches it does not know. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch. Anything you want kept goes in `mo clean --whitelist`
-- **Uninstall**: removes pacman, AUR, apt, Snap and Flatpak apps, Omarchy web and terminal apps and AppImages, shows each app's size and last use, stops its background services, then moves its leftovers to the Trash, matched by the app's exact ID only and never while the app is running
-- **Optimize**: refreshes the font, icon and app launcher caches, compacts browser and Thunderbird databases while they are closed, and points out failed services, launchers, autostart and Hyprland start commands whose program is gone, root-owned files in your home, orphan and unneeded packages, configuration that removed apt packages left behind, pending `.pacnew`, `.dpkg-dist` and `.ucf-dist` merges, AUR packages that need a rebuild, files no package owns, broken links in your home folder, a leftover pacman lock, TRIM switched off on an SSD and power managers that fight each other. It needs no sudo and never touches CPU, power or kernel settings
-- **Analyze**: an interactive disk map of your volumes, home, caches and package cache that stays on local disks and follows btrfs subvolumes; deleting from it moves items to the Trash
-- **Purge**: removes build output of projects you have not touched for a week (`node_modules`, `target`, `build`, `.venv` and about 30 others), only next to the project file of the tool that rebuilds it, never with files git tracks inside and never while a program works in that project
-- **History**: lists what Mole removed, moved to the Trash or skipped, by run, with `--json` for scripts
-- **Status**: live CPU, memory pressure and zram, disks, network, temperatures, GPU, battery and power draw, peripherals, btrfs allocation and the busiest apps with their GPU memory, with a health score
+- **Clean**: Removes caches apps rebuild by themselves, empties the Trash, and trims old packages and journal logs through pacman's, apt's and systemd's own tools
+- **Uninstall**: Removes pacman, AUR, apt, Snap, Flatpak and AppImage apps with their leftovers, matched by the app's exact ID
+- **Optimize**: Refreshes font, icon and launcher caches, compacts closed browser databases, and reports problems with the command to fix them
+- **Analyze**: Explores disk usage in an interactive map that stays on local disks and follows btrfs subvolumes
+- **Purge**: Removes build output such as `node_modules` and `target` from projects untouched for a week
+- **History**: Lists what Mole removed, moved to the Trash or skipped, by run
+- **Status**: Shows live CPU, memory, disks, network, temperatures, GPU and battery with a health score
 
 ## Install
 
@@ -36,7 +36,7 @@ This branch has its own code, written for Linux paths and tools. The look, the k
 curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
 ```
 
-Mole installs into `~/.local/share/mole` and links `mo` into `~/.local/bin`. It needs no sudo to install and runs as your own user; the only steps that ask for sudo are `paccache`, `apt-get autoclean` and `journalctl` in `mo clean` and the package removal in `mo uninstall`, where pacman and apt keep their own confirmation.
+Mole runs on x86_64 and aarch64, installs into `~/.local/share/mole` and links `mo` into `~/.local/bin`, with no sudo. Only `paccache`, `apt-get autoclean` and `journalctl` in `mo clean` and the package removal in `mo uninstall` ask for sudo, and pacman and apt keep their own confirmation.
 
 ```bash
 mo update          # install the latest release
@@ -90,7 +90,7 @@ mo clean --dry-run
 
 <img src="./docs/img/clean-linux.png" alt="mo clean --dry-run preview" width="736" />
 
-Caches whose app is running are skipped and named. Large folders under `~/.cache` that Mole does not know are listed under Not cleaned, never removed.
+Covers browser caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, about 50 developer tools, old versions of AI coding agents, and Flatpak and Snap app caches. Caches whose app is running are skipped and named. Large folders under `~/.cache` that Mole does not know are listed under Not cleaned, never removed, along with core dumps and container space. The space Snap keeps for rolling back is reported, not removed, and on a snapper btrfs root old packages free their space only as snapshots rotate. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch.
 
 ### Uninstall
 
@@ -110,7 +110,7 @@ mo optimize --dry-run
 
 <img src="./docs/img/optimize-linux.png" alt="mo optimize --dry-run preview" width="520" />
 
-Anything that needs root or a choice from you, such as a failed service or orphan packages, is reported with the command to run.
+Needs no sudo and never touches CPU, power or kernel settings. Failed services, launchers, autostart entries and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, leftover apt configuration, pending `.pacnew` and `.dpkg-dist` merges, AUR packages that need a rebuild, files no package owns, broken links, a stale pacman lock, TRIM switched off and power managers that fight each other are reported with the command to run.
 
 ### Analyze
 
