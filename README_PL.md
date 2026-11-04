@@ -141,6 +141,12 @@ W instalacji deklaratywnej dodaj `github:tw93/mole/main` jako wejście flake i u
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
+**Na Linuksie** ([Linux CLI](https://github.com/tw93/Mole/tree/linux#readme))
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
+```
+
 Mole jest dystrybuowane wyłącznie przez Homebrew, to repozytorium i [mole.fit](https://mole.fit/). `molemac.com`, `moleapp.net` i `molefit.com` nie są Mole, a aplikacja na Windowsa pod adresem `mole.bluecatbot.com` to osobny projekt społeczności.
 
 ## Bezpieczeństwo

@@ -141,6 +141,12 @@ Pour une installation déclarative, ajoutez `github:tw93/mole/main` comme entré
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
+**Sous Linux** ([CLI Linux](https://github.com/tw93/Mole/tree/linux#readme))
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
+```
+
 Mole est distribué uniquement via Homebrew, ce dépôt et [mole.fit](https://mole.fit/). `molemac.com`, `moleapp.net` et `molefit.com` ne sont pas Mole, et l'app Windows de `mole.bluecatbot.com` est un projet communautaire distinct.
 
 ## Sécurité et fiabilité

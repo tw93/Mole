@@ -141,6 +141,12 @@ nix profile remove mole
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
+**Linux 上安装**（[Linux CLI](https://github.com/tw93/Mole/tree/linux#readme)）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
+```
+
 Mole 只通过 Homebrew、这个仓库和 [mole.fit](https://mole.fit/) 发布，`molemac.com`、`moleapp.net`、`molefit.com` 都不是 Mole，`mole.bluecatbot.com` 上的 Windows App 是同名的社区项目。
 
 ## 安全机制

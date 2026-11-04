@@ -141,6 +141,12 @@ nix profile remove mole
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
+**У Linux** ([CLI для Linux](https://github.com/tw93/Mole/tree/linux#readme))
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
+```
+
 Mole поширюється лише через Homebrew, цей репозиторій і [mole.fit](https://mole.fit/). `molemac.com`, `moleapp.net` і `molefit.com` не мають стосунку до Mole, а застосунок для Windows на `mole.bluecatbot.com` є окремим проєктом спільноти.
 
 ## Безпека

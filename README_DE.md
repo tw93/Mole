@@ -141,6 +141,12 @@ Für eine deklarative Konfiguration füge `github:tw93/mole/main` als Flake-Inpu
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
 ```
 
+**Unter Linux** ([Linux-CLI](https://github.com/tw93/Mole/tree/linux#readme))
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
+```
+
 Mole wird nur über Homebrew, dieses Repository und [mole.fit](https://mole.fit/) verteilt. `molemac.com`, `moleapp.net` und `molefit.com` sind nicht Mole, und die Windows-App auf `mole.bluecatbot.com` ist ein separates Community-Projekt.
 
 ## Sicherheit
