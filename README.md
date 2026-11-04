@@ -5,6 +5,7 @@
   <h1>Mole CLI for Linux</h1>
   <p><b>Deep clean, uninstall apps, optimize, analyze disk, and monitor your Linux desktop. Free open-source CLI.</b></p>
   <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/tw93/Mole/releases?q=linux"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-linux&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/linux"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/linux?style=flat-square" alt="Commits"></a>
   <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
@@ -15,7 +16,7 @@
   <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="600" />
 </p>
 
-**Under construction.** Mole CLI for Linux is still early: the latest release is [V0.3.0-linux](https://github.com/tw93/Mole/releases/tag/V0.3.0-linux), and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; Debian and Ubuntu are covered too (apt and Snap), and on other distributions the user-level parts work while the package-manager items do not appear.
+Mole CLI for Linux is an early version: the latest release is [V0.4.0-linux](https://github.com/tw93/Mole/releases/tag/V0.4.0-linux), and more lands on this branch with each version. Issues and feedback are welcome. The first target is [Omarchy](https://omarchy.org) and other Arch-based systems; Debian and Ubuntu are covered too (apt and Snap), and on other distributions the user-level parts work while the package-manager items do not appear.
 
 This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole#readme).
 
