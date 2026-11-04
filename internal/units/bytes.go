@@ -29,7 +29,17 @@ func BytesSI(size int64) string {
 		exp++
 	}
 	value := float64(size) / float64(div)
-	return fmt.Sprintf("%.1f %cB", value, "kMGTPE"[exp])
+	label := fmt.Sprintf("%.1f", value)
+	// One decimal place can round a value just under the next unit up to
+	// "1000.0" (999,999 B -> "1000.0 kB"); Finder and diskutil show that size
+	// as 1 MB, so step up a unit instead. int64 tops out at 9.2 EB, so the
+	// last prefix is never stepped past.
+	if label == "1000.0" {
+		value /= unit
+		exp++
+		label = fmt.Sprintf("%.1f", value)
+	}
+	return fmt.Sprintf("%s %cB", label, "kMGTPE"[exp])
 }
 
 // BytesBin formats an unsigned byte count using binary (1024-based) units with
