@@ -140,6 +140,8 @@ mo purge
 mo purge --paths
 ```
 
+<img src="./docs/img/purge-linux.png" alt="mo purge project list" width="900" />
+
 Scans `~/www`, `~/dev`, `~/Projects`, `~/code` and similar folders, plus any home folder that holds a project, or only the folders listed in `~/.config/mole/purge_paths`. Folders changed in the last 7 days and projects a program works in start unselected; the rest start selected. Outside a terminal, `--yes` removes only what is older than 7 days.
 
 ## Community
