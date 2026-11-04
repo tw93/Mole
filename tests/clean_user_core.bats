@@ -3806,6 +3806,62 @@ EOF
     [[ "$plain" == *"Gradle caches"*"LINK<$review_home/.gradle/caches>TEXT<>"* ]] || { echo "$output"; return 1; }
 }
 
+@test "large files reports backup app snapshots without Time Machine (#1916)" {
+    local review_home="$HOME/large-review-snapshots"
+    mkdir -p "$review_home"
+
+    run env HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+docker() { return 1; }
+defaults() { return 1; }
+tmutil() { printf '%s\n' "Snapshots for disk /:" "com.synology.activebackup.F0yvGv9C"; }
+run_with_timeout() {
+    shift
+    "$@"
+}
+check_large_file_candidates
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"*"from com.synology.activebackup, deleted files keep using space until removed"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "large files stops when the snapshot listing is interrupted" {
+    local review_home="$HOME/large-review-snapshot-signal"
+    mkdir -p "$review_home"
+
+    run env HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+docker() { echo "UNEXPECTED_DOCKER_PROBE"; return 1; }
+defaults() { return 1; }
+run_with_timeout() {
+    shift
+    if [[ "$1" == "tmutil" ]]; then
+        return 130
+    fi
+    "$@"
+}
+rc=0
+check_large_file_candidates || rc=$?
+echo "RC=$rc"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"UNEXPECTED_DOCKER_PROBE"* ]] || { echo "$output"; return 1; }
+}
+
 @test "large files measures each row once, at most four at a time, and prints them in order" {
     local review_home="$HOME/large-review-pool"
     # path|label in queue order. Each row gets its own size, so a result read

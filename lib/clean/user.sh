@@ -5,6 +5,8 @@ set -euo pipefail
 _mole_user_module_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1090
 source "$_mole_user_module_dir/purge_shared.sh"
+# shellcheck disable=SC1090
+source "$_mole_user_module_dir/snapshots.sh"
 
 _user_process_delete_guard_allows() {
     mole_clean_process_guard "$_MOLE_USER_PROCESS_GUARD_PROBE" "$_MOLE_USER_PROCESS_GUARD_FAMILY started"
@@ -3603,18 +3605,27 @@ _check_large_file_candidates_body() {
 
     _report_large_or_stop "macOS updates cache" "$HOME/Library/Updates" || return $?
 
-    if [[ "${SYSTEM_CLEAN:-false}" != "true" ]] && command -v tmutil > /dev/null 2>&1 &&
-        defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then
-        local snapshot_list snapshot_count
-        snapshot_list=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" tmutil listlocalsnapshots / 2> /dev/null || true)
-        if [[ -n "$snapshot_list" ]]; then
-            snapshot_count=$(echo "$snapshot_list" | { grep -Eo 'com\.apple\.TimeMachine\.[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}' || true; } | wc -l | awk '{print $1}')
-            if [[ "$snapshot_count" =~ ^[0-9]+$ && "$snapshot_count" -gt 0 ]]; then
-                stop_section_spinner
-                mole_review_row "Time Machine local snapshots" "" "$snapshot_count" "macOS removes them when space runs low"
-                found_any=true
-                start_section_spinner "Scanning large files..."
-            fi
+    if [[ "${SYSTEM_CLEAN:-false}" != "true" ]] && command -v tmutil > /dev/null 2>&1; then
+        # Snapshots from other backup apps exist without Time Machine (#1916).
+        local snapshot_include_tm=false snapshot_list snapshot_rows=""
+        if defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then
+            snapshot_include_tm=true
+        fi
+        local snapshot_rc=0
+        snapshot_list=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" tmutil listlocalsnapshots / 2> /dev/null) || snapshot_rc=$?
+        if [[ $snapshot_rc -ge 128 ]]; then
+            _mole_record_clean_cancellation "$snapshot_rc"
+            stop_section_spinner
+            return "$snapshot_rc"
+        fi
+        if [[ $snapshot_rc -eq 0 && -n "$snapshot_list" ]]; then
+            snapshot_rows=$(mole_local_snapshot_rows "$snapshot_include_tm" <<< "$snapshot_list")
+        fi
+        if [[ -n "$snapshot_rows" ]]; then
+            stop_section_spinner
+            printf '%s\n' "$snapshot_rows"
+            found_any=true
+            start_section_spinner "Scanning large files..."
         fi
     fi
 

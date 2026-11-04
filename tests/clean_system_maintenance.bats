@@ -645,6 +645,141 @@ EOF
     [[ "$output" != *"Time Machine local snapshots"* ]]
 }
 
+@test "clean_local_snapshots reports backup app snapshots without Time Machine (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { return 1; }
+run_with_timeout() {
+    printf '%s\n' \
+        "Snapshots for disk /:" \
+        "com.synology.activebackup.F0yvGv9C" \
+        "com.bombich.ccc.6F2A7C1E-1D3B-4C55-9A0B-2E8F1C7D4B10" \
+        "com.bombich.ccc.0B9D2E44-7A61-4F0C-8E3B-5C1A9F6D2E77.2026-11-04-020000" \
+        "com.apple.os.update-MSUPrepareUpdate" \
+        "com.apple.TimeMachine.2023-10-25-120000.local"
+}
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ echo "ACTIVITY"; }
+tm_is_running(){ echo "UNEXPECTED_TM_PROBE"; return 1; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"3"*"from com.synology.activebackup and com.bombich.ccc, deleted files keep using space until removed"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"ACTIVITY"* ]] || { echo "$output"; return 1; }
+    # No Time Machine configured: no Time Machine probe and no Time Machine row.
+    [[ "$output" != *"UNEXPECTED_TM_PROBE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots still reports backup app snapshots during a Time Machine backup (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000.local" \
+        "com.synology.activebackup.F0yvGv9C"
+}
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ return 0; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Time Machine snapshots · skipped (backup in progress)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"*"from com.synology.activebackup"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots prints both rows when Time Machine is configured and idle (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000.local" \
+        "com.apple.TimeMachine.2023-10-24-120000.local" \
+        "com.synology.activebackup.F0yvGv9C"
+}
+start_section_spinner(){ echo "START:$1"; }
+stop_section_spinner(){ echo "STOP"; }
+note_activity(){ :; }
+tm_is_running(){ return 1; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Time Machine local snapshots · "*"2"*"macOS removes them when space runs low"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"*"from com.synology.activebackup"* ]] || { echo "$output"; return 1; }
+    # An idle Time Machine changes the spinner text in place, no stop between.
+    [[ "$output" == *"START:Checking Time Machine status..."$'\n'"START:Checking local snapshots..."* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots lists backup app snapshots when Time Machine status is unknown (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000.local" \
+        "com.synology.activebackup.F0yvGv9C"
+}
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ return 2; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Time Machine snapshots · skipped (status unknown)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots stops before listing when the Time Machine probe is interrupted (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() { echo "UNEXPECTED_LISTING"; }
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ return 130; }
+
+rc=0
+clean_local_snapshots || rc=$?
+echo "RC=$rc"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"UNEXPECTED_LISTING"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_homebrew skips when cleaned recently" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

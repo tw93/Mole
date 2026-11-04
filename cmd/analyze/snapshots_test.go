@@ -20,23 +20,33 @@ func TestParseLocalSnapshotCount(t *testing.T) {
 		want   int
 	}{
 		{
-			name: "counts documented snapshot dates",
-			output: `Snapshot dates for volume group containing disk /:
-2026-08-26-091500
-2026-08-26-101500
+			name: "counts Time Machine snapshot names",
+			output: `Snapshots for disk /:
+com.apple.TimeMachine.2026-08-26-091500.local
+com.apple.TimeMachine.2026-08-26-101500.local
 `,
 			want: 2,
 		},
 		{
+			name: "counts snapshots other backup apps leave without Time Machine (#1916)",
+			output: `Snapshots for disk /:
+com.synology.activebackup.F0yvGv9C
+com.bombich.ccc.6F2A7C1E-1D3B-4C55-9A0B-2E8F1C7D4B10
+com.apple.TimeMachine.2026-08-26-091500.local
+`,
+			want: 3,
+		},
+		{
 			name:   "ignores a localized heading with no snapshots",
-			output: "本地快照日期：\n",
+			output: "本地快照：\n",
 			want:   0,
 		},
 		{
-			name: "ignores snapshot names and malformed dates",
-			output: `Snapshots for volume group containing disk /:
+			name: "ignores Apple update snapshots and malformed lines",
+			output: `Snapshots for disk /:
 com.apple.os.update-MSUPrepareUpdate
-2026-99-99-999999
+com.apple.TimeMachine.2026-99-99
+not a snapshot name
 `,
 			want: 0,
 		},
@@ -62,7 +72,7 @@ func TestLocalSnapshotProbeUsesBoundedReadOnlyTMUtilQuery(t *testing.T) {
 		if !ok || time.Until(deadline) <= 0 || time.Until(deadline) > localSnapshotProbeTimeout {
 			t.Fatalf("snapshot probe context deadline = %v, want a live %s budget", deadline, localSnapshotProbeTimeout)
 		}
-		return []byte("Snapshot dates:\n2026-08-26-091500\n2026-08-26-101500\n"), nil
+		return []byte("Snapshots for disk /:\ncom.apple.TimeMachine.2026-08-26-091500.local\ncom.synology.activebackup.F0yvGv9C\n"), nil
 	}
 
 	msg := localSnapshotProbeCmd(runner, 0)().(localSnapshotMsg)
@@ -72,7 +82,7 @@ func TestLocalSnapshotProbeUsesBoundedReadOnlyTMUtilQuery(t *testing.T) {
 	if gotName != "/usr/bin/tmutil" {
 		t.Fatalf("snapshot probe command = %q, want /usr/bin/tmutil", gotName)
 	}
-	wantArgs := []string{"listlocalsnapshotdates", "/"}
+	wantArgs := []string{"listlocalsnapshots", "/"}
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
 		t.Fatalf("snapshot probe args = %#v, want %#v", gotArgs, wantArgs)
 	}
@@ -117,7 +127,7 @@ func TestOverviewRefreshReprobesLocalSnapshots(t *testing.T) {
 
 	m := newModel("/", true)
 	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n"), nil
+		return []byte("Snapshots for disk /:\n"), nil
 	}
 	m.localSnapshotCount = 4
 	firstUpdated, firstCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
@@ -148,7 +158,7 @@ func TestOverviewRefreshResultSurvivesDrillDown(t *testing.T) {
 
 	m := newModel("/", true)
 	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n"), nil
+		return []byte("Snapshots for disk /:\n"), nil
 	}
 	m.localSnapshotCount = 4
 	refreshedModel, refreshCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
@@ -174,7 +184,7 @@ func TestEnteringOverviewProbesLocalSnapshots(t *testing.T) {
 
 	m := newModel(t.TempDir(), false)
 	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n2026-08-27-101500\n"), nil
+		return []byte("Snapshots for disk /:\ncom.apple.TimeMachine.2026-08-27-101500.local\n"), nil
 	}
 
 	overviewModel, overviewCmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -195,7 +205,7 @@ func TestSwitchingToOverviewAdvancesSnapshotProbeGeneration(t *testing.T) {
 
 	m := newModel(t.TempDir(), false)
 	m.snapshotRunner = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Snapshot dates:\n2026-08-29-101500\n"), nil
+		return []byte("Snapshots for disk /:\ncom.apple.TimeMachine.2026-08-29-101500.local\n"), nil
 	}
 	firstMsg := localSnapshotMsgFromBatch(t, m.switchToOverviewMode())
 	m.isOverview = false
@@ -250,7 +260,7 @@ func TestOverviewViewExplainsLocalSnapshotOnlySpace(t *testing.T) {
 	}
 
 	view := m.View()
-	for _, want := range []string{"2 Time Machine local snapshots", "snapshot-only space is not listed below"} {
+	for _, want := range []string{"2 local snapshots", "snapshot-only space is not listed below"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected overview snapshot notice %q, got:\n%s", want, view)
 		}
@@ -267,7 +277,7 @@ func TestOverviewViewUsesSingularSnapshotLabel(t *testing.T) {
 	}
 
 	view := m.View()
-	if !strings.Contains(view, "1 Time Machine local snapshot") || strings.Contains(view, "1 Time Machine local snapshots") {
+	if !strings.Contains(view, "1 local snapshot") || strings.Contains(view, "1 local snapshots") {
 		t.Fatalf("expected singular snapshot notice, got:\n%s", view)
 	}
 }
@@ -293,7 +303,7 @@ func TestOverviewViewOmitsSnapshotNoticeWhenNoneDetected(t *testing.T) {
 		entries:    []dirEntry{{Name: "Home", Path: "/tmp/home", Size: 1, IsDir: true}},
 	}
 
-	if view := m.View(); strings.Contains(view, "Time Machine local snapshot") {
+	if view := m.View(); strings.Contains(view, "local snapshot") {
 		t.Fatalf("expected no snapshot notice, got:\n%s", view)
 	}
 }

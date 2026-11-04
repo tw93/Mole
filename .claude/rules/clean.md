@@ -6,6 +6,7 @@ paths:
   - "lib/clean/app_caches.sh"
   - "lib/clean/caches.sh"
   - "lib/clean/system.sh"
+  - "lib/clean/snapshots.sh"
   - "lib/clean/brew.sh"
   - "lib/clean/hints.sh"
   - "lib/clean/dev.sh"
