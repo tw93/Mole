@@ -129,3 +129,11 @@ Implemented in source (Mole CLI (macOS), `main`): a successful stable `mo update
 
 - Mole Mac: Not applicable. Sparkle shows each version's notes before installing and the in-app What's New card lists them after.
 - Mole CLI (Windows): Implemented in source (`884eedc0`): after a pull that changes `VERSION`, `mo update` prints the published `V<version>-windows` release's changelog titles and link.
+
+## 2026-11-04 Byte sizes that round up to the next unit
+
+Implemented in source (Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `units.BytesSI` picked the unit before rounding to one decimal, so `mo analyze` printed 999,999 B as "1000.0 kB" where Finder shows 1 MB; a value that rounds to 1000.0 now moves up one unit (`internal/units/bytes.go`, `TestBytesSI`). Not released until the next tagged version ships it.
+
+- Mole Mac: Not applicable. Sizes go through Foundation's `ByteCountFormatter`, which picks the unit after rounding.
+- Mole CLI (Windows): Pending. `humanizeBytes` in `cmd/analyze/format.go` on the `windows` branch has the same shape with 1024-based units, so 1,048,575 B reads "1024.0 KB". Next check: step up a unit when the formatted value is 1024.0, with a boundary case in `format_test.go`.
+- Mole for Windows: Pending. `ByteSize.Format` in `src/Mole.Core/Formatting/ByteSize.cs` formats values of 100 and above with "0", so 1023.6 KB reads "1024 KB". Next check: confirm what File Explorer shows for that size before changing it, since the formatter follows Explorer.
