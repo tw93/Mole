@@ -156,6 +156,25 @@ Mole może usuwać pliki, dlatego weryfikuje ścieżki, chroni lokalizacje wspó
 
 Wskazówki dotyczące zgłaszania problemów, granice bezpieczeństwa i obecne ograniczenia opisują [SECURITY.md](SECURITY.md) i [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 
+## Konfiguracja
+
+Mole działa bez konfiguracji. Te zmienne środowiskowe dostosowują go do wolnych dysków oraz zawieszonych zasobów sieciowych lub chmurowych; zwiększaj limit czasu tylko wtedy, gdy Mole zgłosi, że któryś krok przekroczył limit czasu (`timed out`).
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): sprawdzanie dostępności poleceń
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): lekkie zapytania, takie jak `df` i `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): sondy przeglądające drzewo katalogów lub korzystające z sieci
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): listowanie pakietów, np. `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): czyszczenie pamięci podręcznych, które przegląda dysk
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): weryfikacja i naprawa systemu plików
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): nieograniczone skanowanie katalogów użytkownika
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): łączny limit czasu dla sekcji czyszczenia chmury i pakietu Office
+
+Liczba w nawiasie to wartość domyślna w sekundach. Na przykład, aby dać skanowaniu więcej czasu na wolnym dysku:
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
+
 ## Funkcje w szczegółach
 
 Poniższe przykłady są skrócone. Dostępne elementy, rozmiary i powody pominięcia zależą od Twojego Maca.
