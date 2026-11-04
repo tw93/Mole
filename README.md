@@ -13,7 +13,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="600" />
+  <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="1000" />
 </p>
 
 Mole CLI for Linux is an early version, and the latest release is [V0.4.0-linux](https://github.com/tw93/Mole/releases/tag/V0.4.0-linux). Issues and feedback are welcome. It is built first for [Omarchy](https://omarchy.org) and other Arch-based systems, and covers Debian and Ubuntu with apt and Snap. On other distributions the user-level parts work and the package-manager items do not appear.
@@ -89,9 +89,11 @@ The screenshots below come from an Omarchy test machine. Available items and siz
 mo clean --dry-run
 ```
 
-<img src="./docs/img/clean-linux.png" alt="mo clean --dry-run preview" width="736" />
+<img src="./docs/img/clean-linux.png" alt="mo clean --dry-run preview" width="1000" />
 
-Covers browser caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, about 50 developer tools, old versions of AI coding agents, and Flatpak and Snap app caches. Caches whose app is running are skipped and named. Large folders under `~/.cache` that Mole does not know are listed under Not cleaned, never removed, along with core dumps and container space. The space Snap keeps for rolling back is reported, not removed, and on a snapper btrfs root old packages free their space only as snapshots rotate. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch.
+Covers browser caches, Electron apps such as VS Code, Cursor, Obsidian, Discord and Slack, Thunderbird, Telegram, about 50 developer tools, old versions of AI coding agents, and Flatpak and Snap app caches. Caches whose app is running are skipped and named. GPU shader caches (Mesa, NVIDIA, Steam, Lutris) go only with `mo clean --gpu-shaders`, since every game compiles them again on its next launch.
+
+Large folders under `~/.cache` that Mole does not know, core dumps and container space are listed under Not cleaned, never removed. The space Snap keeps for rolling back is reported, not removed, and on a snapper btrfs root old packages free their space only as snapshots rotate.
 
 ### Uninstall
 
@@ -99,9 +101,11 @@ Covers browser caches, Electron apps such as VS Code, Cursor, Obsidian, Discord 
 mo uninstall
 ```
 
-<img src="./docs/img/uninstall-linux.png" alt="mo uninstall app list" width="736" />
+<img src="./docs/img/uninstall-linux.png" alt="mo uninstall app list" width="1000" />
 
-Lists pacman, AUR, apt, Snap, Flatpak, AppImage, Omarchy web and terminal apps with their size and last use. Picked apps are removed by their own package manager, with its own confirmation where it has one (Snap has none, so Mole's confirmation is the last step), and their leftovers go to the Trash. Before apt runs, Mole names any other package apt would remove with it, such as a desktop metapackage. `mo uninstall --dry-run` shows everything that would happen without running anything.
+Lists pacman, AUR, apt, Snap, Flatpak, AppImage, Omarchy web and terminal apps with their size and last use. Picked apps are removed by their own package manager, with its own confirmation where it has one (Snap has none, so Mole's confirmation is the last step), and their leftovers go to the Trash.
+
+Before apt runs, Mole names any other package apt would remove with it, such as a desktop metapackage. `mo uninstall --dry-run` shows everything that would happen without running anything.
 
 ### Optimize
 
@@ -111,7 +115,12 @@ mo optimize --dry-run
 
 <img src="./docs/img/optimize-linux.png" alt="mo optimize --dry-run preview" width="520" />
 
-Needs no sudo and never touches CPU, power or kernel settings. Failed services, launchers, autostart entries and Hyprland start commands whose program is gone, root-owned files in your home, orphan packages, leftover apt configuration, pending `.pacnew` and `.dpkg-dist` merges, AUR packages that need a rebuild, files no package owns, broken links, a stale pacman lock, TRIM switched off and power managers that fight each other are reported with the command to run.
+Needs no sudo and never touches CPU, power or kernel settings. These problems are reported with the command to run:
+
+- Failed services, and launchers, autostart entries and Hyprland start commands whose program is gone
+- Orphan packages, leftover apt configuration, pending `.pacnew` and `.dpkg-dist` merges, AUR packages that need a rebuild, files no package owns and a stale pacman lock
+- Root-owned files in your home and broken links
+- TRIM switched off and power managers that fight each other
 
 ### Analyze
 
@@ -120,7 +129,7 @@ mo analyze
 mo analyze /mnt/data
 ```
 
-<img src="./docs/img/analyze-linux.png" alt="mo analyze overview" width="760" />
+<img src="./docs/img/analyze-linux.png" alt="mo analyze overview" width="1000" />
 
 An interactive disk explorer with the same layout as the macOS version. Network, FUSE and container mounts are shown but not scanned.
 
@@ -141,7 +150,7 @@ mo purge
 mo purge --paths
 ```
 
-<img src="./docs/img/purge-linux.png" alt="mo purge project list" width="900" />
+<img src="./docs/img/purge-linux.png" alt="mo purge project list" width="1000" />
 
 Scans `~/www`, `~/dev`, `~/Projects`, `~/code` and similar folders, plus any home folder that holds a project, or only the folders listed in `~/.config/mole/purge_paths`. Folders changed in the last 7 days and projects a program works in start unselected; the rest start selected. Outside a terminal, `--yes` removes only what is older than 7 days.
 
