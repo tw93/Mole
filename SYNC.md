@@ -137,3 +137,11 @@ Implemented in source (Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `u
 - Mole Mac: Not applicable. Sizes go through Foundation's `ByteCountFormatter`, which picks the unit after rounding.
 - Mole CLI (Windows): Pending. `humanizeBytes` in `cmd/analyze/format.go` on the `windows` branch has the same shape with 1024-based units, so 1,048,575 B reads "1024.0 KB". Next check: step up a unit when the formatted value is 1024.0, with a boundary case in `format_test.go`.
 - Mole for Windows: Pending. `ByteSize.Format` in `src/Mole.Core/Formatting/ByteSize.cs` formats values of 100 and above with "0", so 1023.6 KB reads "1024 KB". Next check: confirm what File Explorer shows for that size before changing it, since the formatter follows Explorer.
+
+## 2026-11-04 APFS snapshots from other backup apps
+
+Implemented in source (Mole CLI (macOS), `main`, `a08c6885`, tw93/Mole#1916): Synology Active Backup, Carbon Copy Cloner and similar tools leave APFS snapshots on the data volume that pin deleted files like Time Machine ones, and Mole counted only `com.apple.TimeMachine.<date>` names and probed only with Time Machine configured. `mo clean` now prints a read-only `APFS snapshots` row (count plus owner prefix) from `tmutil listlocalsnapshots /` whether or not Time Machine is set up, through `mole_local_snapshot_rows` in `lib/clean/snapshots.sh`; `mo analyze` counts the same names. Apple's other `com.apple.*` snapshots stay out, and nothing is sized or deleted. Not released until the next tagged version ships it.
+
+- Mole Mac: Pending. `PurgeableSpaceManager.snapshotCount` (`MoleApp/Sources/Services/System/PurgeableSpaceManager.swift`, read at `d9d4f4dde`) counts only `com.apple.TimeMachine` lines, and its row removes snapshots with `tmutil deletelocalsnapshots /`, which must not reach a backup app's snapshot. Next check: decide whether Mole Mac shows a separate report-only row for non-Apple names, kept apart from the Time Machine delete path.
+- Mole CLI (Windows): Not applicable. Windows has no APFS snapshots; Volume Shadow Copies are a different mechanism and are not in scope.
+- Mole for Windows: Not applicable, for the same reason.
