@@ -696,6 +696,26 @@ EOF
     [[ "$output" == *"echo CALLER_TRAP"* ]] || { echo "$output"; return 1; }
 }
 
+@test "run_with_timeout shell fallback leaves the caller's errexit as it was" {
+    run env PROJECT_ROOT="${BATS_TEST_DIRNAME}/.." /bin/bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+MO_TIMEOUT_BIN="" MO_TIMEOUT_PERL_BIN=""
+set +e
+rc=0
+run_with_timeout 5 /bin/sh -c 'exit 3' || rc=$?
+[[ $- == *e* ]] && echo "ERREXIT_ON" || echo "ERREXIT_OFF"
+echo "RC_OFF=$rc"
+set -e
+rc=0
+run_with_timeout 5 /bin/sh -c 'exit 3' || rc=$?
+[[ $- == *e* ]] && echo "ERREXIT_ON" || echo "ERREXIT_OFF"
+echo "RC_ON=$rc"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ERREXIT_OFF"$'\n'"RC_OFF=3"$'\n'"ERREXIT_ON"$'\n'"RC_ON=3"* ]] || { echo "$output"; return 1; }
+}
+
 @test "run_with_timeout passes the caller's stdin through every backend" {
     # The simulator metadata check feeds awk and the Finder and login item
     # paths feed osascript through stdin; the shell backend used to hand them

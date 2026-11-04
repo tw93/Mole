@@ -442,12 +442,11 @@ run_with_timeout() {
         _mole_cleanup_timeout_killer "$killer_pid"
     fi
 
-    # Wait for command to complete
+    # Wait for command to complete. `|| exit_code=$?` keeps a failing status
+    # from tripping errexit without toggling it, so a caller that runs with
+    # errexit off gets it back off.
     local exit_code=0
-    set +e
-    wait "$cmd_pid" 2> /dev/null
-    exit_code=$?
-    set -e
+    wait "$cmd_pid" 2> /dev/null || exit_code=$?
 
     _mole_cleanup_timeout_killer "$killer_pid"
 
