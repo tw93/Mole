@@ -158,16 +158,16 @@ Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for
 
 ## Configuration
 
-Mole runs without configuration. These environment variables adapt it to slow disks, stalled network or cloud mounts; raise a timeout only when a scan reports `exit 124`.
+Mole runs without configuration. These environment variables adapt it to slow disks, stalled network or cloud mounts; raise a timeout only when Mole reports that a step timed out.
 
-- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2) — command-availability probes
-- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3) — lightweight queries such as `df` and `tmutil status`
-- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5) — probes that walk a directory tree or reach the network
-- `MOLE_TIMEOUT_PKG_LIST_SEC` (10) — package-manager listings such as `brew list`
-- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20) — cache cleanups that walk the disk
-- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30) — filesystem verify and repair
-- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15) — unbounded user-directory scans; raise this first when `mo clean` reports a timeout
-- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300) — overall budget for the cloud and Office cleanup section
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): command-availability probes
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): lightweight queries such as `df` and `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): probes that walk a directory tree or reach the network
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): package-manager listings such as `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): cache cleanups that walk the disk
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): filesystem verify and repair
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): unbounded user-directory scans
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): overall budget for the cloud and Office cleanup section
 
 The number in parentheses is the default in seconds. For example, give the scans more time on a slow disk:
 

@@ -158,16 +158,16 @@ Moleはファイルを削除できるため、パスを検証し、共有の場�
 
 ## 設定
 
-Mole は設定なしで動作します。以下の環境変数は、低速ディスク、停止したネットワークやクラウドのマウントに合わせて調整するためのものです。スキャンが `exit 124` を報告した場合のみタイムアウトを延ばしてください。
+Mole は設定なしで動作します。以下の環境変数は、低速ディスク、停止したネットワークやクラウドのマウントに合わせて調整するためのものです。Mole がいずれかの処理で `timed out` と表示した場合のみタイムアウトを延ばしてください。
 
-- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2) — コマンドの有無を調べる検査
-- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3) — `df` や `tmutil status` などの軽量なクエリ
-- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5) — ディレクトリツリーを走査、またはネットワークに接続する検査
-- `MOLE_TIMEOUT_PKG_LIST_SEC` (10) — `brew list` などのパッケージマネージャ一覧
-- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20) — ディスクを走査するキャッシュ削除
-- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30) — ファイルシステムの検証と修復
-- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15) — 上限のないユーザーディレクトリの走査。`mo clean` がタイムアウトを報告したら最初にこれを延ばす
-- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300) — クラウドと Office の削除セクション全体の予算
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): コマンドの有無を調べる検査
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): `df` や `tmutil status` などの軽量なクエリ
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): ディレクトリツリーを走査、またはネットワークに接続する検査
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): `brew list` などのパッケージマネージャ一覧
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): ディスクを走査するキャッシュ削除
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): ファイルシステムの検証と修復
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): 上限のないユーザーディレクトリの走査
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): クラウドと Office の削除セクション全体の予算
 
 括弧内の数字は既定の秒数です。例えば、低速ディスクで走査に時間を与えるには：
 

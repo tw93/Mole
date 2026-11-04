@@ -158,16 +158,16 @@ Mole 会删除文件，所以会先校验路径、保护共享和系统目录，
 
 ## 配置
 
-Mole 无需配置即可运行。以下环境变量用于适配慢速磁盘、卡住的网络或云挂载；仅当某项扫描报告 `exit 124` 时才需要调大超时。
+Mole 无需配置即可运行。以下环境变量用于适配慢速磁盘、卡住的网络或云挂载；仅当 Mole 提示某一步 `timed out` 时才需要调大对应的超时。
 
-- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2) — 命令可用性探测
-- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3) — 轻量查询，如 `df` 与 `tmutil status`
-- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5) — 遍历目录树或访问网络的探测
-- `MOLE_TIMEOUT_PKG_LIST_SEC` (10) — 包管理器列表，如 `brew list`
-- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20) — 遍历磁盘的缓存清理
-- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30) — 文件系统校验与修复
-- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15) — 无上限的用户目录扫描；`mo clean` 报告超时时优先调大此项
-- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300) — 云盘与 Office 清理环节的总预算
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): 命令可用性探测
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): 轻量查询，如 `df` 与 `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): 遍历目录树或访问网络的探测
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): 包管理器列表，如 `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): 遍历磁盘的缓存清理
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): 文件系统校验与修复
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): 无上限的用户目录扫描
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): 云盘与 Office 清理环节的总预算
 
 括号中的数字为默认秒数。例如，在慢速磁盘上给扫描更多时间：
 

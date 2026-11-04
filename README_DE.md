@@ -158,16 +158,16 @@ Hinweise zum Melden von Schwachstellen, Sicherheitsgrenzen und aktuelle Einschr�
 
 ## Konfiguration
 
-Mole läuft ohne Konfiguration. Diese Umgebungsvariablen passen es an langsame Festplatten, hängende Netzwerk- oder Cloud-Mounts an; erhöhe ein Timeout nur, wenn ein Scan `exit 124` meldet.
+Mole läuft ohne Konfiguration. Diese Umgebungsvariablen passen es an langsame Festplatten, hängende Netzwerk- oder Cloud-Mounts an; erhöhe ein Timeout nur, wenn Mole für einen Schritt `timed out` meldet.
 
-- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2) — Prüfungen auf Verfügbarkeit von Befehlen
-- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3) — leichte Abfragen wie `df` und `tmutil status`
-- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5) — Prüfungen, die einen Verzeichnisbaum durchlaufen oder das Netzwerk erreichen
-- `MOLE_TIMEOUT_PKG_LIST_SEC` (10) — Paketmanager-Listen wie `brew list`
-- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20) — Cache-Bereinigungen, die die Festplatte durchlaufen
-- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30) — Dateisystem prüfen und reparieren
-- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15) — unbegrenzte Scans im Benutzerverzeichnis; erhöhe zuerst diesen Wert, wenn `mo clean` ein Timeout meldet
-- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300) — Gesamtbudget für den Cloud- und Office-Bereinigungsabschnitt
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): Prüfungen auf Verfügbarkeit von Befehlen
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): leichte Abfragen wie `df` und `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): Prüfungen, die einen Verzeichnisbaum durchlaufen oder das Netzwerk erreichen
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): Paketmanager-Listen wie `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): Cache-Bereinigungen, die die Festplatte durchlaufen
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): Dateisystem prüfen und reparieren
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): unbegrenzte Scans im Benutzerverzeichnis
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): Gesamtbudget für den Cloud- und Office-Bereinigungsabschnitt
 
 Die Zahl in Klammern ist der Standardwert in Sekunden. Beispiel – den Scans auf einer langsamen Festplatte mehr Zeit geben:
 
