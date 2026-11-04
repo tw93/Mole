@@ -156,6 +156,25 @@ Mole은 파일을 삭제할 수 있으므로 경로를 검증하고, 공유 위�
 
 취약점 신고 방법, 안전 경계, 현재 한계는 [SECURITY.md](SECURITY.md) 및 [SECURITY_AUDIT.md](SECURITY_AUDIT.md)를 참고하세요.
 
+## 설정
+
+Mole는 설정 없이 동작합니다. 다음 환경 변수는 느린 디스크, 멈춘 네트워크·클라우드 마운트에 맞게 조정할 때 사용합니다. Mole가 어떤 단계에서 `timed out`을 표시할 때만 타임아웃을 늘리세요.
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): 명령 사용 가능 여부 검사
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): `df`, `tmutil status` 같은 가벼운 조회
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): 디렉터리 트리를 훑거나 네트워크에 접근하는 검사
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): `brew list` 등 패키지 매니저 목록
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): 디스크를 훑는 캐시 정리
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): 파일 시스템 검증 및 복구
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): 상한이 없는 사용자 디렉터리 스캔
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): 클라우드 및 Office 정리 구간 전체 예산
+
+괄호 안 숫자는 기본 초입니다. 예를 들어 느린 디스크에서 스캔에 더 많은 시간을 주려면:
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
+
 ## 세부 기능 안내
 
 아래 예시는 축약된 화면입니다. 실제 표시 항목, 용량, 건너뛴 이유는 사용 중인 Mac 환경에 따라 다릅니다.

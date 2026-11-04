@@ -156,6 +156,25 @@ Mole kann Dateien löschen. Deshalb prüft es Pfade, schützt gemeinsam genutzte
 
 Hinweise zum Melden von Schwachstellen, Sicherheitsgrenzen und aktuelle Einschränkungen findest du in [SECURITY.md](SECURITY.md) und [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 
+## Konfiguration
+
+Mole läuft ohne Konfiguration. Diese Umgebungsvariablen passen es an langsame Festplatten, hängende Netzwerk- oder Cloud-Mounts an; erhöhe ein Timeout nur, wenn Mole für einen Schritt `timed out` meldet.
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): Prüfungen auf Verfügbarkeit von Befehlen
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): leichte Abfragen wie `df` und `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): Prüfungen, die einen Verzeichnisbaum durchlaufen oder das Netzwerk erreichen
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): Paketmanager-Listen wie `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): Cache-Bereinigungen, die die Festplatte durchlaufen
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): Dateisystem prüfen und reparieren
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): unbegrenzte Scans im Benutzerverzeichnis
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): Gesamtbudget für den Cloud- und Office-Bereinigungsabschnitt
+
+Die Zahl in Klammern ist der Standardwert in Sekunden. Beispiel – den Scans auf einer langsamen Festplatte mehr Zeit geben:
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
+
 ## Funktionsdetails
 
 Die folgenden Beispiele sind gekürzt. Die genauen Einträge, Größen und Gründe für übersprungene Elemente hängen von deinem Mac ab.
