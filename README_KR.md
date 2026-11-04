@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 메뉴" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 메뉴" width="1000" />
 </p>
 
 > 💡 이 브랜치는 무료 오픈소스 Windows CLI(`mo`)입니다. 네이티브 앱을 원한다면 [Mole for Windows](https://mole.fit/ko/windows)를 별도로 내려받을 수 있습니다. 삭제 전 항목별 확인, 앱 업데이트, 시작 프로그램 관리, 디스크 단계별 분석, 실시간 상태 확인을 제공합니다. macOS CLI는 [main 브랜치](https://github.com/tw93/Mole#readme)에 있습니다.
@@ -146,7 +146,7 @@ mo uninstall
 
 레지스트리와 Windows 앱에서 설치된 프로그램을 용량이 큰 순서로 나열한 뒤, 선택한 프로그램을 자체 제거 프로그램으로 삭제하고 남은 설치 폴더를 정리합니다. `mo uninstall --dry-run`은 아무것도 실행하지 않고 각 앱이 사용할 제거 프로그램과 삭제될 항목을 보여줍니다.
 
-<img src="./docs/img/uninstall-windows.png" alt="mo uninstall 앱 목록" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="mo uninstall 앱 목록" width="1000" />
 
 ### 시스템 최적화 (Optimize)
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="mo analyze 개요" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="mo analyze 개요" width="1000" />
 
 macOS 버전과 같은 레이아웃의 인터랙티브 디스크 탐색기입니다. 방향키로 폴더를 이동하고, `Backspace`로 뒤로 가며, `T`로 가장 큰 파일을 나열하고, `Del`로 선택한 항목을 확인 후 휴지통으로 이동합니다.
 

@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 選單介面" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 選單介面" width="1000" />
 </p>
 
 > 💡 這個分支是免費開源的 Windows 命令列工具（`mo`），喜歡圖形介面的話可以單獨下載 [Mole for Windows](https://mole.fit/tw/windows)，支援刪除前逐項確認、應用程式更新、啟動項目管理、逐層分析磁碟空間與即時狀態監控，macOS 命令列在 [main 分支](https://github.com/tw93/Mole#readme)。
@@ -146,7 +146,7 @@ mo uninstall
 
 從登錄檔和 Windows 應用程式中列出已安裝的程式，按佔用從大到小排序，選取的軟體會用它自己的解除安裝程式移除，再清理遺留的安裝資料夾，`mo uninstall --dry-run` 會顯示每個軟體將使用哪個解除安裝程式、會移除什麼，但不會執行任何東西。
 
-<img src="./docs/img/uninstall-windows.png" alt="mo uninstall 應用程式清單" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="mo uninstall 應用程式清單" width="1000" />
 
 ### 系統最佳化（Optimize）
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="mo analyze 概覽" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="mo analyze 概覽" width="1000" />
 
 互動式磁碟瀏覽器，版面配置和 macOS 版一致，方向鍵在資料夾間移動，`Backspace` 返回，`T` 列出最大的檔案，`Del` 在確認後把選取的項目放進資源回收筒。
 

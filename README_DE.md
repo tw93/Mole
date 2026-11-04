@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows Menü" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows Menü" width="1000" />
 </p>
 
 > 💡 Dieser Branch ist das kostenlose Open-Source-Windows-CLI (`mo`). Lieber eine native App? [Mole for Windows](https://mole.fit/de/windows) ist ein separater Download mit Prüfung vor dem Löschen, App-Updates, Autostart-Verwaltung, Festplatten-Drill-down und Live-Status. Das macOS-CLI findest du im [main-Branch](https://github.com/tw93/Mole#readme).
@@ -146,7 +146,7 @@ mo uninstall
 
 Listet die installierten Programme aus der Registry und den Windows-Apps nach Größe absteigend auf, entfernt dann die ausgewählten mit ihrem eigenen Deinstallationsprogramm und bereinigt den verbliebenen Installationsordner. `mo uninstall --dry-run` zeigt, welches Deinstallationsprogramm jede App verwenden würde und was entfernt würde, ohne etwas auszuführen.
 
-<img src="./docs/img/uninstall-windows.png" alt="mo uninstall App-Liste" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="mo uninstall App-Liste" width="1000" />
 
 ### Optimierung (Optimize)
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="mo analyze Übersicht" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="mo analyze Übersicht" width="1000" />
 
 Ein interaktiver Festplatten-Explorer mit demselben Aufbau wie die macOS-Version: Mit den Pfeiltasten navigierst du durch Ordner, `Backspace` geht zurück, `T` listet die größten Dateien, und `Del` verschiebt die ausgewählten Objekte nach einer Bestätigung in den Papierkorb.
 

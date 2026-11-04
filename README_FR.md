@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Menu de Mole CLI for Windows" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Menu de Mole CLI for Windows" width="1000" />
 </p>
 
 > 💡 Cette branche contient la CLI Windows open source gratuite (`mo`). Vous préférez une app native ? [Mole for Windows](https://mole.fit/fr/windows) se télécharge séparément : nettoyage avec vérification avant suppression, mises à jour des applications, gestion du démarrage, exploration détaillée du disque et état en direct. La CLI macOS se trouve sur la [branche main](https://github.com/tw93/Mole#readme).
@@ -146,7 +146,7 @@ mo uninstall
 
 Liste les programmes installés à partir du registre et des applications Windows, du plus volumineux au plus petit, puis supprime ceux que vous choisissez avec leur propre désinstalleur et nettoie le dossier d'installation résiduel. `mo uninstall --dry-run` indique quel désinstalleur serait utilisé pour chaque application et ce qui serait supprimé, sans rien exécuter.
 
-<img src="./docs/img/uninstall-windows.png" alt="Liste des apps de mo uninstall" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="Liste des apps de mo uninstall" width="1000" />
 
 ### Optimisation (Optimize)
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="Vue d'ensemble de mo analyze" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="Vue d'ensemble de mo analyze" width="1000" />
 
 Un explorateur de disque interactif avec la même disposition que la version macOS : les touches fléchées parcourent les dossiers, `Backspace` revient en arrière, `T` liste les plus gros fichiers et `Del` déplace les éléments sélectionnés vers la Corbeille après confirmation.
 

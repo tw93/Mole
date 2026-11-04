@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 菜单界面" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows 菜单界面" width="1000" />
 </p>
 
 > 💡 这个分支是免费开源的 Windows 命令行工具（`mo`），喜欢图形界面的话可以单独下载 [Mole for Windows](https://mole.fit/zh/windows)，支持删除前逐项确认、应用更新、启动项管理、逐层分析磁盘空间与实时状态监控，macOS 命令行在 [main 分支](https://github.com/tw93/Mole#readme)。
@@ -146,7 +146,7 @@ mo uninstall
 
 从注册表和 Windows 应用中列出已安装的程序，按占用从大到小排序，选中的软件会用它自己的卸载程序移除，再清理遗留的安装目录，`mo uninstall --dry-run` 会显示每个软件将使用哪个卸载程序、会移除什么，但不会运行任何东西。
 
-<img src="./docs/img/uninstall-windows.png" alt="mo uninstall 应用列表" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="mo uninstall 应用列表" width="1000" />
 
 ### 系统优化（Optimize）
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="mo analyze 概览" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="mo analyze 概览" width="1000" />
 
 交互式磁盘浏览器，布局和 macOS 版一致，方向键在目录间移动，`Backspace` 返回，`T` 列出最大的文件，`Del` 在确认后把选中的项目放进回收站。
 

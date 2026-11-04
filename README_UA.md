@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Меню Mole CLI for Windows" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Меню Mole CLI for Windows" width="1000" />
 </p>
 
 > 💡 Ця гілка містить безкоштовний CLI для Windows з відкритим кодом (`mo`). Хочете нативний застосунок? [Mole for Windows](https://mole.fit/windows) завантажується окремо: перегляд перед видаленням, оновлення застосунків, керування автозапуском, детальний розбір диска та стан у реальному часі. CLI для macOS розташований у [гілці main](https://github.com/tw93/Mole#readme).
@@ -146,7 +146,7 @@ mo uninstall
 
 Показує встановлені програми з реєстру та Windows Apps, від найбільших до найменших, потім видаляє вибрані власним деінсталятором і прибирає теку встановлення, що залишилася. `mo uninstall --dry-run` показує, який деінсталятор використає кожен застосунок і що буде видалено, нічого не запускаючи.
 
-<img src="./docs/img/uninstall-windows.png" alt="Список програм mo uninstall" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="Список програм mo uninstall" width="1000" />
 
 ### Оптимізація (Optimize)
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="Огляд mo analyze" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="Огляд mo analyze" width="1000" />
 
 Інтерактивний провідник диска з тим самим розташуванням, що й у версії для macOS: стрілки переміщують між теками, `Backspace` повертає назад, `T` показує найбільші файли, а `Del` після підтвердження переміщує вибрані елементи до Кошика.
 

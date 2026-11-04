@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows menu" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows menu" width="1000" />
 </p>
 
 > 💡 This branch is the free open-source Windows CLI (`mo`). Prefer a native app? [Mole for Windows](https://mole.fit/windows) is a separate download with review-before-delete cleanup, app updates, startup management, disk drill-downs, and live status. The macOS CLI lives on the [main branch](https://github.com/tw93/Mole#readme).
@@ -146,7 +146,7 @@ mo uninstall
 
 Lists installed programs from the registry and Windows Apps, largest first, then removes the ones you pick with their own uninstaller and cleans the leftover install folder. `mo uninstall --dry-run` shows which uninstaller each app would use and what would be removed, without running anything.
 
-<img src="./docs/img/uninstall-windows.png" alt="mo uninstall app list" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="mo uninstall app list" width="1000" />
 
 ### Optimize
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="mo analyze overview" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="mo analyze overview" width="1000" />
 
 An interactive disk explorer with the same layout as the macOS version: arrow keys move through folders, `Backspace` goes back, `T` lists the largest files, and `Del` moves the selected items to the Recycle Bin after a confirmation.
 

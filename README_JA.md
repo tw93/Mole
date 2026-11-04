@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows メニュー" width="736" />
+  <img src="./docs/img/mole-windows.png" alt="Mole CLI for Windows メニュー" width="1000" />
 </p>
 
 > 💡 このブランチは無料のオープンソースWindows CLI（`mo`）です。ネイティブアプリがよければ、[Mole for Windows](https://mole.fit/ja/windows) を別途ダウンロードできます。削除前の確認、アプリの更新、スタートアップ管理、ディスクの階層分析、リアルタイムのステータス表示を備えています。macOS版CLIは [mainブランチ](https://github.com/tw93/Mole#readme) にあります。
@@ -146,7 +146,7 @@ mo uninstall
 
 レジストリとWindowsアプリからインストール済みのプログラムを容量の大きい順に一覧表示し、選択したものを各アプリ自身のアンインストーラで削除して、残ったインストールフォルダも整理します。`mo uninstall --dry-run` なら、何も実行せずに、各アプリでどのアンインストーラが使われ、何が削除されるかを確認できます。
 
-<img src="./docs/img/uninstall-windows.png" alt="mo uninstall のアプリ一覧" width="736" />
+<img src="./docs/img/uninstall-windows.png" alt="mo uninstall のアプリ一覧" width="1000" />
 
 ### システム最適化（Optimize）
 
@@ -165,7 +165,7 @@ mo analyze
 mo analyze D:\
 ```
 
-<img src="./docs/img/analyze-windows.png" alt="mo analyze 概要" width="807" />
+<img src="./docs/img/analyze-windows.png" alt="mo analyze 概要" width="1000" />
 
 macOS版と同じレイアウトのインタラクティブなディスク探索ツールです。矢印キーでフォルダを移動し、`Backspace` で戻り、`T` で大容量ファイルを一覧表示し、`Del` で選択した項目を確認後にごみ箱へ移動します。
 
