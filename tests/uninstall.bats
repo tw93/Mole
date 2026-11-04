@@ -3847,6 +3847,17 @@ EOF
     [ "$output" = "VideoFusion" ] || { echo "$output"; return 1; }
 }
 
+# With Spotlight on, mdls answers a hidden bundle's file name; with it off it
+# answers (null). Both must show the plist name, not ".Solo" (#1791).
+@test "uninstall_resolve_display_name never shows a hidden bundle's file name (#1791)" {
+    local app_path="$HOME/Applications/.Solo.app"
+    _write_display_name_fixture "$app_path" "en" "Solo"
+
+    _run_display_name_case "" "$app_path" ".Solo"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = "Solo" ] || { echo "$output"; return 1; }
+}
+
 # The stop condition matters as much as the lookup. MiaoYan.app ships a Chinese
 # override and no English one, so a search that kept walking the preference list
 # would show a Chinese name to a user who asked for English.

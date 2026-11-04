@@ -40,7 +40,7 @@ files_cleaned=0
 total_size_cleaned=0
 
 readonly MOLE_UNINSTALL_META_CACHE_DIR="$HOME/.cache/mole"
-readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v4"
+readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v5"
 readonly MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
 readonly MOLE_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
 readonly MOLE_UNINSTALL_EPOCH_FLOOR=978307200
@@ -253,7 +253,11 @@ uninstall_resolve_display_name() {
         local bundle_name
         bundle_name=$(plutil -extract CFBundleName raw "$app_path/Contents/Info.plist" 2> /dev/null || echo "")
 
-        if [[ "$md_display_name" == /* ]]; then
+        # A path, or a hidden bundle's own file name (.Aegis-backup-1.app),
+        # is never a display name; the bundle's plist names it instead. With
+        # Spotlight off mdls answers (null) and the plist already wins, so
+        # this keeps the name the same on both kinds of Mac (#1791).
+        if [[ "$md_display_name" == /* || "$md_display_name" == .* ]]; then
             md_display_name=""
         fi
         md_display_name="${md_display_name//|/-}"

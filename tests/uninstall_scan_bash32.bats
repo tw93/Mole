@@ -692,7 +692,7 @@ EOF
 		/bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$SRC_PATH"
-[[ "$MOLE_UNINSTALL_META_CACHE_FILE" == */uninstall_app_metadata_v4 ]]
+[[ "$MOLE_UNINSTALL_META_CACHE_FILE" == */uninstall_app_metadata_v5 ]]
 EOF
 
 	[ "$status" -eq 0 ]
