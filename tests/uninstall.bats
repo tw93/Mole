@@ -5768,6 +5768,66 @@ INNER
     [[ "$output" == *'"source": "App"'* ]]
 }
 
+@test "uninstall --list text table keeps the size column aligned for CJK uninstall names" {
+    if ! /usr/bin/script -q /dev/null /usr/bin/true < /dev/null > /dev/null 2>&1; then
+        skip "script cannot allocate a TTY in this environment"
+    fi
+    local apps_cache="$BATS_TEST_TMPDIR/list-cjk.cache"
+    # 15 CJK characters: 30 cells and 45 bytes, longer than the 28-cell column.
+    cat > "$apps_cache" << 'CACHE'
+1700000000|/Applications/Slack.app|Slack|com.tinyspeck.slackmacgap|180MB|Today|184320
+1700000000|/Applications/Music163.app|网易云音乐网易云音乐网易云音乐|com.netease.163music|90MB|Today|92160
+1700000000|/Applications/WeChat.app|微信|com.tencent.xinWeChat|20MB|Today|20480
+CACHE
+    local driver="$BATS_TEST_TMPDIR/list-cjk.sh"
+    cat > "$driver" << 'DRIVER'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+log_operation_session_start() { :; }
+show_uninstall_help() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+clear_screen() { :; }
+scan_applications() { printf '%s\n' "$APPS_CACHE_FILE"; }
+load_applications() {
+    apps_data=()
+    while IFS='|' read -r epoch app_path app_name bundle_id size last_used size_kb; do
+        apps_data+=("$epoch|$app_path|$app_name|$bundle_id|$size|$last_used|${size_kb:-0}")
+    done < "$1"
+}
+is_homebrew_available() { return 1; }
+get_brew_cask_name() { return 1; }
+uninstall_normalize_size_display() { echo "$1"; }
+main --list
+DRIVER
+
+    local raw="$BATS_TEST_TMPDIR/list-cjk.raw"
+    PROJECT_ROOT="$PROJECT_ROOT" HOME="$HOME" MOLE_TEST_NO_AUTH=1 TERM=xterm-256color \
+        APPS_CACHE_FILE="$apps_cache" LANG=en_US.UTF-8 \
+        /usr/bin/script -q "$raw" /bin/bash --noprofile --norc "$driver" < /dev/null > /dev/null 2>&1 || true
+
+    # Print the display column where each row's size starts; a byte slice or
+    # byte padding moves the CJK row's size left, and a split character makes
+    # the table invalid UTF-8.
+    run python3 -I -c '
+import sys, unicodedata
+text = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+if "\ufffd" in text:
+    print("SPLIT")
+def width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+for line in text.replace("\r", "").splitlines():
+    for size in ("180MB", "90MB", "20MB"):
+        if line.rstrip().endswith(size):
+            print(size, width(line.rstrip()))
+' "$raw"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"180MB 107"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"90MB 107"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"20MB 107"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SPLIT"* ]] || { echo "$output"; return 1; }
+}
+
 @test "uninstall --list emits JSON array when stdout is piped" {
     local apps_cache
     apps_cache="$(mktemp "${BATS_TEST_TMPDIR:-$BATS_RUN_TMPDIR:-$HOME}/tmp-list-json.XXXXXX")"

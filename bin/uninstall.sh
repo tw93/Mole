@@ -1982,14 +1982,20 @@ uninstall_list_apps() {
         # printf counts bytes (LC_ALL=C), but CJK chars are 3 bytes yet only
         # 2 display columns wide, so we pad with the extra bytes to land on
         # the correct visual column.
+        # The uninstall name is the app name when no cask owns the app, so it
+        # gets the same treatment: a byte slice would split a CJK character.
         local name_trunc name_display_w name_byte_count name_printf_w
+        local un_trunc un_display_w un_byte_count un_printf_w
         name_trunc=$(truncate_by_display_width "$app_name" 34)
         name_display_w=$(get_display_width "$name_trunc")
+        un_trunc=$(truncate_by_display_width "$uninstall_name" 28)
+        un_display_w=$(get_display_width "$un_trunc")
 
         # Get byte count in C locale for printf
         local old_lc="${LC_ALL:-}"
         export LC_ALL=C
         name_byte_count=${#name_trunc}
+        un_byte_count=${#un_trunc}
         if [[ -n "$old_lc" ]]; then
             export LC_ALL="$old_lc"
         else
@@ -1997,11 +2003,12 @@ uninstall_list_apps() {
         fi
 
         name_printf_w=$((36 + name_byte_count - name_display_w))
+        un_printf_w=$((30 + un_byte_count - un_display_w))
 
-        printf "%-*s %-30s %-30s %8s\n" \
+        printf "%-*s %-30s %-*s %8s\n" \
             "$name_printf_w" "$name_trunc" \
             "${bundle_id:0:28}" \
-            "${uninstall_name:0:28}" \
+            "$un_printf_w" "$un_trunc" \
             "$size_display"
     done
 

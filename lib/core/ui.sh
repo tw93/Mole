@@ -369,12 +369,15 @@ format_spinner_message() {
         available=20
     fi
 
-    if [[ ${#message} -gt $available ]]; then
-        if [[ $available -gt 3 ]]; then
-            message="${message:0:$((available - 3))}..."
-        else
-            message="${message:0:$available}"
+    # An app or file name can make the message non-ASCII. ${#message} then
+    # counts bytes under LC_ALL=C or characters otherwise, neither of which is
+    # the width a CJK name takes, and a byte slice splits a character.
+    if [[ "$message" == *[![:ascii:]]* ]]; then
+        if (($(get_display_width "$message") > available)); then
+            message=$(truncate_by_display_width "$message" "$available")
         fi
+    elif [[ ${#message} -gt $available ]]; then
+        message="${message:0:$((available - 3))}..."
     fi
 
     printf "%s" "$message"

@@ -25,6 +25,26 @@ setup() {
     [ "$result" = $'⠖\n⠲\n⠴\n⠦' ]
 }
 
+@test "format_spinner_message fits a CJK name by display width in both locales" {
+    local locale
+    for locale in C en_US.UTF-8; do
+        # shellcheck disable=SC2016  # the inner bash expands these
+        run env HOME="$HOME" LC_ALL="$locale" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc -c '
+            source "$PROJECT_ROOT/lib/core/common.sh"
+            tput() { echo 40; }
+            format_spinner_message "Removing 网易云音乐网易云音乐网易云音乐网易云音乐..."
+        '
+        [ "$status" -eq 0 ] || return 1
+        local msg="$output"
+        # 40 columns leave 32 for the message; a split character is invalid UTF-8.
+        printf '%s' "$msg" | /usr/bin/iconv -f UTF-8 -t UTF-8 > /dev/null || { echo "$locale split: $msg"; return 1; }
+        run python3 -I -c 'import sys, unicodedata; print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in sys.argv[1]))' "$msg"
+        [ "$status" -eq 0 ] || return 1
+        (( output <= 32 )) || { echo "$locale width $output: $msg"; return 1; }
+        [[ "$msg" == "Removing 网"*"..." ]] || { echo "$locale: $msg"; return 1; }
+    done
+}
+
 @test "detect_architecture maps current CPU to friendly label" {
     expected="Intel"
     if [[ "$(uname -m)" == "arm64" ]]; then
