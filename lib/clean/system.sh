@@ -2,6 +2,10 @@
 # System-Level Cleanup Module (requires sudo).
 set -euo pipefail
 
+_mole_system_module_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1090
+source "$_mole_system_module_dir/snapshots.sh"
+
 is_rebuildable_gpu_cache_dir() {
     local cache_dir="$1"
 
@@ -167,6 +171,44 @@ macos_installer_process_is_idle() {
     return 1
 }
 
+# Only Apple's own installer may go: the bundle is com.apple.InstallAssistant
+# (or a seed suffix of it) and its code is signed by Apple itself, so a folder
+# or app merely named "Install macOS ..." is never removed. Resources are not
+# rehashed: the seal over the 13 GB SharedSupport image would outlast the
+# section budget, and the identity, not integrity, is what this proves.
+# 0 Apple's installer, 1 unproven, 124 or a signal status when cut short.
+macos_installer_is_apple_signed() {
+    local path="$1"
+    local deadline_seconds="$2"
+    local info_plist="$path/Contents/Info.plist"
+    [[ -f "$info_plist" && ! -L "$info_plist" ]] || return 1
+    local probe_timeout="" probe_rc=0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
+        "$deadline_seconds") || return $?
+    local bundle_id=""
+    bundle_id=$(run_with_timeout "$probe_timeout" /usr/bin/plutil -extract CFBundleIdentifier raw \
+        -o - "$info_plist" < /dev/null 2> /dev/null) || probe_rc=$?
+    if mole_rc_timeout_or_signal "$probe_rc"; then
+        return "$probe_rc"
+    fi
+    [[ $probe_rc -eq 0 ]] || return 1
+    case "$bundle_id" in
+        com.apple.InstallAssistant) ;;
+        com.apple.InstallAssistant.?*) ;;
+        *) return 1 ;;
+    esac
+    [[ -x /usr/bin/codesign ]] || return 1
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
+        "$deadline_seconds") || return $?
+    probe_rc=0
+    run_with_timeout "$probe_timeout" /usr/bin/codesign --verify --ignore-resources \
+        -R='anchor apple' "$path" < /dev/null > /dev/null 2>&1 || probe_rc=$?
+    if mole_rc_timeout_or_signal "$probe_rc"; then
+        return "$probe_rc"
+    fi
+    [[ $probe_rc -eq 0 ]]
+}
+
 macos_installer_candidate_still_eligible() {
     local path="$1"
     local expected_identity="$2"
@@ -205,6 +247,7 @@ macos_installer_candidate_still_eligible() {
         installer_version="${installer_version%%.*}"
         [[ -n "$installer_version" && "$installer_version" != "$current_macos_version" ]] || return 1
     fi
+    macos_installer_is_apple_signed "$path" "$deadline_seconds" || return $?
 
     # The size probe between the caller's two eligibility checks can race with
     # Software Update or an installer launch. Repeat active-state checks and
@@ -1388,32 +1431,28 @@ clean_local_snapshots() {
     if ! command -v tmutil > /dev/null 2>&1; then
         return 0
     fi
-    # Fast pre-check: skip entirely if Time Machine is not configured (no tmutil needed)
-    if ! defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then
-        return 0
-    fi
+    # The Time Machine row needs Time Machine configured and idle; snapshots
+    # from other backup apps are listed either way (#1916).
+    local include_tm=false
+    if defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then
+        start_section_spinner "Checking Time Machine status..."
+        local rc_running=0
+        tm_is_running || rc_running=$?
 
-    start_section_spinner "Checking Time Machine status..."
-    local rc_running=0
-    tm_is_running || rc_running=$?
-
-    if [[ $rc_running -ge 128 ]]; then
-        stop_section_spinner
-        return "$rc_running"
-    fi
-
-    if [[ $rc_running -eq 2 ]]; then
-        stop_section_spinner
-        echo -e "  ${YELLOW}!${NC} Snapshot check · skipped (Time Machine status unknown)"
-        note_activity
-        return 0
-    fi
-
-    if [[ $rc_running -eq 0 ]]; then
-        stop_section_spinner
-        echo -e "  ${YELLOW}!${NC} Snapshot check · skipped (backup in progress)"
-        note_activity
-        return 0
+        if [[ $rc_running -ge 128 ]]; then
+            stop_section_spinner
+            return "$rc_running"
+        elif [[ $rc_running -eq 2 ]]; then
+            stop_section_spinner
+            echo -e "  ${YELLOW}!${NC} Time Machine snapshots · skipped (status unknown)"
+            note_activity
+        elif [[ $rc_running -eq 0 ]]; then
+            stop_section_spinner
+            echo -e "  ${YELLOW}!${NC} Time Machine snapshots · skipped (backup in progress)"
+            note_activity
+        else
+            include_tm=true
+        fi
     fi
 
     start_section_spinner "Checking local snapshots..."
@@ -1426,10 +1465,10 @@ clean_local_snapshots() {
     [[ $snapshot_rc -eq 0 ]] || return 0
     [[ -z "$snapshot_list" ]] && return 0
 
-    local snapshot_count
-    snapshot_count=$(echo "$snapshot_list" | { grep -Eo 'com\.apple\.TimeMachine\.[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}' || true; } | wc -l | awk '{print $1}')
-    if [[ "$snapshot_count" =~ ^[0-9]+$ && "$snapshot_count" -gt 0 ]]; then
-        mole_review_row "Time Machine local snapshots" "" "$snapshot_count" "macOS removes them when space runs low"
+    local snapshot_rows
+    snapshot_rows=$(mole_local_snapshot_rows "$include_tm" <<< "$snapshot_list")
+    if [[ -n "$snapshot_rows" ]]; then
+        printf '%s\n' "$snapshot_rows"
         note_activity
     fi
 }

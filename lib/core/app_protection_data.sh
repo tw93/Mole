@@ -184,13 +184,33 @@ readonly OFFICIAL_UNINSTALLER_RULES=(
     "GlobalProtect|com.paloaltonetworks.|globalprotect"
     "Cisco|com.cisco.anyconnect,com.cisco.secureclient|cisco secure client,cisco anyconnect"
     "Alibaba Cloud Security|com.alibaba.security.|"
+    # Ids and vendors match Mole Mac's officialUninstallerRules. Each of these
+    # leaves a daemon, helper or system extension that only the vendor's own
+    # tool removes, so Mole points to it instead of trashing the app. A wrong
+    # id matches nothing; a match only refuses. TeamViewer: UninstallTeamViewer
+    # (maintainer 2026-11-01). Bitdefender, Intego, Norton and Trend Micro ids
+    # are unconfirmed leads, as in Mole Mac.
+    "Adobe Genuine Service|com.adobe.gcclient,gocart.|adobe genuine service"
+    "Avast|com.avast.aafm,com.avast.avast,com.avast.hub|"
+    "AVG|com.avg.hub|avgantivirus,avg antivirus"
+    "Malwarebytes|com.malwarebytes.mbam|"
+    "TeamViewer|com.teamviewer.|"
+    "Bitdefender|com.bitdefender.antivirusformac|"
+    "Intego|com.intego.virusbarrier.,com.intego.virusbarrier-,com.intego.app.netbarrier|"
+    "Kaspersky|com.kaspersky.kav|"
+    "Norton|com.symantec.nfm|"
+    "Trend Micro|com.trendmicro.tmsm,com.trendmicro.icore|"
 )
 
 # Endpoint-security / EDR / MDM agent bundle-id prefixes. Their per-user Darwin
 # caches under /private/var/folders must never be deleted: removing anything
 # inside a sensor's container trips tamper detection (e.g. CrowdStrike
 # "MacFalconSensorTamper", MITRE T1562.001) that corporate security reports as
-# malware. Keep in sync with the vendors in OFFICIAL_UNINSTALLER_RULES above.
+# malware. Keep in sync with the EDR/MDM vendors in the first block of
+# OFFICIAL_UNINSTALLER_RULES above (ESET through Alibaba Cloud Security). The
+# consumer antivirus, TeamViewer and Adobe rows below them only route uninstall
+# to the vendor tool, and several of their ids are unconfirmed leads, so they
+# are not evidence for protecting caches.
 # Consumed by is_endpoint_security_cache_path() in app_protection.sh.
 readonly ENDPOINT_SECURITY_BUNDLE_PREFIXES=(
     "com.crowdstrike."

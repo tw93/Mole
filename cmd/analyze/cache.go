@@ -129,13 +129,22 @@ func ensureOverviewSnapshotCacheLocked() error {
 	// and each save re-serialized all of them.
 	now := time.Now()
 	for path, snapshot := range snapshots {
-		if snapshot.SchemaVersion != cacheSchemaVersion || snapshot.Size <= 0 || now.Sub(snapshot.Updated) >= overviewCacheTTL {
+		if snapshot.SchemaVersion != cacheSchemaVersion || snapshot.Size <= 0 || !stampWithin(now, snapshot.Updated, overviewCacheTTL) {
 			delete(snapshots, path)
 		}
 	}
 	overviewSnapshotCache = snapshots
 	overviewSnapshotLoaded = true
 	return nil
+}
+
+// stampWithin reports whether a stored wall-clock stamp is inside its freshness
+// window. A stamp from the future (the system clock was set back) has a
+// negative age and reads as expired, so a stale answer is not kept until the
+// clock catches up.
+func stampWithin(now, stamp time.Time, window time.Duration) bool {
+	age := now.Sub(stamp)
+	return age >= 0 && age < window
 }
 
 func getOverviewSizeStorePath() (string, error) {
@@ -164,7 +173,7 @@ func loadStoredOverviewMeasurement(path string) (int64, scanState, error) {
 		return 0, scanComplete, fmt.Errorf("snapshot cache unavailable")
 	}
 	if snapshot, ok := overviewSnapshotCache[path]; ok && snapshot.Size > 0 {
-		if time.Since(snapshot.Updated) < overviewCacheTTL {
+		if stampWithin(time.Now(), snapshot.Updated, overviewCacheTTL) {
 			if snapshot.Partial {
 				return snapshot.Size, scanPartial, nil
 			}
@@ -198,7 +207,7 @@ func storeOverviewMeasurement(path string, size int64, partial bool) error {
 	// while the recorded value still stands; the timestamp is only refreshed
 	// often enough to keep a live entry from aging out.
 	if existing, ok := overviewSnapshotCache[path]; ok && existing.Size == size && existing.Partial == partial &&
-		time.Since(existing.Updated) < overviewCacheTTL/overviewRefreshDivisor {
+		stampWithin(time.Now(), existing.Updated, overviewCacheTTL/overviewRefreshDivisor) {
 		return nil
 	}
 	overviewSnapshotCache[path] = overviewSizeSnapshot{
@@ -626,7 +635,7 @@ func loadCacheFromDisk(path string) (*cacheEntry, error) {
 	}
 
 	scanAge := time.Since(entry.ScanTime)
-	if scanAge > analyzerCacheTTL {
+	if scanAge < 0 || scanAge > analyzerCacheTTL {
 		removeCacheEntry(path)
 		return nil, fmt.Errorf("cache expired: too old")
 	}
@@ -662,7 +671,7 @@ func loadStaleCacheFromDisk(path string) (*cacheEntry, error) {
 
 	// Only the authoritative TTL deletes: staleCacheTTL is the shorter
 	// first-paint window, and an entry past it is still valid for a full scan.
-	if time.Since(entry.ScanTime) > staleCacheTTL {
+	if age := time.Since(entry.ScanTime); age < 0 || age > staleCacheTTL {
 		return nil, fmt.Errorf("stale cache expired")
 	}
 

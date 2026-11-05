@@ -614,6 +614,77 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "install_files replaces read-only files an earlier sudo install left in the config tree" {
+	# A root-owned bin/ or lib/ file inside a user-owned directory cannot be
+	# opened for writing by plain cp -r. The copy failed, install_files carried
+	# on, and mo update printed success beside a stale file (1.67.0 update).
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+mole_source_installer
+SOURCE_DIR="$HOME/source"
+INSTALL_DIR="$HOME/install"
+CONFIG_DIR="$HOME/config"
+mkdir -p "$SOURCE_DIR/bin" "$SOURCE_DIR/lib/manage" "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/manage" "$INSTALL_DIR"
+printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="old"' > "$SOURCE_DIR/mole"
+printf '%s\n' 'new bin' > "$SOURCE_DIR/bin/clean.sh"
+printf '%s\n' 'new lib' > "$SOURCE_DIR/lib/manage/remove.sh"
+printf '%s\n' 'stale bin' > "$CONFIG_DIR/bin/clean.sh"
+printf '%s\n' 'stale lib' > "$CONFIG_DIR/lib/manage/remove.sh"
+chmod 444 "$CONFIG_DIR/bin/clean.sh" "$CONFIG_DIR/lib/manage/remove.sh"
+resolve_source_dir() { :; }
+needs_sudo() { return 1; }
+maybe_sudo() { "$@"; }
+download_binary() { return 0; }
+install_files > /dev/null 2>&1 || true
+[[ "$(cat "$CONFIG_DIR/bin/clean.sh")" == "new bin" ]] || { echo "bin file stayed stale"; exit 1; }
+[[ "$(cat "$CONFIG_DIR/lib/manage/remove.sh")" == "new lib" ]] || { echo "lib file stayed stale"; exit 1; }
+EOF
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "install_files keeps the pinned launcher and names a safe next step when a config directory refuses the copy" {
+	# cp -f cannot unlink inside a directory the user cannot write, which is
+	# what a root-owned lib/<subdir> from an earlier sudo install looks like.
+	# The copy must fail before the launcher is replaced, so the old pinned
+	# launcher keeps working, and the next step must quote the path and only
+	# suggest a recursive chown on the default config root, never on a shared
+	# custom one such as ~/.local.
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -uo pipefail
+mole_source_installer
+resolve_source_dir() { :; }
+needs_sudo() { return 1; }
+maybe_sudo() { "$@"; }
+download_binary() { return 0; }
+SOURCE_DIR="$HOME/source"
+mkdir -p "$SOURCE_DIR/bin" "$SOURCE_DIR/lib/manage"
+printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="$(dirname "$0")"' 'new launcher' > "$SOURCE_DIR/mole"
+printf '%s\n' 'new bin' > "$SOURCE_DIR/bin/clean.sh"
+printf '%s\n' 'new lib' > "$SOURCE_DIR/lib/manage/remove.sh"
+for CONFIG_DIR in "$HOME/.config/mole" "$HOME/shared root"; do
+    INSTALL_DIR="$HOME/install"
+    rm -rf "$INSTALL_DIR"
+    mkdir -p "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/manage" "$INSTALL_DIR"
+    printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR=/pinned/config' 'old launcher' > "$INSTALL_DIR/mole"
+    printf '%s\n' 'stale lib' > "$CONFIG_DIR/lib/manage/remove.sh"
+    chmod 444 "$CONFIG_DIR/lib/manage/remove.sh"
+    chmod 555 "$CONFIG_DIR/lib/manage"
+    rc=0
+    out=$(install_files 2>&1) || rc=$?
+    chmod 755 "$CONFIG_DIR/lib/manage"
+    printf 'config=%s rc=%s\n%s\n' "$CONFIG_DIR" "$rc" "$out"
+    [[ "$rc" -eq 1 ]] || exit 1
+    grep -q '^old launcher$' "$INSTALL_DIR/mole" || { echo "launcher was replaced"; exit 1; }
+    grep -q '^SCRIPT_DIR=/pinned/config$' "$INSTALL_DIR/mole" || { echo "launcher lost its pin"; exit 1; }
+    [[ "$out" == *"Could not replace Mole files in $CONFIG_DIR/lib"* ]] || exit 1
+done
+EOF
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"sudo chown -R $(id -un) $HOME/.config/mole/lib && mo update"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *'find '*'shared\ root/lib ! -user '* ]] || { echo "$output"; return 1; }
+	[[ "$output" != *"chown -R $(id -un) $HOME/shared"* ]] || { echo "$output"; return 1; }
+}
+
 @test "get_installed_version fallback reads VERSION past a pinned line that is not UTF-8" {
 	# A UTF-8 printf %q pinned non-ASCII config paths as raw lead bytes plus \NNN
 	# escapes. A UTF-8 sed stops at that line, before the VERSION line the
@@ -665,9 +736,13 @@ GREEN='' BLUE='' YELLOW='' RED='' NC=''
 ICON_SUCCESS='ok' ICON_ERROR='err' ICON_ADMIN='adm'
 MOLE_ASSUME_SUDO_AUTH=1
 
-mkdir -p "$CONFIG_DIR" "$SOURCE_DIR"
+mkdir -p "$CONFIG_DIR/bin" "$CONFIG_DIR/lib/core" "$SOURCE_DIR/lib/core"
 printf '#!/bin/bash\nVERSION="9.9.9"\n' > "$SOURCE_DIR/mole"
 printf '#!/bin/bash\n' > "$SOURCE_DIR/mo"
+# A refused sudo must leave the old modules whole, not an old launcher over
+# new ones, so the gate has to run before the module copy.
+printf 'new lib\n' > "$SOURCE_DIR/lib/core/common.sh"
+printf 'old lib\n' > "$CONFIG_DIR/lib/core/common.sh"
 # Non-writable install dir: needs_sudo must answer true for a plain user.
 mkdir -m 555 "$INSTALL_DIR"
 
@@ -682,10 +757,12 @@ sudo() {
 
 # Reproduce the exact caller shape from the update flow.
 install_files || echo "HANDLED_FAILURE"
+echo "CONFIG_LIB:$(cat "$CONFIG_DIR/lib/core/common.sh")"
 EOF
 
 	[ "$status" -eq 0 ] || return 1
 	[[ "$output" == *"HANDLED_FAILURE"* ]] || return 1
+	[[ "$output" == *"CONFIG_LIB:old lib"* ]] || { echo "$output"; return 1; }
 	[[ "$output" == *"sudo -v && mo update"* ]] || return 1
 	[[ "$output" != *"SUCCESS:Installed mole"* ]] || return 1
 	[[ "$output" != *"DOWNLOAD_CALLED"* ]] || return 1

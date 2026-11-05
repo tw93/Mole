@@ -21,7 +21,7 @@ func TestSpinnerFramesHaveSingleColumnWidth(t *testing.T) {
 	}
 }
 
-func TestRuneWidth(t *testing.T) {
+func TestDisplayWidthCharacters(t *testing.T) {
 	tests := []struct {
 		name  string
 		input rune
@@ -35,13 +35,13 @@ func TestRuneWidth(t *testing.T) {
 		{"CJK ideograph", '語', 2},
 		{"Full-width number", '１', 2},
 		{"ASCII space", ' ', 1},
-		{"Tab", '	', 1},
+		{"Tab", '	', 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := runeWidth(tt.input); got != tt.want {
-				t.Errorf("runeWidth(%q) = %d, want %d", tt.input, got, tt.want)
+			if got := displayWidth(string(tt.input)); got != tt.want {
+				t.Errorf("displayWidth(%q) = %d, want %d", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -481,5 +481,30 @@ func TestFormatUnusedTime(t *testing.T) {
 				t.Errorf("formatUnusedTime(%d days ago) = %q, want %q", tt.daysAgo, got, tt.want)
 			}
 		})
+	}
+}
+
+// Names macOS hands back decomposed (NFD), CJK punctuation, halfwidth kana and
+// joined emoji keep the column width the terminal draws, so the size column
+// after a padded name stays aligned and a cut never splits a grapheme.
+func TestUnicodeColumnsPreserveGraphemes(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		width int
+	}{
+		{"微信输入法", 10}, {"资料、备份", 10}, {"「报告」.pdf", 12}, {"Cafe\u0301", 4}, {"ｶﾀｶﾅ", 4}, {"👨‍👩‍👧‍👦", 2},
+	} {
+		if got := displayWidth(tt.name); got != tt.width {
+			t.Errorf("%q width=%d want %d", tt.name, got, tt.width)
+		}
+		if got := lipgloss.Width(padName(tt.name, 24)); got != 24 {
+			t.Errorf("%q padded width=%d", tt.name, got)
+		}
+	}
+	if got := trimNameWithWidth("Cafe\u0301 xyz", 4); got != "C..." {
+		t.Errorf("trim=%q", got)
+	}
+	if got := truncateMiddle("👨‍👩‍👧‍👦abc", 2); got != "👨‍👩‍👧‍👦" {
+		t.Errorf("split grapheme=%q", got)
 	}
 }

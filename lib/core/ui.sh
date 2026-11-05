@@ -133,9 +133,9 @@ truncate_by_display_width() {
         # How to detect byte size without switching locale?
         # printf %s "$char" | wc -c ? Slow.
         # Check against ASCII range?
-        # Fast ASCII check: if [[ "$char" < $'\x7f' ]]; then ...
-
-        if [[ "$char" =~ [[:ascii:]] ]]; then
+        # Bash's own pattern matcher knows [:ascii:]; a regex hands it to
+        # regcomp, where glibc rejects it (#1918) and macOS never matches.
+        if [[ "$char" == [[:ascii:]] ]]; then
             char_width=1
         else
             # Assume wide for non-ascii in this context (simplified)
@@ -369,12 +369,15 @@ format_spinner_message() {
         available=20
     fi
 
-    if [[ ${#message} -gt $available ]]; then
-        if [[ $available -gt 3 ]]; then
-            message="${message:0:$((available - 3))}..."
-        else
-            message="${message:0:$available}"
+    # An app or file name can make the message non-ASCII. ${#message} then
+    # counts bytes under LC_ALL=C or characters otherwise, neither of which is
+    # the width a CJK name takes, and a byte slice splits a character.
+    if [[ "$message" == *[![:ascii:]]* ]]; then
+        if (($(get_display_width "$message") > available)); then
+            message=$(truncate_by_display_width "$message" "$available")
         fi
+    elif [[ ${#message} -gt $available ]]; then
+        message="${message:0:$((available - 3))}..."
     fi
 
     printf "%s" "$message"

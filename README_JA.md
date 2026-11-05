@@ -1,9 +1,9 @@
-<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows">Windows</a></p>
+<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows#readme">Windows</a> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole</h1>
   <p><b>Macのディープクリーン、アプリアンインストール、システム最適化、ディスク分析、ステータス監視。無料のオープンソースCLIと、ネイティブMacアプリ。</b></p>
-  <p><a href="README.md">English</a> · <a href="README_CN.md">中文</a> · <a href="README_TW.md">繁體</a> · 日本語 · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
+  <p><a href="README.md">English</a> · <a href="README_CN.md">中文</a> · <a href="README_TW.md">繁體</a> · 日本語 · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_PL.md">Polski</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
   <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
@@ -135,10 +135,16 @@ nix profile remove mole
 
 </details>
 
-**Windowsでインストール**（[Windows版CLI](https://github.com/tw93/Mole/tree/windows)）
+**Windowsでインストール**（[Windows版CLI](https://github.com/tw93/Mole/tree/windows#readme)）
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
+```
+
+**Linuxでインストール**（[Linux版CLI](https://github.com/tw93/Mole/tree/linux#readme)）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
 ```
 
 Moleの配布元はHomebrew、このリポジトリ、[mole.fit](https://mole.fit/)だけです。`molemac.com`、`moleapp.net`、`molefit.com` はMoleではなく、`mole.bluecatbot.com` のWindowsアプリは同じ名前の別のコミュニティプロジェクトです。
@@ -155,6 +161,25 @@ Moleはファイルを削除できるため、パスを検証し、共有の場�
 - ホワイトリストファイルを読み取れない場合、`clean`、`purge`、`optimize` はそれなしで実行せずに停止します
 
 脆弱性の報告方法、安全上の境界、現在の制限は [SECURITY.md](SECURITY.md) および [SECURITY_AUDIT.md](SECURITY_AUDIT.md) をご覧ください。
+
+## 設定
+
+Mole は設定なしで動作します。以下の環境変数は、低速ディスク、停止したネットワークやクラウドのマウントに合わせて調整するためのものです。Mole がいずれかの処理で `timed out` と表示した場合のみタイムアウトを延ばしてください。
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): コマンドの有無を調べる検査
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): `df` や `tmutil status` などの軽量なクエリ
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): ディレクトリツリーを走査、またはネットワークに接続する検査
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): `brew list` などのパッケージマネージャ一覧
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): ディスクを走査するキャッシュ削除
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): ファイルシステムの検証と修復
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): 上限のないユーザーディレクトリの走査
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): クラウドと Office の削除セクション全体の予算
+
+括弧内の数字は既定の秒数です。例えば、低速ディスクで走査に時間を与えるには：
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
 
 ## 機能詳細
 

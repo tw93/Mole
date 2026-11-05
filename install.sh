@@ -1459,6 +1459,28 @@ download_binary() {
 }
 
 # File installation (bin/lib/scripts + go helpers).
+# A module directory refused the copy, usually because an earlier sudo install
+# left it root-owned. The default config root belongs to Mole alone, so a
+# recursive chown there is safe; a custom --config root such as ~/.local is
+# shared with other software, so only list what the user cannot replace.
+report_config_copy_failure() {
+    local dir="$1" quoted user
+    user="$(id -un)"
+    # C locale for the same reason as the SCRIPT_DIR pin below: bash 3.2 %q
+    # then escapes every non-ASCII byte instead of leaving lead bytes raw.
+    # shellcheck disable=SC2030 # scoped to this command substitution on purpose
+    quoted=$(
+        export LC_ALL=C
+        printf '%q' "$dir"
+    )
+    log_error "Could not replace Mole files in $dir, an earlier sudo install may own them"
+    if [[ "$CONFIG_DIR" == "$HOME/.config/mole" ]]; then
+        log_error "Take ownership, then retry: sudo chown -R $user $quoted && mo update"
+    else
+        log_error "Fix the owner of the files this lists, then run mo update: find $quoted ! -user $user"
+    fi
+}
+
 install_files() {
 
     resolve_source_dir
@@ -1470,58 +1492,52 @@ install_files() {
     install_dir_abs="$(cd "$INSTALL_DIR" && pwd)"
     config_dir_abs="$(cd "$CONFIG_DIR" && pwd)"
 
-    if [[ -f "$SOURCE_DIR/mole" ]]; then
-        if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
-            if needs_sudo; then
-                log_admin "Admin access required for /usr/local/bin"
-                if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
-                    log_error "Admin access required, blocked in test mode"
-                    return 1
-                fi
-                # Explicit failure checks throughout this function: callers run
-                # `install_files || {...}`, and bash disables errexit inside a
-                # function invoked that way, so a failed sudo would otherwise be
-                # swallowed and the install would report success while leaving
-                # the old entry script in place (the 1.45.0 -> 1.47.0 fake
-                # "Updated to latest version" incident).
-                if ! ensure_sudo_ready; then
-                    log_error "Admin access to $INSTALL_DIR is required but not available"
-                    log_error "Cache credentials first, then retry: sudo -v && mo update"
-                    return 1
-                fi
-            fi
-
-            # Atomic update: copy to temporary name first, then move
-            if ! maybe_sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new" ||
-                ! maybe_sudo chmod +x "$INSTALL_DIR/mole.new" ||
-                ! maybe_sudo mv -f "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"; then
-                log_error "Failed to install mole to $INSTALL_DIR (admin access missing or denied)"
-                log_error "Cache credentials first, then retry: sudo -v && mo update"
-                return 1
-            fi
-
-        fi
-    else
+    if [[ ! -f "$SOURCE_DIR/mole" ]]; then
         log_error "mole executable not found in ${SOURCE_DIR:-unknown}"
         exit 1
     fi
 
-    if [[ -f "$SOURCE_DIR/mo" && "$source_dir_abs" != "$install_dir_abs" ]]; then
-        if ! maybe_sudo cp "$SOURCE_DIR/mo" "$INSTALL_DIR/mo.new" ||
-            ! maybe_sudo chmod +x "$INSTALL_DIR/mo.new" ||
-            ! maybe_sudo mv -f "$INSTALL_DIR/mo.new" "$INSTALL_DIR/mo"; then
-            log_error "Failed to install mo alias to $INSTALL_DIR (admin access missing or denied)"
+    # Every refusal that does not depend on the copy happens here, before
+    # anything in $CONFIG_DIR changes, so a missing sudo ticket leaves the old
+    # install whole instead of an old launcher over new modules.
+    if [[ "$source_dir_abs" != "$install_dir_abs" ]] && needs_sudo; then
+        log_admin "Admin access required for /usr/local/bin"
+        if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+            log_error "Admin access required, blocked in test mode"
+            return 1
+        fi
+        # Explicit failure checks throughout this function: callers run
+        # `install_files || {...}`, and bash disables errexit inside a
+        # function invoked that way, so a failed sudo would otherwise be
+        # swallowed and the install would report success while leaving
+        # the old entry script in place (the 1.45.0 -> 1.47.0 fake
+        # "Updated to latest version" incident).
+        if ! ensure_sudo_ready; then
+            log_error "Admin access to $INSTALL_DIR is required but not available"
+            log_error "Cache credentials first, then retry: sudo -v && mo update"
             return 1
         fi
     fi
 
+    # Copy the modules before the launcher is replaced. A refused copy then
+    # returns while the old launcher is still in place and pinned to this
+    # config directory, so `mo` keeps working and the retry can run. Copying
+    # after the launcher swap left a new launcher whose SCRIPT_DIR was never
+    # pinned, and every `mo` call failed to source lib/core/common.sh.
     if [[ -d "$SOURCE_DIR/bin" ]]; then
         local source_bin_abs="$(cd "$SOURCE_DIR/bin" && pwd)"
         local config_bin_abs="$(cd "$CONFIG_DIR/bin" && pwd)"
         if [[ "$source_bin_abs" != "$config_bin_abs" ]]; then
             local -a bin_files=("$SOURCE_DIR/bin"/*)
-            if [[ ${#bin_files[@]} -gt 0 ]]; then
-                cp -r "${bin_files[@]}" "$CONFIG_DIR/bin/"
+            if [[ -e "${bin_files[0]}" ]]; then
+                # -f replaces a read-only file in a writable directory; a
+                # directory an earlier sudo install left root-owned still
+                # refuses, and without this check the update reported success
+                # beside the stale files.
+                if ! cp -rf "${bin_files[@]}" "$CONFIG_DIR/bin/"; then
+                    report_config_copy_failure "$CONFIG_DIR/bin"
+                    return 1
+                fi
                 for file in "$CONFIG_DIR/bin/"*; do
                     [[ -e "$file" ]] && chmod +x "$file"
                 done
@@ -1534,9 +1550,32 @@ install_files() {
         local config_lib_abs="$(cd "$CONFIG_DIR/lib" && pwd)"
         if [[ "$source_lib_abs" != "$config_lib_abs" ]]; then
             local -a lib_files=("$SOURCE_DIR/lib"/*)
-            if [[ ${#lib_files[@]} -gt 0 ]]; then
-                cp -r "${lib_files[@]}" "$CONFIG_DIR/lib/"
+            if [[ -e "${lib_files[0]}" ]]; then
+                if ! cp -rf "${lib_files[@]}" "$CONFIG_DIR/lib/"; then
+                    report_config_copy_failure "$CONFIG_DIR/lib"
+                    return 1
+                fi
             fi
+        fi
+    fi
+
+    if [[ "$source_dir_abs" != "$install_dir_abs" ]]; then
+        # Atomic update: copy to temporary name first, then move
+        if ! maybe_sudo cp "$SOURCE_DIR/mole" "$INSTALL_DIR/mole.new" ||
+            ! maybe_sudo chmod +x "$INSTALL_DIR/mole.new" ||
+            ! maybe_sudo mv -f "$INSTALL_DIR/mole.new" "$INSTALL_DIR/mole"; then
+            log_error "Failed to install mole to $INSTALL_DIR (admin access missing or denied)"
+            log_error "Cache credentials first, then retry: sudo -v && mo update"
+            return 1
+        fi
+    fi
+
+    if [[ -f "$SOURCE_DIR/mo" && "$source_dir_abs" != "$install_dir_abs" ]]; then
+        if ! maybe_sudo cp "$SOURCE_DIR/mo" "$INSTALL_DIR/mo.new" ||
+            ! maybe_sudo chmod +x "$INSTALL_DIR/mo.new" ||
+            ! maybe_sudo mv -f "$INSTALL_DIR/mo.new" "$INSTALL_DIR/mo"; then
+            log_error "Failed to install mo alias to $INSTALL_DIR (admin access missing or denied)"
+            return 1
         fi
     fi
 
@@ -1561,6 +1600,7 @@ install_files() {
         # in a UTF-8 locale it leaves lead bytes raw and escapes only some
         # continuation bytes, so the pinned line is not valid UTF-8.
         local config_word config_replacement
+        # shellcheck disable=SC2031 # each command substitution sets its own C locale
         config_word=$(
             export LC_ALL=C
             printf '%q' "$config_dir_abs"

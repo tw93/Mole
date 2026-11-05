@@ -190,6 +190,37 @@ EOF
     [[ "$output" == *"warm-slots-refilled eligibility-rechecked"* ]] || return 1
 }
 
+@test "cached app metadata stamped in the future is refreshed, a recent stamp is not" {
+    run /bin/bash <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+uninstall_print_app_search_dirs() { printf '%s\n' "$HOME/Applications"; }
+pkg_receipt_nonstandard_app_paths() { return 0; }
+start_uninstall_metadata_refresh() { cp "$1" "$HOME/refresh-captured"; }
+get_optimal_parallel_jobs() { printf '1\n'; }
+uninstall_resolve_eligible_bundle_id() { printf 'com.example.current\n'; }
+mkdir -p "$MOLE_UNINSTALL_META_CACHE_DIR"
+app="$HOME/Applications/Clock.app"
+mkdir -p "$app/Contents"
+uninstall_print_app_paths_with_mtime() { printf '%s\t%s\n' "$(get_file_mtime "$app")" "$app"; }
+now=$(date +%s)
+for stamp in $((now - 3600)) $((now + 86400)); do
+    printf '%s|%s|4|1000000000|%s|com.example.current|Clock|%s\n' \
+        "$app" "$(get_file_mtime "$app")" "$stamp" "$MOLE_UNINSTALL_LANGUAGE_SIGNATURE" > "$MOLE_UNINSTALL_META_CACHE_FILE"
+    rm -f "$HOME/refresh-captured"
+    scan_applications > /dev/null
+    if [[ $stamp -gt $now ]]; then
+        grep -q 'Clock.app' "$HOME/refresh-captured" || { printf 'future stamp kept as fresh\n'; exit 1; }
+    else
+        [[ ! -s "$HOME/refresh-captured" ]] || { printf 'recent stamp refreshed\n'; exit 1; }
+    fi
+done
+printf 'future-stamp-refreshed recent-stamp-kept\n'
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"future-stamp-refreshed recent-stamp-kept"* ]] || return 1
+}
+
 @test "uninstall scan TERM drains warm workers and removes their temporary results" {
     run /bin/bash <<'EOF'
 set -euo pipefail
@@ -692,7 +723,7 @@ EOF
 		/bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$SRC_PATH"
-[[ "$MOLE_UNINSTALL_META_CACHE_FILE" == */uninstall_app_metadata_v4 ]]
+[[ "$MOLE_UNINSTALL_META_CACHE_FILE" == */uninstall_app_metadata_v5 ]]
 EOF
 
 	[ "$status" -eq 0 ]
@@ -1181,6 +1212,51 @@ EOF
 	[[ "$output" == *"WARM=[$HOME/usr-local/First.app]"* ]] || return 1
 	# The whole point: the newly packaged sibling must appear immediately.
 	[[ "$output" == *"AFTER=[$HOME/usr-local/First.app $HOME/usr-local/Second.app]"* ]] || return 1
+}
+
+@test "a receipt cache stamped in the future is rebuilt, a recent one answers" {
+	local mock_bin="$HOME/mock-pkgutil-clock"
+	local files_file="$HOME/receipt-clock-files.txt"
+	mkdir -p "$mock_bin" "$HOME/usr-local/Old.app/Contents" "$HOME/usr-local/New.app/Contents"
+	cat > "$mock_bin/pkgutil" << MOCK
+#!/bin/bash
+case "\$1" in
+    --pkgs) printf 'com.example.tool\n' ;;
+    --files) cat "$files_file" ;;
+esac
+MOCK
+	chmod +x "$mock_bin/pkgutil"
+	printf '%s\n' "${HOME#/}/usr-local/Old.app/Contents/Info.plist" > "$files_file"
+
+	sed -e "s|/usr/local/|$HOME/usr-local/|g" \
+		-e 's|MOLE_PKG_RECEIPTS_LOADED|MOLE_PKG_RECEIPTS_TEST_LOADED|g' \
+		"$PROJECT_ROOT/lib/core/pkg_receipts.sh" > "$HOME/pkg_receipts_clock_test.sh"
+
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FILES_FILE="$files_file" \
+		PATH="$mock_bin:/usr/bin:/bin" \
+		MOLE_PKG_RECEIPT_CACHE_FILE="$HOME/receipt-cache" \
+		MOLE_PKG_RECEIPT_DB_DIR="$HOME/no-receipt-db" \
+		/bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$HOME/pkg_receipts_clock_test.sh"
+
+first=$(pkg_receipt_nonstandard_app_paths --require-complete)
+# The receipts did not change, so only the clock decides whether the cache answers.
+printf '%s\n' "${HOME#/}/usr-local/New.app/Contents/Info.plist" > "$FILES_FILE"
+recent=$(pkg_receipt_nonstandard_app_paths --require-complete)
+touch -t "$(date -v+1d +%Y%m%d%H%M)" "$HOME/receipt-cache"
+future=$(pkg_receipt_nonstandard_app_paths --require-complete)
+printf 'FIRST=[%s]\nRECENT=[%s]\nFUTURE=[%s]\n' "$first" "$recent" "$future"
+EOF
+
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+	[[ "$output" == *"FIRST=[$HOME/usr-local/Old.app]"* ]] || return 1
+	[[ "$output" == *"RECENT=[$HOME/usr-local/Old.app]"* ]] || return 1
+	[[ "$output" == *"FUTURE=[$HOME/usr-local/New.app]"* ]] || return 1
 }
 
 @test "a reinstalled receipt with the same package id invalidates the cached answer" {

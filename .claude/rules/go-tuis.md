@@ -26,6 +26,7 @@ paths:
 
 - While Analyze is deleting, the busy view must not accept hidden navigation or confirmation actions; keep only quit and the existing safe refresh path. Locked by `TestDeletingIgnoresHiddenActions` and `TestDeletingCannotDispatchHiddenConfirmation`.
 - Protect both known runtime roots and their containing directories before a recursive Trash move. Docker/OrbStack ancestor checks require an existing or unreadable state root, and Darwin user/cache structural containers stay protected without recursively scanning them. Keep empty-container and ordinary-cache positive controls in `delete_test.go`.
+- iCloud structural protection applies to directories, including aliases and ancestors containing an existing or unreadable Mobile Documents store. An absent store does not protect an otherwise ordinary Library folder. Regular files at container depth or named Documents remain user content; unknown metadata retains the conservative path policy. Locked by `TestAnalyzeDeleteAllowsICloudFilesAtStructuralDepths` and `TestAnalyzeDeleteRefusesParentsOfExistingICloudState`.
 
 ## Status
 

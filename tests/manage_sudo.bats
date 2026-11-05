@@ -149,7 +149,7 @@ EOF
     [[ "$result" == "false" ]] || [[ -z "$result" ]]
 }
 
-@test "request_sudo_access clears four lines in clamshell mode when Touch ID hint is shown" {
+@test "request_sudo_access clears three lines in clamshell mode with Touch ID configured" {
     run /bin/bash -c '
         unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
         source "'"$PROJECT_ROOT"'/lib/core/common.sh"
@@ -174,8 +174,8 @@ EOF
         request_sudo_access "Admin access required"
     '
 
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"CLEAR:4"* ]]
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"CLEAR:3"* ]]
 }
 
 @test "request_sudo_access keeps three-line cleanup in clamshell mode without Touch ID" {
@@ -210,15 +210,57 @@ EOF
 
 @test "the Touch ID wait hides typed input and restores echo, also after Ctrl-C" {
     # People often type the password instead of touching the sensor; during
-    # the six-second wait that text used to echo on screen.
+    # the dialog wait that text used to echo on screen.
     run python3 "$PROJECT_ROOT/tests/sudo_tty_pty.py"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     local body
     body=$(sed -n '/^request_sudo_access() {/,/^}/p' "$PROJECT_ROOT/lib/core/sudo.sh")
     # shellcheck disable=SC2016  # Literal source text, not an expansion.
-    [[ "$body" == *'_mole_tty_quiet "$tty_path" _mole_touchid_poll "$sudo_pid"'* ]] || return 1
-    # shellcheck disable=SC2016  # Literal source text, not an expansion.
-    [[ "$body" == *'_mole_tty_quiet "$tty_path" sleep 1'* ]] || return 1
+    [[ "$body" == *'_mole_tty_quiet "$tty_path" sudo -v < "$tty_path"'* ]]
+}
+
+@test "request_sudo_access waits for one Touch ID dialog instead of opening a second" {
+    # macOS 27's Touch ID dialog takes the password itself. Killing that sudo
+    # after five seconds and starting another opened the dialog twice and
+    # discarded the password typed into the first one. A pseudo-terminal gives
+    # the dialog sudo a real /dev/tty, which Bats does not have.
+    # shellcheck disable=SC2016 # The inner bash expands these, not this one.
+    run python3 -c 'import pty, sys; pty.spawn(sys.argv[1:])' /bin/bash -c '
+        unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+        source "'"$PROJECT_ROOT"'/lib/core/common.sh"
+        source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
+
+        calls="$(mktemp)"
+        authed="$(mktemp)"
+        rm -f "$authed"
+
+        sudo() {
+            case "$1" in
+                -n) [[ -e "$authed" ]] ;;
+                -k) return 0 ;;
+                -v)
+                    echo v >> "$calls"
+                    # The user takes longer than the old five-second window.
+                    sleep 6
+                    : > "$authed"
+                    ;;
+                *) return 1 ;;
+            esac
+        }
+        is_clamshell_mode() { return 1; }
+        check_touchid_support() { return 0; }
+        safe_clear_lines() { printf "CLEAR:%s\n" "$1"; }
+        safe_clear_line() { :; }
+
+        rc=0
+        request_sudo_access "Admin access required" || rc=$?
+        printf "RC=%s V_CALLS=%s\n" "$rc" "$(grep -c . "$calls")"
+    ' < /dev/null
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0 V_CALLS=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"once more"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Enter your credentials"* ]]
 }
 
 @test "check_touchid_support ignores a commented-out pam_tid line (#1815)" {
@@ -243,4 +285,48 @@ EOF
     run env MOLE_TEST_MODE=1 MOLE_PAM_SUDO_FILE="$pam_sudo" \
         MOLE_PAM_SUDO_LOCAL_FILE="$pam_sudo_local" /bin/bash -c "$probe"
     [ "$status" -eq 0 ]
+}
+
+@test "a password authorization names mo touchid only when fingerprints are enrolled and sudo ignores them" {
+    local case_spec templates configured expected stub_dir="$BATS_TEST_TMPDIR/bioutil-stub"
+    mkdir -p "$stub_dir"
+    # templates : check_touchid_support status (1 = not configured) : hints
+    for case_spec in 3:1:2 10:1:2 0:1:0 3:0:0; do
+        IFS=: read -r templates configured expected <<< "$case_spec"
+        # run_with_timeout runs an executable, so a shell function cannot stand in.
+        printf '#!/bin/sh\nprintf "User 501:\\t%s biometric template(s)\\n"\n' "$templates" > "$stub_dir/bioutil"
+        chmod +x "$stub_dir/bioutil"
+        # shellcheck disable=SC2016 # The inner bash expands these, not this one.
+        run env PATH="$stub_dir:$PATH" /bin/bash -c '
+            unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+            source "'"$PROJECT_ROOT"'/lib/core/common.sh"
+            source "'"$PROJECT_ROOT"'/lib/core/sudo.sh"
+
+            tty_file="$(mktemp)"
+            chmod 600 "$tty_file"
+            sudo() {
+                case "$1" in
+                    -n) return 1 ;;
+                    *) return 0 ;;
+                esac
+            }
+            tty() { printf "%s\n" "$tty_file"; }
+            is_clamshell_mode() { return 1; }
+            check_touchid_support() { return "'"$configured"'"; }
+            _request_password() { return 0; }
+            safe_clear_lines() { :; }
+
+            # A configured Mac takes the Touch ID branch, which never calls the
+            # hint; the typed-password path below pins the configured guard.
+            if [[ "'"$configured"'" == "1" ]]; then
+                request_sudo_access "Admin access required" || exit 1
+            fi
+            echo "--- typed"
+            request_sudo_access_with_password "secret" "Admin access required" || exit 1
+        ' < /dev/null
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        local hints
+        hints=$(grep -c 'mo touchid' <<< "$output" || true)
+        [[ "$hints" == "$expected" ]] || { echo "case=$case_spec hints=$hints $output"; return 1; }
+    done
 }

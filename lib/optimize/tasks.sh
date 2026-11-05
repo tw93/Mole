@@ -193,9 +193,15 @@ flush_dns_cache() {
     { signal_error=$(sudo /bin/launchctl kill SIGHUP "system/$service_label" 2>&1 >&3); } 3>&1 || signal_status=$?
     [[ $signal_status -eq 0 ]] && return 0
     # macOS 27 refuses this signal to every caller, root included (#1867).
-    # That is the OS withholding the action, not a failed refresh, and the
-    # name-based killall it would take to get past it is still refused above.
-    [[ "$signal_error" == *"Not privileged to signal service"* ]] && return 4
+    # Root-level killall stays off the table: it could signal any process that
+    # shares the name. Run as the service account instead, where the kernel
+    # only lets it signal processes that account owns, and -u narrows the match
+    # to them too. If that is refused as well, the OS is withholding the action,
+    # which is a skip, not a failed refresh.
+    if [[ "$signal_error" == *"Not privileged to signal service"* ]]; then
+        sudo -u _mdnsresponder /usr/bin/killall -u _mdnsresponder -HUP mDNSResponder > /dev/null 2>&1 && return 0
+        return 4
+    fi
     return 1
 }
 

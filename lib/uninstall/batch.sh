@@ -58,22 +58,41 @@ has_sensitive_data() {
 decode_file_list() {
     local encoded="$1"
     local app_name="$2"
-    local decoded
+    local decoded_file decoded
+
+    if ! decoded_file=$(create_temp_file 2> /dev/null); then
+        log_error "Failed to create temporary file for file list $app_name" >&2
+        echo ""
+        return 0
+    fi
 
     # macOS uses -D, GNU uses -d. Always return 0 for set -e safety.
-    if ! decoded=$(printf '%s' "$encoded" | base64 -D 2> /dev/null); then
-        if ! decoded=$(printf '%s' "$encoded" | base64 -d 2> /dev/null); then
+    if ! printf '%s' "$encoded" | base64 -D > "$decoded_file" 2> /dev/null; then
+        if ! printf '%s' "$encoded" | base64 -d > "$decoded_file" 2> /dev/null; then
             log_error "Failed to decode file list for $app_name" >&2
+            rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
             echo ""
             return 0 # Return success with empty string
         fi
     fi
 
-    if [[ "$decoded" =~ $'\0' ]]; then
+    # Bash variables cannot safely carry NUL bytes, and Bash 3.2 expands
+    # $'\0' to an empty regex. Compare the decoded bytes before reading them.
+    # shellcheck disable=SC2094 # cmp only reads the exact scratch file.
+    if ! LC_ALL=C tr -d '\000' < "$decoded_file" | cmp -s - "$decoded_file"; then
         log_warning "File list for $app_name contains null bytes, rejecting" >&2
+        rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
         echo ""
         return 0 # Return success with empty string
     fi
+
+    if ! decoded=$(cat "$decoded_file"); then
+        log_error "Failed to read decoded file list for $app_name" >&2
+        rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
+        echo ""
+        return 0
+    fi
+    rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
 
     while IFS= read -r line; do
         if [[ -n "$line" && ! "$line" =~ ^/ ]]; then
@@ -96,22 +115,41 @@ decode_file_list() {
 decode_bundle_id_list() {
     local encoded="$1"
     local app_name="$2"
-    local decoded
+    local decoded_file decoded
+
+    if ! decoded_file=$(create_temp_file 2> /dev/null); then
+        log_error "Failed to create temporary file for helper id list $app_name" >&2
+        echo ""
+        return 0
+    fi
 
     # macOS uses -D, GNU uses -d. Always return 0 for set -e safety.
-    if ! decoded=$(printf '%s' "$encoded" | base64 -D 2> /dev/null); then
-        if ! decoded=$(printf '%s' "$encoded" | base64 -d 2> /dev/null); then
+    if ! printf '%s' "$encoded" | base64 -D > "$decoded_file" 2> /dev/null; then
+        if ! printf '%s' "$encoded" | base64 -d > "$decoded_file" 2> /dev/null; then
             log_error "Failed to decode helper id list for $app_name" >&2
+            rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
             echo ""
             return 0
         fi
     fi
 
-    if [[ "$decoded" =~ $'\0' ]]; then
+    # Keep this check byte-oriented for Bash 3.2 compatibility; NUL cannot be
+    # represented in a shell variable and $'\0' becomes an empty regex there.
+    # shellcheck disable=SC2094 # cmp only reads the exact scratch file.
+    if ! LC_ALL=C tr -d '\000' < "$decoded_file" | cmp -s - "$decoded_file"; then
         log_warning "Helper id list for $app_name contains null bytes, rejecting" >&2
+        rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
         echo ""
         return 0
     fi
+
+    if ! decoded=$(cat "$decoded_file"); then
+        log_error "Failed to read decoded helper id list for $app_name" >&2
+        rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
+        echo ""
+        return 0
+    fi
+    rm -f "$decoded_file" 2> /dev/null || true # SAFE: exact scratch file created above
 
     echo "$decoded"
     return 0
@@ -634,8 +672,8 @@ remove_login_item() {
         # Skip AppleScript during tests to avoid permission dialogs
         if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
             # Escape double quotes and backslashes for AppleScript
-            local escaped_name="${clean_name//\\/\\\\}"
-            escaped_name="${escaped_name//\"/\\\"}"
+            local escaped_name=""
+            mole_applescript_escape escaped_name "$clean_name"
 
             local login_item_rc=0 deleted_count=""
             deleted_count=$(
@@ -2224,7 +2262,7 @@ _batch_scan_app_details_impl() {
                 _batch_scan_stage="system leftover scan"
                 local system_rc=0
                 system_files=$(find_app_system_files \
-                    "$bundle_id" "$discovery_app_name") || system_rc=$?
+                    "$bundle_id" "$discovery_app_name" "$app_path") || system_rc=$?
                 if mole_rc_timeout "$system_rc"; then
                     system_files=""
                     debug_log "System leftover scan timed out for $app_name"
@@ -3540,5 +3578,8 @@ batch_uninstall_applications() {
     unset -f _restore_uninstall_traps
 
     total_size_cleaned=$((total_size_cleaned + total_size_freed))
+    # Callers turn this into the exit status, so a script that runs
+    # `mo uninstall` sees a failed app (Mole CLI (Windows) exits 1 the same way).
+    MOLE_UNINSTALL_FAILED_APPS=$((${MOLE_UNINSTALL_FAILED_APPS:-0} + failed_count))
     unset failed_items
 }

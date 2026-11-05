@@ -1024,6 +1024,31 @@ EOF
 	[[ "$output" == *"[update] REBUILT Homebrew mole (updated to 9.9.9)"* ]]
 }
 
+@test "Homebrew update logs the change before an interruptible highlights fetch" {
+	run env HOME="$HOME/interrupted-highlights" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/lib/core/common.sh"
+run_with_timeout() {
+	shift
+	case "$*" in
+		"brew upgrade mole") printf '==> Upgrading mole\n' ;;
+		"brew list --versions mole") printf 'mole 9.9.9\n' ;;
+	esac
+}
+# Ctrl-C during the network fetch ends the run after brew already upgraded.
+mole_print_release_highlights() { exit 130; }
+(update_via_homebrew "1.0.0") || true
+cat "$OPERATIONS_LOG_FILE"
+EOF
+
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+	[[ "$output" == *"[update] REBUILT Homebrew mole (updated to 9.9.9)"* ]]
+}
+
 @test "mo update preserves actionable Homebrew diagnostics on failure (#1247)" {
 	local fake_brew_bin="$TEST_ROOT/homebrew/bin"
 	local fake_brew_mole="$TEST_ROOT/homebrew/Cellar/mole/9.9.9/bin/mole"

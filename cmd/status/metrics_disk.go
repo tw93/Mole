@@ -73,12 +73,13 @@ func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
 	var (
 		disks      []DiskStatus
 		seenDevice = make(map[string]bool)
-		seenVolume = make(map[string]bool)
 	)
 	for _, part := range partitions {
 		if shouldSkipDiskPartition(part) {
 			continue
 		}
+		// APFS volumes and snapshots in one container share a diskN base.
+		// Capacity is not an identity: independent disks can be equally sized.
 		baseDevice := baseDeviceName(part.Device)
 		if baseDevice == "" {
 			baseDevice = part.Device
@@ -103,11 +104,6 @@ func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
 		if total < 1<<30 {
 			continue
 		}
-		// Use size-based dedupe key for shared pools.
-		volKey := fmt.Sprintf("%s:%d", part.Fstype, total)
-		if seenVolume[volKey] {
-			continue
-		}
 		used := usage.Used
 		usedPercent := usage.UsedPercent
 		purgeable := uint64(0)
@@ -128,7 +124,6 @@ func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
 			Purgeable:   purgeable,
 		})
 		seenDevice[baseDevice] = true
-		seenVolume[volKey] = true
 	}
 
 	if useCorrections {

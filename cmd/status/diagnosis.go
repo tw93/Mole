@@ -27,7 +27,7 @@ func statusDiagnosisLine(m MetricsSnapshot) string {
 		}
 		return "Memory pressure high"
 	}
-	if disk, ok := rootDisk(m.Disks); ok && disk.UsedPercent > diskCritThreshold {
+	if disk, ok := rootDisk(m.Disks); ok && diskIsCritical(disk) {
 		free := uint64(0)
 		if disk.Total > disk.Used {
 			free = disk.Total - disk.Used

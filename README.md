@@ -1,9 +1,9 @@
-<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows">Windows</a></p>
+<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows#readme">Windows</a> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole</h1>
-  <p><b>Deep clean, uninstall apps, optimize, analyze disk, and monitor your Mac. Free open-source CLI, plus a native Mac app.</b></p>
-  <p>English · <a href="README_CN.md">中文</a> · <a href="README_TW.md">繁體</a> · <a href="README_JA.md">日本語</a> · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
+  <p><b>Deep clean, uninstall, optimize, analyze disk and monitor your Mac. Free open-source CLI, plus a Mac app.</b></p>
+  <p>English · <a href="README_CN.md">中文</a> · <a href="README_TW.md">繁體</a> · <a href="README_JA.md">日本語</a> · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_PL.md">Polski</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
   <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
@@ -135,10 +135,16 @@ For a declarative installation, add `github:tw93/mole/main` as a flake input and
 
 </details>
 
-**On Windows** ([Windows CLI](https://github.com/tw93/Mole/tree/windows))
+**On Windows** ([Windows CLI](https://github.com/tw93/Mole/tree/windows#readme))
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
+```
+
+**On Linux** ([Linux CLI](https://github.com/tw93/Mole/tree/linux#readme))
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
 ```
 
 Mole is only distributed through Homebrew, this repository and [mole.fit](https://mole.fit/). `molemac.com`, `moleapp.net` and `molefit.com` are not Mole, and the Windows app at `mole.bluecatbot.com` is a separate community project.
@@ -155,6 +161,25 @@ Mole can remove files, so it validates paths, protects shared and system-owned l
 - If the whitelist file cannot be read, `clean`, `purge`, and `optimize` stop instead of running without it
 
 Review [SECURITY.md](SECURITY.md) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for reporting guidance, safety boundaries, and current limitations.
+
+## Configuration
+
+Mole runs without configuration. These environment variables adapt it to slow disks, stalled network or cloud mounts; raise a timeout only when Mole reports that a step timed out.
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): command-availability probes
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): lightweight queries such as `df` and `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): probes that walk a directory tree or reach the network
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): package-manager listings such as `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): cache cleanups that walk the disk
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): filesystem verify and repair
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): unbounded user-directory scans
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): overall budget for the cloud and Office cleanup section
+
+The number in parentheses is the default in seconds. For example, give the scans more time on a slow disk:
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
 
 ## Features in Detail
 

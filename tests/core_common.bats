@@ -25,6 +25,26 @@ setup() {
     [ "$result" = $'⠖\n⠲\n⠴\n⠦' ]
 }
 
+@test "format_spinner_message fits a CJK name by display width in both locales" {
+    local locale
+    for locale in C en_US.UTF-8; do
+        # shellcheck disable=SC2016  # the inner bash expands these
+        run env HOME="$HOME" LC_ALL="$locale" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc -c '
+            source "$PROJECT_ROOT/lib/core/common.sh"
+            tput() { echo 40; }
+            format_spinner_message "Removing 网易云音乐网易云音乐网易云音乐网易云音乐..."
+        '
+        [ "$status" -eq 0 ] || return 1
+        local msg="$output"
+        # 40 columns leave 32 for the message; a split character is invalid UTF-8.
+        printf '%s' "$msg" | /usr/bin/iconv -f UTF-8 -t UTF-8 > /dev/null || { echo "$locale split: $msg"; return 1; }
+        run python3 -I -c 'import sys, unicodedata; print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in sys.argv[1]))' "$msg"
+        [ "$status" -eq 0 ] || return 1
+        (( output <= 32 )) || { echo "$locale width $output: $msg"; return 1; }
+        [[ "$msg" == "Removing 网"*"..." ]] || { echo "$locale: $msg"; return 1; }
+    done
+}
+
 @test "detect_architecture maps current CPU to friendly label" {
     expected="Intel"
     if [[ "$(uname -m)" == "arm64" ]]; then
@@ -1272,6 +1292,12 @@ EOF
     [ "$output" = $'-n\n-e' ]
 }
 
+@test "truncate_by_display_width counts ASCII as one column (#1918)" {
+    run /bin/bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; truncate_by_display_width 'abcdefghijklmnop' 10; truncate_by_display_width '中文abcdefghij' 10"
+    [ "$status" -eq 0 ]
+    [ "$output" = $'abcdefg...\n中文abc...' ]
+}
+
 @test "read_key respects MOLE_READ_KEY_FORCE_CHAR" {
     run /bin/bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "CHAR:j" ]
@@ -1580,4 +1606,43 @@ printf '%s:%s\n' \"\$rc\" \"\$MOLE_HAS_FDA\"
     '
     [ "$status" -eq 0 ] || return 1
     [ "$output" = "1 dir|0 items|12 items" ]
+}
+
+@test "mole_applescript_escape leaves no bare quote or trailing backslash in an AppleScript literal" {
+    cat > "$HOME/escape_probe.sh" << 'PROBE'
+source "$1/lib/core/base.sh"
+bad=0
+samples=('plain' 'a"b' 'a\b' 'x\"; do shell script "id"' $'two\nlines' 'ends\' '')
+for sample in "${samples[@]}"; do
+    mole_applescript_escape out "$sample"
+    # Drop every escaped pair; a surviving quote or backslash would end the literal early.
+    rest=${out//\\\\/}
+    rest=${rest//\\\"/}
+    case "$rest" in
+        *'"'* | *'\'*)
+            bad=1
+            printf 'unsafe: %s\n' "$out"
+            ;;
+    esac
+done
+mole_applescript_escape out 'a"b\c'
+[[ "$out" == 'a\"b\\c' ]] || {
+    bad=1
+    printf 'wrong: %s\n' "$out"
+}
+exit "$bad"
+PROBE
+    run /bin/bash --noprofile --norc "$HOME/escape_probe.sh" "$PROJECT_ROOT"
+    echo "$output"
+    [ "$status" -eq 0 ]
+}
+
+@test "AppleScript string literals built from bundle names use mole_applescript_escape" {
+    for f in lib/core/sudo.sh lib/core/app_protection.sh lib/uninstall/batch.sh; do
+        run grep -c '^[^#]*mole_applescript_escape ' "$PROJECT_ROOT/$f"
+        [ "$status" -eq 0 ]
+        [ "$output" -ge 1 ]
+        run grep -nE '^[^#]*\$\{[a-z_]+//\\\\"/' "$PROJECT_ROOT/$f"
+        [ "$status" -ne 0 ]
+    done
 }

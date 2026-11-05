@@ -1,10 +1,10 @@
 # Mole Security Audit
 
-This document describes Mole CLI (macOS), updated for V1.67.0 on 2026-10-31, with the 2026-10-26 review starting from `ec968fc8` on `main` (the code is unchanged from `00f8279e`). It covers safety boundaries, destructive-operation controls, release integrity signals, and known limitations. This is a maintainer review, not an independent security certification. Mole Mac and Mole for Windows are outside its scope.
+This document describes Mole CLI (macOS), updated for V1.69.0 on 2026-11-04, with the 2026-10-26 review starting from `ec968fc8` on `main` (the code is unchanged from `00f8279e`). It covers safety boundaries, destructive-operation controls, release integrity signals, and known limitations. This is a maintainer review, not an independent security certification. Mole Mac and Mole for Windows are outside its scope.
 
 ## 2026-11-01 Yarn Berry dependency boundary
 
-`e59e7d60` removes automatic cleanup of the global Berry archive store and protects it at shared clean sinks, including custom-whitelist runs and direct store-root/descendant attempts. Classic cache cleanup and explicit uninstall keep their existing policies. The producer and real-sink regressions fail on the prior source; the full no-authorization check and test scripts pass, and an independent review found no production defect. This source repair is not a package release; the defect was present in V1.67.0.
+`e59e7d60` removes automatic cleanup of the global Berry archive store and protects it at shared clean sinks, including custom-whitelist runs and direct store-root/descendant attempts. Classic cache cleanup and explicit uninstall keep their existing policies. The producer and real-sink regressions fail on the prior source; the full no-authorization check and test scripts pass, and an independent review found no production defect. The defect was present in V1.67.0, and the repair ships in V1.68.0.
 
 ## Review Scope and Evidence
 
@@ -366,7 +366,7 @@ Repository-level signals include:
 - pre-commit hook that mirrors GitHub CI checks locally (shell syntax, shfmt, shellcheck, Go vet)
 - CI checks for unsafe `rm -rf` usage patterns and core protection behavior
 - targeted tests for path validation, purge boundaries, symlink behavior, dry-run flows, and destructive helpers
-- macOS 15 and macOS 26 compatibility coverage for core Bats suites
+- the full Bats suite on macOS 26 in parallel and serial shards, the core Bats subset on macOS 15 for compatibility, and the security and protection checks on Linux
 - Nix package build plus profile install, upgrade, and removal checks on Apple Silicon and Intel macOS 15 runners
 - CodeQL scanning for Go and GitHub Actions workflows, with workflow permission hardening
 - curated changelog-driven release notes for user-visible changes

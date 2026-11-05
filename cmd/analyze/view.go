@@ -38,7 +38,7 @@ func (m model) View() string {
 			if !m.localSnapshotFresh {
 				freshnessLabel = " · last successful check"
 			}
-			fmt.Fprintf(&b, "%s%d Time Machine local %s · snapshot-only space is not listed below%s%s\n",
+			fmt.Fprintf(&b, "%s%d local %s · snapshot-only space is not listed below%s%s\n",
 				colorGray, m.localSnapshotCount, snapshotLabel, freshnessLabel, colorReset)
 		}
 		if m.overviewScanning {

@@ -7,9 +7,20 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/tw93/mole/internal/units"
 )
+
+// Keep the fallback within both dimensions so the renderer cannot clip away
+// its explanation. A later resize recomputes the dashboard from the model.
+func renderTerminalTooSmall(width, height int) string {
+	return lipgloss.NewStyle().
+		Width(width).
+		MaxWidth(width).
+		MaxHeight(height).
+		Render("Terminal too small. Enlarge the window to view status.")
+}
 
 var (
 	titleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#C79FD7")).Bold(true)
@@ -901,9 +912,7 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus, probed bool
 
 		if b.CycleCount > 0 {
 			cycleText := fmt.Sprintf("%d cycles", b.CycleCount)
-			if b.CycleCount > batteryCycleDanger {
-				cycleText = dangerStyle.Render(cycleText)
-			} else if b.CycleCount > batteryCycleWarn {
+			if b.CycleCount > batteryCycleWarn {
 				cycleText = warnStyle.Render(cycleText)
 			}
 			healthParts = append(healthParts, cycleText)
@@ -1094,11 +1103,15 @@ func humanBytesCompact(v uint64) string {
 	return units.BytesBinCompact(v)
 }
 
+// shorten fits s into maxLen terminal cells, ending a cut with "…". It counts
+// display width rather than bytes, so a multi-byte name (CJK, accents, the
+// curly apostrophe in "Kevin’s") is not cut in the middle of a character or
+// shortened while it still fits.
 func shorten(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if ansi.StringWidth(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-1] + "…"
+	return ansi.Truncate(s, maxLen, "…")
 }
 
 func remainingLineWidth(width int, prefix string) int {

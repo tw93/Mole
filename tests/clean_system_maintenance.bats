@@ -645,6 +645,141 @@ EOF
     [[ "$output" != *"Time Machine local snapshots"* ]]
 }
 
+@test "clean_local_snapshots reports backup app snapshots without Time Machine (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { return 1; }
+run_with_timeout() {
+    printf '%s\n' \
+        "Snapshots for disk /:" \
+        "com.synology.activebackup.F0yvGv9C" \
+        "com.bombich.ccc.6F2A7C1E-1D3B-4C55-9A0B-2E8F1C7D4B10" \
+        "com.bombich.ccc.0B9D2E44-7A61-4F0C-8E3B-5C1A9F6D2E77.2026-11-04-020000" \
+        "com.apple.os.update-MSUPrepareUpdate" \
+        "com.apple.TimeMachine.2023-10-25-120000.local"
+}
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ echo "ACTIVITY"; }
+tm_is_running(){ echo "UNEXPECTED_TM_PROBE"; return 1; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"3"*"from com.synology.activebackup and com.bombich.ccc, deleted files keep using space until removed"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"ACTIVITY"* ]] || { echo "$output"; return 1; }
+    # No Time Machine configured: no Time Machine probe and no Time Machine row.
+    [[ "$output" != *"UNEXPECTED_TM_PROBE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots still reports backup app snapshots during a Time Machine backup (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000.local" \
+        "com.synology.activebackup.F0yvGv9C"
+}
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ return 0; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Time Machine snapshots · skipped (backup in progress)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"*"from com.synology.activebackup"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots prints both rows when Time Machine is configured and idle (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000.local" \
+        "com.apple.TimeMachine.2023-10-24-120000.local" \
+        "com.synology.activebackup.F0yvGv9C"
+}
+start_section_spinner(){ echo "START:$1"; }
+stop_section_spinner(){ echo "STOP"; }
+note_activity(){ :; }
+tm_is_running(){ return 1; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Time Machine local snapshots · "*"2"*"macOS removes them when space runs low"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"*"from com.synology.activebackup"* ]] || { echo "$output"; return 1; }
+    # An idle Time Machine changes the spinner text in place, no stop between.
+    [[ "$output" == *"START:Checking Time Machine status..."$'\n'"START:Checking local snapshots..."* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots lists backup app snapshots when Time Machine status is unknown (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() {
+    printf '%s\n' \
+        "com.apple.TimeMachine.2023-10-25-120000.local" \
+        "com.synology.activebackup.F0yvGv9C"
+}
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ return 2; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Time Machine snapshots · skipped (status unknown)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"APFS snapshots · "*"1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Time Machine local snapshots"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_local_snapshots stops before listing when the Time Machine probe is interrupted (#1916)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+defaults() { echo "1"; }
+run_with_timeout() { echo "UNEXPECTED_LISTING"; }
+start_section_spinner(){ :; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ return 130; }
+
+rc=0
+clean_local_snapshots || rc=$?
+echo "RC=$rc"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"UNEXPECTED_LISTING"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_homebrew skips when cleaned recently" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
@@ -661,6 +796,27 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ -z "$output" ]]
+}
+
+@test "brew_cleanup_ran_recently treats a stamp from the future as expired" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+stamp="$HOME/brew-stamp"
+date +%s > "$stamp"
+brew_cleanup_ran_recently "$stamp" || { echo "recent stamp ignored"; exit 1; }
+echo $(( $(date +%s) + 2 * 86400 )) > "$stamp"
+if brew_cleanup_ran_recently "$stamp"; then
+    echo "future stamp counted as recent"
+    exit 1
+fi
+echo "brew-clock ok"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"brew-clock ok"* ]]
 }
 
 @test "clean_homebrew runs cleanup with timeout stubs" {
@@ -2299,6 +2455,55 @@ EOF
     [[ "$output" != *"ACCEPTED"* ]]
 }
 
+@test "macos_installer_is_apple_signed takes only Apple-signed InstallAssistant bundles" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+installer="$HOME/Install macOS Test.app"
+mkdir -p "$installer/Contents"
+touch "$installer/Contents/Info.plist"
+deadline=$((SECONDS + 10))
+BUNDLE_ID=com.apple.InstallAssistant.Seed
+CODESIGN_RC=0
+run_with_timeout() {
+    local _duration="$1"
+    shift
+    case "${1:-}" in
+        /usr/bin/plutil) printf '%s\n' "$BUNDLE_ID" ;;
+        /usr/bin/codesign)
+            [[ "$*" == *"anchor apple"* ]] || return 99
+            echo "$*" >> "$HOME/codesign.calls"
+            return "$CODESIGN_RC"
+            ;;
+        *) "$@" ;;
+    esac
+}
+
+macos_installer_is_apple_signed "$installer" "$deadline" || { echo 'SIGNED_REJECTED'; exit 1; }
+CODESIGN_RC=3
+if macos_installer_is_apple_signed "$installer" "$deadline"; then echo 'UNSIGNED_ACCEPTED'; exit 1; fi
+CODESIGN_RC=0
+for BUNDLE_ID in com.example.InstallAssistant com.apple.InstallAssistantX com.apple.InstallAssistant. ''; do
+    rm -f "$HOME/codesign.calls"
+    if macos_installer_is_apple_signed "$installer" "$deadline"; then echo "ID_ACCEPTED:$BUNDLE_ID"; exit 1; fi
+    [[ ! -e "$HOME/codesign.calls" ]] || { echo "CODESIGN_RAN:$BUNDLE_ID"; exit 1; }
+done
+BUNDLE_ID=com.apple.InstallAssistant
+CODESIGN_RC=124
+rc=0
+macos_installer_is_apple_signed "$installer" "$deadline" || rc=$?
+[[ $rc -eq 124 ]] || { echo "TIMEOUT_RC:$rc"; exit 1; }
+rm -f "$installer/Contents/Info.plist"
+if macos_installer_is_apple_signed "$installer" "$deadline"; then echo 'NO_PLIST_ACCEPTED'; exit 1; fi
+echo 'APPLE_INSTALLER_ONLY'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"APPLE_INSTALLER_ONLY"* ]]
+}
+
 @test "macos_installer_candidate_still_eligible rejects invalid age replacement active and pending races" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2314,6 +2519,7 @@ expected_mtime="${expected##*:}"
 get_epoch_seconds() { echo "$((expected_mtime + 15 * 86400))"; }
 software_update_pending_or_unknown() { return 1; }
 macos_installer_process_is_idle() { return 0; }
+macos_installer_is_apple_signed() { return 0; }
 run_with_timeout() {
     local _duration="$1"
     shift
@@ -2325,6 +2531,12 @@ run_with_timeout() {
 }
 
 macos_installer_candidate_still_eligible "$installer" "$expected" 14 "$deadline"
+macos_installer_is_apple_signed() { return 1; }
+if macos_installer_candidate_still_eligible "$installer" "$expected" 14 "$deadline"; then
+    echo 'UNSIGNED_ACCEPTED'
+    exit 1
+fi
+macos_installer_is_apple_signed() { return 0; }
 
 macos_installer_candidate_identity() { printf '1:2:0\n'; }
 if macos_installer_candidate_still_eligible "$installer" '1:2:0' 14 "$deadline"; then
@@ -2334,6 +2546,7 @@ fi
 unset -f macos_installer_candidate_identity
 source "$PROJECT_ROOT/lib/clean/system.sh"
 software_update_pending_or_unknown() { return 1; }
+macos_installer_is_apple_signed() { return 0; }
 
 replacement="$HOME/installer-replacement"
 mkdir -p "$replacement/Contents"

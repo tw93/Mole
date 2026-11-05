@@ -243,7 +243,7 @@ type model struct {
 	totalFiles          int64           // Total files found in current/last scan
 	lastTotalFiles      int64           // Total files from previous scan (for progress bar)
 	diskFree            int64           // Free disk space for the analyzed volume
-	localSnapshotCount  int             // Read-only Time Machine snapshot count for overview context
+	localSnapshotCount  int             // Read-only local snapshot count for overview context
 	localSnapshotFresh  bool            // False after the latest matching probe failed
 	snapshotProbeID     int64
 	snapshotRunner      localSnapshotCommandRunner

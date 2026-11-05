@@ -1,9 +1,9 @@
-<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows">Windows</a></p>
+<p align="right"><b>macOS</b> · <a href="https://github.com/tw93/Mole/tree/windows#readme">Windows</a> · <a href="https://github.com/tw93/Mole/tree/linux#readme">Linux</a></p>
 
 <div align="center">
   <h1>Mole</h1>
   <p><b>Mac 深度清理、應用程式解除安裝、系統最佳化、磁碟分析與狀態監控，免費開源命令列工具，另有原生 Mac App</b></p>
-  <p><a href="README.md">English</a> · <a href="README_CN.md">中文</a> · 繁體 · <a href="README_JA.md">日本語</a> · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
+  <p><a href="README.md">English</a> · <a href="README_CN.md">中文</a> · 繁體 · <a href="README_JA.md">日本語</a> · <a href="README_KR.md">한국어</a> · <a href="README_DE.md">Deutsch</a> · <a href="README_FR.md">Français</a> · <a href="README_PL.md">Polski</a> · <a href="README_UA.md">Українська</a> · <a href="README_RU.md">Русский</a></p>
   <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
   <a href="https://github.com/tw93/mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
@@ -135,10 +135,16 @@ nix profile remove mole
 
 </details>
 
-**Windows 上安裝**（[Windows CLI](https://github.com/tw93/Mole/tree/windows)）
+**Windows 上安裝**（[Windows CLI](https://github.com/tw93/Mole/tree/windows#readme)）
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
+```
+
+**Linux 上安裝**（[Linux CLI](https://github.com/tw93/Mole/tree/linux#readme)）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tw93/Mole/linux/install.sh | bash
 ```
 
 Mole 只透過 Homebrew、這個倉庫和 [mole.fit](https://mole.fit/) 發布，`molemac.com`、`moleapp.net`、`molefit.com` 都不是 Mole，`mole.bluecatbot.com` 上的 Windows App 是同名的社群專案。
@@ -155,6 +161,25 @@ Mole 會刪除檔案，所以會先檢查路徑、保護共用和系統目錄，
 - 白名單檔案無法讀取時，`clean`、`purge` 和 `optimize` 會直接停止，不會在沒有白名單的情況下繼續執行
 
 漏洞回報方式、安全邊界與目前限制見 [SECURITY.md](SECURITY.md) 與 [SECURITY_AUDIT.md](SECURITY_AUDIT.md)。
+
+## 設定
+
+Mole 無需設定即可執行。以下環境變數可用於因應慢速磁碟、卡住的網路或雲端掛載；僅在 Mole 提示某一步 `timed out` 時才需要調大對應的逾時。
+
+- `MOLE_TIMEOUT_QUICK_DETECT_SEC` (2): 指令可用性探測
+- `MOLE_TIMEOUT_SHORT_QUERY_SEC` (3): 輕量查詢，如 `df` 與 `tmutil status`
+- `MOLE_TIMEOUT_MEDIUM_PROBE_SEC` (5): 走訪目錄樹或存取網路的探測
+- `MOLE_TIMEOUT_PKG_LIST_SEC` (10): 套件管理器列表，如 `brew list`
+- `MOLE_TIMEOUT_PKG_CLEANUP_SEC` (20): 走訪磁碟的快取清理
+- `MOLE_TIMEOUT_DISK_VERIFY_SEC` (30): 檔案系統校驗與修復
+- `MOLE_TIMEOUT_HINT_SCAN_SEC` (15): 無上限的使用者目錄掃描
+- `MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC` (300): 雲端與 Office 清理環節的總預算
+
+括號中的數字為預設秒數。例如，在慢速磁碟上給掃描更多時間：
+
+```bash
+MOLE_TIMEOUT_HINT_SCAN_SEC=60 MOLE_TIMEOUT_MEDIUM_PROBE_SEC=15 mo clean
+```
 
 ## 功能說明
 

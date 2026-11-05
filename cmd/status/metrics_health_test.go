@@ -257,12 +257,14 @@ func TestBatteryHealthLabel(t *testing.T) {
 	}{
 		{"new battery", 100, 98, "Healthy", "ok"},
 		{"moderate cycles", 600, 92, "Healthy", "ok"},
-		{"high cycles", 950, 85, "Service Soon", "danger"},
+		{"cycles under the rated count", 950, 85, "Healthy", "ok"},
+		{"cycles past the rated count", 1001, 85, "Fair", "warn"},
 		{"low capacity", 200, 55, "Service Soon", "danger"},
 		{"warn capacity", 200, 75, "Fair", "warn"},
 		{"zero values", 0, 0, "", "unknown"},
 		{"known cycles unknown capacity", 100, 0, "", "unknown"},
-		{"unknown capacity high cycles", 950, 0, "Service Soon", "danger"},
+		{"unknown capacity cycles under the rated count", 950, 0, "", "unknown"},
+		{"unknown capacity cycles past the rated count", 1001, 0, "Fair", "warn"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -342,6 +344,38 @@ func TestFormatUptimeEdgeCases(t *testing.T) {
 			got := formatUptime(tt.secs)
 			if got != tt.want {
 				t.Errorf("formatUptime(%d) = %q, want %q", tt.secs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiskIsCriticalNeedsNinetyPercentAndUnderThirtyGBFree(t *testing.T) {
+	const gb = 1_000_000_000
+	for _, tc := range []struct {
+		name       string
+		usedPct    float64
+		total, use uint64
+		want       bool
+	}{
+		{"2 TB at 90% keeps 200 GB free", 90, 2000 * gb, 1800 * gb, false},
+		{"4 TB at 95% keeps 200 GB free", 95, 4000 * gb, 3800 * gb, false},
+		{"256 GB at 93% has 18 GB free", 93, 256 * gb, 238 * gb, true},
+		{"exactly 90% under the floor", 90, 250 * gb, 225 * gb, true},
+		{"under 90% even with little free", 89.9, 100 * gb, 89 * gb, false},
+		{"exactly 30 GB free is not under the floor", 97, 1000 * gb, 970 * gb, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			disk := DiskStatus{Mount: "/", UsedPercent: tc.usedPct, Total: tc.total, Used: tc.use}
+			if got := diskIsCritical(disk); got != tc.want {
+				t.Fatalf("diskIsCritical(%+v) = %v, want %v", disk, got, tc.want)
+			}
+			_, msg := calculateHealthScore(CPUStatus{}, MemoryStatus{}, []DiskStatus{disk}, DiskIOStatus{}, ThermalStatus{}, nil, 0)
+			if strings.Contains(msg, "Disk Almost Full") != tc.want {
+				t.Fatalf("health message %q disagrees with diskIsCritical=%v", msg, tc.want)
+			}
+			line := statusDiagnosisLine(MetricsSnapshot{Disks: []DiskStatus{disk}})
+			if strings.HasPrefix(line, "Disk low") != tc.want {
+				t.Fatalf("diagnosis %q disagrees with diskIsCritical=%v", line, tc.want)
 			}
 		})
 	}

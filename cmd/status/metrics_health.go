@@ -24,9 +24,15 @@ const (
 	memPressureWarnPenalty = 5.0
 	memPressureCritPenalty = 15.0
 
-	// Disk.
+	// Disk. The two percentages shape the score penalty; whether a disk is
+	// critical also needs free space, see diskIsCritical.
 	diskWarnThreshold = 80.0
 	diskCritThreshold = 93.0
+	// A disk is critical at 90% used with under 30 GB free, roughly a macOS
+	// update plus swap: a 2 TB disk at 90% still has 200 GB free. Mole Mac and
+	// Mole for Windows use the same rule.
+	diskCriticalPercent   = 90.0
+	diskCriticalFreeBytes = 30_000_000_000
 
 	// Thermal.
 	thermalNormalThreshold = 65.0
@@ -37,10 +43,11 @@ const (
 	ioHighThreshold   = 150.0
 
 	// Battery.
-	batteryCycleWarn   = 800
-	batteryCycleDanger = 900
-	batteryCapWarn     = 80
-	batteryCapDanger   = 60
+	// Apple rates current MacBook batteries for 1000 full cycles at 80%
+	// capacity; wear before that shows up through capacity, not the count.
+	batteryCycleWarn = 1000
+	batteryCapWarn   = 80
+	batteryCapDanger = 60
 
 	// Uptime (seconds).
 	uptimeWarnDays   = 7
@@ -116,7 +123,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 			}
 		}
 		score -= diskPenalty
-		if diskUsage > diskCritThreshold {
+		if diskIsCritical(disks[0]) {
 			issues = append(issues, "Disk Almost Full")
 		}
 	}
@@ -206,10 +213,22 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 	return int(score), msg
 }
 
+// diskIsCritical reports a disk at least 90% used with under 30 GB free.
+func diskIsCritical(disk DiskStatus) bool {
+	if disk.UsedPercent < diskCriticalPercent {
+		return false
+	}
+	free := uint64(0)
+	if disk.Total > disk.Used {
+		free = disk.Total - disk.Used
+	}
+	return free < diskCriticalFreeBytes
+}
+
 // batteryHealthLabel returns a human-readable health label and severity based on cycle count and capacity.
 // Severity is "ok", "warn", "danger", or "unknown" (no label).
 func batteryHealthLabel(cycles int, capacity int) (string, string) {
-	if cycles > batteryCycleDanger || (capacity > 0 && capacity < batteryCapDanger) {
+	if capacity > 0 && capacity < batteryCapDanger {
 		return "Service Soon", "danger"
 	}
 	if cycles > batteryCycleWarn || (capacity > 0 && capacity < batteryCapWarn) {

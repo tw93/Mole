@@ -40,7 +40,7 @@ files_cleaned=0
 total_size_cleaned=0
 
 readonly MOLE_UNINSTALL_META_CACHE_DIR="$HOME/.cache/mole"
-readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v4"
+readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v5"
 readonly MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
 readonly MOLE_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
 readonly MOLE_UNINSTALL_EPOCH_FLOOR=978307200
@@ -253,7 +253,11 @@ uninstall_resolve_display_name() {
         local bundle_name
         bundle_name=$(plutil -extract CFBundleName raw "$app_path/Contents/Info.plist" 2> /dev/null || echo "")
 
-        if [[ "$md_display_name" == /* ]]; then
+        # A path, or a hidden bundle's own file name (.Aegis-backup-1.app),
+        # is never a display name; the bundle's plist names it instead. With
+        # Spotlight off mdls answers (null) and the plist already wins, so
+        # this keeps the name the same on both kinds of Mac (#1791).
+        if [[ "$md_display_name" == /* || "$md_display_name" == .* ]]; then
             md_display_name=""
         fi
         md_display_name="${md_display_name//|/-}"
@@ -1364,7 +1368,7 @@ _scan_finalize_index() {
                     needs_refresh = 1
                 } else if (cached_language_signature != language_signature) {
                     needs_refresh = 1
-                } else if ((now - cached_updated_epoch) > ttl) {
+                } else if ((now - cached_updated_epoch) > ttl || cached_updated_epoch > now) {
                     needs_refresh = 1
                 }
 
@@ -1978,14 +1982,20 @@ uninstall_list_apps() {
         # printf counts bytes (LC_ALL=C), but CJK chars are 3 bytes yet only
         # 2 display columns wide, so we pad with the extra bytes to land on
         # the correct visual column.
+        # The uninstall name is the app name when no cask owns the app, so it
+        # gets the same treatment: a byte slice would split a CJK character.
         local name_trunc name_display_w name_byte_count name_printf_w
+        local un_trunc un_display_w un_byte_count un_printf_w
         name_trunc=$(truncate_by_display_width "$app_name" 34)
         name_display_w=$(get_display_width "$name_trunc")
+        un_trunc=$(truncate_by_display_width "$uninstall_name" 28)
+        un_display_w=$(get_display_width "$un_trunc")
 
         # Get byte count in C locale for printf
         local old_lc="${LC_ALL:-}"
         export LC_ALL=C
         name_byte_count=${#name_trunc}
+        un_byte_count=${#un_trunc}
         if [[ -n "$old_lc" ]]; then
             export LC_ALL="$old_lc"
         else
@@ -1993,11 +2003,12 @@ uninstall_list_apps() {
         fi
 
         name_printf_w=$((36 + name_byte_count - name_display_w))
+        un_printf_w=$((30 + un_byte_count - un_display_w))
 
-        printf "%-*s %-30s %-30s %8s\n" \
+        printf "%-*s %-30s %-*s %8s\n" \
             "$name_printf_w" "$name_trunc" \
             "${bundle_id:0:28}" \
-            "${uninstall_name:0:28}" \
+            "$un_printf_w" "$un_trunc" \
             "$size_display"
     done
 
@@ -2009,6 +2020,8 @@ uninstall_list_apps() {
 main() {
     # Set current command for operation logging
     export MOLE_CURRENT_COMMAND="uninstall"
+    # Apps that failed across this run's batches; nonzero exits 1.
+    MOLE_UNINSTALL_FAILED_APPS=0
 
     # Default to Trash routing so an accidental uninstall is recoverable.
     # The caller can opt back into rm -rf with --permanent. See #723.
@@ -2122,6 +2135,7 @@ main() {
         # full preview and asks there, after sizing and leftover discovery. A
         # y/N prompt here runs before that scan, so it cannot serve as review.
         batch_uninstall_applications
+        [[ ${MOLE_UNINSTALL_FAILED_APPS:-0} -eq 0 ]] || return 1
         return 0
     fi
 
@@ -2221,6 +2235,8 @@ main() {
                 # selector that broke gets the visible abort below.
                 stop_uninstall_interactive_screen
                 show_cursor
+                # An app that failed earlier in this run still fails the run.
+                [[ ${MOLE_UNINSTALL_FAILED_APPS:-0} -eq 0 ]] || return 1
                 return 0
             fi
             uninstall_abort "application selection did not complete"
@@ -2327,6 +2343,7 @@ main() {
         # is already finished, so exit cleanly instead of touching terminal input.
         if ! mole_tty_is_foreground; then
             show_cursor
+            [[ ${MOLE_UNINSTALL_FAILED_APPS:-0} -eq 0 ]] || return 1
             return 0
         fi
 
@@ -2348,6 +2365,7 @@ main() {
             :
         else
             show_cursor
+            [[ ${MOLE_UNINSTALL_FAILED_APPS:-0} -eq 0 ]] || return 1
             return 0
         fi
 

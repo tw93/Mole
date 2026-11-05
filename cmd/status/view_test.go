@@ -153,6 +153,15 @@ func TestShorten(t *testing.T) {
 		// Edge cases.
 		{"maxLen 1", "hello", 1, "…"},
 		{"maxLen 2", "hello", 2, "h…"},
+
+		// Width is counted in terminal cells, not bytes, and a cut never
+		// splits a multi-byte character.
+		{"curly apostrophe fits", "Kevin’s Mac", 11, "Kevin’s Mac"},
+		{"cut after curly apostrophe", "Kevin’s MacBook Pro", 9, "Kevin’s …"},
+		{"cut inside multi-byte rune", "Kevin’s Mac", 6, "Kevin…"},
+		{"accented name fits", "Café Helper", 11, "Café Helper"},
+		{"wide characters fit", "카카오톡", 8, "카카오톡"},
+		{"wide characters cut", "카카오톡 Helper", 7, "카카오…"},
 	}
 
 	for _, tt := range tests {
@@ -1810,8 +1819,8 @@ func TestModelViewPadsToTerminalHeight(t *testing.T) {
 
 			view := m.View()
 			got := lipgloss.Height(view)
-			if got < tt.height {
-				t.Errorf("View() height = %d, want >= %d (terminal height)", got, tt.height)
+			if tt.height > 0 && got != tt.height {
+				t.Errorf("View() height = %d, want %d (terminal height)", got, tt.height)
 			}
 		})
 	}
@@ -1863,7 +1872,7 @@ func TestBatteryCardUnknownCapacityPreservesCycles(t *testing.T) {
 		{"capacity unavailable", 0, 100, "100 cycles"},
 		{"known healthy capacity", 98, 100, "Healthy"},
 		{"known worn capacity", 20, 50, "Service Soon"},
-		{"known cycle warning", 0, 950, "Service Soon"},
+		{"known cycle warning", 0, 1001, "Fair"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			card := renderBatteryCard([]BatteryStatus{{Percent: 50, Capacity: tc.capacity, CycleCount: tc.cycles, Status: "Discharging"}}, ThermalStatus{}, true)
