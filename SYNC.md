@@ -148,6 +148,16 @@ Implemented in source (Mole CLI (macOS), `main`, `a08c6885`, tw93/Mole#1916): Sy
 - Mole CLI (Windows): Not applicable. Windows has no APFS snapshots; Volume Shadow Copies are a different mechanism and are not in scope.
 - Mole for Windows: Not applicable, for the same reason.
 
+## 2026-11-05 Caches/Google left to its own rows
+
+Source: a 2026-10-28 support bundle from a Mac with only Mole CLI (macOS) 1.64.0: `~/Library/Caches/Google` failed on seven clean runs while Chrome and Google Drive ran. The generic "User app cache" sweep took the whole folder, Chrome's live HTTP cache included, past the Chrome row that waits for Chrome to quit.
+
+Implemented in source (Mole CLI (macOS), `main`, `d2341ba9`): the sweep skips `Caches/Google`; `clean_browsers` cleans `Caches/Google/Chrome` after Chrome quits and Android Studio keeps its own row. Locked by `clean_user_essentials leaves Caches/Google to the Chrome and Android Studio rows`, red on the old code. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Already implemented (`coveredCachePrefixes` lists `Google`, so the generic scan never offers the folder).
+- Mole CLI (Windows): Not applicable (macOS path).
+- Mole for Windows: Not applicable (macOS path).
+
 ## 2026-11-05 Stored timestamps in the future
 
 Source: Mole Mac fixed a freshness window that read a stamp from the future (the system clock was set back) as fresh, so a stale answer lasted until the clock caught up. The rule is `0 <= age < window`: a negative age reads as expired.
