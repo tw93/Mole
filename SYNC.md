@@ -154,4 +154,4 @@ Implemented in source (Mole CLI (macOS), `main`): the temp-root prune stamp (`pr
 
 - Mole Mac: Implemented there first (2026-11-05).
 - Mole CLI (Windows): Implemented in source for the installed-app inventory cache (`SYNC.md` on `windows`); its update-notice state was already guarded.
-- Mole for Windows: Pending, not checked in this pass. Next check: grep its stored-timestamp comparisons (cache, throttle and update-check windows) for a bare `<` against an age.
+- Mole for Windows: Implemented there in the same pass (2026-11-05), through one shared window helper and a source gate.
