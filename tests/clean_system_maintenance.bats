@@ -798,6 +798,27 @@ EOF
     [[ -z "$output" ]]
 }
 
+@test "brew_cleanup_ran_recently treats a stamp from the future as expired" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+stamp="$HOME/brew-stamp"
+date +%s > "$stamp"
+brew_cleanup_ran_recently "$stamp" || { echo "recent stamp ignored"; exit 1; }
+echo $(( $(date +%s) + 2 * 86400 )) > "$stamp"
+if brew_cleanup_ran_recently "$stamp"; then
+    echo "future stamp counted as recent"
+    exit 1
+fi
+echo "brew-clock ok"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"brew-clock ok"* ]]
+}
+
 @test "clean_homebrew runs cleanup with timeout stubs" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

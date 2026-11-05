@@ -145,3 +145,13 @@ Implemented in source (Mole CLI (macOS), `main`, `a08c6885`, tw93/Mole#1916): Sy
 - Mole Mac: Pending. `PurgeableSpaceManager.snapshotCount` (`MoleApp/Sources/Services/System/PurgeableSpaceManager.swift`, read at `d9d4f4dde`) counts only `com.apple.TimeMachine` lines, and its row removes snapshots with `tmutil deletelocalsnapshots /`, which must not reach a backup app's snapshot. Next check: decide whether Mole Mac shows a separate report-only row for non-Apple names, kept apart from the Time Machine delete path.
 - Mole CLI (Windows): Not applicable. Windows has no APFS snapshots; Volume Shadow Copies are a different mechanism and are not in scope.
 - Mole for Windows: Not applicable, for the same reason.
+
+## 2026-11-05 Stored timestamps in the future
+
+Source: Mole Mac fixed a freshness window that read a stamp from the future (the system clock was set back) as fresh, so a stale answer lasted until the clock caught up. The rule is `0 <= age < window`: a negative age reads as expired.
+
+Implemented in source (Mole CLI (macOS), `main`): the temp-root prune stamp (`prune_stale_mole_tmpdir_leftovers` used `find -mmin -N`, which matches a future mtime, so the daily pass was skipped), the Homebrew cleanup throttle (`brew_cleanup_ran_recently`), the pkgutil receipt cache (`lib/core/pkg_receipts.sh`), the uninstall metadata refresh TTL (the awk in `bin/uninstall.sh:_scan_finalize_index`) and the Analyze overview and scan caches (`cmd/analyze/cache.go`, through `stampWithin`) now treat a negative age as expired. Already guarded and unchanged: `check_for_updates` (`now >= checked`), the installed-apps cache in `lib/clean/apps.sh` (`age -ge 0`), the Status collector timers (in-process `time.Now()` values carry a monotonic reading). Age checks that decide whether to delete or list an old item keep a future-dated one, the safe direction, and are unchanged; so is the uninstall metadata lock, because stealing a live lock after a small clock step back is worse than waiting out its four-second retry. Bats cases in `tests/user_file_ops.bats`, `tests/clean_system_maintenance.bats` and `tests/uninstall_scan_bash32.bats` and Go cases in `cmd/analyze/cache_clock_test.go` fail on the previous code. Not released until the next tagged version ships it.
+
+- Mole Mac: Implemented there first (2026-11-05).
+- Mole CLI (Windows): Implemented in source for the installed-app inventory cache (`SYNC.md` on `windows`); its update-notice state was already guarded.
+- Mole for Windows: Pending, not checked in this pass. Next check: grep its stored-timestamp comparisons (cache, throttle and update-check windows) for a bare `<` against an age.

@@ -1394,10 +1394,19 @@ prune_stale_mole_tmpdir_leftovers() {
         # it. Listing this root is the cost: about half a second per listing
         # on a long-lived Mac (126,196 entries on 2026-10-31), paid by every
         # mo command before its first line, four listings per run before this.
+        # A stamp from the future (the clock was set back) is expired, not
+        # fresh, so the age must be 0 <= age < window.
         local stamp="mole.prune-stamp"
-        if [[ -f "$stamp" && ! -L "$stamp" ]] &&
-            [[ -n "$(find "$stamp" -maxdepth 0 -mmin "-$max_age_minutes" -print 2> /dev/null)" ]]; then
-            exit 0
+        if [[ -f "$stamp" && ! -L "$stamp" ]]; then
+            local stamp_mtime stamp_now stamp_age
+            stamp_mtime=$(get_file_mtime "$stamp")
+            stamp_now=$(get_epoch_seconds)
+            if [[ "$stamp_mtime" =~ ^[0-9]+$ && "$stamp_now" =~ ^[0-9]+$ && $stamp_mtime -gt 0 && $stamp_now -gt 0 ]]; then
+                stamp_age=$((stamp_now - stamp_mtime))
+                if [[ $stamp_age -ge 0 && $stamp_age -lt $((max_age_minutes * 60)) ]]; then
+                    exit 0
+                fi
+            fi
         fi
 
         # One listing of the root that also answers every attribute question,

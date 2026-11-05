@@ -309,6 +309,31 @@ EOF
     [[ "$output" == *"daily ok"* ]]
 }
 
+@test "Darwin temp root prune lists again when its stamp is from the future" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+
+darwin_root="$HOME/clock-darwin-temp"
+mkdir -p "$darwin_root"
+_mole_darwin_user_temp_dir() { printf '%s/\n' "$darwin_root"; }
+
+touch "$darwin_root/mole.prune-stamp"
+touch "$darwin_root/mole.Stale3"
+touch -t 202001010101 "$darwin_root/mole.Stale3"
+prune_stale_mole_tmpdir_leftovers "$darwin_root"
+[[ -e "$darwin_root/mole.Stale3" ]] || { echo "recent stamp listed again"; exit 1; }
+
+touch -t "$(date -v+2d +%Y%m%d%H%M)" "$darwin_root/mole.prune-stamp"
+prune_stale_mole_tmpdir_leftovers "$darwin_root"
+[[ ! -e "$darwin_root/mole.Stale3" ]] || { echo "future stamp skipped the pass"; exit 1; }
+echo "prune-clock ok"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"prune-clock ok"* ]]
+}
+
 @test "Darwin temp root prune clears a backlog larger than one argument list" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

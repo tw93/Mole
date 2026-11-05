@@ -106,7 +106,8 @@ brew_cleanup_ran_recently() {
     current_time=$(get_epoch_seconds)
     local time_diff=$((current_time - last_cleanup))
     local days_diff=$((time_diff / 86400))
-    [[ $days_diff -lt $cache_valid_days ]] || return 1
+    # A stamp from the future (clock set back) is expired, not recent.
+    [[ $time_diff -ge 0 && $days_diff -lt $cache_valid_days ]] || return 1
     local cleaned_when="cleaned ${days_diff}d ago"
     [[ $days_diff -eq 0 ]] && cleaned_when="cleaned today"
     debug_log "Homebrew cleanup skipped: ${cleaned_when}"

@@ -77,6 +77,7 @@ pkg_receipt_nonstandard_app_paths() {
         fi
         if [[ "$cache_ttl" =~ ^[0-9]+$ && "$cache_mtime" =~ ^[0-9]+$ &&
             "$now_epoch" =~ ^[0-9]+$ && $cache_ttl -gt 0 &&
+            $((now_epoch - cache_mtime)) -ge 0 &&
             $((now_epoch - cache_mtime)) -lt $cache_ttl ]]; then
             local cache_header=""
             IFS= read -r cache_header < "$cache_file" || cache_header=""

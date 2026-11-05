@@ -1368,7 +1368,7 @@ _scan_finalize_index() {
                     needs_refresh = 1
                 } else if (cached_language_signature != language_signature) {
                     needs_refresh = 1
-                } else if ((now - cached_updated_epoch) > ttl) {
+                } else if ((now - cached_updated_epoch) > ttl || cached_updated_epoch > now) {
                     needs_refresh = 1
                 }
 
