@@ -699,6 +699,18 @@ Describe "Scanning installed apps" {
         finally { $script:AppCacheFile = $savedCache }
     }
 
+    It 'Reuses an inventory cache written <Hours> hours from now only when it is not in the future' -TestCases @(
+        @{ Hours = -1; Expected = 1 }
+        @{ Hours = 1; Expected = 0 }
+    ) {
+        param($Hours, $Expected)
+        New-Item -ItemType Directory -Path $script:CacheDir -Force | Out-Null
+        @([pscustomobject]@{Name='Cached app';Source='Registry'}) |
+            ConvertTo-Json | Set-Content -LiteralPath $script:AppCacheFile -Encoding UTF8
+        [IO.File]::SetLastWriteTime($script:AppCacheFile, (Get-Date).AddHours($Hours))
+        @(Get-InstalledApplications -Quiet).Count | Should -Be $Expected
+    }
+
     It 'Preserves distinct registered identities when <ProtectedCount> installs contain saves' -TestCases @(@{ProtectedCount=1},@{ProtectedCount=2}) {
         param($ProtectedCount)
         $first = New-TestFolder "Identity $ProtectedCount A"

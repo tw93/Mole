@@ -856,7 +856,8 @@ function Get-InstalledApplications {
         $cacheInfo = Get-Item $script:AppCacheFile
         $cacheAge = (Get-Date) - $cacheInfo.LastWriteTime
 
-        if ($cacheAge.TotalHours -lt $script:CacheTTLHours) {
+        # A cache stamped in the future (the clock was set back) is expired, not fresh.
+        if ($cacheAge.TotalHours -ge 0 -and $cacheAge.TotalHours -lt $script:CacheTTLHours) {
             Write-Debug "Loading from cache..."
             try {
                 $cached = [System.IO.File]::ReadAllText($script:AppCacheFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json

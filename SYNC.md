@@ -94,6 +94,16 @@ Mole Mac rows still naming this branch as Pending, checked against `6d8cef1c` th
 - Analyze auto-drill counts files: Not applicable, `cmd/analyze` never skips through a single-child folder.
 - What's New card and Updated pill: Not applicable, no chrome to carry a pill; whether `mo update` should print the installed version's notes is a separate product decision, not a port.
 
+## 2026-11-05 Stored timestamps in the future
+
+Source: Mole Mac fixed a freshness window that read a stamp from the future (the system clock was set back) as fresh, so a stale answer lasted until the clock caught up. The rule is `0 <= age < window`: a negative age reads as expired.
+
+Implemented in source (Mole CLI (Windows), `windows`): the installed-app inventory cache in `bin/uninstall.ps1:Get-InstalledApplications` compared `(Get-Date) - LastWriteTime` with `-lt $script:CacheTTLHours` only, so a cache file stamped in the future was reused for as long as the clock stayed behind; it now rescans. Pester case `Reuses an inventory cache written <Hours> hours from now only when it is not in the future` in `tests/Uninstall.Tests.ps1`. The update-notice state in `lib/core/update_check.ps1` already rejects a negative age in `Read-MoleUpdateState`, and every Go timer in `cmd/status` compares in-process `time.Now()` values, which carry a monotonic reading. Age checks that delete or list old files (`LastWriteTime -lt` a cutoff) keep a future-dated item, the safe direction, and are unchanged. Not released until the next tagged version ships it. The Pester case was written on a machine without PowerShell and has not run; CI `Validation` is its first run.
+
+- Mole CLI (macOS): Implemented in the same pass for its cache and throttle windows (`SYNC.md` on `main`).
+- Mole Mac: Implemented there first (2026-11-05).
+- Mole for Windows: Pending, not checked in this pass. Next check: grep its stored-timestamp comparisons (cache, throttle and update-check windows) for a bare `<` against an age.
+
 ## CLI adaptation queue
 
 | ID | Topic | Status | Source, destination and next check |
