@@ -5694,6 +5694,58 @@ clean_antigravity_caches() {
     # conversation checkpoints and prompt history (AI chat state, not temp).
 }
 
+t3code_desktop_process_state() {
+    mole_pgrep_any -f "/T3 Code[^/]*[.]app/"
+}
+
+# T3 Code embeds a browser for previews, one Chromium partition per browser profile.
+# Measured on T3 Code 0.1.6: these leaves held 120 MiB in the current profile
+# and 937 MiB in the Alpha profile that earlier builds left behind. Cookies,
+# Local Storage, IndexedDB, Service Worker data and every other sibling can hold
+# sign-ins or site state, and ~/.t3 holds thread history and credentials, so all
+# of them are deliberate non-targets. The app's own profile cache stays too.
+clean_t3code_desktop_caches() {
+    local support_root="$HOME/Library/Application Support"
+    local -a profiles=(
+        "$support_root/t3code-v2"
+        "$support_root/T3 Code (Alpha)"
+    )
+    local -a leaves=("Cache" "Code Cache")
+    local -a targets=()
+    local profile partition leaf physical_leaf
+    for profile in "${profiles[@]}"; do
+        [[ -d "$profile/Partitions" ]] || continue
+        for partition in "$profile/Partitions"/t3code-preview-*; do
+            for leaf in "${leaves[@]}"; do
+                physical_leaf=""
+                if physical_leaf=$(codex_staging_physical_path "$partition/$leaf" "$profile" any); then
+                    if mole_cleanup_targets_exist "$physical_leaf"/*; then
+                        targets+=("$physical_leaf"/*)
+                    fi
+                else
+                    debug_log "T3 Code cache leaf skipped: $partition/$leaf"
+                fi
+            done
+        done
+    done
+    [[ ${#targets[@]} -gt 0 ]] || return 0
+
+    local process_state=0
+    t3code_desktop_process_state || process_state=$?
+    if [[ $process_state -ne 1 ]]; then
+        if [[ $process_state -eq 2 ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} T3 Code caches · skipped (process state unknown)"
+            note_activity
+        else
+            mole_defer_cleanup_family "T3 Code"
+        fi
+        return 0
+    fi
+
+    _dev_safe_clean_process_guarded t3code_desktop_process_state "T3 Code" \
+        "T3 Code caches" "${targets[@]}" "T3 Code caches" || return 0
+}
+
 clean_chrome_devtools_mcp_caches() {
     local mcp_profile="$HOME/.cache/chrome-devtools-mcp/chrome-profile"
     [[ -d "$mcp_profile" ]] || return 0
@@ -5987,6 +6039,8 @@ clean_dev_misc() {
     # Codex Chromium runtime caches are separate from its protected Application
     # Support profile and are restricted to measured fixed leaves.
     clean_codex_desktop_caches
+    # T3 Code preview browser caches; its data directory is never a target.
+    clean_t3code_desktop_caches
     # Codex Desktop runtimes contain active Node/Python dependencies.
     clean_codex_runtimes
     # Sparkle uses random first-level directories for each update installation.

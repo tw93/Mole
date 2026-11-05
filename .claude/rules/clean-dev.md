@@ -21,6 +21,7 @@ General clean target policy, including the owner-command rule, is in `.claude/ru
 - `clean_dev_jetbrains_toolbox` only strips whitelist patterns that start at its own apps root, so the broader JetBrains data row and the default `Application Support/JetBrains*` pattern still hide old Toolbox IDE versions; `JetBrains data row hides old Toolbox IDE versions from cleanup` in `tests/manage_whitelist.bats` pins the row case, so change that test together with the bypass if the bypass is widened.
 - The Gradle candidate listing puts the small groups before the build cache, which can hold thousands of entries: whitelisted entries are settled before the roughly 10 ms `should_protect_path` probe, and an exhausted filtering budget keeps only the build cache group.
 - Keep AI-tool cache cleanup conservative. Claude Code, opencode, Copilot CLI, Zed, Warp, Ghostty, and similar developer tools may have active versions, config, credentials, or session state that must not be removed accidentally.
+- `clean_t3code_desktop_caches` takes only `Cache` and `Code Cache` under `Partitions/t3code-preview-*` of the `t3code-v2` and `T3 Code (Alpha)` profiles, while no T3 Code app runs. `should_protect_path` does not cover these profiles, so that exact list is the whole boundary: sign-ins, IndexedDB and Service Worker data stay, and `~/.t3` is never a target (its worktrees are `mo purge` scope). Locked by the `clean_t3code_desktop_caches` cases in `tests/clean_ai_cli_caches.bats`.
 
 ## Recovery contracts
 
