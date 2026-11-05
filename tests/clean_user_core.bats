@@ -306,6 +306,43 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_user_essentials leaves Caches/Google to the Chrome and Android Studio rows" {
+    # Swept whole, the folder took Chrome's live cache while Chrome ran and
+    # failed every run (2026-10-28 diagnose bundle).
+    local test_home="$HOME/google-vendor-home"
+    mkdir -p \
+        "$test_home/Library/Caches/Google/Chrome/Default/Cache" \
+        "$test_home/Library/Caches/ordinary-app/junk"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+safe_clean_guarded() {
+    shift
+    safe_clean "$@"
+}
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/Google"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/ordinary-app"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials keeps Google identity and Clearcut state (#1607)" {
     # The generic cache sweep reaches these dotless names. Drive the real
     # safe_clean_guarded path so should_protect_path at bin/clean.sh:1002
