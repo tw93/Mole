@@ -247,18 +247,23 @@ function /usr/bin/plutil { echo com.apple.mDNSResponder; }
 trace="$HOME/dns-signal-refused.trace"
 sudo() {
     printf '%s\n' "$*" >> "$trace"
-    [[ "$1" == dscacheutil ]]
+    [[ "$1" == dscacheutil ]] && return 0
+    [[ -n "$launchctl_error" ]] && echo "$launchctl_error" >&2
+    return 1
 }
-result=0
-flush_dns_cache || result=$?
-[[ "$result" == 1 ]] || exit 1
 expected=$(printf 'dscacheutil -flushcache\n/bin/launchctl kill SIGHUP system/com.apple.mDNSResponder')
-[[ "$(cat "$trace")" == "$expected" ]] || exit 1
+for launchctl_error in '' 'Could not find service "com.apple.mDNSResponder" in domain for system'; do
+    : > "$trace"
+    result=0
+    flush_dns_cache || result=$?
+    [[ "$result" == 1 ]] || exit 1
+    [[ "$(cat "$trace")" == "$expected" ]] || exit 2
+done
 EOF
 	[[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
 }
 
-@test "DNS refresh reports a macOS-refused service signal as skipped without a name fallback" {
+@test "DNS refresh retries a macOS-refused service signal only as the mDNSResponder account" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_ASSUME_VPN_ACTIVE=0 MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -266,18 +271,23 @@ source "$PROJECT_ROOT/lib/optimize/tasks.sh"
 optimize_sudo_available() { return 0; }
 function /usr/bin/plutil { echo com.apple.mDNSResponder.reloaded; }
 trace="$HOME/dns-signal-eperm.trace"
-: > "$trace"
 sudo() {
     printf '%s\n' "$*" >> "$trace"
-    [[ "$1" == dscacheutil ]] && return 0
-    echo "Not privileged to signal service." >&2
-    return 1
+    case "$1" in
+        dscacheutil) return 0 ;;
+        /bin/launchctl) echo "Not privileged to signal service." >&2; return 1 ;;
+        *) return "$fallback_status" ;;
+    esac
 }
-result=0
-flush_dns_cache || result=$?
-[[ "$result" == 4 ]] || exit 1
-expected=$(printf 'dscacheutil -flushcache\n/bin/launchctl kill SIGHUP system/com.apple.mDNSResponder.reloaded')
-[[ "$(cat "$trace")" == "$expected" ]] || exit 2
+expected=$(printf 'dscacheutil -flushcache\n/bin/launchctl kill SIGHUP system/com.apple.mDNSResponder.reloaded\n-u _mdnsresponder /usr/bin/killall -u _mdnsresponder -HUP mDNSResponder')
+for case_spec in 0:0 1:4; do
+    fallback_status=${case_spec%%:*}
+    : > "$trace"
+    result=0
+    flush_dns_cache || result=$?
+    [[ "$result" == "${case_spec##*:}" ]] || exit 1
+    [[ "$(cat "$trace")" == "$expected" ]] || exit 2
+done
 flush_dns_cache() { return 4; }
 execute_optimization network_optimization
 [[ "$(optimize_outcome_count skipped)" == 1 ]] || exit 3

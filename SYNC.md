@@ -15,6 +15,8 @@ Scoped follow-up on 2026-10-18: Mole CLI (macOS) `8f2671cd` adapts the scan-requ
 
 Released (V1.63.0): `lib/optimize/tasks.sh` refreshes NotificationCenter through its current-user launchd service and mDNSResponder through the allowlisted label in its fixed system plist. Neither operation falls back to matching a process name. The two-CLI queue remains owned by the Windows branch record; its Optimize has no corresponding host restart. The private app-owned record tracks the app comparison separately. Old-source refusal/target tests fail as expected, all 141 targeted Optimize tests and the complete local check/test workflows pass. The public V1.63.0 source and isolated script update were verified on 2026-10-24; no live system-service restart was performed.
 
+Follow-up on 2026-11-05 (#1867): when macOS 27 refuses the launchd signal, Mole CLI (macOS) retries once as the `_mdnsresponder` account with `killall -u _mdnsresponder`. Mole Mac, Mole for Windows and Mole CLI (Windows) have no DNS cache refresh: Not applicable.
+
 ## 2026-10-25 Existing CLI capability follow-up
 
 Frozen sources: Mole CLI (macOS) `ba96efe8` on `main`, Mole CLI (Windows) `973c6e1d` on `windows`; both matched their tracking refs after fetch. App-owned comparisons retain their private source and test receipts. This batch changes existing cleanup, uninstall, optimization and status behavior, with no new command, flag, setting or background service. The two-CLI queue remains owned by the Windows branch record. Implementation commits are `797a484c` (uninstall) and `52c5a7fa` (cleanup/purge). `scripts/test.sh` reports all tests passed, `scripts/check.sh --no-format` passes, and the Go tests and `make build` pass.
