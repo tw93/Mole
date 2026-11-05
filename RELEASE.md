@@ -73,3 +73,7 @@ Then check:
 ## 5. Package managers
 
 Render and submit the winget and Scoop manifests as described in `packaging/README.md`.
+
+## 6. Antivirus check
+
+A day or two after publishing, look up the SHA-256 of every executable the release ships (`mo.exe` from the zip, `analyze.exe` and `status.exe`) on VirusTotal at `https://www.virustotal.com/gui/file/<sha256>`. Look up by hash only and never upload the files. A hash VirusTotal has not seen yet is unknown, not clean, so look again within a week. When any engine flags a file, submit a false-positive report to that vendor (Kaspersky: a reanalysis request on opentip.kaspersky.com, signed in with a Kaspersky Account), and keep the user's issue open until a rescan shows the detection gone. Kaspersky flagged `analyze.exe` as `Trojan-PSW.Win32.Greedy` from 1.40.0 to 1.42.0 until such a report cleared it (#1919, 2026-11-04). Apply for Kaspersky's vendor allowlist only if detections come back on a later release.
