@@ -1558,6 +1558,69 @@ EOF
     [[ "$output" == *"Orphaned services · "*" found dry"* ]]
 }
 
+@test "clean_orphaned_system_services never takes a brew services job under either label" {
+    # Homebrew 7 writes sh.brew.<formula>; older services keep homebrew.mxcl.<formula>.
+    # A job whose program is gone is still brew's to manage, never Mole's orphan.
+    mole_test_fake_command mdfind
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true MOLE_DRY_RUN=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { echo "DBG $*"; }
+
+tmp_dir="$(mktemp -d)"
+write_plist() {
+  cat > "$tmp_dir/$1.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$1</string>
+    <key>Program</key>
+    <string>$tmp_dir/missing-binary</string>
+</dict>
+</plist>
+PLIST
+}
+write_plist com.sogou.test
+write_plist sh.brew.redis
+write_plist homebrew.mxcl.postgresql
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  [[ "${1:-}" == "-n" ]] && shift
+  if [[ "$1" == "find" ]]; then
+    printf '%s\0' "$tmp_dir/com.sogou.test.plist" "$tmp_dir/sh.brew.redis.plist" "$tmp_dir/homebrew.mxcl.postgresql.plist"
+    return 0
+  fi
+  if [[ "$1" == "du" ]]; then
+    echo "4 ${*: -1}"
+    return 0
+  fi
+  if [[ "$1" == "launchctl" || "$1" == "rm" ]]; then
+    echo "$1-called"
+    return 0
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ]
+    # Positive control: the real orphan beside them is still offered.
+    [[ "$output" != *"Would remove orphaned service: "*"/sh.brew.redis.plist"* ]] || return 1
+    [[ "$output" != *"Would remove orphaned service: "*"/homebrew.mxcl.postgresql.plist"* ]] || return 1
+    [[ "$output" == *"Would remove orphaned service: "*"/com.sogou.test.plist"* ]]
+}
+
 @test "clean_orphaned_system_services reports an authorization timeout" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
         DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'

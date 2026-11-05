@@ -1062,8 +1062,10 @@ clean_orphaned_system_services() {
         # Microsoft AutoUpdate serves Edge, Teams, OneDrive and Defender too,
         # and lives outside every app root, so no installed app proves it.
         "com.microsoft.autoupdate.helper:"
-        # Homebrew-managed services (managed by brew services, not .app bundles)
+        # Homebrew-managed services (managed by brew services, not .app bundles);
+        # current Homebrew labels them sh.brew.<formula>, older ones homebrew.mxcl.<formula>
         "homebrew.mxcl.*:"
+        "sh.brew.*:"
     )
 
     # Returns 0 (found/protected) when any app backing a system service is installed.
