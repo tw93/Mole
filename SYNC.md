@@ -102,7 +102,7 @@ Implemented in source (Mole CLI (Windows), `windows`): the installed-app invento
 
 - Mole CLI (macOS): Implemented in the same pass for its cache and throttle windows (`SYNC.md` on `main`).
 - Mole Mac: Implemented there first (2026-11-05).
-- Mole for Windows: Pending, not checked in this pass. Next check: grep its stored-timestamp comparisons (cache, throttle and update-check windows) for a bare `<` against an age.
+- Mole for Windows: Implemented there in the same pass (2026-11-05), through one shared window helper and a source gate.
 
 ## CLI adaptation queue
 
