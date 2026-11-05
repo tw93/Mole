@@ -742,6 +742,29 @@ EOF
 	[ "$status" -eq 0 ]
 }
 
+@test "discover_project_dirs includes the T3 Code worktree container" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+mkdir -p "$HOME/.t3/worktrees/project/checkout/node_modules"
+discover_project_dirs | grep -q "^$HOME/.t3/worktrees$"
+EOF
+
+	[ "$status" -eq 0 ]
+}
+
+@test "T3 Code worktree discovery leaves the rest of its data directory out of scope" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+mkdir -p "$HOME/.t3/worktrees/project/checkout" "$HOME/.t3/userdata" "$HOME/.t3/scratch"
+discover_project_dirs | grep "/.t3" || true
+EOF
+
+	[ "$status" -eq 0 ]
+	[ "$output" = "$HOME/.t3/worktrees" ] || return 1
+}
+
 @test "discover_project_dirs still ignores unlisted dot directories" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" bash --noprofile --norc << 'EOF'
 set -euo pipefail

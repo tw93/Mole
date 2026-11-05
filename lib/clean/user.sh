@@ -3055,8 +3055,8 @@ jetbrains_stale_version_dirs() {
         '
 }
 
-# List every agent worktree container once, NUL-separated: the Codex app's
-# fixed container first, then each `.claude/worktrees` under the project roots.
+# List every agent worktree container once, NUL-separated: the fixed Codex and
+# T3 Code containers first, then each `.claude/worktrees` under the project roots.
 agent_worktree_containers() {
     local -a roots=(
         "$HOME/code" "$HOME/Code" "$HOME/dev" "$HOME/Projects"
@@ -3064,12 +3064,13 @@ agent_worktree_containers() {
         "$HOME/Development" "$HOME/www" "$HOME/src"
     )
     local container
-    # The Codex app keeps every worktree under one fixed container outside
-    # any project root, so the find below never reaches it.
-    container="$HOME/.codex/worktrees"
-    if [[ -d "$container" && ! -L "$container" ]]; then
-        printf '%s\0' "$container"
-    fi
+    # The Codex and T3 Code apps keep every worktree under one fixed container
+    # outside any project root, so the find below never reaches them.
+    for container in "$HOME/.codex/worktrees" "$HOME/.t3/worktrees"; do
+        if [[ -d "$container" && ! -L "$container" ]]; then
+            printf '%s\0' "$container"
+        fi
+    done
 
     # ~/code and ~/Code are one directory on case-insensitive APFS, and a root
     # may be a symlink to another. Scan each physical root once, or every
@@ -3105,7 +3106,8 @@ agent_worktree_containers() {
 }
 
 # AI coding agents create full checkouts that accumulate silently: Claude Code
-# under <project>/.claude/worktrees/, the Codex app under ~/.codex/worktrees/.
+# under <project>/.claude/worktrees/, the Codex app under ~/.codex/worktrees/,
+# T3 Code under ~/.t3/worktrees/.
 # Report only, same 1GB bar as other large candidates; removal stays a manual
 # `git worktree remove` decision because a worktree may hold agent work.
 # $1 may name a container listing that Large files started ahead of time.
@@ -3131,11 +3133,12 @@ report_agent_worktree_candidates() {
         # printing over it glues the row onto the spinner frame.
         stop_section_spinner
         # The linked label no longer shows the path, so name whose they are:
-        # the project for <project>/.claude/worktrees, Codex for ~/.codex.
+        # the project for <project>/.claude/worktrees, else the owning app.
         local owner="${container%/*}"
         owner="${owner%/*}"
         owner="${owner##*/}"
         [[ "$container" == */.codex/worktrees ]] && owner="Codex"
+        [[ "$container" == */.t3/worktrees ]] && owner="T3 Code"
         mole_review_row "AI agent worktrees" "$container" "$(bytes_to_human "$((size_kb * 1024))")" "$owner"
         note_activity
         start_section_spinner "Scanning large files..."
