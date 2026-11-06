@@ -752,3 +752,78 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *CLEAN* ]] || { echo "$output"; return 1; }
 }
+
+# Sources timeout.sh with only the fake directory ahead of the system paths and
+# prints the backend it picked, then the status of a one-second timeout.
+_probe_timeout_backend() {
+    local fake_dir="$1"
+    # shellcheck disable=SC2016 # The child shell expands its own positional parameters.
+    run /bin/bash -c '
+        set -euo pipefail
+        unset MO_TIMEOUT_INITIALIZED MO_TIMEOUT_BIN MO_TIMEOUT_PERL_BIN
+        export PATH="$2:/usr/bin:/bin"
+        source "$1/lib/core/timeout.sh"
+        printf "bin=%s\n" "$MO_TIMEOUT_BIN"
+        rc=0
+        run_with_timeout 1 /bin/sleep 5 || rc=$?
+        printf "rc=%s\n" "$rc"
+    ' bash "${BATS_TEST_DIRNAME}/.." "$fake_dir" < /dev/null
+}
+
+@test "timeout.sh skips a PATH timeout shim that reports its deadline as 143" {
+    local fake_dir="$BATS_TEST_TMPDIR/fake-timeout-143"
+    mkdir -p "$fake_dir"
+    # Kills the command on its deadline and exits with the child's status, as
+    # a hand-written shim does, instead of the 124 every caller relies on.
+    cat > "$fake_dir/timeout" << 'SHIM'
+#!/bin/bash
+shift
+"$@" &
+pid=$!
+(/bin/sleep 0.2; kill -TERM "$pid" 2> /dev/null) &
+wait "$pid"
+exit $?
+SHIM
+    chmod +x "$fake_dir/timeout"
+
+    _probe_timeout_backend "$fake_dir"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"bin=$fake_dir/timeout"* ]] || return 1
+    [[ "$output" == *"rc=124"* ]]
+}
+
+@test "timeout.sh skips a PATH timeout shim that rejects fractional durations" {
+    local fake_dir="$BATS_TEST_TMPDIR/fake-timeout-125"
+    mkdir -p "$fake_dir"
+    cat > "$fake_dir/timeout" << 'SHIM'
+#!/bin/bash
+[[ "$1" =~ ^[0-9]+$ ]] || exit 125
+exec /usr/bin/perl -e 'alarm shift; exec @ARGV' "$@"
+SHIM
+    chmod +x "$fake_dir/timeout"
+
+    _probe_timeout_backend "$fake_dir"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"bin=$fake_dir/timeout"* ]] || return 1
+    [[ "$output" == *"rc=124"* ]]
+}
+
+@test "timeout.sh keeps a PATH timeout that reports its deadline as 124" {
+    local fake_dir="$BATS_TEST_TMPDIR/fake-timeout-124"
+    mkdir -p "$fake_dir"
+    cat > "$fake_dir/timeout" << 'SHIM'
+#!/bin/bash
+shift
+"$@" &
+pid=$!
+(/bin/sleep 0.2; kill -TERM "$pid" 2> /dev/null) &
+wait "$pid" && exit 0
+exit 124
+SHIM
+    chmod +x "$fake_dir/timeout"
+
+    _probe_timeout_backend "$fake_dir"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"bin=$fake_dir/timeout"* ]] || return 1
+    [[ "$output" == *"rc=124"* ]]
+}
