@@ -70,6 +70,25 @@ mole_identity_in_list() {
     return 1
 }
 
+# Every docker command talks to the endpoint the current context or
+# DOCKER_HOST names, which can be a remote engine over TCP or SSH. Mole reports
+# and prunes this Mac only, so each Docker query asks first; `docker context
+# inspect` reads local configuration and never dials the engine (#1922).
+# Returns 0 for a local unix socket, 1 for docker missing or any other
+# endpoint, 2 when the answer is unknown, and a signal status unchanged.
+mole_docker_endpoint_is_local() {
+    command -v docker > /dev/null 2>&1 || return 1
+    local host="" rc=0
+    host=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker context inspect --format '{{.Endpoints.docker.Host}}' 2> /dev/null) || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        mole_rc_signal "$rc" && return "$rc"
+        return 2
+    fi
+    [[ -n "$host" && "$host" != *$'\n'* ]] || return 2
+    [[ "$host" == unix:///* ]] && return 0
+    return 1
+}
+
 # True when a launcher entry provably belongs to a REMOVED Homebrew keg: a
 # dangling symlink into Cellar/mole, or a regular file whose brew-written
 # SCRIPT_DIR line names a Cellar/mole path that no longer exists (the #1488

@@ -3181,19 +3181,25 @@ report_agent_worktree_candidates() {
     return "$rc"
 }
 
-# One `docker system df` row for the Large files Docker line. Docker's
-# Reclaimable is swapped for the active/total count when it contradicts the
-# row's own counts: something reclaimable while every item is in use, or all
-# images reclaimable while a container still uses one. Engine 29.0 through
-# 29.3 reports in-use images as reclaimable (moby/moby#51775), and older
-# clients count shared layers of in-use images the same way. Rows whose
-# counts do not parse keep Docker's text.
+# One `docker system df` row for the Large files Docker line, as
+# "Images 931.5MB, 859.1MB reclaimable". Types and reclaimable figures below
+# 1MB are left out. Docker's Reclaimable is swapped for
+# the active/total count when it contradicts the row's own counts: something
+# reclaimable while every item is in use, or all images reclaimable while a
+# container still uses one. Engine 29.0 through 29.3 reports in-use images as
+# reclaimable (moby/moby#51775), and older clients count shared layers of
+# in-use images the same way. Rows whose counts do not parse keep Docker's
+# figure.
 docker_df_review_segment() {
     local type="$1"
     local size="$2"
     local reclaimable="$3"
     local total="$4"
     local active="$5"
+    case "$size" in
+        *MB | *GB | *TB | *PB) ;;
+        *) return 0 ;;
+    esac
     local contradicts=false
     if [[ "$total" =~ ^[0-9]+$ && "$active" =~ ^[0-9]+$ ]]; then
         if [[ $total -gt 0 && $active -eq $total && "$reclaimable" != 0B* ]]; then
@@ -3202,11 +3208,21 @@ docker_df_review_segment() {
             contradicts=true
         fi
     fi
+    local label="$type"
+    case "$type" in
+        "Build Cache") label="Build cache" ;;
+        "Local Volumes") label="Volumes" ;;
+    esac
     if [[ "$contradicts" == "true" ]]; then
-        printf '%s %s (%s/%s in use)\n' "$type" "$size" "$active" "$total"
-    else
-        printf '%s %s (%s reclaimable)\n' "$type" "$size" "$reclaimable"
+        printf '%s %s, %s/%s in use\n' "$label" "$size" "$active" "$total"
+        return 0
     fi
+    local amount="${reclaimable%% (*}"
+    amount="${amount%% *}"
+    case "$amount" in
+        *MB | *GB | *TB | *PB) printf '%s %s, %s reclaimable\n' "$label" "$size" "$amount" ;;
+        *) printf '%s %s\n' "$label" "$size" ;;
+    esac
 }
 
 # Large file candidates measure a few dozen folders with du, and two or three
@@ -3666,29 +3682,38 @@ _check_large_file_candidates_body() {
     fi
 
     local docker_reported=false
-    if command -v docker > /dev/null 2>&1; then
-        local docker_output
+    # Only a local engine is this Mac's storage: a remote context would report
+    # another machine's images here and hide the Docker Desktop data row
+    # below (#1922). A stopped daemon or an unknown answer falls back to that
+    # row as well, and the query is not retried.
+    local docker_local_rc=0
+    mole_docker_endpoint_is_local || docker_local_rc=$?
+    if mole_rc_signal "$docker_local_rc"; then
+        stop_section_spinner
+        _mole_record_clean_cancellation "$docker_local_rc"
+        return "$docker_local_rc"
+    fi
+    if [[ $docker_local_rc -eq 0 ]]; then
+        local docker_output="" docker_rc=0
         # The counts go last: tab is IFS whitespace, so an empty trailing
         # field cannot shift Size or Reclaimable out of place.
-        docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker system df --format '{{.Type}}\t{{.Size}}\t{{.Reclaimable}}\t{{.TotalCount}}\t{{.Active}}' 2> /dev/null || true)
-        if [[ -n "$docker_output" ]]; then
-            local docker_detail=""
+        docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker system df --format '{{.Type}}\t{{.Size}}\t{{.Reclaimable}}\t{{.TotalCount}}\t{{.Active}}' 2> /dev/null) || docker_rc=$?
+        if mole_rc_signal "$docker_rc"; then
+            stop_section_spinner
+            _mole_record_clean_cancellation "$docker_rc"
+            return "$docker_rc"
+        fi
+        if [[ $docker_rc -eq 0 && -n "$docker_output" ]]; then
+            local docker_detail="" docker_segment=""
             while IFS=$'\t' read -r dtype dsize dreclaim dtotal dactive; do
                 [[ -z "$dtype" ]] && continue
-                docker_detail+="${docker_detail:+ · }$(docker_df_review_segment "$dtype" "$dsize" "$dreclaim" "$dtotal" "$dactive")"
+                docker_segment=$(docker_df_review_segment "$dtype" "$dsize" "$dreclaim" "$dtotal" "$dactive")
+                [[ -n "$docker_segment" ]] || continue
+                docker_detail+="${docker_detail:+ · }$docker_segment"
             done <<< "$docker_output"
             if [[ -n "$docker_detail" ]]; then
                 stop_section_spinner
                 mole_review_row "Docker storage" "" "" "$docker_detail"
-                found_any=true
-                docker_reported=true
-                start_section_spinner "Scanning large files..."
-            fi
-        else
-            docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker system df 2> /dev/null || true)
-            if [[ -n "$docker_output" ]]; then
-                stop_section_spinner
-                echo -e "  ${YELLOW}${ICON_REVIEW}${NC} Docker storage · ${GRAY}docker system df${NC}"
                 found_any=true
                 docker_reported=true
                 start_section_spinner "Scanning large files..."

@@ -57,6 +57,7 @@ setup_file() {
         source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
         ps() { printf '%s\n' '   RSS COMMAND' '8600000 /System/Library/Frameworks/Virtualization.framework/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine'; }
         docker() { :; }
+        mole_docker_endpoint_is_local() { return 0; }
         run_with_timeout() { shift; printf ''; }
         opt_diag_idle_vm
     "
@@ -72,6 +73,7 @@ setup_file() {
         source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
         ps() { printf '%s\n' '   RSS COMMAND' '8600000 Virtualization.framework/x/com.apple.Virtualization.VirtualMachine'; }
         docker() { :; }
+        mole_docker_endpoint_is_local() { return 0; }
         run_with_timeout() { shift; printf '%s\n' abc123 def456; }
         opt_diag_idle_vm
     "
@@ -86,6 +88,7 @@ setup_file() {
         source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
         ps() { printf '%s\n' '   RSS COMMAND' '8600000 Virtualization.framework/x/com.apple.Virtualization.VirtualMachine'; }
         docker() { :; }
+        mole_docker_endpoint_is_local() { return 0; }
         run_with_timeout() { return 124; }
         opt_diag_idle_vm
     "
@@ -102,6 +105,7 @@ setup_file() {
         source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
         ps() { printf '%s\n' '   RSS COMMAND' '8600000 Virtualization.framework/x/com.apple.Virtualization.VirtualMachine'; }
         docker() { :; }
+        mole_docker_endpoint_is_local() { return 0; }
         run_with_timeout() { printf '%s\n' partial-id; return 1; }
         opt_diag_idle_vm
     "
@@ -110,6 +114,26 @@ setup_file() {
     [[ "$output" != *"containers running"* ]] || { echo "$output"; return 1; }
     [[ "$output" != *"no running containers"* ]] || { echo "$output"; return 1; }
     [[ "$output" != *"quitting it reclaims"* ]] || { echo "$output"; return 1; }
+}
+
+@test "idle VM never asks a remote Docker engine about containers (#1922)" {
+    run /bin/bash -c "
+        source '$PROJECT_ROOT/lib/core/common.sh'
+        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
+        ps() { printf '%s\n' '   RSS COMMAND' '8600000 Virtualization.framework/x/com.apple.Virtualization.VirtualMachine'; }
+        docker() { :; }
+        run_with_timeout() {
+            shift
+            if [[ \"\$1 \$2\" == 'docker context' ]]; then echo 'tcp://10.0.0.5:2376'; return 0; fi
+            echo 'abc123'
+            return 0
+        }
+        opt_diag_idle_vm
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"containers running"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"Virtual machine using 8.81GB"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"no running containers"* ]] || { echo "$output"; return 1; }
 }
 
 @test "idle VM silent when no VM is present" {

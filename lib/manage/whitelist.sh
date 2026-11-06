@@ -155,6 +155,7 @@ Brave browser cache|$HOME/Library/Caches/BraveSoftware/Brave-Browser/*|browser_c
 Surge proxy cache|$HOME/Library/Caches/com.nssurge.surge-mac/*|network_tools
 Surge configuration and data|$HOME/Library/Application Support/com.nssurge.surge-mac/*|network_tools
 Docker BuildX cache|$HOME/.docker/buildx/cache/*|container_cache
+Docker build cache and dangling images|$HOME/Library/Containers/com.docker.docker/Data|container_cache
 Podman container storage temp|$HOME/.local/share/containers/storage/tmp/*|container_cache
 Tart OCI/IPSW cache|$HOME/.tart/cache|container_cache
 Font cache|$HOME/Library/Caches/com.apple.FontRegistry/*|system_cache

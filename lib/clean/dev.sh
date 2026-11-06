@@ -1530,32 +1530,164 @@ find_orbstack_data_dir() {
     return 1
 }
 
-clean_dev_docker() {
-    if command -v docker > /dev/null 2>&1; then
-        note_activity
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} Docker unused data · review with docker system df -v"
-        debug_log "Docker daemon-managed cleanup skipped by default"
+# Bytes from the "Total reclaimed space: 1.2GB" (image prune) or "Total:
+# 1.2GB" (builder prune) line of a docker prune. Docker prints decimal units.
+# Prints nothing when no such line parses.
+_docker_prune_reclaimed_bytes() {
+    awk '
+        /^Total( reclaimed space)?:[ \t]/ {
+            v = $NF
+            if (match(v, /^[0-9.]+/) == 0) next
+            n = substr(v, 1, RLENGTH) + 0
+            u = substr(v, RLENGTH + 1)
+            m = 0
+            if (u == "B") m = 1
+            else if (u == "kB" || u == "KB") m = 1000
+            else if (u == "MB") m = 1000000
+            else if (u == "GB") m = 1000000000
+            else if (u == "TB") m = 1000000000000
+            if (m == 0) next
+            printf "%.0f\n", n * m
+            exit
+        }'
+}
+
+# Docker's own prune for what the engine rebuilds on demand: BuildKit cache no
+# build used in the last 7 days, and dangling images (untagged layers a
+# rebuild left behind). Containers, volumes, networks and tagged images are
+# never touched. It runs only against a local engine that already answers,
+# so Mole never starts Docker Desktop or reaches a remote context (#1922).
+# The engine serialises prune against running builds and keeps cache records
+# in use, so no process guard is needed. Docker Desktop's data folder is the
+# whitelist row that turns it off.
+clean_docker_unused_data() {
+    command -v docker > /dev/null 2>&1 || return 0
+    local description="Docker build cache and dangling images"
+    local whitelist_path="$HOME/Library/Containers/com.docker.docker/Data"
+
+    local probe_rc=0
+    mole_docker_endpoint_is_local || probe_rc=$?
+    if mole_rc_signal "$probe_rc"; then
+        _mole_record_clean_cancellation "$probe_rc" "$description"
+        return "$probe_rc"
     fi
+    if [[ $probe_rc -ne 0 ]]; then
+        debug_log "$description skipped: Docker endpoint is not local (state $probe_rc)"
+        return 0
+    fi
+
+    if is_path_whitelisted "$whitelist_path"; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $description · would skip (whitelist)"
+        else
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $description · skipped (whitelist)"
+        fi
+        note_activity
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "SKIPPED" "$whitelist_path" "whitelist"
+        return 0
+    fi
+
+    # A stopped engine stays stopped: the probe fails fast and nothing runs.
+    probe_rc=0
+    run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker info --format '{{.ServerVersion}}' > /dev/null 2>&1 || probe_rc=$?
+    if mole_rc_signal "$probe_rc"; then
+        _mole_record_clean_cancellation "$probe_rc" "$description"
+        return "$probe_rc"
+    fi
+    if [[ $probe_rc -ne 0 ]]; then
+        debug_log "$description skipped: Docker engine not answering (exit $probe_rc)"
+        return 0
+    fi
+
+    # `docker builder` is `docker buildx` once the plugin is installed, and it
+    # prunes the selected buildx builder, which can be a cloud or remote one
+    # while the context is local. Pin the builder the local context owns,
+    # named after it; the legacy builder ignores the variable.
+    local context_name="" steps="image"
+    probe_rc=0
+    context_name=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker context show 2> /dev/null) || probe_rc=$?
+    if mole_rc_signal "$probe_rc"; then
+        _mole_record_clean_cancellation "$probe_rc" "$description"
+        return "$probe_rc"
+    fi
+    if [[ $probe_rc -eq 0 && "$context_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        steps="builder image"
+    else
+        debug_log "$description: build cache skipped, Docker context name unknown"
+    fi
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        if [[ "$steps" == "image" ]]; then
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $description · would prune dangling images"
+        else
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $description · would prune, build cache unused for 7 days"
+        fi
+        note_activity
+        return 0
+    fi
+
+    [[ -t 1 ]] && start_section_spinner "Pruning Docker build cache..."
+    local total_bytes=0 step output rc bytes
+    for step in $steps; do
+        output="" rc=0
+        if [[ "$step" == "builder" ]]; then
+            output=$(run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" env BUILDX_BUILDER="$context_name" docker builder prune -f --filter until=168h 2> /dev/null) || rc=$?
+        else
+            output=$(run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" docker image prune -f 2> /dev/null) || rc=$?
+        fi
+        if mole_rc_signal "$rc"; then
+            [[ -t 1 ]] && stop_section_spinner
+            debug_log "$description: docker $step prune interrupted (exit $rc)"
+            _mole_record_clean_cancellation "$rc" "$description"
+            return "$rc"
+        fi
+        if [[ $rc -ne 0 ]]; then
+            debug_log "$description: docker $step prune exited $rc"
+            if mole_rc_timeout "$rc"; then
+                log_warning_to_file "$description: docker $step prune timed out and was skipped"
+            fi
+            continue
+        fi
+        bytes=$(printf '%s\n' "$output" | _docker_prune_reclaimed_bytes)
+        # A prune can drop image records whose layers stay shared (0B), and
+        # an unparsed total still changed the Mac, so every success is logged.
+        if [[ "$bytes" =~ ^[0-9]+$ ]]; then
+            total_bytes=$((total_bytes + bytes))
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "docker $step prune" "owner command: $(bytes_to_human "$bytes")"
+        else
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "docker $step prune" "owner command"
+        fi
+    done
+    [[ -t 1 ]] && stop_section_spinner
+
+    # Nothing reclaimed prints nothing, like a 0B cleanup row.
+    ((total_bytes > 0)) || return 0
+    local freed_kb=$(((total_bytes + 1023) / 1024))
+    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $description · $(colorize_human_size "$(bytes_to_human_kb "$freed_kb")")"
+    mole_add_cleaned_row 0 "$freed_kb"
+    note_activity
+    return 0
+}
+
+clean_dev_docker() {
+    clean_docker_unused_data || return $?
 
     local orb_data=""
     orb_data=$(find_orbstack_data_dir 2> /dev/null || true)
-    if command -v orb > /dev/null 2>&1 || command -v orbctl > /dev/null 2>&1 || [[ -d "$HOME/.orbstack" || -n "$orb_data" ]]; then
-        local orb_size=0 orb_size_label=""
-        if [[ -n "$orb_data" ]]; then
-            local size_rc=0
-            orb_size=$(get_path_size_kb "$orb_data" 2> /dev/null) || size_rc=$?
-            # The row is advisory and never deletes: a timed-out or failed size
-            # drops only the size, while a signal still stops the run.
-            if [[ $size_rc -ge 128 ]]; then
-                _mole_record_clean_cancellation "$size_rc"
-                return "$size_rc"
-            fi
-            [[ $size_rc -eq 0 && "$orb_size" =~ ^[0-9]+$ ]] || orb_size=""
+    if [[ -n "$orb_data" ]]; then
+        local orb_size="" size_rc=0
+        orb_size=$(get_path_size_kb "$orb_data" 2> /dev/null) || size_rc=$?
+        # The row is advisory and never deletes: a timed-out or failed size
+        # drops the row, while a signal still stops the run.
+        if [[ $size_rc -ge 128 ]]; then
+            _mole_record_clean_cancellation "$size_rc"
+            return "$size_rc"
         fi
-        [[ -n "$orb_size" ]] && orb_size_label="$(bytes_to_human $((orb_size * 1024))) · "
-        note_activity
-        echo -e "  ${GRAY}${ICON_REVIEW}${NC} OrbStack container data · ${orb_size_label}review with docker system df -v"
-        debug_log "OrbStack daemon-managed data left for manual prune ($orb_size KB)"
+        if [[ $size_rc -eq 0 && "$orb_size" =~ ^[0-9]+$ && "$orb_size" -gt 0 ]]; then
+            note_activity
+            echo -e "  ${GRAY}${ICON_REVIEW}${NC} OrbStack container data · $(bytes_to_human $((orb_size * 1024)))"
+            debug_log "OrbStack daemon-managed data left for manual prune ($orb_size KB)"
+        fi
     fi
     safe_clean ~/.docker/buildx/cache/* "Docker BuildX cache"
 }
