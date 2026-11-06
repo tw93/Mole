@@ -3088,7 +3088,7 @@ agent_worktree_containers() {
     local -a roots=(
         "$HOME/code" "$HOME/Code" "$HOME/dev" "$HOME/Projects"
         "$HOME/GitHub" "$HOME/Workspace" "$HOME/Repos"
-        "$HOME/Development" "$HOME/www" "$HOME/src"
+        "$HOME/Development" "$HOME/Developer" "$HOME/www" "$HOME/src"
     )
     local container
     # The Codex and T3 Code apps keep every worktree under one fixed container

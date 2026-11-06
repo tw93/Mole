@@ -61,6 +61,7 @@ readonly MOLE_PURGE_DEFAULT_SEARCH_PATHS=(
     "$HOME/Workspace"
     "$HOME/Repos"
     "$HOME/Development"
+    "$HOME/Developer"
     "$HOME/Library/CloudStorage"
     # AI agent worktree containers. These sit under dot directories, which
     # discover_project_dirs cannot reach: it globs "$HOME"/*/ and
