@@ -764,6 +764,7 @@ _probe_timeout_backend() {
         export PATH="$2:/usr/bin:/bin"
         source "$1/lib/core/timeout.sh"
         printf "bin=%s\n" "$MO_TIMEOUT_BIN"
+        run_with_timeout 1 /bin/echo COMMAND_RAN
         rc=0
         run_with_timeout 1 /bin/sleep 5 || rc=$?
         printf "rc=%s\n" "$rc"
@@ -808,9 +809,11 @@ SHIM
     [[ "$output" == *"rc=124"* ]]
 }
 
-@test "timeout.sh keeps a PATH timeout that reports its deadline as 124" {
+@test "timeout.sh skips a PATH timeout shim without kill-after support" {
     local fake_dir="$BATS_TEST_TMPDIR/fake-timeout-124"
     mkdir -p "$fake_dir"
+    # This passes the old deadline probe, but run_with_timeout's -k 2 makes
+    # it try to execute "2" and report a timeout without running the command.
     cat > "$fake_dir/timeout" << 'SHIM'
 #!/bin/bash
 shift
@@ -824,6 +827,34 @@ SHIM
 
     _probe_timeout_backend "$fake_dir"
     [ "$status" -eq 0 ]
+    [[ "$output" != *"bin=$fake_dir/timeout"* ]] || return 1
+    [[ "$output" == *COMMAND_RAN* ]] || return 1
+    [[ "$output" == *"rc=124"* ]]
+}
+
+@test "timeout.sh keeps a PATH timeout that supports the wrapper arguments" {
+    local fake_dir="$BATS_TEST_TMPDIR/fake-timeout-compatible"
+    mkdir -p "$fake_dir"
+    cat > "$fake_dir/timeout" << 'SHIM'
+#!/bin/bash
+[[ "$1" == "-k" && "$2" == "2" ]] || exit 125
+shift 3
+"$@" &
+pid=$!
+(/bin/sleep 0.2; kill -TERM "$pid" 2> /dev/null) &
+killer=$!
+rc=0
+wait "$pid" || rc=$?
+kill "$killer" 2> /dev/null || true
+wait "$killer" 2> /dev/null || true
+[[ $rc -eq 0 ]] && exit 0
+exit 124
+SHIM
+    chmod +x "$fake_dir/timeout"
+
+    _probe_timeout_backend "$fake_dir"
+    [ "$status" -eq 0 ]
     [[ "$output" == *"bin=$fake_dir/timeout"* ]] || return 1
+    [[ "$output" == *COMMAND_RAN* ]] || return 1
     [[ "$output" == *"rc=124"* ]]
 }
