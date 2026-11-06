@@ -2597,6 +2597,24 @@ app_support_dir_has_regenerable_cache_markers() {
     return 1
 }
 
+# Chromium and Electron apps hold <userData>/SingletonLock, a link to
+# "<host>-<pid>", while they run and remove it when they quit, so a live pid
+# means the Code Cache and GPUCache beside it are in use (Docker Desktop,
+# VS Code, T3 Code). Returns 0 while the app runs or the lock cannot be read,
+# 1 when there is no lock or its pid is gone.
+app_support_dir_in_use() {
+    local lock="$1/SingletonLock"
+    [[ -L "$lock" ]] || return 1
+    local target="" pid=""
+    target=$(readlink "$lock" 2> /dev/null) || return 0
+    pid="${target##*-}"
+    [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 0
+    kill -0 "$pid" 2> /dev/null && return 0
+    # kill -0 also fails for a live process another user owns.
+    ps -p "$pid" > /dev/null 2>&1 && return 0
+    return 1
+}
+
 # Application Support logs/caches.
 clean_application_support_logs() {
     if [[ ! -d "$HOME/Library/Application Support" ]] || ! ls "$HOME/Library/Application Support" > /dev/null 2>&1; then
@@ -2653,6 +2671,10 @@ clean_application_support_logs() {
         if is_critical_system_component "$app_name"; then
             continue
         fi
+        if app_support_dir_in_use "$app_dir"; then
+            debug_log "Application Support: kept $app_name caches, the app is running"
+            continue
+        fi
         # Application Support can hold licenses, databases, offline assets and
         # session state. Keep this generic pass to explicit, regenerable cache
         # subtrees only; app-specific log/cache cleanup belongs in allowlisted
@@ -2677,6 +2699,11 @@ clean_application_support_logs() {
             if [[ -d "$candidate" ]]; then
                 if should_protect_path "$candidate" 2> /dev/null || is_path_whitelisted "$candidate" 2> /dev/null; then
                     continue
+                fi
+                # The app may have started while earlier candidates were sized.
+                if app_support_dir_in_use "$app_dir"; then
+                    debug_log "Application Support: kept $app_name caches, the app started"
+                    break
                 fi
                 # Quick count check - skip if too many items to avoid hanging
                 local quick_count
@@ -3055,8 +3082,8 @@ jetbrains_stale_version_dirs() {
         '
 }
 
-# List every agent worktree container once, NUL-separated: the Codex app's
-# fixed container first, then each `.claude/worktrees` under the project roots.
+# List every agent worktree container once, NUL-separated: the fixed Codex and
+# T3 Code containers first, then each `.claude/worktrees` under the project roots.
 agent_worktree_containers() {
     local -a roots=(
         "$HOME/code" "$HOME/Code" "$HOME/dev" "$HOME/Projects"
@@ -3064,12 +3091,13 @@ agent_worktree_containers() {
         "$HOME/Development" "$HOME/www" "$HOME/src"
     )
     local container
-    # The Codex app keeps every worktree under one fixed container outside
-    # any project root, so the find below never reaches it.
-    container="$HOME/.codex/worktrees"
-    if [[ -d "$container" && ! -L "$container" ]]; then
-        printf '%s\0' "$container"
-    fi
+    # The Codex and T3 Code apps keep every worktree under one fixed container
+    # outside any project root, so the find below never reaches them.
+    for container in "$HOME/.codex/worktrees" "$HOME/.t3/worktrees"; do
+        if [[ -d "$container" && ! -L "$container" ]]; then
+            printf '%s\0' "$container"
+        fi
+    done
 
     # ~/code and ~/Code are one directory on case-insensitive APFS, and a root
     # may be a symlink to another. Scan each physical root once, or every
@@ -3105,7 +3133,8 @@ agent_worktree_containers() {
 }
 
 # AI coding agents create full checkouts that accumulate silently: Claude Code
-# under <project>/.claude/worktrees/, the Codex app under ~/.codex/worktrees/.
+# under <project>/.claude/worktrees/, the Codex app under ~/.codex/worktrees/,
+# T3 Code under ~/.t3/worktrees/.
 # Report only, same 1GB bar as other large candidates; removal stays a manual
 # `git worktree remove` decision because a worktree may hold agent work.
 # $1 may name a container listing that Large files started ahead of time.
@@ -3131,11 +3160,12 @@ report_agent_worktree_candidates() {
         # printing over it glues the row onto the spinner frame.
         stop_section_spinner
         # The linked label no longer shows the path, so name whose they are:
-        # the project for <project>/.claude/worktrees, Codex for ~/.codex.
+        # the project for <project>/.claude/worktrees, else the owning app.
         local owner="${container%/*}"
         owner="${owner%/*}"
         owner="${owner##*/}"
         [[ "$container" == */.codex/worktrees ]] && owner="Codex"
+        [[ "$container" == */.t3/worktrees ]] && owner="T3 Code"
         mole_review_row "AI agent worktrees" "$container" "$(bytes_to_human "$((size_kb * 1024))")" "$owner"
         note_activity
         start_section_spinner "Scanning large files..."
@@ -3151,19 +3181,25 @@ report_agent_worktree_candidates() {
     return "$rc"
 }
 
-# One `docker system df` row for the Large files Docker line. Docker's
-# Reclaimable is swapped for the active/total count when it contradicts the
-# row's own counts: something reclaimable while every item is in use, or all
-# images reclaimable while a container still uses one. Engine 29.0 through
-# 29.3 reports in-use images as reclaimable (moby/moby#51775), and older
-# clients count shared layers of in-use images the same way. Rows whose
-# counts do not parse keep Docker's text.
+# One `docker system df` row for the Large files Docker line, as
+# "Images 931.5MB, 859.1MB reclaimable". Types and reclaimable figures below
+# 1MB are left out. Docker's Reclaimable is swapped for
+# the active/total count when it contradicts the row's own counts: something
+# reclaimable while every item is in use, or all images reclaimable while a
+# container still uses one. Engine 29.0 through 29.3 reports in-use images as
+# reclaimable (moby/moby#51775), and older clients count shared layers of
+# in-use images the same way. Rows whose counts do not parse keep Docker's
+# figure.
 docker_df_review_segment() {
     local type="$1"
     local size="$2"
     local reclaimable="$3"
     local total="$4"
     local active="$5"
+    case "$size" in
+        *MB | *GB | *TB | *PB) ;;
+        *) return 0 ;;
+    esac
     local contradicts=false
     if [[ "$total" =~ ^[0-9]+$ && "$active" =~ ^[0-9]+$ ]]; then
         if [[ $total -gt 0 && $active -eq $total && "$reclaimable" != 0B* ]]; then
@@ -3172,11 +3208,21 @@ docker_df_review_segment() {
             contradicts=true
         fi
     fi
+    local label="$type"
+    case "$type" in
+        "Build Cache") label="Build cache" ;;
+        "Local Volumes") label="Volumes" ;;
+    esac
     if [[ "$contradicts" == "true" ]]; then
-        printf '%s %s (%s/%s in use)\n' "$type" "$size" "$active" "$total"
-    else
-        printf '%s %s (%s reclaimable)\n' "$type" "$size" "$reclaimable"
+        printf '%s %s, %s/%s in use\n' "$label" "$size" "$active" "$total"
+        return 0
     fi
+    local amount="${reclaimable%% (*}"
+    amount="${amount%% *}"
+    case "$amount" in
+        *MB | *GB | *TB | *PB) printf '%s %s, %s reclaimable\n' "$label" "$size" "$amount" ;;
+        *) printf '%s %s\n' "$label" "$size" ;;
+    esac
 }
 
 # Large file candidates measure a few dozen folders with du, and two or three
@@ -3636,29 +3682,38 @@ _check_large_file_candidates_body() {
     fi
 
     local docker_reported=false
-    if command -v docker > /dev/null 2>&1; then
-        local docker_output
+    # Only a local engine is this Mac's storage: a remote context would report
+    # another machine's images here and hide the Docker Desktop data row
+    # below (#1922). A stopped daemon or an unknown answer falls back to that
+    # row as well, and the query is not retried.
+    local docker_local_rc=0
+    mole_docker_endpoint_is_local || docker_local_rc=$?
+    if mole_rc_signal "$docker_local_rc"; then
+        stop_section_spinner
+        _mole_record_clean_cancellation "$docker_local_rc"
+        return "$docker_local_rc"
+    fi
+    if [[ $docker_local_rc -eq 0 ]]; then
+        local docker_output="" docker_rc=0
         # The counts go last: tab is IFS whitespace, so an empty trailing
         # field cannot shift Size or Reclaimable out of place.
-        docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker system df --format '{{.Type}}\t{{.Size}}\t{{.Reclaimable}}\t{{.TotalCount}}\t{{.Active}}' 2> /dev/null || true)
-        if [[ -n "$docker_output" ]]; then
-            local docker_detail=""
+        docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker system df --format '{{.Type}}\t{{.Size}}\t{{.Reclaimable}}\t{{.TotalCount}}\t{{.Active}}' 2> /dev/null) || docker_rc=$?
+        if mole_rc_signal "$docker_rc"; then
+            stop_section_spinner
+            _mole_record_clean_cancellation "$docker_rc"
+            return "$docker_rc"
+        fi
+        if [[ $docker_rc -eq 0 && -n "$docker_output" ]]; then
+            local docker_detail="" docker_segment=""
             while IFS=$'\t' read -r dtype dsize dreclaim dtotal dactive; do
                 [[ -z "$dtype" ]] && continue
-                docker_detail+="${docker_detail:+ · }$(docker_df_review_segment "$dtype" "$dsize" "$dreclaim" "$dtotal" "$dactive")"
+                docker_segment=$(docker_df_review_segment "$dtype" "$dsize" "$dreclaim" "$dtotal" "$dactive")
+                [[ -n "$docker_segment" ]] || continue
+                docker_detail+="${docker_detail:+ · }$docker_segment"
             done <<< "$docker_output"
             if [[ -n "$docker_detail" ]]; then
                 stop_section_spinner
                 mole_review_row "Docker storage" "" "" "$docker_detail"
-                found_any=true
-                docker_reported=true
-                start_section_spinner "Scanning large files..."
-            fi
-        else
-            docker_output=$(run_with_timeout "$MOLE_TIMEOUT_SHORT_QUERY_SEC" docker system df 2> /dev/null || true)
-            if [[ -n "$docker_output" ]]; then
-                stop_section_spinner
-                echo -e "  ${YELLOW}${ICON_REVIEW}${NC} Docker storage · ${GRAY}docker system df${NC}"
                 found_any=true
                 docker_reported=true
                 start_section_spinner "Scanning large files..."

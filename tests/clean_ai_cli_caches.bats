@@ -189,6 +189,209 @@ EOF
     assert_output_not_contains "TARGET:$truncated_prefix/"
 }
 
+@test "clean_t3code_desktop_caches removes only preview partition caches through the real sink" {
+    run env HOME="$HOME/t3-cache-positive" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+support="$HOME/Library/Application Support"
+current="$support/t3code-v2"
+legacy="$support/T3 Code (Alpha)"
+preview="Partitions/t3code-preview-c4aaf7f347eab6967b4a"
+mkdir -p \
+    "$current/$preview/Cache/Cache_Data" \
+    "$current/$preview/Code Cache/js" \
+    "$legacy/$preview/Cache/Cache_Data" \
+    "$legacy/$preview/Code Cache/js" \
+    "$current/$preview/Local Storage" \
+    "$current/$preview/IndexedDB" \
+    "$current/$preview/Service Worker/CacheStorage" \
+    "$current/Partitions/other-partition/Cache" \
+    "$current/Cache/Cache_Data" \
+    "$current/IndexedDB" \
+    "$support/t3code-dev/$preview/Cache" \
+    "$HOME/.t3/userdata" \
+    "$HOME/.t3/caches"
+for cache_file in \
+    "$current/$preview/Cache/Cache_Data/current-cache.bin" \
+    "$current/$preview/Code Cache/js/current-code.bin" \
+    "$legacy/$preview/Cache/Cache_Data/legacy-cache.bin" \
+    "$legacy/$preview/Code Cache/js/legacy-code.bin"; do
+    echo data > "$cache_file"
+done
+touch \
+    "$current/$preview/Cookies" \
+    "$current/$preview/Local Storage/state.bin" \
+    "$current/$preview/IndexedDB/state.bin" \
+    "$current/$preview/Service Worker/CacheStorage/state.bin" \
+    "$current/Partitions/other-partition/Cache/kept.bin" \
+    "$current/Cache/Cache_Data/app-shell.bin" \
+    "$current/IndexedDB/state.bin" \
+    "$support/t3code-dev/$preview/Cache/kept.bin" \
+    "$HOME/.t3/userdata/statev2.sqlite" \
+    "$HOME/.t3/caches/codex.json"
+
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { return 1; }
+DRY_RUN=false
+MOLE_DRY_RUN=0
+clean_t3code_desktop_caches
+
+for removed in \
+    "$current/$preview/Cache/Cache_Data/current-cache.bin" \
+    "$current/$preview/Code Cache/js/current-code.bin" \
+    "$legacy/$preview/Cache/Cache_Data/legacy-cache.bin" \
+    "$legacy/$preview/Code Cache/js/legacy-code.bin"; do
+    [[ ! -e "$removed" ]] || { echo "STILL_PRESENT:$removed"; exit 1; }
+done
+for kept in \
+    "$current/$preview/Cookies" \
+    "$current/$preview/Local Storage/state.bin" \
+    "$current/$preview/IndexedDB/state.bin" \
+    "$current/$preview/Service Worker/CacheStorage/state.bin" \
+    "$current/Partitions/other-partition/Cache/kept.bin" \
+    "$current/Cache/Cache_Data/app-shell.bin" \
+    "$current/IndexedDB/state.bin" \
+    "$support/t3code-dev/$preview/Cache/kept.bin" \
+    "$HOME/.t3/userdata/statev2.sqlite" \
+    "$HOME/.t3/caches/codex.json"; do
+    [[ -f "$kept" ]] || { echo "LOST:$kept"; exit 1; }
+done
+echo "EXACT_LEAVES_CLEANED"
+EOF
+
+    assert_run_success
+    assert_output_contains "EXACT_LEAVES_CLEANED"
+    assert_output_contains "T3 Code caches"
+    assert_output_not_contains "STILL_PRESENT:"
+    assert_output_not_contains "LOST:"
+}
+
+@test "clean_t3code_desktop_caches dry run removes nothing" {
+    run env HOME="$HOME/t3-cache-dry-run" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_file="$HOME/Library/Application Support/t3code-v2/Partitions/t3code-preview-a/Cache/Cache_Data/owned.bin"
+mkdir -p "$(dirname "$cache_file")"
+echo data > "$cache_file"
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { return 1; }
+DRY_RUN=true
+MOLE_DRY_RUN=1
+clean_t3code_desktop_caches
+[[ -f "$cache_file" ]] || exit 1
+EOF
+
+    assert_run_success
+    assert_output_contains "T3 Code caches"
+}
+
+@test "clean_t3code_desktop_caches refuses a link at any component of the cache path" {
+    local link_at
+    for link_at in profile Partitions partition Cache; do
+        run env HOME="$HOME/t3-cache-link-$link_at" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+            LINK_AT="$link_at" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+profile="$HOME/Library/Application Support/t3code-v2"
+real="$HOME/elsewhere"
+case "$LINK_AT" in
+    profile)
+        mkdir -p "$real/Partitions/t3code-preview-a/Cache" "$(dirname "$profile")"
+        ln -s "$real" "$profile"
+        user_file="$real/Partitions/t3code-preview-a/Cache/user-file.bin"
+        ;;
+    Partitions)
+        mkdir -p "$real/t3code-preview-a/Cache" "$profile"
+        ln -s "$real" "$profile/Partitions"
+        user_file="$real/t3code-preview-a/Cache/user-file.bin"
+        ;;
+    partition)
+        mkdir -p "$real/Cache" "$profile/Partitions"
+        ln -s "$real" "$profile/Partitions/t3code-preview-a"
+        user_file="$real/Cache/user-file.bin"
+        ;;
+    Cache)
+        mkdir -p "$real" "$profile/Partitions/t3code-preview-a"
+        ln -s "$real" "$profile/Partitions/t3code-preview-a/Cache"
+        user_file="$real/user-file.bin"
+        ;;
+esac
+touch "$user_file"
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { return 1; }
+DRY_RUN=false
+MOLE_DRY_RUN=0
+clean_t3code_desktop_caches
+[[ -f "$user_file" ]] || { echo "LOST:$LINK_AT"; exit 1; }
+EOF
+
+        assert_run_success
+        assert_output_not_contains "LOST:"
+        assert_output_not_contains "T3 Code caches"
+    done
+}
+
+@test "clean_t3code_desktop_caches keeps caches while any T3 Code channel runs" {
+    local channel
+    for channel in "T3 Code" "T3 Code (Alpha)" "T3 Code (Beta)"; do
+        run env HOME="$HOME/t3-cache-running" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+            T3_PROCESS="/Applications/$channel.app/Contents/MacOS/$channel" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_file="$HOME/Library/Application Support/t3code-v2/Partitions/t3code-preview-a/Cache/Cache_Data/owned.bin"
+mkdir -p "$(dirname "$cache_file")"
+echo data > "$cache_file"
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { [[ "$1" == "-f" ]] && printf '%s\n' "$T3_PROCESS" | grep -Eq "$2"; }
+DRY_RUN=false
+MOLE_DRY_RUN=0
+clean_t3code_desktop_caches
+[[ -f "$cache_file" ]] || exit 1
+EOF
+
+        assert_run_success
+        assert_output_not_contains "T3 Code caches"
+    done
+}
+
+@test "clean_t3code_desktop_caches stops when T3 Code starts after the initial probe" {
+    run env HOME="$HOME/t3-cache-start-race" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_file="$HOME/Library/Application Support/t3code-v2/Partitions/t3code-preview-a/Cache/Cache_Data/owned.bin"
+mkdir -p "$(dirname "$cache_file")"
+echo data > "$cache_file"
+source "$PROJECT_ROOT/bin/clean.sh"
+
+probe_count=0
+pgrep() {
+    probe_count=$((probe_count + 1))
+    [[ $probe_count -ge 2 ]]
+}
+DRY_RUN=false
+MOLE_DRY_RUN=0
+
+clean_t3code_desktop_caches || true
+[[ $probe_count -ge 2 ]] || exit 1
+[[ -f "$cache_file" ]] || exit 1
+printf 'T3_START_RACE_CLOSED\n'
+EOF
+
+    assert_run_success
+    assert_output_contains "T3_START_RACE_CLOSED"
+}
+
+@test "clean_t3code_desktop_caches skips when its process probe fails" {
+    run env HOME="$HOME/t3-cache-probe-error" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_file="$HOME/Library/Application Support/t3code-v2/Partitions/t3code-preview-a/Cache/Cache_Data/owned.bin"
+mkdir -p "$(dirname "$cache_file")"
+echo data > "$cache_file"
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { return 2; }
+clean_t3code_desktop_caches
+[[ -f "$cache_file" ]] || exit 1
+EOF
+
+    assert_run_success
+    assert_output_contains "T3 Code caches · skipped (process state unknown)"
+}
+
 @test "clean_codex_desktop_caches stops when Codex starts after the initial probe" {
     run env HOME="$HOME/codex-cache-start-race" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

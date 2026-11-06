@@ -1619,24 +1619,159 @@ EOF
     rm -f "$HOME/bun-case.out" # SAFE: test scratch file under the temporary HOME
 }
 
-@test "clean_dev_docker skips daemon-managed cleanup by default" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc << 'EOF'
+# A docker double on PATH: run_with_timeout execs a binary, so a shell
+# function would never be reached. Every call is logged to $HOME/docker.calls.
+_docker_prune_fake() {
+    # shellcheck disable=SC2016  # Body is written to the fake script verbatim.
+    mole_test_fake_command docker '
+printf "%s\n" "$*" >> "$HOME/docker.calls"
+case "$1 $2" in
+    "context show")
+        [[ "${DOCKER_TEST_CONTEXT:-}" != FAIL ]] || exit 1
+        printf "%s\n" "${DOCKER_TEST_CONTEXT:-desktop-linux}"
+        ;;
+    "context inspect")
+        [[ "${DOCKER_TEST_HOST:-}" != FAIL ]] || exit 1
+        printf "%s\n" "${DOCKER_TEST_HOST:-unix:///Users/me/.docker/run/docker.sock}"
+        ;;
+    "info --format") exit "${DOCKER_TEST_INFO_RC:-0}" ;;
+    "builder prune")
+        printf "BUILDX_BUILDER=%s\n" "${BUILDX_BUILDER:-unset}" >> "$HOME/docker.calls"
+        [[ -z "${DOCKER_TEST_BUILDER_RC:-}" ]] || exit "$DOCKER_TEST_BUILDER_RC"
+        printf "ID\tRECLAIMABLE\tSIZE\tLAST ACCESSED\nabc123\ttrue\t852.6MB\t2 weeks ago\nTotal:\t852.6MB\n"
+        ;;
+    "image prune")
+        printf "Deleted Images:\ndeleted: sha256:abc\n\nTotal reclaimed space: 12MB\n"
+        ;;
+esac
+exit 0'
+}
+
+_run_clean_dev_docker() {
+    local test_home="$1"
+    shift
+    rm -rf "$test_home"
+    mkdir -p "$test_home"
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false \
+        MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 "$@" \
+        /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/dev.sh"
-clean_tool_cache() { echo "$1|$*"; }
-safe_clean() { echo "$2"; }
+safe_clean() { echo "BUILDX:$2"; }
 note_activity() { :; }
-debug_log() { :; }
-docker() { echo "docker called"; return 0; }
-export -f docker
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+log_warning_to_file() { echo "WARN:$*"; }
+total_size_cleaned=0
+rc=0
+clean_dev_docker || rc=$?
+printf 'RC=%s CANCEL=%s FREED_KB=%s\n' "$rc" "$MOLE_CLEAN_CANCEL_STATUS" "$total_size_cleaned"
+EOF
+}
+
+@test "clean_dev_docker prunes only old build cache and dangling images on a local engine" {
+    _docker_prune_fake
+    local test_home="$HOME/docker-prune-local"
+    _run_clean_dev_docker "$test_home"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Docker build cache and dangling images · "*"864.6MB"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|docker builder prune|owner command: 852.6MB"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|docker image prune|owner command: 12.0MB"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BUILDX:Docker BuildX cache"*"RC=0 CANCEL=0 FREED_KB=844336"* ]] || { echo "$output"; return 1; }
+    local calls
+    calls=$(cat "$test_home/docker.calls")
+    [[ "$calls" == *"builder prune -f --filter until=168h"$'\n'"BUILDX_BUILDER=desktop-linux"* ]] || { echo "$calls"; return 1; }
+    [[ "$calls" == *"image prune -f"* ]] || { echo "$calls"; return 1; }
+    # Never containers, volumes, networks, tagged images or a system prune.
+    [[ "$calls" != *"-a"* && "$calls" != *"--all"* && "$calls" != *"system prune"* ]] || { echo "$calls"; return 1; }
+    [[ "$calls" != *"container"* && "$calls" != *"volume"* && "$calls" != *"network"* ]] || { echo "$calls"; return 1; }
+}
+
+@test "clean_dev_docker pins the build cache prune to the local context builder" {
+    # `docker builder` is buildx, which prunes the selected builder: a cloud
+    # builder chosen through BUILDX_BUILDER must not be the one pruned.
+    _docker_prune_fake
+    _run_clean_dev_docker "$HOME/docker-prune-builder" BUILDX_BUILDER=cloud-org-builder
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local calls
+    calls=$(cat "$HOME/docker-prune-builder/docker.calls")
+    [[ "$calls" == *"BUILDX_BUILDER=desktop-linux"* && "$calls" != *"cloud-org-builder"* ]] || { echo "$calls"; return 1; }
+
+    # Without a context name there is no builder to pin: the build cache stays
+    # and the dangling image prune still runs.
+    _run_clean_dev_docker "$HOME/docker-prune-noctx" DOCKER_TEST_CONTEXT=FAIL
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    calls=$(cat "$HOME/docker-prune-noctx/docker.calls")
+    [[ "$calls" != *"builder prune"* && "$calls" == *"image prune -f"* ]] || { echo "$calls"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|docker image prune|owner command: 12.0MB"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_dev_docker never prunes a remote, unknown or stopped Docker engine (#1922)" {
+    _docker_prune_fake
+    local host
+    for host in "tcp://10.0.0.5:2376" "ssh://builder@remote" "FAIL"; do
+        _run_clean_dev_docker "$HOME/docker-prune-remote" DOCKER_TEST_HOST="$host"
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0 CANCEL=0 FREED_KB=0"* ]] || { echo "$host: $output"; return 1; }
+        [[ "$(cat "$HOME/docker-prune-remote/docker.calls")" == "context inspect --format {{.Endpoints.docker.Host}}" ]] || {
+            echo "$host"
+            cat "$HOME/docker-prune-remote/docker.calls"
+            return 1
+        }
+    done
+
+    # A local engine that does not answer is never started or pruned.
+    _run_clean_dev_docker "$HOME/docker-prune-stopped" DOCKER_TEST_INFO_RC=1
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"Docker build cache"* && "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+    [[ "$(cat "$HOME/docker-prune-stopped/docker.calls")" != *"prune"* ]] || { cat "$HOME/docker-prune-stopped/docker.calls"; return 1; }
+}
+
+@test "clean_dev_docker dry run and whitelist run no prune" {
+    _docker_prune_fake
+    _run_clean_dev_docker "$HOME/docker-prune-dry" DRY_RUN=true
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Docker build cache and dangling images · would prune, build cache unused for 7 days"* ]] || { echo "$output"; return 1; }
+    [[ "$(cat "$HOME/docker-prune-dry/docker.calls")" != *"prune"* ]] || { cat "$HOME/docker-prune-dry/docker.calls"; return 1; }
+
+    # The preview names only the prunes the real run would make.
+    _run_clean_dev_docker "$HOME/docker-prune-dry-noctx" DRY_RUN=true DOCKER_TEST_CONTEXT=FAIL
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Docker build cache and dangling images · would prune dangling images"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"build cache unused"* ]] || { echo "$output"; return 1; }
+
+    local test_home="$HOME/docker-prune-whitelist"
+    rm -rf "$test_home"
+    mkdir -p "$test_home"
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+WHITELIST_PATTERNS=("$HOME/Library/Containers/com.docker.docker/Data")
+safe_clean() { :; }
+note_activity() { :; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
 clean_dev_docker
 EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Docker build cache and dangling images · skipped (whitelist)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:SKIPPED|$test_home/Library/Containers/com.docker.docker/Data|whitelist"* ]] || { echo "$output"; return 1; }
+    [[ "$(cat "$test_home/docker.calls")" != *"prune"* ]] || { cat "$test_home/docker.calls"; return 1; }
+}
 
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Docker unused data · review with docker system df -v"* ]] || return 1
-    [[ "$output" == *"Docker BuildX cache"* ]] || return 1
-    [[ "$output" != *"docker called"* ]]
+@test "clean_dev_docker skips a timed-out prune and stops on a signal" {
+    _docker_prune_fake
+    _run_clean_dev_docker "$HOME/docker-prune-timeout" DOCKER_TEST_BUILDER_RC=124
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"WARN:Docker build cache and dangling images: docker builder prune timed out and was skipped"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"Docker build cache and dangling images · "*"12.0MB"*"RC=0 CANCEL=0"* ]] || { echo "$output"; return 1; }
+
+    _run_clean_dev_docker "$HOME/docker-prune-signal" DOCKER_TEST_BUILDER_RC=130
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130 CANCEL=130"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"BUILDX:"* && "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+    [[ "$(cat "$HOME/docker-prune-signal/docker.calls")" != *"image prune"* ]] || { cat "$HOME/docker-prune-signal/docker.calls"; return 1; }
 }
 
 @test "clean_dev_docker keeps BuildX cache cleanup" {
@@ -1675,15 +1810,15 @@ clean_dev_docker
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"OrbStack container data · 4M · review with docker system df -v"* ]] || return 1
+    [[ "$output" == *"OrbStack container data · 4M"* ]] || return 1
     [[ "$output" == *"Docker BuildX cache|$HOME/.docker/buildx/cache/*"* ]] || return 1
     [[ "$output" != *"data.img.raw"* ]] || return 1
     [[ "$output" != *"swap.img"* ]]
 }
 
-@test "clean_dev_docker keeps the OrbStack row and BuildX cleanup when sizing times out" {
+@test "clean_dev_docker drops the OrbStack row and keeps BuildX cleanup when sizing times out" {
     # The OrbStack row is advisory and never deletes, so a size timeout drops
-    # only the size and later cleanup continues. A signal still stops the run.
+    # the row and later cleanup continues. A signal still stops the run.
     local orb_data="$HOME/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data"
     mkdir -p "$orb_data"
     touch "$orb_data/data.img.raw"
@@ -1708,36 +1843,10 @@ printf 'SIGNAL RC=%s CANCEL=%s\n' "$rc" "$MOLE_CLEAN_CANCEL_STATUS"
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$output" == *"OrbStack container data · review with docker system df -v"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"OrbStack container data"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"BUILDX:Docker BuildX cache"*"TIMEOUT RC=0 CANCEL=0"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"SIGNAL RC=130 CANCEL=130"* ]] || { echo "$output"; return 1; }
     [[ "$(printf '%s\n' "$output" | grep -c 'BUILDX:')" -eq 1 ]]
-}
-
-@test "clean_dev_docker no longer depends on whitelist to avoid prune" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/dev.sh"
-clean_tool_cache() { echo "$1|$*"; }
-safe_clean() { :; }
-note_activity() { :; }
-debug_log() { :; }
-is_path_whitelisted() {
-    [[ "$1" == "$HOME/.docker" ]] && return 0
-    return 1
-}
-export -f is_path_whitelisted
-docker() { echo "docker called"; return 0; }
-export -f docker
-clean_dev_docker
-EOF
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Docker unused data · review with docker system df -v"* ]] || return 1
-    [[ "$output" != *"whitelisted"* ]] || return 1
-    [[ "$output" != *"mo clean --whitelist"* ]] || return 1
-    [[ "$output" != *"docker called"* ]]
 }
 
 @test "codex_desktop_process_state recognizes current and legacy app aliases (#1305)" {
@@ -4037,6 +4146,20 @@ EOF
     [[ "$output" == *"AI agent worktrees"*".codex/worktrees"* ]] || return 1
     # Report only: the worktree must still exist afterwards.
     [ -f "$test_home/.codex/worktrees/topic/repo/file" ]
+}
+
+@test "report_agent_worktree_candidates reports the T3 Code worktree container" {
+    local test_home="$HOME/wt-t3-home"
+    mkdir -p "$test_home/.t3/worktrees/project/topic"
+    echo "data" > "$test_home/.t3/worktrees/project/topic/file"
+
+    _worktree_hint_run "$test_home"
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"AI agent worktrees"*".t3/worktrees"* ]] || return 1
+    [[ "$output" == *"T3 Code"* ]] || return 1
+    # Report only: the worktree must still exist afterwards.
+    [ -f "$test_home/.t3/worktrees/project/topic/file" ]
 }
 
 @test "report_agent_worktree_candidates skips a row on a size timeout without cancelling clean" {

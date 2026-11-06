@@ -167,3 +167,23 @@ Implemented in source (Mole CLI (macOS), `main`): the temp-root prune stamp (`pr
 - Mole Mac: Implemented there first (2026-11-05).
 - Mole CLI (Windows): Implemented in source for the installed-app inventory cache (`SYNC.md` on `windows`); its update-notice state was already guarded.
 - Mole for Windows: Implemented there in the same pass (2026-11-05), through one shared window helper and a source gate.
+
+## 2026-11-06 T3 Code worktrees and preview caches
+
+Source: contributor PRs #1924 and #1925. T3 Code keeps agent checkouts in `~/.t3/worktrees` and a Chromium profile per preview browser under `~/Library/Application Support/t3code-v2` (`T3 Code (Alpha)` is the profile older builds left behind); both names match the T3 Code source (`resolveUserDataPath`, `PREVIEW_PARTITION_PREFIX`).
+
+Implemented in source (Mole CLI (macOS), `main`): `433fde60` adds `~/.t3/worktrees` to `MOLE_PURGE_DEFAULT_SEARCH_PATHS`, so `mo purge`, the `mo clean` project-cache sweep and the report-only "AI agent worktrees" row reach it; the worktrees themselves and the rest of `~/.t3` stay out. `b0dc6fef` adds `clean_t3code_desktop_caches`, which takes only `Cache` and `Code Cache` under `Partitions/t3code-preview-*` of those two profiles while no T3 Code app runs. Verified 2026-11-06 on the test Mac with T3 Code 0.1.7: running, a real-mode call removed nothing; quit, it removed the two leaves' contents, every other profile file hashed the same, and the app rebuilt them on relaunch; a real `git worktree` under `~/.t3/worktrees` lost only its ignored, week-old `target/` to `mo purge`, its tracked files stayed, and `mo clean` showed the 1.15GB report row. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Implemented in source (2026-11-06): project artifacts inside `~/.t3/worktrees` and the same two preview cache leaves, withheld while T3 Code runs. The app-owned record owns the comparison.
+- Mole CLI (Windows): Pending. T3 Code ships a Windows build, but its worktree and profile paths there are unmeasured.
+- Mole for Windows: Pending, for the same reason.
+
+## 2026-11-06 Docker on a local engine only, and running Electron caches
+
+Source: issue #1922 and a Docker Desktop 4.98 run on the test Mac. Every Docker query in Mole CLI (macOS) now reads the endpoint first (`mole_docker_endpoint_is_local`, `docker context inspect`, which never dials the engine) and skips a remote or unknown one; `mo clean` prunes BuildKit cache unused for 7 days and dangling images through Docker itself, only on a local engine that already answers; the Large files row drops types and reclaimable figures under 1MB. Separately, the generic Application Support sweep cleared Code Cache and GPUCache of running Electron apps (Docker Desktop, VS Code, T3 Code); it now skips a folder whose `SingletonLock` names a live pid.
+
+Implemented in source (Mole CLI (macOS), `main`): `4075102a` (Docker, I-38) and `8abe329d` (Application Support, I-39). Verified 2026-11-06 on the test Mac: stopped engine, no prune row and the 1.62GB Docker Desktop data row; running engine, the prune row and the shortened storage row, and Application Support down from 27.3MB to 16.2MB as Docker Desktop's caches stayed; `remote-tcp` and `remote-ssh` contexts, no engine query, the local data row, 17s instead of 25s. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Not applicable for the endpoint gate, since it never runs `docker`; the daemon prune is a CLI owner command and does not transfer by itself. Pending for the running-app check: its generic Chromium sweep matches Application Support folders to running apps by name (`ProcessGuard.namedCacheFolder`), so folders named `Code`, `Docker Desktop` or `t3code-v2` need a check against their running apps, and `SingletonLock` is the evidence the CLI uses.
+- Mole CLI (Windows): Pending. Docker Desktop on Windows has the same context model; whether its Docker queries read the endpoint first is unchecked.
+- Mole for Windows: Pending, for the same reason.

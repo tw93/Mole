@@ -70,6 +70,7 @@ readonly MOLE_PURGE_DEFAULT_SEARCH_PATHS=(
     # directories in general. The worktrees themselves are never removed.
     "$HOME/.codex/worktrees"
     "$HOME/.claude/worktrees"
+    "$HOME/.t3/worktrees"
 )
 
 readonly MOLE_PURGE_MONOREPO_INDICATORS=(

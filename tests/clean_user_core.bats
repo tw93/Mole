@@ -1579,6 +1579,47 @@ EOF
 	[[ "$output" == *"REMOVE=$HOME/Library/Group Containers/group.com.apple.contentdelivery/Logs/event.log SILENT=true SIZE=2"* ]] || return 1
 }
 
+@test "clean_application_support_logs keeps caches of a running Electron app" {
+    # Docker Desktop, VS Code and T3 Code hold <userData>/SingletonLock while
+    # they run; their Code Cache and GPUCache were cleared under them.
+    local support_home="$HOME/support-appsupport-running"
+    rm -rf "$support_home"
+    run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+update_progress_if_needed() { return 1; }
+should_protect_data() { return 1; }
+is_critical_system_component() { return 1; }
+app_support_item_size_bytes() { printf '2048\n'; }
+safe_remove() { printf 'REMOVE=%s\n' "$1" >> "$HOME/remove-calls"; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+support="$HOME/Library/Application Support"
+mkdir -p "$support/Running App/Code Cache/js" "$support/Running App/GPUCache/data" \
+    "$support/Quit App/Code Cache/js" "$support/Unreadable App/GPUCache/data" \
+    "$support/Plain App/GPUCache/data"
+ln -s "$(hostname)-$$" "$support/Running App/SingletonLock"
+# A pid that cannot exist: a stale lock a crash left behind.
+ln -s "$(hostname)-99999999" "$support/Quit App/SingletonLock"
+ln -s "garbage" "$support/Unreadable App/SingletonLock"
+clean_application_support_logs
+cat "$HOME/remove-calls"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"REMOVE=$support_home/Library/Application Support/Running App/"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"REMOVE=$support_home/Library/Application Support/Unreadable App/"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"REMOVE=$support_home/Library/Application Support/Quit App/Code Cache/js"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"REMOVE=$support_home/Library/Application Support/Plain App/GPUCache/data"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_application_support_logs uses bulk clean for large Application Support directories" {
     local support_home="$HOME/support-appsupport-bulk"
     run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
@@ -4325,6 +4366,7 @@ _large_files_docker_row() {
     mkdir -p "$review_home"
 
     run env HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" DOCKER_DF_ROWS="$rows" \
+        DOCKER_HOST_ANSWER="${DOCKER_HOST_ANSWER:-}" \
         /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -4333,12 +4375,19 @@ start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
 defaults() { return 1; }
+du() { printf '2097152 %s\n' "${2:-/tmp}"; }
 run_with_timeout() {
     shift
     "$@"
 }
 docker() {
+    if [[ "${1:-} ${2:-}" == "context inspect" ]]; then
+        [[ "${DOCKER_HOST_ANSWER:-}" != "FAIL" ]] || return 1
+        printf '%s\n' "${DOCKER_HOST_ANSWER:-unix:///var/run/docker.sock}"
+        return 0
+    fi
     [[ "${1:-} ${2:-}" == "system df" && "${3:-}" == "--format" ]] || return 1
+    : > "$HOME/.docker-df-called"
     local type total active size reclaimable line
     while IFS='|' read -r type total active size reclaimable; do
         line="$4"
@@ -4374,11 +4423,11 @@ Build Cache|0|0|0B|0B"
     }
     local docker_row
     docker_row=$(_docker_row "$output")
-    [[ "$docker_row" == *"Images 7.093GB (2/2 in use) · Containers 846.3MB (3.658MB (0%) reclaimable) · Local Volumes 65.76MB (0B (0%) reclaimable) · Build Cache 0B (0B reclaimable)"* ]] || {
+    [[ "$docker_row" == *"Images 7.093GB, 2/2 in use · Containers 846.3MB, 3.658MB reclaimable · Volumes 65.76MB"* ]] || {
         echo "$output"
         return 1
     }
-    [[ "$docker_row" != *"(100%)"* ]] || {
+    [[ "$docker_row" != *"(100%)"* && "$docker_row" != *"Build cache"* && "$docker_row" != *"0B"* ]] || {
         echo "$docker_row"
         return 1
     }
@@ -4397,7 +4446,7 @@ Containers|1|1|12MB|0B (0%)"
     }
     local docker_row
     docker_row=$(_docker_row "$output")
-    [[ "$docker_row" == *"Images 4.2GB (1/3 in use) · Containers 12MB (0B (0%) reclaimable)"* ]] || {
+    [[ "$docker_row" == *"Images 4.2GB, 1/3 in use · Containers 12MB"* ]] || {
         echo "$output"
         return 1
     }
@@ -4415,7 +4464,7 @@ Containers|1|1|12MB|0B (0%)"
     }
     local docker_row
     docker_row=$(_docker_row "$output")
-    [[ "$docker_row" == *"Images 2.8GB (3/3 in use)"* ]] || {
+    [[ "$docker_row" == *"Images 2.8GB, 3/3 in use"* ]] || {
         echo "$output"
         return 1
     }
@@ -4438,10 +4487,56 @@ Build Cache|12|0|1.2GB|1.2GB"
     }
     local docker_row
     docker_row=$(_docker_row "$output")
-    [[ "$docker_row" == *"Images 2.5GB (2.5GB (100%) reclaimable) · Containers 40MB (12MB (30%) reclaimable) · Local Volumes 300MB (100MB (33%) reclaimable) · Build Cache 1.2GB (1.2GB reclaimable)"* ]] || {
+    [[ "$docker_row" == *"Images 2.5GB, 2.5GB reclaimable · Containers 40MB, 12MB reclaimable · Volumes 300MB, 100MB reclaimable · Build cache 1.2GB, 1.2GB reclaimable"* ]] || {
         echo "$output"
         return 1
     }
+}
+
+@test "large files Docker row leaves out types and reclaimable figures under 1MB" {
+    # Docker Desktop 4.98 on the test Mac: a 852.6MB build cache with 12.29kB
+    # reclaimable read as noise in the row.
+    _large_files_docker_row "$HOME/large-review-docker-small" \
+        "Images|5|3|931.5MB|859.1MB (92%)
+Containers|5|0|24.58kB|24.58kB (100%)
+Local Volumes|3|2|89B|0B (0%)
+Build Cache|9|0|852.6MB|12.29kB"
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    local docker_row
+    docker_row=$(_docker_row "$output")
+    [[ "$docker_row" == *"Images 931.5MB, 859.1MB reclaimable · Build cache 852.6MB"* ]] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$docker_row" != *"kB"* && "$docker_row" != *"%"* && "$docker_row" != *"Containers"* && "$docker_row" != *"Volumes"* ]] || {
+        echo "$docker_row"
+        return 1
+    }
+}
+
+@test "large files never queries a remote Docker engine (#1922)" {
+    # A tcp or ssh context answers for another machine: Mole must not ask it
+    # for storage, and the local Docker Desktop data row stays in charge.
+    local answer
+    mkdir -p "$HOME/large-review-docker-remote/Library/Containers/com.docker.docker/Data"
+    for answer in "tcp://10.0.0.5:2376" "ssh://builder@remote" "FAIL"; do
+        DOCKER_HOST_ANSWER="$answer" _large_files_docker_row "$HOME/large-review-docker-remote" \
+            "Images|5|3|931.5MB|859.1MB (92%)"
+        [ "$status" -eq 0 ] || {
+            echo "$output"
+            return 1
+        }
+        [[ ! -e "$HOME/large-review-docker-remote/.docker-df-called" && "$output" != *"Docker storage"* ]] &&
+            [[ "$output" == *"Docker Desktop data"* ]] || {
+            echo "answer=$answer"
+            echo "$output"
+            return 1
+        }
+    done
 }
 
 @test "external volume cleanup discards a partial metadata scan before deletion" {

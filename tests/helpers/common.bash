@@ -65,7 +65,7 @@ export -f mole_source_installer
 # defines a shell function (functions win over PATH) or puts its own stub
 # directory earlier on PATH. Production code that calls an absolute path such
 # as /usr/bin/sudo bypasses these stubs by design.
-MOLE_TEST_UNSTUBBED_COMMANDS=(sudo osascript launchctl mdfind brew xcrun)
+MOLE_TEST_UNSTUBBED_COMMANDS=(sudo osascript launchctl mdfind brew xcrun docker)
 
 # Put an executable test double for <name> first on PATH for the rest of this
 # test, including `run env ... /bin/bash` children and `mole` subprocesses.
