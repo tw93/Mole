@@ -313,7 +313,7 @@ mole_purge_read_paths_config() {
     [[ -f "$config_file" ]] || return 0
 
     local line
-    while IFS= read -r line; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line#"${line%%[![:space:]]*}"}"
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" =~ ^# ]] && continue

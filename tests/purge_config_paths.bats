@@ -63,6 +63,30 @@ EOF
     [[ "$output" != *"$HOME/Library/Mobile Documents"* ]] || return 1
 }
 
+@test "purge paths preserves a single custom path without a final newline" {
+    local config_file="$HOME/.config/mole/purge_paths"
+    local expected_file="$BATS_TEST_TMPDIR/expected-purge-paths"
+    mkdir -p "$HOME/Projects" "$HOME/custom projects"
+    printf '%s' "$HOME/custom projects" > "$config_file"
+    cp "$config_file" "$expected_file"
+
+    run env HOME="$HOME" EDITOR=/usr/bin/true MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"Using custom config with 1 paths"* ]] || return 1
+    cmp "$expected_file" "$config_file"
+}
+
+@test "load_purge_config includes the final custom path without a newline" {
+    local config_file="$HOME/.config/mole/purge_paths"
+    printf '%s\n%s' "$HOME/first" "$HOME/second project" > "$config_file"
+
+    run env HOME="$HOME" /bin/bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; printf '%s\\n' \"\${PURGE_SEARCH_PATHS[@]}\""
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == "$HOME/first"$'\n'"$HOME/second project" ]]
+}
+
 @test "load_purge_config expands tilde in paths" {
     local config_file="$HOME/.config/mole/purge_paths"
     
