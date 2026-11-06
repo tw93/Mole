@@ -283,23 +283,49 @@ EOF
     assert_output_contains "T3 Code caches"
 }
 
-@test "clean_t3code_desktop_caches refuses a linked cache leaf" {
-    run env HOME="$HOME/t3-cache-link" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+@test "clean_t3code_desktop_caches refuses a link at any component of the cache path" {
+    local link_at
+    for link_at in profile Partitions partition Cache; do
+        run env HOME="$HOME/t3-cache-link-$link_at" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 \
+            LINK_AT="$link_at" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
-preview="$HOME/Library/Application Support/t3code-v2/Partitions/t3code-preview-a"
-mkdir -p "$preview" "$HOME/elsewhere"
-touch "$HOME/elsewhere/user-file.bin"
-ln -s "$HOME/elsewhere" "$preview/Cache"
+profile="$HOME/Library/Application Support/t3code-v2"
+real="$HOME/elsewhere"
+case "$LINK_AT" in
+    profile)
+        mkdir -p "$real/Partitions/t3code-preview-a/Cache" "$(dirname "$profile")"
+        ln -s "$real" "$profile"
+        user_file="$real/Partitions/t3code-preview-a/Cache/user-file.bin"
+        ;;
+    Partitions)
+        mkdir -p "$real/t3code-preview-a/Cache" "$profile"
+        ln -s "$real" "$profile/Partitions"
+        user_file="$real/t3code-preview-a/Cache/user-file.bin"
+        ;;
+    partition)
+        mkdir -p "$real/Cache" "$profile/Partitions"
+        ln -s "$real" "$profile/Partitions/t3code-preview-a"
+        user_file="$real/Cache/user-file.bin"
+        ;;
+    Cache)
+        mkdir -p "$real" "$profile/Partitions/t3code-preview-a"
+        ln -s "$real" "$profile/Partitions/t3code-preview-a/Cache"
+        user_file="$real/user-file.bin"
+        ;;
+esac
+touch "$user_file"
 source "$PROJECT_ROOT/bin/clean.sh"
 pgrep() { return 1; }
 DRY_RUN=false
 MOLE_DRY_RUN=0
 clean_t3code_desktop_caches
-[[ -f "$HOME/elsewhere/user-file.bin" ]] || exit 1
+[[ -f "$user_file" ]] || { echo "LOST:$LINK_AT"; exit 1; }
 EOF
 
-    assert_run_success
-    assert_output_not_contains "T3 Code caches"
+        assert_run_success
+        assert_output_not_contains "LOST:"
+        assert_output_not_contains "T3 Code caches"
+    done
 }
 
 @test "clean_t3code_desktop_caches keeps caches while any T3 Code channel runs" {

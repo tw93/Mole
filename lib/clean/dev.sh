@@ -5711,7 +5711,7 @@ clean_t3code_desktop_caches() {
         "$support_root/T3 Code (Alpha)"
     )
     local -a leaves=("Cache" "Code Cache")
-    local -a targets=()
+    local -a physical_leaves=()
     local profile partition leaf physical_leaf
     for profile in "${profiles[@]}"; do
         [[ -d "$profile/Partitions" ]] || continue
@@ -5720,7 +5720,7 @@ clean_t3code_desktop_caches() {
                 physical_leaf=""
                 if physical_leaf=$(codex_staging_physical_path "$partition/$leaf" "$profile" any); then
                     if mole_cleanup_targets_exist "$physical_leaf"/*; then
-                        targets+=("$physical_leaf"/*)
+                        physical_leaves+=("$physical_leaf")
                     fi
                 else
                     debug_log "T3 Code cache leaf skipped: $partition/$leaf"
@@ -5728,7 +5728,7 @@ clean_t3code_desktop_caches() {
             done
         done
     done
-    [[ ${#targets[@]} -gt 0 ]] || return 0
+    [[ ${#physical_leaves[@]} -gt 0 ]] || return 0
 
     local process_state=0
     t3code_desktop_process_state || process_state=$?
@@ -5741,6 +5741,13 @@ clean_t3code_desktop_caches() {
         fi
         return 0
     fi
+
+    # List each folder's contents only now, right before the guarded sink, as
+    # the Codex cleanup does, so discovery never hands the sink a stale listing.
+    local -a targets=()
+    for physical_leaf in "${physical_leaves[@]}"; do
+        targets+=("$physical_leaf"/*)
+    done
 
     _dev_safe_clean_process_guarded t3code_desktop_process_state "T3 Code" \
         "T3 Code caches" "${targets[@]}" "T3 Code caches" || return 0
