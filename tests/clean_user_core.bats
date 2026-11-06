@@ -1579,6 +1579,47 @@ EOF
 	[[ "$output" == *"REMOVE=$HOME/Library/Group Containers/group.com.apple.contentdelivery/Logs/event.log SILENT=true SIZE=2"* ]] || return 1
 }
 
+@test "clean_application_support_logs keeps caches of a running Electron app" {
+    # Docker Desktop, VS Code and T3 Code hold <userData>/SingletonLock while
+    # they run; their Code Cache and GPUCache were cleared under them.
+    local support_home="$HOME/support-appsupport-running"
+    rm -rf "$support_home"
+    run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+update_progress_if_needed() { return 1; }
+should_protect_data() { return 1; }
+is_critical_system_component() { return 1; }
+app_support_item_size_bytes() { printf '2048\n'; }
+safe_remove() { printf 'REMOVE=%s\n' "$1" >> "$HOME/remove-calls"; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+support="$HOME/Library/Application Support"
+mkdir -p "$support/Running App/Code Cache/js" "$support/Running App/GPUCache/data" \
+    "$support/Quit App/Code Cache/js" "$support/Unreadable App/GPUCache/data" \
+    "$support/Plain App/GPUCache/data"
+ln -s "$(hostname)-$$" "$support/Running App/SingletonLock"
+# A pid that cannot exist: a stale lock a crash left behind.
+ln -s "$(hostname)-99999999" "$support/Quit App/SingletonLock"
+ln -s "garbage" "$support/Unreadable App/SingletonLock"
+clean_application_support_logs
+cat "$HOME/remove-calls"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"REMOVE=$support_home/Library/Application Support/Running App/"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"REMOVE=$support_home/Library/Application Support/Unreadable App/"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"REMOVE=$support_home/Library/Application Support/Quit App/Code Cache/js"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"REMOVE=$support_home/Library/Application Support/Plain App/GPUCache/data"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_application_support_logs uses bulk clean for large Application Support directories" {
     local support_home="$HOME/support-appsupport-bulk"
     run env HOME="$support_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
