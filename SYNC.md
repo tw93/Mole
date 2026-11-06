@@ -167,3 +167,13 @@ Implemented in source (Mole CLI (macOS), `main`): the temp-root prune stamp (`pr
 - Mole Mac: Implemented there first (2026-11-05).
 - Mole CLI (Windows): Implemented in source for the installed-app inventory cache (`SYNC.md` on `windows`); its update-notice state was already guarded.
 - Mole for Windows: Implemented there in the same pass (2026-11-05), through one shared window helper and a source gate.
+
+## 2026-11-06 T3 Code worktrees and preview caches
+
+Source: contributor PRs #1924 and #1925. T3 Code keeps agent checkouts in `~/.t3/worktrees` and a Chromium profile per preview browser under `~/Library/Application Support/t3code-v2` (`T3 Code (Alpha)` is the profile older builds left behind); both names match the T3 Code source (`resolveUserDataPath`, `PREVIEW_PARTITION_PREFIX`).
+
+Implemented in source (Mole CLI (macOS), `main`): `433fde60` adds `~/.t3/worktrees` to `MOLE_PURGE_DEFAULT_SEARCH_PATHS`, so `mo purge`, the `mo clean` project-cache sweep and the report-only "AI agent worktrees" row reach it; the worktrees themselves and the rest of `~/.t3` stay out. `b0dc6fef` adds `clean_t3code_desktop_caches`, which takes only `Cache` and `Code Cache` under `Partitions/t3code-preview-*` of those two profiles while no T3 Code app runs. Verified 2026-11-06 on the test Mac with T3 Code 0.1.7: running, a real-mode call removed nothing; quit, it removed the two leaves' contents, every other profile file hashed the same, and the app rebuilt them on relaunch; a real `git worktree` under `~/.t3/worktrees` lost only its ignored, week-old `target/` to `mo purge`, its tracked files stayed, and `mo clean` showed the 1.15GB report row. Next check: delivery in the next Mole CLI release.
+
+- Mole Mac: Pending. Its AI page already lists `~/.t3/worktrees`; project artifacts inside it and the preview caches are not offered yet. The app-owned record owns the comparison.
+- Mole CLI (Windows): Pending. T3 Code ships a Windows build, but its worktree and profile paths there are unmeasured.
+- Mole for Windows: Pending, for the same reason.
