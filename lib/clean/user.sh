@@ -288,6 +288,12 @@ clean_user_essentials() {
     if [[ "$deno_cache_root_valid" == "true" ]]; then
         for user_cache_target in "$HOME/Library/Caches"/*; do
             [[ -e "$user_cache_target" || -L "$user_cache_target" ]] || continue
+            # Google holds Chrome's live HTTP cache, which clean_browsers
+            # cleans only after Chrome quits; Android Studio has its own row.
+            # Swept whole, it went while Chrome ran and failed every run
+            # (seven times in one 2026-10-28 bundle), like Mole Mac's
+            # coveredCachePrefixes.
+            [[ "${user_cache_target##*/}" == "Google" ]] && continue
             case "$deno_cache_root" in
                 "$user_cache_target" | "$user_cache_target"/*) continue ;;
             esac

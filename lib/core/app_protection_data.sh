@@ -580,6 +580,7 @@ readonly DATA_PROTECTED_BUNDLES=(
     "com.DigiDNA.iMazing*"
     "com.shirtpocket.*"
     "homebrew.mxcl.*"
+    "sh.brew.*"
 
     # Remote Desktop / Remote Access
     "org.chromium.chromoting*"
