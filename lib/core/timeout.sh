@@ -21,7 +21,7 @@ readonly MOLE_TIMEOUT_LOADED=1
 #   brew install coreutils
 #
 # Fallback order:
-#   1. gtimeout / timeout
+#   1. gtimeout / timeout / /usr/bin/timeout, each verified to report 124
 #   2. perl helper with dedicated process group cleanup
 #   3. shell-based fallback (last resort)
 #
@@ -29,18 +29,43 @@ readonly MOLE_TIMEOUT_LOADED=1
 #   - May not clean up all child processes
 #   - Has race conditions in edge cases
 #   - Less reliable than native timeout/perl helper
+# A `timeout` found through PATH is not always coreutils or the system one: a
+# hand-written shim that exits with the killed child's 143 instead of 124 on
+# its deadline makes every bounded scan read as Ctrl-C, so `mo clean` cancels
+# the whole run at the first slow step. A shim that rejects fractional
+# durations (exit 125) breaks every sub-second budget the same way. GNU
+# coreutils and the system binary are trusted without a probe; any other
+# candidate must time out a short sleep with 124 or it is skipped.
+_mole_timeout_bin_is_compatible() {
+    local bin="$1"
+    [[ "$bin" == "/usr/bin/timeout" ]] && return 0
+    local version_text=""
+    version_text=$("$bin" --version < /dev/null 2> /dev/null) || true
+    [[ "$version_text" == *"GNU coreutils"* ]] && return 0
+    local probe_rc=0
+    "$bin" 0.1 /bin/sleep 2 < /dev/null > /dev/null 2>&1 || probe_rc=$?
+    [[ $probe_rc -eq 124 ]]
+}
+
 if [[ -z "${MO_TIMEOUT_INITIALIZED:-}" ]]; then
     MO_TIMEOUT_BIN=""
     MO_TIMEOUT_PERL_BIN=""
-    for candidate in gtimeout timeout; do
-        if command -v "$candidate" > /dev/null 2>&1; then
-            MO_TIMEOUT_BIN="$(command -v "$candidate")"
+    for candidate in gtimeout timeout /usr/bin/timeout; do
+        candidate_path="$(command -v "$candidate" 2> /dev/null || true)"
+        [[ -n "$candidate_path" && -x "$candidate_path" ]] || continue
+        if ! _mole_timeout_bin_is_compatible "$candidate_path"; then
             if [[ "${MO_DEBUG:-0}" == "1" ]]; then
-                echo "[TIMEOUT] Using command: $MO_TIMEOUT_BIN" >&2
+                echo "[TIMEOUT] Skipping $candidate_path: it does not report a timeout as 124" >&2
             fi
-            break
+            continue
         fi
+        MO_TIMEOUT_BIN="$candidate_path"
+        if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+            echo "[TIMEOUT] Using command: $MO_TIMEOUT_BIN" >&2
+        fi
+        break
     done
+    unset candidate candidate_path
 
     if command -v perl > /dev/null 2>&1; then
         MO_TIMEOUT_PERL_BIN="$(command -v perl)"
