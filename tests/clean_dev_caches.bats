@@ -4039,6 +4039,20 @@ EOF
     [ -f "$test_home/.codex/worktrees/topic/repo/file" ]
 }
 
+@test "report_agent_worktree_candidates reports the T3 Code worktree container" {
+    local test_home="$HOME/wt-t3-home"
+    mkdir -p "$test_home/.t3/worktrees/project/topic"
+    echo "data" > "$test_home/.t3/worktrees/project/topic/file"
+
+    _worktree_hint_run "$test_home"
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"AI agent worktrees"*".t3/worktrees"* ]] || return 1
+    [[ "$output" == *"T3 Code"* ]] || return 1
+    # Report only: the worktree must still exist afterwards.
+    [ -f "$test_home/.t3/worktrees/project/topic/file" ]
+}
+
 @test "report_agent_worktree_candidates skips a row on a size timeout without cancelling clean" {
     local test_home="$HOME/wt-timeout-home"
     mkdir -p "$test_home/code/proj/.claude/worktrees/wt-one"
