@@ -137,8 +137,8 @@ Implemented in source (Mole CLI (macOS), `main`): a successful stable `mo update
 Implemented in source (Mole CLI (macOS), `main`, `2335f055`, tw93/Mole#1914): `units.BytesSI` picked the unit before rounding to one decimal, so `mo analyze` printed 999,999 B as "1000.0 kB" where Finder shows 1 MB; a value that rounds to 1000.0 now moves up one unit (`internal/units/bytes.go`, `TestBytesSI`). Not released until the next tagged version ships it.
 
 - Mole Mac: Not applicable. Sizes go through Foundation's `ByteCountFormatter`, which picks the unit after rounding.
-- Mole CLI (Windows): Pending. `humanizeBytes` in `cmd/analyze/format.go` on the `windows` branch has the same shape with 1024-based units, so 1,048,575 B reads "1024.0 KB". Next check: step up a unit when the formatted value is 1024.0, with a boundary case in `format_test.go`.
-- Mole for Windows: Pending. `ByteSize.Format` in `src/Mole.Core/Formatting/ByteSize.cs` formats values of 100 and above with "0", so 1023.6 KB reads "1024 KB". Next check: confirm what File Explorer shows for that size before changing it, since the formatter follows Explorer.
+- Mole CLI (Windows): Implemented (`f07253a7`).
+- Mole for Windows: Implemented (`912e4c50`).
 
 ## 2026-11-04 APFS snapshots from other backup apps
 
@@ -185,5 +185,5 @@ Source: issue #1922 and a Docker Desktop 4.98 run on the test Mac. Every Docker 
 Implemented in source (Mole CLI (macOS), `main`): `4075102a` (Docker, I-38) and `8abe329d` (Application Support, I-39). Verified 2026-11-06 on the test Mac: stopped engine, no prune row and the 1.62GB Docker Desktop data row; running engine, the prune row and the shortened storage row, and Application Support down from 27.3MB to 16.2MB as Docker Desktop's caches stayed; `remote-tcp` and `remote-ssh` contexts, no engine query, the local data row, 17s instead of 25s. Next check: delivery in the next Mole CLI release.
 
 - Mole Mac: Not applicable for the endpoint gate and the daemon prune, since it never runs `docker` and a CLI owner command does not transfer by itself. Implemented in source (2026-11-06) for the running-app check: folders named `Code`, `Docker Desktop` and `t3code-v2` already answered to their running apps, and an Application Support folder that matches no running app is now held while the process its `SingletonLock` names is alive. The app-owned record owns the comparison.
-- Mole CLI (Windows): Pending. Docker Desktop on Windows has the same context model; whether its Docker queries read the endpoint first is unchecked.
-- Mole for Windows: Pending, for the same reason.
+- Mole CLI (Windows): Not applicable. It never runs `docker`: `Clear-DockerCaches` keeps the build cache, and the running-app check is `Clear-MoleAppCache`'s named owners.
+- Mole for Windows: Not applicable. It never runs `docker`; its one Docker row is Docker Desktop's log folder, and every cache rule names its owner process.
