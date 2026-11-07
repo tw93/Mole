@@ -187,3 +187,13 @@ Implemented in source (Mole CLI (macOS), `main`): `4075102a` (Docker, I-38) and 
 - Mole Mac: Not applicable for the endpoint gate and the daemon prune, since it never runs `docker` and a CLI owner command does not transfer by itself. Implemented in source (2026-11-06) for the running-app check: folders named `Code`, `Docker Desktop` and `t3code-v2` already answered to their running apps, and an Application Support folder that matches no running app is now held while the process its `SingletonLock` names is alive. The app-owned record owns the comparison.
 - Mole CLI (Windows): Not applicable. It never runs `docker`: `Clear-DockerCaches` keeps the build cache, and the running-app check is `Clear-MoleAppCache`'s named owners.
 - Mole for Windows: Not applicable. It never runs `docker`; its one Docker row is Docker Desktop's log folder, and every cache rule names its owner process.
+
+## 2026-11-07 Purge editor commands
+
+Source: PR #1940. `mo purge --paths` now runs an `EDITOR` that holds arguments, such as `code --wait`, and returns the editor's failure instead of reporting success.
+
+Implemented in source (Mole CLI (macOS), `main`): `4917abd1`, merged in `2cc4f227`.
+
+- Mole CLI (Windows): Not applicable. `bin/purge.ps1` opens `notepad.exe` directly and never reads `EDITOR`.
+- Mole Mac: Not applicable. It has no purge paths editor and never reads `EDITOR`.
+- Mole for Windows: Not applicable. It has no purge paths editor and never reads `EDITOR`.
