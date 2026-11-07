@@ -175,8 +175,8 @@ Source: contributor PRs #1924 and #1925. T3 Code keeps agent checkouts in `~/.t3
 Implemented in source (Mole CLI (macOS), `main`): `433fde60` adds `~/.t3/worktrees` to `MOLE_PURGE_DEFAULT_SEARCH_PATHS`, so `mo purge`, the `mo clean` project-cache sweep and the report-only "AI agent worktrees" row reach it; the worktrees themselves and the rest of `~/.t3` stay out. `b0dc6fef` adds `clean_t3code_desktop_caches`, which takes only `Cache` and `Code Cache` under `Partitions/t3code-preview-*` of those two profiles while no T3 Code app runs. Verified 2026-11-06 on the test Mac with T3 Code 0.1.7: running, a real-mode call removed nothing; quit, it removed the two leaves' contents, every other profile file hashed the same, and the app rebuilt them on relaunch; a real `git worktree` under `~/.t3/worktrees` lost only its ignored, week-old `target/` to `mo purge`, its tracked files stayed, and `mo clean` showed the 1.15GB report row. Next check: delivery in the next Mole CLI release.
 
 - Mole Mac: Implemented in source (2026-11-06): project artifacts inside `~/.t3/worktrees` and the same two preview cache leaves, withheld while T3 Code runs. The app-owned record owns the comparison.
-- Mole CLI (Windows): Pending. T3 Code ships a Windows build, but its worktree and profile paths there are unmeasured.
-- Mole for Windows: Pending, for the same reason.
+- Mole CLI (Windows): Implemented for the preview caches (`6088c9e3`, read in a VM on 2026-11-07). `.t3\worktrees` is not a `mo purge` root.
+- Mole for Windows: Implemented for the preview caches (`4f2dddb9`). It has no project artifact surface, so the worktrees are Not applicable.
 
 ## 2026-11-06 Docker on a local engine only, and running Electron caches
 
