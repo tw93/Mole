@@ -31,12 +31,6 @@ function Clear-UserTempFiles {
         Remove-OldFiles -Path $userTemp -DaysOld $DaysOld -Description "User temp files"
     }
     
-    # Windows Temp (if accessible)
-    $winTemp = "$env:WINDIR\Temp"
-    if ((Test-Path $winTemp) -and (Test-IsAdmin)) {
-        Remove-OldFiles -Path $winTemp -DaysOld $DaysOld -Description "Windows temp files"
-    }
-    
 }
 
 # ============================================================================

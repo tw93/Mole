@@ -212,12 +212,6 @@ Context "Specific App Cleanup" {
 }
 
 Describe "System Cleanup Module" {
-    Context "System Temp" {
-        It "Should have Clear-SystemTempFiles function" {
-            Get-Command Clear-SystemTempFiles -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
     Context "Windows Logs" {
         It "Should have Clear-WindowsLogs function" {
             Get-Command Clear-WindowsLogs -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
@@ -230,10 +224,18 @@ Describe "System Cleanup Module" {
         }
     }
     
+    Context "Targets the path guard can reach" {
+        It "Lists nothing under the protected Windows folder" {
+            $source = Get-Content (Join-Path $PSScriptRoot "..\lib\clean\system.ps1") -Raw
+            $source | Should -Not -Match '"\$env:WINDIR\\'
+            (Test-SafePath -Path "$env:WINDIR\Logs\CBS") | Should -BeFalse
+        }
+    }
+
     Context "Admin Requirements" {
         It "Should check for admin when needed" {
             # System cleanup should handle non-admin gracefully
-            { Clear-SystemTempFiles } | Should -Not -Throw
+            { Clear-WindowsLogs } | Should -Not -Throw
         }
     }
     

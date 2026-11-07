@@ -15,31 +15,11 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\..\core\file_ops.ps1"
 
 # ============================================================================
-# System Temp Files
-# ============================================================================
-
-function Clear-SystemTempFiles {
-    <#
-    .SYNOPSIS
-        Clean system-level temporary files (requires admin)
-    #>
-
-    if (-not (Test-IsAdmin)) {
-        Write-Debug "Skipping system temp cleanup - requires admin"
-        return
-    }
-
-    # Windows Temp folder
-    $winTemp = "$env:WINDIR\Temp"
-    if (Test-Path $winTemp) {
-        Remove-OldFiles -Path $winTemp -DaysOld 7 -Description "Windows temp files"
-    }
-}
-
-# ============================================================================
 # Windows Logs
 # ============================================================================
 
+# Targets under %WINDIR% are absent on purpose: Test-SafePath protects that prefix
+# outright, so a row there could only ever report nothing (elevated dry run, 2026-11-07).
 function Clear-WindowsLogs {
     <#
     .SYNOPSIS
@@ -54,14 +34,6 @@ function Clear-WindowsLogs {
 
     # Windows Logs directory
     $logPaths = @(
-        "$env:WINDIR\Logs\CBS"
-        "$env:WINDIR\Logs\DISM"
-        "$env:WINDIR\Logs\DPX"
-        "$env:WINDIR\Logs\WindowsUpdate"
-        "$env:WINDIR\Logs\SIH"
-        "$env:WINDIR\Logs\waasmedia"
-        "$env:WINDIR\Debug"
-        "$env:WINDIR\Panther"
         "$env:PROGRAMDATA\Microsoft\Windows\WER\ReportQueue"
         "$env:PROGRAMDATA\Microsoft\Windows\WER\ReportArchive"
     )
@@ -70,14 +42,6 @@ function Clear-WindowsLogs {
         if (Test-Path $path) {
             Remove-OldFiles -Path $path -DaysOld $DaysOld -Description "$(Split-Path -Leaf $path) logs"
         }
-    }
-
-    # Setup logs (*.log files in Windows directory)
-    $setupLogs = Get-ChildItem -Path "$env:WINDIR\*.log" -File -ErrorAction SilentlyContinue |
-                 Where-Object { (Test-MoleOlderThan $_ (Get-Date).AddDays(-$DaysOld)) }
-    if ($setupLogs) {
-        $paths = $setupLogs | ForEach-Object { $_.FullName }
-        Remove-SafeItems -Paths $paths -Description "Windows setup logs"
     }
 }
 
@@ -88,25 +52,8 @@ function Clear-WindowsLogs {
 function Clear-InstallerCache {
     <#
     .SYNOPSIS
-        Clean Windows Installer cache (orphaned patches)
+        Clean old Windows Installer logs from the temp folder
     #>
-
-    if (-not (Test-IsAdmin)) {
-        return
-    }
-
-    # Windows Installer patch cache
-    # WARNING: Be very careful here - only clean truly orphaned files
-    $installerPath = "$env:WINDIR\Installer"
-
-    # Only clean .tmp files and very old .msp files that are likely orphaned
-    if (Test-Path $installerPath) {
-        $tmpFiles = Get-ChildItem -Path $installerPath -Filter "*.tmp" -File -ErrorAction SilentlyContinue
-        if ($tmpFiles) {
-            $paths = $tmpFiles | ForEach-Object { $_.FullName }
-            Remove-SafeItems -Paths $paths -Description "Installer temp files"
-        }
-    }
 
     # Installer logs in temp
     $installerLogs = Get-ChildItem -Path $env:TEMP -Filter "MSI*.LOG" -File -ErrorAction SilentlyContinue |
@@ -124,24 +71,12 @@ function Clear-InstallerCache {
 function Clear-MemoryDumps {
     <#
     .SYNOPSIS
-        Clean Windows memory dumps
+        Clean per-user application crash dumps
     #>
 
-    $dumpPaths = @(
-        "$env:WINDIR\MEMORY.DMP"
-        "$env:WINDIR\Minidump"
-        "$env:LOCALAPPDATA\CrashDumps"
-    )
-
-    foreach ($path in $dumpPaths) {
-        if (Test-Path $path -PathType Leaf) {
-            # Single file (MEMORY.DMP)
-            $null = Remove-SafeItem -Path $path -Description "Memory dump"
-        }
-        elseif (Test-Path $path -PathType Container) {
-            # Directory (Minidump, CrashDumps)
-            Clear-DirectoryContents -Path $path -Description "$(Split-Path -Leaf $path)"
-        }
+    $path = "$env:LOCALAPPDATA\CrashDumps"
+    if (Test-Path $path -PathType Container) {
+        Clear-DirectoryContents -Path $path -Description "CrashDumps"
     }
 }
 
@@ -160,9 +95,6 @@ function Invoke-SystemCleanup {
     if (-not (Test-IsAdmin)) {
         Write-MoleWarning "Running without admin - some cleanup tasks will be skipped"
     }
-
-    # System temp files
-    Clear-SystemTempFiles
 
     # Windows logs
     Clear-WindowsLogs -DaysOld 7
@@ -382,4 +314,4 @@ function Clear-DeliveryOptimizationFiles {
 # ============================================================================
 # Exports
 # ============================================================================
-# Functions: Clear-SystemTempFiles, Clear-WindowsLogs, Invoke-SystemCleanup, etc.
+# Functions: Clear-WindowsLogs, Invoke-SystemCleanup, etc.
