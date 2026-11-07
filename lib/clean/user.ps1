@@ -40,84 +40,6 @@ function Clear-UserTempFiles {
 }
 
 # ============================================================================
-# Downloads Folder Cleanup
-# ============================================================================
-
-function Clear-OldDownloads {
-    <#
-    .SYNOPSIS
-        Clean old files from Downloads folder (with user confirmation pattern)
-    #>
-    param([int]$DaysOld = 30)
-    
-    $downloadsPath = [Environment]::GetFolderPath('UserProfile') + '\Downloads'
-    
-    if (-not (Test-Path $downloadsPath)) {
-        return
-    }
-    
-    # Find old installers and archives
-    $patterns = @('*.exe', '*.msi', '*.zip', '*.7z', '*.rar', '*.tar.gz', '*.iso')
-    $cutoffDate = (Get-Date).AddDays(-$DaysOld)
-    
-    $oldFiles = @()
-    foreach ($pattern in $patterns) {
-        $files = Get-ChildItem -Path $downloadsPath -Filter $pattern -File -ErrorAction SilentlyContinue |
-                 Where-Object { $_.LastWriteTime -lt $cutoffDate }
-        if ($files) {
-            $oldFiles += $files
-        }
-    }
-    
-    if ($oldFiles.Count -gt 0) {
-        $paths = $oldFiles | ForEach-Object { $_.FullName }
-        Remove-SafeItems -Paths $paths -Description "Old downloads (>${DaysOld}d)"
-    }
-}
-
-# ============================================================================
-# Recycle Bin Cleanup
-# ============================================================================
-
-function Clear-RecycleBin {
-    <#
-    .SYNOPSIS
-        Empty the Recycle Bin
-    #>
-    
-    if (Test-DryRunMode) {
-        Write-DryRun "Recycle Bin (would empty)"
-        Set-SectionActivity
-        return
-    }
-    
-    try {
-        # Use Shell.Application COM object
-        $shell = New-Object -ComObject Shell.Application
-        $recycleBin = $shell.Namespace(0xA)  # Recycle Bin
-        $items = $recycleBin.Items()
-        
-        if ($items.Count -gt 0) {
-            # Calculate size
-            $totalSize = 0
-            foreach ($item in $items) {
-                $totalSize += $item.Size
-            }
-            
-            # Clear using Clear-RecycleBin cmdlet (Windows 10+)
-            Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-            
-            $sizeHuman = Format-ByteSize -Bytes $totalSize
-            Write-Success "Recycle Bin $($script:Colors.Green)($sizeHuman)$($script:Colors.NC)"
-            Set-SectionActivity
-        }
-    }
-    catch {
-        Write-Debug "Could not clear Recycle Bin: $_"
-    }
-}
-
-# ============================================================================
 # Windows Error Reports Cleanup
 # ============================================================================
 
@@ -203,7 +125,7 @@ function Clear-UserLogs {
         
         if (Test-Path $parent) {
             $logs = Get-ChildItem -Path $parent -Filter $filter -File -ErrorAction SilentlyContinue |
-                    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$DaysOld) }
+                    Where-Object { (Test-MoleOlderThan $_ (Get-Date).AddDays(-$DaysOld)) }
             
             if ($logs) {
                 $paths = $logs | ForEach-Object { $_.FullName }
@@ -224,10 +146,7 @@ function Invoke-UserCleanup {
     #>
     param(
         [int]$TempDaysOld = 7,
-        [int]$DownloadsDaysOld = 30,
-        [int]$LogDaysOld = 7,
-        [switch]$IncludeDownloads,
-        [switch]$IncludeRecycleBin
+        [int]$LogDaysOld = 7
     )
     
     Start-Section "User essentials"
@@ -237,20 +156,10 @@ function Invoke-UserCleanup {
     Clear-ErrorReports -DaysOld 7
     Clear-UserLogs -DaysOld $LogDaysOld
     
-    # Optional: Downloads cleanup
-    if ($IncludeDownloads) {
-        Clear-OldDownloads -DaysOld $DownloadsDaysOld
-    }
-    
-    # Optional: Recycle Bin
-    if ($IncludeRecycleBin) {
-        Clear-RecycleBin
-    }
-    
     Stop-Section
 }
 
 # ============================================================================
 # Exports
 # ============================================================================
-# Functions: Clear-UserTempFiles, Clear-OldDownloads, Clear-RecycleBin, etc.
+# Functions: Clear-UserTempFiles, etc.

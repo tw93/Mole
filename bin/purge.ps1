@@ -39,6 +39,7 @@ $script:DefaultSearchPaths = @(
     "$env:USERPROFILE\Projects"
     "$env:USERPROFILE\Code"
     "$env:USERPROFILE\Development"
+    "$env:USERPROFILE\Developer"
     "$env:USERPROFILE\workspace"
     "$env:USERPROFILE\github"
     "$env:USERPROFILE\repos"

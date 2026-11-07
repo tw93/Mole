@@ -384,6 +384,16 @@ function Get-RegistryAppSize {
     return [PSCustomObject]@{ SizeKB = $EstimatedKB; Checked = $true }
 }
 
+# A search splits on whitespace and needs every word, read literally, so "Fan Control"
+# finds "FanControl" and a typed [ or * means itself.
+function Test-AppNameMatchesSearch {
+    param([string]$Name, [string]$Search)
+    foreach ($word in ($Search -split '\s+')) {
+        if ($word -and $Name.IndexOf($word, [StringComparison]::OrdinalIgnoreCase) -lt 0) { return $false }
+    }
+    return $true
+}
+
 # One Uninstall registry entry as an app, or $null for entries Settings > Apps hides.
 function ConvertFrom-UninstallEntry {
     param($Entry)
@@ -394,6 +404,8 @@ function ConvertFrom-UninstallEntry {
     if ([string]::IsNullOrWhiteSpace($displayName)) { return $null }
     if (-not $uninstallString -and -not $quietString) { return $null }
     if (Test-UninstallEntryFlag $Entry 'SystemComponent') { return $null }
+    # NoRemove is the publisher saying this entry is not to be uninstalled.
+    if (Test-UninstallEntryFlag $Entry 'NoRemove') { return $null }
     if (Test-UninstallEntryIsUpdate $Entry) { return $null }
     $displayName = $displayName.Trim()
     if (Test-ProtectedApp $displayName) { return $null }
@@ -1141,7 +1153,7 @@ function Show-AppSelectionMenu {
                     if ($searchTerm) {
                         # One match is a single object, and strict mode has no
                         # .Count on it; keep the filtered list an array.
-                        $filteredApps = @($Apps | Where-Object { $_.Name -like "*$searchTerm*" })
+                        $filteredApps = @($Apps | Where-Object { Test-AppNameMatchesSearch -Name $_.Name -Search $searchTerm })
                     }
                     else {
                         $filteredApps = $Apps

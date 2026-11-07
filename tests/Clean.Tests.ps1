@@ -40,18 +40,6 @@ Describe "User Cleanup Module" {
         }
     }
     
-    Context "Clear-OldDownloads" {
-        It "Should have Clear-OldDownloads function" {
-            Get-Command Clear-OldDownloads -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
-    Context "Clear-RecycleBin" {
-        It "Should have Clear-RecycleBin function" {
-            Get-Command Clear-RecycleBin -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
     Context "Invoke-UserCleanup" {
         It "Should have main user cleanup function" {
             Get-Command Invoke-UserCleanup -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
@@ -185,6 +173,7 @@ Describe "Game media enumeration" {
         Set-Content -LiteralPath $keptFile -Value "notes"
         foreach ($path in @($oldFile, $oldPhoto, $keptFile)) {
             (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-120)
+            (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-120)
         }
         $env:USERPROFILE = $script:MediaHome
         $script:MediaPaths = New-Object System.Collections.Generic.List[string]
@@ -205,17 +194,7 @@ Describe "Game media enumeration" {
 }
 
 Describe "Apps Cleanup Module" {
-    Context "Orphan Detection" {
-        It "Should have Find-OrphanedAppData function" {
-            Get-Command Find-OrphanedAppData -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-        
-        It "Should have Clear-OrphanedAppData function" {
-            Get-Command Clear-OrphanedAppData -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
-    Context "Specific App Cleanup" {
+Context "Specific App Cleanup" {
         It "Should have Clear-OfficeCache function" {
             Get-Command Clear-OfficeCache -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
         }
@@ -288,10 +267,41 @@ Describe "Cleanup accounting" {
         $old = Join-Path $dir "b.tmp"
         Set-Content -Path $old -Value "x"
         (Get-Item $old).LastWriteTime = (Get-Date).AddDays(-30)
+        (Get-Item $old).CreationTime = (Get-Date).AddDays(-30)
 
         @(Clear-DirectoryContents -Path $dir -Description "Test cache").Count | Should -Be 0
         @(Remove-SafeItems -Paths @($old) -Description "Test items").Count | Should -Be 0
         @(Remove-OldFiles -Path $dir -DaysOld 7 -Description "Test old").Count | Should -Be 0
+    }
+
+    It "Counts a file by the newer of its write and creation times" {
+        $dir = Join-Path $script:Root "aged"
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $old = Join-Path $dir "old.tmp"
+        $unpacked = Join-Path $dir "unpacked.tmp"
+        Set-Content -Path $old, $unpacked -Value "x"
+        $past = (Get-Date).AddDays(-30)
+        (Get-Item $old).LastWriteTime = $past
+        (Get-Item $old).CreationTime = $past
+        (Get-Item $unpacked).LastWriteTime = $past
+        Mock Remove-SafeItems {}
+
+        Remove-OldFiles -Path $dir -DaysOld 7 -Description "Test old"
+
+        Should -Invoke Remove-SafeItems -Times 1 -Exactly -ParameterFilter { @($Paths).Count -eq 1 -and $Paths -contains $old }
+    }
+
+    It "Leaves a launcher's logs alone while it runs and takes only old ones after" {
+        $dir = Join-Path $script:Root "launcher-logs"
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Mock Remove-OldFiles {}
+        Mock Test-MoleCacheOwnerIdle { $false }
+        Clear-MoleOwnerLogs -Path $dir -Description "Launcher logs" -Processes @('launcher')
+        Should -Invoke Remove-OldFiles -Times 0 -Exactly
+
+        Mock Test-MoleCacheOwnerIdle { $true }
+        Clear-MoleOwnerLogs -Path $dir -Description "Launcher logs" -Processes @('launcher')
+        Should -Invoke Remove-OldFiles -Times 1 -Exactly -ParameterFilter { $DaysOld -eq 7 }
     }
 
     It "Counts what a dry run would remove" {
@@ -336,6 +346,7 @@ Describe "Cleanup accounting" {
 
         foreach ($path in @($wer, (Join-Path $wer "Report.wer"), (Join-Path $dumps "app.dmp"))) {
             (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-10)
+            (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
             (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
         }
         Clear-ErrorReports

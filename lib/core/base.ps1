@@ -152,7 +152,6 @@ Initialize-MoleVisualDefaults
 # ============================================================================
 $script:Config = @{
     TempFileAgeDays        = 7       # Temp file retention (days)
-    OrphanAgeDays          = 60      # Orphaned data retention (days)
     MaxParallelJobs        = 15      # Parallel job limit
     LogAgeDays             = 7       # Log retention (days)
     CrashReportAgeDays     = 7       # Crash report retention (days)

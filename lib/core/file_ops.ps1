@@ -814,6 +814,13 @@ function Add-DryRunListEntries {
 # Pattern-Based Cleanup Functions
 # ============================================================================
 
+# A file's age is the newer of its write and creation times: a freshly unpacked
+# or copied file keeps its old write time and is not old.
+function Test-MoleOlderThan {
+    param($Item, [datetime]$Cutoff)
+    return $Item.LastWriteTime -lt $Cutoff -and $Item.CreationTime -lt $Cutoff
+}
+
 function Remove-OldFiles {
     <#
     .SYNOPSIS
@@ -839,7 +846,7 @@ function Remove-OldFiles {
     $cutoffDate = (Get-Date).AddDays(-$DaysOld)
     
     $oldFiles = Get-ChildItem -LiteralPath $Path -Filter $Filter -File -Force -ErrorAction SilentlyContinue |
-                Where-Object { $_.LastWriteTime -lt $cutoffDate }
+                Where-Object { (Test-MoleOlderThan $_ $cutoffDate) }
     
     if ($oldFiles -and (Test-MolePathSnapshot $rootSnapshot)) {
         $paths = $oldFiles | ForEach-Object { $_.FullName }

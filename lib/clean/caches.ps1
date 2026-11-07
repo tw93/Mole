@@ -197,17 +197,8 @@ function Clear-AppCaches {
         }
     }
     
-    # Steam (download cache, not games)
-    $steamCachePath = "${env:ProgramFiles(x86)}\Steam\appcache"
-    if (Test-Path $steamCachePath) {
-        Clear-DirectoryContents -Path $steamCachePath -Description "Steam app cache"
-    }
-    
     # Epic Games Launcher
-    $epicCachePath = "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache"
-    if (Test-Path $epicCachePath) {
-        Clear-DirectoryContents -Path $epicCachePath -Description "Epic Games cache"
-    }
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache" -Description "Epic Games cache" -Processes @('EpicGamesLauncher')
     
     Stop-Section
 }

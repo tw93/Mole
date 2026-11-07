@@ -31,6 +31,7 @@ Describe "Clean Command" {
             $canary = Join-Path $temp "keep.tmp"
             Set-Content -LiteralPath $canary -Value "preview canary"
             (Get-Item -LiteralPath $canary).LastWriteTime = (Get-Date).AddDays(-30)
+            (Get-Item -LiteralPath $canary).CreationTime = (Get-Date).AddDays(-30)
             $start = New-Object System.Diagnostics.ProcessStartInfo
             $start.FileName = (Get-Command powershell.exe -CommandType Application | Select-Object -First 1).Source
             $start.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $script:BinDir 'clean.ps1') + '" -DryRun'

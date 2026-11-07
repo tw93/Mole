@@ -16,155 +16,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$PSScriptRoot\cache_guard.ps1"
 
 # ============================================================================
-# Orphaned App Data Detection
-# ============================================================================
-
-function Get-InstalledPrograms {
-    <#
-    .SYNOPSIS
-        Get list of installed programs from registry
-    #>
-    
-    $programs = @()
-    
-    $registryPaths = @(
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )
-    
-    foreach ($path in $registryPaths) {
-        $items = Get-ItemProperty -Path $path -ErrorAction SilentlyContinue |
-                 Where-Object { $_.DisplayName } |
-                 Select-Object DisplayName, InstallLocation, Publisher
-        if ($items) {
-            $programs += $items
-        }
-    }
-    
-    # Also check UWP apps
-    try {
-        $uwpApps = Get-AppxPackage -ErrorAction SilentlyContinue | 
-                   Select-Object @{N='DisplayName';E={$_.Name}}, @{N='InstallLocation';E={$_.InstallLocation}}, Publisher
-        if ($uwpApps) {
-            $programs += $uwpApps
-        }
-    }
-    catch {
-        Write-Debug "Could not enumerate UWP apps: $_"
-    }
-    
-    return $programs
-}
-
-function Find-OrphanedAppData {
-    <#
-    .SYNOPSIS
-        Find app data folders for apps that are no longer installed
-    #>
-    param([int]$DaysOld = 60)
-    
-    $installedPrograms = Get-InstalledPrograms
-    $installedNames = $installedPrograms | ForEach-Object { $_.DisplayName.ToLower() }
-    
-    $orphanedPaths = @()
-    $cutoffDate = (Get-Date).AddDays(-$DaysOld)
-    
-    # Check common app data locations
-    $appDataPaths = @(
-        @{ Path = $env:APPDATA; Type = "Roaming" }
-        @{ Path = $env:LOCALAPPDATA; Type = "Local" }
-    )
-    
-    foreach ($location in $appDataPaths) {
-        if (-not (Test-Path $location.Path)) { continue }
-        
-        $folders = Get-ChildItem -Path $location.Path -Directory -ErrorAction SilentlyContinue
-        
-        foreach ($folder in $folders) {
-            # Skip system folders
-            $skipFolders = @('Microsoft', 'Windows', 'Packages', 'Programs', 'Temp', 'Roaming')
-            if ($folder.Name -in $skipFolders) { continue }
-            
-            # Skip if recently modified
-            if ($folder.LastWriteTime -gt $cutoffDate) { continue }
-            
-            # Check if app is installed using stricter matching
-            # Require exact match or that folder name is a clear prefix/suffix of app name
-            $isInstalled = $false
-            $folderLower = $folder.Name.ToLower()
-            foreach ($name in $installedNames) {
-                # Exact match
-                if ($name -eq $folderLower) {
-                    $isInstalled = $true
-                    break
-                }
-                # Folder is prefix of app name (e.g., "chrome" matches "chrome browser")
-                if ($name.StartsWith($folderLower) -and $folderLower.Length -ge 4) {
-                    $isInstalled = $true
-                    break
-                }
-                # App name is prefix of folder (e.g., "vscode" matches "vscode-data")
-                if ($folderLower.StartsWith($name) -and $name.Length -ge 4) {
-                    $isInstalled = $true
-                    break
-                }
-            }
-            
-            if (-not $isInstalled) {
-                $orphanedPaths += @{
-                    Path = $folder.FullName
-                    Name = $folder.Name
-                    Type = $location.Type
-                    Size = (Get-PathSize -Path $folder.FullName)
-                    LastModified = $folder.LastWriteTime
-                }
-            }
-        }
-    }
-    
-    return $orphanedPaths
-}
-
-function Clear-OrphanedAppData {
-    <#
-    .SYNOPSIS
-        Clean orphaned application data
-    #>
-    param([int]$DaysOld = 60)
-    
-    Start-Section "Orphaned app data"
-    
-    # @() keeps a single result an array; one hashtable alone would report
-    # its key count as .Count.
-    $orphaned = @(Find-OrphanedAppData -DaysOld $DaysOld)
-    
-    if ($orphaned.Count -eq 0) {
-        Write-Info "No orphaned app data found"
-        Stop-Section
-        return
-    }
-    
-    # Filter by size (only clean if > 10MB to avoid noise)
-    $significantOrphans = @($orphaned | Where-Object { $_.Size -gt 10MB })
-    
-    if ($significantOrphans.Count -gt 0) {
-        $totalSize = ($significantOrphans | Measure-Object -Property Size -Sum).Sum
-        $sizeHuman = Format-ByteSize -Bytes $totalSize
-        
-        $noun = if ($significantOrphans.Count -eq 1) { 'folder' } else { 'folders' }
-        Write-Info "Found $($significantOrphans.Count) orphaned $noun ($sizeHuman)"
-        
-        foreach ($orphan in $significantOrphans) {
-            $orphanSize = Format-ByteSize -Bytes $orphan.Size
-            $null = Remove-SafeItem -Path $orphan.Path -Description "$($orphan.Name) ($orphanSize)" -Recurse
-        }
-    }
-    
-    Stop-Section
-}
-
-# ============================================================================
 # Specific Application Cleanup
 # ============================================================================
 
@@ -292,7 +143,7 @@ function Clear-AutodeskData {
         $paths = Resolve-Path $pattern -ErrorAction SilentlyContinue
         foreach ($path in $paths) {
             if (Test-Path $path.Path) {
-                Clear-DirectoryContents -Path $path.Path -Description "Autodesk cache"
+                Clear-MoleAppCache -Path $path.Path -Description "Autodesk cache" -Processes @('acad', 'Revit', 'maya', '3dsmax', 'Inventor', 'Fusion360')
             }
         }
     }
@@ -308,75 +159,34 @@ function Clear-GamingPlatformCaches {
         Clean gaming platform caches (Steam, Epic, Origin, etc.)
     #>
     
-    # Steam
-    $steamPaths = @(
-        "${env:ProgramFiles(x86)}\Steam\appcache\httpcache"
-        "${env:ProgramFiles(x86)}\Steam\appcache\librarycache"
-        "${env:ProgramFiles(x86)}\Steam\logs"
-    )
-    foreach ($path in $steamPaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "Steam $(Split-Path -Leaf $path)"
-        }
-    }
-    
+    # Each launcher's caches go only while it is closed, and its logs at seven days,
+    # the way Mole for Windows holds them. Steam's own folder is under Program Files,
+    # which stays protected; its web cache lives in the profile.
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Steam\htmlcache" -Description "Steam web cache" -Processes @('steam', 'steamwebhelper')
+
     # Epic Games Launcher
-    $epicPaths = @(
-        "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache"
-        "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\Logs"
-    )
-    foreach ($path in $epicPaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "Epic Games $(Split-Path -Leaf $path)"
-        }
-    }
-    
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache" -Description "Epic Games webcache" -Processes @('EpicGamesLauncher')
+    Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\Logs" -Description "Epic Games logs" -Processes @('EpicGamesLauncher')
+
     # EA App (Origin replacement)
-    $eaPaths = @(
-        "$env:LOCALAPPDATA\Electronic Arts\EA Desktop\cache"
-        "$env:APPDATA\Origin\*\cache"
-    )
-    foreach ($pattern in $eaPaths) {
-        $paths = Resolve-Path $pattern -ErrorAction SilentlyContinue
-        foreach ($path in $paths) {
-            if (Test-Path $path.Path) {
-                Clear-DirectoryContents -Path $path.Path -Description "EA/Origin cache"
-            }
-        }
+    $eaProcesses = @('EADesktop', 'EABackgroundService', 'Origin')
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Electronic Arts\EA Desktop\cache" -Description "EA cache" -Processes $eaProcesses
+    foreach ($path in @(Resolve-Path "$env:APPDATA\Origin\*\cache" -ErrorAction SilentlyContinue)) {
+        Clear-MoleAppCache -Path $path.Path -Description "Origin cache" -Processes $eaProcesses
     }
-    
+
     # GOG Galaxy
-    $gogPaths = @(
-        "$env:LOCALAPPDATA\GOG.com\Galaxy\webcache"
-        "$env:PROGRAMDATA\GOG.com\Galaxy\logs"
-    )
-    foreach ($path in $gogPaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "GOG Galaxy $(Split-Path -Leaf $path)"
-        }
-    }
-    
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\GOG.com\Galaxy\webcache" -Description "GOG Galaxy webcache" -Processes @('GalaxyClient')
+    Clear-MoleOwnerLogs -Path "$env:PROGRAMDATA\GOG.com\Galaxy\logs" -Description "GOG Galaxy logs" -Processes @('GalaxyClient')
+
     # Ubisoft Connect
-    $ubiPaths = @(
-        "$env:LOCALAPPDATA\Ubisoft Game Launcher\cache"
-        "$env:LOCALAPPDATA\Ubisoft Game Launcher\logs"
-    )
-    foreach ($path in $ubiPaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "Ubisoft $(Split-Path -Leaf $path)"
-        }
-    }
-    
+    $ubisoftProcesses = @('upc', 'UbisoftConnect')
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Ubisoft Game Launcher\cache" -Description "Ubisoft cache" -Processes $ubisoftProcesses
+    Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\Ubisoft Game Launcher\logs" -Description "Ubisoft logs" -Processes $ubisoftProcesses
+
     # Battle.net
-    $battlenetPaths = @(
-        "$env:APPDATA\Battle.net\Cache"
-        "$env:APPDATA\Battle.net\Logs"
-    )
-    foreach ($path in $battlenetPaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "Battle.net $(Split-Path -Leaf $path)"
-        }
-    }
+    Clear-MoleAppCache -Path "$env:APPDATA\Battle.net\Cache" -Description "Battle.net Cache" -Processes @('Battle.net')
+    Clear-MoleOwnerLogs -Path "$env:APPDATA\Battle.net\Logs" -Description "Battle.net logs" -Processes @('Battle.net')
 }
 
 # ============================================================================
@@ -427,7 +237,7 @@ function Clear-GameMediaFiles {
     foreach ($basePath in $nvidiaPaths) {
         if (Test-Path $basePath) {
             $oldFiles = Get-ChildItem -Path $basePath -File -Recurse -ErrorAction SilentlyContinue |
-                        Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match $mediaExtensionPattern }
+                        Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match $mediaExtensionPattern }
             if ($oldFiles) {
                 $paths = $oldFiles | ForEach-Object { $_.FullName }
                 Remove-SafeItems -Paths $paths -Description "NVIDIA recordings (>${DaysOld}d)"
@@ -439,7 +249,7 @@ function Clear-GameMediaFiles {
     $highlightsPath = "$env:USERPROFILE\Videos\NVIDIA\Highlights"
     if (Test-Path $highlightsPath) {
         $oldHighlights = Get-ChildItem -Path $highlightsPath -File -Recurse -ErrorAction SilentlyContinue |
-                         Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match '\.(mp4|mkv|avi|mov)$' }
+                         Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match '\.(mp4|mkv|avi|mov)$' }
         if ($oldHighlights) {
             $paths = $oldHighlights | ForEach-Object { $_.FullName }
             Remove-SafeItems -Paths $paths -Description "NVIDIA Highlights (>${DaysOld}d)"
@@ -458,7 +268,7 @@ function Clear-GameMediaFiles {
     foreach ($basePath in $amdPaths) {
         if (Test-Path $basePath) {
             $oldFiles = Get-ChildItem -Path $basePath -File -Recurse -ErrorAction SilentlyContinue |
-                        Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match $mediaExtensionPattern }
+                        Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match $mediaExtensionPattern }
             if ($oldFiles) {
                 $paths = $oldFiles | ForEach-Object { $_.FullName }
                 Remove-SafeItems -Paths $paths -Description "AMD ReLive recordings (>${DaysOld}d)"
@@ -472,7 +282,7 @@ function Clear-GameMediaFiles {
     $xboxCapturesPath = "$env:USERPROFILE\Videos\Captures"
     if (Test-Path $xboxCapturesPath) {
         $oldFiles = Get-ChildItem -Path $xboxCapturesPath -File -ErrorAction SilentlyContinue |
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match $mediaExtensionPattern }
+                    Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match $mediaExtensionPattern }
         if ($oldFiles) {
             $paths = $oldFiles | ForEach-Object { $_.FullName }
             Remove-SafeItems -Paths $paths -Description "Xbox Game Bar captures (>${DaysOld}d)"
@@ -491,7 +301,7 @@ function Clear-GameMediaFiles {
         
         foreach ($folder in $screenshotFolders) {
             $oldScreenshots = Get-ChildItem -Path $folder -Filter "*.jpg" -File -Recurse -ErrorAction SilentlyContinue |
-                              Where-Object { $_.LastWriteTime -lt $cutoffDate }
+                              Where-Object { (Test-MoleOlderThan $_ $cutoffDate) }
             if ($oldScreenshots) {
                 $paths = $oldScreenshots | ForEach-Object { $_.FullName }
                 Remove-SafeItems -Paths $paths -Description "Steam screenshots (>${DaysOld}d)"
@@ -503,7 +313,7 @@ function Clear-GameMediaFiles {
     $steamScreenshotsPath = "$env:USERPROFILE\Pictures\Steam Screenshots"
     if (Test-Path $steamScreenshotsPath) {
         $oldFiles = Get-ChildItem -Path $steamScreenshotsPath -Filter "*.jpg" -File -Recurse -ErrorAction SilentlyContinue |
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate }
+                    Where-Object { (Test-MoleOlderThan $_ $cutoffDate) }
         if ($oldFiles) {
             $paths = $oldFiles | ForEach-Object { $_.FullName }
             Remove-SafeItems -Paths $paths -Description "Steam exported screenshots (>${DaysOld}d)"
@@ -516,7 +326,7 @@ function Clear-GameMediaFiles {
     $obsRecordingsPath = "$env:USERPROFILE\Videos\OBS"
     if (Test-Path $obsRecordingsPath) {
         $oldFiles = Get-ChildItem -Path $obsRecordingsPath -File -Recurse -ErrorAction SilentlyContinue |
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match $obsExtensionPattern }
+                    Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match $obsExtensionPattern }
         if ($oldFiles) {
             $paths = $oldFiles | ForEach-Object { $_.FullName }
             Remove-SafeItems -Paths $paths -Description "OBS recordings (>${DaysOld}d)"
@@ -531,7 +341,7 @@ function Clear-GameMediaFiles {
     foreach ($path in $gameDvrPaths) {
         if (Test-Path $path.Path) {
             $oldFiles = Get-ChildItem -Path $path.Path -File -Recurse -ErrorAction SilentlyContinue |
-                        Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match '\.(mp4|png)$' }
+                        Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match '\.(mp4|png)$' }
             if ($oldFiles) {
                 $paths = $oldFiles | ForEach-Object { $_.FullName }
                 Remove-SafeItems -Paths $paths -Description "Game DVR recordings (>${DaysOld}d)"
@@ -545,7 +355,7 @@ function Clear-GameMediaFiles {
     $medalPath = "$env:USERPROFILE\Videos\Medal"
     if (Test-Path $medalPath) {
         $oldFiles = Get-ChildItem -Path $medalPath -File -Recurse -ErrorAction SilentlyContinue |
-                    Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match $mediaExtensionPattern }
+                    Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match $mediaExtensionPattern }
         if ($oldFiles) {
             $paths = $oldFiles | ForEach-Object { $_.FullName }
             Remove-SafeItems -Paths $paths -Description "Medal.tv clips (>${DaysOld}d)"
@@ -562,7 +372,7 @@ function Clear-GameMediaFiles {
     foreach ($basePath in $overwolfPaths) {
         if (Test-Path $basePath) {
             $oldFiles = Get-ChildItem -Path $basePath -File -Recurse -ErrorAction SilentlyContinue |
-                        Where-Object { $_.LastWriteTime -lt $cutoffDate -and $_.Extension -match $mediaExtensionPattern }
+                        Where-Object { (Test-MoleOlderThan $_ $cutoffDate) -and $_.Extension -match $mediaExtensionPattern }
             if ($oldFiles) {
                 $paths = $oldFiles | ForEach-Object { $_.FullName }
                 Remove-SafeItems -Paths $paths -Description "Overwolf/Outplayed recordings (>${DaysOld}d)"
@@ -591,7 +401,7 @@ function Clear-GameMediaFiles {
     foreach ($path in $gameReplayPaths) {
         if (Test-Path $path) {
             $oldFiles = Get-ChildItem -Path $path -File -Recurse -ErrorAction SilentlyContinue |
-                        Where-Object { $_.LastWriteTime -lt $cutoffDate }
+                        Where-Object { (Test-MoleOlderThan $_ $cutoffDate) }
             if ($oldFiles) {
                 $gameName = (Split-Path (Split-Path $path -Parent) -Leaf)
                 $paths = $oldFiles | ForEach-Object { $_.FullName }
@@ -613,7 +423,6 @@ function Invoke-AppCleanup {
         Run all application-specific cleanup tasks
     #>
     param(
-        [switch]$IncludeOrphaned,
         [switch]$IncludeGameMedia,
         [int]$GameMediaDaysOld = 90
     )
@@ -638,14 +447,9 @@ function Invoke-AppCleanup {
     if ($IncludeGameMedia) {
         Clear-GameMediaFiles -DaysOld $GameMediaDaysOld
     }
-    
-    # Orphaned app data (separate section)
-    if ($IncludeOrphaned) {
-        Clear-OrphanedAppData -DaysOld 60
-    }
 }
 
 # ============================================================================
 # Exports
 # ============================================================================
-# Functions: Get-InstalledPrograms, Find-OrphanedAppData, Clear-OfficeCache, etc.
+# Functions: Clear-OfficeCache, etc.

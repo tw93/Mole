@@ -36,6 +36,14 @@ function Clear-MoleAppCache {
     Clear-DirectoryContents -Path $Path -Description $Description -CanRemove $condition
 }
 
+# A named app's logs: files seven days old or more, only while it is not running.
+function Clear-MoleOwnerLogs {
+    param([string]$Path, [string]$Description, [string[]]$Processes)
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return }
+    if (-not (Test-MoleCacheOwnerIdle -Names $Processes)) { return }
+    Remove-OldFiles -Path $Path -DaysOld 7 -Description $Description
+}
+
 function Get-MoleCacheProfiles {
     param([string]$Root)
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return }

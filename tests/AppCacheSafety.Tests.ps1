@@ -144,8 +144,11 @@ Describe 'Application cache boundaries' {
         $data = New-CacheFile "$env:LOCALAPPDATA\Tencent\Wemeet\Global\Data\db.sqlite"
         $wsl = New-CacheFile "$env:LOCALAPPDATA\Docker\wsl\disk\docker_data.vhdx"
         (Get-Item -LiteralPath $old).LastWriteTime = (Get-Date).AddDays(-10)
+        (Get-Item -LiteralPath $old).CreationTime = (Get-Date).AddDays(-10)
         (Get-Item -LiteralPath $data).LastWriteTime = (Get-Date).AddDays(-10)
+        (Get-Item -LiteralPath $data).CreationTime = (Get-Date).AddDays(-10)
         (Get-Item -LiteralPath $wsl).LastWriteTime = (Get-Date).AddDays(-10)
+        (Get-Item -LiteralPath $wsl).CreationTime = (Get-Date).AddDays(-10)
         Clear-AppCaches
         Test-Path -LiteralPath $old | Should -BeFalse
         foreach ($file in @($recent, $data, $wsl)) { Test-Path -LiteralPath $file | Should -BeTrue }
@@ -208,6 +211,7 @@ Describe 'Application cache boundaries' {
         foreach ($path in @($old, (Split-Path $old), $oldDump)) {
             (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-10)
             (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
+            (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
         }
         Set-DryRunMode -Enabled $true
         Clear-ErrorReports -DaysOld 7
@@ -229,6 +233,7 @@ Describe 'Application cache boundaries' {
         foreach ($path in @($report, (Split-Path $report))) {
             (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-10)
             (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
+            (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
         }
         Clear-ErrorReports
         Test-Path -LiteralPath $report | Should -BeTrue
@@ -239,6 +244,7 @@ Describe 'Application cache boundaries' {
         $report = New-CacheFile "$env:LOCALAPPDATA\Microsoft\Windows\WER\ReportArchive\old\Report.wer"
         foreach ($path in @($report, (Split-Path $report))) {
             (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-10)
+            (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
             (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-10)
         }
         $script:ReportAttachment = "$(Split-Path $report)\new.dmp"
@@ -819,6 +825,7 @@ Describe 'NVIDIA driver installers' {
         Set-Age "$root\DisplayDriver\560.94" 30
         Set-Age "$root\DisplayDriver\572.16" 30
         (Get-Item -LiteralPath $mixed).LastWriteTime = Get-Date
+        (Get-Item -LiteralPath $mixed).CreationTime = Get-Date
         Set-Age "$root\GameReady" 30
         Clear-NvidiaDriverInstallers
         Test-Path -LiteralPath "$root\DisplayDriver\560.94" | Should -BeFalse

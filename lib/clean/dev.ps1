@@ -296,12 +296,12 @@ function Clear-DotNetDevCaches {
     
     $nugetHttpCache = "$env:LOCALAPPDATA\NuGet\v3-cache"
     if (Test-Path $nugetHttpCache) {
-        Clear-DirectoryContents -Path $nugetHttpCache -Description "NuGet HTTP cache"
+        Clear-MoleAppCache -Path $nugetHttpCache -Description "NuGet HTTP cache" -Processes @('devenv', 'dotnet', 'MSBuild')
     }
     
     $nugetTempPath = "$env:LOCALAPPDATA\NuGet\plugins-cache"
     if (Test-Path $nugetTempPath) {
-        Clear-DirectoryContents -Path $nugetTempPath -Description "NuGet plugins cache"
+        Clear-MoleAppCache -Path $nugetTempPath -Description "NuGet plugins cache" -Processes @('devenv', 'dotnet', 'MSBuild')
     }
     
     # MSBuild temp files
@@ -309,7 +309,7 @@ function Clear-DotNetDevCaches {
     if (Test-Path $msbuildTemp) {
         $tempDirs = Get-ChildItem -Path $msbuildTemp -Directory -Filter "*temp*" -ErrorAction SilentlyContinue
         foreach ($dir in $tempDirs) {
-            Clear-DirectoryContents -Path $dir.FullName -Description "MSBuild temp"
+            Clear-MoleAppCache -Path $dir.FullName -Description "MSBuild temp" -Processes @('devenv', 'dotnet', 'MSBuild')
         }
     }
 }
@@ -669,7 +669,7 @@ function Clear-GitCaches {
     $ghCachePath = "$env:APPDATA\GitHub CLI"
     if (Test-Path $ghCachePath) {
         $cacheFiles = Get-ChildItem -Path $ghCachePath -Filter "*.json" -ErrorAction SilentlyContinue |
-                      Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) }
+                      Where-Object { (Test-MoleOlderThan $_ (Get-Date).AddDays(-7)) }
         if ($cacheFiles) {
             $paths = $cacheFiles | ForEach-Object { $_.FullName }
             Remove-SafeItems -Paths $paths -Description "GitHub CLI cache"

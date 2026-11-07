@@ -1510,3 +1510,20 @@ Describe 'Charge limit uninstall notice' {
         Should -Invoke Remove-AppxPackage -Times 0 -Exactly
     }
 }
+
+Describe "Finding an app to uninstall" {
+    It "Lists no entry the publisher marked NoRemove" {
+        $entry = [pscustomobject]@{ DisplayName = "Vendor Runtime"; UninstallString = "C:\vendor\uninst.exe"; NoRemove = 1; PSChildName = "vendor"; PSPath = "HKLM-test\vendor" }
+        ConvertFrom-UninstallEntry $entry | Should -BeNullOrEmpty
+    }
+
+    It "Finds <Name> for '<Search>': <Expected>" -TestCases @(
+        @{ Name = "FanControl"; Search = "Fan Control"; Expected = $true }
+        @{ Name = "Fan Control"; Search = "control  FAN"; Expected = $true }
+        @{ Name = "FanControl"; Search = "Fan Speed"; Expected = $false }
+        @{ Name = "Tool [Beta]"; Search = "[Beta]"; Expected = $true }
+        @{ Name = "Toolbox"; Search = "T*x"; Expected = $false }
+    ) {
+        Test-AppNameMatchesSearch -Name $Name -Search $Search | Should -Be $Expected
+    }
+}

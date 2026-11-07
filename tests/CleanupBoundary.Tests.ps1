@@ -54,6 +54,7 @@ Describe 'Cleanup physical boundaries' {
         $sentinel = Join-Path $target 'keep.txt'
         Set-Content -LiteralPath $sentinel -Value 'keep'
         (Get-Item -LiteralPath $sentinel).LastWriteTime = (Get-Date).AddDays(-30)
+        (Get-Item -LiteralPath $sentinel).CreationTime = (Get-Date).AddDays(-30)
         $link = Join-Path $script:Root 'cache'
         New-Item -ItemType Junction -Path $link -Target $target | Out-Null
         Remove-OldFiles -Path $link

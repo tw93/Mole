@@ -111,8 +111,10 @@ Describe 'Game media scope' {
                 New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
                 Set-Content -LiteralPath $path -Value 'fixture'
                 (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddDays(-100)
+                (Get-Item -LiteralPath $path).CreationTime = (Get-Date).AddDays(-100)
             }
             (Get-Item -LiteralPath $paths[3]).LastWriteTime = Get-Date
+            (Get-Item -LiteralPath $paths[3]).CreationTime = Get-Date
             Mock Start-Section {}
             Mock Stop-Section {}
             Mock Remove-SafeItems {}
