@@ -208,6 +208,11 @@ load_purge_config() {
     PURGE_SEARCH_PATHS=()
     PURGE_DISCOVERY_STATUS=0
 
+    # A failed read must not look like an empty config and trigger discovery
+    # that replaces the user's scope. Process substitution loses that status.
+    local config_paths
+    config_paths=$(mole_purge_read_paths_config "$PURGE_CONFIG_FILE") || return $?
+
     local line existing_path already_found
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
@@ -224,7 +229,7 @@ load_purge_config() {
         done
         [[ "$already_found" == "true" ]] && continue
         PURGE_SEARCH_PATHS+=("$line")
-    done < <(mole_purge_read_paths_config "$PURGE_CONFIG_FILE")
+    done <<< "$config_paths"
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
         if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then

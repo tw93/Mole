@@ -87,6 +87,56 @@ EOF
     [[ "$output" == "$HOME/first"$'\n'"$HOME/second project" ]]
 }
 
+@test "purge refuses unreadable custom paths without replacing them with discovered roots" {
+    local option
+    for option in --paths --dry-run; do
+        local fixture_home="$BATS_TEST_TMPDIR/home-$option"
+        local config_file="$fixture_home/.config/mole/purge_paths"
+        local expected_file="$BATS_TEST_TMPDIR/expected-$option"
+        mkdir -p "$fixture_home/.config/mole" "$fixture_home/custom projects" "$fixture_home/Projects/demo"
+        touch "$fixture_home/Projects/demo/package.json"
+        printf '%s\n' "$fixture_home/custom projects" > "$config_file"
+        cp "$config_file" "$expected_file"
+        chmod 000 "$config_file"
+        if [[ -r "$config_file" ]]; then
+            chmod 600 "$config_file"
+            skip "requires a user that cannot read mode-000 files"
+        fi
+
+        run env HOME="$fixture_home" EDITOR=/usr/bin/true MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge "$option"
+
+        chmod 600 "$config_file"
+        cmp "$expected_file" "$config_file" || return 1
+        [ "$status" -ne 0 ] || return 1
+        [[ "$output" == *"Permission denied"* ]] || return 1
+        [[ "$output" != *"Configuration updated"* ]] || return 1
+    done
+}
+
+@test "purge paths preserves custom paths when the editor makes the configuration unreadable" {
+    local fixture_home="$BATS_TEST_TMPDIR/editor-home"
+    local config_file="$fixture_home/.config/mole/purge_paths"
+    local expected_file="$BATS_TEST_TMPDIR/expected-editor-paths"
+    mkdir -p "$fixture_home/.config/mole" "$fixture_home/custom projects" "$fixture_home/Projects/demo"
+    touch "$fixture_home/Projects/demo/package.json"
+    printf '%s\n' "$fixture_home/custom projects" > "$config_file"
+    cp "$config_file" "$expected_file"
+    chmod 000 "$config_file"
+    if [[ -r "$config_file" ]]; then
+        chmod 600 "$config_file"
+        skip "requires a user that cannot read mode-000 files"
+    fi
+    chmod 600 "$config_file"
+
+    run env HOME="$fixture_home" EDITOR="/bin/chmod 000" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    chmod 600 "$config_file"
+    cmp "$expected_file" "$config_file" || return 1
+    [ "$status" -ne 0 ] || return 1
+    [[ "$output" == *"Permission denied"* ]] || return 1
+    [[ "$output" != *"Configuration updated"* ]]
+}
+
 @test "load_purge_config expands tilde in paths" {
     local config_file="$HOME/.config/mole/purge_paths"
     
