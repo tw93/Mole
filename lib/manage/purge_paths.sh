@@ -100,8 +100,13 @@ manage_purge_paths() {
     # Wait for user to read
     sleep 1
 
-    # Open editor
-    "$editor" "$PURGE_PATHS_CONFIG"
+    # Keep literal executable paths (including spaces) working. Otherwise,
+    # interpret the user's editor command while passing the config only as data.
+    if command -v "$editor" > /dev/null 2>&1; then
+        "$editor" "$PURGE_PATHS_CONFIG" || return $?
+    else
+        /bin/bash -c "$editor \"\$@\"" mole-editor "$PURGE_PATHS_CONFIG" || return $?
+    fi
 
     # Reload and show updated status
     load_purge_config
