@@ -601,6 +601,7 @@ should_protect_path() {
             return 0
             ;;
         */Library/Caches/ms-playwright | */Library/Caches/ms-playwright/* | \
+            */Library/Caches/camoufox | */Library/Caches/camoufox/* | \
             */Library/Caches/app.cotypist.Cotypist | */Library/Caches/app.cotypist.Cotypist/* | \
             */Library/Caches/com.displaylink.DisplayLinkUserAgent | */Library/Caches/com.displaylink.DisplayLinkUserAgent/* | \
             */Library/Caches/com.lasersoft-imaging.SilverFast9 | */Library/Caches/com.lasersoft-imaging.SilverFast9/* | \

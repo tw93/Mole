@@ -148,6 +148,7 @@ RubyGems spec cache|$HOME/.gem/specs/*|package_manager
 Conda package metadata/tarball cache|$HOME/.conda/pkgs|package_manager
 Anaconda package metadata/tarball cache|$HOME/anaconda3/pkgs|package_manager
 Playwright browser binaries|$HOME/Library/Caches/ms-playwright*|ai_ml_cache
+Camoufox browser binaries|$HOME/Library/Caches/camoufox*|ai_ml_cache
 Safari web browser cache|$HOME/Library/Caches/com.apple.Safari/*|browser_cache
 Chrome browser cache|$HOME/Library/Caches/Google/Chrome/*|browser_cache
 Firefox browser cache|$HOME/Library/Caches/Firefox/*|browser_cache

@@ -1525,6 +1525,8 @@ EOF
     run /bin/bash -c "
         source '$PROJECT_ROOT/lib/core/common.sh'
         should_protect_path '$HOME/Library/Caches/ms-playwright/chromium-123'
+        should_protect_path '$HOME/Library/Caches/camoufox' || exit 1
+        should_protect_path '$HOME/Library/Caches/camoufox/Camoufox.app' || exit 1
         should_protect_path '$HOME/Library/Caches/com.apple.homed/state'
         should_protect_path '$HOME/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite'
         should_protect_path '$HOME/Library/Preferences/com.paceap.eden.iLokLicenseManager.plist'

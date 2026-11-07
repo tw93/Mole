@@ -171,6 +171,7 @@ readonly MOLE_ONE_GB_BYTES=1000000000
 readonly FINDER_METADATA_SENTINEL="FINDER_METADATA"
 declare -a DEFAULT_WHITELIST_PATTERNS=(
     "$HOME/Library/Caches/ms-playwright*"
+    "$HOME/Library/Caches/camoufox*"
     "$HOME/.gradle/caches/*"
     "$HOME/.gradle/daemon/*"
     "$HOME/.ollama/models/*"
