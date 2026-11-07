@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -20,7 +21,14 @@ var protectedTrees = []string{
 	`\System Volume Information`,
 	`\$Recycle.Bin`,
 	`\Config.Msi`,
+	`\PerfLogs`,
+	`\Boot`,
+	`\Documents and Settings`,
+	`\$WinREAgent`,
 }
+
+// volumeRootFiles are the paging files Windows keeps at the root of any volume.
+var volumeRootFiles = []string{`pagefile.sys`, `hiberfil.sys`, `swapfile.sys`}
 
 // protectedTreeEnvVars name system folders that may live away from their
 // default location; each is refused with everything below it.
@@ -67,6 +75,14 @@ func isProtectedPath(path string) bool {
 		}
 	}
 
+	// One entry at a volume's root: a paging file on any volume, and anything at
+	// all on the system drive's first level, which holds nothing of the user's.
+	if rest := rel[1:]; !strings.Contains(rest, `\`) {
+		if slices.Contains(volumeRootFiles, rest) || onSystemDrive(absPath) {
+			return true
+		}
+	}
+
 	// \Users and every profile root directly below it, the user's own included.
 	if rel == `\users` {
 		return true
@@ -92,6 +108,21 @@ func isProtectedPath(path string) bool {
 	}
 
 	return false
+}
+
+// onSystemDrive reports whether a lowercased absolute path is on the system
+// drive. A share is not; a volume GUID or device spelling cannot be told apart
+// from it here, so it counts as the system drive, as does a missing SystemDrive.
+func onSystemDrive(lowerAbsPath string) bool {
+	volume := strings.TrimPrefix(filepath.VolumeName(lowerAbsPath), `\\?\`)
+	if strings.HasPrefix(volume, `\\`) || strings.HasPrefix(volume, `unc\`) {
+		return false
+	}
+	system := strings.ToLower(strings.TrimSpace(os.Getenv("SystemDrive")))
+	if system == "" || len(volume) != 2 || volume[1] != ':' {
+		return true
+	}
+	return volume == system
 }
 
 func userHomeDir() string {

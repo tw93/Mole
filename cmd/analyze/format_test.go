@@ -80,6 +80,12 @@ func TestHumanizeBytes(t *testing.T) {
 		{1 << 20, "1.0 MB"},
 		{1 << 30, "1.0 GB"},
 		{1 << 40, "1.0 TB"},
+		{1023, "1023 B"},
+		{1<<20 - 1024, "1023.0 KB"},
+		{1<<20 - 53, "1023.9 KB"},
+		{1<<20 - 1, "1.0 MB"},
+		{1<<30 - 1, "1.0 GB"},
+		{1<<40 - 1, "1.0 TB"},
 	}
 	for _, tt := range tests {
 		if got := humanizeBytes(tt.input); got != tt.want {
@@ -442,6 +448,10 @@ func TestFormatUnusedTime(t *testing.T) {
 		{"3 years", 1095, ">3yr"},
 	}
 
+	tracked := lastAccessTracked
+	lastAccessTracked = func() bool { return true }
+	t.Cleanup(func() { lastAccessTracked = tracked })
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lastAccess time.Time
@@ -456,6 +466,27 @@ func TestFormatUnusedTime(t *testing.T) {
 				t.Errorf("formatUnusedTime(%d days ago) = %q, want %q", tt.daysAgo, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatUnusedTimeClaimsNothingWithoutAccessTimes(t *testing.T) {
+	tracked := lastAccessTracked
+	lastAccessTracked = func() bool { return false }
+	t.Cleanup(func() { lastAccessTracked = tracked })
+
+	if got := formatUnusedTime(time.Now().Add(-3 * 365 * 24 * time.Hour)); got != "" {
+		t.Errorf("formatUnusedTime without access times = %q, want empty", got)
+	}
+}
+
+func TestAccessTrackedFromReadsBitZero(t *testing.T) {
+	for value, want := range map[uint64]bool{
+		0: true, 0x80000000: true, 0x80000002: true,
+		1: false, 0x80000001: false, 0x80000003: false,
+	} {
+		if got := accessTrackedFrom(value); got != want {
+			t.Errorf("accessTrackedFrom(%#x) = %v, want %v", value, got, want)
+		}
 	}
 }
 

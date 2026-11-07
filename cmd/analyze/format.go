@@ -76,7 +76,13 @@ func humanizeBytes(size int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
+	value := float64(size) / float64(div)
+	// One decimal rounds 1023.95 up to 1024.0, which is the next unit's 1.0.
+	if value >= 1023.95 && exp < len("KMGTPE")-1 {
+		value /= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", value, "KMGTPE"[exp])
 }
 
 func formatPercent(percent float64, known bool) string {
@@ -178,9 +184,18 @@ func padName(name string, targetWidth int) string {
 	return name + strings.Repeat(" ", targetWidth-currentWidth)
 }
 
-// formatUnusedTime formats time since last access.
+// accessTrackedFrom reads the NtfsDisableLastAccessUpdate value: bit 0 set means
+// NTFS does not record openings (1, 0x80000001 user managed, 0x80000003 system
+// managed); 0, 0x80000000 and 0x80000002 mean it does.
+func accessTrackedFrom(value uint64) bool {
+	return value&1 == 0
+}
+
+// formatUnusedTime formats time since last access. Without NTFS recording
+// openings, which is the default on a system volume over 128 GB, an often-opened
+// file reads as a year old, so nothing is claimed.
 func formatUnusedTime(lastAccess time.Time) string {
-	if lastAccess.IsZero() {
+	if lastAccess.IsZero() || !lastAccessTracked() {
 		return ""
 	}
 

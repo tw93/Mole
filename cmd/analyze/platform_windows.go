@@ -9,12 +9,26 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
+
+// lastAccessTracked answers once per run whether NTFS records file openings; a
+// missing or unreadable value is unknown, which claims nothing.
+var lastAccessTracked = sync.OnceValue(func() bool {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\FileSystem`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+	value, _, err := key.GetIntegerValue("NtfsDisableLastAccessUpdate")
+	return err == nil && accessTrackedFrom(value)
+})
 
 // isLinkEntry reports a junction or symbolic link. Go reports these name
 // surrogate reparse points without the directory bit, so a walk that only

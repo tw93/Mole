@@ -18,6 +18,8 @@ func isLinkEntry(entry fs.DirEntry) bool { return entry.Type()&fs.ModeSymlink !=
 
 func lastAccessTime(fs.FileInfo) time.Time { return time.Time{} }
 
+var lastAccessTracked = func() bool { return false }
+
 func diskSize(_ string, info fs.FileInfo) int64 { return info.Size() }
 
 func volumeUsedBytes(string) (int64, error) { return 0, errUnsupported }

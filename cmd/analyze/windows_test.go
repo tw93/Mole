@@ -41,6 +41,17 @@ func TestIsProtectedPathAcrossVolumeSpellings(t *testing.T) {
 		`E:\$Recycle.Bin`,
 		`E:\$Recycle.Bin\S-1-5-21\file`,
 		`E:\System Volume Information`,
+		`C:\PerfLogs`,
+		`C:\PerfLogs\System\Diagnostics`,
+		`E:\Boot\BCD`,
+		`C:\$WinREAgent\Scratch`,
+		`C:\pagefile.sys`,
+		`E:\pagefile.sys`,
+		`E:\swapfile.sys`,
+		`D:\HIBERFIL.SYS`,
+		`C:\Projects`,
+		`\\?\C:\Projects`,
+		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\Projects`,
 		``,
 	}
 	for _, path := range protected {
@@ -52,6 +63,9 @@ func TestIsProtectedPathAcrossVolumeSpellings(t *testing.T) {
 	allowed := []string{
 		`C:\Projects\Windows`,
 		`D:\data\Program Files`,
+		`E:\Projects`,
+		`E:\pagefile.sys.bak`,
+		`\\localhost\share\pagefile.txt`,
 		`\\localhost\share\work`,
 		`\\?\Volume{12345678-1234-1234-1234-123456789abc}\data\work`,
 		`C:\Users\me\Downloads\node_modules`,
