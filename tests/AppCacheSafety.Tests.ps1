@@ -87,6 +87,8 @@ Describe 'Application cache boundaries' {
     }
 
     It 'Cleans the measured <Name> leaves and keeps the state beside them' -ForEach @(
+        @{ Name='T3 Code'; Root='APPDATA'; Base='t3code-v2'; Caches=@('Cache','Code Cache','GPUCache','DawnGraphiteCache','DawnWebGPUCache','ShaderCache','GrShaderCache','Partitions\t3code-preview-a1\Cache','Partitions\t3code-preview-a1\Code Cache'); State=@('IndexedDB\keep','Local Storage\keep','Partitions\t3code-preview-a1\Local Storage\keep') }
+        @{ Name='BrowserOS'; Root='LOCALAPPDATA'; Base='BrowserOS\User Data'; Caches=@('Default\Cache','Default\DawnGraphiteCache','ShaderCache'); State=@('Default\Login Data','Local State') }
         @{ Name='Trae'; Root='APPDATA'; Base='Trae'; Caches=@('Cache','Code Cache','GPUCache','CachedData','DawnGraphiteCache','DawnWebGPUCache'); State=@('User\settings.json','Local Storage\leveldb\x','Session Storage\x','logs\s1\main.log') }
         @{ Name='Qoder'; Root='APPDATA'; Base='Qoder'; Caches=@('Cache','Code Cache','GPUCache','CachedData'); State=@('User\settings.json','Backups\x') }
         @{ Name='Kiro'; Root='APPDATA'; Base='Kiro'; Caches=@('Cache','Code Cache','GPUCache'); State=@('User\settings.json') }

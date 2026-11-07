@@ -43,6 +43,7 @@ function Clear-BrowserCaches {
         @{ Name = 'Vivaldi'; Root = 'Vivaldi\User Data'; Processes = @('vivaldi'); ProfileCaches = $chromium; RootCaches = @() }
         @{ Name = '360 Chrome'; Root = '360Chrome\Chrome\User Data'; Processes = @('360chrome'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
         @{ Name = 'Quark'; Root = 'Quark\User Data'; Processes = @('quark'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
+        @{ Name = 'BrowserOS'; Root = 'BrowserOS\User Data'; Processes = @('chrome'); ProfileCaches = $dawn; RootCaches = @('ShaderCache', 'GrShaderCache') }
     )
     foreach ($browser in $browsers) {
         $root = Join-Path $env:LOCALAPPDATA $browser.Root
@@ -159,6 +160,7 @@ function Clear-AppCaches {
         @{ Name = 'Trae'; Root = "$env:APPDATA\Trae"; Processes = @('Trae'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'CachedData', 'DawnGraphiteCache', 'DawnWebGPUCache') }
         @{ Name = 'Discord PTB'; Root = "$env:APPDATA\discordptb"; Processes = @('DiscordPTB'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache', 'GrShaderCache') }
         @{ Name = 'Discord Canary'; Root = "$env:APPDATA\discordcanary"; Processes = @('DiscordCanary'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache', 'GrShaderCache') }
+        @{ Name = 'T3 Code'; Root = "$env:APPDATA\t3code-v2"; Processes = @('T3 Code (Beta)'); Leaves = @('Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache', 'GrShaderCache') }
         @{ Name = 'QQ'; Root = "$env:APPDATA\QQ"; Processes = @('QQ'); Leaves = @('Cache', 'Code Cache') }
         @{ Name = 'Feishu'; Root = "$env:APPDATA\LarkShell"; Processes = @('Feishu'); Leaves = @('aha\users\global\profile_global\Cache', 'aha\users\global\profile_global\Code Cache', 'aha\users\global\profile_global\GPUCache', 'aha\users\global\profile_global\DawnGraphiteCache', 'aha\users\global\profile_global\DawnWebGPUCache', 'ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
         @{ Name = 'Lark'; Root = "$env:APPDATA\LarkInternational"; Processes = @('Lark'); Leaves = @('aha\users\global\profile_global\Cache', 'aha\users\global\profile_global\Code Cache', 'aha\users\global\profile_global\GPUCache', 'aha\users\global\profile_global\DawnGraphiteCache', 'aha\users\global\profile_global\DawnWebGPUCache', 'ShaderCache', 'GrShaderCache', 'GraphiteDawnCache') }
@@ -168,6 +170,16 @@ function Clear-AppCaches {
     foreach ($app in $electron) {
         foreach ($leaf in $app.Leaves) {
             Clear-MoleAppCache -Path (Join-Path $app.Root $leaf) -Description "$($app.Name) cache" -Processes $app.Processes
+        }
+    }
+
+    # Each T3 Code preview window has its own partition; only its two cache leaves
+    # go, read on Windows 2026-11-07, and a linked partition is not followed.
+    $t3Partitions = @(Get-ChildItem -LiteralPath "$env:APPDATA\t3code-v2\Partitions" -Directory -Filter 't3code-preview-*' -ErrorAction SilentlyContinue |
+                      Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) })
+    foreach ($partition in $t3Partitions) {
+        foreach ($leaf in @('Cache', 'Code Cache')) {
+            Clear-MoleAppCache -Path (Join-Path $partition.FullName $leaf) -Description 'T3 Code preview cache' -Processes @('T3 Code (Beta)')
         }
     }
 
