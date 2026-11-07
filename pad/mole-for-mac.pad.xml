@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XML_DIZ_INFO>
+  <MASTER_PAD_VERSION_INFO>
+    <MASTER_PAD_VERSION>3.11</MASTER_PAD_VERSION>
+    <MASTER_PAD_EDITOR>Hand-authored</MASTER_PAD_EDITOR>
+    <MASTER_PAD_INFO>Portable Application Description, or PAD for short, is a data set that is used by shareware authors to disseminate information to anyone interested in their software products. To find out more go to http://pad.asp-shareware.org</MASTER_PAD_INFO>
+  </MASTER_PAD_VERSION_INFO>
+  <Company_Info>
+    <Company_Name>Mole</Company_Name>
+    <Address_1>Hong Kong</Address_1>
+    <Address_2></Address_2>
+    <City_Town>Hong Kong</City_Town>
+    <State_Province></State_Province>
+    <Zip_Postal_Code></Zip_Postal_Code>
+    <Country>Hong Kong</Country>
+    <Company_WebSite_URL>https://mole.fit</Company_WebSite_URL>
+    <Contact_Info>
+      <Author_First_Name>Tw93</Author_First_Name>
+      <Author_Last_Name></Author_Last_Name>
+      <Author_Email>hi@mole.fit</Author_Email>
+      <Contact_First_Name>Tw93</Contact_First_Name>
+      <Contact_Last_Name></Contact_Last_Name>
+      <Contact_Email>hi@mole.fit</Contact_Email>
+    </Contact_Info>
+    <Support_Info>
+      <Sales_Email>hi@mole.fit</Sales_Email>
+      <Support_Email>hi@mole.fit</Support_Email>
+      <General_Email>hi@mole.fit</General_Email>
+      <Sales_Phone></Sales_Phone>
+      <Support_Phone></Support_Phone>
+      <General_Phone></General_Phone>
+      <Fax_Phone></Fax_Phone>
+    </Support_Info>
+  </Company_Info>
+  <Program_Info>
+    <Program_Name>Mole for Mac</Program_Name>
+    <Program_Version>1.20.0</Program_Version>
+    <Program_Release_Month>11</Program_Release_Month>
+    <Program_Release_Day>02</Program_Release_Day>
+    <Program_Release_Year>2026</Program_Release_Year>
+    <Program_Cost_Dollars>19.00</Program_Cost_Dollars>
+    <Program_Cost_Other_Code>USD</Program_Cost_Other_Code>
+    <Program_Cost_Other>19.00</Program_Cost_Other>
+    <Program_Type>Shareware</Program_Type>
+    <Program_Release_Status>Major Update</Program_Release_Status>
+    <Program_Install_Support>Install and Uninstall</Program_Install_Support>
+    <Program_OS_Support>Mac OS X</Program_OS_Support>
+    <Program_Language>English</Program_Language>
+    <Program_Change_Info></Program_Change_Info>
+    <Program_Specific_Category>System Maintenance</Program_Specific_Category>
+    <Program_Categories>System Utilities</Program_Categories>
+    <Program_Category_Class>System Utilities::System Maintenance</Program_Category_Class>
+    <Program_System_Requirements>macOS</Program_System_Requirements>
+    <File_Info>
+      <File_Size_Bytes></File_Size_Bytes>
+      <File_Size_K></File_Size_K>
+      <File_Size_MB></File_Size_MB>
+    </File_Info>
+    <Expire_Info>
+      <Has_Expire_Info>N</Has_Expire_Info>
+      <Expire_Count></Expire_Count>
+      <Expire_Based_On></Expire_Based_On>
+      <Expire_Other_Info></Expire_Other_Info>
+      <Expire_Month></Expire_Month>
+      <Expire_Day></Expire_Day>
+      <Expire_Year></Expire_Year>
+    </Expire_Info>
+    <Program_Icon_URL></Program_Icon_URL>
+    <Program_Screenshot_URL></Program_Screenshot_URL>
+  </Program_Info>
+  <Program_Descriptions>
+    <English>
+      <Keywords>cleaner, uninstaller, disk usage, cache, system utility, macos, mole.fit</Keywords>
+      <Char_Desc_45>Cleans caches, leftovers, and disk usage</Char_Desc_45>
+      <Char_Desc_80>Native macOS cleaner for caches, leftovers, and disk usage</Char_Desc_80>
+      <Char_Desc_250>Native macOS system utility that cleans caches and leftovers from uninstalled apps, fully uninstalls programs, and shows disk space. Free GPL-3.0 CLI plus paid GUI.</Char_Desc_250>
+      <Char_Desc_450>Mole for Mac is a native system utility that cleans caches, removes leftovers from uninstalled apps, fully uninstalls programs, and shows where disk space goes. It pairs a free GPL-3.0 CLI with a paid GUI. Learn more at https://mole.fit or https://github.com/tw93/Mole. Contact hi@mole.fit. Hong Kong.</Char_Desc_450>
+      <Char_Desc_2000>Mole for Mac is a native system maintenance utility that keeps your Mac lean and fast. It safely cleans application and system caches, removes leftover files left behind by uninstalled apps, fully uninstalls programs you no longer need, and shows exactly where your disk space is going so you can reclaim it with confidence.
+
+Mole pairs a free, open-source GPL-3.0 command-line interface with a polished paid GUI, giving both power users and everyday users a fast, reviewable way to maintain macOS.
+
+Key features:
+- Clean application, browser, and system caches
+- Remove leftovers from uninstalled applications
+- Fully uninstall programs along with their residual files
+- Analyze disk usage and find large or forgotten files
+- Review actions before anything is removed
+
+Download: https://mole.fit/Mole.dmg
+Product page: https://mole.fit
+Source code (CLI): https://github.com/tw93/Mole
+Contact: hi@mole.fit
+Location: Hong Kong</Char_Desc_2000>
+    </English>
+  </Program_Descriptions>
+  <Web_Info>
+    <Application_URLs>
+      <Application_Info_URL>https://mole.fit</Application_Info_URL>
+      <Application_Order_URL>https://mole.fit</Application_Order_URL>
+      <Application_Screenshot_URL></Application_Screenshot_URL>
+      <Application_Icon_URL></Application_Icon_URL>
+      <Application_XML_File_URL></Application_XML_File_URL>
+    </Application_URLs>
+    <Download_URLs>
+      <Primary_Download_URL>https://mole.fit/Mole.dmg</Primary_Download_URL>
+      <Secondary_Download_URL>https://mole.fit</Secondary_Download_URL>
+      <Additional_Download_URL_1>https://github.com/tw93/Mole</Additional_Download_URL_1>
+      <Additional_Download_URL_2></Additional_Download_URL_2>
+    </Download_URLs>
+  </Web_Info>
+</XML_DIZ_INFO>
