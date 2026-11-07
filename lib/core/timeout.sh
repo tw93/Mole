@@ -35,15 +35,19 @@ readonly MOLE_TIMEOUT_LOADED=1
 # the whole run at the first slow step. A shim that rejects fractional
 # durations (exit 125) breaks every sub-second budget the same way. GNU
 # coreutils and the system binary are trusted without a probe; any other
-# candidate must time out a short sleep with 124 or it is skipped.
+# candidate must run a short command successfully and time out a short sleep
+# with 124, both using run_with_timeout's -k arguments, or it is skipped.
 _mole_timeout_bin_is_compatible() {
     local bin="$1"
     [[ "$bin" == "/usr/bin/timeout" ]] && return 0
     local version_text=""
     version_text=$("$bin" --version < /dev/null 2> /dev/null) || true
     [[ "$version_text" == *"GNU coreutils"* ]] && return 0
+    # A shim can report 124 yet reject -k, returning that status without ever
+    # running the command. Check successful execution with the actual syntax.
+    "$bin" -k 2 1 /usr/bin/true < /dev/null > /dev/null 2>&1 || return 1
     local probe_rc=0
-    "$bin" 0.1 /bin/sleep 2 < /dev/null > /dev/null 2>&1 || probe_rc=$?
+    "$bin" -k 2 0.1 /bin/sleep 2 < /dev/null > /dev/null 2>&1 || probe_rc=$?
     [[ $probe_rc -eq 124 ]]
 }
 
