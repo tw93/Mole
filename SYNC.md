@@ -188,6 +188,17 @@ Implemented in source (Mole CLI (macOS), `main`): `4075102a` (Docker, I-38) and 
 - Mole CLI (Windows): Not applicable. It never runs `docker`: `Clear-DockerCaches` keeps the build cache, and the running-app check is `Clear-MoleAppCache`'s named owners.
 - Mole for Windows: Not applicable. It never runs `docker`; its one Docker row is Docker Desktop's log folder, and every cache rule names its owner process.
 
+## 2026-11-08 Purge configuration that cannot be read
+
+Source: PR #1947. `mo purge` stops with a cause and a next action when `purge_paths` exists but cannot be read, is a broken link or link loop, or is a directory, instead of treating it as missing and replacing the user's scope with discovered roots.
+
+Implemented in source (Mole CLI (macOS), `main`): `ae5a6eb5` and `57f2f633`, merged in `7efe3e40`; `402ef6f5` keeps the shell error out of `mo clean`.
+
+- Mole CLI (Windows): Implemented on `windows`, recorded in its `SYNC.md`. It never rewrote the file; it silently scanned the default paths.
+- Mole CLI (Linux): Implemented before this entry. `lib/purge/scan.sh` already returns a refusal for an unreadable file.
+- Mole Mac: Not applicable. It has no purge paths file.
+- Mole for Windows: Not applicable. It has no purge paths file.
+
 ## 2026-11-07 Purge editor commands
 
 Source: PR #1940. `mo purge --paths` now runs an `EDITOR` that holds arguments, such as `code --wait`, and returns the editor's failure instead of reporting success.
