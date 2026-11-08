@@ -208,6 +208,20 @@ load_purge_config() {
     PURGE_SEARCH_PATHS=()
     PURGE_DISCOVERY_STATUS=0
 
+    # Only a confirmed missing file may fall back to discovery, which rewrites
+    # the config. Anything else that cannot be read keeps the user's scope.
+    local config_state=0
+    mole_whitelist_file_state "$PURGE_CONFIG_FILE" "purge paths" || config_state=$?
+    [[ $config_state -ne 2 ]] || return 1
+
+    # Process substitution would lose the status of a failure after the probe.
+    local config_paths config_status=0
+    config_paths=$(mole_purge_read_paths_config "$PURGE_CONFIG_FILE" 2> /dev/null) || config_status=$?
+    if [[ $config_status -ne 0 ]]; then
+        [[ $config_status -ge 128 ]] || mole_report_unreadable_whitelist "$PURGE_CONFIG_FILE" "purge paths"
+        return "$config_status"
+    fi
+
     local line existing_path already_found
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
@@ -224,7 +238,7 @@ load_purge_config() {
         done
         [[ "$already_found" == "true" ]] && continue
         PURGE_SEARCH_PATHS+=("$line")
-    done < <(mole_purge_read_paths_config "$PURGE_CONFIG_FILE")
+    done <<< "$config_paths"
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
         if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then

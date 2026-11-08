@@ -87,6 +87,130 @@ EOF
     [[ "$output" == "$HOME/first"$'\n'"$HOME/second project" ]]
 }
 
+@test "purge refuses unreadable custom paths without replacing them with discovered roots" {
+    local option
+    for option in --paths --dry-run; do
+        local fixture_home="$BATS_TEST_TMPDIR/home-$option"
+        local config_file="$fixture_home/.config/mole/purge_paths"
+        local expected_file="$BATS_TEST_TMPDIR/expected-$option"
+        mkdir -p "$fixture_home/.config/mole" "$fixture_home/custom projects" "$fixture_home/Projects/demo"
+        touch "$fixture_home/Projects/demo/package.json"
+        printf '%s\n' "$fixture_home/custom projects" > "$config_file"
+        cp "$config_file" "$expected_file"
+        chmod 000 "$config_file"
+        if [[ -r "$config_file" ]]; then
+            chmod 600 "$config_file"
+            skip "requires a user that cannot read mode-000 files"
+        fi
+
+        run env HOME="$fixture_home" EDITOR=/usr/bin/true MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge "$option"
+
+        chmod 600 "$config_file"
+        cmp "$expected_file" "$config_file" || return 1
+        [ "$status" -ne 0 ] || return 1
+        [[ "$output" == *"Cannot read your purge paths:"* ]] || return 1
+        [[ "$output" == *"chmod u+r"* ]] || return 1
+        [[ "$output" != *"purge_shared.sh"* ]] || return 1
+        [[ "$output" != *"Configuration updated"* ]] || return 1
+    done
+}
+
+@test "purge paths preserves custom paths when the editor makes the configuration unreadable" {
+    local fixture_home="$BATS_TEST_TMPDIR/editor-home"
+    local config_file="$fixture_home/.config/mole/purge_paths"
+    local expected_file="$BATS_TEST_TMPDIR/expected-editor-paths"
+    mkdir -p "$fixture_home/.config/mole" "$fixture_home/custom projects" "$fixture_home/Projects/demo"
+    touch "$fixture_home/Projects/demo/package.json"
+    printf '%s\n' "$fixture_home/custom projects" > "$config_file"
+    cp "$config_file" "$expected_file"
+    chmod 000 "$config_file"
+    if [[ -r "$config_file" ]]; then
+        chmod 600 "$config_file"
+        skip "requires a user that cannot read mode-000 files"
+    fi
+    chmod 600 "$config_file"
+
+    run env HOME="$fixture_home" EDITOR="/bin/chmod 000" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    chmod 600 "$config_file"
+    cmp "$expected_file" "$config_file" || return 1
+    [ "$status" -ne 0 ] || return 1
+    [[ "$output" == *"Cannot read your purge paths:"* ]] || return 1
+    [[ "$output" == *"chmod u+r"* ]] || return 1
+    [[ "$output" != *"purge_shared.sh"* ]] || return 1
+    [[ "$output" != *"Configuration updated"* ]]
+}
+
+@test "purge refuses a config path that is not a readable file without discovering or rewriting" {
+    local kind
+    for kind in broken-link link-loop directory unsearchable-parent; do
+        local fixture_home="$BATS_TEST_TMPDIR/home-$kind"
+        local config_file="$fixture_home/.config/mole/purge_paths"
+        mkdir -p "$fixture_home/.config/mole" "$fixture_home/Projects/demo"
+        touch "$fixture_home/Projects/demo/package.json"
+        case "$kind" in
+            broken-link) ln -s "$fixture_home/unmounted/purge_paths" "$config_file" ;;
+            link-loop) ln -s "$config_file" "$config_file" ;;
+            directory) mkdir "$config_file" ;;
+            unsearchable-parent)
+                printf '%s\n' "$fixture_home/custom" > "$config_file"
+                chmod 000 "$fixture_home/.config/mole"
+                if [[ -x "$fixture_home/.config/mole" ]]; then
+                    chmod 700 "$fixture_home/.config/mole"
+                    skip "requires a user that cannot search mode-000 directories"
+                fi
+                ;;
+        esac
+
+        run env HOME="$fixture_home" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --dry-run
+
+        [[ "$kind" != "unsearchable-parent" ]] || chmod 700 "$fixture_home/.config/mole"
+        [ "$status" -ne 0 ] || return 1
+        case "$kind" in
+            broken-link | directory)
+                [[ "$output" == *"Cannot read your purge paths: invalid path or broken link:"* ]] || return 1
+                ;;
+            link-loop)
+                [[ "$output" == *"Cannot inspect your purge paths path:"* ]] || return 1
+                ;;
+            unsearchable-parent)
+                [[ "$output" == *"Cannot access your purge paths directory:"* ]] || return 1
+                [[ "$output" == *"chmod u+rx"* ]] || return 1
+                ;;
+        esac
+        case "$kind" in
+            directory)
+                [[ -d "$config_file" ]] || return 1
+                [[ -z "$(ls -A "$config_file")" ]] || return 1
+                ;;
+            unsearchable-parent)
+                [[ "$(cat "$config_file")" == "$fixture_home/custom" ]] || return 1
+                ;;
+            *)
+                [[ -L "$config_file" ]] || return 1
+                ;;
+        esac
+    done
+}
+
+@test "load_purge_config keeps signal statuses silent and reports other read failures" {
+    run env HOME="$HOME" /bin/bash --noprofile --norc -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        printf '%s\\n' '$HOME/custom' > \"\$PURGE_CONFIG_FILE\"
+        mole_purge_read_paths_config() { return 130; }
+        load_purge_config && echo 'signal=0' || echo \"signal=\$?\"
+        mole_purge_read_paths_config() { return 1; }
+        load_purge_config && echo 'failure=0' || echo \"failure=\$?\"
+        cat \"\$PURGE_CONFIG_FILE\"
+    "
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"signal=130"* ]] || return 1
+    [[ "$output" == *"failure=1"* ]] || return 1
+    [ "$(grep -c 'Cannot read your purge paths' <<< "$output")" -eq 1 ] || return 1
+    [[ "$output" == *"$HOME/custom"* ]] || return 1
+}
+
 @test "load_purge_config expands tilde in paths" {
     local config_file="$HOME/.config/mole/purge_paths"
     
