@@ -219,3 +219,14 @@ Implemented in source (Mole CLI (macOS), `310753e9`): `~/Library/Caches/Buzz` jo
 - Mole CLI (Linux): Not applicable. Clean removes only allowlisted caches; an unknown `~/.cache` folder is listed, never selected.
 - Mole Mac: To be checked by the maintainer against its generic cache scan.
 - Mole for Windows: To be checked by the maintainer.
+
+## 2026-11-09 Puppeteer browser installs
+
+Source: the same 2026-11-09 review. Puppeteer installs the browser it launches into `~/.cache/puppeteer` and runs it from there; `clean_browsers` removed it as "Puppeteer browser cache" since `5a8d7666` (V1.23.2), the shape of ms-playwright, Camoufox and Cypress (#1400, #1941, #1945).
+
+Implemented in source (Mole CLI (macOS), `e2c363f8`): the row is gone and `should_protect_path` keeps the folder and its children. Locked by `should_protect_path applies high-risk cleanup denylist` and `clean_browsers calls expected cache paths`, both red on the old code.
+
+- Mole CLI (Linux): Same rule in `lib/clean/rules.sh` (`Puppeteer browsers`); removed in a separate change on `linux`.
+- Mole CLI (Windows): Not applicable. It has no Puppeteer row.
+- Mole Mac: To be checked by the maintainer.
+- Mole for Windows: To be checked by the maintainer.
