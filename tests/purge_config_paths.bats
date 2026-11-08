@@ -77,6 +77,22 @@ EOF
     cmp "$expected_file" "$config_file"
 }
 
+@test "purge paths preserves an empty or comment-only config without discovering or rewriting" {
+    local config_file="$HOME/.config/mole/purge_paths"
+    local expected_file="$BATS_TEST_TMPDIR/expected-comment-paths"
+    mkdir -p "$HOME/Projects" "$HOME/discovered-project"
+    touch "$HOME/discovered-project/package.json"
+    printf '# Custom notes\n# Another comment\n' > "$config_file"
+    cp "$config_file" "$expected_file"
+
+    run env HOME="$HOME" EDITOR=/usr/bin/true MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"default paths"* ]] || return 1
+    [[ "$output" != *"discovered-project"* ]] || return 1
+    cmp "$expected_file" "$config_file"
+}
+
 @test "load_purge_config includes the final custom path without a newline" {
     local config_file="$HOME/.config/mole/purge_paths"
     printf '%s\n%s' "$HOME/first" "$HOME/second project" > "$config_file"
@@ -277,24 +293,32 @@ EOF
 
 @test "load_purge_config falls back to defaults if config file is empty" {
     local config_file="$HOME/.config/mole/purge_paths"
+    mkdir -p "$HOME/discovered-project"
+    touch "$HOME/discovered-project/package.json"
     touch "$config_file"
 
     run env HOME="$HOME" /bin/bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
     
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || return 1
     
-    [[ "$output" == *"$HOME/Projects"* ]]
+    [[ "$output" == *"$HOME/Projects"* ]] || return 1
+    [[ "$output" != *"$HOME/discovered-project"* ]] || return 1
+    [ ! -s "$config_file" ]
 }
 
 @test "load_purge_config falls back to defaults if config file has only comments" {
     local config_file="$HOME/.config/mole/purge_paths"
+    mkdir -p "$HOME/discovered-project"
+    touch "$HOME/discovered-project/package.json"
     echo "# Just a comment" > "$config_file"
 
     run env HOME="$HOME" /bin/bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
 
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || return 1
 
-    [[ "$output" == *"$HOME/Projects"* ]]
+    [[ "$output" == *"$HOME/Projects"* ]] || return 1
+    [[ "$output" != *"$HOME/discovered-project"* ]] || return 1
+    [ "$(cat "$config_file")" = "# Just a comment" ]
 }
 
 @test "load_purge_config deduplicates case variants on case-insensitive FS" {

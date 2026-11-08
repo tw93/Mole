@@ -241,31 +241,35 @@ load_purge_config() {
     done <<< "$config_paths"
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
-        if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
-            echo -e "${GRAY}First run: discovering project directories...${NC}" >&2
-        fi
+        if [[ $config_state -eq 1 ]]; then
+            if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
+                echo -e "${GRAY}First run: discovering project directories...${NC}" >&2
+            fi
 
-        local -a discovered=()
-        local discovery_output
-        discovery_output=$(discover_project_dirs) || PURGE_DISCOVERY_STATUS=$?
-        [[ $PURGE_DISCOVERY_STATUS -lt 128 ]] || return "$PURGE_DISCOVERY_STATUS"
-        while IFS= read -r path; do
-            [[ -n "$path" ]] && discovered+=("$path")
-        done <<< "$discovery_output"
-        if [[ $PURGE_DISCOVERY_STATUS -ne 0 && -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
-            echo -e "${YELLOW}${ICON_WARNING}${NC} Project discovery was incomplete; using completed roots without saving them. Run mo purge --paths to review search paths." >&2
-        fi
+            local -a discovered=()
+            local discovery_output
+            discovery_output=$(discover_project_dirs) || PURGE_DISCOVERY_STATUS=$?
+            [[ $PURGE_DISCOVERY_STATUS -lt 128 ]] || return "$PURGE_DISCOVERY_STATUS"
+            while IFS= read -r path; do
+                [[ -n "$path" ]] && discovered+=("$path")
+            done <<< "$discovery_output"
+            if [[ $PURGE_DISCOVERY_STATUS -ne 0 && -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
+                echo -e "${YELLOW}${ICON_WARNING}${NC} Project discovery was incomplete; using completed roots without saving them. Run mo purge --paths to review search paths." >&2
+            fi
 
-        if [[ ${#discovered[@]} -gt 0 ]]; then
-            PURGE_SEARCH_PATHS=("${discovered[@]}")
-            if [[ $PURGE_DISCOVERY_STATUS -ne 0 ]]; then
-                : # A partial inventory must not become the next run's saved scope.
-            elif save_discovered_paths "${discovered[@]}"; then
-                if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
-                    echo -e "${GRAY}Found ${#discovered[@]} project directories, saved to config${NC}" >&2
+            if [[ ${#discovered[@]} -gt 0 ]]; then
+                PURGE_SEARCH_PATHS=("${discovered[@]}")
+                if [[ $PURGE_DISCOVERY_STATUS -ne 0 ]]; then
+                    : # A partial inventory must not become the next run's saved scope.
+                elif save_discovered_paths "${discovered[@]}"; then
+                    if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
+                        echo -e "${GRAY}Found ${#discovered[@]} project directories, saved to config${NC}" >&2
+                    fi
+                else
+                    warn_purge_config_write_failure
                 fi
             else
-                warn_purge_config_write_failure
+                PURGE_SEARCH_PATHS=("${DEFAULT_PURGE_SEARCH_PATHS[@]}")
             fi
         else
             PURGE_SEARCH_PATHS=("${DEFAULT_PURGE_SEARCH_PATHS[@]}")
