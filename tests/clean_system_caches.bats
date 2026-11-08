@@ -1932,6 +1932,7 @@ printf 'STATUS=%s ELAPSED=%s BYTES=%s\n' \
 	"$scan_rc" "$SECONDS" "$(wc -c < "$OUTPUT_FILE" | tr -d ' ')"
 EOF
 
+	printf '%s\n' "$output" # shown only when this case fails, and it failed once on CI without it
 	[ "$status" -eq 0 ] || return 1
 	local elapsed
 	elapsed=$(printf '%s\n' "$output" | sed -n 's/.*ELAPSED=\([0-9][0-9]*\).*/\1/p')
