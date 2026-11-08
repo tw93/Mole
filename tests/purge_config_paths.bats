@@ -211,6 +211,30 @@ EOF
     [[ "$output" == *"$HOME/custom"* ]] || return 1
 }
 
+@test "mo clean readers of an unreadable purge config print no shell error" {
+    local config_file="$HOME/.config/mole/purge_paths"
+    mkdir -p "$HOME/.config/mole"
+    printf '%s\n' "$HOME/custom" > "$config_file"
+    chmod 000 "$config_file"
+    if [[ -r "$config_file" ]]; then
+        chmod 600 "$config_file"
+        skip "requires a user that cannot read mode-000 files"
+    fi
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc -c '
+        source "$PROJECT_ROOT/bin/clean.sh"
+        discover_project_cache_roots > /dev/null
+        load_quick_purge_hint_paths > /dev/null
+        echo finished
+    '
+
+    chmod 600 "$config_file"
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"finished"* ]] || return 1
+    [[ "$output" != *"Permission denied"* ]] || return 1
+    [[ "$output" != *"purge_shared.sh"* ]] || return 1
+}
+
 @test "load_purge_config expands tilde in paths" {
     local config_file="$HOME/.config/mole/purge_paths"
     

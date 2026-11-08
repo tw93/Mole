@@ -16,7 +16,7 @@ load_quick_purge_hint_paths() {
 
     while IFS= read -r line; do
         [[ -n "$line" ]] && paths+=("$line")
-    done < <(mole_purge_read_paths_config "$config_file")
+    done < <(mole_purge_read_paths_config "$config_file" 2> /dev/null)
 
     if [[ ${#paths[@]} -eq 0 ]]; then
         paths=("${MOLE_PURGE_DEFAULT_SEARCH_PATHS[@]}")

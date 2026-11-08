@@ -263,7 +263,7 @@ discover_project_cache_roots() {
 
     while IFS= read -r root; do
         [[ -d "$root" ]] && roots+=("$root")
-    done < <(mole_purge_read_paths_config "$HOME/.config/mole/purge_paths")
+    done < <(mole_purge_read_paths_config "$HOME/.config/mole/purge_paths" 2> /dev/null)
 
     local _indicator_tmp
     _indicator_tmp=$(create_temp_file)
