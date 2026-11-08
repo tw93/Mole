@@ -85,6 +85,7 @@ make_cache() {
             [[ "$root" == "$HOME/"* ]] || { echo "outside home: $root"; exit 1; }
             case "$root" in
                 *huggingface* | *ollama* | *lm-studio* | */.cache/doc*) echo "model or portal: $root"; exit 1 ;;
+                *ms-playwright* | */Cypress* | */puppeteer*) echo "browser install: $root"; exit 1 ;;
             esac
             mole_is_protected_path "$root" && { echo "protected: $root"; exit 1; }
         done < <(mole_clean_rules)
@@ -534,9 +535,10 @@ pkg_cache_run() {
     [[ "$output" == *"total=2048 items=3"* ]]
 }
 
-@test "sccache waits for its server and goes when idle; Playwright and Cypress browsers are never cleaned" {
+@test "sccache waits for its server and goes when idle; Playwright, Cypress and Puppeteer browsers are never cleaned" {
     make_cache "$HOME/.cache/ms-playwright/chromium-1140"
     make_cache "$HOME/.cache/Cypress/13.6.0"
+    make_cache "$HOME/.cache/puppeteer/chrome/linux-131.0.6778.85"
     make_cache "$HOME/.cache/sccache/a"
     start_owner sccache
     mole_run clean 'clean_user_rules'
@@ -557,6 +559,7 @@ pkg_cache_run() {
     # and nothing proves the user is done with it.
     [ -f "$HOME/.cache/ms-playwright/chromium-1140/entry/blob" ]
     [ -f "$HOME/.cache/Cypress/13.6.0/entry/blob" ]
+    [ -f "$HOME/.cache/puppeteer/chrome/linux-131.0.6778.85/entry/blob" ]
 }
 
 @test "Steam: only shadercache children go, once, never through ~/.steam/steam or out of the root" {
