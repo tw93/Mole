@@ -172,6 +172,7 @@ readonly FINDER_METADATA_SENTINEL="FINDER_METADATA"
 declare -a DEFAULT_WHITELIST_PATTERNS=(
     "$HOME/Library/Caches/ms-playwright*"
     "$HOME/Library/Caches/camoufox*"
+    "$HOME/Library/Caches/Cypress*"
     "$HOME/.gradle/caches/*"
     "$HOME/.gradle/daemon/*"
     "$HOME/.ollama/models/*"
