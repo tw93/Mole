@@ -907,6 +907,13 @@ run_once() {
         return 0
     fi
 
+    # Every selected app is a held-back orphan the user kept in the data
+    # review, so there is nothing to confirm or remove.
+    if [[ "$(removable_app_count)" -eq 0 ]]; then
+        echo "Nothing to remove; the kept data stays where it is."
+        return 4
+    fi
+
     if running_apps; then
         log_error "Quit ${RUNNING[*]} first, then run mo uninstall again."
         return 1
@@ -948,8 +955,11 @@ run_once() {
     if [[ ${#REMOVED[@]} -gt 0 ]]; then
         details+=("Removed: ${removed_names}")
     fi
-    if [[ ${#REMOVED[@]} -lt ${#SELECTED[@]} ]]; then
-        details+=("Not removed: $(mole_count_label $((${#SELECTED[@]} - ${#REMOVED[@]})) app)")
+    # Apps the user kept in the data review were never meant to go.
+    local wanted
+    wanted=$(removable_app_count)
+    if [[ ${#REMOVED[@]} -lt $wanted ]]; then
+        details+=("Not removed: $(mole_count_label $((wanted - ${#REMOVED[@]})) app)")
     fi
     if [[ ${#REMOVED[@]} -gt 0 ]] && packages_held_by_snapshots "${REMOVED[@]}"; then
         details+=("$PACKAGES_SNAPSHOT_NOTE")

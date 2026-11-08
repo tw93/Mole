@@ -150,6 +150,45 @@ desktop() {
     [[ "$output" == *"Would remove: 1 app"* ]]
 }
 
+# run_once on two orphans with the removal stubbed; $1 = SELECTED indices.
+kept_orphan_run_once() {
+    mkdir -p "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" "$HOME/.var/app/org.b.Gone/data"
+    mole_run uninstall 'DRY_RUN=false; ASSUME_YES=true
+        load_apps() {
+            APP_KIND=(orphan orphan); APP_ID=(org.mozilla.firefox org.b.Gone); APP_NAME=(Firefox Gone)
+            APP_DESKTOPS=("" ""); APP_EXEC=("" ""); APP_SCOPE=(user user); APP_KB=(10 10)
+        }
+        match_names() { SELECTED=('"$1"'); }
+        choose_data() { :; }; running_apps() { return 1; }
+        remove_packages() {
+            echo REMOVE_CALLED
+            local j
+            for j in "${!LEFT_PATH[@]}"; do
+                [[ "${LEFT_CLASS[j]}" == app && "${LEFT_ON[j]}" == true ]] && REMOVED+=("${LEFT_APP[j]}")
+            done
+            return 0
+        }
+        plan_leftover_trash() { LEFTOVER_PATHS=(); }
+        refresh_after_removal() { :; }; stale_mime_associations() { :; }; get_free_space_kb() { echo 0; }
+        run_once false'
+}
+
+@test "keeping the only selected orphan in the data review removes nothing and asks nothing" {
+    kept_orphan_run_once 0
+    [ "$status" -eq 4 ]
+    [[ "$output" == *"Nothing to remove"* ]]
+    [[ "$output" != *REMOVE_CALLED* ]]
+    [ -d "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" ]
+}
+
+@test "a kept orphan is not reported as an app that failed to go" {
+    kept_orphan_run_once "0 1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *REMOVE_CALLED* ]]
+    [[ "$output" == *"Removed: Gone"* ]]
+    [[ "$output" != *"Not removed"* ]]
+}
+
 @test "an exact ID wins over a display name, and a tie is refused" {
     mole_run uninstall '
         APP_KIND=(flatpak pacman); APP_ID=(org.mozilla.firefox firefox); APP_NAME=(Firefox Firefox)
