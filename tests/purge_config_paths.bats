@@ -221,12 +221,12 @@ EOF
         skip "requires a user that cannot read mode-000 files"
     fi
 
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc -c '
-        source "$PROJECT_ROOT/bin/clean.sh"
+    run env HOME="$HOME" MOLE_TEST_MODE=1 MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc -c "
+        source '$PROJECT_ROOT/bin/clean.sh'
         discover_project_cache_roots > /dev/null
         load_quick_purge_hint_paths > /dev/null
         echo finished
-    '
+    "
 
     chmod 600 "$config_file"
     [ "$status" -eq 0 ] || return 1
