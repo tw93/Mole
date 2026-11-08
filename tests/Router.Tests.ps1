@@ -104,6 +104,15 @@ param([switch]$Json, [switch]$Watch, [string]$Interval)
         $script:MoleExitCode | Should -Be 0
     }
 
+    It "Returns the purge result as the exit code" {
+        Set-Content -LiteralPath (Join-Path $script:MOLE_BIN "purge.ps1") -Value 'exit 1'
+        Invoke-MoleCommand -CommandName "purge" -Arguments @()
+        $script:MoleExitCode | Should -Be 1
+        Set-Content -LiteralPath (Join-Path $script:MOLE_BIN "purge.ps1") -Value '& $env:ComSpec /d /c exit 9; exit 0'
+        Invoke-MoleCommand -CommandName "purge" -Arguments @()
+        $script:MoleExitCode | Should -Be 0
+    }
+
     It "Returns the uninstall result as the exit code" {
         Set-Content -LiteralPath (Join-Path $script:MOLE_BIN "uninstall.ps1") -Value 'exit 1'
         Invoke-MoleCommand -CommandName "uninstall" -Arguments @()

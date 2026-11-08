@@ -157,6 +157,25 @@ Describe 'Purge project boundaries' {
     }
 }
 
+Describe 'Purge search paths' {
+    BeforeEach {
+        $script:DefaultSearchPaths = @($TestDrive)
+    }
+
+    It 'stops on a config it cannot read instead of scanning the default paths' {
+        $script:ConfigFile = Join-Path $TestDrive 'unreadable-config'
+        $null = New-Item -ItemType Directory -Path $script:ConfigFile -Force
+
+        { Get-SearchPaths } | Should -Throw '*Cannot read your purge paths*'
+    }
+
+    It 'falls back to the default paths when the config is missing' {
+        $script:ConfigFile = Join-Path $TestDrive 'missing-config'
+
+        @(Get-SearchPaths) | Should -Be @($TestDrive)
+    }
+}
+
 Describe 'Purge project labels' {
     BeforeAll { $script:OldProfile = $env:USERPROFILE }
     BeforeEach { $env:USERPROFILE = 'C:\Users\dev' }

@@ -121,7 +121,14 @@ function Get-SearchPaths {
 
     # Load custom paths if available
     if (Test-Path $script:ConfigFile) {
-        $customPaths = Get-Content $script:ConfigFile -ErrorAction SilentlyContinue |
+        # A config that exists but cannot be read must not silently widen the scan to the defaults.
+        try {
+            $configLines = @(Get-Content -LiteralPath $script:ConfigFile -ErrorAction Stop)
+        }
+        catch {
+            throw "Cannot read your purge paths: $($script:ConfigFile). Check its permissions, then run mo purge again"
+        }
+        $customPaths = $configLines |
                        Where-Object { $_ -and -not $_.StartsWith('#') } |
                        ForEach-Object { $_.Trim() }
 
@@ -692,7 +699,13 @@ function Main {
     Write-Host ""
 
     # Get search paths
-    $searchPaths = @(Get-SearchPaths)
+    try {
+        $searchPaths = @(Get-SearchPaths)
+    }
+    catch {
+        Write-MoleError $_.Exception.Message
+        exit 1
+    }
 
     if ($null -eq $searchPaths -or $searchPaths.Count -eq 0) {
         Write-MoleWarning "No valid search paths found"
@@ -765,3 +778,5 @@ function Main {
 
 # Run main
 try { Main } finally { Stop-Spinner }
+# Git probes leave their own exit status; the router returns this one.
+exit 0
