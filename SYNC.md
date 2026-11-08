@@ -208,3 +208,14 @@ Implemented in source (Mole CLI (macOS), `main`): `4917abd1`, merged in `2cc4f22
 - Mole CLI (Windows): Not applicable. `bin/purge.ps1` opens `notepad.exe` directly and never reads `EDITOR`.
 - Mole Mac: Not applicable. It has no purge paths editor and never reads `EDITOR`.
 - Mole for Windows: Not applicable. It has no purge paths editor and never reads `EDITOR`.
+
+## 2026-11-09 Buzz models in the user cache sweep
+
+Source: a 2026-11-09 review of model stores under `~/Library/Caches`. Buzz keeps downloaded Whisper models in platformdirs' cache folder, `~/Library/Caches/Buzz/models` on macOS (its FAQ names the folder; `BUZZ_MODEL_ROOT` overrides it), next to the plugins the user installed and their presentation CSS. The generic "User app cache" sweep removed the whole folder, the same shape as the llama.cpp store (`3b0f94df`).
+
+Implemented in source (Mole CLI (macOS), `310753e9`): `~/Library/Caches/Buzz` joins `SAFETY_WHITELIST_PATTERNS`, so it holds under a custom whitelist too. Locked by `the user cache sweep keeps Buzz models and plugins even with a custom whitelist`, red on the old code.
+
+- Mole CLI (Windows): Not applicable. No generic `%LOCALAPPDATA%` sweep reaches Buzz's cache folder.
+- Mole CLI (Linux): Not applicable. Clean removes only allowlisted caches; an unknown `~/.cache` folder is listed, never selected.
+- Mole Mac: To be checked by the maintainer against its generic cache scan.
+- Mole for Windows: To be checked by the maintainer.
