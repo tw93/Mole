@@ -74,3 +74,14 @@ Learned from xdg-ninja, pacutils `pacreport`, rebuild-detector, lostfiles, clean
 | status: apps grouped by cgroup, per-process GPU memory, btrfs allocation | Mole Mac groups processes by app | Implemented | `cmd/status`; Go tests with fixture `/proc` and `/sys`; 5.6 ms per process sample on the VM. Mole CLI (macOS) lists plain processes: Intentional difference. |
 | analyze delete progress | `main` analyze | Not applicable | Every delete is one rename into the Trash, and cross-device moves are refused, so there is no slow path to show. |
 
+## Implemented on `linux` after 0.5.0 (2026-11-09, not released)
+
+From a 2026-11-09 review of `main` and `windows` fixes against this branch. Each row's regression failed on the previous code.
+
+| Contract | Source | Status | Verification |
+| --- | --- | --- | --- |
+| A stored timestamp in the future reads as expired in the analyze overview and scan caches | `main` `1493ee17` (`stampWithin`) | Implemented | Ported as is; `cmd/analyze/cache_clock_test.go`. |
+| `mo status` shortens names by display width | `main` `c70d4731` (#1917) | Implemented | `shorten` counts terminal cells (`ansi.StringWidth`, `ansi.Truncate`); the rune cut already kept characters whole, but a CJK name took twice its budget. `TestShorten`. |
+| A disk is critical only at 90% used with under 30 GB free | `main` `e694d6d3` (`diskIsCritical`, the Mole Mac and Mole for Windows rule) | Implemented | The health message and the diagnosis line use it; the score's percentage curve is unchanged. `TestDiskCriticalNeedsNinetyPercentAndUnderThirtyGBFree`. The battery cycle change in the same commit is not ported: it follows Apple's rated 1000 cycles, which Linux laptops do not share. |
+| Puppeteer's browser installs are not a cache | `main` `e2c363f8` (drops its "Puppeteer browser cache" row and protects `~/.cache/puppeteer`) | Implemented | The `Puppeteer browsers` rule is gone, like ms-playwright and Cypress (`docs/oss-research.md`); `tests/clean.bats` keeps a Puppeteer browser through `clean_user_rules`, and no rule root may be one of these installs. |
+| Held-back data stays unselected when it is a Flatpak orphan; game libraries, virtual machines and model stores are held back | `main` `.claude/rules/uninstall.md` (`--with-data` keeps game libraries and CrossOver/Whisky bottles unselected) | Implemented, Linux only | An orphan whose folder `mole_leftover_holdback` names is listed in the data review unselected, and `remove_packages` takes only selected app rows; Flatpak Steam and Bottles, GNOME Boxes and the AGENTS.md model stores join the list; the dry run and the prompt count only apps that will go. `tests/uninstall.bats`. |
