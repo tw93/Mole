@@ -226,6 +226,10 @@ declare -a SAFETY_WHITELIST_PATTERNS=(
     # default LLAMA_CACHE here; they are user-chosen models, not a cache that
     # rebuilds on its own. Mole Mac blocks the same folder (2026-10-29).
     "$HOME/Library/Caches/llama.cpp"
+    # Buzz keeps downloaded Whisper models (models/), installed plugins and
+    # the user's presentation CSS in its platformdirs cache folder, which its
+    # FAQ names as the place models live: user choices, not rebuildable cache.
+    "$HOME/Library/Caches/Buzz"
 )
 
 # Resolve the cache root used by GitHub CLI without following filesystem
