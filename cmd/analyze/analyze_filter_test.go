@@ -295,7 +295,7 @@ func TestEntryFilterFindsEveryChildAfterLiveScanAndCacheReload(t *testing.T) {
 		count       int
 	}{{false, 40}, {true, 40}, {false, 10000}} {
 		t.Run(fmt.Sprintf("directories=%t/count=%d", fixture.directories, fixture.count), func(t *testing.T) {
-			home := t.TempDir()
+			home := scanHome(t)
 			t.Setenv("HOME", home)
 			root := filepath.Join(home, "root")
 			if err := os.Mkdir(root, 0o755); err != nil {
