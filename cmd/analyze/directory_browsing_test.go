@@ -15,7 +15,7 @@ import (
 func TestDirectoryRefreshKeepsSelectedPathVisible(t *testing.T) {
 	for _, live := range []bool{false, true} {
 		t.Run(fmt.Sprintf("live=%t", live), func(t *testing.T) {
-			home := t.TempDir()
+			home := scanHome(t)
 			t.Setenv("HOME", home)
 			root := filepath.Join(home, "root")
 			if err := os.Mkdir(root, 0o755); err != nil {
@@ -74,7 +74,7 @@ func TestDirectoryRefreshKeepsSelectedPathVisible(t *testing.T) {
 }
 
 func TestDirectoryNavigationExpandsWarmedSummary(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 	root := filepath.Join(home, "root")
 	child := filepath.Join(root, "child")

@@ -1618,7 +1618,7 @@ func TestScanPathConcurrentUsesChildCacheLargeFiles(t *testing.T) {
 	}
 }
 func TestScanCmdTreatsWarmedCacheAsStale(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 
 	target := filepath.Join(home, "target")
@@ -1999,7 +1999,7 @@ func TestLiveScanEventStreamReservesRequiredCapacity(t *testing.T) {
 }
 
 func TestCanceledLiveScanPublishesNoResultsOrCache(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 
 	root := filepath.Join(home, "root")
@@ -2192,7 +2192,7 @@ func TestLiveScanChildUpdateUpdatesRowTotalAndCache(t *testing.T) {
 }
 
 func TestManualRefreshBypassesNestedSubdirCache(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 
 	root := filepath.Join(home, "root")
@@ -2694,7 +2694,7 @@ func TestEnterSelectedDirMarksScanningParentForRefresh(t *testing.T) {
 }
 
 func TestEnterSelectedDirRefreshesStaleInMemoryCache(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 
 	parent := filepath.Join(home, "parent")
@@ -2762,7 +2762,7 @@ func TestEnterSelectedDirRefreshesStaleInMemoryCache(t *testing.T) {
 }
 
 func TestGoBackRefreshesHistoryEntryNeedingRefresh(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 
 	child := filepath.Join(home, "child")
@@ -3111,7 +3111,7 @@ func setChangedAfterRecentScan(t *testing.T, dir string, save func()) {
 // as current for up to 24 hours: the TUI showed the old sizes with no refresh,
 // and a parent scan folded the old subtree total into its own.
 func TestLoadCacheRefusesRecentEntryAfterDirectoryChanges(t *testing.T) {
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 
 	target := filepath.Join(home, "recent-change-target")
@@ -3599,7 +3599,7 @@ func TestLiveScanKeepsUnavailableDirectoryAndPartialTotal(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission fixture requires an unprivileged user")
 	}
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 	root := filepath.Join(home, "root")
 	locked := filepath.Join(root, "locked")
@@ -3660,7 +3660,7 @@ func TestPartialScanCoverageSurvivesEntryLimit(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission fixture requires an unprivileged user")
 	}
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 	root := filepath.Join(home, "root")
 	locked := filepath.Join(root, "locked")
@@ -3704,7 +3704,7 @@ func TestPartialNavigationRefreshRecoversCoverage(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission fixture requires an unprivileged user")
 	}
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 	root := filepath.Join(home, "root")
 	readable := filepath.Join(root, "readable")
@@ -3917,7 +3917,7 @@ func TestDeniedFolderPartialIsServedFromDiskCacheOnRevisit(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission fixture requires an unprivileged user")
 	}
-	home := t.TempDir()
+	home := scanHome(t)
 	t.Setenv("HOME", home)
 	root := filepath.Join(home, "root")
 	locked := filepath.Join(root, "locked")
@@ -4627,7 +4627,7 @@ func TestPrefetchHonorsSelectiveCacheWriteCancellation(t *testing.T) {
 func TestCompletedScanCacheWritesRemainCancelable(t *testing.T) {
 	for _, live := range []bool{true, false} {
 		t.Run(fmt.Sprintf("live=%t", live), func(t *testing.T) {
-			home := t.TempDir()
+			home := scanHome(t)
 			t.Setenv("HOME", home)
 			resetOverviewSnapshotForTest()
 			t.Cleanup(resetOverviewSnapshotForTest)
@@ -5023,7 +5023,7 @@ func TestLiveScanVariantsRejectSupersededStart(t *testing.T) {
 func TestCachedScanRejectsSupersededResult(t *testing.T) {
 	for _, warmed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("warmed=%t", warmed), func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
+			t.Setenv("HOME", scanHome(t))
 			root := t.TempDir()
 			result := scanResult{TotalSize: 42, TotalFiles: 1}
 			if err := saveCacheToDiskWithOptions(newScanPublication(context.Background(), nil), root, result, warmed); err != nil {
