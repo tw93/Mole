@@ -384,5 +384,33 @@ class ReleaseLookupTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][:2], ["gh", "api"])
 
 
+class RemoteFailureTests(unittest.TestCase):
+    """A failed cmdlet must end the script, or its null result reads as a verdict."""
+
+    def assert_stops_before(self, step, command, result):
+        run = Mock(setup=r"C:\fixture.exe", install_location=r"C:\WinMerge", info={"profile": r"C:\Users\fixture"})
+        run.remote.ps_json.return_value = result
+        step(run)
+        script = run.remote.ps_json.call_args.args[0]
+        self.assertIn("$ErrorActionPreference = 'Stop'", script)
+        self.assertLess(script.index("$ErrorActionPreference = 'Stop'"), script.index(command))
+
+    def test_failed_download_reports_its_error_instead_of_a_null_hash(self):
+        release = {"tag_name": "v1", "assets": [{"name": "WinMerge-2.16.60-x64-PerUser-Setup.exe",
+                                                 "digest": "sha256:aa", "browser_download_url": "https://example.test/a"}]}
+        with patch.object(E2E, "latest_release", return_value=release):
+            self.assert_stops_before(E2E.download, "Invoke-WebRequest",
+                                     {"hash": "AA", "signature": "Valid", "signer": "CN=fixture"})
+
+    def test_missing_executable_cannot_read_as_a_running_app(self):
+        self.assert_stops_before(E2E.launch, "Get-ChildItem", {"ran": True, "settings": True})
+
+    def test_failure_names_the_powershell_error_not_its_clixml(self):
+        stderr = ('#< CLIXML\r\n<Objs Version="1.1.0.1"><S S="Error">Invoke-WebRequest : Not Found_x000D__x000A_</S>'
+                  '<S S="Error">At line:5 char:1_x000D__x000A_</S>' + '<S S="Error">padding_x000D__x000A_</S>' * 80 + '</Objs>')
+        self.assertTrue(E2E.remote_error(stderr).startswith("Invoke-WebRequest : Not Found\nAt line:5"))
+        self.assertEqual(E2E.remote_error("plain failure\n"), "plain failure")
+
+
 if __name__ == "__main__":
     unittest.main()

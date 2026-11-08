@@ -67,6 +67,15 @@ class StepFailed(Exception):
     pass
 
 
+def remote_error(text):
+    # PowerShell serializes stderr as CLIXML when it is captured, which buries
+    # the message; its first lines say what failed.
+    parts = re.findall(r'<S S="Error">(.*?)</S>', text, re.S)
+    if parts:
+        return "".join(parts).replace("_x000D__x000A_", "\n").strip()[:400]
+    return text.strip()[-400:]
+
+
 def plain(data):
     return ANSI.sub(b"", data).decode("utf-8", "replace").replace("\r", "")
 
@@ -97,7 +106,7 @@ class Remote:
         result = self.ps("& {\n" + script + "\n} | ConvertTo-Json -Compress -Depth 4", timeout)
         lines = [line for line in result.stdout.splitlines() if line.strip()]
         if result.returncode or not lines:
-            raise StepFailed(f"remote script failed ({result.returncode}): {(result.stderr or result.stdout).strip()[-400:]}")
+            raise StepFailed(f"remote script failed ({result.returncode}): {remote_error(result.stderr or result.stdout)}")
         return json.loads(lines[-1])
 
     def put(self, local, remote_path):
@@ -349,9 +358,11 @@ def download(run):
         raise StepFailed(f"{asset['name']} has no published sha256 digest")
     run.setup = f"{run.info['profile']}\\Downloads\\{FIXTURE_APP}-{run.token}-Setup.exe"
     result = run.remote.ps_json(rf"""
+$ErrorActionPreference = 'Stop'
 $out = '{run.setup}'
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $out) | Out-Null
-Invoke-WebRequest -UseBasicParsing -Uri '{asset['browser_download_url']}' -OutFile $out
+try {{ Invoke-WebRequest -UseBasicParsing -Uri '{asset['browser_download_url']}' -OutFile $out }}
+catch {{ throw "download failed: $($_.Exception.Message)" }}
 $sig = Get-AuthenticodeSignature -LiteralPath $out
 [pscustomobject]@{{ hash = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash; signature = [string]$sig.Status; signer = $sig.SignerCertificate.Subject }}""")
     if result["hash"].lower() != digest.lower():
@@ -377,6 +388,7 @@ $p = Start-Process -FilePath '{run.setup}' -ArgumentList '/VERYSILENT','/SUPPRES
 
 def launch(run):
     result = run.remote.ps_json(rf"""
+$ErrorActionPreference = 'Stop'
 $exe = Get-ChildItem -LiteralPath '{run.install_location}' -Filter 'WinMerge*.exe' | Select-Object -First 1
 $p = Start-Process -FilePath $exe.FullName -PassThru
 Start-Sleep -Seconds 8
