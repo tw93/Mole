@@ -108,7 +108,9 @@ EOF
         chmod 600 "$config_file"
         cmp "$expected_file" "$config_file" || return 1
         [ "$status" -ne 0 ] || return 1
-        [[ "$output" == *"Permission denied"* ]] || return 1
+        [[ "$output" == *"Cannot read your purge paths:"* ]] || return 1
+        [[ "$output" == *"chmod u+r"* ]] || return 1
+        [[ "$output" != *"purge_shared.sh"* ]] || return 1
         [[ "$output" != *"Configuration updated"* ]] || return 1
     done
 }
@@ -133,8 +135,54 @@ EOF
     chmod 600 "$config_file"
     cmp "$expected_file" "$config_file" || return 1
     [ "$status" -ne 0 ] || return 1
-    [[ "$output" == *"Permission denied"* ]] || return 1
+    [[ "$output" == *"Cannot read your purge paths:"* ]] || return 1
+    [[ "$output" == *"chmod u+r"* ]] || return 1
+    [[ "$output" != *"purge_shared.sh"* ]] || return 1
     [[ "$output" != *"Configuration updated"* ]]
+}
+
+@test "purge refuses a config path that is not a readable file without discovering or rewriting" {
+    local kind
+    for kind in broken-link link-loop directory; do
+        local fixture_home="$BATS_TEST_TMPDIR/home-$kind"
+        local config_file="$fixture_home/.config/mole/purge_paths"
+        mkdir -p "$fixture_home/.config/mole" "$fixture_home/Projects/demo"
+        touch "$fixture_home/Projects/demo/package.json"
+        case "$kind" in
+            broken-link) ln -s "$fixture_home/unmounted/purge_paths" "$config_file" ;;
+            link-loop) ln -s "$config_file" "$config_file" ;;
+            directory) mkdir "$config_file" ;;
+        esac
+
+        run env HOME="$fixture_home" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --dry-run
+
+        [ "$status" -ne 0 ] || return 1
+        [[ "$output" == *"Cannot "*"purge paths"* ]] || return 1
+        if [[ "$kind" == "directory" ]]; then
+            [[ -d "$config_file" ]] || return 1
+            [[ -z "$(ls -A "$config_file")" ]] || return 1
+        else
+            [[ -L "$config_file" ]] || return 1
+        fi
+    done
+}
+
+@test "load_purge_config keeps signal statuses silent and reports other read failures" {
+    run env HOME="$HOME" /bin/bash --noprofile --norc -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        printf '%s\\n' '$HOME/custom' > \"\$PURGE_CONFIG_FILE\"
+        mole_purge_read_paths_config() { return 130; }
+        load_purge_config && echo 'signal=0' || echo \"signal=\$?\"
+        mole_purge_read_paths_config() { return 1; }
+        load_purge_config && echo 'failure=0' || echo \"failure=\$?\"
+        cat \"\$PURGE_CONFIG_FILE\"
+    "
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"signal=130"* ]] || return 1
+    [[ "$output" == *"failure=1"* ]] || return 1
+    [ "$(grep -c 'Cannot read your purge paths' <<< "$output")" -eq 1 ] || return 1
+    [[ "$output" == *"$HOME/custom"* ]] || return 1
 }
 
 @test "load_purge_config expands tilde in paths" {
