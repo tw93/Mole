@@ -1675,11 +1675,12 @@ cleanup_temp_files() {
 TRACK_SECTION=0
 SECTION_ACTIVITY=0
 
-# IMPORTANT: There are intentionally three start_section / end_section /
-# note_activity implementations across the codebase. The one that wins is the
-# one loaded last, and each variant has product-level differences (color,
-# fallback wording, dry-run export behavior). Before changing any of them,
-# read the cross references first:
+# IMPORTANT: There are intentionally three start_section / end_section
+# implementations across the codebase, and two note_activity ones (bin/clean.sh
+# uses this file's). The one that wins is the one loaded last, and each
+# variant has product-level differences (color, fallback wording, dry-run
+# export behavior). Before changing any of them, read the cross references
+# first:
 #
 #   - lib/core/base.sh   (this file): purple arrow header, "Nothing to tidy"
 #                                     fallback, no dry-run export.
