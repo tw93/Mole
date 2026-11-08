@@ -2539,7 +2539,9 @@ EOF
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"Safari cache"* ]] || return 1
     [[ "$output" == *"Firefox cache"* ]] || return 1
-    [[ "$output" == *"Puppeteer browser cache"* ]]
+    # ~/.cache/puppeteer holds the browsers Puppeteer launches, like the
+    # protected Playwright and Cypress installs, so no browser row targets it.
+    [[ "$output" != *"Puppeteer"* ]]
 }
 
 @test "clean_browsers never enters Firefox cleanup while Firefox is running" {

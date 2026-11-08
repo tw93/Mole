@@ -2109,7 +2109,6 @@ clean_browsers() {
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/crx_cache/* "GoogleUpdater CRX cache"
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/*.old "GoogleUpdater old files"
     safe_clean ~/Library/Caches/Chromium/* "Chromium cache"
-    safe_clean ~/.cache/puppeteer/* "Puppeteer browser cache"
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
     # Arc Browser.
     if [[ -d ~/Library/Application\ Support/Arc ]]; then
