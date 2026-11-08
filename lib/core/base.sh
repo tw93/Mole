@@ -1773,18 +1773,6 @@ safe_clear_lines() {
     return 0
 }
 
-# Safe single line clear with fallback
-# Usage: safe_clear_line [tty_device]
-safe_clear_line() {
-    local tty_device="${1:-/dev/tty}"
-
-    # Use centralized ANSI support check
-    is_ansi_supported 2> /dev/null || return 1
-
-    printf "\r\033[2K" > "$tty_device" 2> /dev/null || return 1
-    return 0
-}
-
 # Update progress spinner if enough time has elapsed
 # Usage: update_progress_if_needed <completed> <total> <last_update_time_var> [interval] [label]
 # Example: update_progress_if_needed "$completed" "$total" last_progress_update 2

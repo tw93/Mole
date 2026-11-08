@@ -250,7 +250,6 @@ EOF
         is_clamshell_mode() { return 1; }
         check_touchid_support() { return 0; }
         safe_clear_lines() { printf "CLEAR:%s\n" "$1"; }
-        safe_clear_line() { :; }
 
         rc=0
         request_sudo_access "Admin access required" || rc=$?
