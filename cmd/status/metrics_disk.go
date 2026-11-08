@@ -344,13 +344,10 @@ func (p *diskPlistProbe) containerFreeBytes() (uint64, error) {
 	return extractPlistUint(out, "APFSContainerFree")
 }
 
-// correctDiskTotalBytes uses diskutil's plist output when macOS reports a
-// meaningfully different disk size than gopsutil. This fixes external APFS
-// volumes that can show doubled capacities through statfs/gopsutil.
-func correctDiskTotalBytes(mountpoint string, rawTotal uint64) uint64 {
-	return correctDiskTotalBytesWithProbe(rawTotal, newDiskPlistProbe(mountpoint))
-}
-
+// correctDiskTotalBytesWithProbe uses diskutil's plist output when macOS
+// reports a meaningfully different disk size than gopsutil. This fixes
+// external APFS volumes that can show doubled capacities through
+// statfs/gopsutil.
 func correctDiskTotalBytesWithProbe(rawTotal uint64, probe *diskPlistProbe) uint64 {
 	if rawTotal == 0 || !commandExists("diskutil") {
 		return rawTotal
@@ -368,17 +365,13 @@ func correctDiskTotalBytesWithProbe(rawTotal uint64, probe *diskPlistProbe) uint
 	return rawTotal
 }
 
-// correctAPFSDiskUsage returns Finder-accurate used bytes, percent, and the
+// correctAPFSDiskUsageWithProbe returns Finder-accurate used bytes, percent, and the
 // purgeable bytes Finder counts as free, for an APFS volume. It accounts for
 // purgeable caches and APFS local snapshots that statfs incorrectly counts as
 // "used". Uses a three-tier fallback:
 //  1. Finder via osascript (startup disk only), exact match with macOS Finder
 //  2. diskutil APFSContainerFree, corrects APFS snapshot space
 //  3. Raw gopsutil values, original statfs-based calculation
-func correctAPFSDiskUsage(mountpoint string, total, rawUsed, rawFree uint64) (used uint64, usedPercent float64, purgeable uint64) {
-	return correctAPFSDiskUsageWithProbe(mountpoint, total, rawUsed, rawFree, newDiskPlistProbe(mountpoint))
-}
-
 func correctAPFSDiskUsageWithProbe(mountpoint string, total, rawUsed, rawFree uint64, probe *diskPlistProbe) (used uint64, usedPercent float64, purgeable uint64) {
 	// Tier 1: Finder via osascript (startup disk at "/" only).
 	if mountpoint == "/" && commandExists("osascript") {

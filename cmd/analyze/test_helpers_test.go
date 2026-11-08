@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -78,4 +79,19 @@ func scanHome(t *testing.T) string {
 		}
 	})
 	return home
+}
+
+// Test-only shortcuts to the production entry points, which take a scan
+// publication, an entry limit or a shared limiter.
+
+func saveCacheToDisk(path string, result scanResult) error {
+	return saveCacheToDiskWithOptions(newScanPublication(context.Background(), nil), path, result, false)
+}
+
+func scanPathConcurrent(ctx context.Context, root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (scanResult, error) {
+	return scanPathConcurrentWithOptions(ctx, root, filesScanned, dirsScanned, bytesScanned, currentPath, true, maxEntries)
+}
+
+func calculateDirSizeFast(ctx context.Context, root string, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (int64, error) {
+	return calculateDirSizeFastWithLimiter(ctx, root, newScanLimiter(0), filesScanned, dirsScanned, bytesScanned, currentPath)
 }

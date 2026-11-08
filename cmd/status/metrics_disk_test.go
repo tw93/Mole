@@ -723,3 +723,14 @@ func TestFinderPurgeableBytesIgnoresCorrectedTotal(t *testing.T) {
 		t.Fatalf("purgeable when finder below statfs = %d, want 0", got)
 	}
 }
+
+// Test-only shortcuts; production code passes the diskPlistProbe it already
+// built for the mount.
+
+func correctDiskTotalBytes(mountpoint string, rawTotal uint64) uint64 {
+	return correctDiskTotalBytesWithProbe(rawTotal, newDiskPlistProbe(mountpoint))
+}
+
+func correctAPFSDiskUsage(mountpoint string, total, rawUsed, rawFree uint64) (used uint64, usedPercent float64, purgeable uint64) {
+	return correctAPFSDiskUsageWithProbe(mountpoint, total, rawUsed, rawFree, newDiskPlistProbe(mountpoint))
+}
