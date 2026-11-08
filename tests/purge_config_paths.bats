@@ -143,7 +143,7 @@ EOF
 
 @test "purge refuses a config path that is not a readable file without discovering or rewriting" {
     local kind
-    for kind in broken-link link-loop directory; do
+    for kind in broken-link link-loop directory unsearchable-parent; do
         local fixture_home="$BATS_TEST_TMPDIR/home-$kind"
         local config_file="$fixture_home/.config/mole/purge_paths"
         mkdir -p "$fixture_home/.config/mole" "$fixture_home/Projects/demo"
@@ -152,18 +152,44 @@ EOF
             broken-link) ln -s "$fixture_home/unmounted/purge_paths" "$config_file" ;;
             link-loop) ln -s "$config_file" "$config_file" ;;
             directory) mkdir "$config_file" ;;
+            unsearchable-parent)
+                printf '%s\n' "$fixture_home/custom" > "$config_file"
+                chmod 000 "$fixture_home/.config/mole"
+                if [[ -x "$fixture_home/.config/mole" ]]; then
+                    chmod 700 "$fixture_home/.config/mole"
+                    skip "requires a user that cannot search mode-000 directories"
+                fi
+                ;;
         esac
 
         run env HOME="$fixture_home" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --dry-run
 
+        [[ "$kind" != "unsearchable-parent" ]] || chmod 700 "$fixture_home/.config/mole"
         [ "$status" -ne 0 ] || return 1
-        [[ "$output" == *"Cannot "*"purge paths"* ]] || return 1
-        if [[ "$kind" == "directory" ]]; then
-            [[ -d "$config_file" ]] || return 1
-            [[ -z "$(ls -A "$config_file")" ]] || return 1
-        else
-            [[ -L "$config_file" ]] || return 1
-        fi
+        case "$kind" in
+            broken-link | directory)
+                [[ "$output" == *"Cannot read your purge paths: invalid path or broken link:"* ]] || return 1
+                ;;
+            link-loop)
+                [[ "$output" == *"Cannot inspect your purge paths path:"* ]] || return 1
+                ;;
+            unsearchable-parent)
+                [[ "$output" == *"Cannot access your purge paths directory:"* ]] || return 1
+                [[ "$output" == *"chmod u+rx"* ]] || return 1
+                ;;
+        esac
+        case "$kind" in
+            directory)
+                [[ -d "$config_file" ]] || return 1
+                [[ -z "$(ls -A "$config_file")" ]] || return 1
+                ;;
+            unsearchable-parent)
+                [[ "$(cat "$config_file")" == "$fixture_home/custom" ]] || return 1
+                ;;
+            *)
+                [[ -L "$config_file" ]] || return 1
+                ;;
+        esac
     done
 }
 
