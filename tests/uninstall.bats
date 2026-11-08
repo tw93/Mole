@@ -92,6 +92,64 @@ desktop() {
     [ "$output" = "$HOME/.var/app/org.b.Gone" ]
 }
 
+@test "game libraries, virtual machines and model stores are held back like browser profiles" {
+    mole_run uninstall 'for p in "$HOME/.var/app/com.valvesoftware.Steam" "$HOME/.var/app/com.usebottles.bottles" \
+        "$HOME/.var/app/org.gnome.Boxes" "$HOME/.ollama" "$HOME/.cache/huggingface" "$HOME/.cache/lm-studio" \
+        "$HOME/.var/app/org.b.Gone" "$HOME/.cache/foo"; do
+        printf "%s=%s\n" "${p#"$HOME"/}" "$(mole_leftover_holdback "$p" || echo -)"
+    done'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".var/app/com.valvesoftware.Steam=game library"* ]]
+    [[ "$output" == *".var/app/com.usebottles.bottles=game library"* ]]
+    [[ "$output" == *".var/app/org.gnome.Boxes=virtual machines"* ]]
+    [[ "$output" == *".ollama=model store"* ]]
+    [[ "$output" == *".cache/huggingface=model store"* ]]
+    [[ "$output" == *".cache/lm-studio=model store"* ]]
+    [[ "$output" == *".var/app/org.b.Gone=-"* ]]
+    [[ "$output" == *".cache/foo=-"* ]]
+}
+
+@test "a held-back orphan waits for the data review and stays unless picked" {
+    mkdir -p "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" "$HOME/.var/app/org.b.Gone/data"
+    mole_run uninstall 'APP_KIND=(orphan orphan); APP_ID=(org.mozilla.firefox org.b.Gone); APP_NAME=(Firefox Gone)
+        APP_DESKTOPS=("" ""); APP_EXEC=("" ""); APP_SCOPE=(user user); SELECTED=(0 1); REMOVED=()
+        collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do
+            printf "ROW %s %s %s %s\n" "${LEFT_APP[j]}" "${LEFT_CLASS[j]}" "${LEFT_ON[j]}" "${LEFT_NOTE[j]:--}"
+        done
+        mole_trash() {
+            shift
+            local p
+            for p in "$@"; do printf "TRASH %s\n" "$p"; rm -rf "$p"; done
+            MOLE_TRASH_MOVED=$#
+            MOLE_TRASH_ERRORS=()
+        }
+        mole_sudo_end() { :; }
+        remove_packages
+        printf "REMOVED %s\n" "${REMOVED[*]-}"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ROW 0 app false browser profile"* ]]
+    [[ "$output" == *"ROW 1 app true -"* ]]
+    [[ "$output" == *"TRASH $HOME/.var/app/org.b.Gone"* ]]
+    [[ "$output" != *"TRASH $HOME/.var/app/org.mozilla.firefox"* ]]
+    [[ "$output" == *"REMOVED 1"* ]]
+    [ -d "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" ]
+}
+
+@test "a dry run counts a held-back orphan as kept, not removed" {
+    mkdir -p "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" "$HOME/.var/app/org.b.Gone/data"
+    mole_run uninstall 'DRY_RUN=true; ASSUME_YES=true
+        load_apps() {
+            APP_KIND=(orphan orphan); APP_ID=(org.mozilla.firefox org.b.Gone); APP_NAME=(Firefox Gone)
+            APP_DESKTOPS=("" ""); APP_EXEC=("" ""); APP_SCOPE=(user user); APP_KB=(10 10)
+        }
+        match_names() { SELECTED=(0 1); }
+        run_once false'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"kept, browser profile"* ]]
+    [[ "$output" == *"Would remove: 1 app"* ]]
+}
+
 @test "an exact ID wins over a display name, and a tie is refused" {
     mole_run uninstall '
         APP_KIND=(flatpak pacman); APP_ID=(org.mozilla.firefox firefox); APP_NAME=(Firefox Firefox)
