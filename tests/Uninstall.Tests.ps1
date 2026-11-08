@@ -263,13 +263,14 @@ Describe 'Generic game content in install folders' {
     }
     It 'Keeps content markers at the root or below one wrapper: <Marker>' -TestCases @(
         @{Marker='goggame-42.info'}, @{Marker='galaxy-2.0.db'},
-        @{Marker='OneGame\goggame-42.info'}, @{Marker='Library\steamapps'}, @{Marker='Library\libraryfolder.vdf'}
+        @{Marker='OneGame\goggame-42.info'}, @{Marker='Library\steamapps'}, @{Marker='Library\libraryfolder.vdf'},
+        @{Marker='.egstore'}, @{Marker='Fortnite\.egstore'}
     ) {
         param($Marker)
         $root = New-TestFolder ('Launcher ' + $Marker.Replace('\', '_'))
         $path = Join-Path $root $Marker
         New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
-        if ($Marker -like '*steamapps') { New-Item -ItemType Directory -Path $path -Force | Out-Null }
+        if ($Marker -like '*steamapps' -or $Marker -like '*.egstore') { New-Item -ItemType Directory -Path $path -Force | Out-Null }
         else { [IO.File]::WriteAllText($path,'content marker') }
         Test-MoleLeftoverOwnership $root $script:ContentApp | Should -BeFalse
     }

@@ -166,7 +166,8 @@ function Test-MoleInstallContentFree {
                     $entry = $enumerator.Current
                     if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
                     if ($entry.Attributes -band [IO.FileAttributes]::Directory) {
-                        if ($entry.Name -in @('roms', 'saves', 'states', 'bios', 'games', 'gog games', 'steamapps')) { return $false }
+                        # .egstore sits in every game the Epic Games Launcher installs.
+                        if ($entry.Name -in @('roms', 'saves', 'states', 'bios', 'games', 'gog games', 'steamapps', '.egstore')) { return $false }
                         if ($index -eq 0) {
                             if ($folders.Count -ge 257) { return $false }
                             $folders.Add($entry.FullName)
