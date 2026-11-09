@@ -6012,7 +6012,7 @@ results=$(printf '%s' "$items" | filter_protected_artifacts)
 lsof_calls=$(wc -l < "$count_file" | tr -d ' ')
 rm -f "$count_file"
 echo "CALLS=$lsof_calls"
-[[ "$lsof_calls" -eq 1 ]]
+[[ "$lsof_calls" -eq 1 ]] || exit 1
 [[ "$results" == *p6/target* ]]
 SCRIPT
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
