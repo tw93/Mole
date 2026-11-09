@@ -244,3 +244,10 @@ Implemented in source (Mole CLI (macOS), `4cd5be26`): the row is gone and `shoul
 - Mole CLI (Windows): Not applicable. It has no Puppeteer row.
 - Mole Mac: Implemented. Its path guard and whitelist already keep `~/.cache/puppeteer`.
 - Mole for Windows: To be checked by the maintainer.
+
+## 2026-11-09 Clean write refusal and protected containers
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean` stops with a refusal when every folder it checks refuses a write, instead of ending on "Cleanup complete" with nothing removed; any other failure carries on, above all a full disk | Implemented (Mole CLI (macOS), `bab30aa8`); Not applicable (Mole CLI (Windows): its previews are the open case, handled separately, and its real runs report each failed removal); Not applicable (Mole Mac, Mole for Windows: desktop apps with their own failure rows) | `tests/clean_core.bats`, incident I-53. |
+| An uninstall keeps a `Containers/<id>` or `Group Containers/<id>` folder holding an entry System Integrity Protection guards, so it never reaches the Trash, where it would fail every Empty Trash; asked only with Full Disk Access and only of the container's own folder | Implemented (Mole CLI (macOS), `f316ef8a`); Implemented (Mole Mac record); Not applicable (Mole for Windows, Mole CLI (Windows): no sandbox containers) | `tests/uninstall_remove_file_list.bats`, real probes of `/System/Library/Sandbox` and an ordinary tree. |
