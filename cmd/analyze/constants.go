@@ -15,7 +15,7 @@ const (
 	analyzerCacheTTL       = 7 * 24 * time.Hour
 	overviewCacheTTL       = 7 * 24 * time.Hour
 	overviewCacheFile      = "overview_sizes.json"
-	duTimeout              = 30 * time.Second
+	duExitWait             = 500 * time.Millisecond
 	maxConcurrentOverview  = 8
 	batchUpdateSize        = 100
 	staleCacheTTL          = 3 * 24 * time.Hour

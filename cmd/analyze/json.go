@@ -142,10 +142,12 @@ func measureOverviewEntriesForJSON(overviewEntries []dirEntry, insightPaths map[
 			if cached, state, cacheErr := loadOverviewCachedMeasurement(item.Path); cacheErr == nil && cached > 0 {
 				size, item.State = cached, state
 			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), duTimeout)
+				defer cancel()
 				if insightPaths[item.Path] {
-					size, err = measureInsightSize(context.Background(), item.Path)
+					size, err = measureInsightSize(ctx, item.Path)
 				} else {
-					size, err = measureOverviewSize(context.Background(), item.Path)
+					size, err = measureOverviewSize(ctx, item.Path)
 				}
 				item.State = measurementState(size, err)
 			}
