@@ -323,7 +323,14 @@ collect_leftovers() {
         # in the Trash.
         while IFS= read -r path; do
             [[ -e "$path" || -L "$path" ]] || continue
-            add_left "$i" app "$path" true
+            # An orphan is the data a removed Flatpak left; a held-back one
+            # (a browser profile, a game library) waits for the data review
+            # like the same folder does as a leftover.
+            if [[ "${APP_KIND[i]}" == orphan ]] && note=$(mole_leftover_holdback "$path"); then
+                add_left "$i" app "$path" false "$note"
+            else
+                add_left "$i" app "$path" true
+            fi
         done < <(app_own_files "$i")
         while IFS=$'\t' read -r class path; do
             [[ -n "$path" ]] || continue
@@ -704,7 +711,7 @@ remove_packages() {
                 local -a own=()
                 local j
                 for j in "${!LEFT_PATH[@]}"; do
-                    [[ "${LEFT_APP[j]}" == "$i" && "${LEFT_CLASS[j]}" == app ]] && own+=("${LEFT_PATH[j]}")
+                    [[ "${LEFT_APP[j]}" == "$i" && "${LEFT_CLASS[j]}" == app && "${LEFT_ON[j]}" == true ]] && own+=("${LEFT_PATH[j]}")
                 done
                 [[ ${#own[@]} -gt 0 ]] || continue
                 if ! mole_trash uninstall "${own[@]}"; then
@@ -741,6 +748,22 @@ packages_held_by_snapshots() {
         mole_native_kind "${APP_KIND[i]}" && any=true
     done
     [[ "$any" == true ]] && mole_snapshot_state "$PACKAGE_ROOT"
+}
+
+# Selected apps that will go: not one whose own files are all kept, such as
+# a held-back orphan the user did not pick in the data review.
+removable_app_count() {
+    local i j n=0 kept
+    for i in "${SELECTED[@]}"; do
+        kept=false
+        for j in "${!LEFT_PATH[@]}"; do
+            [[ "${LEFT_APP[j]}" == "$i" && "${LEFT_CLASS[j]}" == app ]] || continue
+            kept=true
+            [[ "${LEFT_ON[j]}" == true ]] && { kept=false; break; }
+        done
+        [[ "$kept" == true ]] || n=$((n + 1))
+    done
+    echo "$n"
 }
 
 # Leftover paths of removed apps that are selected, minus the user units when
@@ -878,10 +901,17 @@ run_once() {
     show_plan
 
     if [[ "$DRY_RUN" == true ]]; then
-        local -a dry=("Would remove: $(mole_count_label "${#SELECTED[@]}" app)")
+        local -a dry=("Would remove: $(mole_count_label "$(removable_app_count)" app)")
         packages_held_by_snapshots "${SELECTED[@]}" && dry+=("$PACKAGES_SNAPSHOT_NOTE")
         print_summary_block "Dry run complete - no changes made" "${dry[@]}"
         return 0
+    fi
+
+    # Every selected app is a held-back orphan the user kept in the data
+    # review, so there is nothing to confirm or remove.
+    if [[ "$(removable_app_count)" -eq 0 ]]; then
+        echo "Nothing to remove; the kept data stays where it is."
+        return 4
     fi
 
     if running_apps; then
@@ -893,7 +923,7 @@ run_once() {
         echo "Run mo uninstall in a terminal, or pass --yes." >&2
         return 1
     fi
-    if [[ "$ASSUME_YES" != true ]] && ! uninstall_confirm "Remove $(mole_count_label "${#SELECTED[@]}" app)?"; then
+    if [[ "$ASSUME_YES" != true ]] && ! uninstall_confirm "Remove $(mole_count_label "$(removable_app_count)" app)?"; then
         echo "Cancelled."
         return 4
     fi
@@ -925,8 +955,11 @@ run_once() {
     if [[ ${#REMOVED[@]} -gt 0 ]]; then
         details+=("Removed: ${removed_names}")
     fi
-    if [[ ${#REMOVED[@]} -lt ${#SELECTED[@]} ]]; then
-        details+=("Not removed: $(mole_count_label $((${#SELECTED[@]} - ${#REMOVED[@]})) app)")
+    # Apps the user kept in the data review were never meant to go.
+    local wanted
+    wanted=$(removable_app_count)
+    if [[ ${#REMOVED[@]} -lt $wanted ]]; then
+        details+=("Not removed: $(mole_count_label $((wanted - ${#REMOVED[@]})) app)")
     fi
     if [[ ${#REMOVED[@]} -gt 0 ]] && packages_held_by_snapshots "${REMOVED[@]}"; then
         details+=("$PACKAGES_SNAPSHOT_NOTE")

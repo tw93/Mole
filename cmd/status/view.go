@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/tw93/mole/internal/units"
 )
@@ -1192,16 +1193,15 @@ func humanBytesCompact(v uint64) string {
 	return units.BytesBinCompact(v)
 }
 
+// shorten fits s into maxLen terminal cells, ending a cut with "…". It counts
+// display width rather than runes, so a wide (CJK) name is not drawn at twice
+// its budget, and a cut never splits a character such as the "×" in
+// "Firefox ×14".
 func shorten(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if ansi.StringWidth(s) <= maxLen {
 		return s
 	}
-	// Cut on a rune boundary; names such as "Firefox ×14" are not ASCII.
-	r := []rune(s)
-	if len(r) <= maxLen {
-		return s
-	}
-	return string(r[:maxLen-1]) + "…"
+	return ansi.Truncate(s, maxLen, "…")
 }
 
 func remainingLineWidth(width int, prefix string) int {

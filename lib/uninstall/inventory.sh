@@ -814,6 +814,23 @@ mole_leftover_holdback() {
             echo "offline music"
             return 0
             ;;
+        # Model stores are never touched unless the user picks them in a
+        # review list (AGENTS.md); an app id of the same name must not turn
+        # one into a preselected cache row.
+        "$HOME/.ollama" | "$MOLE_CACHE_HOME/huggingface" | "$MOLE_CACHE_HOME/lm-studio")
+            echo "model store"
+            return 0
+            ;;
+        # Flatpak Steam keeps its steamapps library and Bottles its Wine
+        # bottles inside the sandbox home; Boxes keeps its disk images there.
+        "$v/com.valvesoftware.Steam" | "$v/com.usebottles.bottles")
+            echo "game library"
+            return 0
+            ;;
+        "$v/org.gnome.Boxes")
+            echo "virtual machines"
+            return 0
+            ;;
         "$HOME/.ViberPC")
             echo "chat history"
             return 0

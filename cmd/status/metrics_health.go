@@ -52,6 +52,12 @@ const (
 	// Disk.
 	diskWarnThreshold = 80.0
 	diskCritThreshold = 93.0
+	// The two percentages above shape the score penalty only. A disk is
+	// critical at 90% used with under 30 GB free: a 2 TB disk at 90% still
+	// has 200 GB free. Mole CLI (macOS), Mole Mac and Mole for Windows use the
+	// same rule.
+	diskCriticalPercent   = 90.0
+	diskCriticalFreeBytes = 30_000_000_000
 
 	// Thermal.
 	thermalNormalThreshold = 65.0
@@ -145,7 +151,7 @@ func calculateHealthScore(cpu CPUStatus, mem MemoryStatus, disks []DiskStatus, d
 			}
 		}
 		score -= diskPenalty
-		if diskUsage > diskCritThreshold {
+		if diskIsCritical(disks[0]) {
 			issues = append(issues, "Disk Almost Full")
 		}
 	}
@@ -247,6 +253,18 @@ func swapPenalty(mem MemoryStatus) float64 {
 	tight := (mem.UsedPercent - swapTightnessLow) / (swapTightnessHigh - swapTightnessLow)
 	tight = max(0, min(1, tight))
 	return healthSwapWeight * frac * tight
+}
+
+// diskIsCritical reports a disk at least 90% used with under 30 GB free.
+func diskIsCritical(disk DiskStatus) bool {
+	if disk.UsedPercent < diskCriticalPercent {
+		return false
+	}
+	free := uint64(0)
+	if disk.Total > disk.Used {
+		free = disk.Total - disk.Used
+	}
+	return free < diskCriticalFreeBytes
 }
 
 // batteryHealthLabel returns a human-readable health label and severity based on cycle count and capacity.

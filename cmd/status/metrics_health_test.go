@@ -413,3 +413,32 @@ func TestFormatUptimeEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestDiskCriticalNeedsNinetyPercentAndUnderThirtyGBFree(t *testing.T) {
+	const gb = 1_000_000_000
+	for _, tc := range []struct {
+		name       string
+		usedPct    float64
+		total, use uint64
+		want       bool
+	}{
+		{"2 TB at 90% keeps 200 GB free", 90, 2000 * gb, 1800 * gb, false},
+		{"4 TB at 95% keeps 200 GB free", 95, 4000 * gb, 3800 * gb, false},
+		{"256 GB at 93.5% has 18 GB free", 93.5, 256 * gb, 238 * gb, true},
+		{"exactly 90% under the floor", 90, 250 * gb, 225 * gb, true},
+		{"under 90% even with little free", 89.9, 100 * gb, 89 * gb, false},
+		{"exactly 30 GB free is not under the floor", 97, 1000 * gb, 970 * gb, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			disk := DiskStatus{Mount: "/", UsedPercent: tc.usedPct, Total: tc.total, Used: tc.use}
+			_, msg := calculateHealthScore(CPUStatus{}, MemoryStatus{}, []DiskStatus{disk}, DiskIOStatus{}, ThermalStatus{}, nil, "")
+			if strings.Contains(msg, "Disk Almost Full") != tc.want {
+				t.Fatalf("health message %q, want critical=%v", msg, tc.want)
+			}
+			line := statusDiagnosisLine(MetricsSnapshot{Disks: []DiskStatus{disk}})
+			if strings.HasPrefix(line, "Disk low") != tc.want {
+				t.Fatalf("diagnosis %q, want critical=%v", line, tc.want)
+			}
+		})
+	}
+}
