@@ -143,7 +143,114 @@ def check_term_without_keypress():
             os.close(master)
 
 
+def check_word_search():
+    # Words match in any order; one missing word empties the list; an extra
+    # space, and a glob character, stay literal.
+    cases = [(b'target zebra', True), (b'zebra  target', True),
+             (b'zebra nope', False), (b'z*a', False)]
+    for term, found in cases:
+        with tempfile.TemporaryDirectory(prefix="mole-menu-words-") as home:
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, b'\x28\x00\x78\x00\x00\x00\x00\x00')
+            env = dict(os.environ, HOME=home, TERM="xterm-256color",
+                       MOLE_TEST_MODE="1", MOLE_TEST_NO_AUTH="1", TEST_ROOT=str(root))
+
+            def own_terminal():
+                os.setsid()
+                fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+            process = subprocess.Popen(
+                ["/bin/bash", "--noprofile", "--norc", "-c", child_script],
+                stdin=slave, stdout=slave, stderr=slave, env=env,
+                preexec_fn=own_terminal)
+            output = b''
+            try:
+                output = read_until(master, output, b'selected', 10)
+                os.write(master, b'/')
+                output = read_until(master, output, b'type to search', 5)
+                mark = len(output)
+                os.write(master, term)
+                output = read_until(master, output, b'Search: ' + term + b'_', 5)
+                output = read_until(master, output[mark:], b'selected)', 5)
+                # The header counts the matches of the 41 rows; the list follows it.
+                assert (b'(1/41;' if found else b'(0/41;') in output, (term, output[-200:])
+                print('PASS: search for', term.decode(), 'found' if found else 'empty')
+            finally:
+                if process.poll() is None:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except PermissionError:
+                        process.kill()
+                    deadline = time.monotonic() + 5
+                    while process.poll() is None and time.monotonic() < deadline:
+                        if select.select([master], [], [], .02)[0]:
+                            try:
+                                os.read(master, 65536)
+                            except OSError:
+                                break
+                    process.wait(timeout=5)
+                os.close(slave)
+                os.close(master)
+
+
+def check_word_search_steps():
+    # Each step reuses or rebuilds the filter cache: extending narrows, and a
+    # backspace has to bring back what the longer text hid.
+    steps = [(b'app', b'app', 40), (b' ', b'app ', 40), (b'1', b'app 1', 13),
+             (b'x', b'app 1x', 0), (b'\x7f', b'app 1', 13), (b'\x7f', b'app ', 40)]
+    with tempfile.TemporaryDirectory(prefix="mole-menu-steps-") as home:
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, b'\x28\x00\x78\x00\x00\x00\x00\x00')
+        env = dict(os.environ, HOME=home, TERM="xterm-256color",
+                   MOLE_TEST_MODE="1", MOLE_TEST_NO_AUTH="1", TEST_ROOT=str(root))
+
+        def own_terminal():
+            os.setsid()
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+        process = subprocess.Popen(
+            ["/bin/bash", "--noprofile", "--norc", "-c", child_script],
+            stdin=slave, stdout=slave, stderr=slave, env=env,
+            preexec_fn=own_terminal)
+        output = b''
+        try:
+            output = read_until(master, output, b'selected', 10)
+            os.write(master, b'/')
+            output = read_until(master, output, b'type to search', 5)
+            for key, shown, count in steps:
+                mark = len(output)
+                os.write(master, key)
+                marker = b'Search: ' + shown + b'_'
+                deadline = time.monotonic() + 5
+                while marker not in output[mark:]:
+                    assert time.monotonic() < deadline, ('missing', marker, output[-800:])
+                    if select.select([master], [], [], .02)[0]:
+                        output += os.read(master, 65536)
+                # The header counts the matches of the 41 rows; the list follows it.
+                output = read_until(master, output[output.rindex(marker):], b'selected)', 5)
+                assert b'(%d/41;' % count in output, (shown, output[-200:])
+            print('PASS: search steps kept the filter cache honest')
+        finally:
+            if process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except PermissionError:
+                    process.kill()
+                deadline = time.monotonic() + 5
+                while process.poll() is None and time.monotonic() < deadline:
+                    if select.select([master], [], [], .02)[0]:
+                        try:
+                            os.read(master, 65536)
+                        except OSError:
+                            break
+                process.wait(timeout=5)
+            os.close(slave)
+            os.close(master)
+
+
 check_search(paste)
 check_search(fast_typing)
 check_search(after_partial_escape)
+check_word_search()
+check_word_search_steps()
 check_term_without_keypress()
