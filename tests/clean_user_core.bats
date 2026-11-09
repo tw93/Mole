@@ -2493,7 +2493,8 @@ EOF
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"Safari cache"* ]] || return 1
     [[ "$output" == *"Firefox cache"* ]] || return 1
-    [[ "$output" == *"Puppeteer browser cache"* ]]
+    # Puppeteer installs its browsers here; removing them breaks launch (#1941).
+    [[ "$output" != *"Puppeteer"* ]]
 }
 
 @test "clean_browsers never enters Firefox cleanup while Firefox is running" {

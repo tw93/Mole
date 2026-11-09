@@ -603,6 +603,7 @@ should_protect_path() {
         */Library/Caches/ms-playwright | */Library/Caches/ms-playwright/* | \
             */Library/Caches/camoufox | */Library/Caches/camoufox/* | \
             */Library/Caches/Cypress | */Library/Caches/Cypress/* | \
+            */.cache/puppeteer | */.cache/puppeteer/* | \
             */Library/Caches/app.cotypist.Cotypist | */Library/Caches/app.cotypist.Cotypist/* | \
             */Library/Caches/com.displaylink.DisplayLinkUserAgent | */Library/Caches/com.displaylink.DisplayLinkUserAgent/* | \
             */Library/Caches/com.lasersoft-imaging.SilverFast9 | */Library/Caches/com.lasersoft-imaging.SilverFast9/* | \
