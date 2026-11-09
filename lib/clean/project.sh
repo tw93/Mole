@@ -599,6 +599,71 @@ purge_node_modules_is_protected() {
     purge_node_project_running "$project" "$deadline"
 }
 
+# Returns the same tri-state as process probes (0 active, 1 idle, 2 unknown,
+# >128 signal). Checks whether any current-user process holds an open file
+# descriptor, mapped executable (txt), working directory (cwd), or command-line
+# argument inside the artifact directory itself.
+purge_artifact_in_use() {
+    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence rc=0
+    [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    evidence=$(run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd,txt,0-999 -Fn 2>&1) || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+
+    local awk_rc=0
+    TARGET_ARTIFACT="$artifact" /usr/bin/awk '
+        BEGIN {
+            target = ENVIRON["TARGET_ARTIFACT"]
+            prefix = target "/"
+            saw_pid = 0
+        }
+        /^p[0-9]+$/ { saw_pid = 1; next }
+        /^f[A-Za-z0-9_]+$/ { next }
+        /^n/ {
+            path = substr($0, 2)
+            if (path == target || index(path, prefix) == 1) {
+                exit 10
+            }
+            next
+        }
+        { exit 20 }
+        END {
+            if (!saw_pid) exit 20
+        }
+    ' <<< "$evidence" || awk_rc=$?
+    case "$awk_rc" in
+        0) ;;
+        10) return 0 ;;
+        *) return 2 ;;
+    esac
+
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    rc=0
+    run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$artifact")(/|[[:space:]]|$)" > /dev/null 2>&1 || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -le 1 ]] || return 2
+    return "$rc"
+}
+
+purge_project_artifact_is_protected() {
+    local path="${1%/}" deadline="${2:-}"
+    path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
+    local project="${path%/*}"
+    [[ -n "$project" && "$project" == /* ]] || return 2
+
+    local running_rc=0
+    purge_node_project_running "$project" "$deadline" || running_rc=$?
+    [[ $running_rc -le 128 ]] || return "$running_rc"
+    [[ $running_rc -ne 2 ]] || return 2
+    [[ $running_rc -ne 0 ]] || return 0
+
+    local in_use_rc=0
+    purge_artifact_in_use "$path" "$deadline" || in_use_rc=$?
+    [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
+    return "$in_use_rc"
+}
+
 is_protected_purge_artifact() {
     local path="${1%/}"
     local deadline="${2:-}"
@@ -640,6 +705,57 @@ is_protected_purge_artifact() {
             # Protect Xcode global DerivedData in ~/Library/Developer/Xcode/
             # Only allow purging DerivedData within project directories
             [[ "$path" == *"/Library/Developer/Xcode/DerivedData"* ]] && return 0
+            if [[ -f "$path/info.plist" || -d "$path/Build" ]]; then
+                local dd_rc=0
+                purge_project_artifact_is_protected "$path" "$deadline" || dd_rc=$?
+                [[ $dd_rc -le 128 ]] || return "$dd_rc"
+                if [[ $dd_rc -eq 2 ]]; then
+                    PURGE_PROTECTION_UNVERIFIED=true
+                    return 0
+                fi
+                return "$dd_rc"
+            fi
+            return 1
+            ;;
+        target)
+            local parent_dir="${path%/*}"
+            if [[ -f "$parent_dir/Cargo.toml" || -f "$parent_dir/pom.xml" || -f "$path/.rustc_info.json" ]]; then
+                local target_rc=0
+                purge_project_artifact_is_protected "$path" "$deadline" || target_rc=$?
+                [[ $target_rc -le 128 ]] || return "$target_rc"
+                if [[ $target_rc -eq 2 ]]; then
+                    PURGE_PROTECTION_UNVERIFIED=true
+                    return 0
+                fi
+                return "$target_rc"
+            fi
+            return 1
+            ;;
+        .build)
+            local parent_dir="${path%/*}"
+            if [[ -f "$parent_dir/Package.swift" || -f "$path/workspace-state.json" || -f "$path/build.db" ]]; then
+                local build_rc=0
+                purge_project_artifact_is_protected "$path" "$deadline" || build_rc=$?
+                [[ $build_rc -le 128 ]] || return "$build_rc"
+                if [[ $build_rc -eq 2 ]]; then
+                    PURGE_PROTECTION_UNVERIFIED=true
+                    return 0
+                fi
+                return "$build_rc"
+            fi
+            return 1
+            ;;
+        venv | .venv)
+            if [[ -f "$path/pyvenv.cfg" ]]; then
+                local venv_rc=0
+                purge_project_artifact_is_protected "$path" "$deadline" || venv_rc=$?
+                [[ $venv_rc -le 128 ]] || return "$venv_rc"
+                if [[ $venv_rc -eq 2 ]]; then
+                    PURGE_PROTECTION_UNVERIFIED=true
+                    return 0
+                fi
+                return "$venv_rc"
+            fi
             return 1
             ;;
     esac
@@ -1341,6 +1457,13 @@ _mole_purge_final_remove_guard() {
     is_protected_purge_artifact "$path" || protection_rc=$?
     [[ $protection_rc -le 128 ]] || return "$protection_rc"
     [[ $protection_rc -ne 0 ]] || return 1
+
+    local physical_target=""
+    physical_target=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 1
+    local in_use_rc=0
+    purge_artifact_in_use "$physical_target" || in_use_rc=$?
+    [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
+    [[ $in_use_rc -eq 1 ]] || return 1
 
     _mole_path_matches_identity \
         "${_MOLE_PURGE_FINAL_SCAN_ROOT:-}" \

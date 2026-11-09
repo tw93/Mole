@@ -5333,3 +5333,139 @@ EOF
 @test "purge final node owner after activity scan idle" {
     assert_purge_final_owner_guard idle
 }
+
+@test "purge_artifact_in_use detects open file descriptors mapped executables cwd and args" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+artifact="$HOME/www/app/target"
+for mode in fd txt cwd args idle error partial signal; do
+    run_with_timeout() {
+        shift
+        if [[ "$1" == /usr/sbin/lsof ]]; then
+            case "$mode" in
+                fd) printf 'p123\nf4\nn%s/debug/.cargo-lock\n' "$artifact" ;;
+                txt) printf 'p123\nftxt\nn%s/debug/app\n' "$artifact" ;;
+                cwd) printf 'p123\nfcwd\nn%s\n' "$artifact" ;;
+                error) return 1 ;;
+                partial) printf 'p123\nfcwd\nn/unrelated\n'; echo 'lsof: incomplete visibility' >&2 ;;
+                signal) return 143 ;;
+                *) printf 'p123\nfcwd\nn/unrelated\n' ;;
+            esac
+        else
+            [[ "$1" == pgrep ]] || return 2
+            [[ "$mode" == args ]]
+        fi
+    }
+    rc=0
+    purge_artifact_in_use "$artifact" || rc=$?
+    case "$mode" in
+        fd|txt|cwd|args) [[ $rc -eq 0 ]] || exit 1 ;;
+        idle) [[ $rc -eq 1 ]] || exit 1 ;;
+        error|partial) [[ $rc -eq 2 ]] || exit 1 ;;
+        signal) [[ $rc -eq 143 ]] || exit 1 ;;
+    esac
+done
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "purge final sink refuses any artifact with open files and removes it once closed" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+HOME=$(cd "$HOME" && pwd -P)
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+fixture_project="$HOME/projects/app"
+fixture_entry="$fixture_project/build"
+mkdir -p "$fixture_entry"
+printf payload > "$fixture_entry/output.lock"
+touch -t 202001010000 "$fixture_entry/output.lock" "$fixture_entry"
+PURGE_SEARCH_PATHS=("$HOME/projects")
+
+_MOLE_PURGE_FINAL_ACTIVITY_STATE=old
+_mole_snapshot_path_identity "$HOME/projects"
+_MOLE_PURGE_FINAL_SCAN_ROOT="$HOME/projects"
+_MOLE_PURGE_FINAL_SCAN_ROOT_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_PURGE_FINAL_SCAN_ROOT_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_PURGE_FINAL_SCAN_ROOT_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+_MOLE_PURGE_FINAL_SCAN_ROOT_PHYSICAL="$_MOLE_PURGE_FINAL_SCAN_ROOT"
+_MOLE_PURGE_FINAL_SCAN_ROOT_PHYSICAL_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_PURGE_FINAL_SCAN_ROOT_PHYSICAL_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_PURGE_FINAL_SCAN_ROOT_PHYSICAL_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+_mole_snapshot_path_identity "$fixture_entry"
+_MOLE_PURGE_FINAL_EXPECTED_PARENT="$_MOLE_PATH_SNAPSHOT_PARENT"
+_MOLE_PURGE_FINAL_EXPECTED_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+_MOLE_PURGE_FINAL_EXPECTED_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+_MOLE_SAFE_REMOVE_FINAL_GUARD=_mole_purge_final_remove_guard
+
+# Hold an open file descriptor inside build/ from an unrelated cwd (/).
+( cd / && exec 9<"$fixture_entry/output.lock" && exec >/dev/null 2>&1 </dev/null && exec sleep 30 ) &
+holder_pid=$!
+trap 'kill "$holder_pid" 2>/dev/null || true; wait "$holder_pid" 2>/dev/null || true' EXIT
+sleep 0.2
+
+rc=0
+safe_remove "$fixture_entry" true 1 '' "$_MOLE_PURGE_FINAL_EXPECTED_PARENT" "$_MOLE_PURGE_FINAL_EXPECTED_PARENT_ID" "$_MOLE_PURGE_FINAL_EXPECTED_TARGET_ID" || rc=$?
+[[ $rc -ne 0 && -d "$fixture_entry" && -f "$fixture_entry/output.lock" ]] || exit 1
+
+kill "$holder_pid" 2>/dev/null || true
+wait "$holder_pid" 2>/dev/null || true
+trap - EXIT
+
+rc=0
+safe_remove "$fixture_entry" true 1 '' "$_MOLE_PURGE_FINAL_EXPECTED_PARENT" "$_MOLE_PURGE_FINAL_EXPECTED_PARENT_ID" "$_MOLE_PURGE_FINAL_EXPECTED_TARGET_ID" || rc=$?
+[[ $rc -eq 0 && ! -e "$fixture_entry" ]] || exit 1
+printf 'PASS\n'
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *PASS* ]]
+}
+
+@test "purge protects Rust target Python venv Swift .build and project DerivedData while active" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+rust_proj="$HOME/www/rust-app"
+mkdir -p "$rust_proj/target/debug"
+touch "$rust_proj/Cargo.toml"
+
+py_proj="$HOME/www/py-app"
+mkdir -p "$py_proj/.venv/bin"
+touch "$py_proj/.venv/pyvenv.cfg"
+
+swift_proj="$HOME/www/swift-app"
+mkdir -p "$swift_proj/.build/debug"
+touch "$swift_proj/Package.swift"
+
+xcode_proj="$HOME/www/xcode-app"
+mkdir -p "$xcode_proj/DerivedData/Build"
+touch "$xcode_proj/DerivedData/info.plist"
+
+for target in "$rust_proj/target" "$py_proj/.venv" "$swift_proj/.build" "$xcode_proj/DerivedData"; do
+    purge_node_project_running() { return 1; }
+    purge_artifact_in_use() { return 1; }
+    if is_protected_purge_artifact "$target"; then exit 1; fi
+
+    purge_node_project_running() { return 0; }
+    is_protected_purge_artifact "$target" || exit 1
+
+    purge_node_project_running() { return 1; }
+    purge_artifact_in_use() { return 0; }
+    is_protected_purge_artifact "$target" || exit 1
+
+    purge_artifact_in_use() { return 2; }
+    is_protected_purge_artifact "$target" || exit 1
+    [[ "$PURGE_PROTECTION_UNVERIFIED" == true ]] || exit 1
+
+    purge_artifact_in_use() { return 143; }
+    rc=0
+    is_protected_purge_artifact "$target" || rc=$?
+    [[ $rc -eq 143 ]] || exit 1
+done
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
