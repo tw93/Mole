@@ -863,3 +863,46 @@ fake_snap_proc() {
     mole_run core '_MOLE_PROC_ROOT="'"$proc"'"; rc=0; mole_apt_busy || rc=$?; echo "rc=$rc"'
     [[ "$output" == *"rc=2"* ]]
 }
+
+@test "mo clean refuses a shell that may not write, and removes nothing" {
+    mkdir -p "$HOME/.cache/pip" "$HOME/.local/share"
+    : > "$HOME/.cache/pip/keep"
+    chmod a-w "$HOME/.cache" "$HOME/.local/share"
+    run bash "$MOLE_TEST_REPO/bin/clean.sh"
+    chmod u+w "$HOME/.cache" "$HOME/.local/share"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"writing to ~/.cache was refused (Permission denied)"* ]]
+    [[ "$output" == *"Nothing was removed."* ]]
+    [[ "$output" != *"Cleanup complete"* ]]
+    [ -f "$HOME/.cache/pip/keep" ]
+}
+
+@test "mo clean carries on when only one checked folder refuses" {
+    mkdir -p "$HOME/.cache" "$HOME/.local/share"
+    chmod a-w "$HOME/.local/share"
+    run bash "$MOLE_TEST_REPO/bin/clean.sh"
+    chmod u+w "$HOME/.local/share"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]]
+    [[ "$output" == *"Cleanup complete"* ]]
+}
+
+@test "mo clean --dry-run writes no probe and is not refused" {
+    mkdir -p "$HOME/.cache"
+    chmod a-w "$HOME/.cache"
+    run bash "$MOLE_TEST_REPO/bin/clean.sh" --dry-run
+    chmod u+w "$HOME/.cache"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]]
+}
+
+@test "only an explicit refusal counts, so a full disk still cleans" {
+    mole_run clean 'for line in "mktemp: failed: No space left on device" "x: Permission denied" "x: Read-only file system" "x: Operation not permitted" "/tmp/Permission denied: Input/output error"; do
+        if reason=$(_clean_write_refusal "$line"); then echo "refused=$reason"; else echo "carries on"; fi
+    done'
+    [ "${lines[0]}" = "carries on" ]
+    [ "${lines[1]}" = "refused=Permission denied" ]
+    [ "${lines[2]}" = "refused=Read-only file system" ]
+    [ "${lines[3]}" = "refused=Operation not permitted" ]
+    [ "${lines[4]}" = "carries on" ]
+}

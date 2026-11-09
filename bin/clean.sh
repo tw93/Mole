@@ -752,6 +752,59 @@ report_snap_revisions() {
     review_line "$label · $(colorize_human_size "$(bytes_to_human_kb "$((total / 1024))")"), $(mole_count_label "$apps" app) keep one for snap revert · ${GRAY}sudo snap remove $first${NC}"
 }
 
+# Prints the refusal behind an error line, or fails when the line is anything
+# else. Only the text after the last ": " counts, since mktemp quotes the path.
+_clean_write_refusal() {
+    local message="${1##*: }"
+    case "$message" in
+        "Operation not permitted" | "Permission denied" | "Read-only file system")
+            printf '%s' "$message"
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+# Creates and removes one empty folder in $1. Prints the reason and succeeds only
+# when the system refused the write.
+_clean_write_check() {
+    local output="" path=""
+    if ! output=$(LC_ALL=C mktemp -d "$1/.mole-write-check.XXXXXX" 2>&1); then
+        _clean_write_refusal "${output##*$'\n'}"
+        return
+    fi
+    path="${output##*$'\n'}"
+    if output=$(LC_ALL=C rmdir -- "$path" 2>&1); then
+        return 1
+    fi
+    _clean_write_refusal "${output##*$'\n'}"
+}
+
+# A shell that may not write here, such as an agent's sandbox, has every delete
+# denied, and a denied delete reads as nothing to clean: the run would end on
+# "Cleanup complete" and exit 0 with nothing removed. Only an explicit refusal
+# stops the run, and only when every checked folder refuses. Any other failure
+# carries on, above all a full disk, which is what people run this for.
+refuse_cleanup_without_write_access() {
+    [[ "$DRY_RUN" == "true" ]] && return 0
+    local target="" reason="" refused_target="" refused_reason=""
+    for target in "$HOME/.cache" "$HOME/.local/share"; do
+        [[ -d "$target" ]] || continue
+        reason=$(_clean_write_check "$target") || return 0
+        if [[ -z "$refused_target" ]]; then
+            refused_target="$target"
+            refused_reason="$reason"
+        fi
+    done
+    [[ -n "$refused_target" ]] || return 0
+
+    printf 'mo clean cannot remove files from this shell: writing to %s was refused (%s).\n' "$(mole_display_path "$refused_target")" "$refused_reason" >&2
+    printf 'Nothing was removed.' >&2
+    [[ "$refused_reason" == "Read-only file system" ]] || printf ' If this shell runs in a sandbox, run mo clean in your own terminal.' >&2
+    printf '\n' >&2
+    return 1
+}
+
 main() {
     local initial_free
     initial_free=$(get_free_space_kb "$HOME")
@@ -767,6 +820,7 @@ main() {
         echo "Cannot read $(mole_display_path "$MOLE_WHITELIST_FILE"); fix or remove it, then run mo clean again." >&2
         exit 1
     fi
+    refuse_cleanup_without_write_access || exit 1
     prompt_for_system_clean
 
     clean_user_rules
