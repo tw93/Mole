@@ -54,6 +54,7 @@ $script:MoleCleanPathGuard = $true
 # ============================================================================
 
 $script:ExportListFile = "$env:USERPROFILE\.config\mole\clean-list.txt"
+$script:ExportListWritten = $false
 
 # ============================================================================
 # Help
@@ -150,7 +151,7 @@ function Show-CleanupSummary {
         $details += $(if ($IsDryRun) { 'No significant reclaimable space detected.' } else { 'System was already clean; no additional space freed.' })
     }
     $details += "Free space: $(Get-FreeSpace)"
-    if ($IsDryRun -and ($Stats.TotalSizeKB -gt 0 -or ($Stats.ContainsKey('OwnerCleanups') -and $Stats.OwnerCleanups -gt 0))) {
+    if ($IsDryRun -and $script:ExportListWritten -and ($Stats.TotalSizeKB -gt 0 -or ($Stats.ContainsKey('OwnerCleanups') -and $Stats.OwnerCleanups -gt 0))) {
         $details += "Detailed file list: $($script:ExportListFile)"
     }
     Show-SummaryBlock -Heading $heading -Details $details
@@ -182,11 +183,6 @@ function Start-Cleanup {
         Write-Host ""
 
         # Prepare export file
-        $exportDir = Split-Path -Parent $script:ExportListFile
-        if (-not (Test-Path $exportDir)) {
-            New-Item -ItemType Directory -Path $exportDir -Force | Out-Null
-        }
-
         $header = @"
 # Mole Cleanup Preview - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 #
@@ -196,7 +192,18 @@ function Start-Cleanup {
 #
 
 "@
-        Set-Content -Path $script:ExportListFile -Value $header
+        # The list is a convenience: a preview still runs where it cannot be saved.
+        try {
+            $exportDir = Split-Path -Parent $script:ExportListFile
+            if (-not (Test-Path $exportDir)) {
+                New-Item -ItemType Directory -Path $exportDir -Force | Out-Null
+            }
+            Set-Content -Path $script:ExportListFile -Value $header
+            $script:ExportListWritten = $true
+        }
+        catch {
+            Write-Debug "Preview list not written: $($_.Exception.Message)"
+        }
     }
     else {
         Write-Host "$esc[90m$($script:Icons.Solid) Use --dry-run to preview, --whitelist to manage protected paths$esc[0m"

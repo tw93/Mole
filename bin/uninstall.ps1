@@ -986,12 +986,18 @@ function Get-InstalledApplications {
     $apps = $apps | Sort-Object -Property SizeKB -Descending
 
     # Cache results
-    if (-not (Test-Path $script:CacheDir)) {
-        New-Item -ItemType Directory -Path $script:CacheDir -Force | Out-Null
+    # A failed write only costs the next scan its speed.
+    try {
+        if (-not (Test-Path $script:CacheDir)) {
+            New-Item -ItemType Directory -Path $script:CacheDir -Force | Out-Null
+        }
+        # UTF-8 explicitly: Set-Content in Windows PowerShell 5.1 writes the ANSI
+        # code page, which cannot hold most non-ASCII app names.
+        [System.IO.File]::WriteAllText($script:AppCacheFile, [string]($apps | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding $false))
     }
-    # UTF-8 explicitly: Set-Content in Windows PowerShell 5.1 writes the ANSI
-    # code page, which cannot hold most non-ASCII app names.
-    [System.IO.File]::WriteAllText($script:AppCacheFile, [string]($apps | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding $false))
+    catch {
+        Write-Debug "App scan cache not written: $($_.Exception.Message)"
+    }
 
     return $apps
 }

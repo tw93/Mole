@@ -558,6 +558,7 @@ Describe 'Review regressions: owner log and summary' {
         Mock Get-FreeSpace { '10 GB' }
         Mock Show-SummaryBlock { Write-Output ($Details -join "`n") }
         $script:ExportListFile = 'fixture-list.txt'
+        $script:ExportListWritten = $true
         $output = Show-CleanupSummary -Stats @{ TotalSizeKB = 4; FilesCleaned = 2; TotalItems = 1; OwnerCleanups = 0 } -IsDryRun $true | Out-String
         $output | Should -Match 'Potential space:.*Items: 2'
         $output | Should -Not -Match 'Categories:|--whitelist'

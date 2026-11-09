@@ -735,7 +735,8 @@ function Get-ConfigPath {
     #>
     $path = $script:Config.ConfigPath
     if (-not (Test-Path $path)) {
-        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        # A preview must run where state cannot be written.
+        try { New-Item -ItemType Directory -Path $path -Force | Out-Null } catch { Write-Debug "Config directory not created: $path" }
     }
     return $path
 }
@@ -747,7 +748,7 @@ function Get-CachePath {
     #>
     $path = $script:Config.CachePath
     if (-not (Test-Path $path)) {
-        New-Item -ItemType Directory -Path $path -Force | Out-Null
+        try { New-Item -ItemType Directory -Path $path -Force | Out-Null } catch { Write-Debug "Cache directory not created: $path" }
     }
     return $path
 }
