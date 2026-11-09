@@ -1,5 +1,6 @@
 ---
 paths:
+  - "lib/core/delete.sh"
   - "bin/purge.sh"
   - "lib/purge/**"
   - "bin/optimize.sh"

@@ -1,5 +1,7 @@
 ---
 paths:
+  - "bin/remove.sh"
+  - "bin/update.sh"
   - "install.sh"
 ---
 
