@@ -1,8 +1,8 @@
 # Mole agent skill
 
-Clean your computer with AI: clear tens of GB of junk, uninstall apps, remove leftovers and tune up your system.
+Use AI to clear tens of GB of junk from your computer at once, uninstall apps, remove leftovers and make your computer feel lighter and faster.
 
-Ask "what is using my disk?" or "clean up my computer", and your agent finds the junk on your system, lists all of it, and cleans only after you agree.
+Ask "clean up my computer", "optimize my computer" or "uninstall this app", and your agent finds the junk on your system, lists all of it, and cleans only after you agree.
 
 If Mole is not installed yet, your agent asks first and installs it once you agree.
 
