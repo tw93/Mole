@@ -20,7 +20,7 @@ ensure_config_template() {
     if [[ ! -f "$PURGE_PATHS_CONFIG" ]]; then
         if ! write_purge_config "# Mole Purge Paths - Directories to scan for project artifacts
 # Add one path per line (supports ~ for home directory)
-# Delete all paths or this file to use defaults
+# Delete all paths to use defaults
 #
 # Example:
 # ~/Documents/MyProjects

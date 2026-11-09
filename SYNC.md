@@ -199,6 +199,20 @@ Released (Mole CLI (macOS), `V1.70.0`): `ae5a6eb5` and `57f2f633`, merged in `7e
 - Mole Mac: Not applicable. It has no purge paths file.
 - Mole for Windows: Not applicable. It has no purge paths file.
 
+## 2026-11-09 Orphan data age reads the files inside
+
+Source: Mole CLI (macOS) `is_bundle_orphaned` and `orphan_cleanup_candidate_still_eligible`. Orphaned caches, logs and saved state now need every entry inside to be past the 30-day age, at discovery and at the final sink, not only the directory. The 30-day value itself did not change.
+
+- Mole Mac: Intentional difference. Its orphan rows have their own scanner and quiet period, start unchecked and go to the Trash.
+- Mole for Windows, Mole CLI (Windows): Not applicable. Neither has this directory-age check.
+
+## 2026-11-09 Claude VM leftover evidence
+
+Source: Mole CLI (macOS) `is_claude_vm_bundle_orphaned` and `clean_orphaned_app_data`. The orphan check now accepts only a `*.bundle` directly under `Application Support/Claude/vm_bundles`, and its 7-day age walks every entry inside the bundle, at discovery and at the final sink, not only the directory.
+
+- Mole Mac: Not applicable. It protects `vm_bundles` and does not offer this row, on purpose.
+- Mole for Windows, Mole CLI (Windows): Not applicable. Neither checkout's code has this cleanup.
+
 ## 2026-11-07 Purge editor commands
 
 Source: PR #1940. `mo purge --paths` now runs an `EDITOR` that holds arguments, such as `code --wait`, and returns the editor's failure instead of reporting success.

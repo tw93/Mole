@@ -241,6 +241,13 @@ load_purge_config() {
     done <<< "$config_paths"
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
+        # A file the user kept with no active paths asks for the defaults, as
+        # its template and `mo purge --paths` say; discovery would replace it.
+        if [[ $config_state -eq 0 ]]; then
+            PURGE_SEARCH_PATHS=("${DEFAULT_PURGE_SEARCH_PATHS[@]}")
+            return 0
+        fi
+
         if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
             echo -e "${GRAY}First run: discovering project directories...${NC}" >&2
         fi
@@ -541,34 +548,114 @@ purge_artifact_has_authored_content() {
     return "$tracked_rc"
 }
 
+# Set by is_protected_purge_artifact: "in_use" when a process holds the artifact.
+PURGE_PROTECTION_REASON=""
 # Set by is_protected_purge_artifact: true when the verdict came from an
 # unfinished content probe rather than evidence.
 PURGE_PROTECTION_UNVERIFIED=false
 
 # Returns the same tri-state as process probes. A project may be active with
 # no open file inside node_modules, for example a shell or dev server in cwd.
+# lsof prints a name in the C locale, which purge runs under, with every byte
+# outside printable ASCII as \xHH, so a raw comparison never matches ~/www/项目.
+_purge_lsof_path_form() {
+    local path="$1" byte form=""
+    local LC_ALL=C
+    if [[ "$path" != *[!\ -~]* ]]; then
+        printf '%s' "$path"
+        return 0
+    fi
+    for byte in $(printf '%s' "$path" | /usr/bin/od -An -v -tx1); do
+        if [[ "$((16#$byte))" -ge 32 && "$((16#$byte))" -le 126 ]]; then
+            # shellcheck disable=SC2059 # The format is the two hex digits od printed.
+            form+=$(printf "\\x$byte")
+        else
+            form+="\\x$byte"
+        fi
+    done
+    printf '%s' "$form"
+}
+
+# Space-delimited pids of Mole, what started it and what it started. The shell
+# that ran `mo purge` from a project and Mole's own find workers walking a
+# sibling artifact are not the project running. Without a process table only
+# Mole itself is known, which keeps more candidates, not fewer.
+_purge_own_process_tree() {
+    local table=""
+    table=$(LC_ALL=C /bin/ps -axo pid=,ppid= 2> /dev/null) || table=""
+    printf '%s\n' "$table" | SELF_PID="$$" LC_ALL=C /usr/bin/awk '
+        NF == 2 { parent[$1] = $2 }
+        END {
+            self = ENVIRON["SELF_PID"]
+            own[self] = 1
+            for (pid = parent[self]; pid != "" && !(pid in own); pid = parent[pid]) own[pid] = 1
+            descendants[self] = 1
+            do {
+                grew = 0
+                for (pid in parent) {
+                    if (!(pid in descendants) && (parent[pid] in descendants)) {
+                        descendants[pid] = 1
+                        grew = 1
+                    }
+                }
+            } while (grew)
+            for (pid in descendants) own[pid] = 1
+            printf " "
+            for (pid in own) printf "%s ", pid
+        }'
+}
+
+# Does a process outside Mole's own tree match this command-line pattern?
+# Same statuses as the process probes: 0 yes, 1 no, 2 could not tell.
+_purge_other_process_matches() {
+    local probe_timeout="$1" pattern="$2" own_pids="$3" rc=0 matched_pids="" matched_pid
+    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$pattern" 2> /dev/null) || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -le 1 ]] || return 2
+    [[ $rc -eq 0 ]] || return 1
+    # A match that names no pid is still a match.
+    [[ -n "$matched_pids" ]] || return 0
+    while IFS= read -r matched_pid; do
+        [[ "$own_pids" == *" $matched_pid "* ]] || return 0
+    done <<< "$matched_pids"
+    return 1
+}
+
 purge_node_project_running() {
     local project="$1" deadline="${2:-}" probe_timeout evidence rc=0 line saw_cwd=false
     [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    evidence=$(run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    if [[ -n "${_PURGE_OPEN_SNAPSHOT:-}" ]]; then
+        evidence=$(LC_ALL=C /usr/bin/awk '
+            /^p/ { pid = $0; next }
+            /^f/ { cwd = ($0 == "fcwd"); if (cwd) { print pid; print $0 } next }
+            /^n/ { if (cwd) print; next }
+            { print }' <<< "$_PURGE_OPEN_SNAPSHOT")
+    else
+        # From /, so lsof and its wrappers never list themselves in the project;
+        # they are gone by the time the process tree below is read.
+        evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
+        [[ $rc -le 128 ]] || return "$rc"
+        [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    fi
+    local own_pids listed_project current_pid=""
+    own_pids=$(_purge_own_process_tree)
+    listed_project=$(_purge_lsof_path_form "$project")
     while IFS= read -r line; do
         case "$line" in
-            "n$project" | "n$project/"*) return 0 ;;
+            "n$project" | "n$project/"* | "n$listed_project" | "n$listed_project/"*)
+                [[ "$own_pids" == *" $current_pid "* ]] || return 0
+                saw_cwd=true
+                ;;
             n/*) saw_cwd=true ;;
-            p[0-9]* | fcwd) ;;
+            p[0-9]*) current_pid="${line#p}" ;;
+            fcwd) ;;
             *) return 2 ;; # A warning or unavailable cwd makes visibility incomplete.
         esac
     done <<< "$evidence"
     [[ "$saw_cwd" == true ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    rc=0
-    run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" > /dev/null 2>&1 || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -le 1 ]] || return 2
-    return "$rc"
+    _purge_other_process_matches "$probe_timeout" "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" "$own_pids"
 }
 
 # Lockfiles make reinstall possible; the package-manager record separates
@@ -599,30 +686,32 @@ purge_node_modules_is_protected() {
     purge_node_project_running "$project" "$deadline"
 }
 
-# Returns the same tri-state as process probes (0 active, 1 idle, 2 unknown,
-# >128 signal). Checks whether any current-user process holds an open file
-# descriptor, mapped executable (txt), working directory (cwd), or command-line
-# argument inside the artifact directory itself.
+# Same statuses as the process probes (0 in use, 1 idle, 2 unknown, >128 signal).
+# Does a current-user process hold a descriptor, mapped binary or cwd inside the
+# artifact, or name it on a command line? Only pgrep skips Mole's own tree: a
+# shell of the user's sitting inside the artifact still counts.
 purge_artifact_in_use() {
-    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence rc=0
+    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
     [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
-    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    evidence=$(run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd,txt,0-999 -Fn 2>&1) || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    if [[ -z "$evidence" ]]; then
+        probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+        evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -Fn 2>&1) || rc=$?
+        [[ $rc -le 128 ]] || return "$rc"
+        [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    fi
 
     local awk_rc=0
-    TARGET_ARTIFACT="$artifact" /usr/bin/awk '
+    TARGET_ARTIFACT="$artifact" TARGET_LISTED="$(_purge_lsof_path_form "$artifact")" LC_ALL=C /usr/bin/awk '
         BEGIN {
-            target = ENVIRON["TARGET_ARTIFACT"]
-            prefix = target "/"
+            raw = ENVIRON["TARGET_ARTIFACT"]
+            listed = ENVIRON["TARGET_LISTED"]
             saw_pid = 0
         }
         /^p[0-9]+$/ { saw_pid = 1; next }
-        /^f[A-Za-z0-9_]+$/ { next }
+        /^f/ { next }
         /^n/ {
             path = substr($0, 2)
-            if (path == target || index(path, prefix) == 1) {
+            if (path == raw || path == listed || index(path, raw "/") == 1 || index(path, listed "/") == 1) {
                 exit 10
             }
             next
@@ -639,29 +728,135 @@ purge_artifact_in_use() {
     esac
 
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    rc=0
-    run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$artifact")(/|[[:space:]]|$)" > /dev/null 2>&1 || rc=$?
+    _purge_other_process_matches "$probe_timeout" "$(_mole_regex_escape "$artifact")(/|[[:space:]]|$)" "$(_purge_own_process_tree)"
+}
+
+# One listing for a whole filter pass, taken before its workers start. Without
+# it every candidate pays a whole-system lsof. A failed listing leaves the
+# probes to ask live and report for themselves.
+_purge_take_lsof_snapshots() {
+    local deadline="${1:-}" probe_timeout listing
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 0
+    listing=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -Fn 2>&1) && _PURGE_OPEN_SNAPSHOT="$listing"
+    return 0
+}
+
+# A build folder also stays while its project runs. Records an unknown state in
+# PURGE_PROTECTION_UNVERIFIED, as the other target checks do.
+_purge_running_project_protects() {
+    local path="$1" deadline="${2:-}" physical rc=0
+    if ! physical=$(cd "$path" 2> /dev/null && /bin/pwd -P); then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
+    purge_node_project_running "${physical%/*}" "$deadline" || rc=$?
     [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -le 1 ]] || return 2
+    if [[ $rc -eq 2 ]]; then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
     return "$rc"
 }
 
-purge_project_artifact_is_protected() {
+# .build, or a --scratch-path directory SwiftPM itself tagged. A file named
+# workspace-state.json proves nothing: any other purge target name stays that
+# target, with its own guards.
+_is_swiftpm_scratch_root() {
+    local dir="${1%/}" base="${1%/}" target tag
+    base="${base##*/}"
+    [[ -d "$dir" && ! -L "$dir" ]] || return 1
+    [[ "$base" != ".build" ]] || return 0
+    for target in "${MOLE_PURGE_TARGETS[@]}"; do
+        [[ "$base" != "$target" ]] || return 1
+    done
+    tag="$dir/$MOLE_CACHEDIR_TAG_NAME"
+    [[ -f "$tag" && ! -L "$tag" ]] || return 1
+    LC_ALL=C /usr/bin/grep -q 'Swift Package Manager' "$tag" 2> /dev/null
+}
+
+# An unreadable or non-directory entry counts as holding something.
+_swiftpm_dir_has_entries() {
+    local listing=""
+    [[ -e "$1" || -L "$1" ]] || return 1
+    [[ -d "$1" && ! -L "$1" ]] || return 0
+    listing=$(/bin/ls -A "$1" 2> /dev/null) || return 0
+    [[ -n "$listing" ]]
+}
+
+# A scratch root that resolved dependencies, which is what offering it whole
+# would trip on (checkouts/<pkg>/.git) and re-clone. SourceKit-LSP's index-build
+# resolves its own, so it decomposes the same way.
+is_swiftpm_packaged_scratch_dir() {
+    local dir="${1%/}"
+    [[ -d "$dir" && ! -L "$dir" ]] || return 1
+    if [[ "${dir##*/}" == "index-build" ]]; then
+        _is_swiftpm_scratch_root "${dir%/*}" || return 1
+    else
+        _is_swiftpm_scratch_root "$dir" || return 1
+    fi
+    _swiftpm_dir_has_entries "$dir/checkouts" || _swiftpm_dir_has_entries "$dir/repositories"
+}
+
+is_swiftpm_build_output_artifact() {
+    local path="${1%/}"
+    local base="${path##*/}"
+    local parent="${path%/*}"
+    [[ -n "$parent" && "$parent" != "$path" ]] || return 1
+    local output_name
+    for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
+        if [[ "$base" == "$output_name" ]]; then
+            is_swiftpm_packaged_scratch_dir "$parent"
+            return $?
+        fi
+    done
+    return 1
+}
+
+purge_swiftpm_scratch_running() {
+    local scratch_dir="${1%/}" deadline="${2:-}"
+    local scratch_name="${scratch_dir##*/}"
+    [[ -n "$scratch_name" && ! "$scratch_name" =~ [[:cntrl:]] ]] || return 2
+    # A plain .build names nothing specific; the project probe covers it.
+    [[ "$scratch_name" != ".build" ]] || return 1
+    local probe_timeout=""
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    _purge_other_process_matches "$probe_timeout" \
+        "(^|[[:space:]/=])$(_mole_regex_escape "$scratch_name")(/|[[:space:]]|$)" "$(_purge_own_process_tree)"
+}
+
+purge_swiftpm_output_is_protected() {
     local path="${1%/}" deadline="${2:-}"
     path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
-    local project="${path%/*}"
+    local scratch_dir="${path%/*}"
+    [[ "${scratch_dir##*/}" != "index-build" ]] || scratch_dir="${scratch_dir%/*}"
+    local project="${scratch_dir%/*}"
     [[ -n "$project" && "$project" == /* ]] || return 2
-
     local running_rc=0
     purge_node_project_running "$project" "$deadline" || running_rc=$?
     [[ $running_rc -le 128 ]] || return "$running_rc"
     [[ $running_rc -ne 2 ]] || return 2
     [[ $running_rc -ne 0 ]] || return 0
 
-    local in_use_rc=0
-    purge_artifact_in_use "$path" "$deadline" || in_use_rc=$?
-    [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
-    return "$in_use_rc"
+    local scratch_rc=0
+    purge_swiftpm_scratch_running "$scratch_dir" "$deadline" || scratch_rc=$?
+    [[ $scratch_rc -le 128 ]] || return "$scratch_rc"
+    return "$scratch_rc"
+}
+
+emit_purge_candidate_or_swiftpm_outputs() {
+    local item="${1%/}"
+    local search_path="$2"
+    if is_swiftpm_packaged_scratch_dir "$item"; then
+        local output_name output_dir
+        for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
+            output_dir="$item/$output_name"
+            if [[ -d "$output_dir" && ! -L "$output_dir" ]] && is_safe_project_artifact "$output_dir" "$search_path"; then
+                emit_purge_candidate_or_swiftpm_outputs "$output_dir" "$search_path"
+            fi
+        done
+        return 0
+    fi
+    printf '%s\n' "$item"
 }
 
 is_protected_purge_artifact() {
@@ -670,6 +865,7 @@ is_protected_purge_artifact() {
     local base="${path##*/}"
 
     PURGE_PROTECTION_UNVERIFIED=false
+    PURGE_PROTECTION_REASON=""
     local authored_rc=0
     purge_artifact_has_authored_content "$path" "$deadline" || authored_rc=$?
     [[ $authored_rc -le 128 ]] || return "$authored_rc"
@@ -678,6 +874,19 @@ is_protected_purge_artifact() {
         return 0
     fi
     [[ $authored_rc -ne 0 ]] || return 0
+
+    local physical_path="$path" in_use_rc=0
+    physical_path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || physical_path="$path"
+    purge_artifact_in_use "$physical_path" "$deadline" || in_use_rc=$?
+    [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
+    if [[ $in_use_rc -eq 2 ]]; then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
+    if [[ $in_use_rc -eq 0 ]]; then
+        PURGE_PROTECTION_REASON="in_use"
+        return 0
+    fi
 
     case "$base" in
         node_modules)
@@ -705,60 +914,37 @@ is_protected_purge_artifact() {
             # Protect Xcode global DerivedData in ~/Library/Developer/Xcode/
             # Only allow purging DerivedData within project directories
             [[ "$path" == *"/Library/Developer/Xcode/DerivedData"* ]] && return 0
-            if [[ -f "$path/info.plist" || -d "$path/Build" ]]; then
-                local dd_rc=0
-                purge_project_artifact_is_protected "$path" "$deadline" || dd_rc=$?
-                [[ $dd_rc -le 128 ]] || return "$dd_rc"
-                if [[ $dd_rc -eq 2 ]]; then
-                    PURGE_PROTECTION_UNVERIFIED=true
-                    return 0
-                fi
-                return "$dd_rc"
-            fi
-            return 1
+            [[ -f "$path/info.plist" || -d "$path/Build" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
             ;;
         target)
-            local parent_dir="${path%/*}"
-            if [[ -f "$parent_dir/Cargo.toml" || -f "$parent_dir/pom.xml" || -f "$path/.rustc_info.json" ]]; then
-                local target_rc=0
-                purge_project_artifact_is_protected "$path" "$deadline" || target_rc=$?
-                [[ $target_rc -le 128 ]] || return "$target_rc"
-                if [[ $target_rc -eq 2 ]]; then
-                    PURGE_PROTECTION_UNVERIFIED=true
-                    return 0
-                fi
-                return "$target_rc"
-            fi
-            return 1
+            [[ -f "${path%/*}/Cargo.toml" || -f "${path%/*}/pom.xml" || -f "$path/.rustc_info.json" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
             ;;
         .build)
-            local parent_dir="${path%/*}"
-            if [[ -f "$parent_dir/Package.swift" || -f "$path/workspace-state.json" || -f "$path/build.db" ]]; then
-                local build_rc=0
-                purge_project_artifact_is_protected "$path" "$deadline" || build_rc=$?
-                [[ $build_rc -le 128 ]] || return "$build_rc"
-                if [[ $build_rc -eq 2 ]]; then
-                    PURGE_PROTECTION_UNVERIFIED=true
-                    return 0
-                fi
-                return "$build_rc"
-            fi
-            return 1
+            [[ -f "${path%/*}/Package.swift" || -f "$path/workspace-state.json" || -f "$path/build.db" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
             ;;
         venv | .venv)
-            if [[ -f "$path/pyvenv.cfg" ]]; then
-                local venv_rc=0
-                purge_project_artifact_is_protected "$path" "$deadline" || venv_rc=$?
-                [[ $venv_rc -le 128 ]] || return "$venv_rc"
-                if [[ $venv_rc -eq 2 ]]; then
-                    PURGE_PROTECTION_UNVERIFIED=true
-                    return 0
-                fi
-                return "$venv_rc"
-            fi
-            return 1
+            [[ -f "$path/pyvenv.cfg" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
             ;;
     esac
+
+    if is_swiftpm_build_output_artifact "$path"; then
+        local swiftpm_rc=0
+        purge_swiftpm_output_is_protected "$path" "$deadline" || swiftpm_rc=$?
+        [[ $swiftpm_rc -le 128 ]] || return "$swiftpm_rc"
+        if [[ $swiftpm_rc -eq 2 ]]; then
+            PURGE_PROTECTION_UNVERIFIED=true
+            return 0
+        fi
+        return "$swiftpm_rc"
+    fi
 
     return 1
 }
@@ -981,7 +1167,7 @@ scan_purge_targets() {
                         fi
 
                         if [[ -n "$item" ]] && is_safe_project_artifact "$item" "$search_path"; then
-                            echo "$item"
+                            emit_purge_candidate_or_swiftpm_outputs "$item" "$search_path"
                             # Update scanning path to show current project directory
                             local project_dir="${item%/*}"
                             echo "$project_dir" > "$stats_dir/purge_scanning" 2> /dev/null || true
@@ -1240,6 +1426,9 @@ filter_protected_artifacts() {
         results=$(mktemp_file "mole-purge-probes") || return 1
     fi
 
+    local _PURGE_OPEN_SNAPSHOT=""
+    _purge_take_lsof_snapshots "$deadline"
+
     local max_probe_jobs
     max_probe_jobs=$(get_optimal_parallel_jobs io)
     if ! [[ "$max_probe_jobs" =~ ^[0-9]+$ ]] || [[ "$max_probe_jobs" -lt 1 ]]; then
@@ -1457,13 +1646,6 @@ _mole_purge_final_remove_guard() {
     is_protected_purge_artifact "$path" || protection_rc=$?
     [[ $protection_rc -le 128 ]] || return "$protection_rc"
     [[ $protection_rc -ne 0 ]] || return 1
-
-    local physical_target=""
-    physical_target=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 1
-    local in_use_rc=0
-    purge_artifact_in_use "$physical_target" || in_use_rc=$?
-    [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
-    [[ $in_use_rc -eq 1 ]] || return 1
 
     _mole_path_matches_identity \
         "${_MOLE_PURGE_FINAL_SCAN_ROOT:-}" \
@@ -2584,6 +2766,13 @@ clean_project_artifacts() {
         if is_path_whitelisted "$item"; then
             continue
         fi
+        # A glob entry gives children no inheritance, so an entry on the scratch
+        # root has to be asked for the outputs decomposed from it.
+        if is_swiftpm_build_output_artifact "$item"; then
+            local swiftpm_scratch="${item%/*}"
+            is_path_whitelisted "$swiftpm_scratch" && continue
+            [[ "${swiftpm_scratch##*/}" == "index-build" ]] && is_path_whitelisted "${swiftpm_scratch%/*}" && continue
+        fi
         local candidate_bound=false
         local candidate_parent=""
         local candidate_parent_id=""
@@ -2980,6 +3169,9 @@ clean_project_artifacts() {
             project_parent="${artifact_path%/*}"
             if ! project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
                 project_root="$project_parent"
+                if is_swiftpm_packaged_scratch_dir "$project_root" && [[ "${project_root%/*}" == /* && -n "${project_root%/*}" ]]; then
+                    project_root="${project_root%/*}"
+                fi
             fi
             project_identity=$(mole_path_identity "$project_root")
         fi
@@ -3377,6 +3569,8 @@ clean_project_artifacts() {
         if [[ $protection_rc -eq 0 ]]; then
             if [[ "$PURGE_PROTECTION_UNVERIFIED" == "true" ]]; then
                 echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (could not inspect contents; re-run mo purge to review it again)"
+            elif [[ "${PURGE_PROTECTION_REASON:-}" == "in_use" ]]; then
+                echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (in use; stop what has it open, then run mo purge again)"
             else
                 debug_log "Skipping purge target that became protected after review: $item_path"
             fi
@@ -3433,7 +3627,11 @@ clean_project_artifacts() {
                     fi
                     return "$removal_status"
                 fi
-                echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (final removal check failed; re-run mo purge to review it again)"
+                if [[ "${PURGE_PROTECTION_REASON:-}" == "in_use" ]]; then
+                    echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (in use; stop what has it open, then run mo purge again)"
+                else
+                    echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (final removal check failed; re-run mo purge to review it again)"
+                fi
             fi
         fi
         if [[ -t 1 ]]; then

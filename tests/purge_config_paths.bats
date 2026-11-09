@@ -297,6 +297,24 @@ EOF
     [[ "$output" == *"$HOME/Projects"* ]]
 }
 
+@test "a config with no active paths uses defaults without discovering or rewriting (#1953)" {
+    local config_file="$HOME/.config/mole/purge_paths" content
+    mkdir -p "$HOME/demo-1953"
+    touch "$HOME/demo-1953/package.json"
+
+    for content in "" "# Notes only"; do
+        printf '%s' "$content" > "$config_file"
+
+        run env HOME="$HOME" /bin/bash -c "source '$PROJECT_ROOT/lib/clean/project.sh'; echo \"\${PURGE_SEARCH_PATHS[*]}\""
+
+        [ "$status" -eq 0 ] || return 1
+        [[ "$output" == *"$HOME/Projects"* ]] || return 1
+        [[ "$output" != *"demo-1953"* ]] || return 1
+        [ "$(cat "$config_file")" = "$content" ] || return 1
+    done
+    rm -rf "$HOME/demo-1953"
+}
+
 @test "load_purge_config deduplicates case variants on case-insensitive FS" {
     # Create a real directory so resolve_path_case can cd into it
     mkdir -p "$HOME/code"
