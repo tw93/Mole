@@ -337,3 +337,8 @@ fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0
         rm -f "$TEST_ROOT/bin/$tool"
     done
 }
+
+@test "menu search matches every word in any order" {
+    run python3 "$MOLE_TEST_REPO/tests/menu_search_pty.py"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}

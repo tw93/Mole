@@ -423,10 +423,21 @@ paginated_multi_select() {
                 fi
             fi
 
+            # Every word must appear, in any order and read literally. Extending
+            # the text only narrows this, so the prefix cache above stays valid.
+            local -a filter_words=()
+            IFS=$' \t' read -r -a filter_words <<< "$filter_text_lower"
             view_indices=()
-            local id
+            local id word matched
             for id in "${source_indices[@]}"; do
-                if [[ "${filter_targets_lower[id]:-}" == *"$filter_text_lower"* ]]; then
+                matched=true
+                for word in "${filter_words[@]+"${filter_words[@]}"}"; do
+                    if [[ "${filter_targets_lower[id]:-}" != *"$word"* ]]; then
+                        matched=false
+                        break
+                    fi
+                done
+                if [[ "$matched" == "true" ]]; then
                     view_indices+=("$id")
                 fi
             done
