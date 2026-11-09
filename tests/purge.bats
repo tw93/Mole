@@ -5391,9 +5391,11 @@ purge_node_project_running "$(cd "$PROJECT_PATH" && /bin/pwd -P)" || rc=$?
 echo "RC=$rc"
 SCRIPT
     # A dev app in the project whose integrated terminal moved away and runs Mole.
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc -c '
-        cd "$PROJECT_PATH"
-        exec /usr/bin/perl -e '\''system("/bin/bash", "--noprofile", "--norc", "-c", "cd / && exec /bin/bash --noprofile --norc \"\$HOME/probe.sh\""); exit($? >> 8)'\'''
+    cat > "$HOME/launch.sh" <<'SCRIPT'
+cd "$PROJECT_PATH"
+exec /usr/bin/perl -e 'system("/bin/bash", "--noprofile", "--norc", "-c", "cd / && exec /bin/bash --noprofile --norc \"$ENV{HOME}/probe.sh\""); exit($? >> 8)'
+SCRIPT
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc "$HOME/launch.sh"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
 }
