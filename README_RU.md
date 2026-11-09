@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-Как плагин хоста: в Claude Code `/plugin marketplace add tw93/Mole`, затем `/plugin install mole@mole`, в Codex `codex plugin marketplace add tw93/Mole`, затем `codex plugin add mole@mole`.
+Как плагин хоста: в Claude Code `/plugin marketplace add tw93/Mole`, затем `/plugin install mole@mole`, в Codex `codex plugin marketplace add tw93/Mole`, затем `codex plugin add mole@mole`, в DeepSeek Harness `dsh plugin --profile <name> add dsh-mole`.
 
 **Запуск**
 

@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-喜欢用宿主自带的插件管理，Claude Code 里先 `/plugin marketplace add tw93/Mole` 再 `/plugin install mole@mole`，Codex 里先 `codex plugin marketplace add tw93/Mole` 再 `codex plugin add mole@mole`。
+喜欢用宿主自带的插件管理，Claude Code 里先 `/plugin marketplace add tw93/Mole` 再 `/plugin install mole@mole`，Codex 里先 `codex plugin marketplace add tw93/Mole` 再 `codex plugin add mole@mole`，DeepSeek Harness 里用 `dsh plugin --profile <name> add dsh-mole`。
 
 **常用命令**
 
