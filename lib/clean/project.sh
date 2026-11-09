@@ -603,6 +603,22 @@ _purge_own_process_tree() {
         }'
 }
 
+# Does a process outside Mole's own tree match this command-line pattern?
+# Same statuses as the process probes: 0 yes, 1 no, 2 could not tell.
+_purge_other_process_matches() {
+    local probe_timeout="$1" pattern="$2" own_pids="$3" rc=0 matched_pids="" matched_pid
+    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$pattern" 2> /dev/null) || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -le 1 ]] || return 2
+    [[ $rc -eq 0 ]] || return 1
+    # A match that names no pid is still a match.
+    [[ -n "$matched_pids" ]] || return 0
+    while IFS= read -r matched_pid; do
+        [[ "$own_pids" == *" $matched_pid "* ]] || return 0
+    done <<< "$matched_pids"
+    return 1
+}
+
 purge_node_project_running() {
     local project="$1" deadline="${2:-}" probe_timeout evidence rc=0 line saw_cwd=false
     [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
@@ -629,18 +645,7 @@ purge_node_project_running() {
     done <<< "$evidence"
     [[ "$saw_cwd" == true ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    rc=0
-    local matched_pids="" matched_pid
-    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" 2> /dev/null) || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -le 1 ]] || return 2
-    [[ $rc -eq 0 ]] || return 1
-    # A match that names no pid is still a match.
-    [[ -n "$matched_pids" ]] || return 0
-    while IFS= read -r matched_pid; do
-        [[ "$own_pids" == *" $matched_pid "* ]] || return 0
-    done <<< "$matched_pids"
-    return 1
+    _purge_other_process_matches "$probe_timeout" "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" "$own_pids"
 }
 
 # Lockfiles make reinstall possible; the package-manager record separates
@@ -671,19 +676,43 @@ purge_node_modules_is_protected() {
     purge_node_project_running "$project" "$deadline"
 }
 
-# A SwiftPM scratch root (.build or --scratch-path) that holds resolved
-# package state (workspace-state.json, checkouts/, or repositories/).
-# Offering the scratch root whole would trip the nested-.git protection on
-# checkouts/<pkg>/.git and would wipe downloaded package repositories;
-# decompose it into MOLE_SWIFTPM_BUILD_OUTPUT_DIRS instead.
+# .build, or a --scratch-path directory SwiftPM itself tagged. A file named
+# workspace-state.json proves nothing: any other purge target name stays that
+# target, with its own guards.
+_is_swiftpm_scratch_root() {
+    local dir="${1%/}" base="${1%/}" target tag
+    base="${base##*/}"
+    [[ -d "$dir" && ! -L "$dir" ]] || return 1
+    [[ "$base" != ".build" ]] || return 0
+    for target in "${MOLE_PURGE_TARGETS[@]}"; do
+        [[ "$base" != "$target" ]] || return 1
+    done
+    tag="$dir/$MOLE_CACHEDIR_TAG_NAME"
+    [[ -f "$tag" && ! -L "$tag" ]] || return 1
+    LC_ALL=C /usr/bin/grep -q 'Swift Package Manager' "$tag" 2> /dev/null
+}
+
+# An unreadable or non-directory entry counts as holding something.
+_swiftpm_dir_has_entries() {
+    local listing=""
+    [[ -e "$1" || -L "$1" ]] || return 1
+    [[ -d "$1" && ! -L "$1" ]] || return 0
+    listing=$(/bin/ls -A "$1" 2> /dev/null) || return 0
+    [[ -n "$listing" ]]
+}
+
+# A scratch root that resolved dependencies, which is what offering it whole
+# would trip on (checkouts/<pkg>/.git) and re-clone. SourceKit-LSP's index-build
+# resolves its own, so it decomposes the same way.
 is_swiftpm_packaged_scratch_dir() {
     local dir="${1%/}"
     [[ -d "$dir" && ! -L "$dir" ]] || return 1
-    local base="${dir##*/}"
-    if [[ "$base" != ".build" && "$base" != .build-* ]]; then
-        [[ -f "$dir/workspace-state.json" && ! -L "$dir/workspace-state.json" ]] || return 1
+    if [[ "${dir##*/}" == "index-build" ]]; then
+        _is_swiftpm_scratch_root "${dir%/*}" || return 1
+    else
+        _is_swiftpm_scratch_root "$dir" || return 1
     fi
-    [[ -f "$dir/workspace-state.json" || -e "$dir/checkouts" || -L "$dir/checkouts" || -e "$dir/repositories" || -L "$dir/repositories" ]]
+    _swiftpm_dir_has_entries "$dir/checkouts" || _swiftpm_dir_has_entries "$dir/repositories"
 }
 
 is_swiftpm_build_output_artifact() {
@@ -704,19 +733,20 @@ is_swiftpm_build_output_artifact() {
 purge_swiftpm_scratch_running() {
     local scratch_dir="${1%/}" deadline="${2:-}"
     local scratch_name="${scratch_dir##*/}"
-    [[ "$scratch_name" != ".build" && -n "$scratch_name" && ! "$scratch_name" =~ [[:cntrl:]] ]] || return 1
-    local probe_timeout="" rc=0
+    [[ -n "$scratch_name" && ! "$scratch_name" =~ [[:cntrl:]] ]] || return 2
+    # A plain .build names nothing specific; the project probe covers it.
+    [[ "$scratch_name" != ".build" ]] || return 1
+    local probe_timeout=""
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    run_with_timeout "$probe_timeout" pgrep -f "(^|[[:space:]/=])$(_mole_regex_escape "$scratch_name")(/|[[:space:]]|$)" > /dev/null 2>&1 || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -le 1 ]] || return 2
-    return "$rc"
+    _purge_other_process_matches "$probe_timeout" \
+        "(^|[[:space:]/=])$(_mole_regex_escape "$scratch_name")(/|[[:space:]]|$)" "$(_purge_own_process_tree)"
 }
 
 purge_swiftpm_output_is_protected() {
     local path="${1%/}" deadline="${2:-}"
     path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
     local scratch_dir="${path%/*}"
+    [[ "${scratch_dir##*/}" != "index-build" ]] || scratch_dir="${scratch_dir%/*}"
     local project="${scratch_dir%/*}"
     [[ -n "$project" && "$project" == /* ]] || return 2
     local running_rc=0
@@ -739,7 +769,7 @@ emit_purge_candidate_or_swiftpm_outputs() {
         for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
             output_dir="$item/$output_name"
             if [[ -d "$output_dir" && ! -L "$output_dir" ]] && is_safe_project_artifact "$output_dir" "$search_path"; then
-                printf '%s\n' "$output_dir"
+                emit_purge_candidate_or_swiftpm_outputs "$output_dir" "$search_path"
             fi
         done
         return 0
@@ -2619,6 +2649,13 @@ clean_project_artifacts() {
         item="${all_found_items[$candidate_index]}"
         if is_path_whitelisted "$item"; then
             continue
+        fi
+        # A glob entry gives children no inheritance, so an entry on the scratch
+        # root has to be asked for the outputs decomposed from it.
+        if is_swiftpm_build_output_artifact "$item"; then
+            local swiftpm_scratch="${item%/*}"
+            is_path_whitelisted "$swiftpm_scratch" && continue
+            [[ "${swiftpm_scratch##*/}" == "index-build" ]] && is_path_whitelisted "${swiftpm_scratch%/*}" && continue
         fi
         local candidate_bound=false
         local candidate_parent=""
