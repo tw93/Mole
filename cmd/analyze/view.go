@@ -259,7 +259,7 @@ func (m model) View() string {
 						}
 					}
 					entryPrefix := "   "
-					name := trimNameWithWidth(entry.Name, nameWidth)
+					name := truncateMiddle(entry.Name, nameWidth)
 					paddedName := padName(name, nameWidth)
 					nameSegment := paddedName
 					numColor := ""
@@ -306,7 +306,7 @@ func (m model) View() string {
 					if entry.IsDir {
 						icon = "📁"
 					}
-					name := trimNameWithWidth(entry.Name, nameWidth)
+					name := truncateMiddle(entry.Name, nameWidth)
 					paddedName := padName(name, nameWidth)
 
 					sizeValue := max(entry.Size, 0)

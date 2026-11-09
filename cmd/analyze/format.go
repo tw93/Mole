@@ -207,38 +207,6 @@ func calculateNameWidth(termWidth int) int {
 	return available
 }
 
-func trimNameWithWidth(name string, maxWidth int) string {
-	const (
-		ellipsis      = "..."
-		ellipsisWidth = 3
-	)
-
-	runes := []rune(name)
-	widths := make([]int, len(runes))
-	for i, r := range runes {
-		widths[i] = runeWidth(r)
-	}
-
-	currentWidth := 0
-	for i, w := range widths {
-		if currentWidth+w > maxWidth {
-			subWidth := currentWidth
-			j := i
-			for j > 0 && subWidth+ellipsisWidth > maxWidth {
-				j--
-				subWidth -= widths[j]
-			}
-			if j == 0 {
-				return ellipsis
-			}
-			return string(runes[:j]) + ellipsis
-		}
-		currentWidth += w
-	}
-
-	return name
-}
-
 func padName(name string, targetWidth int) string {
 	currentWidth := displayWidth(name)
 	if currentWidth >= targetWidth {

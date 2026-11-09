@@ -371,56 +371,6 @@ func TestPadName(t *testing.T) {
 	}
 }
 
-func TestTrimNameWithWidth(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxWidth int
-		check    func(t *testing.T, result string)
-	}{
-		{
-			name:     "Trim ASCII name",
-			input:    "verylongfilename.txt",
-			maxWidth: 10,
-			check: func(t *testing.T, result string) {
-				if displayWidth(result) > 10 {
-					t.Errorf("Width exceeds max: %d > 10", displayWidth(result))
-				}
-				if !strings.HasSuffix(result, "...") {
-					t.Errorf("Expected ellipsis, got %q", result)
-				}
-			},
-		},
-		{
-			name:     "Trim CJK name",
-			input:    "很长的文件名称.txt",
-			maxWidth: 12,
-			check: func(t *testing.T, result string) {
-				if displayWidth(result) > 12 {
-					t.Errorf("Width exceeds max: %d > 12", displayWidth(result))
-				}
-			},
-		},
-		{
-			name:     "No trimming needed",
-			input:    "short.txt",
-			maxWidth: 20,
-			check: func(t *testing.T, result string) {
-				if result != "short.txt" {
-					t.Errorf("Should not trim, got %q", result)
-				}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := trimNameWithWidth(tt.input, tt.maxWidth)
-			tt.check(t, result)
-		})
-	}
-}
-
 func TestCalculateNameWidth(t *testing.T) {
 	tests := []struct {
 		termWidth int
