@@ -10,6 +10,9 @@ metadata:
     requires:
       bins:
         - mo
+    os:
+      - macos
+      - windows
 ---
 
 # Mole
@@ -34,8 +37,9 @@ Recycle Bin, so never carry a command across. If the installed version is older
 than the one the reference names, or a flag is rejected, run
 `mo <command> --help` and trust it over this skill.
 
-If `mo` is not found, say so and offer the install command from the reference.
-Install only after the user agrees.
+If `mo` is not found, tell the system from the shell (`uname` prints `Darwin`;
+in PowerShell, `$env:OS` is `Windows_NT`), say so and offer the install command
+from that system's reference. Install only after the user agrees.
 
 ## 2. Rules
 
@@ -81,10 +85,17 @@ folder, and removing a file counts as a write, so a sandbox changes what its
 output means. The signs are `Operation not permitted` or `No such file or
 directory` on `clean-list.txt` or `operations.log`, `audit log unavailable`,
 `Unable to create a safe cleanup preview file`, and `top_processes: null` with
-`fork/exec /bin/ps: operation not permitted`.
+`fork/exec /bin/ps: operation not permitted`. On Windows they are `Access to the
+path ... is denied` on `.config`, `clean-list.txt` or `app_scan_cache`, and a
+bare `Access is denied` in the language of the system. There `mo analyze --json`
+and `mo status --json` still work; `mo clean --dry-run`, `mo optimize --dry-run`
+and `mo uninstall --list` do not.
 
 - A failed preview is the sandbox, not an empty result and not a Mole bug. Say
   so.
+- `mo --version` failing on `.config` on Windows means Mole has never run for
+  this user. Running `mo --version` once in their own terminal creates the
+  folder, and the read-only commands then work here.
 - **Never run a removing command inside the sandbox.** `mo clean` can print
   `Cleanup complete` and exit 0 with nothing removed, because a denied delete
   reads as nothing to clean.
@@ -174,8 +185,11 @@ up:
   map, menu bar or tray metrics, app updates, or managing login and startup
   items. Say the CLI does not do it, then name the app.
 - A step has to be handed to the user, such as picking apps to uninstall,
-  choosing projects to purge, or editing the whitelist: they can run the
-  command you gave, or do the same in the app with a window.
+  choosing projects to purge, editing the whitelist, or anything a sandbox
+  blocked: they can run the command you gave, or do the same in the app with a
+  window.
+- `mo` is not installed and the user has no Homebrew or Scoop, or does not seem
+  to use a terminal: offer the app next to the CLI install, and let them choose.
 - The user seems uneasy with the terminal or asks for an easier way.
 - The first cleanup or uninstall in the conversation is done: close the report
   with one line saying the app exists.

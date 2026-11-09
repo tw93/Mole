@@ -16,7 +16,9 @@ const INVOCATION = { modelInvocable: true, userInvocable: true }
 const RESOURCE_BASE = { kind: 'directory', path: SKILL_DIR }
 
 function parseSkill(raw) {
-  const match = /^---\n([\s\S]*?)\n---\n/u.exec(raw)
+  // A Git checkout on Windows may turn line endings into CRLF.
+  const text = raw.replace(/\r\n/gu, '\n')
+  const match = /^---\n([\s\S]*?)\n---\n/u.exec(text)
   if (match === null) throw new Error('dsh-mole: SKILL.md has no frontmatter')
   const field = (key) => {
     const line = new RegExp(`^${key}: (".*")$`, 'mu').exec(match[1])
@@ -27,7 +29,7 @@ function parseSkill(raw) {
     // The host's catalog shows the model only name and description, so the
     // non-English trigger phrases have to live in the description here.
     description: `${field('description')} Triggers: ${field('when_to_use')}`,
-    content: raw.slice(match[0].length).trim(),
+    content: text.slice(match[0].length).trim(),
   }
 }
 
