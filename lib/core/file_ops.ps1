@@ -513,6 +513,8 @@ namespace Mole {
                 Check(result);
                 if (recycled == null || File.Exists(path) || Directory.Exists(path))
                     throw new IOException("Recycling was not completed.");
+                // RecycleItem leaves the desktop bin icon as it was until the shell next refreshes it.
+                SHUpdateRecycleBinIcon();
                 IntPtr name;
                 recycled.GetDisplayName(0x80058000, out name);
                 try { return Marshal.PtrToStringUni(name); } finally { Marshal.FreeCoTaskMem(name); }
@@ -522,6 +524,8 @@ namespace Mole {
         }
         private static void Check(int result) { if (result < 0) Marshal.ThrowExceptionForHR(result); }
         private static void Release(object value) { if (value != null) Marshal.ReleaseComObject(value); }
+        [DllImport("shell32.dll")]
+        private static extern void SHUpdateRecycleBinIcon();
         [DllImport("shell32.dll", CharSet=CharSet.Unicode, PreserveSig=true)]
         private static extern int SHCreateItemFromParsingName(string path, IntPtr context, ref Guid iid, out IShellItem item);
         [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

@@ -82,3 +82,11 @@ Describe 'Recoverable uninstall leftovers' {
         Should -Invoke Remove-SafeDirectoryTree -Times 0 -Exactly
     }
 }
+
+Describe 'Recycle Bin icon' {
+    It 'Refreshes the desktop bin icon once a move has completed' {
+        $source = Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'lib\core\file_ops.ps1') -Raw
+        $source | Should -Match 'Recycling was not completed\."\);\s+//[^\r\n]*\s+SHUpdateRecycleBinIcon\(\);'
+        $source | Should -Match 'static extern void SHUpdateRecycleBinIcon\(\);'
+    }
+}
