@@ -167,15 +167,6 @@ func calculateNameWidth(termWidth int) int {
 	return min(60, max(1, termWidth-fixedWithoutBar-calculateBarWidth(termWidth)))
 }
 
-func trimNameWithWidth(name string, maxWidth int) string {
-	maxWidth = max(0, maxWidth)
-	tail := "..."
-	if maxWidth < len(tail) {
-		tail = ""
-	}
-	return ansi.Truncate(name, maxWidth, tail)
-}
-
 func padName(name string, targetWidth int) string {
 	currentWidth := displayWidth(name)
 	if currentWidth >= targetWidth {

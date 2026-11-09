@@ -563,3 +563,31 @@ func TestDeleteCompletionDoesNotPromiseRecycling(t *testing.T) {
 		}
 	}
 }
+
+// Siblings that share a long start must stay distinguishable on a narrow
+// terminal, so a row name keeps its tail rather than only its start.
+func TestNarrowRowsKeepTheTailOfLongSiblingNames(t *testing.T) {
+	names := []string{
+		"quarterly-financial-report-2023-final.xlsx",
+		"quarterly-financial-report-2024-final.xlsx",
+	}
+	m := model{
+		path:       filepath.Join(t.TempDir(), "docs"),
+		width:      70,
+		height:     30,
+		scanState:  scanComplete,
+		totalSize:  2048,
+		largeFiles: nil,
+	}
+	for _, n := range names {
+		m.entries = append(m.entries, dirEntry{Name: n, Path: filepath.Join(m.path, n), Size: 1024, State: scanComplete})
+	}
+
+	view := stripANSI(m.View())
+	for _, n := range names {
+		tail := n[len(n)-14:]
+		if rowContaining(view, tail) == "" {
+			t.Fatalf("no row keeps the tail %q of %q in:\n%s", tail, n, view)
+		}
+	}
+}
