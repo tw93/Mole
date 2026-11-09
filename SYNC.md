@@ -231,8 +231,8 @@ Implemented in source (Mole CLI (macOS), #1950): `~/Library/Caches/Buzz` joins `
 
 - Mole CLI (Windows): Not applicable. No generic `%LOCALAPPDATA%` sweep reaches Buzz's cache folder.
 - Mole CLI (Linux): Not applicable. Clean removes only allowlisted caches; an unknown `~/.cache` folder is listed, never selected.
-- Mole Mac: To be checked by the maintainer against its generic cache scan.
-- Mole for Windows: To be checked by the maintainer.
+- Mole Mac: Implemented, `6c379a32c`: both block lists, the shape of llama.cpp.
+- Mole for Windows: Not applicable. Clean lists catalog rules and enumerates no `%LOCALAPPDATA%` folders; no Buzz or Puppeteer row exists.
 
 ## 2026-11-09 Puppeteer browser installs
 
@@ -243,7 +243,7 @@ Implemented in source (Mole CLI (macOS), `4cd5be26`): the row is gone and `shoul
 - Mole CLI (Linux): Same rule in `lib/clean/rules.sh` (`Puppeteer browsers`); removed by #1949 on `linux`.
 - Mole CLI (Windows): Not applicable. It has no Puppeteer row.
 - Mole Mac: Implemented. Its path guard and whitelist already keep `~/.cache/puppeteer`.
-- Mole for Windows: To be checked by the maintainer.
+- Mole for Windows: Not applicable. No Puppeteer row exists in its catalog.
 
 ## 2026-11-09 Clean write refusal and protected containers
 
@@ -251,3 +251,15 @@ Implemented in source (Mole CLI (macOS), `4cd5be26`): the row is gone and `shoul
 | --- | --- | --- |
 | `mo clean` stops with a refusal when every folder it checks refuses a write, instead of ending on "Cleanup complete" with nothing removed; any other failure carries on, above all a full disk | Implemented (Mole CLI (macOS), `bab30aa8`); Implemented (Mole CLI (Windows), `3cd63f92`, with its previews fixed in `16eaba98`); Not applicable (Mole Mac, Mole for Windows: desktop apps with their own failure rows) | `tests/clean_core.bats`, incident I-53. |
 | An uninstall keeps a `Containers/<id>` or `Group Containers/<id>` folder holding an entry System Integrity Protection guards, so it never reaches the Trash, where it would fail every Empty Trash; asked only with Full Disk Access and only of the container's own folder | Implemented (Mole CLI (macOS), `f316ef8a`); Implemented (Mole Mac record); Not applicable (Mole for Windows, Mole CLI (Windows): no sandbox containers) | `tests/uninstall_remove_file_list.bats`, real probes of `/System/Library/Sandbox` and an ordinary tree. |
+
+## 2026-11-09 Artifacts in use and lsof spellings
+
+Source heads read on 2026-11-09: `main` at `3feb1dd0`, `windows` at `cf28b442`, Mole Mac at `3d93c4f83`, Mole for Windows at `3c25648f`.
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| A project artifact a running process uses is not offered or removed (#1958) | Implemented (Mole CLI (macOS), `6f2c0ce5`); Implemented (Mole CLI (Windows), `659bc206`); Implemented (Mole Mac, `32c2b1a71`); Not applicable (Mole for Windows: Clean has no project build output row) | Bats `purge_artifact_in_use`, `PurgeBoundary.Tests.ps1`, `testAProjectArtifactSomethingHoldsIsSeenAndAnIdleOneIsNot`. Mole CLI (Linux) is recorded on `linux`. |
+| `lsof` spellings of a non-ASCII or backslash path are read as the real name | Implemented (Mole CLI (macOS), `c73bb7c9`, `52dad8df`, `ab24a019`); Implemented (Mole Mac, `32c2b1a71`: it also decoded names for its container and AI scratch checks); Not applicable (Mole CLI (Windows), Mole for Windows: no `lsof`) | `testAHeldFolderWithANonASCIINameIsSeenInARealListingWithoutALocale` on real lsof. |
+| A packaged SwiftPM scratch folder is offered as its compiler output (#1955) | Implemented (Mole CLI (macOS), `1ae52ae5`); Intentional difference (Mole Mac: `.build/checkouts` is a known rebuildable layout, so the folder is already offered whole); Not applicable (Mole CLI (Windows): SwiftPM is not a purge pattern; Mole for Windows: no such row) | `clean-scanner.md`. |
+| A folder holding Epic games is not an uninstall leftover (#1948) | Implemented (Mole CLI (Windows), `3313adbe`); Implemented (Mole for Windows, `0b88ce85`); Not applicable (Mole CLI (macOS), Mole Mac: uninstall follows the app bundle and bundle-id leftovers, and no scan reaches `/Users/Shared/Epic Games`) | `AnEpicGameCountsAsContentAtTheGameFolderAndOneLevelInside`. |
+| Search matches every word (`1de902bf`), rows keep a long name's tail (`60a64902`), other apps' containers stay unmeasured without Full Disk Access (`157296a6`) | Implemented (Mole CLI (macOS)); Implemented (Mole CLI (Windows) and Mole for Windows: sources of the first two; Mole Mac: source of the third) | Pending for the third only: the real prompt on the test Mac, Next check on a Terminal without Full Disk Access running `mo uninstall --dry-run`. |
