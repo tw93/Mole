@@ -623,10 +623,69 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "skill command audit requires a plugin version bump after a skill change" {
+    local repo="$BATS_TEST_TMPDIR/repo"
+    local manifest="$repo/plugins/mole/.claude-plugin/plugin.json"
+    local package="$repo/plugins/mole/package.json"
+    mkdir -p "$repo/skills/mole" "$repo/plugins/mole/.claude-plugin"
+    printf 'one\n' > "$repo/skills/mole/SKILL.md"
+    printf '{\n  "version": "0.1.0"\n}\n' > "$package"
+    cp "$package" "$manifest"
+    git -C "$repo" init -q
+    commit_all() {
+        git -C "$repo" add -A
+        git -C "$repo" -c user.name=t -c user.email=t@example.invalid commit -qm "$1"
+    }
+    audit_versions() {
+        run python3 - "$PROJECT_ROOT/scripts" "$repo" <<'PYTHON'
+import sys
+from pathlib import Path
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from audit_skill_commands import version_problems
+problems = version_problems(Path(sys.argv[2]))
+print("\n".join(problems))
+sys.exit(1 if problems else 0)
+PYTHON
+    }
+
+    # Skill and version landing in one commit is a release, not drift.
+    commit_all "first"
+    audit_versions
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+    printf 'two\n' > "$repo/skills/mole/SKILL.md"
+    commit_all "skill only"
+    audit_versions
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"without a plugin version bump"* ]] || { echo "$output"; return 1; }
+
+    # A manifest edit that leaves the version alone does not count as a bump.
+    printf '{\n  "version": "0.1.0",\n  "license": "GPL-3.0"\n}\n' > "$manifest"
+    commit_all "other manifest field"
+    audit_versions
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+
+    printf '{\n  "version": "0.1.1",\n  "license": "GPL-3.0"\n}\n' > "$manifest"
+    audit_versions
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"they must match"* ]] || { echo "$output"; return 1; }
+
+    printf '{\n  "version": "0.1.1"\n}\n' > "$package"
+    commit_all "bump"
+    audit_versions
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "CI checks the published skill against both CLIs" {
     run grep -F 'audit_skill_commands.py' "$PROJECT_ROOT/scripts/check.sh"
     [ "$status" -eq 0 ]
     run grep -F 'git fetch --no-tags --depth=1 origin windows' "$PROJECT_ROOT/.github/workflows/check.yml"
+    [ "$status" -eq 0 ]
+    run grep -E '^[[:space:]]+failures \+= version_problems\(PROJECT_ROOT\)$' "$PROJECT_ROOT/scripts/audit_skill_commands.py"
+    [ "$status" -eq 0 ]
+    # shellcheck disable=SC2016  # the literal workflow text, not an expansion here
+    run grep -F 'git fetch --no-tags --deepen=100 origin "$GITHUB_SHA"' "$PROJECT_ROOT/.github/workflows/check.yml"
     [ "$status" -eq 0 ]
 }
 

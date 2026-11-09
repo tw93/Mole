@@ -254,7 +254,7 @@ skill_audit_args=()
 [[ "${MOLE_SKILL_AUDIT_REQUIRE_WINDOWS:-0}" == "1" ]] && skill_audit_args+=(--require-windows)
 if ! skill_audit_output=$(python3 "$SCRIPT_DIR/audit_skill_commands.py" "${skill_audit_args[@]+"${skill_audit_args[@]}"}" 2>&1); then
     printf '%s\n' "$skill_audit_output"
-    echo -e "${RED}${ICON_ERROR} The agent skill names commands or flags the CLI does not have${NC}\n"
+    echo -e "${RED}${ICON_ERROR} The published agent skill failed its audit, see the lines above${NC}\n"
     exit 1
 fi
 printf '%s\n' "$skill_audit_output"

@@ -13,11 +13,19 @@ origin/windows). Missing that ref skips the Windows side with a notice unless
 Codex installs plugins by copying files and drops symbolic links, so
 plugins/mole/skills/mole is a real copy of skills/mole; it must match byte for
 byte.
+
+A `version` in a Claude plugin manifest keeps users on their cached copy until
+that string changes, and npm refuses to republish a version, so a skill change
+must raise the one version plugins/mole/package.json and its Claude manifest
+share. The version must differ from the one just before the latest skill commit.
+The Check job deepens its shallow clone for this, since a commit whose parent is
+out of reach cannot be judged and passes.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -169,6 +177,26 @@ def catalog_problems(skill_md: Path) -> list[str]:
     return []
 
 
+def version_problems(root: Path) -> list[str]:
+    package = "plugins/mole/package.json"
+    manifest = "plugins/mole/.claude-plugin/plugin.json"
+    versions = [json.loads((root / path).read_text(encoding="utf-8")).get("version") for path in (package, manifest)]
+    if versions[0] is None or versions[0] != versions[1]:
+        return [f"{package} has version {versions[0]} but {manifest} has {versions[1]}; they must match"]
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+
+    skill_commit = git("log", "-1", "--format=%H", "--", "skills/mole").stdout.strip()
+    before = git("show", f"{skill_commit}^:{manifest}") if skill_commit else None
+    if before is None or before.returncode != 0 or json.loads(before.stdout).get("version") != versions[1]:
+        return []
+    return [
+        f"skills/mole changed in {skill_commit[:8]} without a plugin version bump: "
+        f"raise version in {package} and {manifest}, then npm publish from plugins/mole"
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--skill-dir", type=Path, default=PROJECT_ROOT / "skills" / "mole")
@@ -211,6 +239,8 @@ def main() -> int:
         failures += copy_problems(args.skill_dir, args.plugin_copy)
     if (args.skill_dir / "SKILL.md").is_file():
         failures += catalog_problems(args.skill_dir / "SKILL.md")
+    if args.skill_dir == PROJECT_ROOT / "skills" / "mole":
+        failures += version_problems(PROJECT_ROOT)
 
     if failures:
         print("\n".join(failures))
