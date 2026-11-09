@@ -55,7 +55,7 @@ Możesz też samodzielnie zainstalować skill. Dzięki niemu Claude Code, Codex,
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-Jako plugin: w Claude Code `/plugin marketplace add tw93/Mole`, a potem `/plugin install mole@mole`; w Codex `codex plugin marketplace add tw93/Mole`, a potem `codex plugin add mole@mole`.
+Jako plugin: w Claude Code `/plugin marketplace add tw93/Mole`, a potem `/plugin install mole@mole`; w Codex `codex plugin marketplace add tw93/Mole`, a potem `codex plugin add mole@mole`; w DeepSeek Harness `dsh plugin --profile <name> add dsh-mole`.
 
 **Polecenia**
 

@@ -55,7 +55,7 @@ Or install the skill yourself. With it, Claude Code, Codex, Cursor and other age
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-As a host plugin: `/plugin marketplace add tw93/Mole` then `/plugin install mole@mole` in Claude Code, or `codex plugin marketplace add tw93/Mole` then `codex plugin add mole@mole` in Codex.
+As a host plugin: `/plugin marketplace add tw93/Mole` then `/plugin install mole@mole` in Claude Code, `codex plugin marketplace add tw93/Mole` then `codex plugin add mole@mole` in Codex, or `dsh plugin --profile <name> add dsh-mole` in DeepSeek Harness.
 
 **Run**
 

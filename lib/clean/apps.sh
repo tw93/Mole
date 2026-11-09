@@ -4,6 +4,7 @@ set -euo pipefail
 
 readonly ORPHAN_AGE_THRESHOLD=${MOLE_ORPHAN_AGE_DAYS:-30}
 readonly CLAUDE_VM_ORPHAN_AGE_THRESHOLD=7
+readonly ORPHAN_AGE_WALK_BUDGET_SEC=60
 readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v3:complete"
 # Args: $1=target_dir, $2=label, optional $3=scan stderr file, $4...=find exclusions
 clean_ds_store_tree() {
@@ -493,16 +494,10 @@ is_bundle_orphaned() {
             ;;
     esac
 
-    # 5. Fast path: 30-day modification check (stat call, fast)
-    if [[ -e "$directory_path" ]]; then
-        local last_modified_epoch=$(get_file_mtime "$directory_path")
-        local current_epoch
-        current_epoch=$(get_epoch_seconds)
-        local days_since_modified=$(((current_epoch - last_modified_epoch) / 86400))
-        if [[ $days_since_modified -lt $ORPHAN_AGE_THRESHOLD ]]; then
-            return 1
-        fi
-    fi
+    # 5. Nothing inside changed within the threshold (bounded walk)
+    local stale_rc=0
+    _orphan_path_is_stale "$directory_path" "$ORPHAN_AGE_THRESHOLD" || stale_rc=$?
+    [[ $stale_rc -eq 0 ]] || return "$stale_rc"
 
     # 6. Slow path: mdfind fallback with in-memory caching (Bash 3.2 compatible)
     # This catches apps installed in non-standard locations
@@ -537,6 +532,38 @@ is_bundle_orphaned() {
     return 0
 }
 
+# Returns 0 only when the whole path was read and nothing in it changed within
+# the given days. Writing a file leaves its directory's own mtime alone, so the
+# walk covers every entry. find passes over a directory it cannot search and
+# still exits 0, so one counts as a match; only a directory this user does not
+# own, has no owner search bit on, or that carries an ACL pays for the test
+# process. A walk that fails, times out or finds the section's walk budget spent
+# returns 1, keeping the path; an interrupt returns its signal status. Only walk
+# time spends the budget, not sizing or removal between walks.
+_orphan_path_is_stale() {
+    local path="$1"
+    local age_days="$2"
+    local recent_entry="" walk_rc=0 walk_timeout="" walk_started=$SECONDS
+    local budget_left="${_ORPHAN_AGE_WALK_BUDGET_LEFT:-}"
+    if ! walk_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" \
+        "${budget_left:+$((SECONDS + budget_left))}"); then
+        debug_log "Keeping orphan candidate, age walk budget spent: $path"
+        return 1
+    fi
+    recent_entry=$(run_with_timeout "$walk_timeout" "$FIND_BSD" "$path" \
+        \( -mmin "-$((age_days * 1440))" -o \
+        \( -type d \( ! -uid "$UID" -o ! -perm -u+x -o -acl \) ! -exec /bin/test -x {} \; \) \) \
+        -print -quit 2> /dev/null) || walk_rc=$?
+    [[ -z "$budget_left" ]] ||
+        _ORPHAN_AGE_WALK_BUDGET_LEFT=$((budget_left - (SECONDS - walk_started)))
+    [[ $walk_rc -lt 128 ]] || return "$walk_rc"
+    if [[ $walk_rc -ne 0 ]]; then
+        debug_log "Keeping orphan candidate, age walk status $walk_rc: $path"
+        return 1
+    fi
+    [[ -z "$recent_entry" ]]
+}
+
 is_claude_vm_bundle_orphaned() {
     local vm_bundle_path="$1"
     local installed_bundles="$2"
@@ -554,16 +581,9 @@ is_claude_vm_bundle_orphaned() {
         return 1
     fi
 
-    if [[ -e "$vm_bundle_path" ]]; then
-        local last_modified_epoch
-        last_modified_epoch=$(get_file_mtime "$vm_bundle_path")
-        local current_epoch
-        current_epoch=$(get_epoch_seconds)
-        local days_since_modified=$(((current_epoch - last_modified_epoch) / 86400))
-        if [[ $days_since_modified -lt $CLAUDE_VM_ORPHAN_AGE_THRESHOLD ]]; then
-            return 1
-        fi
-    fi
+    local stale_rc=0
+    _orphan_path_is_stale "$vm_bundle_path" "$CLAUDE_VM_ORPHAN_AGE_THRESHOLD" || stale_rc=$?
+    [[ $stale_rc -eq 0 ]] || return "$stale_rc"
 
     local _cache_rc=0
     _mdfind_cache_check "$claude_bundle_id" || _cache_rc=$?
@@ -625,13 +645,16 @@ orphan_cleanup_candidate_snapshot() {
 # trusting the negative mdfind cache used during the broad discovery pass.
 orphan_cleanup_candidate_still_eligible() {
     local path="$1"
+    local age_days="$ORPHAN_AGE_THRESHOLD"
 
     if [[ "${_ORPHAN_CLEANUP_KIND:-bundle}" == "claude" ]]; then
         local process_rc=0
         pgrep -x "Claude" > /dev/null 2>&1 || process_rc=$?
         mole_rc_timeout_or_signal "$process_rc" && return "$process_rc"
         [[ $process_rc -eq 1 ]] || return 1
+        age_days="$CLAUDE_VM_ORPHAN_AGE_THRESHOLD"
     fi
+    _orphan_path_is_stale "$path" "$age_days" || return $?
 
     local resolver_rc=0
     bundle_has_installed_app "${_ORPHAN_CLEANUP_BUNDLE_ID:-}" \
@@ -699,19 +722,20 @@ clean_orphaned_app_data() {
     debug_log "Found $app_count active/installed apps"
     local orphaned_count=0
     local total_orphaned_kb=0
+    local _ORPHAN_AGE_WALK_BUDGET_LEFT="$ORPHAN_AGE_WALK_BUDGET_SEC"
     start_section_spinner "Scanning orphaned app resources..."
 
-    # Dynamically discover Claude VM bundles (path may vary across versions).
-    local claude_support_dir="$HOME/Library/Application Support/Claude"
-    if [[ -d "$claude_support_dir" ]]; then
+    # The bundle name may vary across versions; only vm_bundles holds the VM.
+    local claude_vm_root="$HOME/Library/Application Support/Claude/vm_bundles"
+    if [[ -d "$claude_vm_root" ]]; then
         local claude_scan_file=""
         claude_scan_file=$(create_temp_file) || {
             rm -f -- "$installed_bundles" 2> /dev/null || true # SAFE: exact tracked temp file created above
             return 1
         }
         local claude_scan_rc=0
-        run_with_timeout "$MOLE_TIMEOUT_HINT_SCAN_SEC" find "$claude_support_dir" \
-            -maxdepth 3 -name "*.bundle" -type d -print0 \
+        run_with_timeout "$MOLE_TIMEOUT_HINT_SCAN_SEC" find "$claude_vm_root" \
+            -mindepth 1 -maxdepth 1 -name "*.bundle" -type d -print0 \
             > "$claude_scan_file" 2> /dev/null || claude_scan_rc=$?
         if [[ $claude_scan_rc -ge 128 ]]; then
             rm -f -- "$claude_scan_file" 2> /dev/null || true  # SAFE: exact tracked temp file created above
@@ -894,11 +918,12 @@ clean_orphaned_app_data() {
     done
     stop_section_spinner
     if [[ $orphaned_count -gt 0 ]]; then
-        local orphaned_mb=$(echo "$total_orphaned_kb" | awk '{printf "%.1f", $1/1024}')
+        local orphaned_human
+        orphaned_human=$(bytes_to_human_kb "$total_orphaned_kb")
         if [[ "${DRY_RUN:-false}" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would clean $(mole_count_label "$orphaned_count" item), about ${orphaned_mb}MB"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would clean $(mole_count_label "$orphaned_count" item), about ${orphaned_human}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $(mole_count_label "$orphaned_count" item), about ${orphaned_mb}MB"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $(mole_count_label "$orphaned_count" item), about ${orphaned_human}"
         fi
         note_activity
     fi

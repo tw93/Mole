@@ -2539,8 +2539,7 @@ EOF
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"Safari cache"* ]] || return 1
     [[ "$output" == *"Firefox cache"* ]] || return 1
-    # ~/.cache/puppeteer holds the browsers Puppeteer launches, like the
-    # protected Playwright and Cypress installs, so no browser row targets it.
+    # Puppeteer installs its browsers here; removing them breaks launch (#1941).
     [[ "$output" != *"Puppeteer"* ]]
 }
 

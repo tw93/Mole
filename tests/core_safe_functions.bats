@@ -1530,7 +1530,7 @@ EOF
         should_protect_path '$HOME/Library/Caches/Cypress' || exit 1
         should_protect_path '$HOME/Library/Caches/Cypress/13.6.0/Cypress.app' || exit 1
         should_protect_path '$HOME/.cache/puppeteer' || exit 1
-        should_protect_path '$HOME/.cache/puppeteer/chrome/mac_arm-131.0.6778.85/chrome-mac-arm64' || exit 1
+        should_protect_path '$HOME/.cache/puppeteer/chrome-headless-shell/mac_arm-156.0.8078.47/chrome-headless-shell' || exit 1
         should_protect_path '$HOME/Library/Caches/com.apple.homed/state'
         should_protect_path '$HOME/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite'
         should_protect_path '$HOME/Library/Preferences/com.paceap.eden.iLokLicenseManager.plist'

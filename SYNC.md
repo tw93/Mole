@@ -199,6 +199,20 @@ Released (Mole CLI (macOS), `V1.70.0`): `ae5a6eb5` and `57f2f633`, merged in `7e
 - Mole Mac: Not applicable. It has no purge paths file.
 - Mole for Windows: Not applicable. It has no purge paths file.
 
+## 2026-11-09 Orphan data age reads the files inside
+
+Source: Mole CLI (macOS) `is_bundle_orphaned` and `orphan_cleanup_candidate_still_eligible`. Orphaned caches, logs and saved state now need every entry inside to be past the 30-day age, at discovery and at the final sink, not only the directory. The 30-day value itself did not change.
+
+- Mole Mac: Intentional difference. Its orphan rows have their own scanner and quiet period, start unchecked and go to the Trash.
+- Mole for Windows, Mole CLI (Windows): Not applicable. Neither has this directory-age check.
+
+## 2026-11-09 Claude VM leftover evidence
+
+Source: Mole CLI (macOS) `is_claude_vm_bundle_orphaned` and `clean_orphaned_app_data`. The orphan check now accepts only a `*.bundle` directly under `Application Support/Claude/vm_bundles`, and its 7-day age walks every entry inside the bundle, at discovery and at the final sink, not only the directory.
+
+- Mole Mac: Not applicable. It protects `vm_bundles` and does not offer this row, on purpose.
+- Mole for Windows, Mole CLI (Windows): Not applicable. Neither checkout's code has this cleanup.
+
 ## 2026-11-07 Purge editor commands
 
 Source: PR #1940. `mo purge --paths` now runs an `EDITOR` that holds arguments, such as `code --wait`, and returns the editor's failure instead of reporting success.
@@ -213,7 +227,7 @@ Implemented in source (Mole CLI (macOS), `main`): `4917abd1`, merged in `2cc4f22
 
 Source: a 2026-11-09 review of model stores under `~/Library/Caches`. Buzz keeps downloaded Whisper models in platformdirs' cache folder, `~/Library/Caches/Buzz/models` on macOS (its FAQ names the folder; `BUZZ_MODEL_ROOT` overrides it), next to the plugins the user installed and their presentation CSS. The generic "User app cache" sweep removed the whole folder, the same shape as the llama.cpp store (`3b0f94df`).
 
-Implemented in source (Mole CLI (macOS), `310753e9`): `~/Library/Caches/Buzz` joins `SAFETY_WHITELIST_PATTERNS`, so it holds under a custom whitelist too. Locked by `the user cache sweep keeps Buzz models and plugins even with a custom whitelist`, red on the old code.
+Implemented in source (Mole CLI (macOS), #1950): `~/Library/Caches/Buzz` joins `SAFETY_WHITELIST_PATTERNS`, so it holds under a custom whitelist too. Locked by `the user cache sweep keeps Buzz models and plugins even with a custom whitelist`, red on the old code.
 
 - Mole CLI (Windows): Not applicable. No generic `%LOCALAPPDATA%` sweep reaches Buzz's cache folder.
 - Mole CLI (Linux): Not applicable. Clean removes only allowlisted caches; an unknown `~/.cache` folder is listed, never selected.
@@ -224,9 +238,9 @@ Implemented in source (Mole CLI (macOS), `310753e9`): `~/Library/Caches/Buzz` jo
 
 Source: the same 2026-11-09 review. Puppeteer installs the browser it launches into `~/.cache/puppeteer` and runs it from there; `clean_browsers` removed it as "Puppeteer browser cache" since `5a8d7666` (V1.23.2), the shape of ms-playwright, Camoufox and Cypress (#1400, #1941, #1945).
 
-Implemented in source (Mole CLI (macOS), `e2c363f8`): the row is gone and `should_protect_path` keeps the folder and its children. Locked by `should_protect_path applies high-risk cleanup denylist` and `clean_browsers calls expected cache paths`, both red on the old code.
+Implemented in source (Mole CLI (macOS), `4cd5be26`): the row is gone and `should_protect_path` keeps the folder and its children. Locked by `should_protect_path applies high-risk cleanup denylist` and `clean_browsers calls expected cache paths`, both red on the old code.
 
-- Mole CLI (Linux): Same rule in `lib/clean/rules.sh` (`Puppeteer browsers`); removed in a separate change on `linux`.
+- Mole CLI (Linux): Same rule in `lib/clean/rules.sh` (`Puppeteer browsers`); removed by #1949 on `linux`.
 - Mole CLI (Windows): Not applicable. It has no Puppeteer row.
 - Mole Mac: To be checked by the maintainer.
 - Mole for Windows: To be checked by the maintainer.
