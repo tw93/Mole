@@ -366,20 +366,52 @@ mole_purge_other_pids() {
     return 0
 }
 
+# Open files and mapped files of the process folders in $@, NUL separated, then
+# MOLE_PURGE_HOLDERS_DONE once all of it was read. xargs reporting 123 means a
+# child failed, which is how a process that exited, or one the kernel will not
+# let this user read (ssh-agent), looks; those hold nothing this can learn.
+# Anything else, a timeout above all (a stuck process can block reading its
+# maps), leaves the end mark out. One process each would cost seconds on a desktop.
+readonly MOLE_PURGE_HOLDERS_DONE="mole-purge-holders-done"
+mole_purge_proc_holders() {
+    set +e
+    local -a statuses
+    export LC_ALL=C
+    (($# > 0)) || {
+        printf '%s\0' "$MOLE_PURGE_HOLDERS_DONE"
+        return 0
+    }
+    printf '%s/fd\0' "$@" |
+        timeout "$MOLE_PURGE_PROBE_TIMEOUT" xargs -0 sh -c 'exec find "$@" -mindepth 1 -maxdepth 1 -type l -printf "%l\\0"' sh 2> /dev/null
+    statuses=("${PIPESTATUS[@]}")
+    [[ "${statuses[1]}" -eq 0 || "${statuses[1]}" -eq 123 ]] || return 0
+    printf '%s/maps\0' "$@" |
+        timeout "$MOLE_PURGE_PROBE_TIMEOUT" xargs -0 cat 2> /dev/null |
+        sed -n 's|^[^/]*\(/.*\)$|\1|p' | sort -u | tr '\n' '\0'
+    statuses=("${PIPESTATUS[@]}")
+    [[ "${statuses[1]}" -eq 0 || "${statuses[1]}" -eq 123 ]] || return 0
+    [[ "${statuses[2]}" -eq 0 && "${statuses[3]}" -eq 0 && "${statuses[4]}" -eq 0 ]] || return 0
+    printf '%s\0' "$MOLE_PURGE_HOLDERS_DONE"
+}
+
 # Every folder the user's other processes work in: working folders, programs,
-# path arguments and an activated VIRTUAL_ENV, into MOLE_PURGE_PROC_PATHS.
-# MOLE_PURGE_PROC_OK is false when /proc cannot be read, and then every
-# project counts as busy.
+# path arguments, an activated VIRTUAL_ENV, open files and mapped libraries,
+# into MOLE_PURGE_PROC_PATHS. A process elsewhere holding one file of a build
+# folder shows only in the last two.
+# MOLE_PURGE_PROC_OK is false when /proc cannot be read or the open and mapped
+# files could not all be listed, and then every project counts as busy.
 MOLE_PURGE_PROC_PATHS=()
 MOLE_PURGE_PROC_OK=false
 mole_purge_proc_snapshot() {
     local pid dir path arg
+    local -a pid_dirs=()
     local -A seen=()
     MOLE_PURGE_PROC_PATHS=()
     MOLE_PURGE_PROC_OK=false
     [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
     while IFS= read -r pid; do
         dir="$_MOLE_PROC_ROOT/$pid"
+        pid_dirs+=("$dir")
         for path in "$(readlink -- "$dir/cwd" 2> /dev/null)" "$(readlink -- "$dir/exe" 2> /dev/null)"; do
             [[ "$path" == /* && -z "${seen[$path]:-}" ]] || continue
             seen[$path]=1
@@ -399,6 +431,22 @@ mole_purge_proc_snapshot() {
             MOLE_PURGE_PROC_PATHS+=("$arg")
         done < "$dir/environ"; } 2> /dev/null || true
     done < <(mole_purge_other_pids)
+    local finished=false
+    while IFS= read -r -d '' path; do
+        case "$path" in
+            "$MOLE_PURGE_HOLDERS_DONE") finished=true ;;
+            # A shared library or device is in every process and in no project.
+            /usr/lib/* | /usr/share/* | /lib/* | /lib64/* | /dev/* | /proc/* | /sys/*) ;;
+            /*)
+                if [[ -z "${seen[$path]:-}" ]]; then
+                    seen[$path]=1
+                    MOLE_PURGE_PROC_PATHS+=("$path")
+                fi
+                ;;
+        esac
+    done < <(mole_purge_proc_holders "${pid_dirs[@]+"${pid_dirs[@]}"}")
+    # An unfinished answer could hide a holder, and that is a failed snapshot.
+    [[ "$finished" == true ]] || return 2
     MOLE_PURGE_PROC_OK=true
     return 0
 }

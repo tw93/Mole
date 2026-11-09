@@ -269,3 +269,71 @@ age() { find "$1" -exec touch -h -d '30 days ago' {} +; }
     [[ "$output" == *"kept=changed since the scan"* ]]
     [ -d "$HOME/www/app/node_modules" ]
 }
+
+@test "a process elsewhere holding one file of a project keeps the project busy" {
+    mkdir -p "$HOME/www/held/dist" "$HOME/www/idle/dist" "$HOME/elsewhere"
+    : > "$HOME/www/held/dist/server.log"
+    (cd "$HOME/elsewhere" && exec 3< "$HOME/www/held/dist/server.log" && exec sleep 30) &
+    local holder=$!
+    sleep 0.2
+    purge_run 'mole_purge_proc_snapshot
+        for n in held idle; do mole_purge_project_busy "$HOME/www/$n" "$HOME/www" && echo "busy $n"; done; true'
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"busy held"* ]]
+    [[ "$output" != *"busy idle"* ]]
+}
+
+@test "a library mapped from a project keeps the project busy after its handle closed" {
+    command -v python3 > /dev/null 2>&1 || skip "python3 not available"
+    mkdir -p "$HOME/www/mapped/target" "$HOME/www/idle/target" "$HOME/elsewhere"
+    head -c 4096 /dev/zero > "$HOME/www/mapped/target/libheld.so"
+    # The executable sits outside the project, the path is in no argument and the
+    # file handle is closed, so only the mapping shows it.
+    # Python's own mmap keeps a duplicate descriptor, so this calls libc directly.
+    (cd "$HOME/elsewhere" && HELD_LIBRARY="$HOME/www/mapped/target/libheld.so" exec python3 -c 'import ctypes,os,time
+libc=ctypes.CDLL(None); libc.mmap.restype=ctypes.c_void_p
+libc.mmap.argtypes=[ctypes.c_void_p,ctypes.c_size_t,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_long]
+fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0); os.close(fd); time.sleep(30)') &
+    local holder=$!
+    sleep 0.5
+    grep -q libheld "/proc/$holder/maps"
+    run bash -c "find /proc/$holder/fd -mindepth 1 -maxdepth 1 -type l -printf '%l\n' | grep libheld"
+    [ "$status" -ne 0 ]
+    purge_run 'mole_purge_proc_snapshot; echo "ok=$MOLE_PURGE_PROC_OK"
+        for n in mapped idle; do mole_purge_project_busy "$HOME/www/$n" "$HOME/www" && echo "busy $n"; done; true'
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [[ "$output" == *"ok=true"* ]]
+    [[ "$output" == *"busy mapped"* ]]
+    [[ "$output" != *"busy idle"* ]]
+}
+
+@test "a process that vanished does not lose what the others hold" {
+    mkdir -p "$HOME/www/held/dist" "$HOME/elsewhere"
+    : > "$HOME/www/held/dist/server.log"
+    (cd "$HOME/elsewhere" && exec 3< "$HOME/www/held/dist/server.log" && exec sleep 30) &
+    local holder=$!
+    sleep 0.2
+    purge_run 'mole_purge_other_pids() { printf "%s\n" 4194000 "'"$holder"'"; }
+        mole_purge_proc_snapshot; echo "rc=$? ok=$MOLE_PURGE_PROC_OK"
+        mole_purge_project_busy "$HOME/www/held" "$HOME/www" && echo busy; true'
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [[ "$output" == *"rc=0 ok=true"* ]]
+    [[ "$output" == *busy* ]]
+}
+
+@test "an unfinished holder scan fails the snapshot, so every project reads busy" {
+    mkdir -p "$HOME/www/idle/dist"
+    for tool in xargs timeout sort; do
+        printf '#!/bin/sh\nexit 127\n' > "$TEST_ROOT/bin/$tool"
+        chmod +x "$TEST_ROOT/bin/$tool"
+        purge_run 'set +e; mole_purge_proc_snapshot; echo "rc=$? ok=$MOLE_PURGE_PROC_OK"
+            mole_purge_project_busy "$HOME/www/idle" "$HOME/www" && echo busy'
+        [[ "$output" == *"rc=2 ok=false"* ]] || { echo "$tool: $output"; return 1; }
+        [[ "$output" == *busy* ]]
+        rm -f "$TEST_ROOT/bin/$tool"
+    done
+}
