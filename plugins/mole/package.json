@@ -1,6 +1,6 @@
 {
   "name": "dsh-mole",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Mole CLI skill for DeepSeek Harness: find what uses disk space, preview cleanup, uninstall apps and read system health on macOS and Windows.",
   "type": "module",
   "main": "index.js",
