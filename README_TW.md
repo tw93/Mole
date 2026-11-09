@@ -58,7 +58,7 @@ Mole 只透過這個 GitHub 倉庫、Scoop 和 Windows 版官網 [mole.fit](http
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-習慣用宿主內建的外掛管理，Claude Code 裡先 `/plugin marketplace add tw93/Mole` 再 `/plugin install mole@mole`，Codex 裡先 `codex plugin marketplace add tw93/Mole` 再 `codex plugin add mole@mole`。
+習慣用宿主內建的外掛管理，Claude Code 裡先 `/plugin marketplace add tw93/Mole` 再 `/plugin install mole@mole`，Codex 裡先 `codex plugin marketplace add tw93/Mole` 再 `codex plugin add mole@mole`，DeepSeek Harness 裡用 `dsh plugin --profile <name> add dsh-mole`。
 
 **常用指令**
 

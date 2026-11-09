@@ -58,7 +58,7 @@ Mole은 이 GitHub 저장소, Scoop, 그리고 Windows 앱용 [mole.fit](https:/
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-호스트 플러그인으로 설치하려면 Claude Code에서 `/plugin marketplace add tw93/Mole` 다음 `/plugin install mole@mole`, Codex에서 `codex plugin marketplace add tw93/Mole` 다음 `codex plugin add mole@mole`을 실행합니다.
+호스트 플러그인으로 설치하려면 Claude Code에서 `/plugin marketplace add tw93/Mole` 다음 `/plugin install mole@mole`, Codex에서 `codex plugin marketplace add tw93/Mole` 다음 `codex plugin add mole@mole`, DeepSeek Harness에서 `dsh plugin --profile <name> add dsh-mole`를 실행합니다.
 
 **실행**
 

@@ -58,7 +58,7 @@ Moleの配布元はこのGitHubリポジトリ、Scoop、Windowsアプリ用の 
 npx skills add tw93/Mole -a claude-code codex cursor -g -y
 ```
 
-ホストのプラグインとして入れる場合は、Claude Code で `/plugin marketplace add tw93/Mole` のあと `/plugin install mole@mole`、Codex で `codex plugin marketplace add tw93/Mole` のあと `codex plugin add mole@mole` を実行します。
+ホストのプラグインとして入れる場合は、Claude Code で `/plugin marketplace add tw93/Mole` のあと `/plugin install mole@mole`、Codex で `codex plugin marketplace add tw93/Mole` のあと `codex plugin add mole@mole`、DeepSeek Harness で `dsh plugin --profile <name> add dsh-mole` を実行します。
 
 **主要コマンド**
 
