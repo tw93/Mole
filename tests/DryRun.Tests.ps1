@@ -29,7 +29,7 @@ BeforeAll {
         "Test-NsisUninstaller", "Test-SteamClientUninstaller", "Get-UninstallLaunch"
     )
     Import-ScriptFunction -Script (Join-Path $script:WindowsDir "bin\purge.ps1") -Names @(
-        "Remove-ProjectArtifacts", "Get-PurgeDisplayPath", "Test-PurgeArtifactKind", "Test-PurgeArtifactContent", "Invoke-PurgeGit"
+        "Remove-ProjectArtifacts", "Get-PurgeDisplayPath", "Test-PurgeArtifactKind", "Test-PurgeArtifactContent", "Invoke-PurgeGit", "Get-PurgeProcessSnapshot", "Test-PurgeProcessNames", "Get-PurgeFirstHeldEntry", "Get-PurgeArtifactHold"
     )
     $script:AppCacheFile = Join-Path $TestDrive "no-cache.json"
 }

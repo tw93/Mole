@@ -227,3 +227,226 @@ AfterAll {
         Where-Object { $_.FullName -match '[\\/]\.git[\\/]' } |
         ForEach-Object { $_.IsReadOnly = $false }
 }
+
+Describe 'Purge leaves an artifact in use alone' {
+    BeforeEach {
+        Reset-CleanupStats; $script:ItemsCleaned = 0; $script:ItemsHeld = 0; $script:ArtifactsHeldAtScan = 0; Set-DryRunMode -Enabled $false
+        $script:held = @()
+    }
+    AfterEach {
+        foreach ($item in $script:held) {
+            if ($item -is [Diagnostics.Process]) { Stop-Process -Id $item.Id -Force -ErrorAction SilentlyContinue; $null = $item.WaitForExit(5000) }
+            else { $item.Dispose() }
+        }
+        Set-DryRunMode -Enabled $false
+    }
+
+    It 'reads the process list by image path, name boundary and path spelling' {
+        function Snapshot($id, $image, $line) { @{ Known = $true; List = @([pscustomobject]@{ ProcessId = $id; ExecutablePath = $image; CommandLine = $line }) } }
+        Test-PurgeProcessNames 'C:\p\DIST' (Snapshot 1 'C:\p\dist\app.exe' '') | Should -BeTrue
+        Test-PurgeProcessNames 'C:\p\dis' (Snapshot 1 'C:\p\dist\app.exe' '') | Should -BeFalse
+        foreach ($line in @('node C:/p/dist/server.js', 'node "C:\p\dist"', 'x (C:\p\dist)', 'x C:\p\dist|y')) {
+            Test-PurgeProcessNames 'C:\p\dist' (Snapshot 2 '' $line) | Should -BeTrue -Because $line
+        }
+        Test-PurgeProcessNames 'C:\p\dist' (Snapshot 4 '' 'node C:\p\dist-old\server.js') | Should -BeFalse
+        Test-PurgeProcessNames 'C:\p\dist' (Snapshot $PID '' 'mo purge C:\p\dist') | Should -BeFalse
+    }
+
+    It 'retains an artifact when the process list is unknown, and says so' {
+        $root = New-PurgeFixture
+        $unknown = @{ Known = $false; List = @() }
+        Get-PurgeArtifactHold (Join-Path $root 'node_modules') $unknown | Should -Be 'unknown'
+        @(Find-ProjectArtifacts $root $unknown).Count | Should -Be 0
+        $found = @(Find-ProjectArtifacts $root)
+        Mock Get-PurgeProcessSnapshot { @{ Known = $false; List = @() } }
+        $output = Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) 6>&1 | Out-String
+        $output | Should -Match 'could not check'
+        Test-Path -LiteralPath (Join-Path $root 'node_modules\payload.txt') | Should -BeTrue
+    }
+
+    It 'does not offer an artifact a running process names, and offers it once that stops' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $process = Start-Process -FilePath "$env:ComSpec" -ArgumentList '/k', 'rem', "$artifact\x" -WindowStyle Hidden -PassThru
+        $script:held += $process
+        Start-Sleep -Milliseconds 500
+        @(Find-ProjectArtifacts $root).Count | Should -Be 0
+        Stop-Process -Id $process.Id -Force
+        $null = $process.WaitForExit(5000)
+        @(Find-ProjectArtifacts $root).Count | Should -Be 1
+    }
+
+    It 'a file held with <Share> sharing keeps the whole folder until it closes' -TestCases @(
+        @{ Share = 'None' }
+        @{ Share = 'ReadWrite' }
+        @{ Share = 'ReadWrite,Delete' }
+    ) {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $second = Join-Path $artifact 'other.txt'
+        Set-Content -LiteralPath $second -Value 'kept'
+        $found = @(Find-ProjectArtifacts $root)
+        $found.Count | Should -Be 1
+        $handle = [IO.File]::Open((Join-Path $artifact 'payload.txt'), 'Open', 'Read', $Share)
+        $script:held += $handle
+        @(Find-ProjectArtifacts $root).Count | Should -Be 0
+        $output = Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) 6>&1 | Out-String
+        $output | Should -Match 'in use'
+        Test-Path -LiteralPath $second | Should -BeTrue
+        $script:ItemsCleaned | Should -Be 0
+        $handle.Dispose()
+        $found = @(Find-ProjectArtifacts $root)
+        Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) *> $null
+        Test-Path -LiteralPath $artifact | Should -BeFalse
+        $script:ItemsCleaned | Should -Be 1
+    }
+
+    It 'a working directory inside the folder keeps it, even nested' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $nested = New-Item -ItemType Directory -Path (Join-Path $artifact 'pkg\lib')
+        $found = @(Find-ProjectArtifacts $root)
+        $process = Start-Process -FilePath "$env:ComSpec" -ArgumentList '/k' -WorkingDirectory $nested.FullName -WindowStyle Hidden -PassThru
+        $script:held += $process
+        Start-Sleep -Milliseconds 500
+        Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) *> $null
+        Test-Path -LiteralPath (Join-Path $artifact 'payload.txt') | Should -BeTrue
+        $script:ItemsCleaned | Should -Be 0
+        $script:ItemsHeld | Should -Be 1
+    }
+
+    It 'a skipped artifact leaves a SKIPPED row naming the reason' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $found = @(Find-ProjectArtifacts $root)
+        Mock Write-MoleOperation {}
+        $handle = [IO.File]::Open((Join-Path $artifact 'payload.txt'), 'Open', 'Read', 'ReadWrite,Delete')
+        try { Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) *> $null }
+        finally { $handle.Dispose() }
+        Should -Invoke Write-MoleOperation -Times 1 -ParameterFilter { $Action -eq 'SKIPPED' -and $Path -eq $artifact -and $Detail -eq 'in use' }
+    }
+
+    It 'a library loaded from the folder keeps it after its file handle closed' {
+        if (-not ('Mole.TestLoader' -as [type])) {
+            Add-Type -TypeDefinition 'namespace Mole { public static class TestLoader {
+                [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)] public static extern System.IntPtr LoadLibraryExW(string p, System.IntPtr h, uint f);
+                [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool FreeLibrary(System.IntPtr h); } }'
+        }
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $dll = Join-Path $artifact 'addon.dll'
+        Copy-Item -LiteralPath "$env:WINDIR\System32\version.dll" -Destination $dll
+        Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty
+        $library = [Mole.TestLoader]::LoadLibraryExW($dll, [IntPtr]::Zero, 0)
+        $library | Should -Not -Be ([IntPtr]::Zero)
+        try { Get-PurgeFirstHeldEntry $artifact | Should -Match 'addon\.dll$' }
+        finally { $null = [Mole.TestLoader]::FreeLibrary($library) }
+        Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty
+    }
+
+    It 'a dry run reports a held folder the same as a real run and removes nothing' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $found = @(Find-ProjectArtifacts $root)
+        $handle = [IO.File]::Open((Join-Path $artifact 'payload.txt'), 'Open', 'Read', 'ReadWrite,Delete')
+        $script:held += $handle
+        Set-DryRunMode -Enabled $true
+        $output = Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) 6>&1 | Out-String
+        $output | Should -Match 'in use'
+        $script:ItemsCleaned | Should -Be 0
+        @(Get-ChildItem -LiteralPath $artifact -Force).Count | Should -Be 1
+    }
+
+    It 'a read-only file and a junction do not read as held, and the probe stays out of the target' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $readonly = Join-Path $artifact 'readonly.txt'
+        Set-Content -LiteralPath $readonly -Value 'x'
+        (Get-Item -LiteralPath $readonly).IsReadOnly = $true
+        $target = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType Directory -Path $target
+        $outside = Join-Path $target 'held.txt'
+        Set-Content -LiteralPath $outside -Value 'x'
+        $null = New-Item -ItemType Junction -Path (Join-Path $artifact 'link') -Target $target
+        $handle = [IO.File]::Open($outside, 'Open', 'Read', 'ReadWrite,Delete')
+        $script:held += $handle
+        Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty
+    }
+
+    It 'names a probe failure as unknown, not as in use' {
+        Mock Get-PurgeFirstHeldEntry { throw 'Access is denied' }
+        Get-PurgeArtifactHold (Join-Path (New-PurgeFixture) 'node_modules') @{ Known = $true; List = @() } | Should -Be 'unknown'
+    }
+
+    It 'the probe leaves timestamps alone, and a file denying write can still go' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $file = Join-Path $artifact 'payload.txt'
+        $stamp = [datetime]'2020-01-02 03:04:05'
+        (Get-Item -LiteralPath $file).LastWriteTime = $stamp
+        Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty
+        (Get-Item -LiteralPath $file).LastWriteTime | Should -Be $stamp
+        & icacls.exe $file /deny "$($env:USERNAME):(W)" | Out-Null
+        try {
+            $LASTEXITCODE | Should -Be 0
+            Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty
+        }
+        finally { & icacls.exe $file /reset | Out-Null }
+    }
+
+    It 'a summary with nothing removed names what was skipped' {
+        $script:TotalSizeCleaned = 0
+        $script:ItemsHeld = 2
+        Mock Show-SummaryBlock { $script:summaryDetails = $Details }
+        Mock Get-FreeSpace { '1 GB' }
+        Show-PurgeSummary
+        ($script:summaryDetails -join ' ') | Should -Match 'Skipped 2'
+    }
+
+    It 'a command line naming the folder in any absolute spelling keeps it' {
+        $root = New-PurgeFixture
+        $artifact = Join-Path $root 'node_modules'
+        $doubled = $artifact.Replace('\', '\\')
+        foreach ($line in @("node -e require('$doubled\\x.js')", "node --roots=[$artifact]", "node <$artifact>", "node $($artifact.Replace('\', '/'))/x.js")) {
+            Test-PurgeProcessNames $artifact @{ Known = $true; List = @([pscustomobject]@{ ProcessId = -1; ExecutablePath = ''; CommandLine = $line }) } | Should -BeTrue -Because $line
+        }
+        foreach ($line in @("node $artifact-old\x.js", "node $artifact.bak", "node ${artifact}2")) {
+            Test-PurgeProcessNames $artifact @{ Known = $true; List = @([pscustomobject]@{ ProcessId = -1; ExecutablePath = ''; CommandLine = $line }) } | Should -BeFalse -Because $line
+        }
+    }
+
+    It 'the script starts both skip counters at zero under strict mode' {
+        $ast = [Management.Automation.Language.Parser]::ParseFile("$script:RepoRoot\bin\purge.ps1", [ref]$null, [ref]$null)
+        foreach ($name in '$script:ItemsHeld', '$script:ArtifactsHeldAtScan') {
+            @($ast.EndBlock.Statements | Where-Object { $_.Extent.Text -eq "$name = 0" }).Count | Should -Be 1
+        }
+    }
+
+    It 'a real run with every artifact in use says so instead of finding nothing' {
+        $home2 = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $searchRoot = Join-Path $home2 'projects'
+        $null = New-Item -ItemType Directory -Path (Join-Path $home2 '.config\mole'), $searchRoot
+        $root = Join-Path $searchRoot 'app'
+        Move-Item -LiteralPath (New-PurgeFixture) -Destination $root
+        Set-Content -LiteralPath (Join-Path $home2 '.config\mole\purge_paths.txt') -Value $searchRoot
+        $holder = [IO.File]::Open((Join-Path $root 'node_modules\payload.txt'), 'Open', 'Read', 'ReadWrite,Delete')
+        $saved = $env:USERPROFILE
+        try {
+            $env:USERPROFILE = $home2
+            $output = & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File "$script:RepoRoot\bin\purge.ps1" -DryRun 2>&1 | Out-String
+            $exit = $LASTEXITCODE
+        }
+        finally { $env:USERPROFILE = $saved; $holder.Dispose() }
+        $exit | Should -Be 0 -Because $output
+        $output | Should -Match '1 in use or unchecked'
+        $output | Should -Not -Match 'No cleanable artifacts found'
+    }
+
+    It 'an idle folder is removed by the real sink' {
+        $root = New-PurgeFixture
+        $found = @(Find-ProjectArtifacts $root)
+        Remove-ProjectArtifacts -Projects @([pscustomobject]@{ Path = $root; Artifacts = $found }) *> $null
+        Test-Path -LiteralPath (Join-Path $root 'node_modules') | Should -BeFalse
+        $script:ItemsCleaned | Should -Be 1
+    }
+}

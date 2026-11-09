@@ -74,6 +74,8 @@ $script:ArtifactPatterns = @(
 
 $script:TotalSizeCleaned = 0
 $script:ItemsCleaned = 0
+$script:ItemsHeld = 0
+$script:ArtifactsHeldAtScan = 0
 
 # ============================================================================
 # Help
@@ -322,6 +324,122 @@ function Test-PurgeArtifactContent {
     }
 }
 
+# A complete process list for one pass. CIM reports image paths across bitness
+# and the command lines of this user's processes. A failed or empty list is
+# unknown and retains every artifact.
+function Get-PurgeProcessSnapshot {
+    try {
+        $processes = @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, ExecutablePath, CommandLine -OperationTimeoutSec 10 -ErrorAction Stop)
+    }
+    catch { return @{ Known = $false; List = @() } }
+    return @{ Known = ($processes.Count -gt 0); List = $processes }
+}
+
+# Does another process run from the artifact or name it on its command line?
+# A name ends where a file name cannot continue, so dist does not match dist-old.
+# A relative or 8.3 path cannot be matched: `node dist\server.js` shows no folder.
+function Test-PurgeProcessNames {
+    param([string]$Path, $Snapshot)
+    if (-not $Snapshot.Known) { return $true }
+    try { $full = [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+    catch { return $true }
+    $prefix = $full + '\'
+    $named = [regex]::new(([regex]::Escape($full) + '(?![\w.\-])'), 'IgnoreCase')
+    foreach ($process in $Snapshot.List) {
+        if ($process.ProcessId -eq $PID) { continue }
+        $image = [string]$process.ExecutablePath
+        if ($image -and $image.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        $line = [string]$process.CommandLine
+        if ($line -and $named.IsMatch(($line -replace '[\\/]+', '\'))) { return $true }
+    }
+    return $false
+}
+
+# Asking for delete access with no sharing fails with a sharing violation while
+# anything holds the entry: an open file or a working directory. Write access,
+# which writes nothing here, also fails on a loaded library, whose file handle is
+# long closed; a read-only file cannot ask for it, so a loaded read-only library
+# goes unseen. A file denying write by its ACL is asked again for delete alone.
+# Nothing changes and placeholders are not followed, so a dry run answers the same
+# as a real run. A hard link shares its file's holds, which retains in the safe
+# direction. Any other failure throws and reads as unknown.
+function Get-PurgeFirstHeldEntry {
+    param([string]$Path)
+    if (-not ('Mole.PurgeHolds' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
+namespace Mole {
+    public static class PurgeHolds {
+        private const uint DeleteOnly = 0x10000;
+        [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+        private static extern SafeFileHandle CreateFile(string path, uint access, uint share,
+            IntPtr security, uint disposition, uint flags, IntPtr template);
+        private static string Extended(string path) {
+            return path.StartsWith(@"\\?\") ? path : @"\\?\" + path;
+        }
+        // A scanner's brief handle must not read as a holder, so a refusal gets a second look.
+        private static bool Free(string path, uint access) {
+            for (int attempt = 0; ; attempt++) {
+                int error;
+                using (SafeFileHandle handle = CreateFile(Extended(path), access, 0, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
+                    if (!handle.IsInvalid) return true;
+                    error = Marshal.GetLastWin32Error();
+                }
+                if (error == 2 || error == 3) return true;
+                if (error == 5 && access != DeleteOnly) { access = DeleteOnly; continue; }
+                if (error != 32 && error != 1224) throw new IOException(path + ": " + error);
+                if (attempt >= 4) return false;
+                Thread.Sleep(100);
+            }
+        }
+        public static string FirstHeld(string root, int budgetMilliseconds) {
+            Stopwatch clock = Stopwatch.StartNew();
+            Stack<string> pending = new Stack<string>();
+            pending.Push(root);
+            while (pending.Count > 0) {
+                string path = pending.Pop();
+                if (clock.ElapsedMilliseconds > budgetMilliseconds) throw new TimeoutException(path);
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(Extended(path)); }
+                catch (FileNotFoundException) { continue; }
+                catch (DirectoryNotFoundException) { continue; }
+                bool directory = (attributes & FileAttributes.Directory) != 0;
+                bool plainFile = !directory && (attributes & (FileAttributes.ReadOnly | FileAttributes.ReparsePoint)) == 0;
+                if (!Free(path, plainFile ? 0x10002u : DeleteOnly)) return path;
+                if (!directory || (attributes & FileAttributes.ReparsePoint) != 0) continue;
+                string[] entries;
+                try { entries = Directory.GetFileSystemEntries(Extended(path)); }
+                catch (DirectoryNotFoundException) { continue; }
+                foreach (string entry in entries) pending.Push(entry);
+            }
+            return null;
+        }
+    }
+}
+'@ -ErrorAction Stop
+    }
+    return [Mole.PurgeHolds]::FirstHeld([IO.Path]::GetFullPath($Path), 60000)
+}
+
+# 'in use', 'unknown' or $null when the artifact is free to go.
+function Get-PurgeArtifactHold {
+    param([string]$Path, $Snapshot)
+    if (-not $Snapshot.Known) { return 'unknown' }
+    if (Test-PurgeProcessNames $Path $Snapshot) { return 'in use' }
+    try { if (Get-PurgeFirstHeldEntry $Path) { return 'in use' } }
+    catch {
+        Write-Debug "purge: could not check $Path`: $($_.Exception.Message)"
+        return 'unknown'
+    }
+    return $null
+}
+
 function Get-PurgeProjectDirectories {
     param([string]$Root)
     $pending = New-Object System.Collections.Generic.Stack[object]
@@ -374,6 +492,10 @@ function Find-Projects {
     $seen = @{}
     $pathCount = 0
     $totalPaths = @($SearchPaths).Count
+    $processes = Get-PurgeProcessSnapshot
+    if (-not $processes.Known) {
+        Write-Host "  $([char]27)[33m$($script:Icons.Warning)$([char]27)[0m Could not read the process list, so nothing can be offered. Try mo purge again."
+    }
     foreach ($searchPath in $SearchPaths) {
         $pathCount++
         Write-Progress -Activity "Scanning for projects" `
@@ -382,7 +504,7 @@ function Find-Projects {
         foreach ($project in Get-PurgeProjectDirectories -Root $searchPath) {
             if ($seen.ContainsKey($project.Path)) { continue }
             $seen[$project.Path] = $true
-            $artifacts = @(Find-ProjectArtifacts -ProjectPath $project.Path)
+            $artifacts = @(Find-ProjectArtifacts -ProjectPath $project.Path -Processes $processes)
             if ($artifacts.Count -eq 0) { continue }
             $totalSize = ($artifacts | Measure-Object -Property SizeKB -Sum).Sum
             $projects += [pscustomobject]@{
@@ -405,9 +527,10 @@ function Find-ProjectArtifacts {
     .SYNOPSIS
         Find cleanable artifacts in a project directory
     #>
-    param([string]$ProjectPath)
+    param([string]$ProjectPath, $Processes = $null)
 
     $artifacts = @()
+    if ($null -eq $Processes) { $Processes = Get-PurgeProcessSnapshot }
 
     foreach ($pattern in $script:ArtifactPatterns) {
         $items = Get-ChildItem -LiteralPath $ProjectPath -Filter $pattern.Name -Force -ErrorAction SilentlyContinue
@@ -421,6 +544,7 @@ function Find-ProjectArtifacts {
 
                 if (-not (Test-MolePathSnapshot $snapshot) -or
                     -not (Test-PurgeArtifactContent $ProjectPath $item.FullName)) { continue }
+                if (Get-PurgeArtifactHold $item.FullName $Processes) { $script:ArtifactsHeldAtScan++; continue }
                 $artifacts += [PSCustomObject]@{
                     Snapshot = $snapshot
                     Path = $item.FullName
@@ -436,6 +560,7 @@ function Find-ProjectArtifacts {
 
                 if (-not (Test-MolePathSnapshot $snapshot) -or
                     -not (Test-PurgeArtifactContent $ProjectPath $item.FullName)) { continue }
+                if (Get-PurgeArtifactHold $item.FullName $Processes) { $script:ArtifactsHeldAtScan++; continue }
                 $artifacts += [PSCustomObject]@{
                     Snapshot = $snapshot
                     Path = $item.FullName
@@ -625,10 +750,14 @@ function Remove-ProjectArtifacts {
                     -not (Test-PurgeArtifactContent $project.Path $artifact.Path)) { continue }
                 $projectPath = $project.Path
                 $previewSnapshot = $artifact.Snapshot
+                $state = @{ Hold = $null }
                 $guard = {
                     param($candidate)
-                    return (Test-MolePathSnapshot $previewSnapshot) -and
-                        (Test-PurgeArtifactContent $projectPath $candidate)
+                    if (-not ((Test-MolePathSnapshot $previewSnapshot) -and
+                            (Test-PurgeArtifactContent $projectPath $candidate))) { return $false }
+                    # Fresh at the sink: the selection may have waited a long time.
+                    $state.Hold = Get-PurgeArtifactHold $candidate (Get-PurgeProcessSnapshot)
+                    return -not $state.Hold
                 }
                 # Remove-SafeItem prints the result row and adds the size to
                 # $script:TotalSizeCleaned; counting it here as well doubled it.
@@ -636,6 +765,15 @@ function Remove-ProjectArtifacts {
 
                 if ($success) {
                     $script:ItemsCleaned++
+                }
+                elseif ($state.Hold) {
+                    $script:ItemsHeld++
+                    if (-not $script:MoleDryRunMode) {
+                        Write-MoleOperation -Action "SKIPPED" -Path $artifact.Path -Detail $state.Hold
+                    }
+                    $reason = if ($state.Hold -eq 'in use') { 'in use; stop what has it open, then run mo purge again' }
+                    else { 'could not check what has it open; run mo purge again' }
+                    Write-Host "  $esc[33m$($script:Icons.Warning)$esc[0m Skipped $($artifact.Name) ($reason)"
                 }
                 else {
                     Write-Host "  $esc[31m$($script:Icons.Error)$esc[0m $($artifact.Name) - removal failed"
@@ -657,6 +795,7 @@ function Show-PurgeSummary {
         $label = if ($script:MoleDryRunMode) { 'Potential space' } else { 'Tracked cleanup' }
         $details += "${label}: $(Get-MoleColor -Name Green)$size$(Get-MoleColor -Name NC) | Items: $($script:ItemsCleaned)"
     }
+    elseif ($script:ItemsHeld -gt 0) { $details += "Skipped $($script:ItemsHeld) in use or unchecked." }
     else { $details += 'No artifacts to clean.' }
     $details += "Free space: $(Get-FreeSpace)"
     Show-SummaryBlock -Heading $heading -Details $details
@@ -718,9 +857,16 @@ function Main {
     # Find projects
     $projects = @(Find-Projects -SearchPaths $searchPaths)
 
-    if ($null -eq $projects -or $projects.Count -eq 0) {
+    if ($script:ArtifactsHeldAtScan -gt 0) {
         Write-Host ""
-        Write-Host "$esc[32m$($script:Icons.Success)$esc[0m No cleanable artifacts found"
+        Write-Host "$esc[33m$($script:Icons.Warning)$esc[0m Skipped $($script:ArtifactsHeldAtScan) in use or unchecked; stop what has them open, then run mo purge again"
+    }
+
+    if ($null -eq $projects -or $projects.Count -eq 0) {
+        if ($script:ArtifactsHeldAtScan -eq 0) {
+            Write-Host ""
+            Write-Host "$esc[32m$($script:Icons.Success)$esc[0m No cleanable artifacts found"
+        }
         Write-Host ""
         return
     }
