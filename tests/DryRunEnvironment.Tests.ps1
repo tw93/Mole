@@ -48,6 +48,8 @@ Describe 'Environment dry-run at command entrypoints' {
     It 'Keeps ordinary clean outside preview' {
         Import-EntryMain clean
         $DryRun=$false; $env:MOLE_DRY_RUN=$null
+        # A real run probes first, and this test must not depend on the runner's folders.
+        Set-Item function:script:Test-CleanCanWrite { $true }
         Mock Start-Cleanup {}
         Main
         Should -Invoke Start-Cleanup -Times 1 -Exactly -ParameterFilter { -not $IsDryRun }
