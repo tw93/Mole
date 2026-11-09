@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// A negative limit expires at once; a tiny positive one can outlast a fast walk on
+// Windows, where the walk of one file finishes before the timer fires.
 func setWalkTimeouts(t *testing.T, overview, json time.Duration) {
 	t.Helper()
 	previousOverview, previousJSON := overviewWalkTimeout, jsonWalkTimeout
@@ -33,12 +35,12 @@ func overviewFixture(t *testing.T) string {
 func TestOverviewMeasurementUsesItsOwnWalkTimeout(t *testing.T) {
 	dir := overviewFixture(t)
 
-	setWalkTimeouts(t, time.Nanosecond, time.Hour)
+	setWalkTimeouts(t, -time.Second, time.Hour)
 	if _, err := measureOverviewSize(context.Background(), dir); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("overview err = %v; want the overview deadline", err)
 	}
 
-	setWalkTimeouts(t, time.Minute, time.Nanosecond)
+	setWalkTimeouts(t, time.Minute, -time.Second)
 	if _, err := measureOverviewSize(context.Background(), dir); err != nil {
 		t.Fatalf("overview err = %v; the --json limit must not reach the TUI row", err)
 	}
@@ -55,7 +57,7 @@ func TestJSONOverviewKeepsTheShortWalkTimeout(t *testing.T) {
 	dir := overviewFixture(t)
 	rows := []dirEntry{{Name: "Fixture", Path: dir, IsDir: true, Size: -1}}
 
-	setWalkTimeouts(t, time.Minute, time.Nanosecond)
+	setWalkTimeouts(t, time.Minute, -time.Second)
 	got := measureOverviewEntriesForJSON(rows, measureOverviewSize)
 	if got[0].State == scanComplete {
 		t.Fatalf("--json row state = %v; want it cut by jsonWalkTimeout", got[0].State)
