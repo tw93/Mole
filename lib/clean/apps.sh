@@ -537,6 +537,21 @@ is_bundle_orphaned() {
     return 0
 }
 
+# Returns 0 only when the whole bundle was read and nothing in it changed within
+# the threshold. Writing a file leaves the bundle directory's own mtime alone, so
+# the walk covers every entry. find passes over a directory it cannot search and
+# still exits 0, so one counts as a match. A walk that fails or times out returns
+# 1, keeping the bundle; an interrupt returns its signal status.
+_claude_vm_bundle_is_stale() {
+    local vm_bundle_path="$1"
+    local recent_entry="" walk_rc=0
+    recent_entry=$(run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" "$FIND_BSD" "$vm_bundle_path" \
+        \( -mmin "-$((CLAUDE_VM_ORPHAN_AGE_THRESHOLD * 1440))" -o \( -type d ! -exec /bin/test -x {} \; \) \) \
+        -print -quit 2> /dev/null) || walk_rc=$?
+    [[ $walk_rc -lt 128 ]] || return "$walk_rc"
+    [[ $walk_rc -eq 0 && -z "$recent_entry" ]]
+}
+
 is_claude_vm_bundle_orphaned() {
     local vm_bundle_path="$1"
     local installed_bundles="$2"
@@ -554,16 +569,9 @@ is_claude_vm_bundle_orphaned() {
         return 1
     fi
 
-    if [[ -e "$vm_bundle_path" ]]; then
-        local last_modified_epoch
-        last_modified_epoch=$(get_file_mtime "$vm_bundle_path")
-        local current_epoch
-        current_epoch=$(get_epoch_seconds)
-        local days_since_modified=$(((current_epoch - last_modified_epoch) / 86400))
-        if [[ $days_since_modified -lt $CLAUDE_VM_ORPHAN_AGE_THRESHOLD ]]; then
-            return 1
-        fi
-    fi
+    local stale_rc=0
+    _claude_vm_bundle_is_stale "$vm_bundle_path" || stale_rc=$?
+    [[ $stale_rc -eq 0 ]] || return "$stale_rc"
 
     local _cache_rc=0
     _mdfind_cache_check "$claude_bundle_id" || _cache_rc=$?
@@ -631,6 +639,7 @@ orphan_cleanup_candidate_still_eligible() {
         pgrep -x "Claude" > /dev/null 2>&1 || process_rc=$?
         mole_rc_timeout_or_signal "$process_rc" && return "$process_rc"
         [[ $process_rc -eq 1 ]] || return 1
+        _claude_vm_bundle_is_stale "$path" || return $?
     fi
 
     local resolver_rc=0
@@ -701,17 +710,17 @@ clean_orphaned_app_data() {
     local total_orphaned_kb=0
     start_section_spinner "Scanning orphaned app resources..."
 
-    # Dynamically discover Claude VM bundles (path may vary across versions).
-    local claude_support_dir="$HOME/Library/Application Support/Claude"
-    if [[ -d "$claude_support_dir" ]]; then
+    # The bundle name may vary across versions; only vm_bundles holds the VM.
+    local claude_vm_root="$HOME/Library/Application Support/Claude/vm_bundles"
+    if [[ -d "$claude_vm_root" ]]; then
         local claude_scan_file=""
         claude_scan_file=$(create_temp_file) || {
             rm -f -- "$installed_bundles" 2> /dev/null || true # SAFE: exact tracked temp file created above
             return 1
         }
         local claude_scan_rc=0
-        run_with_timeout "$MOLE_TIMEOUT_HINT_SCAN_SEC" find "$claude_support_dir" \
-            -maxdepth 3 -name "*.bundle" -type d -print0 \
+        run_with_timeout "$MOLE_TIMEOUT_HINT_SCAN_SEC" find "$claude_vm_root" \
+            -mindepth 1 -maxdepth 1 -name "*.bundle" -type d -print0 \
             > "$claude_scan_file" 2> /dev/null || claude_scan_rc=$?
         if [[ $claude_scan_rc -ge 128 ]]; then
             rm -f -- "$claude_scan_file" 2> /dev/null || true  # SAFE: exact tracked temp file created above
@@ -894,11 +903,12 @@ clean_orphaned_app_data() {
     done
     stop_section_spinner
     if [[ $orphaned_count -gt 0 ]]; then
-        local orphaned_mb=$(echo "$total_orphaned_kb" | awk '{printf "%.1f", $1/1024}')
+        local orphaned_human
+        orphaned_human=$(bytes_to_human_kb "$total_orphaned_kb")
         if [[ "${DRY_RUN:-false}" == "true" ]]; then
-            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would clean $(mole_count_label "$orphaned_count" item), about ${orphaned_mb}MB"
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would clean $(mole_count_label "$orphaned_count" item), about ${orphaned_human}"
         else
-            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $(mole_count_label "$orphaned_count" item), about ${orphaned_mb}MB"
+            echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $(mole_count_label "$orphaned_count" item), about ${orphaned_human}"
         fi
         note_activity
     fi

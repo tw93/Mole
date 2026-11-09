@@ -1129,7 +1129,7 @@ clean_orphaned_app_data
 EOF
 
     [ "$status" -eq 0 ] || return 1
-    [[ "$output" == *"Would clean 1 item, about 2.0MB"* ]] || return 1
+    [[ "$output" == *"Would clean 1 item, about 2.1MB"* ]] || return 1
     [[ "$output" != *"Cleaned 1 item"* ]] || return 1
     [ -d "$test_home/Library/Caches/com.test.orphan-dry-run" ] || return 1
 }
@@ -1153,7 +1153,6 @@ pgrep() {
 }
 
 run_with_timeout() { shift; "$@"; }
-get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 4; }
 
 safe_clean() {
@@ -1174,6 +1173,7 @@ stop_section_spinner() { :; }
 mkdir -p "$HOME/Library/Caches"
 mkdir -p "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle"
 echo "vm data" > "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle/rootfs.img"
+find "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle" -exec touch -t 202001010000 {} +
 
 clean_orphaned_app_data
 
@@ -1184,7 +1184,211 @@ EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Orphaned Claude workspace VM"* ]] || return 1
+    # HOME is shared across this file, so the count may include earlier fixtures.
+    [[ "$output" =~ Cleaned\ [0-9]+\ items?,\ about\ [0-9]+KB ]] || return 1
     [[ "$output" == *"PASS: Claude VM removed"* ]]
+}
+
+@test "clean_orphaned_app_data treats only vm_bundles entries as the Claude VM" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+scan_installed_apps() { : > "$1"; }
+mdfind() { return 0; }
+pgrep() { return 1; }
+run_with_timeout() { shift; "$@"; }
+get_path_size_kb() { echo 4; }
+safe_clean() {
+    echo "CLEANED:$1"
+    rm -rf "$1"
+}
+bundle_has_installed_app() { return 1; }
+safe_clean_guarded() {
+    local guard="$1"
+    shift
+    "$guard" "$1" || return $?
+    safe_clean "$@"
+}
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+
+support="$HOME/Library/Application Support/Claude"
+mkdir -p "$HOME/Library/Caches"
+mkdir -p "$support/vm_bundles/claudevm.bundle"
+mkdir -p "$support/plugin.bundle"
+mkdir -p "$support/Claude Extensions/tool.bundle"
+mkdir -p "$support/Claude Extensions/tool/resources.bundle"
+mkdir -p "$support/vm_bundles/nested/deep.bundle"
+for bundle in \
+    "$support/vm_bundles/claudevm.bundle" \
+    "$support/plugin.bundle" \
+    "$support/Claude Extensions/tool.bundle" \
+    "$support/Claude Extensions/tool/resources.bundle" \
+    "$support/vm_bundles/nested/deep.bundle"; do
+    echo data > "$bundle/payload"
+    find "$bundle" -exec touch -t 202001010000 {} +
+done
+
+clean_orphaned_app_data
+
+[[ ! -e "$support/vm_bundles/claudevm.bundle" ]] || exit 1
+[[ -f "$support/plugin.bundle/payload" ]] || exit 1
+[[ -f "$support/Claude Extensions/tool.bundle/payload" ]] || exit 1
+[[ -f "$support/Claude Extensions/tool/resources.bundle/payload" ]] || exit 1
+[[ -f "$support/vm_bundles/nested/deep.bundle/payload" ]] || exit 1
+echo "PASS: only the VM bundle removed"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"PASS: only the VM bundle removed"* ]]
+}
+
+@test "is_claude_vm_bundle_orphaned reads the age of the files inside the bundle" {
+    # Writing a file leaves the bundle directory's own mtime alone, so the
+    # directory alone cannot show a VM used this week. All-old is the positive
+    # control that the fixture reaches "orphan".
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+pgrep() { return 1; }
+_mdfind_cache_check() { return 1; }
+
+fixture="$HOME/claude-vm-age"
+bundle="$fixture/claudevm.bundle"
+mkdir -p "$bundle/state"
+: > "$fixture/installed"
+echo image > "$bundle/rootfs.img"
+echo lock > "$bundle/.lock"
+echo disk > "$bundle/state/disk.img"
+
+age_all() { find "$bundle" -exec touch -t 202001010000 {} +; }
+report() {
+    local rc=0
+    is_claude_vm_bundle_orphaned "$bundle" "$fixture/installed" || rc=$?
+    echo "$1=$rc"
+}
+
+age_all
+report ALL_OLD
+for written in rootfs.img .lock state/disk.img; do
+    age_all
+    echo more >> "$bundle/$written"
+    # Restore the parent directory, which a shell redirect does not touch anyway.
+    touch -t 202001010000 "$bundle"
+    report "WRITTEN_$written"
+done
+
+age_all
+chmod 000 "$bundle/state"
+report UNREADABLE_ENTRY
+chmod 444 "$bundle/state"
+report UNSEARCHABLE_DIRECTORY
+chmod 755 "$bundle/state"
+age_all
+report READABLE_AGAIN
+
+for walk_status in 1 124 130; do
+    printf '#!/bin/sh\nexit %s\n' "$walk_status" > "$fixture/find-stub"
+    chmod 755 "$fixture/find-stub"
+    FIND_BSD="$fixture/find-stub"
+    report "WALK_$walk_status"
+done
+rm -rf "$fixture"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"ALL_OLD=0"* ]] || return 1
+    [[ "$output" == *"WRITTEN_rootfs.img=1"* ]] || return 1
+    [[ "$output" == *"WRITTEN_.lock=1"* ]] || return 1
+    [[ "$output" == *"WRITTEN_state/disk.img=1"* ]] || return 1
+    [[ "$output" == *"UNREADABLE_ENTRY=1"* ]] || return 1
+    [[ "$output" == *"UNSEARCHABLE_DIRECTORY=1"* ]] || return 1
+    [[ "$output" == *"READABLE_AGAIN=0"* ]] || return 1
+    [[ "$output" == *"WALK_1=1"* ]] || return 1
+    [[ "$output" == *"WALK_124=1"* ]] || return 1
+    [[ "$output" == *"WALK_130=130"* ]]
+}
+
+@test "orphan cleanup guard rechecks the Claude VM age at the final sink" {
+    # A write after discovery changes nothing the identity snapshot binds,
+    # since the directory's own mtime stays put.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+pgrep() { return 1; }
+bundle_has_installed_app() { return 1; }
+
+bundle="$HOME/claude-vm-sink/claudevm.bundle"
+mkdir -p "$bundle"
+echo image > "$bundle/rootfs.img"
+find "$bundle" -exec touch -t 202001010000 {} +
+
+orphan_cleanup_candidate_snapshot "$bundle"
+_ORPHAN_CLEANUP_EXPECTED_IDENTITY="$_ORPHAN_CANDIDATE_IDENTITY"
+_ORPHAN_CLEANUP_EXPECTED_PARENT="$_ORPHAN_CANDIDATE_PARENT"
+_ORPHAN_CLEANUP_EXPECTED_PARENT_ID="$_ORPHAN_CANDIDATE_PARENT_ID"
+_ORPHAN_CLEANUP_EXPECTED_TARGET_ID="$_ORPHAN_CANDIDATE_TARGET_ID"
+_ORPHAN_CLEANUP_BUNDLE_ID="com.anthropic.claudefordesktop"
+_ORPHAN_CLEANUP_KIND="claude"
+
+rc=0
+orphan_cleanup_candidate_still_eligible "$bundle" || rc=$?
+echo "OLD=$rc"
+
+echo more >> "$bundle/rootfs.img"
+touch -t 202001010000 "$bundle"
+rc=0
+orphan_cleanup_candidate_still_eligible "$bundle" || rc=$?
+echo "WRITTEN=$rc"
+
+find "$bundle" -exec touch -t 202001010000 {} +
+mkdir "$bundle/state"
+touch -t 202001010000 "$bundle/state" "$bundle"
+chmod 444 "$bundle/state"
+orphan_cleanup_candidate_snapshot "$bundle"
+_ORPHAN_CLEANUP_EXPECTED_IDENTITY="$_ORPHAN_CANDIDATE_IDENTITY"
+_ORPHAN_CLEANUP_EXPECTED_TARGET_ID="$_ORPHAN_CANDIDATE_TARGET_ID"
+rc=0
+orphan_cleanup_candidate_still_eligible "$bundle" || rc=$?
+echo "UNSEARCHABLE=$rc"
+chmod 755 "$bundle/state"
+rmdir "$bundle/state"
+touch -t 202001010000 "$bundle"
+orphan_cleanup_candidate_snapshot "$bundle"
+_ORPHAN_CLEANUP_EXPECTED_IDENTITY="$_ORPHAN_CANDIDATE_IDENTITY"
+_ORPHAN_CLEANUP_EXPECTED_TARGET_ID="$_ORPHAN_CANDIDATE_TARGET_ID"
+
+for walk_status in 1 124 130; do
+    printf '#!/bin/sh\nexit %s\n' "$walk_status" > "$HOME/claude-vm-sink/find-stub"
+    chmod 755 "$HOME/claude-vm-sink/find-stub"
+    FIND_BSD="$HOME/claude-vm-sink/find-stub"
+    rc=0
+    orphan_cleanup_candidate_still_eligible "$bundle" || rc=$?
+    echo "WALK_$walk_status=$rc"
+done
+rm -rf "$HOME/claude-vm-sink"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"OLD=0"* ]] || return 1
+    [[ "$output" == *"WRITTEN=1"* ]] || return 1
+    [[ "$output" == *"UNSEARCHABLE=1"* ]] || return 1
+    [[ "$output" == *"WALK_1=1"* ]] || return 1
+    [[ "$output" == *"WALK_124=1"* ]] || return 1
+    [[ "$output" == *"WALK_130=130"* ]]
 }
 
 @test "orphan cleanup guard rejects replacement objects and newly installed apps" {
@@ -1300,30 +1504,44 @@ pgrep() {
 }
 
 run_with_timeout() { shift; "$@"; }
-get_file_mtime() { date +%s; }
+get_path_size_kb() { echo 4; }
+bundle_has_installed_app() { return 1; }
 
 safe_clean() {
-    echo "UNEXPECTED:$2"
-    return 1
+    echo "REMOVED:$2"
+    return 0
+}
+safe_clean_guarded() {
+    local guard="$1"
+    shift
+    "$guard" "$1" || return $?
+    safe_clean "$@"
 }
 
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
 
+bundle="$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle"
 mkdir -p "$HOME/Library/Caches"
-mkdir -p "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle"
-echo "vm data" > "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle/rootfs.img"
+mkdir -p "$bundle"
+echo "vm data" > "$bundle/rootfs.img"
+touch -t 202001010000 "$bundle"
 
 clean_orphaned_app_data
+echo "RECENT_PASS_DONE"
 
-if [[ -d "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle" ]]; then
-    echo "PASS: Recent Claude VM kept"
-fi
+find "$bundle" -exec touch -t 202001010000 {} +
+clean_orphaned_app_data
+rm -rf "$HOME/Library/Application Support/Claude"
 EOF
 
-    [ "$status" -eq 0 ]
-    [[ "$output" != *"UNEXPECTED:Orphaned Claude workspace VM"* ]] || return 1
-    [[ "$output" == *"PASS: Recent Claude VM kept"* ]]
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    [[ "$output" == *"RECENT_PASS_DONE"* ]] || return 1
+    [[ "${output%%RECENT_PASS_DONE*}" != *"REMOVED:Orphaned Claude workspace VM"* ]] || return 1
+    [[ "${output##*RECENT_PASS_DONE}" == *"REMOVED:Orphaned Claude workspace VM"* ]]
 }
 
 @test "is_claude_vm_bundle_orphaned keeps the bundle when the Claude probe cannot tell" {
@@ -1339,10 +1557,10 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"
 pgrep() { return "$PGREP_RC"; }
-get_file_mtime() { echo 0; }
 _mdfind_cache_check() { return 1; }
 fixture="$HOME/claude-vm-probe-$PGREP_RC"
 mkdir -p "$fixture/claudevm.bundle"
+touch -t 202001010000 "$fixture/claudevm.bundle"
 : > "$fixture/installed"
 rc=0
 is_claude_vm_bundle_orphaned "$fixture/claudevm.bundle" "$fixture/installed" || rc=$?
@@ -1406,7 +1624,6 @@ scan_installed_apps() { : > "$1"; }
 mdfind() { return 0; }
 pgrep() { return 1; }
 run_with_timeout() { shift; "$@"; }
-get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 4; }
 safe_clean() { echo "UNEXPECTED_CLEAN:$2"; rm -rf "$1"; }
 start_section_spinner() { :; }
@@ -1415,6 +1632,7 @@ stop_section_spinner() { :; }
 mkdir -p "$HOME/Library/Caches"
 mkdir -p "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle"
 echo "vm data" > "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle/rootfs.img"
+find "$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle" -exec touch -t 202001010000 {} +
 
 WHITELIST_PATTERNS=("$HOME/Library/Application Support/Claude/vm_bundles/claudevm.bundle")
 
@@ -1442,7 +1660,6 @@ is_claude_vm_bundle_orphaned() { return 1; }
 mdfind() { return 0; }
 pgrep() { return 1; }
 run_with_timeout() { shift; "$@"; }
-get_file_mtime() { echo 0; }
 get_path_size_kb() { echo 4; }
 safe_clean() { echo "UNEXPECTED_CLEAN:$2"; rm -rf "$1"; }
 start_section_spinner() { :; }
