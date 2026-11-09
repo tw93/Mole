@@ -5357,6 +5357,151 @@ SCRIPT
     [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
 }
 
+@test "purge node project process check sees a real process in a path holding a backslash" {
+    local name project holder
+    for name in 'bs\x' '项\目'; do
+        project="$HOME/www/$name"
+        mkdir -p "$project"
+        (cd "$project" && exec sleep 30) &
+        holder=$!
+        sleep 0.3
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" LC_ALL=C \
+            /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$PROJECT_PATH" && /bin/pwd -P)" || rc=$?
+echo "RC=$rc"
+SCRIPT
+        kill "$holder" 2> /dev/null || true
+        wait "$holder" 2> /dev/null || true
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$name: $output"; return 1; }
+    done
+}
+
+@test "purge node project process check counts a non-shell ancestor as the project running" {
+    local project="$HOME/www/electron-app"
+    mkdir -p "$project"
+    cat > "$HOME/probe.sh" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$PROJECT_PATH" && /bin/pwd -P)" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    # A dev app in the project whose integrated terminal moved away and runs Mole.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc -c '
+        cd "$PROJECT_PATH"
+        exec /usr/bin/perl -e '\''system("/bin/bash", "--noprofile", "--norc", "-c", "cd / && exec /bin/bash --noprofile --norc \"\$HOME/probe.sh\""); exit($? >> 8)'\'''
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge node project process check matches a command line in the other Unicode form" {
+    local nfc nfd
+    nfc=$(printf 'caf\xc3\xa9')
+    nfd=$(printf 'cafe\xcc\x81')
+    local name named
+    for name in "$nfd" "$nfc"; do
+        [[ "$name" == "$nfd" ]] && named="$nfc" || named="$nfd"
+        rm -rf "$HOME/www/form-$name"
+        mkdir -p "$HOME/www/form-$name"
+        local physical
+        physical="$(cd "$HOME/www" && /bin/pwd -P)/form-$named"
+        (cd / && exec /bin/sh -c 'sleep 30; : '"$physical"'/server.js') &
+        local holder=$!
+        sleep 0.3
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$HOME/www/form-$name" LC_ALL=C \
+            /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$(dirname "$PROJECT_PATH")" && /bin/pwd -P)/$(basename "$PROJECT_PATH")" || rc=$?
+echo "RC=$rc"
+SCRIPT
+        kill "$holder" 2> /dev/null || true
+        wait "$holder" 2> /dev/null || true
+        rm -rf "$HOME/www/form-$name"
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+    done
+}
+
+@test "purge node project process check treats an unreadable process table as unknown" {
+    local project="$HOME/www/table"
+    mkdir -p "$project"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+project=$(cd "$PROJECT_PATH" && /bin/pwd -P)
+for ps_status in 1 124 143; do
+    run_with_timeout() {
+        shift
+        case "$1" in
+            /usr/sbin/lsof) printf 'p%s\nfcwd\nn%s\n' "$$" "$project" ;;
+            /bin/ps) return "$ps_status" ;;
+            *) return 1 ;;
+        esac
+    }
+    rc=0
+    purge_node_project_running "$project" || rc=$?
+    echo "PS=$ps_status RC=$rc"
+done
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"PS=1 RC=2"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PS=124 RC=2"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PS=143 RC=143"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge node project process check ignores a pid that has already exited" {
+    local project="$HOME/www/exited"
+    mkdir -p "$project"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+project=$(cd "$PROJECT_PATH" && /bin/pwd -P)
+sleep 0 &
+gone=$!
+wait "$gone"
+/usr/bin/true
+real_run_with_timeout=$(declare -f run_with_timeout)
+eval "real_${real_run_with_timeout}"
+run_with_timeout() {
+    if [[ "$2" == /usr/sbin/lsof ]]; then
+        printf 'p%s\nfcwd\nn%s\n' "$gone" "$project"
+        return 0
+    fi
+    real_run_with_timeout "$@"
+}
+rc=0
+purge_node_project_running "$project" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "mo purge run from inside a project still offers that project's node_modules" {
+    local project="$HOME/www/inside"
+    mkdir -p "$project/node_modules/pkg" "$HOME/.config/mole" "$HOME/.cache/mole"
+    printf '{"name":"inside"}\n' > "$project/package.json"
+    printf '{"lockfileVersion":3}\n' > "$project/package-lock.json"
+    printf 'x\n' > "$project/node_modules/pkg/index.js"
+    printf '{"lockfileVersion":3}\n' > "$project/node_modules/.package-lock.json"
+    touch -t 202001010101 "$project/package.json" "$project/package-lock.json" \
+        "$project/node_modules/pkg/index.js" "$project/node_modules/pkg"
+    touch -t 202001010102 "$project/node_modules/.package-lock.json" "$project/node_modules" "$project"
+    printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
+    local from output_from
+    for from in / "$project"; do
+        output_from=$(cd "$from" && HOME="$HOME" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --dry-run < /dev/null 2>&1) || true
+        [[ "$output_from" == *"inside/node_modules"* ]] || { echo "from $from: $output_from"; return 1; }
+    done
+    [ -f "$project/node_modules/pkg/index.js" ]
+}
+
 @test "purge node project process check reads an idle project as idle under --debug" {
     # The real run_with_timeout, so its debug notice reaches the lsof capture
     # the way it does in `mo purge --debug`; the stubbed case above cannot see it.
