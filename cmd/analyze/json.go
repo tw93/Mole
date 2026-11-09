@@ -204,7 +204,7 @@ func pathEqual(a, b string) bool {
 }
 
 // measureOverviewEntriesForJSON measures every row with the TUI's own
-// measurement and its timeouts, at most maxConcurrentOverview at a time. A
+// measurement, each row held to jsonWalkTimeout, at most maxConcurrentOverview at a time. A
 // failed or timed-out measurement keeps the bytes it reached and is marked
 // partial, or unavailable when it reached none; it is never a complete zero.
 func measureOverviewEntriesForJSON(overviewEntries []dirEntry, measure func(context.Context, string) (int64, error)) []dirEntry {
@@ -219,7 +219,9 @@ func measureOverviewEntriesForJSON(overviewEntries []dirEntry, measure func(cont
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			size, err := measure(context.Background(), item.Path)
+			ctx, cancel := context.WithTimeout(context.Background(), jsonWalkTimeout)
+			defer cancel()
+			size, err := measure(ctx, item.Path)
 			item.Size = size
 			item.State = measurementState(size, err)
 			measured[index] = item

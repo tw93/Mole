@@ -11,7 +11,6 @@ const (
 	scanPathInlineMinWidth = 24
 	largeFileWarmupMinSize = 1 << 20
 	defaultViewport        = 12
-	overviewWalkTimeout    = 30 * time.Second
 	fastWalkTimeout        = 5 * time.Minute
 	maxConcurrentOverview  = 8
 	batchUpdateSize        = 100

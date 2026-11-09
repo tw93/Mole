@@ -543,6 +543,17 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 	return total.Load(), failures.err()
 }
 
+var (
+	// overviewWalkTimeout bounds an overview row. A row has no fallback after
+	// its deadline and shows a spinner meanwhile, so a normal walk of a large
+	// AppData or Program Files must finish rather than read as unknown.
+	overviewWalkTimeout = 5 * time.Minute
+	// jsonWalkTimeout bounds an overview row in --json, which prints nothing
+	// until every row lands and whose callers often have shorter tool
+	// timeouts of their own.
+	jsonWalkTimeout = 30 * time.Second
+)
+
 // measureOverviewSize measures one overview row. A drive row reports the
 // volume's used space, which is instant and covers what a walk cannot read;
 // the Home row leaves out AppData, which has its own row.
