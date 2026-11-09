@@ -1,6 +1,6 @@
 # Mole CLI (macOS)
 
-Written against Mole 1.62.0. Older versions may lack a flag or field below; check
+Written against Mole 1.70.0. Older versions may lack a flag or field below; check
 `mo <command> --help` first.
 
 ## Install

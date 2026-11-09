@@ -1,0 +1,5 @@
+{
+  "name": "mole",
+  "version": "1.0.0",
+  "description": "Drive the Mole CLI (mo) safely on macOS and Windows: find what uses disk space, preview cleanup, uninstall apps and read system health."
+}

@@ -5286,6 +5286,77 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "purge node project process check sees a real process in a non-ASCII project under LC_ALL=C" {
+    local project="$HOME/www/项目 é"
+    mkdir -p "$project"
+    (cd "$project" && exec sleep 30) &
+    local holder=$!
+    sleep 0.3
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" LC_ALL=C \
+        /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$PROJECT_PATH" && /bin/pwd -P)" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge node project process check ignores Mole's own process tree" {
+    local project="$HOME/www/own-tree"
+    mkdir -p "$project"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" \
+        /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+project=$(cd "$PROJECT_PATH" && /bin/pwd -P)
+# Started from the project, as `cd project && mo purge` is.
+cd "$project"
+rc=0
+purge_node_project_running "$project" || rc=$?
+echo "SELF_CWD_RC=$rc"
+# A worker of this run walking the project and naming it in its arguments.
+(cd "$project" && exec /bin/sh -c 'sleep 8; : '"$project"'/dist') &
+worker=$!
+sleep 0.3
+cd /
+rc=0
+purge_node_project_running "$project" || rc=$?
+echo "WORKER_RC=$rc"
+kill "$worker" 2> /dev/null || true
+wait "$worker" 2> /dev/null || true
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"SELF_CWD_RC=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"WORKER_RC=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge node project process check still sees an outside process with the same cwd" {
+    local project="$HOME/www/outside-holder"
+    mkdir -p "$project"
+    (cd "$project" && exec sleep 30) &
+    local holder=$!
+    sleep 0.3
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" \
+        /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+project=$(cd "$PROJECT_PATH" && /bin/pwd -P)
+cd "$project"
+rc=0
+purge_node_project_running "$project" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+}
+
 @test "purge node project process check reads an idle project as idle under --debug" {
     # The real run_with_timeout, so its debug notice reaches the lsof capture
     # the way it does in `mo purge --debug`; the stubbed case above cannot see it.

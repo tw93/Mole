@@ -1393,6 +1393,18 @@ func scanOverviewPathCmd(path string, index int, publication *scanPublication) t
 
 // Cancel before invalidating stored measurements, so an in-flight scan cannot
 // publish pre-delete bytes after the invalidation has finished.
+// stopMeasurementsForExit ends every running du before the process leaves.
+// exec.CommandContext can only kill a child while its parent is alive, so a
+// quit that does not wait would leave du walking the tree with no deadline.
+func (m *model) stopMeasurementsForExit() {
+	m.cancelLiveScan()
+	m.cancelOverviewScans(nil)
+	m.cancelBackgroundCacheWrites(nil)
+	for deadline := time.Now().Add(duExitWait); activeDu.Load() > 0 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (m *model) cancelOverviewScans(removedPaths []string) {
 	for path, publication := range m.overviewScanningSet {
 		if len(removedPaths) == 0 || pathTouchesRemoved(path, removedPaths) {

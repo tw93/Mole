@@ -111,6 +111,9 @@ jobs:
       - name: Fetch the Windows CLI for the skill audit
         run: git fetch --no-tags --depth=1 origin windows:refs/remotes/origin/windows
 
+      - name: Fetch recent history for the skill version check
+        run: git fetch --no-tags --deepen=100 origin "$GITHUB_SHA"
+
       - name: Run check script
         env:
           MOLE_SKILL_AUDIT_REQUIRE_WINDOWS: "1"

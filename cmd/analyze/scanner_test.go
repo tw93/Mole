@@ -107,7 +107,7 @@ func TestGetDirectorySizeFromDuMeasuresUserLibraryInOneTraversal(t *testing.T) {
 	useDuStub(t, filepath.Join(binDir, "du"))
 	t.Setenv("MOLE_TEST_DU_OPERANDS", operandLog)
 
-	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), library, "", overviewIgnoreNamesForPath(library))
+	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), library, "", overviewIgnoreNamesForPath(library), duTimeout)
 	if err != nil {
 		t.Fatalf("getDirectorySizeFromDuWithExcludeAndIgnores: %v", err)
 	}
@@ -186,11 +186,11 @@ func TestGetDirectorySizeFromDuWithIgnoresSkipsCloudPlaceholderTree(t *testing.T
 	writeFileWithSize(t, filepath.Join(base, "Application Support", "state.dat"), 4096)
 	writeFileWithSize(t, filepath.Join(base, "Mobile Documents", "cloud.dat"), 1024*1024)
 
-	withoutIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", nil)
+	withoutIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", nil, duTimeout)
 	if err != nil {
 		t.Fatalf("getDirectorySizeFromDuWithExcludeAndIgnores without ignore: %v", err)
 	}
-	withIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{"Mobile Documents"})
+	withIgnore, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{"Mobile Documents"}, duTimeout)
 	if err != nil {
 		t.Fatalf("getDirectorySizeFromDuWithExcludeAndIgnores with ignore: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestDuIgnoresUseSystemDuWhenGNUDuIsFirstInPath(t *testing.T) {
 	}
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{"Mobile Documents"})
+	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), base, "", []string{"Mobile Documents"}, duTimeout)
 	if err != nil {
 		t.Fatalf("ignore-aware size failed with a GNU du in PATH: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestUserLibraryOverviewDeduplicatesHardlinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), library, "", nil)
+	got, err := getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), library, "", nil, duTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
