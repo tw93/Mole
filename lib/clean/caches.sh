@@ -411,7 +411,7 @@ scan_project_cache_root() {
     # the scan past its timeout on a busy disk and skip the whole root.
     local -a find_args=(
         "$FIND_BSD" -P "$root" -maxdepth 9 -mount
-        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" ")"
+        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".build-*" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" ")"
         -prune -o
         -type d
         "(" -name ".next" -o -name "__pycache__" -o -name ".dart_tool" ")"

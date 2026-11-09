@@ -716,6 +716,104 @@ purge_node_modules_is_protected() {
     purge_node_project_running "$project" "$deadline"
 }
 
+# .build, or a --scratch-path directory SwiftPM itself tagged. A file named
+# workspace-state.json proves nothing: any other purge target name stays that
+# target, with its own guards.
+_is_swiftpm_scratch_root() {
+    local dir="${1%/}" base="${1%/}" target tag
+    base="${base##*/}"
+    [[ -d "$dir" && ! -L "$dir" ]] || return 1
+    [[ "$base" != ".build" ]] || return 0
+    for target in "${MOLE_PURGE_TARGETS[@]}"; do
+        [[ "$base" != "$target" ]] || return 1
+    done
+    tag="$dir/$MOLE_CACHEDIR_TAG_NAME"
+    [[ -f "$tag" && ! -L "$tag" ]] || return 1
+    LC_ALL=C /usr/bin/grep -q 'Swift Package Manager' "$tag" 2> /dev/null
+}
+
+# An unreadable or non-directory entry counts as holding something.
+_swiftpm_dir_has_entries() {
+    local listing=""
+    [[ -e "$1" || -L "$1" ]] || return 1
+    [[ -d "$1" && ! -L "$1" ]] || return 0
+    listing=$(/bin/ls -A "$1" 2> /dev/null) || return 0
+    [[ -n "$listing" ]]
+}
+
+# A scratch root that resolved dependencies, which is what offering it whole
+# would trip on (checkouts/<pkg>/.git) and re-clone. SourceKit-LSP's index-build
+# resolves its own, so it decomposes the same way.
+is_swiftpm_packaged_scratch_dir() {
+    local dir="${1%/}"
+    [[ -d "$dir" && ! -L "$dir" ]] || return 1
+    if [[ "${dir##*/}" == "index-build" ]]; then
+        _is_swiftpm_scratch_root "${dir%/*}" || return 1
+    else
+        _is_swiftpm_scratch_root "$dir" || return 1
+    fi
+    _swiftpm_dir_has_entries "$dir/checkouts" || _swiftpm_dir_has_entries "$dir/repositories"
+}
+
+is_swiftpm_build_output_artifact() {
+    local path="${1%/}"
+    local base="${path##*/}"
+    local parent="${path%/*}"
+    [[ -n "$parent" && "$parent" != "$path" ]] || return 1
+    local output_name
+    for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
+        if [[ "$base" == "$output_name" ]]; then
+            is_swiftpm_packaged_scratch_dir "$parent"
+            return $?
+        fi
+    done
+    return 1
+}
+
+purge_swiftpm_scratch_running() {
+    local scratch_dir="${1%/}" deadline="${2:-}"
+    local scratch_name="${scratch_dir##*/}"
+    [[ -n "$scratch_name" && ! "$scratch_name" =~ [[:cntrl:]] ]] || return 2
+    # A plain .build names nothing specific; the project probe covers it.
+    [[ "$scratch_name" != ".build" ]] || return 1
+    _purge_other_process_matches "(^|[[:space:]/=])$(_purge_path_regex "$scratch_name")" "$deadline"
+}
+
+purge_swiftpm_output_is_protected() {
+    local path="${1%/}" deadline="${2:-}"
+    path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
+    local scratch_dir="${path%/*}"
+    [[ "${scratch_dir##*/}" != "index-build" ]] || scratch_dir="${scratch_dir%/*}"
+    local project="${scratch_dir%/*}"
+    [[ -n "$project" && "$project" == /* ]] || return 2
+    local running_rc=0
+    purge_node_project_running "$project" "$deadline" || running_rc=$?
+    [[ $running_rc -le 128 ]] || return "$running_rc"
+    [[ $running_rc -ne 2 ]] || return 2
+    [[ $running_rc -ne 0 ]] || return 0
+
+    local scratch_rc=0
+    purge_swiftpm_scratch_running "$scratch_dir" "$deadline" || scratch_rc=$?
+    [[ $scratch_rc -le 128 ]] || return "$scratch_rc"
+    return "$scratch_rc"
+}
+
+emit_purge_candidate_or_swiftpm_outputs() {
+    local item="${1%/}"
+    local search_path="$2"
+    if is_swiftpm_packaged_scratch_dir "$item"; then
+        local output_name output_dir
+        for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
+            output_dir="$item/$output_name"
+            if [[ -d "$output_dir" && ! -L "$output_dir" ]] && is_safe_project_artifact "$output_dir" "$search_path"; then
+                emit_purge_candidate_or_swiftpm_outputs "$output_dir" "$search_path"
+            fi
+        done
+        return 0
+    fi
+    printf '%s\n' "$item"
+}
+
 is_protected_purge_artifact() {
     local path="${1%/}"
     local deadline="${2:-}"
@@ -760,6 +858,17 @@ is_protected_purge_artifact() {
             return 1
             ;;
     esac
+
+    if is_swiftpm_build_output_artifact "$path"; then
+        local swiftpm_rc=0
+        purge_swiftpm_output_is_protected "$path" "$deadline" || swiftpm_rc=$?
+        [[ $swiftpm_rc -le 128 ]] || return "$swiftpm_rc"
+        if [[ $swiftpm_rc -eq 2 ]]; then
+            PURGE_PROTECTION_UNVERIFIED=true
+            return 0
+        fi
+        return "$swiftpm_rc"
+    fi
 
     return 1
 }
@@ -982,7 +1091,7 @@ scan_purge_targets() {
                         fi
 
                         if [[ -n "$item" ]] && is_safe_project_artifact "$item" "$search_path"; then
-                            echo "$item"
+                            emit_purge_candidate_or_swiftpm_outputs "$item" "$search_path"
                             # Update scanning path to show current project directory
                             local project_dir="${item%/*}"
                             echo "$project_dir" > "$stats_dir/purge_scanning" 2> /dev/null || true
@@ -2578,6 +2687,13 @@ clean_project_artifacts() {
         if is_path_whitelisted "$item"; then
             continue
         fi
+        # A glob entry gives children no inheritance, so an entry on the scratch
+        # root has to be asked for the outputs decomposed from it.
+        if is_swiftpm_build_output_artifact "$item"; then
+            local swiftpm_scratch="${item%/*}"
+            is_path_whitelisted "$swiftpm_scratch" && continue
+            [[ "${swiftpm_scratch##*/}" == "index-build" ]] && is_path_whitelisted "${swiftpm_scratch%/*}" && continue
+        fi
         local candidate_bound=false
         local candidate_parent=""
         local candidate_parent_id=""
@@ -2974,6 +3090,9 @@ clean_project_artifacts() {
             project_parent="${artifact_path%/*}"
             if ! project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
                 project_root="$project_parent"
+                if is_swiftpm_packaged_scratch_dir "$project_root" && [[ "${project_root%/*}" == /* && -n "${project_root%/*}" ]]; then
+                    project_root="${project_root%/*}"
+                fi
             fi
             project_identity=$(mole_path_identity "$project_root")
         fi

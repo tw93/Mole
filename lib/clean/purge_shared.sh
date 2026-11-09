@@ -107,6 +107,19 @@ readonly MOLE_PURGE_PROJECT_INDICATORS=(
 readonly MOLE_CACHEDIR_TAG_NAME="CACHEDIR.TAG"
 readonly MOLE_CACHEDIR_TAG_SIGNATURE="Signature: 8a477f597d28d172789f06886806bc55"
 
+# Rebuildable compiler and index output directories inside a SwiftPM scratch
+# root (.build or --scratch-path). Package checkouts, bare repositories,
+# binary-target artifacts, and workspace-state.json are excluded so cleanup
+# never deletes nested dependency repositories or requires a network restore.
+readonly MOLE_SWIFTPM_BUILD_OUTPUT_DIRS=(
+    "out"
+    "index-build"
+    "arm64-apple-macosx"
+    "x86_64-apple-macosx"
+    "aarch64-unknown-linux-gnu"
+    "x86_64-unknown-linux-gnu"
+)
+
 # Normalize an integer or fractional timeout into the whole-second budget used
 # by SECONDS. Shared by clean's project-cache scan and purge's size pool so both
 # keep fractional overrides without duplicating deadline arithmetic.
