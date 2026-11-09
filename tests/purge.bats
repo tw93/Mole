@@ -5981,25 +5981,6 @@ SCRIPT
     [[ "$output" == *"CHILD_RC=1"* ]] || { echo "$output"; return 1; }
 }
 
-@test "purge_artifact_in_use reads a command line spelled through the scanned root" {
-    mkdir -p "$HOME/real/app/dist"
-    ln -s "$HOME/real" "$HOME/linked"
-    (cd / && exec /bin/sh -c 'sleep 30; : '"$HOME/linked/app/dist/server.js") &
-    local holder=$!
-    sleep 0.3
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/clean/project.sh"
-rc=0
-is_protected_purge_artifact "$HOME/linked/app/dist" || rc=$?
-echo "RC=$rc REASON=$PURGE_PROTECTION_REASON"
-SCRIPT
-    kill "$holder" 2> /dev/null || true
-    wait "$holder" 2> /dev/null || true
-    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$output" == *"RC=0 REASON=in_use"* ]] || { echo "$output"; return 1; }
-}
-
 @test "a selected build folder refused because its project runs says so" {
     local project="$HOME/www/rusty"
     mkdir -p "$project/target/debug" "$HOME/.config/mole" "$HOME/.cache/mole"

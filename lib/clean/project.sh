@@ -728,10 +728,9 @@ purge_node_modules_is_protected() {
 
 # Same statuses as the process probes (0 in use, 1 idle, 2 unknown, >128 signal).
 # Does a current-user process other than Mole hold a descriptor, mapped binary or
-# cwd inside the artifact, or name it on a command line? The artifact is physical;
-# $3 is how the scan reached it, which a command line may use instead.
+# cwd inside the artifact, or name it on a command line?
 purge_artifact_in_use() {
-    local artifact="${1%/}" deadline="${2:-}" reached="${3:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
+    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
     [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
     if [[ -z "$evidence" ]]; then
         probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
@@ -768,7 +767,7 @@ purge_artifact_in_use() {
         [[ $rc -eq 1 ]] || return "$rc"
     fi
 
-    _purge_other_process_matches "$(_purge_path_regex "$artifact" "${reached:-$artifact}")" "$deadline"
+    _purge_other_process_matches "$(_purge_path_regex "$artifact")" "$deadline"
 }
 
 # One listing for a whole filter pass, taken before its workers start. Without
@@ -915,7 +914,7 @@ is_protected_purge_artifact() {
 
     local physical_path="$path" in_use_rc=0
     physical_path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || physical_path="$path"
-    purge_artifact_in_use "$physical_path" "$deadline" "$path" || in_use_rc=$?
+    purge_artifact_in_use "$physical_path" "$deadline" || in_use_rc=$?
     [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
     if [[ $in_use_rc -eq 2 ]]; then
         PURGE_PROTECTION_UNVERIFIED=true
