@@ -242,5 +242,5 @@ Implemented in source (Mole CLI (macOS), `4cd5be26`): the row is gone and `shoul
 
 - Mole CLI (Linux): Same rule in `lib/clean/rules.sh` (`Puppeteer browsers`); removed by #1949 on `linux`.
 - Mole CLI (Windows): Not applicable. It has no Puppeteer row.
-- Mole Mac: To be checked by the maintainer.
+- Mole Mac: Implemented. Its path guard and whitelist already keep `~/.cache/puppeteer`.
 - Mole for Windows: To be checked by the maintainer.
