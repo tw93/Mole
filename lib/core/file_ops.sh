@@ -2456,7 +2456,11 @@ mole_delete() {
     # path is gone afterwards. Use "unknown" (not 0) on failure so the log
     # never lies about a multi-GB delete by recording it as 0KB.
     local size_kb="unknown"
-    if [[ -e "$path" ]]; then
+    local skip_size_probe=false
+    if [[ "${MOLE_UNINSTALL_MODE:-0}" == "1" ]] && mole_sizing_would_ask_for_app_data "$path"; then
+        skip_size_probe=true
+    fi
+    if [[ -e "$path" && "$skip_size_probe" != "true" ]]; then
         local raw_size=""
         local du_rc=0
         if [[ "$needs_sudo" == "true" ]]; then
@@ -4170,6 +4174,21 @@ mole_item_size_continues() {
 }
 
 # Calculate total size for multiple paths
+# macOS asks "wants to access data from other apps" when a process without Full
+# Disk Access reads into another app's container, and the read blocks until the
+# prompt is answered. A size is not worth that, so those rows go unmeasured.
+# An unknown grant counts as no grant: the prompt would still block.
+mole_sizing_would_ask_for_app_data() {
+    case "$1" in
+        "$HOME/Library/Containers/"?* | "$HOME/Library/Group Containers/"?*) ;;
+        *) return 1 ;;
+    esac
+    if has_full_disk_access; then
+        return 1
+    fi
+    return 0
+}
+
 calculate_total_size() {
     local files="$1"
     local total_kb=0 file
@@ -4185,6 +4204,7 @@ calculate_total_size() {
     done <<< "$filtered"
 
     for file in "${unique_paths[@]+"${unique_paths[@]}"}"; do
+        mole_sizing_would_ask_for_app_data "$file" && continue
         local size_kb=0
         local size_rc=0
         size_kb=$(get_path_size_kb "$file") || size_rc=$?

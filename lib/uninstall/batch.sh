@@ -264,7 +264,7 @@ format_uninstall_preview_path() {
     local size_rc=0
     if [[ $# -gt 1 ]]; then
         size_kb="$2"
-    else
+    elif ! mole_sizing_would_ask_for_app_data "$path"; then
         size_kb=$(get_path_size_kb "$path" 2> /dev/null) || size_rc=$?
         mole_rc_timeout_or_signal "$size_rc" && return "$size_rc"
         [[ $size_rc -eq 0 ]] || size_kb="0"
@@ -2231,7 +2231,9 @@ _batch_scan_app_details_impl() {
         _batch_scan_stage="application size check"
         local app_size_kb="0"
         local app_size_rc=0
-        app_size_kb=$(get_path_size_kb "$app_path") || app_size_rc=$?
+        if ! mole_sizing_would_ask_for_app_data "$app_path"; then
+            app_size_kb=$(get_path_size_kb "$app_path") || app_size_rc=$?
+        fi
         mole_rc_timeout_or_signal "$app_size_rc" && return "$app_size_rc"
         [[ $app_size_rc -eq 0 && "$app_size_kb" =~ ^[0-9]+$ ]] || app_size_kb=0
         local preview_selector="" preview_selector_rc=0
@@ -2986,7 +2988,7 @@ _batch_execute_removals() {
             # path; the source paths that DID move to Trash are already gone
             # and would just produce stderr noise we discard.
             local leftover_kb=0
-            local -a leftover_paths=()
+            local -a leftover_paths=() leftover_sizable=()
             if ! is_uninstall_dry_run; then
                 while IFS= read -r _lf; do
                     [[ -n "$_lf" && -e "$_lf" ]] || continue
@@ -3002,13 +3004,15 @@ _batch_execute_removals() {
                         mole_rc_signal "$_stub_rc" && return "$_stub_rc"
                     fi
                     leftover_paths+=("$_lf")
+                    # Unmeasured in the total too, so nothing to subtract.
+                    mole_sizing_would_ask_for_app_data "$_lf" || leftover_sizable+=("$_lf")
                 done <<< "$related_files"
 
-                if [[ ${#leftover_paths[@]} -gt 0 ]]; then
+                if [[ ${#leftover_sizable[@]} -gt 0 ]]; then
                     local _du_output="" _du_total=""
                     local _du_rc=0
                     _du_output=$(LC_ALL=C run_with_timeout "$MOLE_TIMEOUT_DISK_VERIFY_SEC" \
-                        du -skcP "${leftover_paths[@]}" 2> /dev/null) || _du_rc=$?
+                        du -skcP "${leftover_sizable[@]}" 2> /dev/null) || _du_rc=$?
                     mole_rc_timeout_or_signal "$_du_rc" && return "$_du_rc"
                     # An unreadable survivor can leave a valid partial total.
                     # Only accept du's final total, never a truncated path row.

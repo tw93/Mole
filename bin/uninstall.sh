@@ -106,6 +106,11 @@ uninstall_inline_du_size_kb() {
         echo "0"
         return 0
     }
+    # A PlayCover app lives inside PlayCover's container.
+    if mole_sizing_would_ask_for_app_data "$app_path"; then
+        echo "0"
+        return 0
+    fi
 
     local du_size_kb
     du_size_kb=$(run_with_timeout "$MOLE_UNINSTALL_INLINE_DU_SIZE_TIMEOUT_SEC" du -skP "$app_path" 2> /dev/null | awk '{print $1; exit}') || du_size_kb=""
@@ -425,8 +430,10 @@ start_uninstall_metadata_refresh() {
                     last_used_epoch=0
                 fi
 
-                local size_kb
-                size_kb=$(get_path_size_kb "$app_path")
+                local size_kb=0
+                if ! mole_sizing_would_ask_for_app_data "$app_path"; then
+                    size_kb=$(get_path_size_kb "$app_path")
+                fi
                 [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
 
                 printf "%s|%s|%s|%s|%s|%s|%s|%s\n" "$app_path" "${app_mtime:-0}" "$size_kb" "${last_used_epoch:-0}" "$now_epoch" "$bundle_id" "$display_name" "$language_signature" > "$worker_output"
