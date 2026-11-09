@@ -1,6 +1,6 @@
 {
   "name": "dsh-mole",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mole CLI skill for DeepSeek Harness: find what uses disk space, preview cleanup, uninstall apps and read system health on macOS and Windows.",
   "type": "module",
   "main": "index.js",
@@ -19,7 +19,7 @@
     "skills",
     ".claude-plugin/icon.png"
   ],
-  "keywords": ["dsh-plugin", "dsh", "deepseek-harness", "mole", "disk-cleanup", "macos", "windows", "uninstall", "system-health", "cli"],
+  "keywords": ["dsh-plugin", "dsh", "deepseek-harness", "mole", "disk-cleanup", "disk", "clean", "cleanup", "cleaner", "清理", "磁盘清理", "卸载", "macos", "windows", "uninstall", "system-health", "cli"],
   "homepage": "https://mole.fit",
   "repository": {
     "type": "git",
