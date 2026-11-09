@@ -579,18 +579,27 @@ _purge_lsof_path_form() {
     printf '%s' "$form"
 }
 
-# Regex for a path on a command line, which may spell a non-ASCII name in the
-# other Unicode form than the disk does. lsof reports the disk's spelling.
+# Regex for paths on a command line, ended by anything that cannot continue a
+# file name (a `java -cp a:b` colon, a comma, a quote). A /private path may be
+# spelled through its macOS alias, and a non-ASCII name in the other Unicode form
+# than the disk. lsof reports the disk's spelling, so only this probe needs them.
 _purge_path_regex() {
-    local path="$1" regex conversion form
-    regex=$(_mole_regex_escape "$path")
-    if [[ "$(LC_ALL=C printf '%s' "$path" | LC_ALL=C /usr/bin/tr -d ' -~')" != "" ]]; then
-        for conversion in "UTF-8-MAC UTF-8" "UTF-8 UTF-8-MAC"; do
-            form=$(printf '%s' "$path" | /usr/bin/iconv -f "${conversion% *}" -t "${conversion#* }" 2> /dev/null) || continue
-            [[ -z "$form" || "$form" == "$path" ]] || regex+="|$(_mole_regex_escape "$form")"
+    local regex="" path spelling conversion form
+    for path in "$@"; do
+        for spelling in "$path" "${path#/private}"; do
+            case "$spelling" in
+                /tmp | /tmp/* | /var | /var/* | /etc | /etc/* | "$path") ;;
+                *) continue ;;
+            esac
+            regex+="${regex:+|}$(_mole_regex_escape "$spelling")"
+            [[ -n "$(LC_ALL=C printf '%s' "$spelling" | LC_ALL=C /usr/bin/tr -d ' -~')" ]] || continue
+            for conversion in "UTF-8-MAC UTF-8" "UTF-8 UTF-8-MAC"; do
+                form=$(printf '%s' "$spelling" | /usr/bin/iconv -f "${conversion% *}" -t "${conversion#* }" 2> /dev/null) || continue
+                [[ -z "$form" || "$form" == "$spelling" ]] || regex+="|$(_mole_regex_escape "$form")"
+            done
         done
-    fi
-    printf '(%s)(/|[[:space:]]|$)' "$regex"
+    done
+    printf '(%s)([^[:alnum:]._-]|$)' "$regex"
 }
 
 # Is any of these pids, which a probe just saw, a live process other than Mole?
@@ -644,7 +653,8 @@ _purge_outside_process_among() {
 _purge_other_process_matches() {
     local pattern="$1" deadline="${2:-}" probe_timeout rc=0 matched_pids=""
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$pattern" 2> /dev/null) || rc=$?
+    # Case-blind: the default volume is, so a command line may spell it either way.
+    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -if "$pattern" 2> /dev/null) || rc=$?
     [[ $rc -le 128 ]] || return "$rc"
     [[ $rc -le 1 ]] || return 2
     [[ $rc -eq 0 ]] || return 1
@@ -718,9 +728,10 @@ purge_node_modules_is_protected() {
 
 # Same statuses as the process probes (0 in use, 1 idle, 2 unknown, >128 signal).
 # Does a current-user process other than Mole hold a descriptor, mapped binary or
-# cwd inside the artifact, or name it on a command line?
+# cwd inside the artifact, or name it on a command line? The artifact is physical;
+# $3 is how the scan reached it, which a command line may use instead.
 purge_artifact_in_use() {
-    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
+    local artifact="${1%/}" deadline="${2:-}" reached="${3:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
     [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
     if [[ -z "$evidence" ]]; then
         probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
@@ -757,7 +768,7 @@ purge_artifact_in_use() {
         [[ $rc -eq 1 ]] || return "$rc"
     fi
 
-    _purge_other_process_matches "$(_purge_path_regex "$artifact")" "$deadline"
+    _purge_other_process_matches "$(_purge_path_regex "$artifact" "${reached:-$artifact}")" "$deadline"
 }
 
 # One listing for a whole filter pass, taken before its workers start. Without
@@ -784,6 +795,7 @@ _purge_running_project_protects() {
         PURGE_PROTECTION_UNVERIFIED=true
         return 0
     fi
+    [[ $rc -ne 0 ]] || PURGE_PROTECTION_REASON="in_use"
     return "$rc"
 }
 
@@ -903,7 +915,7 @@ is_protected_purge_artifact() {
 
     local physical_path="$path" in_use_rc=0
     physical_path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || physical_path="$path"
-    purge_artifact_in_use "$physical_path" "$deadline" || in_use_rc=$?
+    purge_artifact_in_use "$physical_path" "$deadline" "$path" || in_use_rc=$?
     [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
     if [[ $in_use_rc -eq 2 ]]; then
         PURGE_PROTECTION_UNVERIFIED=true
@@ -969,6 +981,7 @@ is_protected_purge_artifact() {
             PURGE_PROTECTION_UNVERIFIED=true
             return 0
         fi
+        [[ $swiftpm_rc -ne 0 ]] || PURGE_PROTECTION_REASON="in_use"
         return "$swiftpm_rc"
     fi
 

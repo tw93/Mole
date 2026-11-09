@@ -5428,6 +5428,44 @@ SCRIPT
     done
 }
 
+@test "purge node project process check matches the spellings a command line uses" {
+    local root="/private/tmp/mole-argv-$$"
+    mkdir -p "$root/app"
+    local arg holder
+    for arg in "$root/app:/other" "$root/app,/other" "'$root/app'" "$root/APP/server.js" "/tmp/mole-argv-$$/app/server.js"; do
+        (cd / && exec /bin/sh -c 'sleep 30; : '"$arg") &
+        holder=$!
+        sleep 0.3
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$root/app" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$PROJECT_PATH" || rc=$?
+echo "RC=$rc"
+SCRIPT
+        kill "$holder" 2> /dev/null || true
+        wait "$holder" 2> /dev/null || true
+        [ "$status" -eq 0 ] || { echo "$output"; rm -rf "$root"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$arg: $output"; rm -rf "$root"; return 1; }
+    done
+    # A longer sibling name is not this project.
+    (cd / && exec /bin/sh -c 'sleep 30; : '"$root/app-old/server.js") &
+    holder=$!
+    sleep 0.3
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$root/app" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$PROJECT_PATH" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    rm -rf "$root"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "purge node project process check treats an unreadable process table as unknown" {
     local project="$HOME/www/table"
     mkdir -p "$project"
@@ -5941,6 +5979,60 @@ SCRIPT
     [[ "$output" == *"EXITED_RC=1"* ]] || { echo "$output"; return 1; }
     # What Mole itself started is Mole's, the same rule as the project probe.
     [[ "$output" == *"CHILD_RC=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge_artifact_in_use reads a command line spelled through the scanned root" {
+    mkdir -p "$HOME/real/app/dist"
+    ln -s "$HOME/real" "$HOME/linked"
+    (cd / && exec /bin/sh -c 'sleep 30; : '"$HOME/linked/app/dist/server.js") &
+    local holder=$!
+    sleep 0.3
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+is_protected_purge_artifact "$HOME/linked/app/dist" || rc=$?
+echo "RC=$rc REASON=$PURGE_PROTECTION_REASON"
+SCRIPT
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0 REASON=in_use"* ]] || { echo "$output"; return 1; }
+}
+
+@test "a selected build folder refused because its project runs says so" {
+    local project="$HOME/www/rusty"
+    mkdir -p "$project/target/debug" "$HOME/.config/mole" "$HOME/.cache/mole"
+    touch "$project/Cargo.toml"
+    head -c 4096 /dev/zero > "$project/target/debug/app"
+    touch -t 202001010000 "$project/target/debug/app" "$project/target/debug" "$project/target" "$project/Cargo.toml"
+    printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
+    (cd "$project" && exec sleep 30) &
+    local holder=$!
+    sleep 0.3
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+filter_protected_artifacts() { cat; }
+eval "real_$(declare -f is_protected_purge_artifact)"
+protection_calls=0
+is_protected_purge_artifact() {
+    # Other tests leave candidates in this HOME; only this path passes once.
+    [[ "$1" == */www/rusty/target ]] && protection_calls=$((protection_calls + 1))
+    if [[ $protection_calls -eq 1 && "$1" == */www/rusty/target ]]; then
+        PURGE_PROTECTION_UNVERIFIED=false
+        PURGE_PROTECTION_REASON=""
+        return 1
+    fi
+    real_is_protected_purge_artifact "$@"
+}
+MOLE_DRY_RUN=1 MOLE_PURGE_YES=1 clean_project_artifacts < /dev/null || true
+SCRIPT
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    [[ "$output" == *"Skipped ~/www/rusty/target (in use"* ]] || { echo "$output"; return 1; }
+    [ -f "$project/target/debug/app" ]
 }
 
 @test "purge dry run and real run refuse an in-use artifact the same way" {
