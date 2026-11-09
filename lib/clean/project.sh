@@ -599,6 +599,82 @@ purge_node_modules_is_protected() {
     purge_node_project_running "$project" "$deadline"
 }
 
+# A SwiftPM scratch root (.build or --scratch-path) that holds resolved
+# package state (workspace-state.json, checkouts/, or repositories/).
+# Offering the scratch root whole would trip the nested-.git protection on
+# checkouts/<pkg>/.git and would wipe downloaded package repositories;
+# decompose it into MOLE_SWIFTPM_BUILD_OUTPUT_DIRS instead.
+is_swiftpm_packaged_scratch_dir() {
+    local dir="${1%/}"
+    [[ -d "$dir" && ! -L "$dir" ]] || return 1
+    local base="${dir##*/}"
+    if [[ "$base" != ".build" && "$base" != .build-* ]]; then
+        [[ -f "$dir/workspace-state.json" && ! -L "$dir/workspace-state.json" ]] || return 1
+    fi
+    [[ -f "$dir/workspace-state.json" || -e "$dir/checkouts" || -L "$dir/checkouts" || -e "$dir/repositories" || -L "$dir/repositories" ]]
+}
+
+is_swiftpm_build_output_artifact() {
+    local path="${1%/}"
+    local base="${path##*/}"
+    local parent="${path%/*}"
+    [[ -n "$parent" && "$parent" != "$path" ]] || return 1
+    local output_name
+    for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
+        if [[ "$base" == "$output_name" ]]; then
+            is_swiftpm_packaged_scratch_dir "$parent"
+            return $?
+        fi
+    done
+    return 1
+}
+
+purge_swiftpm_scratch_running() {
+    local scratch_dir="${1%/}" deadline="${2:-}"
+    local scratch_name="${scratch_dir##*/}"
+    [[ "$scratch_name" != ".build" && -n "$scratch_name" && ! "$scratch_name" =~ [[:cntrl:]] ]] || return 1
+    local probe_timeout="" rc=0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    run_with_timeout "$probe_timeout" pgrep -f "(^|[[:space:]/=])$(_mole_regex_escape "$scratch_name")(/|[[:space:]]|$)" > /dev/null 2>&1 || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -le 1 ]] || return 2
+    return "$rc"
+}
+
+purge_swiftpm_output_is_protected() {
+    local path="${1%/}" deadline="${2:-}"
+    path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || return 2
+    local scratch_dir="${path%/*}"
+    local project="${scratch_dir%/*}"
+    [[ -n "$project" && "$project" == /* ]] || return 2
+    local running_rc=0
+    purge_node_project_running "$project" "$deadline" || running_rc=$?
+    [[ $running_rc -le 128 ]] || return "$running_rc"
+    [[ $running_rc -ne 2 ]] || return 2
+    [[ $running_rc -ne 0 ]] || return 0
+
+    local scratch_rc=0
+    purge_swiftpm_scratch_running "$scratch_dir" "$deadline" || scratch_rc=$?
+    [[ $scratch_rc -le 128 ]] || return "$scratch_rc"
+    return "$scratch_rc"
+}
+
+emit_purge_candidate_or_swiftpm_outputs() {
+    local item="${1%/}"
+    local search_path="$2"
+    if is_swiftpm_packaged_scratch_dir "$item"; then
+        local output_name output_dir
+        for output_name in "${MOLE_SWIFTPM_BUILD_OUTPUT_DIRS[@]}"; do
+            output_dir="$item/$output_name"
+            if [[ -d "$output_dir" && ! -L "$output_dir" ]] && is_safe_project_artifact "$output_dir" "$search_path"; then
+                printf '%s\n' "$output_dir"
+            fi
+        done
+        return 0
+    fi
+    printf '%s\n' "$item"
+}
+
 is_protected_purge_artifact() {
     local path="${1%/}"
     local deadline="${2:-}"
@@ -643,6 +719,17 @@ is_protected_purge_artifact() {
             return 1
             ;;
     esac
+
+    if is_swiftpm_build_output_artifact "$path"; then
+        local swiftpm_rc=0
+        purge_swiftpm_output_is_protected "$path" "$deadline" || swiftpm_rc=$?
+        [[ $swiftpm_rc -le 128 ]] || return "$swiftpm_rc"
+        if [[ $swiftpm_rc -eq 2 ]]; then
+            PURGE_PROTECTION_UNVERIFIED=true
+            return 0
+        fi
+        return "$swiftpm_rc"
+    fi
 
     return 1
 }
@@ -865,7 +952,7 @@ scan_purge_targets() {
                         fi
 
                         if [[ -n "$item" ]] && is_safe_project_artifact "$item" "$search_path"; then
-                            echo "$item"
+                            emit_purge_candidate_or_swiftpm_outputs "$item" "$search_path"
                             # Update scanning path to show current project directory
                             local project_dir="${item%/*}"
                             echo "$project_dir" > "$stats_dir/purge_scanning" 2> /dev/null || true
@@ -2857,6 +2944,9 @@ clean_project_artifacts() {
             project_parent="${artifact_path%/*}"
             if ! project_root=$(find_purge_project_root_for_artifact "$artifact_path"); then
                 project_root="$project_parent"
+                if is_swiftpm_packaged_scratch_dir "$project_root" && [[ "${project_root%/*}" == /* && -n "${project_root%/*}" ]]; then
+                    project_root="${project_root%/*}"
+                fi
             fi
             project_identity=$(mole_path_identity "$project_root")
         fi

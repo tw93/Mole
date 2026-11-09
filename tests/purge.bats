@@ -5333,3 +5333,80 @@ EOF
 @test "purge final node owner after activity scan idle" {
     assert_purge_final_owner_guard idle
 }
+
+@test "purge decomposes SwiftPM scratch roots with package checkouts into compiler output subdirs" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+purge_node_project_running() { return 1; }
+purge_swiftpm_scratch_running() { return 1; }
+
+app="$HOME/www/swift-app"
+mkdir -p     "$app/.build/checkouts/swift-crypto/.git"     "$app/.build/repositories/swift-crypto-1234"     "$app/.build/out/Products"     "$app/.build/index-build/arm64-apple-macosx"     "$app/.build/arm64-apple-macosx/debug"     "$app/.build-feature/checkouts/swift-crypto/.git"     "$app/.build-feature/out/Products"     "$app/.build-feature/aarch64-unknown-linux-gnu/debug"     "$HOME/www/plain-swift/.build/arm64-apple-macosx"
+touch "$app/Package.swift" "$HOME/www/plain-swift/Package.swift"
+printf '{"object":{"dependencies":[]},"version":6}
+' > "$app/.build/workspace-state.json"
+printf '{"object":{"dependencies":[]},"version":6}
+' > "$app/.build-feature/workspace-state.json"
+printf '%s
+# Swift Package Manager
+' "$MOLE_CACHEDIR_TAG_SIGNATURE" > "$app/.build/CACHEDIR.TAG"
+printf '%s
+# Swift Package Manager
+' "$MOLE_CACHEDIR_TAG_SIGNATURE" > "$app/.build-feature/CACHEDIR.TAG"
+
+for force_find in 0 1; do
+    out_file=$(mktemp)
+    MO_USE_FIND="$force_find" scan_purge_targets "$HOME/www" "$out_file"
+    results=$(cat "$out_file")
+    rm -f "$out_file"
+    [[ "$results" == *"$app/.build/out"* ]] || exit 1
+    [[ "$results" == *"$app/.build/index-build"* ]] || exit 1
+    [[ "$results" == *"$app/.build/arm64-apple-macosx"* ]] || exit 1
+    [[ "$results" == *"$app/.build-feature/out"* ]] || exit 1
+    [[ "$results" == *"$app/.build-feature/aarch64-unknown-linux-gnu"* ]] || exit 1
+    [[ "$results" == *"$HOME/www/plain-swift/.build"* ]] || exit 1
+    [[ "$results" != *"$app/.build/checkouts"* ]] || exit 1
+    [[ "$results" != *"$app/.build/repositories"* ]] || exit 1
+    while IFS= read -r line; do
+        [[ "$line" != "$app/.build" && "$line" != "$app/.build-feature" ]] || exit 1
+    done <<< "$results"
+done
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "purge protects SwiftPM compiler output subdirs while project or scratch-path processes run" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+
+project="$HOME/www/swift-app"
+mkdir -p "$project/.build-win-commands/checkouts/dep/.git" "$project/.build-win-commands/out/Products"
+touch "$project/Package.swift"
+printf '{"object":{"dependencies":[]},"version":6}
+' > "$project/.build-win-commands/workspace-state.json"
+target="$project/.build-win-commands/out"
+
+purge_node_project_running() { return 1; }
+purge_swiftpm_scratch_running() { return 1; }
+if is_protected_purge_artifact "$target"; then exit 1; fi
+
+purge_node_project_running() { return 0; }
+is_protected_purge_artifact "$target" || exit 1
+
+purge_node_project_running() { return 1; }
+purge_swiftpm_scratch_running() { return 0; }
+is_protected_purge_artifact "$target" || exit 1
+
+purge_swiftpm_scratch_running() { return 2; }
+is_protected_purge_artifact "$target" || exit 1
+[[ "$PURGE_PROTECTION_UNVERIFIED" == true ]] || exit 1
+
+purge_swiftpm_scratch_running() { return 143; }
+rc=0
+is_protected_purge_artifact "$target" || rc=$?
+[[ $rc -eq 143 ]]
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
