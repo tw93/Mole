@@ -2408,3 +2408,132 @@ _sim_runtime_size_kb "$fixture" > /dev/null
 SCRIPT
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+
+@test "mo clean refuses a shell that may not write, and removes nothing" {
+    [[ "$(id -u)" != "0" ]] || skip "root ignores directory modes"
+    local caches="$HOME/Library/Caches" logs="$HOME/Library/Logs"
+    mkdir -p "$caches/com.example.refused" "$logs"
+    touch "$caches/com.example.refused/blob"
+    chmod 555 "$caches" "$logs"
+
+    run env HOME="$HOME" MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh"
+    chmod 755 "$caches" "$logs"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"writing to ~/Library/Caches was refused (Permission denied)"* ]] || return 1
+    [[ "$output" == *"Nothing was removed."* ]] || return 1
+    [[ "$output" != *"Cleanup complete"* ]] || return 1
+    [ -f "$caches/com.example.refused/blob" ]
+}
+
+@test "mo clean carries on when only one checked folder refuses" {
+    [[ "$(id -u)" != "0" ]] || skip "root ignores directory modes"
+    local caches="$HOME/Library/Caches" logs="$HOME/Library/Logs"
+    mkdir -p "$caches" "$logs"
+    chmod 555 "$caches"
+
+    run env HOME="$HOME" MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh"
+    chmod 755 "$caches"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]] || return 1
+    [ -z "$(find "$logs" -name '.mole-write-check.*' -print -quit)" ]
+}
+
+# $1 is the tool to fail, $2 the error it prints; everything else stays real.
+_failing_write_check_tool() {
+    local bin_dir="$HOME/write-check-bin"
+    mkdir -p "$bin_dir" "$HOME/Library/Caches" "$HOME/Library/Logs"
+    rm -f "$bin_dir/mktemp" "$bin_dir/rmdir"
+    cat > "$bin_dir/$1" << SH
+#!/bin/bash
+case "\$*" in
+    *.mole-write-check*)
+        echo "$1: failed on \$*: $2" >&2
+        exit 1
+        ;;
+esac
+exec /bin/$1 "\$@" 2> /dev/null || exec /usr/bin/$1 "\$@"
+SH
+    chmod +x "$bin_dir/$1"
+    printf '%s' "$bin_dir"
+}
+
+@test "mo clean still runs on a full disk, where the write check also fails" {
+    local bin_dir
+    bin_dir=$(_failing_write_check_tool mktemp "No space left on device")
+
+    run env HOME="$HOME" PATH="$bin_dir:$PATH" MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]] || return 1
+}
+
+@test "mo clean carries on when removing the probe fails for another reason" {
+    local bin_dir
+    bin_dir=$(_failing_write_check_tool rmdir "No space left on device")
+
+    run env HOME="$HOME" PATH="$bin_dir:$PATH" MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh"
+    find "$HOME/Library" -maxdepth 2 -name '.mole-write-check.*' -exec /bin/rmdir {} +
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]] || return 1
+}
+
+@test "mo clean refuses when the system denies removing the probe" {
+    local bin_dir
+    bin_dir=$(_failing_write_check_tool rmdir "Operation not permitted")
+
+    run env HOME="$HOME" PATH="$bin_dir:$PATH" MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh"
+    find "$HOME/Library" -maxdepth 2 -name '.mole-write-check.*' -exec /bin/rmdir {} +
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"was refused (Operation not permitted)"* ]] || return 1
+}
+
+@test "the write check ignores stderr noise from a healthy mktemp and refusal words in a path" {
+    run env HOME="$HOME" MallocStackLogging=1 MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]] || return 1
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+_clean_write_refusal "mktemp: mkdtemp failed on /Permission denied/x: No space left on device" && exit 7
+_clean_write_refusal "rmdir: /x: Read-only file system"
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = "Read-only file system" ]
+}
+
+@test "mo clean --external refuses a volume the system will not write to" {
+    [[ "$(id -u)" != "0" ]] || skip "root ignores directory modes"
+    local volume="$HOME/fake-volume"
+    mkdir -p "$volume"
+    chmod 555 "$volume"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" VOLUME="$volume" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+EXTERNAL_VOLUME_TARGET="$VOLUME"
+refuse_cleanup_without_write_access
+EOF
+    chmod 755 "$volume"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"was refused (Permission denied)"* ]] || return 1
+}
+
+@test "mo clean --dry-run writes no probe and is not refused by the write check" {
+    [[ "$(id -u)" != "0" ]] || skip "root ignores directory modes"
+    local caches="$HOME/Library/Caches" logs="$HOME/Library/Logs"
+    mkdir -p "$caches" "$logs"
+    chmod 555 "$caches" "$logs"
+
+    run env HOME="$HOME" MOLE_TEST_MODE=1 MO_NO_OPLOG=1 "$PROJECT_ROOT/bin/clean.sh" --dry-run
+    chmod 755 "$caches" "$logs"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"was refused"* ]] || return 1
+    [ -z "$(find "$caches" -name '.mole-write-check.*' -print -quit)" ]
+}

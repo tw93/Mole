@@ -1495,6 +1495,69 @@ safe_clean_guarded() {
     _safe_clean_impl "$delete_guard" "$@"
 }
 
+# Prints the refusal behind an error line, or fails when the line is anything
+# else. Only the text after the last ": " counts, since mktemp quotes the path.
+_clean_write_refusal() {
+    local message="${1##*: }"
+    case "$message" in
+        "Operation not permitted" | "Permission denied" | "Read-only file system")
+            printf '%s' "$message"
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+# Creates and removes one empty folder in $1. Prints the reason and succeeds only
+# when the system refused the write.
+_clean_write_check() {
+    local output="" path=""
+    if ! output=$(LC_ALL=C mktemp -d "$1/.mole-write-check.XXXXXX" 2>&1); then
+        _clean_write_refusal "${output##*$'\n'}"
+        return
+    fi
+    # Stderr noise from a healthy mktemp comes first; the path is the last line.
+    path="${output##*$'\n'}"
+    if output=$(LC_ALL=C rmdir "$path" 2>&1); then
+        return 1
+    fi
+    _clean_write_refusal "${output##*$'\n'}"
+}
+
+# A shell that may not write here, such as an agent's sandbox, has every delete
+# denied, and a denied delete reads as nothing to clean: the run used to end on
+# "Cleanup complete" and exit 0 with nothing removed. Only an explicit refusal
+# stops the run. Any other failure carries on, above all ENOSPC, since a full
+# disk is what people run this for. A home run is stopped only when every folder
+# it checks refuses, so one odd folder never costs the rest of the cleanup.
+refuse_cleanup_without_write_access() {
+    [[ "$DRY_RUN" == "true" ]] && return 0
+
+    local -a targets=()
+    if [[ -n "$EXTERNAL_VOLUME_TARGET" ]]; then
+        targets=("$EXTERNAL_VOLUME_TARGET")
+    else
+        targets=("$HOME/Library/Caches" "$HOME/Library/Logs")
+    fi
+
+    local target="" reason="" refused_target="" refused_reason=""
+    for target in "${targets[@]}"; do
+        [[ -d "$target" ]] || continue
+        reason=$(_clean_write_check "$target") || return 0
+        if [[ -z "$refused_target" ]]; then
+            refused_target="$target"
+            refused_reason="$reason"
+        fi
+    done
+    [[ -n "$refused_target" ]] || return 0
+
+    printf 'mo clean cannot remove files from this shell: writing to %s was refused (%s).\n' "${refused_target/#$HOME/~}" "$refused_reason" >&2
+    printf 'Nothing was removed.' >&2
+    [[ "$refused_reason" == "Read-only file system" ]] || printf ' If this shell runs in a sandbox, run mo clean in your own terminal.' >&2
+    printf '\n' >&2
+    return 1
+}
+
 start_cleanup() {
     # Set current command for operation logging
     export MOLE_CURRENT_COMMAND="clean"
@@ -2191,6 +2254,7 @@ main() {
         shift
     done
 
+    refuse_cleanup_without_write_access || exit 1
     start_cleanup
     hide_cursor
     local cleanup_rc=0
