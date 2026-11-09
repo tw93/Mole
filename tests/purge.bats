@@ -5428,6 +5428,44 @@ SCRIPT
     done
 }
 
+@test "purge node project process check matches the spellings a command line uses" {
+    local root="/private/tmp/mole-argv-$$"
+    mkdir -p "$root/app"
+    local arg holder
+    for arg in "$root/app:/other" "$root/app,/other" "'$root/app'" "$root/APP/server.js" "/tmp/mole-argv-$$/app/server.js"; do
+        (cd / && exec /bin/sh -c 'sleep 30; : '"$arg") &
+        holder=$!
+        sleep 0.3
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$root/app" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$PROJECT_PATH" || rc=$?
+echo "RC=$rc"
+SCRIPT
+        kill "$holder" 2> /dev/null || true
+        wait "$holder" 2> /dev/null || true
+        [ "$status" -eq 0 ] || { echo "$output"; rm -rf "$root"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$arg: $output"; rm -rf "$root"; return 1; }
+    done
+    # A longer sibling name is not this project.
+    (cd / && exec /bin/sh -c 'sleep 30; : '"$root/app-old/server.js") &
+    holder=$!
+    sleep 0.3
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$root/app" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$PROJECT_PATH" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    kill "$holder" 2> /dev/null || true
+    wait "$holder" 2> /dev/null || true
+    rm -rf "$root"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "purge node project process check treats an unreadable process table as unknown" {
     local project="$HOME/www/table"
     mkdir -p "$project"

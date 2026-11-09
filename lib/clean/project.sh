@@ -577,18 +577,27 @@ _purge_lsof_path_form() {
     printf '%s' "$form"
 }
 
-# Regex for a path on a command line, which may spell a non-ASCII name in the
-# other Unicode form than the disk does. lsof reports the disk's spelling.
+# Regex for paths on a command line, ended by anything that cannot continue a
+# file name (a `java -cp a:b` colon, a comma, a quote). A /private path may be
+# spelled through its macOS alias, and a non-ASCII name in the other Unicode form
+# than the disk. lsof reports the disk's spelling, so only this probe needs them.
 _purge_path_regex() {
-    local path="$1" regex conversion form
-    regex=$(_mole_regex_escape "$path")
-    if [[ "$(LC_ALL=C printf '%s' "$path" | LC_ALL=C /usr/bin/tr -d ' -~')" != "" ]]; then
-        for conversion in "UTF-8-MAC UTF-8" "UTF-8 UTF-8-MAC"; do
-            form=$(printf '%s' "$path" | /usr/bin/iconv -f "${conversion% *}" -t "${conversion#* }" 2> /dev/null) || continue
-            [[ -z "$form" || "$form" == "$path" ]] || regex+="|$(_mole_regex_escape "$form")"
+    local regex="" path spelling conversion form
+    for path in "$@"; do
+        for spelling in "$path" "${path#/private}"; do
+            case "$spelling" in
+                /tmp | /tmp/* | /var | /var/* | /etc | /etc/* | "$path") ;;
+                *) continue ;;
+            esac
+            regex+="${regex:+|}$(_mole_regex_escape "$spelling")"
+            [[ -n "$(LC_ALL=C printf '%s' "$spelling" | LC_ALL=C /usr/bin/tr -d ' -~')" ]] || continue
+            for conversion in "UTF-8-MAC UTF-8" "UTF-8 UTF-8-MAC"; do
+                form=$(printf '%s' "$spelling" | /usr/bin/iconv -f "${conversion% *}" -t "${conversion#* }" 2> /dev/null) || continue
+                [[ -z "$form" || "$form" == "$spelling" ]] || regex+="|$(_mole_regex_escape "$form")"
+            done
         done
-    fi
-    printf '(%s)(/|[[:space:]]|$)' "$regex"
+    done
+    printf '(%s)([^[:alnum:]._-]|$)' "$regex"
 }
 
 # Is any of these pids, which a probe just saw, a live process other than Mole?
@@ -642,7 +651,8 @@ _purge_outside_process_among() {
 _purge_other_process_matches() {
     local pattern="$1" deadline="${2:-}" probe_timeout rc=0 matched_pids=""
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$pattern" 2> /dev/null) || rc=$?
+    # Case-blind: the default volume is, so a command line may spell it either way.
+    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -if "$pattern" 2> /dev/null) || rc=$?
     [[ $rc -le 128 ]] || return "$rc"
     [[ $rc -le 1 ]] || return 2
     [[ $rc -eq 0 ]] || return 1
