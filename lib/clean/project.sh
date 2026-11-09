@@ -555,18 +555,21 @@ PURGE_PROTECTION_UNVERIFIED=false
 # Returns the same tri-state as process probes. A project may be active with
 # no open file inside node_modules, for example a shell or dev server in cwd.
 # lsof prints a name in the C locale, which purge runs under, with every byte
-# outside printable ASCII as \xHH, so a raw comparison never matches ~/www/项目.
+# outside printable ASCII as \xHH and a backslash doubled, so a raw comparison
+# never matches ~/www/项目.
 _purge_lsof_path_form() {
-    local path="$1" byte form=""
+    local path="$1" byte char form=""
     local LC_ALL=C
-    if [[ "$path" != *[!\ -~]* ]]; then
+    if [[ "$path" != *[!\ -~]* && "$path" != *\\* ]]; then
         printf '%s' "$path"
         return 0
     fi
     for byte in $(printf '%s' "$path" | /usr/bin/od -An -v -tx1); do
-        if [[ "$((16#$byte))" -ge 32 && "$((16#$byte))" -le 126 ]]; then
-            # shellcheck disable=SC2059 # The format is the two hex digits od printed.
-            form+=$(printf "\\x$byte")
+        if [[ "$byte" == 5c ]]; then
+            form+="\\\\"
+        elif [[ "$((16#$byte))" -ge 32 && "$((16#$byte))" -le 126 ]]; then
+            printf -v char '%b' "\\x$byte"
+            form+="$char"
         else
             form+="\\x$byte"
         fi
@@ -574,19 +577,48 @@ _purge_lsof_path_form() {
     printf '%s' "$form"
 }
 
-# Space-delimited pids of Mole, what started it and what it started. The shell
-# that ran `mo purge` from a project and Mole's own find workers walking a
-# sibling artifact are not the project running. Without a process table only
-# Mole itself is known, which keeps more candidates, not fewer.
-_purge_own_process_tree() {
-    local table=""
-    table=$(LC_ALL=C /bin/ps -axo pid=,ppid= 2> /dev/null) || table=""
-    printf '%s\n' "$table" | SELF_PID="$$" LC_ALL=C /usr/bin/awk '
-        NF == 2 { parent[$1] = $2 }
+# Regex for a path on a command line, which may spell a non-ASCII name in the
+# other Unicode form than the disk does. lsof reports the disk's spelling.
+_purge_path_regex() {
+    local path="$1" regex conversion form
+    regex=$(_mole_regex_escape "$path")
+    if [[ "$(LC_ALL=C printf '%s' "$path" | LC_ALL=C /usr/bin/tr -d ' -~')" != "" ]]; then
+        for conversion in "UTF-8-MAC UTF-8" "UTF-8 UTF-8-MAC"; do
+            form=$(printf '%s' "$path" | /usr/bin/iconv -f "${conversion% *}" -t "${conversion#* }" 2> /dev/null) || continue
+            [[ -z "$form" || "$form" == "$path" ]] || regex+="|$(_mole_regex_escape "$form")"
+        done
+    fi
+    printf '(%s)(/|[[:space:]]|$)' "$regex"
+}
+
+# Is any of these pids, which a probe just saw, a live process other than Mole?
+# Mole is itself, what it started, and the unbroken chain of shells that started
+# it, such as the shell that ran `mo purge` from a project. The first ancestor
+# that is not a shell ends the chain, so a dev server or an Electron app whose
+# terminal runs Mole still counts. The table is read after the probe, so a pid
+# missing from it has exited, as Mole's own polling sleeps do. A match that names
+# no pid is still a match. Same statuses as the probes that call it.
+_purge_outside_process_among() {
+    local pids="$1" deadline="${2:-}" probe_timeout table rc=0
+    [[ -n "$pids" ]] || return 0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    table=$(LC_ALL=C run_with_timeout "$probe_timeout" /bin/ps -axo pid=,ppid=,comm= 2> /dev/null) || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -eq 0 && -n "$table" ]] || return 2
+    rc=0
+    HIT_PIDS="$pids" SELF_PID="$$" LC_ALL=C /usr/bin/awk '
+        {
+            parent[$1] = $2
+            name = $0
+            sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+/, "", name)
+            sub(/.*\//, "", name)
+            sub(/^-/, "", name)
+            if (name ~ /^(bash|zsh|sh|dash|ksh|fish|tcsh|csh)$/) shell[$1] = 1
+        }
         END {
             self = ENVIRON["SELF_PID"]
             own[self] = 1
-            for (pid = parent[self]; pid != "" && !(pid in own); pid = parent[pid]) own[pid] = 1
+            for (pid = parent[self]; (pid in shell) && !(pid in own); pid = parent[pid]) own[pid] = 1
             descendants[self] = 1
             do {
                 grew = 0
@@ -597,28 +629,43 @@ _purge_own_process_tree() {
                     }
                 }
             } while (grew)
-            for (pid in descendants) own[pid] = 1
-            printf " "
-            for (pid in own) printf "%s ", pid
-        }'
+            count = split(ENVIRON["HIT_PIDS"], hits, /[ \n]+/)
+            for (i = 1; i <= count; i++) {
+                pid = hits[i]
+                if ((pid in parent) && !(pid in own) && !(pid in descendants)) exit 0
+            }
+            exit 1
+        }' <<< "$table" || rc=$?
+    return "$rc"
+}
+
+_purge_other_process_matches() {
+    local pattern="$1" deadline="${2:-}" probe_timeout rc=0 matched_pids=""
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$pattern" 2> /dev/null) || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -le 1 ]] || return 2
+    [[ $rc -eq 0 ]] || return 1
+    _purge_outside_process_among "$matched_pids" "$deadline"
 }
 
 purge_node_project_running() {
     local project="$1" deadline="${2:-}" probe_timeout evidence rc=0 line saw_cwd=false
     [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    # From /, so lsof and its wrappers never list themselves in the project;
-    # they are gone by the time the process tree below is read.
+    # From /, so lsof and its wrappers never list themselves in the project.
     evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
     [[ $rc -le 128 ]] || return "$rc"
     [[ $rc -eq 0 && -n "$evidence" ]] || return 2
-    local own_pids listed_project current_pid=""
-    own_pids=$(_purge_own_process_tree)
+    local listed_project current_pid=""
     listed_project=$(_purge_lsof_path_form "$project")
     while IFS= read -r line; do
         case "$line" in
             "n$project" | "n$project/"* | "n$listed_project" | "n$listed_project/"*)
-                [[ "$own_pids" == *" $current_pid "* ]] || return 0
+                rc=0
+                _purge_outside_process_among "$current_pid" "$deadline" || rc=$?
+                [[ $rc -ne 0 ]] || return 0
+                [[ $rc -eq 1 ]] || return "$rc"
                 saw_cwd=true
                 ;;
             n/*) saw_cwd=true ;;
@@ -628,19 +675,7 @@ purge_node_project_running() {
         esac
     done <<< "$evidence"
     [[ "$saw_cwd" == true ]] || return 2
-    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    rc=0
-    local matched_pids="" matched_pid
-    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" 2> /dev/null) || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -le 1 ]] || return 2
-    [[ $rc -eq 0 ]] || return 1
-    # A match that names no pid is still a match.
-    [[ -n "$matched_pids" ]] || return 0
-    while IFS= read -r matched_pid; do
-        [[ "$own_pids" == *" $matched_pid "* ]] || return 0
-    done <<< "$matched_pids"
-    return 1
+    _purge_other_process_matches "$(_purge_path_regex "$project")" "$deadline"
 }
 
 # Lockfiles make reinstall possible; the package-manager record separates
