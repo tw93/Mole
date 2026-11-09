@@ -554,28 +554,93 @@ PURGE_PROTECTION_UNVERIFIED=false
 
 # Returns the same tri-state as process probes. A project may be active with
 # no open file inside node_modules, for example a shell or dev server in cwd.
+# lsof prints a name in the C locale, which purge runs under, with every byte
+# outside printable ASCII as \xHH, so a raw comparison never matches ~/www/项目.
+_purge_lsof_path_form() {
+    local path="$1" byte form=""
+    local LC_ALL=C
+    if [[ "$path" != *[!\ -~]* ]]; then
+        printf '%s' "$path"
+        return 0
+    fi
+    for byte in $(printf '%s' "$path" | /usr/bin/od -An -v -tx1); do
+        if [[ "$((16#$byte))" -ge 32 && "$((16#$byte))" -le 126 ]]; then
+            # shellcheck disable=SC2059 # The format is the two hex digits od printed.
+            form+=$(printf "\\x$byte")
+        else
+            form+="\\x$byte"
+        fi
+    done
+    printf '%s' "$form"
+}
+
+# Space-delimited pids of Mole, what started it and what it started. The shell
+# that ran `mo purge` from a project and Mole's own find workers walking a
+# sibling artifact are not the project running. Without a process table only
+# Mole itself is known, which keeps more candidates, not fewer.
+_purge_own_process_tree() {
+    local table=""
+    table=$(LC_ALL=C /bin/ps -axo pid=,ppid= 2> /dev/null) || table=""
+    printf '%s\n' "$table" | SELF_PID="$$" LC_ALL=C /usr/bin/awk '
+        NF == 2 { parent[$1] = $2 }
+        END {
+            self = ENVIRON["SELF_PID"]
+            own[self] = 1
+            for (pid = parent[self]; pid != "" && !(pid in own); pid = parent[pid]) own[pid] = 1
+            descendants[self] = 1
+            do {
+                grew = 0
+                for (pid in parent) {
+                    if (!(pid in descendants) && (parent[pid] in descendants)) {
+                        descendants[pid] = 1
+                        grew = 1
+                    }
+                }
+            } while (grew)
+            for (pid in descendants) own[pid] = 1
+            printf " "
+            for (pid in own) printf "%s ", pid
+        }'
+}
+
 purge_node_project_running() {
     local project="$1" deadline="${2:-}" probe_timeout evidence rc=0 line saw_cwd=false
     [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    evidence=$(run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
+    # From /, so lsof and its wrappers never list themselves in the project;
+    # they are gone by the time the process tree below is read.
+    evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
     [[ $rc -le 128 ]] || return "$rc"
     [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    local own_pids listed_project current_pid=""
+    own_pids=$(_purge_own_process_tree)
+    listed_project=$(_purge_lsof_path_form "$project")
     while IFS= read -r line; do
         case "$line" in
-            "n$project" | "n$project/"*) return 0 ;;
+            "n$project" | "n$project/"* | "n$listed_project" | "n$listed_project/"*)
+                [[ "$own_pids" == *" $current_pid "* ]] || return 0
+                saw_cwd=true
+                ;;
             n/*) saw_cwd=true ;;
-            p[0-9]* | fcwd) ;;
+            p[0-9]*) current_pid="${line#p}" ;;
+            fcwd) ;;
             *) return 2 ;; # A warning or unavailable cwd makes visibility incomplete.
         esac
     done <<< "$evidence"
     [[ "$saw_cwd" == true ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
     rc=0
-    run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" > /dev/null 2>&1 || rc=$?
+    local matched_pids="" matched_pid
+    matched_pids=$(run_with_timeout "$probe_timeout" pgrep -f "$(_mole_regex_escape "$project")(/|[[:space:]]|$)" 2> /dev/null) || rc=$?
     [[ $rc -le 128 ]] || return "$rc"
     [[ $rc -le 1 ]] || return 2
-    return "$rc"
+    [[ $rc -eq 0 ]] || return 1
+    # A match that names no pid is still a match.
+    [[ -n "$matched_pids" ]] || return 0
+    while IFS= read -r matched_pid; do
+        [[ "$own_pids" == *" $matched_pid "* ]] || return 0
+    done <<< "$matched_pids"
+    return 1
 }
 
 # Lockfiles make reinstall possible; the package-manager record separates
