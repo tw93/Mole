@@ -540,6 +540,11 @@ SCRIPT
     local skill="$BATS_TEST_TMPDIR/skill"
     mkdir -p "$skill/references"
     cat > "$skill/SKILL.md" <<'EOF'
+---
+name: mole
+description: "Short."
+when_to_use: "short"
+---
 Run `mo clean --dry-run`, then `mo status --json`.
 EOF
     cat > "$skill/references/macos.md" <<'EOF'
@@ -574,6 +579,11 @@ EOF
     local copy="$BATS_TEST_TMPDIR/copy"
     mkdir -p "$skill/references"
     cat > "$skill/SKILL.md" <<'EOF'
+---
+name: mole
+description: "Short."
+when_to_use: "short"
+---
 Run `mo clean --dry-run`.
 EOF
     : > "$skill/references/macos.md"
@@ -588,6 +598,29 @@ EOF
     [ "$status" -eq 1 ] || { echo "$output"; return 1; }
     [[ "$output" == *"$copy/references/macos.md: differs from $skill"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"fix with: rm -rf $copy && cp -R $skill $copy"* ]] || { echo "$output"; return 1; }
+}
+
+@test "skill command audit rejects a description DeepSeek Harness would cut off" {
+    local audit="$PROJECT_ROOT/scripts/audit_skill_commands.py"
+    local skill="$BATS_TEST_TMPDIR/skill"
+    mkdir -p "$skill/references"
+    : > "$skill/references/macos.md"
+    : > "$skill/references/windows.md"
+    local long
+    long=$(printf 'x%.0s' {1..300})
+    local body="$BATS_TEST_TMPDIR/body.md"
+    cat > "$body" <<'EOF'
+Run `mo clean --dry-run`.
+EOF
+    { printf -- '---\nname: mole\ndescription: "%s"\nwhen_to_use: "%s"\n---\n' "$long" "$long"; cat "$body"; } > "$skill/SKILL.md"
+
+    run python3 "$audit" --skill-dir "$skill" --plugin-copy "$skill" --windows-ref refs/heads/mole-audit-missing-ref
+    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"join to 611 characters, over 500"* ]] || { echo "$output"; return 1; }
+
+    { printf -- '---\nname: mole\ndescription: "%s"\nwhen_to_use: "short"\n---\n' "$long"; cat "$body"; } > "$skill/SKILL.md"
+    run python3 "$audit" --skill-dir "$skill" --plugin-copy "$skill" --windows-ref refs/heads/mole-audit-missing-ref
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "CI checks the published skill against both CLIs" {

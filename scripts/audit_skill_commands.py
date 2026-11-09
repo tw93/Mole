@@ -25,6 +25,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CATALOG_DESCRIPTION_LIMIT = 500
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 STOP_TOKENS = {"|", "||", "&&", ";", "#", "or", "then"}
 
@@ -156,6 +157,18 @@ def copy_problems(source: Path, copy: Path) -> list[str]:
     return [f"{copy}/{name}: differs from {source}" for name in stale] + [f"fix with: {fix}"]
 
 
+def catalog_problems(skill_md: Path) -> list[str]:
+    """plugins/mole/index.js joins these two fields; DeepSeek Harness cuts the result at 500 characters."""
+    text = skill_md.read_text(encoding="utf-8")
+    fields = [re.search(rf'^{key}: "(.*)"$', text, re.M) for key in ("description", "when_to_use")]
+    if not all(fields):
+        return [f"{skill_md}: description and when_to_use must be single-line quoted strings"]
+    length = sum(len(field.group(1)) for field in fields) + len(" Triggers: ")
+    if length > CATALOG_DESCRIPTION_LIMIT:
+        return [f"{skill_md}: description and when_to_use join to {length} characters, over {CATALOG_DESCRIPTION_LIMIT}"]
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--skill-dir", type=Path, default=PROJECT_ROOT / "skills" / "mole")
@@ -196,6 +209,8 @@ def main() -> int:
 
     if args.plugin_copy is not None:
         failures += copy_problems(args.skill_dir, args.plugin_copy)
+    if (args.skill_dir / "SKILL.md").is_file():
+        failures += catalog_problems(args.skill_dir / "SKILL.md")
 
     if failures:
         print("\n".join(failures))

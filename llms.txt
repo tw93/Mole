@@ -18,6 +18,8 @@ If you are an agent asked to install Mole, do both steps below, telling the user
    - Claude Code, Codex, Cursor and other agents: `npx skills add tw93/Mole -a claude-code codex cursor -g -y`
    - Or the Claude Code plugin: `/plugin marketplace add tw93/Mole`, then `/plugin install mole@mole`
    - Or the Codex plugin: `codex plugin marketplace add tw93/Mole`, then `codex plugin add mole@mole`
+   - Or the DeepSeek Harness plugin: `dsh plugin --profile <name> add dsh-mole`
+   - Or the Gemini CLI extension: `gemini extensions install https://github.com/tw93/Mole`
 
 Then run `mo --version` to confirm, and tell the user they can ask things like "what is using my disk?". If the skill does not show up yet, a new session loads it.
 
