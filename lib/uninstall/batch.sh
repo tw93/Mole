@@ -721,6 +721,46 @@ _uninstall_container_is_stub() {
     [[ $scan_rc -eq 0 && -z "$entry" ]]
 }
 
+# True when a tree holds an entry System Integrity Protection guards, which
+# nothing outside recoveryOS can remove: the restricted or sunlnk flag, the
+# com.apple.rootless attribute, or an entry macOS refuses to stat at all. Moved
+# to the Trash, such a folder fails every Empty Trash afterwards. A scan that
+# cannot prove protection (timeout, any other error) answers no. The system
+# find by full path: a GNU find earlier in PATH rejects these predicates.
+_uninstall_find_system_protected() {
+    LC_ALL=C run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" /usr/bin/find "$1" -maxdepth 4 \
+        \( -flags +restricted -o -flags +sunlnk -o -xattrname com.apple.rootless \) \
+        -print -quit
+}
+
+_uninstall_tree_holds_system_protected_entry() {
+    local errors="" hit="" refusals="" scan_rc=0 line=""
+    errors=$(mktemp "${TMPDIR:-/tmp}/mole-sip.XXXXXX") || return 1
+    hit=$(_uninstall_find_system_protected "$1" 2> "$errors") || scan_rc=$?
+    refusals=$(cat "$errors" 2> /dev/null) || refusals=""
+    rm -f "$errors"
+    mole_rc_signal "$scan_rc" && return "$scan_rc"
+    [[ -n "$hit" ]] && return 0
+    while IFS= read -r line; do
+        [[ "$line" == "find: "*": Operation not permitted" ]] && return 0
+    done <<< "$refusals"
+    return 1
+}
+
+# Asked only of a sandbox or group container's own folder, and only with Full
+# Disk Access: the walk reads into another app's container, and without the
+# grant a refused read proves nothing and may raise macOS's own prompt. A dry
+# run moves nothing, so it does not walk.
+_uninstall_container_holds_system_protected_entry() {
+    case "${1%/*}" in
+        "$HOME/Library/Containers" | "$HOME/Library/Group Containers") ;;
+        *) return 1 ;;
+    esac
+    is_uninstall_dry_run && return 1
+    has_full_disk_access || return 1
+    _uninstall_tree_holds_system_protected_entry "$1"
+}
+
 # Remove files (handles symlinks, optional sudo).
 # Security: All paths pass validate_path_for_deletion() before any deletion.
 # Performance: when MOLE_DELETE_MODE=trash and the batch is sudo-free and
@@ -792,6 +832,15 @@ remove_file_list() {
         mole_rc_timeout_or_signal "$validation_rc" && return "$validation_rc"
         if [[ $validation_rc -ne 0 ]]; then
             log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "SKIPPED" "$file" "${_MOLE_VALIDATION_REASON:-protected}"
+            continue
+        fi
+
+        local system_protected_rc=0
+        _uninstall_container_holds_system_protected_entry "$file" || system_protected_rc=$?
+        mole_rc_signal "$system_protected_rc" && return "$system_protected_rc"
+        if [[ $system_protected_rc -eq 0 ]]; then
+            log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "SKIPPED" "$file" "system protected"
+            _mole_record_uninstall_refusal "$file" "access-denied"
             continue
         fi
 

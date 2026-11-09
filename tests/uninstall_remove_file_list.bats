@@ -948,3 +948,182 @@ done
 '
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+
+@test "the System Integrity Protection probe reads real protected trees and an ordinary one" {
+    [[ -d /System/Library/Sandbox && -d /private/var/db/CVMS ]] || skip "needs macOS system folders"
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+_uninstall_tree_holds_system_protected_entry /System/Library/Sandbox || exit 1
+_uninstall_tree_holds_system_protected_entry /private/var/db/CVMS || exit 2
+mkdir -p "$HOME/ordinary/Data"
+if _uninstall_tree_holds_system_protected_entry "$HOME/ordinary"; then exit 3; fi
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
+
+@test "the System Integrity Protection probe asks the system find for every mark, bounded" {
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+run_with_timeout() { shift; printf '%s\n' "$*"; }
+line=$(_uninstall_find_system_protected "$HOME/x")
+[[ "$line" == "/usr/bin/find $HOME/x -maxdepth 4 "* ]] || exit 1
+[[ "$line" == *"-flags +restricted"* && "$line" == *"-flags +sunlnk"* ]] || exit 2
+[[ "$line" == *"-xattrname com.apple.rootless"* && "$line" == *"-print -quit" ]] || exit 3
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
+
+@test "only a hit or a refused stat proves protection, and a signal cancels" {
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+answer() { _uninstall_tree_holds_system_protected_entry /x; echo "$?"; }
+_uninstall_find_system_protected() { echo /x/Data/drkit; }
+[[ $(answer) == 0 ]] || exit 1
+_uninstall_find_system_protected() { echo "find: /x/Data/drkit: Operation not permitted" >&2; return 1; }
+[[ $(answer) == 0 ]] || exit 2
+_uninstall_find_system_protected() { echo "find: /x/gone: No such file or directory" >&2; return 1; }
+[[ $(answer) == 1 ]] || exit 3
+_uninstall_find_system_protected() { echo "/lib/timeout.sh: fork: retry: Resource temporarily unavailable" >&2; return 1; }
+[[ $(answer) == 1 ]] || exit 4
+_uninstall_find_system_protected() { return 124; }
+[[ $(answer) == 1 ]] || exit 5
+_uninstall_find_system_protected() { echo /x/Data/drkit; return 124; }
+[[ $(answer) == 0 ]] || exit 6
+_uninstall_find_system_protected() { return 143; }
+[[ $(answer) == 143 ]] || exit 7
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
+
+@test "uninstall keeps a container macOS protects, counts only what it removed, and logs why" {
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+export MOLE_UNINSTALL_MODE=1 MOLE_HAS_FDA=1
+flagged="$HOME/Library/Containers/developer.apple.wwdc-Release"
+grouped="$HOME/Library/Group Containers/group.example.denied"
+plain="$HOME/Library/Containers/com.example.plain"
+outside="$HOME/Library/Application Support/com.example.outside"
+mkdir -p "$flagged" "$grouped" "$plain" "$outside"
+_uninstall_tree_holds_system_protected_entry() {
+    printf '%s\n' "$1" >> "$HOME/asked"
+    [[ "$1" == "$flagged" || "$1" == "$grouped" ]]
+}
+logged="$HOME/logged"
+log_operation() { printf '%s|%s|%s\n' "$2" "$3" "$4" >> "$logged"; }
+collect() {
+    local _MOLE_UNINSTALL_REFUSALS_ACTIVE=1
+    local -a _MOLE_UNINSTALL_REFUSAL_PATHS=() _MOLE_UNINSTALL_REFUSAL_REASONS=()
+    local removed
+    removed=$(remove_file_list "$(printf '%s\n' "$flagged" "$grouped" "$plain" "$outside")" false | tail -1)
+    [[ "$removed" == 2 ]] || { echo "removed=$removed"; exit 1; }
+    _MOLE_UNINSTALL_REFUSAL_PATHS=()
+}
+collect
+[[ -d "$flagged" && -d "$grouped" ]] || exit 2
+[[ ! -e "$plain" && ! -e "$outside" ]] || exit 3
+if grep -qF "$outside" "$HOME/asked"; then exit 4; fi
+grep -qF "SKIPPED|$flagged|system protected" "$logged" || exit 5
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
+
+@test "a protected container is recorded as denied access for the summary, and a signal stops the batch" {
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+export MOLE_UNINSTALL_MODE=1 MOLE_HAS_FDA=1
+kept="$HOME/Library/Containers/com.example.kept"
+later="$HOME/Library/Containers/com.example.later"
+mkdir -p "$kept" "$later"
+_MOLE_UNINSTALL_REFUSALS_ACTIVE=1
+_MOLE_UNINSTALL_REFUSAL_PATHS=()
+_MOLE_UNINSTALL_REFUSAL_REASONS=()
+_uninstall_tree_holds_system_protected_entry() { return 0; }
+remove_file_list "$kept" false > /dev/null || exit 1
+[[ "${_MOLE_UNINSTALL_REFUSAL_PATHS[0]}" == "$kept" ]] || exit 2
+[[ "${_MOLE_UNINSTALL_REFUSAL_REASONS[0]}" == access-denied ]] || exit 3
+_uninstall_tree_holds_system_protected_entry() { return 143; }
+rc=0
+remove_file_list "$later" false > /dev/null || rc=$?
+[[ $rc -eq 143 ]] || { echo "rc=$rc"; exit 4; }
+[[ -d "$later" ]] || exit 5
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
+
+@test "a batch names a kept protected container as denied and leaves it out of the freed total" {
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+export MOLE_UNINSTALL_MODE=1 MOLE_HAS_FDA=1
+app="$HOME/Applications/Kept.app"
+kept="$HOME/Library/Containers/com.example.kept"
+mkdir -p "$app" "$kept/Data"
+dd if=/dev/zero of="$kept/Data/blob" bs=1024 count=100 2> /dev/null
+kept_kb=$(du -skP "$kept" | awk '{print $1}')
+stop_launch_services() { :; }
+unregister_app_bundle() { :; }
+_uninstall_tree_holds_system_protected_entry() { return 0; }
+mole_delete() { rmdir "$1"; }
+encoded=$(printf '%s\n' "$kept" | base64 | tr -d '\n')
+app_details=("Kept|$app|com.example.kept|500|$encoded||false|false|false|||||guard_login|$(_batch_selected_app_identity "$app")|unknown||missing")
+success_count=0
+failed_count=0
+brew_apps_removed=0
+failed_items=()
+success_items=()
+success_dock_targets=()
+system_extension_warning_apps=()
+review_only_system_leftovers=()
+review_only_system_leftover_keys=()
+running_at_uninstall_apps=()
+total_size_freed=0
+files_cleaned=0
+total_items=0
+_batch_execute_removals > "$HOME/batch.out" 2>&1
+[[ -d "$kept/Data" ]] || { echo "container moved"; exit 1; }
+grep -Fq "macOS denied access" "$HOME/batch.out" || { cat "$HOME/batch.out"; exit 2; }
+[[ $total_size_freed -eq $((500 - kept_kb)) ]] || { echo "freed=$total_size_freed kept=$kept_kb"; cat "$HOME/batch.out"; exit 3; }
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
+
+@test "the protection walk stays out of a dry run and needs a proven Full Disk Access grant" {
+    run /bin/bash --noprofile --norc <<'SCRIPT'
+set -uo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+container="$HOME/Library/Containers/com.example.plain"
+_uninstall_tree_holds_system_protected_entry() { printf 'walked\n' > "$HOME/walked"; return 0; }
+is_uninstall_dry_run() { return 1; }
+MOLE_HAS_FDA=0
+if _uninstall_container_holds_system_protected_entry "$container"; then exit 1; fi
+MOLE_HAS_FDA=unknown
+if _uninstall_container_holds_system_protected_entry "$container"; then exit 2; fi
+MOLE_HAS_FDA=1
+is_uninstall_dry_run() { return 0; }
+if _uninstall_container_holds_system_protected_entry "$container"; then exit 3; fi
+is_uninstall_dry_run() { return 1; }
+if _uninstall_container_holds_system_protected_entry "$HOME/Library/Application Support/x"; then exit 4; fi
+[[ ! -e "$HOME/walked" ]] || exit 5
+_uninstall_container_holds_system_protected_entry "$container" || exit 6
+[[ -e "$HOME/walked" ]] || exit 7
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "status=$status"; echo "$output"; return 1; }
+}
