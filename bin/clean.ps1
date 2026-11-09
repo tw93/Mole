@@ -161,6 +161,60 @@ function Show-CleanupSummary {
 # Main Cleanup Flow
 # ============================================================================
 
+# Prints the refusal behind a failed folder write, or nothing for any other
+# failure. A full disk is what people run this for, so only an explicit refusal
+# counts.
+function Get-CleanWriteRefusal {
+    param([System.Exception]$Exception)
+    while ($Exception) {
+        if ($Exception -is [System.UnauthorizedAccessException]) { return 'Access is denied' }
+        # ERROR_WRITE_PROTECT
+        if ($Exception.HResult -eq -2147024877) { return 'The media is write protected' }
+        $Exception = $Exception.InnerException
+    }
+    return ''
+}
+
+# Creates and removes one empty folder. Prints the reason only when the system
+# refused the write.
+function Test-CleanWriteRefused {
+    param([string]$Folder)
+    try {
+        $probe = [System.IO.Path]::Combine($Folder, '.mole-write-check.' + [guid]::NewGuid().ToString('N'))
+        [System.IO.Directory]::CreateDirectory($probe) | Out-Null
+        [System.IO.Directory]::Delete($probe)
+        return ''
+    }
+    catch {
+        return Get-CleanWriteRefusal -Exception $_.Exception
+    }
+}
+
+# A shell that may not write here, such as an agent's sandbox, has every delete
+# denied, and a denied delete only reaches the debug log: the run used to end on
+# "System was already clean" and exit 0 with nothing removed. A run stops only
+# when every folder it checks refuses, so one odd folder never costs the rest.
+# %TEMP% is not asked: a sandbox commonly leaves it open and denies the rest.
+function Test-CleanCanWrite {
+    param([string[]]$Folders)
+    $refusedFolder = ''
+    $refusedReason = ''
+    foreach ($folder in $Folders) {
+        if (-not $folder -or -not [System.IO.Directory]::Exists($folder)) { continue }
+        $reason = Test-CleanWriteRefused -Folder $folder
+        if (-not $reason) { return $true }
+        if (-not $refusedFolder) {
+            $refusedFolder = $folder
+            $refusedReason = $reason
+        }
+    }
+    if (-not $refusedFolder) { return $true }
+    [Console]::Error.WriteLine("mo clean cannot remove files from this shell: writing to $refusedFolder was refused ($refusedReason).")
+    $advice = if ($refusedReason -eq 'Access is denied') { ' If this shell runs in a sandbox, run mo clean in your own terminal.' } else { '' }
+    [Console]::Error.WriteLine("Nothing was removed.$advice")
+    return $false
+}
+
 function Start-Cleanup {
     param(
         [bool]$IsDryRun,
@@ -313,8 +367,14 @@ function Main {
     }
 
     # Run cleanup
+    if (-not $effectiveDryRun -and -not (Test-CleanCanWrite -Folders @($env:LOCALAPPDATA, $env:APPDATA))) {
+        exit 1
+    }
+
     Start-Cleanup -IsDryRun $effectiveDryRun -IncludeSystem $System -IncludeGameMedia $GameMedia -IncludeGpuShaders $GpuShaders
 }
 
 # Run main
 Main
+# A tool's own exit status stays its own; the router returns this one.
+exit 0

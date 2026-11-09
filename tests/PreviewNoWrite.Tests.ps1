@@ -62,3 +62,65 @@ Describe 'Preview without writable state' {
         (Show-CleanupSummary -Stats $stats -IsDryRun $true | Out-String) | Should -Not -Match 'Detailed file list'
     }
 }
+
+Describe 'Real clean without write access' {
+    BeforeAll {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root 'bin\clean.ps1'), [ref]$null, [ref]$null)
+        foreach ($name in 'Get-CleanWriteRefusal', 'Test-CleanWriteRefused', 'Test-CleanCanWrite') {
+            $definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
+            . ([scriptblock]::Create($definition.Extent.Text))
+        }
+        function New-DeniedFolder {
+            $folder = Join-Path ([IO.Path]::GetTempPath()) ("mole-refuse-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $folder | Out-Null
+            icacls $folder /deny "$env:USERDOMAIN\${env:USERNAME}:(OI)(CI)(WD,AD)" | Out-Null
+            return $folder
+        }
+        function Remove-DeniedFolder([string]$Folder) {
+            icacls $Folder /remove:d "$env:USERDOMAIN\$env:USERNAME" | Out-Null
+            Remove-Item -LiteralPath $Folder -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'Refuses when every checked folder refuses a write' {
+        $one = New-DeniedFolder
+        $two = New-DeniedFolder
+        try {
+            Test-CleanCanWrite -Folders @($one, $two) | Should -BeFalse
+        }
+        finally { Remove-DeniedFolder $one; Remove-DeniedFolder $two }
+    }
+
+    It 'Reads a denied write through the exception PowerShell wraps it in' {
+        $denied = [System.UnauthorizedAccessException]::new('Access to the path is denied.')
+        $wrapped = [System.Management.Automation.MethodInvocationException]::new('Exception calling Delete', $denied)
+        Get-CleanWriteRefusal -Exception $wrapped | Should -Be 'Access is denied'
+    }
+
+    It 'Carries on when only one checked folder refuses' {
+        $denied = New-DeniedFolder
+        $open = Join-Path ([IO.Path]::GetTempPath()) ("mole-open-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $open | Out-Null
+        try {
+            Test-CleanCanWrite -Folders @($denied, $open) | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $open -Force).Count | Should -Be 0
+        }
+        finally { Remove-DeniedFolder $denied; Remove-Item -LiteralPath $open -Recurse -Force }
+    }
+
+    It 'Reads a full disk as no refusal' {
+        $full = [System.IO.IOException]::new('There is not enough space on the disk.', -2147024784)
+        Get-CleanWriteRefusal -Exception $full | Should -Be ''
+    }
+
+    It 'Reads a write-protected volume as a refusal' {
+        $locked = [System.IO.IOException]::new('The media is write protected.', -2147024877)
+        Get-CleanWriteRefusal -Exception $locked | Should -Not -Be ''
+    }
+
+    It 'Asks before a real run and never before a dry run' {
+        $source = Get-Content (Join-Path $script:Root 'bin\clean.ps1') -Raw
+        $source | Should -Match '(?m)^exit 0\s*$'
+        $source | Should -Match 'if \(-not \$effectiveDryRun -and -not \(Test-CleanCanWrite -Folders @\(\$env:LOCALAPPDATA, \$env:APPDATA\)\)\) \{\s+exit 1\s+\}\s+Start-Cleanup -IsDryRun'
+    }
+}
