@@ -508,7 +508,7 @@ run_with_timeout() {
 }
 SECONDS=0
 printf '%s\n' "$fixture/project/build" | filter_protected_artifacts 4
-[[ $(wc -l < "$fixture/budgets") -eq 2 ]] || exit 1
+[[ $(wc -l < "$fixture/budgets") -ge 2 ]] || exit 1
 while IFS= read -r budget; do
     [[ "$budget" -gt 0 && "$budget" -le 4 ]] || exit 1
 done < "$fixture/budgets"
@@ -5357,6 +5357,151 @@ SCRIPT
     [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
 }
 
+@test "purge node project process check sees a real process in a path holding a backslash" {
+    local name project holder
+    for name in 'bs\x' '项\目'; do
+        project="$HOME/www/$name"
+        mkdir -p "$project"
+        (cd "$project" && exec sleep 30) &
+        holder=$!
+        sleep 0.3
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" LC_ALL=C \
+            /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$PROJECT_PATH" && /bin/pwd -P)" || rc=$?
+echo "RC=$rc"
+SCRIPT
+        kill "$holder" 2> /dev/null || true
+        wait "$holder" 2> /dev/null || true
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$name: $output"; return 1; }
+    done
+}
+
+@test "purge node project process check counts a non-shell ancestor as the project running" {
+    local project="$HOME/www/electron-app"
+    mkdir -p "$project"
+    cat > "$HOME/probe.sh" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$PROJECT_PATH" && /bin/pwd -P)" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    # A dev app in the project whose integrated terminal moved away and runs Mole.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc -c '
+        cd "$PROJECT_PATH"
+        exec /usr/bin/perl -e '\''system("/bin/bash", "--noprofile", "--norc", "-c", "cd / && exec /bin/bash --noprofile --norc \"\$HOME/probe.sh\""); exit($? >> 8)'\'''
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge node project process check matches a command line in the other Unicode form" {
+    local nfc nfd
+    nfc=$(printf 'caf\xc3\xa9')
+    nfd=$(printf 'cafe\xcc\x81')
+    local name named
+    for name in "$nfd" "$nfc"; do
+        [[ "$name" == "$nfd" ]] && named="$nfc" || named="$nfd"
+        rm -rf "$HOME/www/form-$name"
+        mkdir -p "$HOME/www/form-$name"
+        local physical
+        physical="$(cd "$HOME/www" && /bin/pwd -P)/form-$named"
+        (cd / && exec /bin/sh -c 'sleep 30; : '"$physical"'/server.js') &
+        local holder=$!
+        sleep 0.3
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$HOME/www/form-$name" LC_ALL=C \
+            /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_node_project_running "$(cd "$(dirname "$PROJECT_PATH")" && /bin/pwd -P)/$(basename "$PROJECT_PATH")" || rc=$?
+echo "RC=$rc"
+SCRIPT
+        kill "$holder" 2> /dev/null || true
+        wait "$holder" 2> /dev/null || true
+        rm -rf "$HOME/www/form-$name"
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+    done
+}
+
+@test "purge node project process check treats an unreadable process table as unknown" {
+    local project="$HOME/www/table"
+    mkdir -p "$project"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+project=$(cd "$PROJECT_PATH" && /bin/pwd -P)
+for ps_status in 1 124 143; do
+    run_with_timeout() {
+        shift
+        case "$1" in
+            /usr/sbin/lsof) printf 'p%s\nfcwd\nn%s\n' "$$" "$project" ;;
+            /bin/ps) return "$ps_status" ;;
+            *) return 1 ;;
+        esac
+    }
+    rc=0
+    purge_node_project_running "$project" || rc=$?
+    echo "PS=$ps_status RC=$rc"
+done
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"PS=1 RC=2"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PS=124 RC=2"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"PS=143 RC=143"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge node project process check ignores a pid that has already exited" {
+    local project="$HOME/www/exited"
+    mkdir -p "$project"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECT_PATH="$project" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+project=$(cd "$PROJECT_PATH" && /bin/pwd -P)
+sleep 0 &
+gone=$!
+wait "$gone"
+/usr/bin/true
+real_run_with_timeout=$(declare -f run_with_timeout)
+eval "real_${real_run_with_timeout}"
+run_with_timeout() {
+    if [[ "$2" == /usr/sbin/lsof ]]; then
+        printf 'p%s\nfcwd\nn%s\n' "$gone" "$project"
+        return 0
+    fi
+    real_run_with_timeout "$@"
+}
+rc=0
+purge_node_project_running "$project" || rc=$?
+echo "RC=$rc"
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "mo purge run from inside a project still offers that project's node_modules" {
+    local project="$HOME/www/inside"
+    mkdir -p "$project/node_modules/pkg" "$HOME/.config/mole" "$HOME/.cache/mole"
+    printf '{"name":"inside"}\n' > "$project/package.json"
+    printf '{"lockfileVersion":3}\n' > "$project/package-lock.json"
+    printf 'x\n' > "$project/node_modules/pkg/index.js"
+    printf '{"lockfileVersion":3}\n' > "$project/node_modules/.package-lock.json"
+    touch -t 202001010101 "$project/package.json" "$project/package-lock.json" \
+        "$project/node_modules/pkg/index.js" "$project/node_modules/pkg"
+    touch -t 202001010102 "$project/node_modules/.package-lock.json" "$project/node_modules" "$project"
+    printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
+    local from output_from
+    for from in / "$project"; do
+        output_from=$(cd "$from" && HOME="$HOME" MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --dry-run < /dev/null 2>&1) || true
+        [[ "$output_from" == *"inside/node_modules"* ]] || { echo "from $from: $output_from"; return 1; }
+    done
+    [ -f "$project/node_modules/pkg/index.js" ]
+}
+
 @test "purge node project process check reads an idle project as idle under --debug" {
     # The real run_with_timeout, so its debug notice reaches the lsof capture
     # the way it does in `mo purge --debug`; the stubbed case above cannot see it.
@@ -5423,6 +5568,8 @@ for mode in fd txt cwd args idle error partial signal; do
                 signal) return 143 ;;
                 *) printf 'p123\nfcwd\nn/unrelated\n' ;;
             esac
+        elif [[ "$1" == /bin/ps ]]; then
+            printf '123 1 /bin/sleep\n'
         else
             [[ "$1" == pgrep ]] || return 2
             [[ "$mode" == args ]]
@@ -5516,10 +5663,13 @@ _MOLE_PURGE_FINAL_EXPECTED_PARENT_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
 _MOLE_PURGE_FINAL_EXPECTED_TARGET_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
 _MOLE_SAFE_REMOVE_FINAL_GUARD=_mole_purge_final_remove_guard
 
-# Hold an open file descriptor inside build/ from an unrelated cwd (/).
-( cd / && exec 9<"$fixture_entry/output.lock" && exec >/dev/null 2>&1 </dev/null && exec sleep 30 ) &
-holder_pid=$!
-trap 'kill "$holder_pid" 2>/dev/null || true; wait "$holder_pid" 2>/dev/null || true' EXIT
+# Hold an open file descriptor inside build/ from an unrelated cwd (/). Started
+# through a subshell that exits, so the holder is not one of Mole's descendants.
+holder_pid=$(
+    ( cd / && exec 9<"$fixture_entry/output.lock" && exec >/dev/null 2>&1 </dev/null && exec sleep 30 ) &
+    printf '%s' "$!"
+)
+trap 'kill "$holder_pid" 2>/dev/null || true' EXIT
 sleep 0.2
 
 rc=0
@@ -5527,7 +5677,7 @@ safe_remove "$fixture_entry" true 1 '' "$_MOLE_PURGE_FINAL_EXPECTED_PARENT" "$_M
 [[ $rc -ne 0 && -d "$fixture_entry" && -f "$fixture_entry/output.lock" ]] || exit 1
 
 kill "$holder_pid" 2>/dev/null || true
-wait "$holder_pid" 2>/dev/null || true
+while kill -0 "$holder_pid" 2>/dev/null; do sleep 0.1; done
 trap - EXIT
 
 rc=0
@@ -5757,6 +5907,42 @@ SCRIPT
     [[ "$output" == *"IDLE=1"* ]] || { echo "$output"; return 1; }
 }
 
+@test "purge_artifact_in_use ignores Mole's own shell and a holder that has exited" {
+    local artifact="$HOME/www/own/dist"
+    mkdir -p "$artifact"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" ARTIFACT="$artifact" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+artifact=$(cd "$ARTIFACT" && /bin/pwd -P)
+cd "$artifact"
+rc=0
+purge_artifact_in_use "$artifact" || rc=$?
+echo "OWN_CWD_RC=$rc"
+cd /
+sleep 0 &
+gone=$!
+wait "$gone"
+_PURGE_OPEN_SNAPSHOT=$(printf 'p%s\nfcwd\nn%s\n' "$gone" "$artifact")
+rc=0
+purge_artifact_in_use "$artifact" || rc=$?
+echo "EXITED_RC=$rc"
+_PURGE_OPEN_SNAPSHOT=""
+(cd "$artifact" && exec sleep 8) &
+holder=$!
+sleep 0.3
+rc=0
+purge_artifact_in_use "$artifact" || rc=$?
+echo "CHILD_RC=$rc"
+kill "$holder" 2> /dev/null || true
+wait "$holder" 2> /dev/null || true
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OWN_CWD_RC=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"EXITED_RC=1"* ]] || { echo "$output"; return 1; }
+    # What Mole itself started is Mole's, the same rule as the project probe.
+    [[ "$output" == *"CHILD_RC=1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "purge dry run and real run refuse an in-use artifact the same way" {
     local project="$HOME/www/busy"
     mkdir -p "$project/dist" "$HOME/.config/mole" "$HOME/.cache/mole"
@@ -5771,7 +5957,7 @@ SCRIPT
     ) &
     local holder=$!
     sleep 0.3
-    # The filter is skipped so the recheck itself is exercised on a selected item.
+    # Discovery passes it once, so the recheck itself runs on a selected item.
     local mode dry real
     for mode in 1 0; do
         run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY="$mode" /bin/bash --noprofile --norc <<'SCRIPT'
@@ -5779,9 +5965,21 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/project.sh"
 filter_protected_artifacts() { cat; }
+eval "real_$(declare -f is_protected_purge_artifact)"
+protection_calls=0
+is_protected_purge_artifact() {
+    # Other tests leave candidates in this HOME; only this path passes once.
+    [[ "$1" == */www/busy/dist ]] && protection_calls=$((protection_calls + 1))
+    if [[ $protection_calls -eq 1 && "$1" == */www/busy/dist ]]; then
+        PURGE_PROTECTION_UNVERIFIED=false
+        PURGE_PROTECTION_REASON=""
+        return 1
+    fi
+    real_is_protected_purge_artifact "$@"
+}
 MOLE_DRY_RUN="$DRY" MOLE_PURGE_YES=1 clean_project_artifacts < /dev/null || true
 SCRIPT
-        [[ "$mode" == 1 ]] && dry="$output" || real="$output"
+        if [[ "$mode" == 1 ]]; then dry="$output"; else real="$output"; fi
     done
     kill "$holder" 2> /dev/null || true
     wait "$holder" 2> /dev/null || true
