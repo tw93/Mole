@@ -386,7 +386,9 @@ Describe 'Purge leaves an artifact in use alone' {
         (Get-Item -LiteralPath $file).LastWriteTime = $stamp
         Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty
         (Get-Item -LiteralPath $file).LastWriteTime | Should -Be $stamp
-        & icacls.exe $file /deny "$($env:USERNAME):(W)" | Out-Null
+        # Not (W): that also denies SYNCHRONIZE, which CreateFile always asks for, so
+        # the delete-only open is refused too and the file reads as unknown.
+        & icacls.exe $file /deny "$($env:USERNAME):(WD,AD,WEA,WA)" | Out-Null
         try {
             $LASTEXITCODE | Should -Be 0
             Get-PurgeFirstHeldEntry $artifact | Should -BeNullOrEmpty

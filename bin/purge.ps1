@@ -359,7 +359,8 @@ function Test-PurgeProcessNames {
 # anything holds the entry: an open file or a working directory. Write access,
 # which writes nothing here, also fails on a loaded library, whose file handle is
 # long closed; a read-only file cannot ask for it, so a loaded read-only library
-# goes unseen. A file denying write by its ACL is asked again for delete alone.
+# goes unseen. A file denying write by its ACL is asked again for delete alone;
+# a deny that also covers SYNCHRONIZE, such as icacls (W), refuses that too.
 # Nothing changes and placeholders are not followed, so a dry run answers the same
 # as a real run. A hard link shares its file's holds, which retains in the safe
 # direction. Any other failure throws and reads as unknown.
