@@ -241,6 +241,13 @@ load_purge_config() {
     done <<< "$config_paths"
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -eq 0 ]]; then
+        # A file the user kept with no active paths asks for the defaults, as
+        # its template and `mo purge --paths` say; discovery would replace it.
+        if [[ $config_state -eq 0 ]]; then
+            PURGE_SEARCH_PATHS=("${DEFAULT_PURGE_SEARCH_PATHS[@]}")
+            return 0
+        fi
+
         if [[ -t 1 ]] && [[ -z "${_PURGE_DISCOVERY_SILENT:-}" ]]; then
             echo -e "${GRAY}First run: discovering project directories...${NC}" >&2
         fi
