@@ -678,11 +678,6 @@ func loadStaleCacheFromDisk(path string) (*cacheEntry, error) {
 	return entry, nil
 }
 
-func saveCacheToDisk(path string, result scanResult) error {
-	ctx := context.Background()
-	return saveCacheToDiskWithOptions(newScanPublication(ctx, nil), path, result, false)
-}
-
 func saveCacheToDiskWithOptions(publication *scanPublication, path string, result scanResult, needsRefresh bool) error {
 	if !result.persistable() {
 		return nil

@@ -146,13 +146,6 @@ declare -a DRY_RUN_SEEN_IDENTITIES=()
 DRY_RUN_TOTAL_PARTIAL=false
 declare -a DEFERRED_CLEANUP_FAMILIES=()
 
-# shellcheck disable=SC2329
-note_activity() {
-    if [[ "${TRACK_SECTION:-0}" == "1" ]]; then
-        SECTION_ACTIVITY=1
-    fi
-}
-
 # Record expected process-state skips without turning every protected target
 # into a separate warning row. Unknown process state is not recorded here and
 # remains visible at the call site.
