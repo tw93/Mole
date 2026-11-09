@@ -548,6 +548,8 @@ purge_artifact_has_authored_content() {
     return "$tracked_rc"
 }
 
+# Set by is_protected_purge_artifact: "in_use" when a process holds the artifact.
+PURGE_PROTECTION_REASON=""
 # Set by is_protected_purge_artifact: true when the verdict came from an
 # unfinished content probe rather than evidence.
 PURGE_PROTECTION_UNVERIFIED=false
@@ -663,10 +665,18 @@ purge_node_project_running() {
     local project="$1" deadline="${2:-}" probe_timeout evidence rc=0 line saw_cwd=false
     [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
     probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-    # From /, so lsof and its wrappers never list themselves in the project.
-    evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
-    [[ $rc -le 128 ]] || return "$rc"
-    [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    if [[ -n "${_PURGE_OPEN_SNAPSHOT:-}" ]]; then
+        evidence=$(LC_ALL=C /usr/bin/awk '
+            /^p/ { pid = $0; next }
+            /^f/ { cwd = ($0 == "fcwd"); if (cwd) { print pid; print $0 } next }
+            /^n/ { if (cwd) print; next }
+            { print }' <<< "$_PURGE_OPEN_SNAPSHOT")
+    else
+        # From /, so lsof and its wrappers never list themselves in the project.
+        evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
+        [[ $rc -le 128 ]] || return "$rc"
+        [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    fi
     local listed_project current_pid=""
     listed_project=$(_purge_lsof_path_form "$project")
     while IFS= read -r line; do
@@ -714,6 +724,78 @@ purge_node_modules_is_protected() {
     [[ $rc -eq 0 ]] || return 2
     [[ -z "$evidence" ]] || return 0
     purge_node_project_running "$project" "$deadline"
+}
+
+# Same statuses as the process probes (0 in use, 1 idle, 2 unknown, >128 signal).
+# Does a current-user process other than Mole hold a descriptor, mapped binary or
+# cwd inside the artifact, or name it on a command line?
+purge_artifact_in_use() {
+    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
+    [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
+    if [[ -z "$evidence" ]]; then
+        probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+        evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -Fn 2>&1) || rc=$?
+        [[ $rc -le 128 ]] || return "$rc"
+        [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+    fi
+
+    local holders=""
+    holders=$(TARGET_ARTIFACT="$artifact" TARGET_LISTED="$(_purge_lsof_path_form "$artifact")" LC_ALL=C /usr/bin/awk '
+        BEGIN {
+            raw = ENVIRON["TARGET_ARTIFACT"]
+            listed = ENVIRON["TARGET_LISTED"]
+        }
+        /^p[0-9]+$/ { pid = substr($0, 2); next }
+        /^f/ { next }
+        /^n/ {
+            path = substr($0, 2)
+            if ((path == raw || path == listed || index(path, raw "/") == 1 || index(path, listed "/") == 1) && !(pid in seen)) {
+                seen[pid] = 1
+                printf "%s ", pid
+            }
+            next
+        }
+        { exit 20 }
+        END {
+            if (pid == "") exit 20
+        }
+    ' <<< "$evidence") || return 2
+    if [[ -n "$holders" ]]; then
+        rc=0
+        _purge_outside_process_among "$holders" "$deadline" || rc=$?
+        [[ $rc -ne 0 ]] || return 0
+        [[ $rc -eq 1 ]] || return "$rc"
+    fi
+
+    _purge_other_process_matches "$(_purge_path_regex "$artifact")" "$deadline"
+}
+
+# One listing for a whole filter pass, taken before its workers start. Without
+# it every candidate pays a whole-system lsof. A failed listing leaves the
+# probes to ask live and report for themselves.
+_purge_take_lsof_snapshots() {
+    local deadline="${1:-}" probe_timeout listing
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 0
+    listing=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -Fn 2>&1) && _PURGE_OPEN_SNAPSHOT="$listing"
+    return 0
+}
+
+# A build folder also stays while its project runs. Records an unknown state in
+# PURGE_PROTECTION_UNVERIFIED, as the other target checks do.
+_purge_running_project_protects() {
+    local path="$1" deadline="${2:-}" physical rc=0
+    if ! physical=$(cd "$path" 2> /dev/null && /bin/pwd -P); then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
+    purge_node_project_running "${physical%/*}" "$deadline" || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    if [[ $rc -eq 2 ]]; then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
+    [[ $rc -ne 0 ]] || PURGE_PROTECTION_REASON="in_use"
+    return "$rc"
 }
 
 # .build, or a --scratch-path directory SwiftPM itself tagged. A file named
@@ -820,6 +902,7 @@ is_protected_purge_artifact() {
     local base="${path##*/}"
 
     PURGE_PROTECTION_UNVERIFIED=false
+    PURGE_PROTECTION_REASON=""
     local authored_rc=0
     purge_artifact_has_authored_content "$path" "$deadline" || authored_rc=$?
     [[ $authored_rc -le 128 ]] || return "$authored_rc"
@@ -828,6 +911,19 @@ is_protected_purge_artifact() {
         return 0
     fi
     [[ $authored_rc -ne 0 ]] || return 0
+
+    local physical_path="$path" in_use_rc=0
+    physical_path=$(cd "$path" 2> /dev/null && /bin/pwd -P) || physical_path="$path"
+    purge_artifact_in_use "$physical_path" "$deadline" || in_use_rc=$?
+    [[ $in_use_rc -le 128 ]] || return "$in_use_rc"
+    if [[ $in_use_rc -eq 2 ]]; then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
+    if [[ $in_use_rc -eq 0 ]]; then
+        PURGE_PROTECTION_REASON="in_use"
+        return 0
+    fi
 
     case "$base" in
         node_modules)
@@ -855,7 +951,24 @@ is_protected_purge_artifact() {
             # Protect Xcode global DerivedData in ~/Library/Developer/Xcode/
             # Only allow purging DerivedData within project directories
             [[ "$path" == *"/Library/Developer/Xcode/DerivedData"* ]] && return 0
-            return 1
+            [[ -f "$path/info.plist" || -d "$path/Build" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
+            ;;
+        target)
+            [[ -f "${path%/*}/Cargo.toml" || -f "${path%/*}/pom.xml" || -f "$path/.rustc_info.json" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
+            ;;
+        .build)
+            [[ -f "${path%/*}/Package.swift" || -f "$path/workspace-state.json" || -f "$path/build.db" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
+            ;;
+        venv | .venv)
+            [[ -f "$path/pyvenv.cfg" ]] || return 1
+            _purge_running_project_protects "$path" "$deadline"
+            return $?
             ;;
     esac
 
@@ -867,6 +980,7 @@ is_protected_purge_artifact() {
             PURGE_PROTECTION_UNVERIFIED=true
             return 0
         fi
+        [[ $swiftpm_rc -ne 0 ]] || PURGE_PROTECTION_REASON="in_use"
         return "$swiftpm_rc"
     fi
 
@@ -1349,6 +1463,9 @@ filter_protected_artifacts() {
     else
         results=$(mktemp_file "mole-purge-probes") || return 1
     fi
+
+    local _PURGE_OPEN_SNAPSHOT=""
+    _purge_take_lsof_snapshots "$deadline"
 
     local max_probe_jobs
     max_probe_jobs=$(get_optimal_parallel_jobs io)
@@ -3490,6 +3607,8 @@ clean_project_artifacts() {
         if [[ $protection_rc -eq 0 ]]; then
             if [[ "$PURGE_PROTECTION_UNVERIFIED" == "true" ]]; then
                 echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (could not inspect contents; re-run mo purge to review it again)"
+            elif [[ "${PURGE_PROTECTION_REASON:-}" == "in_use" ]]; then
+                echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (in use; stop what has it open, then run mo purge again)"
             else
                 debug_log "Skipping purge target that became protected after review: $item_path"
             fi
@@ -3546,7 +3665,11 @@ clean_project_artifacts() {
                     fi
                     return "$removal_status"
                 fi
-                echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (final removal check failed; re-run mo purge to review it again)"
+                if [[ "${PURGE_PROTECTION_REASON:-}" == "in_use" ]]; then
+                    echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (in use; stop what has it open, then run mo purge again)"
+                else
+                    echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (final removal check failed; re-run mo purge to review it again)"
+                fi
             fi
         fi
         if [[ -t 1 ]]; then
