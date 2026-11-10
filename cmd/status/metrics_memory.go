@@ -90,25 +90,34 @@ func getFileBackedMemory() uint64 {
 	return 0
 }
 
+// getMemoryPressure reads the level the kernel publishes. The memory_pressure
+// tool prints page counters and a free percentage but never names the level,
+// so matching its output for "normal", "warn" or "critical" always came back
+// empty (#1963).
 func getMemoryPressure() string {
 	if runtime.GOOS != "darwin" {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	out, err := runCmd(ctx, "memory_pressure")
+	out, err := runCmd(ctx, "/usr/sbin/sysctl", "-n", "kern.memorystatus_vm_pressure_level")
 	if err != nil {
 		return ""
 	}
-	lower := strings.ToLower(out)
-	if strings.Contains(lower, "critical") {
-		return "critical"
-	}
-	if strings.Contains(lower, "warn") {
-		return "warn"
-	}
-	if strings.Contains(lower, "normal") {
+	return parseMemoryPressureLevel(out)
+}
+
+// parseMemoryPressureLevel maps kern.memorystatus_vm_pressure_level to the
+// names status reports. The values are the DISPATCH_MEMORYPRESSURE_* levels:
+// 1 normal, 2 warn, 4 critical. Anything else is unknown.
+func parseMemoryPressureLevel(out string) string {
+	switch strings.TrimSpace(out) {
+	case "1":
 		return "normal"
+	case "2":
+		return "warn"
+	case "4":
+		return "critical"
 	}
 	return ""
 }
