@@ -298,10 +298,13 @@ $1"
     [[ "$output" == *"before=[Update 0.2.0"* && "$output" == *"msg=[]"* ]]
 }
 
-@test "notice is off with MOLE_NO_UPDATE_CHECK=1 and in a source checkout" {
+@test "notice is off in a source checkout, and no environment variable switches it" {
     export NOTICE_LATEST=0.2.0
+    # MOLE_NO_UPDATE_CHECK was a switch until 2026-11-10; the lookup is one
+    # background request a day and needs no setting.
     MOLE_NO_UPDATE_CHECK=1 notice_run 'mole_update_notice_check wait; count; echo "calls=$calls msg=[$(mole_update_notice_message)]"'
-    [[ "$output" == *"calls=0 msg=[]"* ]]
+    [[ "$output" == *"calls=1 msg=[Update 0.2.0"* ]]
+    rm -f "$TEST_ROOT/calls"
     mkdir -p "$TEST_ROOT/co/.git"
     notice_run "SCRIPT_DIR='$TEST_ROOT/co'; mole_update_notice_check wait; count; echo \"calls=\$calls\""
     [[ "$output" == *"calls=0"* ]]

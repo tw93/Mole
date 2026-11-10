@@ -4,7 +4,7 @@
 # At most one lookup a day, in the background, with a short timeout, so the
 # menu never waits on the network. The answer is cached as the latest version
 # string; the line is rebuilt from it on every read, so it disappears as soon
-# as the installed version catches up. MOLE_NO_UPDATE_CHECK=1 turns it off.
+# as the installed version catches up.
 
 if [[ -n "${MOLE_UPDATE_NOTICE_LOADED:-}" ]]; then
     return 0
@@ -52,7 +52,6 @@ mole_update_notice_lookup() {
 # case that should not look.
 mole_update_notice_check() {
     local mode="${1:-background}" dir now checked=0 interval=0
-    [[ "${MOLE_NO_UPDATE_CHECK:-}" == "1" ]] && return 0
     # Only the installed tree can act on the line (mo update refuses others).
     mole_runs_installed_tree || return 0
     dir="$(mole_update_notice_dir)"
@@ -79,7 +78,6 @@ mole_update_notice_check() {
 
 # Print the line to show, or nothing.
 mole_update_notice_message() {
-    [[ "${MOLE_NO_UPDATE_CHECK:-}" == "1" ]] && return 0
     mole_runs_installed_tree || return 0
     local latest=""
     # The cache file has no trailing newline, so read reports failure on a good value.

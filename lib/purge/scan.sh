@@ -23,9 +23,10 @@ readonly MOLE_PURGE_LOADED=1
 MOLE_PURGE_CONFIG_FILE="$MOLE_CONFIG_HOME/mole/purge_paths"
 readonly MOLE_PURGE_MIN_AGE_DAYS=7
 readonly MOLE_PURGE_MAX_DEPTH=6
-# Seconds: one root's walk, one candidate's content probe, one size.
-MOLE_PURGE_WALK_TIMEOUT="${MO_PURGE_WALK_TIMEOUT:-120}"
-MOLE_PURGE_PROBE_TIMEOUT="${MO_PURGE_PROBE_TIMEOUT:-20}"
+# Seconds: one root's walk, one candidate's content probe, one size. Plain
+# globals, not read from the environment: a tuning variable is a setting.
+MOLE_PURGE_WALK_TIMEOUT=120
+MOLE_PURGE_PROBE_TIMEOUT=20
 
 # name|evidence beside it (any one; *.ext is a glob in the project folder;
 # "tag" means the folder carries its own CACHEDIR.TAG instead).
