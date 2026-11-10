@@ -5,8 +5,8 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 ## 2026-11-10 Three-CLI whole review
 
 - Frozen sources: main `1baecd15`, windows `075215a8`, linux `cf42a724` (first audit of Mole CLI (Linux)). Scope: all three trees whole, at the maintainer's request, in six read-only passes: macOS deletion safety, Windows and Linux deletion safety, command and flag matrix, performance (measured on macOS, by reading elsewhere), over-design and design, stale guidance and codification.
-- Landed: main `2ed8427b`, `5cbe27b7`, `0afbb83c`, `59c274a4`, `543a6574`, `dfd0e583`; linux `210e3932`, `c80d3da5`, `e1593dff`; windows `06b07a9d`, `75ce2f7a`, `cd60e200`, `16c78ee7`. The per-change table is in SYNC.md under 2026-11-10.
-- Next window from: main `dfd0e583`, windows `cd60e200`, linux `c80d3da5`.
+- Landed: main `2ed8427b`, `5cbe27b7`, `0afbb83c`, `59c274a4`, `543a6574`, `dfd0e583`; linux `210e3932`, `c80d3da5`, `e1593dff`, `954da7d7`; windows `06b07a9d`, `75ce2f7a`, `cd60e200`, `16c78ee7`, `bec984bb`, `147eef15`. The per-change table is in SYNC.md under 2026-11-10.
+- Next window from: main `dfd0e583`, windows `bec984bb`, linux `954da7d7`.
 
 | Item | Disposition | Evidence |
 | --- | --- | --- |
@@ -21,6 +21,9 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 | Windows: dry-run preview without a console, `analyse`, one owner check per preview, MSI scripts removed | Fixed | ThinkPad: nine new cases red on the previous source on both hosts; four changed test files 420 of 420 on both. |
 | Stale release lines (five on main, one on windows), eight issue-numbered fixes without incident rows | Fixed | Six rows added (I-58 to I-63); #1955 is a capability and #1889 a hint text, not defects. Windows #1948 was defensive, not user-met, so it gets no row. |
 | Lessons fixed repeatedly without a rule: display width, future-dated stamps, a helper flipping errexit | Codified | `go-tuis.md`, `shell.md`, `core.md`. |
+| Windows: `mo remove --dry-run` (maintainer: do it) | Fixed | `bec984bb`: a `-DryRun` switch on `Uninstall-Mole`; 17 new cases red on the previous source on both hosts, install-tier files 197 of 199 on both, the ThinkPad's user PATH byte-identical before and after. The second reviewer found the first "changes nothing" snapshots skipped every file. `scripts/e2e_windows.py` not run. |
+| Linux: three environment switches without a recorded reason (maintainer: remove) | Fixed | `954da7d7`. |
+| Windows AGENTS.md past the 20% trigger (maintainer: compress) | Fixed | `147eef15`: dedupe found 113 bytes, so 27 per-command Safety Rules bullets moved verbatim into five `.claude/rules` files; 41,451 to 27,480 bytes. The second reviewer found six loading gaps, all closed. |
 
 ### Decided, do not re-report
 
@@ -32,18 +35,17 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 
 ### Open
 
-- Windows `mo remove --dry-run`: needs a `-DryRun` switch inside `Uninstall-Mole` in `install.ps1`, install-tier work with its own native run (CLI-SYNC-19).
 - Windows performance by reading only, no baseline measured, so not changed: `bin/uninstall.ps1` builds the registry and Appx inventory twice per selected app; `bin/purge.ps1` walks one artifact four to five times. Measure on a Windows host first.
 - Windows: a real `purge` or `uninstall` without a console ends on the raw `ReadKey` exception instead of a refusal that names the cause and the next command.
+- Windows: `Remove-FromUserPath` reads the user PATH expanded and writes it back when it removes the install folder, which on Windows PowerShell 5.1 probably turns `%VAR%` entries into literals (by reading, not run). It no longer writes when the folder is not in the PATH.
 - Windows: something in the complete suite leaves `Microsoft\Windows\PowerShell\ModuleAnalysisCache` in the test tree when run from a desktop session; the four changed test files do not.
 - Linux `mo history` reads the log line by line in Bash like the macOS reader did before `0afbb83c`; not timed.
 - Linux performance by reading only: `report_unknown_caches` repeats `du` over `~/.cache`, owner checks run `pgrep` per name and scan `/proc` per Snap rule, gopsutil runs `lsb_release` each status tick. A real Trash run still forks `date` and two subshells per entry in `log_operation`.
-- Linux ships three environment variables without a recorded rejected default (`MO_PURGE_PROBE_TIMEOUT`, `MO_PURGE_WALK_TIMEOUT`, `MOLE_NO_UPDATE_CHECK`); the maintainer decides whether they stay.
-- The published `mole` skill and `llms.txt` cover macOS and Windows only, and `skills/mole/references/windows.md` still describes the old dry-run workaround; update them with the next tagged Windows version, and decide when Linux joins.
+- The published `mole` skill and `llms.txt` cover macOS and Windows only, and `skills/mole/references/windows.md` still describes the old dry-run workaround and has no `mo remove --dry-run`. Maintainer 2026-11-10: leave them until a user asks.
 - `MOLE_LSREGISTER_PATH` in `lib/core/base.sh` picks the binary `lsregister` calls run as the user and is read outside test mode; not a deletion root, left as is.
 - Delivery receipts are missing for V1.68.0 to V1.70.0, V1.41.0 to V1.43.0-windows and V0.5.0-linux.
 
-Rule volume after this run: main AGENTS.md 36,446 bytes, AGENTS.md plus `.claude/rules` 178,785 bytes (18.8% over the 150,543 recorded on 2026-10-30); Windows AGENTS.md 40,840 bytes (22.6% over 33,315, past the 20% review trigger); Linux AGENTS.md 21,690 bytes, with rules 33,810. No rule was compressed or removed in this run; the Windows compression review is due.
+Rule volume after this run: main AGENTS.md 36,446 bytes, AGENTS.md plus `.claude/rules` 178,785 bytes (18.8% over the 150,543 recorded on 2026-10-30); Windows AGENTS.md 27,480 bytes after the split, its five `.claude/rules` files 17,462 together (the new baseline; it was 41,451 before, 24% over 33,315); Linux AGENTS.md 21,963 bytes, with rules 34,135. On Windows two duplicate sentences were removed and one incident sentence moved; no constraint was removed on any branch.
 
 ## 2026-10-30 Dual CLI post-release review
 

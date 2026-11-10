@@ -266,7 +266,7 @@ Source heads read on 2026-11-09: `main` at `3feb1dd0`, `windows` at `cf28b442`, 
 
 ## 2026-11-10 Three-CLI review
 
-Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, `linux` at `cf42a724`. Fixes landed as `main` `2ed8427b`..`dfd0e583`, `linux` `210e3932`..`e1593dff` and `windows` `06b07a9d`..`16c78ee7`; none is in a tagged version. Mole Mac and Mole for Windows were not reviewed; the rows name what each should check.
+Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, `linux` at `cf42a724`. Fixes landed as `main` `2ed8427b`..`dfd0e583`, `linux` `210e3932`..`954da7d7` and `windows` `06b07a9d`..`147eef15`; none is in a tagged version. Mole Mac and Mole for Windows were not reviewed; the rows name what each should check.
 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
@@ -280,5 +280,6 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 | `purge --dry-run` and `uninstall --dry-run` preview without a terminal | Released earlier (Mole CLI (macOS), Mole CLI (Linux)); Implemented (Mole CLI (Windows), `06b07a9d`, CLI-SYNC-18 there) | `skills/mole/references/windows.md` still tells an agent to hand these commands to the user; update the skill, its plugin copy and both versions when a tagged Windows version ships this. |
 | `mo history` condenses the log before parsing, `mo status` reads disk metadata from one plist | Implemented (Mole CLI (macOS), `0afbb83c`, `59c274a4`); Not applicable (Mole CLI (Windows): `history.ps1` parses with .NET strings, status has no `diskutil`); Pending (Mole CLI (Linux): `bin/history.sh` also reads the log line by line in Bash and was not timed; its status reads sysfs, so the disk change does not apply) | Measured on an M5 Pro: 5 MB log 4.15s to 0.80s, `status --json` 0.53s to 0.44s. Next check: time `mo history` on the devbox with a log near its rotation size before porting anything. |
 | Exit code for an unknown command, and `mo history --json` keys | Intentional difference: Mole CLI (macOS) and Mole CLI (Linux) exit 1, Mole CLI (Windows) exits 2; macOS has `deletions`, `trashed`, `rebuilt`, Windows `operations`, `recycled`, `uninstalled`, Linux `operations`, `trashed` | Scripts already depend on each; the skill references document each schema (CLI-SYNC-19 on `windows`). |
-| `mo remove --dry-run` | Released earlier (Mole CLI (macOS), Mole CLI (Linux)); Pending (Mole CLI (Windows), CLI-SYNC-19) | The removal is `Uninstall-Mole` in `install.ps1`; next check with the next `install.ps1` change. |
+| `mo remove --dry-run` | Released earlier (Mole CLI (macOS), Mole CLI (Linux)); Implemented (Mole CLI (Windows), `bec984bb`, CLI-SYNC-19) | The preview is a `-DryRun` switch on `Uninstall-Mole` in `install.ps1`, so it runs the removal's own path; `mo remove` there now returns its script's exit code. |
+| Tuning and switches are not environment variables | Released earlier (Mole CLI (macOS): AGENTS.md treats a new variable as a setting); Implemented (Mole CLI (Linux), `954da7d7`: `MO_PURGE_PROBE_TIMEOUT`, `MO_PURGE_WALK_TIMEOUT` and `MOLE_NO_UPDATE_CHECK` removed, maintainer decision 2026-11-10); Not applicable (Mole CLI (Windows): it reads none) | The purge bounds are fixed globals and the update notice has no switch. |
 

@@ -44,6 +44,9 @@ survive refutation. Run it once a week and keep the report short.
   `docs/ledger.md` and its `SYNC.md`, and it has no incident table. Bats and Go
   tests run on the LazyCat devbox as the user `mole` (`linux-devbox` skill),
   never on macOS. Where this file says "both branches", read all three.
+- Mole CLI (Windows) keeps its per-command rules in `.claude/rules/` since
+  2026-11-10 (`147eef15`); the stale and rule-volume checks read those five
+  files with its `AGENTS.md`, whose baseline is in `docs/weekly-audit.md`.
 - An explicit whole-codebase request takes precedence over incremental defaults.
   Otherwise audit both branches whole on the first run, after a release, or when the
   window touched more than about 40 source files; otherwise incremental: the files
