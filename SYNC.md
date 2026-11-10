@@ -266,7 +266,7 @@ Source heads read on 2026-11-09: `main` at `3feb1dd0`, `windows` at `cf28b442`, 
 
 ## 2026-11-10 Three-CLI review
 
-Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, `linux` at `cf42a724`. Fixes landed as `main` `2ed8427b`..`dfd0e583`, `linux` `210e3932`..`15e995aa` and `windows` `06b07a9d`..`46c53900`; the `main` commits shipped in V1.71.0 and the `linux` commits in V0.6.0-linux, both on 2026-11-10 (assets checked against `SHA256SUMS` and, for V1.71.0, their attestations; a script install of the previous version updated to each with `mo update`); the `windows` commits are not in a tagged version yet. Mole Mac and Mole for Windows were not reviewed; the rows name what each should check.
+Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, `linux` at `cf42a724`. Fixes landed as `main` `2ed8427b`..`dfd0e583`, `linux` `210e3932`..`15e995aa` and `windows` `06b07a9d`..`46c53900`; the `main` commits shipped in V1.71.0 and the `linux` commits in V0.6.0-linux, both on 2026-11-10 (assets checked against `SHA256SUMS` and, for V1.71.0, their attestations; a script install of the previous version updated to each with `mo update`); the `windows` commits shipped in V1.44.0-windows the same day, signed and checked the same way. Mole Mac and Mole for Windows were not reviewed; the rows name what each should check.
 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
