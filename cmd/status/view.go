@@ -474,17 +474,13 @@ func renderMemoryCard(mem MemoryStatus, cardWidth int) cardData {
 			lines = append(lines, fmt.Sprintf("Avail  %s", humanBytes(mem.Available)))
 		}
 	}
-	// Memory pressure status.
-	if mem.Pressure != "" {
-		pressureStyle := okStyle
-		pressureText := "Status " + mem.Pressure
-		switch mem.Pressure {
-		case "warn":
-			pressureStyle = warnStyle
-		case "critical":
-			pressureStyle = dangerStyle
-		}
-		lines = append(lines, pressureStyle.Render(pressureText))
+	// Memory pressure status, only when it asks for attention: normal is the
+	// usual state and a line that always reads normal is noise.
+	switch mem.Pressure {
+	case "warn":
+		lines = append(lines, warnStyle.Render("Status warn"))
+	case "critical":
+		lines = append(lines, dangerStyle.Render("Status critical"))
 	}
 	return cardData{icon: iconMemory, title: "Memory", lines: lines}
 }
