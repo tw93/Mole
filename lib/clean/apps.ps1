@@ -168,9 +168,16 @@ function Clear-GamingPlatformCaches {
     Clear-MoleAppCache -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache" -Description "Epic Games webcache" -Processes @('EpicGamesLauncher')
     Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\Logs" -Description "Epic Games logs" -Processes @('EpicGamesLauncher')
 
-    # EA App (Origin replacement)
+    # EA app (Origin replacement). 13.822 keeps a whole Chromium profile in
+    # CEF\<n>\EADesktop\BrowserCache, cookies and its sign-in store included, so
+    # only the cache leaves go (Windows 2026-11-10). EADesktop holds them; its
+    # EABackgroundService service keeps running after the window closes.
     $eaProcesses = @('EADesktop', 'EABackgroundService', 'Origin')
-    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Electronic Arts\EA Desktop\cache" -Description "EA cache" -Processes $eaProcesses
+    foreach ($profile in @(Get-MoleCacheProfiles "$env:LOCALAPPDATA\Electronic Arts\EA Desktop\CEF")) {
+        foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache', 'DawnCache')) {
+            Clear-MoleAppCache -Path (Join-Path $profile.FullName "EADesktop\BrowserCache\$leaf") -Description "EA app $leaf" -Processes @('EADesktop')
+        }
+    }
     foreach ($path in @(Resolve-Path "$env:APPDATA\Origin\*\cache" -ErrorAction SilentlyContinue)) {
         Clear-MoleAppCache -Path $path.Path -Description "Origin cache" -Processes $eaProcesses
     }
@@ -181,7 +188,15 @@ function Clear-GamingPlatformCaches {
 
     # Ubisoft Connect
     $ubisoftProcesses = @('upc', 'UbisoftConnect')
-    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Ubisoft Game Launcher\cache" -Description "Ubisoft cache" -Processes $ubisoftProcesses
+    # cache\http2 is a whole Chromium user-data folder whose Default keeps Login
+    # Data and Cookies, so only its cache leaves go (Windows 2026-11-10).
+    $ubisoftData = "$env:LOCALAPPDATA\Ubisoft Game Launcher\cache\http2"
+    foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache')) {
+        Clear-MoleAppCache -Path "$ubisoftData\Default\$leaf" -Description "Ubisoft Connect $leaf" -Processes $ubisoftProcesses
+    }
+    foreach ($leaf in @('ShaderCache', 'GrShaderCache', 'GraphiteDawnCache')) {
+        Clear-MoleAppCache -Path "$ubisoftData\$leaf" -Description "Ubisoft Connect $leaf" -Processes $ubisoftProcesses
+    }
     Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\Ubisoft Game Launcher\logs" -Description "Ubisoft logs" -Processes $ubisoftProcesses
 
     # Battle.net

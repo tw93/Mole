@@ -108,6 +108,29 @@ Describe 'Application cache boundaries' {
         foreach ($file in $state) { Test-Path -LiteralPath $file | Should -BeTrue }
     }
 
+    It 'Cleans only the measured <Name> launcher caches and keeps its sign-in' -ForEach @(
+        @{ Name='EA app'; Base='Electronic Arts\EA Desktop\CEF\2\EADesktop\BrowserCache'; Caches=@('Cache','Code Cache','GPUCache','DawnCache'); State=@('Network\Cookies','IndexedDB\https_signin.ea.com_0.indexeddb.leveldb\x','Local Storage\leveldb\x') }
+        @{ Name='Ubisoft Connect'; Base='Ubisoft Game Launcher\cache\http2'; Caches=@('Default\Cache','Default\Code Cache','Default\GPUCache','Default\DawnWebGPUCache','ShaderCache','GraphiteDawnCache'); State=@('Default\Login Data','Default\Network\Cookies','Default\History','Local State','component_crx_cache\x') }
+    ) {
+        $base = Join-Path $env:LOCALAPPDATA $Base
+        $caches = @(foreach ($leaf in $Caches) { New-CacheFile (Join-Path $base "$leaf\entry") })
+        $state = @(foreach ($leaf in $State) { New-CacheFile (Join-Path $base $leaf) })
+        Clear-GamingPlatformCaches
+        foreach ($file in $caches) { Test-Path -LiteralPath $file | Should -BeFalse }
+        foreach ($file in $state) { Test-Path -LiteralPath $file | Should -BeTrue }
+    }
+
+    It 'A running <Owner> keeps the <Path> launcher cache' -ForEach @(
+        @{ Owner='EADesktop'; Path='Electronic Arts\EA Desktop\CEF\2\EADesktop\BrowserCache\Cache\entry' }
+        @{ Owner='upc'; Path='Ubisoft Game Launcher\cache\http2\Default\Cache\entry' }
+    ) {
+        $cache = New-CacheFile (Join-Path $env:LOCALAPPDATA $Path)
+        $script:RunningOwner = $Owner
+        Mock Get-Process { [pscustomobject]@{ProcessName=$script:RunningOwner} }
+        Clear-GamingPlatformCaches
+        Test-Path -LiteralPath $cache | Should -BeTrue
+    }
+
     It 'Keeps the new app caches while their owner runs or is unknown: <Owner>' -ForEach @(
         @{ Owner='Trae'; Path='Trae\Cache\entry' }, @{ Owner='Feishu'; Path='LarkShell\ShaderCache\entry' },
         @{ Owner='Qoder'; Path='Qoder\CachedData\entry' }, @{ Owner='Qoder IDE'; Path='Qoder\Cache\entry' },
