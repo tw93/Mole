@@ -179,12 +179,24 @@ up before it is trusted on new code.
   Pester run and package acceptance are separate evidence. Red-run before the
   fix locally where possible; otherwise use an isolated native snapshot.
   Do not require a public test-only PR. If a host is unavailable, report the
-  missing layer. When the test reaches into a
+  missing layer. `mo update` follows the `windows` head for source installs,
+  so PowerShell that has never run on Windows is not pushed for CI to judge:
+  run both hosts on the VM, or on the ThinkPad when the VM's host is leased
+  (the route is in the `windows` branch's `docs/development-pitfalls.md`),
+  then push. Linux: the complete `bats tests/`, the Go tests and shellcheck on
+  the devbox as the user `mole` before pushing `linux`. When the test reaches into a
   helper the fix introduced (Pester extracting a function from the script),
   restoring the old file fails the whole test file at discovery, which proves
   nothing; break only the judged condition in the new code instead and check
   that exactly that `It` fails. The first run's junction test was proven that
   way after the fact (draft PR #1754).
+- Every fix diff that touches a deletion, privilege, install or update path gets
+  a second review by an agent that sees only the diff, the requirement and the
+  files to read, before it is pushed. On 2026-11-10 that review found the worst
+  miss on each branch after the fixing agent's own tests were green: a
+  `COREPACK_HOME=~/Documents` cache root on Linux, "changes nothing" snapshots
+  that skipped every file on Windows, and a history condenser that disagreed
+  with the old parser in GBK and Shift-JIS locales on macOS.
 - Agent reports are leads. Before integration, read each agent's deviations from its
   brief and accept or undo each one, verify every "this does nothing" or "baseline
   already fails" claim yourself, and close each agent's "not done / outside my

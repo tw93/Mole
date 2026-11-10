@@ -5,8 +5,8 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 ## 2026-11-10 Three-CLI whole review
 
 - Frozen sources: main `1baecd15`, windows `075215a8`, linux `cf42a724` (first audit of Mole CLI (Linux)). Scope: all three trees whole, at the maintainer's request, in six read-only passes: macOS deletion safety, Windows and Linux deletion safety, command and flag matrix, performance (measured on macOS, by reading elsewhere), over-design and design, stale guidance and codification.
-- Landed: main `2ed8427b`, `5cbe27b7`, `0afbb83c`, `59c274a4`, `543a6574`, `dfd0e583`; linux `210e3932`, `c80d3da5`, `e1593dff`, `954da7d7`; windows `06b07a9d`, `75ce2f7a`, `cd60e200`, `16c78ee7`, `bec984bb`, `147eef15`. The per-change table is in SYNC.md under 2026-11-10.
-- Next window from: main `dfd0e583`, windows `bec984bb`, linux `954da7d7`.
+- Landed: main `2ed8427b`, `5cbe27b7`, `0afbb83c`, `59c274a4`, `543a6574`, `dfd0e583`; linux `210e3932`, `c80d3da5`, `e1593dff`, `954da7d7`, `15e995aa`; windows `06b07a9d`, `75ce2f7a`, `cd60e200`, `16c78ee7`, `bec984bb`, `147eef15`, `46c53900`. The per-change table is in SYNC.md under 2026-11-10.
+- Next window from: main `dfd0e583`, windows `bec984bb`, linux `15e995aa`.
 
 | Item | Disposition | Evidence |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 | Lessons fixed repeatedly without a rule: display width, future-dated stamps, a helper flipping errexit | Codified | `go-tuis.md`, `shell.md`, `core.md`. |
 | Windows: `mo remove --dry-run` (maintainer: do it) | Fixed | `bec984bb`: a `-DryRun` switch on `Uninstall-Mole`; 17 new cases red on the previous source on both hosts, install-tier files 197 of 199 on both, the ThinkPad's user PATH byte-identical before and after. The second reviewer found the first "changes nothing" snapshots skipped every file. `scripts/e2e_windows.py` not run. |
 | Linux: three environment switches without a recorded reason (maintainer: remove) | Fixed | `954da7d7`. |
+| Linux: `mo history` appended every record to Bash arrays | Fixed | `15e995aa`: 5 MB log 1.8 s to 0.1 s on the devbox, output byte-identical. |
 | Windows AGENTS.md past the 20% trigger (maintainer: compress) | Fixed | `147eef15`: dedupe found 113 bytes, so 27 per-command Safety Rules bullets moved verbatim into five `.claude/rules` files; 41,451 to 27,480 bytes. The second reviewer found six loading gaps, all closed. |
 
 ### Decided, do not re-report
@@ -39,7 +40,6 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 - Windows: a real `purge` or `uninstall` without a console ends on the raw `ReadKey` exception instead of a refusal that names the cause and the next command.
 - Windows: `Remove-FromUserPath` reads the user PATH expanded and writes it back when it removes the install folder, which on Windows PowerShell 5.1 probably turns `%VAR%` entries into literals (by reading, not run). It no longer writes when the folder is not in the PATH.
 - Windows: something in the complete suite leaves `Microsoft\Windows\PowerShell\ModuleAnalysisCache` in the test tree when run from a desktop session; the four changed test files do not.
-- Linux `mo history` reads the log line by line in Bash like the macOS reader did before `0afbb83c`; not timed.
 - Linux performance by reading only: `report_unknown_caches` repeats `du` over `~/.cache`, owner checks run `pgrep` per name and scan `/proc` per Snap rule, gopsutil runs `lsb_release` each status tick. A real Trash run still forks `date` and two subshells per entry in `log_operation`.
 - The published `mole` skill and `llms.txt` cover macOS and Windows only, and `skills/mole/references/windows.md` still describes the old dry-run workaround and has no `mo remove --dry-run`. Maintainer 2026-11-10: leave them until a user asks.
 - `MOLE_LSREGISTER_PATH` in `lib/core/base.sh` picks the binary `lsregister` calls run as the user and is read outside test mode; not a deletion root, left as is.

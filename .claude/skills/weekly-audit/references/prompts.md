@@ -3,6 +3,10 @@
 Fill `<MAIN_HEAD>`, `<WINDOWS_HEAD>`, `<WINDOW>` (per branch, from `docs/weekly-audit.md`, "Next window from")
 and `<SCOPE>` (Phase 1). Every audit prompt starts with the shared header; every fix prompt with the fix header.
 Fixed prompts keep coverage from drifting between runs (adapted from mole-mac and mole-windows, 2026-10-16).
+Since 2026-11-10 the audit covers three trees: add the linux branch (checkout `~/www/mole-cli-linux`, or
+`origin/linux` at `<LINUX_HEAD>`) to the shared header and every dimension, with its own `AGENTS.md`, `SYNC.md` and
+`docs/ledger.md`; its code is bash 5 with GNU tools, cannot run on macOS, and is tested on the devbox. Windows keeps
+per-command rules in `.claude/rules/` beside its `AGENTS.md`.
 
 ## Shared audit header
 

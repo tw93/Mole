@@ -63,3 +63,15 @@ says the same: the repo's guides are the complete contract. Keep `paths:` frontm
 - A contract between two files (an app shape the uninstall inventory accepts must also pass Clean's scan)
   goes into the rules of both sides, and a rule follows the file that holds its code, not the feature name.
 - The routing table in `AGENTS.md` names every rule file for runtimes that do not load `.claude/rules`.
+- Dedupe first, then decide. When a merge-and-dedupe pass frees under about 1%, the file is long because its
+  rules are dense, and the reduction is a split, not more cutting: on 2026-11-10 the Windows guide gave up 113
+  of 41,451 bytes to dedupe and 14,000 to moving 27 per-command bullets verbatim into five path rules. Move
+  whole bullets without rewording, so the meaning review has only loading scope to check.
+- The meaning review of a split asks one question per moved rule: where does the code it constrains live, and
+  does a glob match that file. That review found six gaps in the Windows split (a rule filed under the wrong
+  command, `lib/core/base.ps1` and `mole.ps1` enforcing clean, uninstall and update rules, Go status files
+  sharing an optimize rule). Files that say "the guide owns policy" (`CLAUDE.md`, security review, docs
+  headers) need the rule folder named too.
+- New rule files are shipped files where the branch installs from source: track them in `.gitignore`, and on
+  `windows` list them in `Get-MoleInstallNestedFiles`, or the install inventory test fails and `mo remove`
+  leaves them behind.
