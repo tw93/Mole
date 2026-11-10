@@ -182,8 +182,14 @@ function Clear-GamingPlatformCaches {
         Clear-MoleAppCache -Path $path.Path -Description "Origin cache" -Processes $eaProcesses
     }
 
-    # GOG Galaxy
-    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\GOG.com\Galaxy\webcache" -Description "GOG Galaxy webcache" -Processes @('GalaxyClient')
+    # GOG Galaxy 2.1 keeps its web profile in ProgramData\GOG.com\Galaxy\webcache\<profile>,
+    # Local Storage and Session Storage beside the caches (x64 Windows 2026-11-10).
+    # GalaxyClient stays in the tray after its window closes and holds them.
+    foreach ($profile in @(Get-MoleCacheProfiles "$env:PROGRAMDATA\GOG.com\Galaxy\webcache")) {
+        foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache', 'DawnCache')) {
+            Clear-MoleAppCache -Path (Join-Path $profile.FullName $leaf) -Description "GOG Galaxy $leaf" -Processes @('GalaxyClient')
+        }
+    }
     Clear-MoleOwnerLogs -Path "$env:PROGRAMDATA\GOG.com\Galaxy\logs" -Description "GOG Galaxy logs" -Processes @('GalaxyClient')
 
     # Ubisoft Connect

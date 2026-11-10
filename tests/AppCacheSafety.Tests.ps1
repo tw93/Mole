@@ -7,7 +7,7 @@ BeforeAll {
     . "$repo\lib\clean\apps.ps1"
     . "$repo\lib\clean\system.ps1"
     $script:SavedCacheEnvironment = @{}
-    foreach ($name in @('USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'MO_NO_OPLOG')) {
+    foreach ($name in @('USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMDATA', 'MO_NO_OPLOG')) {
         $script:SavedCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
     }
     $script:SavedCacheWhitelist = $script:Config.WhitelistFile
@@ -110,9 +110,11 @@ Describe 'Application cache boundaries' {
 
     It 'Cleans only the measured <Name> launcher caches and keeps its sign-in' -ForEach @(
         @{ Name='EA app'; Base='Electronic Arts\EA Desktop\CEF\2\EADesktop\BrowserCache'; Caches=@('Cache','Code Cache','GPUCache','DawnCache'); State=@('Network\Cookies','IndexedDB\https_signin.ea.com_0.indexeddb.leveldb\x','Local Storage\leveldb\x') }
+        @{ Name='GOG Galaxy'; Base='GOG.com\Galaxy\webcache\common'; Caches=@('Cache','GPUCache','DawnCache'); State=@('Local Storage\leveldb\x','Session Storage\x','databases\Databases.db') }
         @{ Name='Ubisoft Connect'; Base='Ubisoft Game Launcher\cache\http2'; Caches=@('Default\Cache','Default\Code Cache','Default\GPUCache','Default\DawnWebGPUCache','ShaderCache','GraphiteDawnCache'); State=@('Default\Login Data','Default\Network\Cookies','Default\History','Local State','component_crx_cache\x') }
     ) {
-        $base = Join-Path $env:LOCALAPPDATA $Base
+        $env:PROGRAMDATA = Join-Path $env:USERPROFILE 'ProgramData'
+        $base = Join-Path $(if ($Name -eq 'GOG Galaxy') { $env:PROGRAMDATA } else { $env:LOCALAPPDATA }) $Base
         $caches = @(foreach ($leaf in $Caches) { New-CacheFile (Join-Path $base "$leaf\entry") })
         $state = @(foreach ($leaf in $State) { New-CacheFile (Join-Path $base $leaf) })
         Clear-GamingPlatformCaches
@@ -121,10 +123,12 @@ Describe 'Application cache boundaries' {
     }
 
     It 'A running <Owner> keeps the <Path> launcher cache' -ForEach @(
-        @{ Owner='EADesktop'; Path='Electronic Arts\EA Desktop\CEF\2\EADesktop\BrowserCache\Cache\entry' }
-        @{ Owner='upc'; Path='Ubisoft Game Launcher\cache\http2\Default\Cache\entry' }
+        @{ Owner='EADesktop'; Path='Electronic Arts\EA Desktop\CEF\2\EADesktop\BrowserCache\Cache\entry'; ProgramData=$false }
+        @{ Owner='upc'; Path='Ubisoft Game Launcher\cache\http2\Default\Cache\entry'; ProgramData=$false }
+        @{ Owner='GalaxyClient'; Path='GOG.com\Galaxy\webcache\common\GPUCache\entry'; ProgramData=$true }
     ) {
-        $cache = New-CacheFile (Join-Path $env:LOCALAPPDATA $Path)
+        $env:PROGRAMDATA = Join-Path $env:USERPROFILE 'ProgramData'
+        $cache = New-CacheFile (Join-Path $(if ($ProgramData) { $env:PROGRAMDATA } else { $env:LOCALAPPDATA }) $Path)
         $script:RunningOwner = $Owner
         Mock Get-Process { [pscustomobject]@{ProcessName=$script:RunningOwner} }
         Clear-GamingPlatformCaches
