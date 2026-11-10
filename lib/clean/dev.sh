@@ -1736,7 +1736,8 @@ check_android_ndk() {
 clean_xcode_documentation_cache() {
     # Honor the command-wide choice before scanning or requesting credentials.
     [[ "${SYSTEM_CLEAN:-true}" == "true" ]] || return 0
-    local doc_cache_root="${MOLE_XCODE_DOCUMENTATION_CACHE_DIR:-/Library/Developer/Xcode/DocumentationCache}"
+    local doc_cache_root
+    doc_cache_root=$(mole_test_path_override MOLE_XCODE_DOCUMENTATION_CACHE_DIR /Library/Developer/Xcode/DocumentationCache)
     [[ -d "$doc_cache_root" ]] || return 0
 
     local -a index_entries=()
@@ -2122,7 +2123,8 @@ _xcode_safe_clean_guarded() {
 }
 
 clean_xcode_xctest_devices() {
-    local xctest_devices_dir="${MOLE_XCODE_XCTEST_DEVICES_DIR:-$HOME/Library/Developer/XCTestDevices}"
+    local xctest_devices_dir
+    xctest_devices_dir=$(mole_test_path_override MOLE_XCODE_XCTEST_DEVICES_DIR "$HOME/Library/Developer/XCTestDevices")
     [[ -d "$xctest_devices_dir" ]] || return 0
 
     # Preserve safe_clean's skip accounting while checking eligibility before
@@ -2179,7 +2181,8 @@ clean_xcode_xctest_devices() {
 clean_xcode_system_coresimulator_caches() {
     # Honor the command-wide choice before scanning or requesting credentials.
     [[ "${SYSTEM_CLEAN:-true}" == "true" ]] || return 0
-    local cache_root="${MOLE_XCODE_SYSTEM_CORESIMULATOR_CACHE_DIR:-/Library/Developer/CoreSimulator/Caches}"
+    local cache_root
+    cache_root=$(mole_test_path_override MOLE_XCODE_SYSTEM_CORESIMULATOR_CACHE_DIR /Library/Developer/CoreSimulator/Caches)
     [[ -d "$cache_root" ]] || return 0
 
     local -a cache_entries=()

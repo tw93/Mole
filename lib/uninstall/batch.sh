@@ -735,10 +735,10 @@ _uninstall_find_system_protected() {
 
 _uninstall_tree_holds_system_protected_entry() {
     local errors="" hit="" refusals="" scan_rc=0 line=""
-    errors=$(mktemp "${TMPDIR:-/tmp}/mole-sip.XXXXXX") || return 1
+    errors=$(create_temp_file) || return 1
     hit=$(_uninstall_find_system_protected "$1" 2> "$errors") || scan_rc=$?
     refusals=$(cat "$errors" 2> /dev/null) || refusals=""
-    rm -f "$errors"
+    rm -f -- "$errors" 2> /dev/null || true # SAFE: exact tracked temp file created above
     mole_rc_signal "$scan_rc" && return "$scan_rc"
     [[ -n "$hit" ]] && return 0
     while IFS= read -r line; do

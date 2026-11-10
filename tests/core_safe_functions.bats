@@ -3529,19 +3529,48 @@ SCRIPT
     [[ "$output" == *"DELETE:$target_file"*"SCAN_RC=0 RC=0"* ]]
 }
 
-@test "safe_find_delete works when app protection is not loaded" {
+@test "safe_find_delete keeps files when app protection is not loaded" {
     local old_file="$TEST_DIR/file-ops-only.tmp"
     touch "$old_file"
     touch -t "$(/bin/date -v-8d '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '8 days ago' '+%Y%m%d%H%M.%S')" "$old_file" 2>/dev/null || true
 
+    # Without should_protect_path the validator cannot prove a path is not
+    # protected, so it refuses instead of skipping the check.
     run /bin/bash --noprofile --norc <<EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/file_ops.sh"
+safe_find_delete "$TEST_DIR" "*.tmp" 7 "f" || true
+EOF
+    [ -e "$old_file" ] || { echo "$output"; return 1; }
+
+    # Positive control: the same call removes the file once protection loads.
+    run /bin/bash --noprofile --norc <<EOF
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
 safe_find_delete "$TEST_DIR" "*.tmp" 7 "f"
 EOF
-
-    [ "$status" -eq 0 ]
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [ ! -e "$old_file" ]
+}
+
+@test "validate_path_for_deletion refuses every path when protection rules are not loaded" {
+    local target="$HOME/Library/Caches/com.example.unloaded/cache.db"
+    run env TARGET="$target" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+rc=0
+validate_path_for_deletion "$TARGET" || rc=$?
+printf 'RC=%s REASON=%s\n' "$rc" "$_MOLE_VALIDATION_REASON"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
+rc=0
+validate_path_for_deletion "$TARGET" || rc=$?
+printf 'LOADED_RC=%s\n' "$rc"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=1 REASON=protected"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"protection rules not loaded"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"LOADED_RC=0"* ]]
 }
 
 @test "MOLE_* constants are defined" {

@@ -3276,3 +3276,73 @@ EOF
     [[ "$output" == *"DEVELOPER_RC:124 CANCEL:124"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_LATER_DELETE"* ]]
 }
+
+@test "Xcode root overrides are honored only in test mode" {
+    local override="$HOME/xctest-override"
+    mkdir -p "$override/11111111-2222-3333-4444-555555555555"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_XCODE_XCTEST_DEVICES_DIR="$override" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+note_activity() { :; }
+pgrep() { return 1; }
+_coresimulator_booted_device_state() { return 1; }
+safe_clean() { for target in "$@"; do printf 'SAFE:%s\n' "$target"; done; }
+MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 clean_xcode_xctest_devices
+echo "REAL_DONE"
+for seam in MOLE_XCODE_DOCUMENTATION_CACHE_DIR MOLE_XCODE_SYSTEM_CORESIMULATOR_CACHE_DIR; do
+    export "$seam=$HOME/fake-system-root"
+    printf 'REAL:%s:%s\n' "$seam" "$(MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 mole_test_path_override "$seam" /Library/default)"
+    printf 'TEST:%s:%s\n' "$seam" "$(MOLE_TEST_MODE=1 mole_test_path_override "$seam" /Library/default)"
+done
+MOLE_TEST_MODE=1 clean_xcode_xctest_devices
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local real_part="${output%%REAL_DONE*}"
+    [[ "$real_part" != *"$override"* ]] || { echo "override used outside test mode: $output"; return 1; }
+    [[ "$output" == *"REAL:MOLE_XCODE_DOCUMENTATION_CACHE_DIR:/Library/default"* ]] || return 1
+    [[ "$output" == *"REAL:MOLE_XCODE_SYSTEM_CORESIMULATOR_CACHE_DIR:/Library/default"* ]] || return 1
+    [[ "$output" == *"TEST:MOLE_XCODE_DOCUMENTATION_CACHE_DIR:$HOME/fake-system-root"* ]] || return 1
+    # Positive control: in test mode the same override reaches the cleaner.
+    [[ "$output" == *"SAFE:$override/11111111-2222-3333-4444-555555555555"* ]]
+}
+
+@test "test-only cleanup root overrides are read only through the test-mode guard" {
+    run python3 - "$PROJECT_ROOT" << 'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+seams = [
+    "MOLE_XCODE_DOCUMENTATION_CACHE_DIR",
+    "MOLE_XCODE_SYSTEM_CORESIMULATOR_CACHE_DIR",
+    "MOLE_XCODE_XCTEST_DEVICES_DIR",
+    "MOLE_CHROME_APP_PATHS",
+    "MOLE_EDGE_APP_PATHS",
+    "MOLE_BRAVE_APP_PATHS",
+    "MOLE_EXTERNAL_VOLUMES_ROOT",
+]
+files = [root / "mole"] + sorted((root / "lib").rglob("*.sh")) + sorted((root / "bin").rglob("*.sh"))
+guarded = {s: 0 for s in seams}
+bad = []
+for path in files:
+    for lineno, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        code = line.lstrip()
+        if code.startswith("#"):
+            continue
+        code = re.sub(r"\s#.*$", "", code)
+        for seam in seams:
+            if re.search(r"\$\{?" + seam + r"\b", code):
+                bad.append(f"{path.relative_to(root)}:{lineno}: {line.strip()}")
+            if re.search(r"\bmole_test_path_override\s+\"?" + seam + r"\b", code):
+                guarded[seam] += 1
+missing = [s for s, n in guarded.items() if n == 0]
+for b in bad:
+    print("UNGUARDED " + b)
+for m in missing:
+    print("NO_GUARDED_SITE " + m)
+sys.exit(1 if bad or missing else 0)
+PY
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}

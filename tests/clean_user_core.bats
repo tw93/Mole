@@ -5073,3 +5073,36 @@ EOF
     [[ "$output" == *"SPIN:Measuring Trash..."*"Trash · would empty, 1 item"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"SPINNING_AFTER=false"* ]] || { echo "$output"; return 1; }
 }
+
+@test "browser and external volume root overrides are honored only in test mode" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_CHROME_APP_PATHS="$HOME/override/Chrome.app" \
+        MOLE_EDGE_APP_PATHS="$HOME/override/Edge.app" \
+        MOLE_BRAVE_APP_PATHS="$HOME/override/Brave.app" \
+        MOLE_EXTERNAL_VOLUMES_ROOT="$HOME/override/volumes" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+# The wrappers only choose the bundle list; record it instead of cleaning.
+_clean_chromium_old_versions() { shift 3; printf 'PATHS:%s\n' "$*"; }
+for mode in 0 1; do
+    echo "MODE:$mode"
+    MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 clean_chrome_old_versions
+    MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 clean_edge_old_versions
+    MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 clean_brave_old_versions
+    printf 'VOLUMES:%s\n' "$(MOLE_TEST_MODE=$mode MOLE_TEST_NO_AUTH=0 external_volume_root)"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local real_part="${output%%MODE:1*}"
+    local test_part="${output#*MODE:1}"
+    [[ "$real_part" != *"$HOME/override"* ]] || { echo "override used outside test mode: $output"; return 1; }
+    [[ "$real_part" == *"PATHS:/Applications/Google Chrome.app $HOME/Applications/Google Chrome.app"* ]] || return 1
+    [[ "$real_part" == *"VOLUMES:/Volumes"* ]] || return 1
+    [[ "$test_part" == *"PATHS:$HOME/override/Chrome.app"* ]] || return 1
+    [[ "$test_part" == *"PATHS:$HOME/override/Edge.app"* ]] || return 1
+    [[ "$test_part" == *"PATHS:$HOME/override/Brave.app"* ]] || return 1
+    [[ "$test_part" == *"VOLUMES:$HOME/override/volumes"* ]]
+}

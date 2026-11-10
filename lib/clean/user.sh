@@ -883,8 +883,10 @@ _clean_dropbox_caches_guarded() {
 # Remove old Google Chrome versions while keeping Current.
 clean_chrome_old_versions() {
     local -a app_paths
-    if [[ -n "${MOLE_CHROME_APP_PATHS:-}" ]]; then
-        IFS=':' read -ra app_paths <<< "$MOLE_CHROME_APP_PATHS"
+    local override_paths
+    override_paths=$(mole_test_path_override MOLE_CHROME_APP_PATHS)
+    if [[ -n "$override_paths" ]]; then
+        IFS=':' read -ra app_paths <<< "$override_paths"
     else
         app_paths=(
             "/Applications/Google Chrome.app"
@@ -899,8 +901,10 @@ clean_chrome_old_versions() {
 # Remove old Microsoft Edge versions while keeping Current.
 clean_edge_old_versions() {
     local -a app_paths
-    if [[ -n "${MOLE_EDGE_APP_PATHS:-}" ]]; then
-        IFS=':' read -ra app_paths <<< "$MOLE_EDGE_APP_PATHS"
+    local override_paths
+    override_paths=$(mole_test_path_override MOLE_EDGE_APP_PATHS)
+    if [[ -n "$override_paths" ]]; then
+        IFS=':' read -ra app_paths <<< "$override_paths"
     else
         app_paths=(
             "/Applications/Microsoft Edge.app"
@@ -1046,8 +1050,10 @@ clean_edge_updater_old_versions() {
 # Remove old Brave Browser versions while keeping Current.
 clean_brave_old_versions() {
     local -a app_paths
-    if [[ -n "${MOLE_BRAVE_APP_PATHS:-}" ]]; then
-        IFS=':' read -ra app_paths <<< "$MOLE_BRAVE_APP_PATHS"
+    local override_paths
+    override_paths=$(mole_test_path_override MOLE_BRAVE_APP_PATHS)
+    if [[ -n "$override_paths" ]]; then
+        IFS=':' read -ra app_paths <<< "$override_paths"
     else
         app_paths=(
             "/Applications/Brave Browser.app"
@@ -1730,7 +1736,7 @@ resolve_existing_path() {
 }
 
 external_volume_root() {
-    printf '%s\n' "${MOLE_EXTERNAL_VOLUMES_ROOT:-/Volumes}"
+    mole_test_path_override MOLE_EXTERNAL_VOLUMES_ROOT /Volumes
 }
 
 validate_external_volume_target() {

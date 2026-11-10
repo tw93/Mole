@@ -1191,6 +1191,13 @@ validate_path_for_deletion() {
     policy_path=$(_mole_normalize_deletion_policy_path "$path")
     _MOLE_VALIDATION_REASON="protected"
 
+    # Without the protection rules no path can be shown to be unprotected, so
+    # a caller that loaded file_ops.sh alone gets a refusal, never a skipped check.
+    if ! declare -F should_protect_path > /dev/null 2>&1; then
+        log_error "Path validation failed: protection rules not loaded: $path"
+        return 1
+    fi
+
     # Check symlink target if path is a symbolic link
     if [[ -L "$path" ]]; then
         local link_target
@@ -1256,7 +1263,7 @@ validate_path_for_deletion() {
                 log_error "Path validation failed: resolves into a critical system path: $path -> $resolved_path"
                 return 1
             fi
-            if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$resolved_path"; then
+            if should_protect_path "$resolved_path"; then
                 _mole_record_uninstall_refusal "$path" protected
                 if [[ "${MO_DEBUG:-0}" == "1" ]]; then
                     log_warning "Path validation: resolves into a protected path: $path -> $resolved_path"
@@ -1363,16 +1370,14 @@ validate_path_for_deletion() {
     fi
 
     # Check if path is protected (keychains, system settings, etc)
-    if declare -f should_protect_path > /dev/null 2>&1; then
-        if _mole_is_user_trash_top_level_item "$policy_path"; then
-            :
-        elif should_protect_path "$policy_path"; then
-            _mole_record_uninstall_refusal "$path" protected
-            if [[ "${MO_DEBUG:-0}" == "1" ]]; then
-                log_warning "Path validation: protected path skipped: $policy_path"
-            fi
-            return 1
+    if _mole_is_user_trash_top_level_item "$policy_path"; then
+        :
+    elif should_protect_path "$policy_path"; then
+        _mole_record_uninstall_refusal "$path" protected
+        if [[ "${MO_DEBUG:-0}" == "1" ]]; then
+            log_warning "Path validation: protected path skipped: $policy_path"
         fi
+        return 1
     fi
 
     return 0
@@ -2819,6 +2824,19 @@ APPLESCRIPT
 
     debug_log "Finder moved application to Trash: $path"
     return 0
+}
+
+# Print the test-only path override held in the variable named by $1, or
+# the default $2. These seams choose a root that cleanup deletes from, some
+# through sudo, so like MOLE_TEST_TRASH_DIR they are read only under
+# MOLE_TEST_MODE / MOLE_TEST_NO_AUTH: an exported value in a real run cannot
+# redirect what Mole removes.
+mole_test_path_override() {
+    local name="$1" fallback="${2:-}" value=""
+    if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
+        value="${!name:-}"
+    fi
+    printf '%s\n' "${value:-$fallback}"
 }
 
 # Move a path to the macOS Trash. Test harnesses set MOLE_TEST_TRASH_DIR to
