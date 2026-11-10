@@ -21,9 +21,8 @@ TIERS = [
     ("release", "actionlint on workflow changes; tests/Release.Tests.ps1 on a staged build-release.ps1 run; "
                 "scripts/e2e_windows.py on the VM and the ThinkPad; the maintainer's go-ahead (RELEASE.md)", [
         ".github/workflows/*", "scripts/build-release.ps1", "scripts/new-release-zip.ps1",
-        "scripts/sign-release.ps1", "scripts/write-checksums.ps1", "scripts/build-msi.ps1",
-        "scripts/mole-installer.wxs", "scripts/render-packaging.ps1", "packaging/*", "VERSION",
-        "lib/core/version.ps1",
+        "scripts/sign-release.ps1", "scripts/write-checksums.ps1", "scripts/render-packaging.ps1",
+        "packaging/*", "VERSION", "lib/core/version.ps1",
     ]),
     ("install", "tests/Install.Tests.ps1, InstallLifecycle.Tests.ps1 and UpdateNotice.Tests.ps1 under both "
                 "powershell and pwsh (scripts/test.ps1); scripts/e2e_windows.py on a real PC", [
