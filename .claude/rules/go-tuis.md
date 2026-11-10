@@ -31,6 +31,7 @@ paths:
 ## Status
 
 - `cmd/status/view.go` owns status rendering only; collection and JSON/NDJSON contracts live elsewhere in `cmd/status/`. Keep narrow-terminal layout and automation output independent. Unknown battery capacity must not render Healthy from cycle count alone; retain independent cycle counts, their known warnings and a known system condition. `TestBatteryHealthLabel` and `TestBatteryCardUnknownCapacityPreservesCycles` pin the label and card. Run `go test ./cmd/status` and `MOLE_TEST_NO_AUTH=1 bats tests/cli.bats` when command routing changes.
+- **Fit and cut text by display cells, never bytes or runes.** Names reach both TUIs as CJK, decomposed accents (the NFD names macOS file systems return), halfwidth kana and joined emoji; a byte or rune count misaligns the size column and can split a character. Measure with `ansi.StringWidth` and cut with `ansi.Truncate` / `ansi.TruncateLeft`, the library lipgloss lays out with, and do not bring back a hand-written rune table. Long sibling names are cut in the middle so their tails stay distinct. This was fixed five times in one window (#1917, #1918 and three follow-ups) before it was written down. Locked by `TestShorten` in `cmd/status/view_test.go`, `TestUnicodeColumnsPreserveGraphemes` in `cmd/analyze/format_test.go` and `TestNarrowRowsKeepTheTailOfLongSiblingNames` in `cmd/analyze/analyze_test.go`; the shell side is in `.claude/rules/shell.md`.
 
 ## Tests
 

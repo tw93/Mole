@@ -37,6 +37,13 @@ survive refutation. Run it once a week and keep the report short.
   dimension reads that window; the others follow the scope selected below.
 - Exclude `tests/tmp-*`, `.git`, build output and other sessions' worktrees from
   every grep.
+- Mole CLI (Linux) is the third audited tree since 2026-11-10: the `linux`
+  branch, checked out at `~/www/mole-cli-linux` (bash 5, GNU tools, Go). Freeze
+  and fetch it like `windows`, and give every dimension its head. Its contract
+  is the Safety contract in its own `AGENTS.md`; its run record is
+  `docs/ledger.md` and its `SYNC.md`, and it has no incident table. Bats and Go
+  tests run on the LazyCat devbox as the user `mole` (`linux-devbox` skill),
+  never on macOS. Where this file says "both branches", read all three.
 - An explicit whole-codebase request takes precedence over incremental defaults.
   Otherwise audit both branches whole on the first run, after a release, or when the
   window touched more than about 40 source files; otherwise incremental: the files
