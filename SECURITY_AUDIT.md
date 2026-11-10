@@ -13,7 +13,7 @@ The 2026-10-26 review starts from `8bff8583` on the `windows` branch and covers 
 | Analyze | Asynchronous selection, protected descendants, path identity and native shell recycling | `cmd/analyze/*_test.go` |
 | Status and history | Partial/unknown measurements, credential-safe rendering, stored records and output encoding | `cmd/status/*_test.go`, `tests/History.Tests.ps1` |
 | Router, launchers, install, update and remove | Argument/exit-status handling, owned installation files, native-tool freshness, provenance and channel notices | `tests/Router.Tests.ps1`, `tests/Install.Tests.ps1`, `tests/InstallLifecycle.Tests.ps1`, `tests/UpdateNotice.Tests.ps1`, `cmd/mo/*_test.go` |
-| Tests, workflows and guidance | Nonempty passing test results, enforced/advisory gates, signed inventory and current safety claims | `tests/TestRunner.Tests.ps1`, `tests/Release.Tests.ps1`, `.github/workflows/`, `AGENTS.md` |
+| Tests, workflows and guidance | Nonempty passing test results, enforced/advisory gates, signed inventory and current safety claims | `tests/TestRunner.Tests.ps1`, `tests/Release.Tests.ps1`, `.github/workflows/`, `AGENTS.md`, `.claude/rules/` |
 
 The matrix identifies scope; the executed checks are recorded in Verification Evidence. This source review fixes the confirmed batch-file replacement gap in `34f646c2`. Package signatures, real UAC/vendor-uninstaller behavior and physical-machine acceptance remain separate evidence.
 

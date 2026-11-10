@@ -1,6 +1,6 @@
 # Windows CLI development pitfalls
 
-Read only the section matching the change. [AGENTS.md](../AGENTS.md) owns current safety and compatibility policy; this reference explains verified failure mechanisms from the October 2026 Windows review. [The development record](development-record.md) holds delivery evidence.
+Read only the section matching the change. [AGENTS.md](../AGENTS.md) and the area rules in `.claude/rules/` own current safety and compatibility policy; this reference explains verified failure mechanisms from the October 2026 Windows review. [The development record](development-record.md) holds delivery evidence.
 
 ## PowerShell path and Git probes
 
@@ -22,7 +22,7 @@ Root and command-local flags have different PowerShell binding paths: a long roo
 
 When checking decoded JSON argument arrays in PowerShell 5.1, assign the decoded value before asserting its elements. Wrapping the conversion pipeline in an array can count one emitted array object rather than its individual arguments, falsely suggesting argument loss.
 
-PowerShell pipelines unwrap a single result to a scalar. Keep a collection-shaped result with `@(...)` before inspecting its count or indexing it, and test zero, one and multiple matches. The real uninstall search found the one-match case that multi-match fixtures missed; [Uninstall.Tests.ps1](../tests/Uninstall.Tests.ps1) keeps that regression.
+PowerShell pipelines unwrap a single result to a scalar. Keep a collection-shaped result with `@(...)` before inspecting its count or indexing it, and test zero, one and multiple matches. The real uninstall search found the one-match case that multi-match fixtures missed; [Uninstall.Tests.ps1](../tests/Uninstall.Tests.ps1) keeps that regression. `scripts/e2e_windows.py` found it on its first runs as the single-match search crash in `mo uninstall`, which Pester on pwsh 7 had hidden.
 
 ## Test isolation and false success
 

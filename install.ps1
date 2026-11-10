@@ -680,6 +680,11 @@ function Get-MoleInstallEntries {
 # unknown files in shared folders and Git metadata; prune only empty folders.
 function Get-MoleInstallNestedFiles {
     return @(
+        ".claude\rules\clean.md"
+        ".claude\rules\install-update.md"
+        ".claude\rules\optimize.md"
+        ".claude\rules\purge.md"
+        ".claude\rules\uninstall.md"
         ".github\FUNDING.yml"
         ".github\ISSUE_TEMPLATE\bug_report.md"
         ".github\ISSUE_TEMPLATE\config.yml"

@@ -1,6 +1,6 @@
 # Open-source research for the Windows CLI
 
-What Mole CLI (Windows) learns from open-source Windows cleanup, uninstall, maintenance and disk tools: rules and failure modes, never code. Mole for Windows ran these studies from 2026-09-24 for its own surfaces and keeps its notes in its own record; this file holds the public, CLI-side reading of the same repositories. Current policy stays in [AGENTS.md](../AGENTS.md), cross-product decisions in [SYNC.md](../SYNC.md); this file is the evidence and the queue.
+What Mole CLI (Windows) learns from open-source Windows cleanup, uninstall, maintenance and disk tools: rules and failure modes, never code. Mole for Windows ran these studies from 2026-09-24 for its own surfaces and keeps its notes in its own record; this file holds the public, CLI-side reading of the same repositories. Current policy stays in [AGENTS.md](../AGENTS.md) and the area rules in `.claude/rules/`, cross-product decisions in [SYNC.md](../SYNC.md); this file is the evidence and the queue.
 
 ## Repositories and baselines
 

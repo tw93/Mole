@@ -43,7 +43,8 @@ temp/
 
 # AI / local assistant files
 .agents/
-.claude/
+.claude/*
+!.claude/rules/
 .gemini/
 .kiro/
 ANTIGRAVITY.md
