@@ -1599,8 +1599,8 @@ func TestModelViewPadsToTerminalHeight(t *testing.T) {
 
 			view := m.View()
 			got := lipgloss.Height(view)
-			if got < tt.height {
-				t.Errorf("View() height = %d, want >= %d (terminal height)", got, tt.height)
+			if tt.height > 0 && got != tt.height {
+				t.Errorf("View() height = %d, want %d (terminal height)", got, tt.height)
 			}
 		})
 	}

@@ -19,7 +19,7 @@ func TestSpinnerFramesHaveSingleColumnWidth(t *testing.T) {
 	}
 }
 
-func TestRuneWidth(t *testing.T) {
+func TestDisplayWidthCharacters(t *testing.T) {
 	tests := []struct {
 		name  string
 		input rune
@@ -33,13 +33,13 @@ func TestRuneWidth(t *testing.T) {
 		{"CJK ideograph", '語', 2},
 		{"Full-width number", '１', 2},
 		{"ASCII space", ' ', 1},
-		{"Tab", '	', 1},
+		{"Tab", '	', 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := runeWidth(tt.input); got != tt.want {
-				t.Errorf("runeWidth(%q) = %d, want %d", tt.input, got, tt.want)
+			if got := displayWidth(string(tt.input)); got != tt.want {
+				t.Errorf("displayWidth(%q) = %d, want %d", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -89,7 +89,9 @@ func TestFormatNumber(t *testing.T) {
 		{999, "999"},
 		{1000, "1.0k"},
 		{1500, "1.5k"},
-		{999999, "1000.0k"},
+		{999949, "999.9k"},
+		{999950, "1.0M"},
+		{999999, "1.0M"},
 		{1000000, "1.0M"},
 		{1500000, "1.5M"},
 	}
@@ -429,5 +431,38 @@ func TestFormatUnusedTime(t *testing.T) {
 				t.Errorf("formatUnusedTime(%d days ago) = %q, want %q", tt.daysAgo, got, tt.want)
 			}
 		})
+	}
+}
+
+// Names that file systems hand back decomposed (NFD), CJK punctuation,
+// halfwidth kana, joined emoji, flags and variation selectors keep the column
+// width the terminal draws, so the size column after a padded name stays
+// aligned and a cut never splits a grapheme.
+func TestUnicodeColumnsPreserveGraphemes(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		width int
+	}{
+		{"微信输入法", 10}, {"资料、备份", 10}, {"「报告」.pdf", 12}, {"Cafe\u0301", 4}, {"ｶﾀｶﾅ", 4},
+		{"👨‍👩‍👧‍👦", 2}, {"🇯🇵", 2}, {"❤\ufe0f", 2},
+	} {
+		if got := displayWidth(tt.name); got != tt.width {
+			t.Errorf("%q width=%d want %d", tt.name, got, tt.width)
+		}
+		if got := lipgloss.Width(padName(tt.name, 24)); got != 24 {
+			t.Errorf("%q padded width=%d", tt.name, got)
+		}
+	}
+	if got := truncateMiddle("👨‍👩‍👧‍👦abc", 2); got != "👨‍👩‍👧‍👦" {
+		t.Errorf("split grapheme=%q", got)
+	}
+	// A wide grapheme straddling the tail cut must not push the result past
+	// the column budget.
+	for _, name := range []string{"🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵", "一二三四五六七八九十一二三四五六", "资料、备份、报告、归档、截图"} {
+		for budget := 1; budget <= 24; budget++ {
+			if got := truncateMiddle(name, budget); lipgloss.Width(got) > budget {
+				t.Errorf("truncateMiddle(%q, %d) = %q is %d cells", name, budget, got, lipgloss.Width(got))
+			}
+		}
 	}
 }

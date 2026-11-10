@@ -29,7 +29,17 @@ func BytesSI(size int64) string {
 		exp++
 	}
 	value := float64(size) / float64(div)
-	return fmt.Sprintf("%.1f %cB", value, "kMGTPE"[exp])
+	label := fmt.Sprintf("%.1f", value)
+	// One decimal place can round a value just under the next unit up to
+	// "1000.0" (999,999 B -> "1000.0 kB"); Finder and diskutil show that size
+	// as 1 MB, so step up a unit instead. int64 tops out at 9.2 EB, so the
+	// last prefix is never stepped past.
+	if label == "1000.0" {
+		value /= unit
+		exp++
+		label = fmt.Sprintf("%.1f", value)
+	}
+	return fmt.Sprintf("%s %cB", label, "kMGTPE"[exp])
 }
 
 // BytesBin formats an unsigned byte count using binary (1024-based) units with
@@ -50,38 +60,47 @@ func BytesBin(v uint64) string {
 	}
 }
 
+// binScaled picks the largest binary unit (K, M, G, T) not above v and rounds
+// the scaled value to the given number of decimals. A value that rounds up to
+// 1024 (just under the next unit) steps up one unit instead of printing
+// "1024K", except at the last unit. Returns the rounded text and the unit
+// letter, or ok=false when v is below 1 KiB.
+func binScaled(v uint64, decimals int) (text string, letter byte, ok bool) {
+	const letters = "KMGT"
+	if v < 1<<10 {
+		return "", 0, false
+	}
+	exp := 0
+	for exp < len(letters)-1 && v >= 1<<(10*(exp+2)) {
+		exp++
+	}
+	value := float64(v) / float64(uint64(1)<<(10*(exp+1)))
+	text = strconv.FormatFloat(value, 'f', decimals, 64)
+	if text == strconv.FormatFloat(1024, 'f', decimals, 64) && exp < len(letters)-1 {
+		exp++
+		value /= 1024
+		text = strconv.FormatFloat(value, 'f', decimals, 64)
+	}
+	return text, letters[exp], true
+}
+
 // BytesBinShort formats an unsigned byte count using binary units, no decimal
 // places, single-letter suffix and no space (e.g. "100G"). Boundary uses '>='
-// so values at exactly 1<<n promote to the larger unit.
+// so values at exactly 1<<n promote to the larger unit, and a value that
+// rounds up to 1024 of the smaller unit (1<<20 - 1) steps up too ("1M").
 func BytesBinShort(v uint64) string {
-	switch {
-	case v >= 1<<40:
-		return fmt.Sprintf("%.0fT", float64(v)/(1<<40))
-	case v >= 1<<30:
-		return fmt.Sprintf("%.0fG", float64(v)/(1<<30))
-	case v >= 1<<20:
-		return fmt.Sprintf("%.0fM", float64(v)/(1<<20))
-	case v >= 1<<10:
-		return fmt.Sprintf("%.0fK", float64(v)/(1<<10))
-	default:
-		return strconv.FormatUint(v, 10)
+	if text, letter, ok := binScaled(v, 0); ok {
+		return text + string(letter)
 	}
+	return strconv.FormatUint(v, 10)
 }
 
 // BytesBinCompact formats an unsigned byte count using binary units, one
 // decimal place, single-letter suffix and no space (e.g. "1.5G"). Boundary
-// uses '>=' to mirror BytesBinShort.
+// and rounding step-up mirror BytesBinShort.
 func BytesBinCompact(v uint64) string {
-	switch {
-	case v >= 1<<40:
-		return fmt.Sprintf("%.1fT", float64(v)/(1<<40))
-	case v >= 1<<30:
-		return fmt.Sprintf("%.1fG", float64(v)/(1<<30))
-	case v >= 1<<20:
-		return fmt.Sprintf("%.1fM", float64(v)/(1<<20))
-	case v >= 1<<10:
-		return fmt.Sprintf("%.1fK", float64(v)/(1<<10))
-	default:
-		return strconv.FormatUint(v, 10)
+	if text, letter, ok := binScaled(v, 1); ok {
+		return text + string(letter)
 	}
+	return strconv.FormatUint(v, 10)
 }

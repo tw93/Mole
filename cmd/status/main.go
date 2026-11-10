@@ -223,6 +223,11 @@ func (m model) View() string {
 		cpuCores = smallerCPUCores(cpuCores)
 		output = renderFrame(cpuCores)
 	}
+	// Still taller than the window with the fewest core rows: the terminal
+	// clips the frame from the top, hiding the heading, so say so instead.
+	if m.height > 0 && lipgloss.Height(output) > m.height {
+		output = renderTerminalTooSmall(termWidth, m.height)
+	}
 	return padViewToHeight(output, m.height)
 }
 

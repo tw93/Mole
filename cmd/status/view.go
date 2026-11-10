@@ -13,6 +13,17 @@ import (
 	"github.com/tw93/mole/internal/units"
 )
 
+// renderTerminalTooSmall is shown when the dashboard cannot fit the window.
+// It stays within both dimensions so the renderer cannot clip away its
+// explanation; a later resize recomputes the dashboard from the model.
+func renderTerminalTooSmall(width, height int) string {
+	return lipgloss.NewStyle().
+		Width(width).
+		MaxWidth(width).
+		MaxHeight(height).
+		Render("Terminal too small. Enlarge the window to view status.")
+}
+
 var (
 	titleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#C79FD7")).Bold(true)
 	subtleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#737373"))
