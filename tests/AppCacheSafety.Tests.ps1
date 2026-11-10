@@ -111,6 +111,7 @@ Describe 'Application cache boundaries' {
     It 'Cleans only the measured <Name> launcher caches and keeps its sign-in' -ForEach @(
         @{ Name='EA app'; Base='Electronic Arts\EA Desktop\CEF\2\EADesktop\BrowserCache'; Caches=@('Cache','Code Cache','GPUCache','DawnCache'); State=@('Network\Cookies','IndexedDB\https_signin.ea.com_0.indexeddb.leveldb\x','Local Storage\leveldb\x') }
         @{ Name='GOG Galaxy'; Base='GOG.com\Galaxy\webcache\common'; Caches=@('Cache','GPUCache','DawnCache'); State=@('Local Storage\leveldb\x','Session Storage\x','databases\Databases.db') }
+        @{ Name='Battle.net'; Base='Battle.net'; Caches=@('Cache\00\34','BrowserCaches\common\Cache','BrowserCaches\common\GPUCache'); State=@('BrowserCaches\common\Network\Cookies','BrowserCaches\common\Local Storage\leveldb\x','BrowserCaches\common\Visited Links','CachedData.db') }
         @{ Name='Ubisoft Connect'; Base='Ubisoft Game Launcher\cache\http2'; Caches=@('Default\Cache','Default\Code Cache','Default\GPUCache','Default\DawnWebGPUCache','ShaderCache','GraphiteDawnCache'); State=@('Default\Login Data','Default\Network\Cookies','Default\History','Local State','component_crx_cache\x') }
     ) {
         $env:PROGRAMDATA = Join-Path $env:USERPROFILE 'ProgramData'

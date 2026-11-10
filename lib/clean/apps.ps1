@@ -205,9 +205,16 @@ function Clear-GamingPlatformCaches {
     }
     Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\Ubisoft Game Launcher\logs" -Description "Ubisoft logs" -Processes $ubisoftProcesses
 
-    # Battle.net
-    Clear-MoleAppCache -Path "$env:APPDATA\Battle.net\Cache" -Description "Battle.net Cache" -Processes @('Battle.net')
-    Clear-MoleOwnerLogs -Path "$env:APPDATA\Battle.net\Logs" -Description "Battle.net logs" -Processes @('Battle.net')
+    # Battle.net 2.0 keeps everything in Local; Roaming holds only Battle.net.config
+    # (x64 Windows 2026-11-10). BrowserCaches\<profile> is a whole CEF profile, so
+    # only its cache leaves go.
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Battle.net\Cache" -Description "Battle.net Cache" -Processes @('Battle.net')
+    foreach ($profile in @(Get-MoleCacheProfiles "$env:LOCALAPPDATA\Battle.net\BrowserCaches")) {
+        foreach ($leaf in @('Cache', 'Code Cache', 'GPUCache', 'DawnCache')) {
+            Clear-MoleAppCache -Path (Join-Path $profile.FullName $leaf) -Description "Battle.net $leaf" -Processes @('Battle.net')
+        }
+    }
+    Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\Battle.net\Logs" -Description "Battle.net logs" -Processes @('Battle.net')
 }
 
 # ============================================================================
