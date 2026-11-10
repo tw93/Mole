@@ -6,6 +6,7 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 
 - Frozen sources: main `1baecd15`, windows `075215a8`, linux `cf42a724` (first audit of Mole CLI (Linux)). Scope: all three trees whole, at the maintainer's request, in six read-only passes: macOS deletion safety, Windows and Linux deletion safety, command and flag matrix, performance (measured on macOS, by reading elsewhere), over-design and design, stale guidance and codification.
 - Landed: main `2ed8427b`, `5cbe27b7`, `0afbb83c`, `59c274a4`, `543a6574`, `dfd0e583`; linux `210e3932`, `c80d3da5`, `e1593dff`, `954da7d7`, `15e995aa`; windows `06b07a9d`, `75ce2f7a`, `cd60e200`, `16c78ee7`, `bec984bb`, `147eef15`, `46c53900`. The per-change table is in SYNC.md under 2026-11-10.
+- Released the same day: `V1.71.0` from `49a861b8` and `V0.6.0-linux` from `f8161dd4`. Before tagging, the macOS candidate passed the full suite, the release builds with go1.26.10 at macOS 12.0 and `scripts/e2e_macos.py` 9 of 9 on the test Mac, and the Linux archive passed 49 end-to-end checks and the sudo gate with a real password on the devbox. `V1.44.0-windows` is prepared locally (`scripts/e2e_windows.py` 9 of 9 on the ThinkPad) and waits for the VM run and signing.
 - Next window from: main `dfd0e583`, windows `bec984bb`, linux `15e995aa`.
 
 | Item | Disposition | Evidence |
@@ -43,7 +44,7 @@ One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole 
 - Linux performance by reading only: `report_unknown_caches` repeats `du` over `~/.cache`, owner checks run `pgrep` per name and scan `/proc` per Snap rule, gopsutil runs `lsb_release` each status tick. A real Trash run still forks `date` and two subshells per entry in `log_operation`.
 - The published `mole` skill and `llms.txt` cover macOS and Windows only, and `skills/mole/references/windows.md` still describes the old dry-run workaround and has no `mo remove --dry-run`. Maintainer 2026-11-10: leave them until a user asks.
 - `MOLE_LSREGISTER_PATH` in `lib/core/base.sh` picks the binary `lsregister` calls run as the user and is read outside test mode; not a deletion root, left as is.
-- Delivery receipts are missing for V1.68.0 to V1.70.0, V1.41.0 to V1.43.0-windows and V0.5.0-linux.
+- Delivery receipts are missing for V1.68.0 to V1.70.0, V1.41.0 to V1.43.0-windows and V0.5.0-linux; V1.71.0 and V0.6.0-linux have theirs above.
 
 Rule volume after this run: main AGENTS.md 36,446 bytes, AGENTS.md plus `.claude/rules` 178,785 bytes (18.8% over the 150,543 recorded on 2026-10-30); Windows AGENTS.md 27,480 bytes after the split, its five `.claude/rules` files 17,462 together (the new baseline; it was 41,451 before, 24% over 33,315); Linux AGENTS.md 21,963 bytes, with rules 34,135. On Windows two duplicate sentences were removed and one incident sentence moved; no constraint was removed on any branch.
 
