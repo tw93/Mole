@@ -31,7 +31,41 @@
 # process is `electron` or `electron37`, not the app's name.
 readonly MOLE_SYSTEM_ELECTRON='electron[0-9]*'
 
+# Every rule passes mole_rule_root_ok on its way out, so a root that an
+# environment variable (XDG_*, CARGO_HOME, COREPACK_HOME) moved onto the home,
+# an XDG base folder or a protected path is never a rule.
 mole_clean_rules() {
+    local line root
+    while IFS= read -r line; do
+        root="${line#*|*|}"
+        root="${root%%|*}"
+        mole_rule_root_ok "$root" || continue
+        printf '%s\n' "$line"
+    done < <(mole_clean_rules_unchecked)
+}
+
+# 0 when a rule root inside the home is a folder of its own: not the home, no
+# "." or ".." component, not protected (mole_is_protected_path names the XDG
+# base folders, the Trash and the key stores) and no ancestor of those. A root
+# outside the home stays: the cache-folder-redirected note needs it, and
+# mole_cache_child_ok refuses everything outside the home.
+mole_rule_root_ok() {
+    local root="$1" r base
+    [[ "$root" == "$HOME" || "$root" == "$HOME/" ]] && return 1
+    [[ "$root" == "$HOME/"* ]] || return 0
+    case "$root/" in
+        */./* | */../* | *//*) return 1 ;;
+    esac
+    r="${root%/}"
+    mole_is_protected_path "$r" && return 1
+    for base in "$MOLE_CACHE_HOME" "$MOLE_CONFIG_HOME" "$MOLE_DATA_HOME" "$MOLE_STATE_HOME" "$MOLE_TRASH_DIR" \
+        "$HOME/.local" "$HOME/.var/app" "$HOME/.ssh" "$HOME/.gnupg"; do
+        [[ "$base" == "$r/"* ]] && return 1
+    done
+    return 0
+}
+
+mole_clean_rules_unchecked() {
     local c="$MOLE_CACHE_HOME"
     cat << RULES
 Browsers|Chromium cache|$c/chromium|chromium
@@ -257,8 +291,17 @@ mole_developer_rules() {
     local cargo="$HOME/.cargo" corepack="$c/node/corepack"
     # Only a CARGO_HOME / COREPACK_HOME inside the home is followed; anything
     # else keeps the default, so an odd variable cannot point a rule elsewhere.
+    # mole_rule_root_ok refuses one that lands on the home or an XDG base.
     [[ "${CARGO_HOME:-}" == "$HOME/"* ]] && cargo="${CARGO_HOME%/}"
-    [[ "${COREPACK_HOME:-}" == "$HOME/"* ]] && corepack="${COREPACK_HOME%/}"
+    # The Corepack rule's root is the folder itself, so a COREPACK_HOME is
+    # followed only when it holds what corepack writes there (v1/ or
+    # lastKnownGood.json): COREPACK_HOME=~/Documents must not empty Documents.
+    if [[ "${COREPACK_HOME:-}" == "$HOME/"* ]]; then
+        local corepack_home="${COREPACK_HOME%/}"
+        if [[ -d "$corepack_home/v1" && ! -L "$corepack_home/v1" ]] || [[ -f "$corepack_home/lastKnownGood.json" ]]; then
+            corepack="$corepack_home"
+        fi
+    fi
     local rust='cargo,rustc,rustdoc,clippy-driver,cargo-nextest'
     local gradle='gradle,gradlew,cmd:org[.]gradle[.]launcher[.]daemon,cmd:GradleDaemon'
     # JetBrains IDEs run as their launcher (idea, pycharm, ...) or, started
@@ -393,12 +436,52 @@ mole_snap_cache_rules() {
 mole_rule_children() {
     local root="$1" selector="${2:-}"
     case "$selector" in
-        "") find "$root" -mindepth 1 -maxdepth 1 -print0 2> /dev/null ;;
+        "")
+            if mole_app_cache_root "$root"; then
+                mole_select_app_cache_children "$root"
+            else
+                find "$root" -mindepth 1 -maxdepth 1 -print0 2> /dev/null
+            fi
+            ;;
         versions:*) mole_select_old_versions "$root" "${selector#versions:}" ;;
         obsolete) mole_select_obsolete_extensions "$root" ;;
         suffix:*) find "$root" -mindepth 1 -maxdepth 1 -type f -name "*${selector#suffix:}" -print0 2> /dev/null ;;
         *) return 0 ;;
     esac
+}
+
+# Children of a Flatpak or Snap app's cache folder, NUL-separated: each direct
+# child, except that a name a native rule narrows contributes only the
+# children of the same leaves (mole_app_cache_leaves) and a kept name nothing.
+# mole_cache_child_ok asks mole_app_cache_path_ok again for every one.
+mole_select_app_cache_children() {
+    local root="$1" child name kind leaf dir
+    while IFS= read -r -d '' child; do
+        name="${child##*/}"
+        kind=$(mole_app_cache_name_kind "$name") || kind=""
+        case "$kind" in
+            keep) continue ;;
+            "" | whole)
+                printf '%s\0' "$child"
+                continue
+                ;;
+        esac
+        [[ -d "$child" && ! -L "$child" ]] || continue
+        while IFS= read -r leaf; do
+            # shellcheck disable=SC2086  # The leaf is a glob on purpose.
+            for dir in "$root"/$leaf; do
+                [[ -d "$dir" && ! -L "$dir" ]] || continue
+                find "$dir" -mindepth 1 -maxdepth 1 -print0 2> /dev/null
+            done
+        done < <(mole_app_cache_leaves "$name")
+        # Google holds more than Android Studio; its other folders go whole.
+        if [[ "$name" == Google ]]; then
+            while IFS= read -r -d '' dir; do
+                [[ "${dir##*/}" == AndroidStudio* ]] || printf '%s\0' "$dir"
+            done < <(find "$child" -mindepth 1 -maxdepth 1 -print0 2> /dev/null)
+        fi
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -print0 2> /dev/null)
+    return 0
 }
 
 # Executables the user's processes run, one per line; a process whose

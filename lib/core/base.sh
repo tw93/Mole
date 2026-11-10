@@ -60,6 +60,8 @@ readonly MOLE_UTF8_LOCALE="C.UTF-8"
 mole_xdg_dir() {
     local value="$1" fallback="$2"
     if [[ "$value" == /* ]]; then
+        # A trailing slash would put "//" into every path built from it.
+        while [[ "$value" == */ && "$value" != / ]]; do value="${value%/}"; done
         printf '%s' "$value"
     else
         printf '%s' "$fallback"
@@ -134,7 +136,8 @@ mole_path_kb() {
         echo 0
         return 0
     }
-    kb=$(mole_c du -skx -- "$path" 2> /dev/null | awk 'NR==1 {print $1}') || true
+    kb=$(mole_c du -skx -- "$path" 2> /dev/null) || true
+    kb="${kb%%[[:space:]]*}"
     [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
     echo "$kb"
 }
@@ -380,12 +383,27 @@ mole_apt_busy() {
     return "$rc"
 }
 
+# Seconds flatpak ps may take before its answer counts as unknown.
+MOLE_FLATPAK_PS_TIMEOUT=10
+
+# The application ids flatpak ps lists, one per line; fails when flatpak is
+# missing, fails or does not answer in time.
+mole_flatpak_ps() {
+    command -v flatpak > /dev/null 2>&1 || return 2
+    mole_c timeout "$MOLE_FLATPAK_PS_TIMEOUT" flatpak ps --columns=application 2> /dev/null || return 2
+}
+
+# 0 when id is a line of a mole_flatpak_ps list.
+mole_flatpak_listed() {
+    [[ $'\n'"$2"$'\n' == *$'\n'"$1"$'\n'* ]]
+}
+
 # 0 when the Flatpak app runs, 1 when it does not, 2 when flatpak cannot say.
+# Asks flatpak every time: it is the check right before removal.
 mole_flatpak_running() {
     local id="$1" out
-    command -v flatpak > /dev/null 2>&1 || return 2
-    out=$(mole_c flatpak ps --columns=application 2> /dev/null) || return 2
-    grep -qxF -- "$id" <<< "$out" && return 0
+    out=$(mole_flatpak_ps) || return 2
+    mole_flatpak_listed "$id" "$out" && return 0
     return 1
 }
 
@@ -412,9 +430,14 @@ mole_exe_running() {
     return "$rc"
 }
 
+# Lowercase A-Z only, without a fork: under LC_ALL=C bash's ${v,,} leaves
+# every byte above 127 alone, as tr did. Trailing newlines are dropped, as the
+# command substitution around tr dropped them.
 mole_ascii_lowercase() {
-    local _value="${2:-}"
-    printf -v "$1" '%s' "$(LC_ALL=C tr '[:upper:]' '[:lower:]' <<< "$_value")"
+    local LC_ALL=C _value="${2:-}"
+    _value="${_value,,}"
+    while [[ "$_value" == *$'\n' ]]; do _value="${_value%$'\n'}"; done
+    printf -v "$1" '%s' "$_value"
 }
 
 get_display_width() {

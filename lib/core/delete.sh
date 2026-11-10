@@ -45,10 +45,25 @@ mole_path_is_plain_home_item() {
     [[ "$path" == "$HOME/"* ]] || return 1
     [[ -e "$path" || -L "$path" ]] || return 1
     # $HOME itself may be a link (/home -> /var/home); below it nothing may be.
-    local dir home_real
-    dir=$(dirname -- "$path")
-    resolved=$(readlink -f -- "$dir" 2> /dev/null) || return 1
-    home_real=$(readlink -f -- "$HOME" 2> /dev/null) || return 1
+    # The parent is cut off without a fork where that equals dirname (no
+    # trailing or doubled slash), and one readlink resolves both folders
+    # unless a newline in either would split its output wrongly.
+    local dir home_real both
+    if [[ "$path" == */ || "$path" == *//* ]]; then
+        dir=$(dirname -- "$path")
+    else
+        dir="${path%/*}"
+        [[ -n "$dir" ]] || dir=/
+    fi
+    if [[ "$dir$HOME" == *$'\n'* ]]; then
+        resolved=$(readlink -f -- "$dir" 2> /dev/null) || return 1
+        home_real=$(readlink -f -- "$HOME" 2> /dev/null) || return 1
+    else
+        both=$(readlink -f -- "$dir" "$HOME" 2> /dev/null) || return 1
+        [[ "$both" == *$'\n'* ]] || return 1
+        resolved="${both%%$'\n'*}"
+        home_real="${both#*$'\n'}"
+    fi
     [[ "$resolved" == "$home_real${dir#"$HOME"}" ]] || return 1
     [[ -O "$path" ]] || return 1
     mole_is_protected_path "$path" && return 1
@@ -107,6 +122,97 @@ mole_trash() {
     [[ ${#MOLE_TRASH_ERRORS[@]} -eq 0 ]]
 }
 
+# 0 when root is a Flatpak or Snap app's whole cache folder, the app's own
+# XDG cache home, which is one rule root.
+mole_app_cache_root() {
+    case "$1" in
+        "$HOME/.var/app/"*/cache | "$HOME/snap/"*/.cache) return 0 ;;
+    esac
+    return 1
+}
+
+# How a name directly inside an app's cache folder is treated, the same way
+# the native rules in lib/clean/rules.sh treat that name in ~/.cache:
+#   keep    never a rule natively: Spotify's offline music, the model stores,
+#           the browsers Playwright, Cypress and Puppeteer install, uv (only
+#           uv cache prune may touch it), Wine (only its .msi downloads go)
+#           and, without --gpu-shaders, the Mesa and NVIDIA shader caches
+#   narrow  natively only some folders inside it are rule roots; the same
+#           leaves (mole_app_cache_leaves) are the only ones that go
+#   whole   reviewed: the native rule root is nested only because the tool
+#           keeps its cache there (mozilla/firefox)
+# Prints nothing and fails for a name no native rule narrows: the whole child
+# goes. tests/clean.bats fails when a narrowed native rule has no entry here.
+mole_app_cache_name_kind() {
+    case "$1" in
+        spotify | huggingface | lm-studio | ms-playwright | Cypress | puppeteer | uv | wine) echo keep ;;
+        # Rejected as native rules: downloads no longer online, the search
+        # index database, the learned input dictionary.
+        winetricks | tracker3 | ibus) echo keep ;;
+        # GPU shader caches go only with mo clean --gpu-shaders, as in ~/.cache.
+        mesa_shader_cache | mesa_shader_cache_db | nvidia)
+            [[ "${GPU_SHADERS:-false}" == true ]] && return 1
+            echo keep
+            ;;
+        JetBrains | Google | lutris | deno | bazel | webkitgtk | thunderbird | pypoetry | node) echo narrow ;;
+        mozilla) echo whole ;;
+        *) return 1 ;;
+    esac
+}
+
+# The rule roots inside a narrowed name, as globs relative to the app's cache
+# folder, matching the native rules: JetBrains and Android Studio IDE logs only
+# (LocalHistory lives beside them and is not recoverable), Lutris's installer
+# downloads only (its shaders are opt-in GPU caches, its other folders hold
+# sign-in tokens), Deno's import caches, Bazel's repository cache, WebKitGTK's
+# HTTP and media caches, Thunderbird's cache2, Poetry's cache and artifacts
+# (virtualenvs stay), Corepack. One glob per line.
+mole_app_cache_leaves() {
+    case "$1" in
+        JetBrains) echo 'JetBrains/*/log' ;;
+        Google) echo 'Google/AndroidStudio*/log' ;;
+        lutris) echo 'lutris/installer' ;;
+        deno) printf '%s\n' deno/deps deno/remote deno/gen deno/npm deno/registries ;;
+        bazel) echo 'bazel/_bazel_*/cache/repos' ;;
+        webkitgtk) printf '%s\n' webkitgtk/WebKitCache webkitgtk/MediaCache ;;
+        thunderbird) echo 'thunderbird/*/cache2' ;;
+        pypoetry) printf '%s\n' pypoetry/cache pypoetry/artifacts ;;
+        node) echo 'node/corepack' ;;
+    esac
+}
+
+# 0 when rel (a path relative to an app's cache folder) is something that
+# folder's rule removes: a direct child whose name is not kept or narrowed, a
+# direct child of a narrowed name's leaf, or (Google only) a folder under
+# Google that is not Android Studio's.
+mole_app_cache_path_ok() {
+    local rel="$1" top kind leaf parent slashes want
+    # "Google/" would read as a Google folder that is not Android Studio's.
+    [[ -z "$rel" || "$rel" == /* || "$rel" == */ || "$rel" == *//* ]] && return 1
+    top="${rel%%/*}"
+    kind=$(mole_app_cache_name_kind "$top") || kind=""
+    case "$kind" in
+        keep) return 1 ;;
+        "" | whole)
+            [[ "$rel" != */* ]]
+            return
+            ;;
+    esac
+    [[ "$rel" == */* ]] || return 1
+    if [[ "$top" == Google && "$rel" == Google/* && "${rel#Google/}" != */* ]]; then
+        [[ "${rel#Google/}" != AndroidStudio* ]]
+        return
+    fi
+    parent="${rel%/*}"
+    slashes="${parent//[!\/]/}"
+    while IFS= read -r leaf; do
+        want="${leaf//[!\/]/}"
+        # shellcheck disable=SC2053  # The leaf is a glob on purpose.
+        [[ ${#want} -eq ${#slashes} && "$parent" == $leaf ]] && return 0
+    done < <(mole_app_cache_leaves "$top")
+    return 1
+}
+
 # 0 when mole_remove_cache would remove this child of an allowlisted root.
 # Dry runs size exactly these, so a preview never counts what a real run
 # refuses (another device, not the user's, below a symlink).
@@ -115,22 +221,16 @@ mole_cache_child_ok() {
     [[ "$path" == "$root/"* ]] || return 1
     mole_path_is_plain_home_item "$path" || return 1
     # A Flatpak or Snap app's whole cache folder is a rule root, and inside it
-    # the same names that are never rules in ~/.cache stay: Spotify's offline
-    # music and the model stores.
-    case "$root" in
-        "$HOME/.var/app/"*/cache | "$HOME/snap/"*/.cache)
-            case "${path#"$root/"}" in
-                spotify | spotify/* | huggingface | huggingface/* | lm-studio | lm-studio/*) return 1 ;;
-            esac
-            ;;
-    esac
+    # the names native rules narrow or never clean keep that treatment.
+    if mole_app_cache_root "$root"; then
+        mole_app_cache_path_ok "${path#"$root/"}" || return 1
+    fi
     # rm --one-file-system stays on the device of the path it is given, so a
     # child that is itself a mount point (sshfs, a bind mount) would lose its
     # contents. Only children on the cache root's own device are removed.
-    local path_dev root_dev
-    path_dev=$(stat -c %d -- "$path" 2> /dev/null) || return 1
-    root_dev=$(stat -c %d -- "$root" 2> /dev/null) || return 1
-    [[ "$path_dev" == "$root_dev" ]]
+    local devs
+    devs=$(stat -c %d -- "$root" "$path" 2> /dev/null) || return 1
+    [[ "$devs" == *$'\n'* && "${devs%%$'\n'*}" == "${devs#*$'\n'}" ]]
 }
 
 # Remove one cache path directly. $2 is the allowlisted root it must sit under

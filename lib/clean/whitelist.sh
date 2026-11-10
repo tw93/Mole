@@ -21,7 +21,8 @@ MOLE_WHITELIST_PATTERNS=()
 mole_whitelist_load() {
     MOLE_WHITELIST=()
     MOLE_WHITELIST_PATTERNS=()
-    [[ -e "$MOLE_WHITELIST_FILE" ]] || return 0
+    # A link whose target is gone is a whitelist that cannot be read, not none.
+    [[ -e "$MOLE_WHITELIST_FILE" || -L "$MOLE_WHITELIST_FILE" ]] || return 0
     [[ -f "$MOLE_WHITELIST_FILE" && -r "$MOLE_WHITELIST_FILE" ]] || return 1
     local line pattern
     while IFS= read -r line || [[ -n "$line" ]]; do

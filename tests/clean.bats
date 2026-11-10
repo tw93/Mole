@@ -66,9 +66,11 @@ make_cache() {
     make_cache "$s/huggingface"
     make_cache "$s/lm-studio"
     make_cache "$s/mesa_shader_cache"
-    mole_run clean 'for c in spotify huggingface lm-studio mesa_shader_cache; do mole_cache_child_ok "'"$s"'/$c" "'"$s"'" && echo "$c=ok" || echo "$c=kept"; done'
+    make_cache "$s/fontconfig"
+    mole_run clean 'for c in spotify huggingface lm-studio mesa_shader_cache fontconfig; do mole_cache_child_ok "'"$s"'/$c" "'"$s"'" && echo "$c=ok" || echo "$c=kept"; done'
     [[ "$output" == *"spotify=kept"* && "$output" == *"huggingface=kept"* && "$output" == *"lm-studio=kept"* ]]
-    [[ "$output" == *"mesa_shader_cache=ok"* ]]
+    # Shader caches go only with --gpu-shaders, inside an app cache as in ~/.cache.
+    [[ "$output" == *"mesa_shader_cache=kept"* && "$output" == *"fontconfig=ok"* ]]
 }
 
 @test "only a Flatpak app's cache folder becomes a rule, never its data" {
@@ -905,4 +907,351 @@ fake_snap_proc() {
     [ "${lines[2]}" = "refused=Read-only file system" ]
     [ "${lines[3]}" = "refused=Operation not permitted" ]
     [ "${lines[4]}" = "carries on" ]
+}
+
+# Under a Flatpak or Snap app's cache folder (the app's own XDG cache), a name
+# a native rule narrows keeps the same narrowing.
+app_cache_fixture() {
+    local a="$1"
+    make_cache "$a/JetBrains/IntelliJIdea2026.2/log"
+    make_cache "$a/JetBrains/IntelliJIdea2026.2/LocalHistory"
+    make_cache "$a/Google/AndroidStudio2026.1/log"
+    make_cache "$a/Google/AndroidStudio2026.1/LocalHistory"
+    make_cache "$a/Google/Chrome"
+    make_cache "$a/lutris/installer/some-game"
+    make_cache "$a/lutris/gogdl"
+    make_cache "$a/lutris/shaders/wine"
+    make_cache "$a/deno/deps"
+    make_cache "$a/deno/location_data"
+    make_cache "$a/pypoetry/cache"
+    make_cache "$a/pypoetry/virtualenvs"
+    make_cache "$a/uv/archive-v0"
+    make_cache "$a/ms-playwright/chromium-1100"
+    make_cache "$a/Cypress/13.0.0"
+    make_cache "$a/puppeteer/chrome"
+    make_cache "$a/fontconfig"
+}
+
+app_cache_assert_kept() {
+    local a="$1"
+    [ -f "$a/JetBrains/IntelliJIdea2026.2/LocalHistory/entry/blob" ]
+    [ -f "$a/Google/AndroidStudio2026.1/LocalHistory/entry/blob" ]
+    [ -f "$a/lutris/gogdl/entry/blob" ]
+    [ -f "$a/lutris/shaders/wine/entry/blob" ]
+    [ -f "$a/deno/location_data/entry/blob" ]
+    [ -f "$a/pypoetry/virtualenvs/entry/blob" ]
+    [ -f "$a/uv/archive-v0/entry/blob" ]
+    [ -f "$a/ms-playwright/chromium-1100/entry/blob" ]
+    [ -f "$a/Cypress/13.0.0/entry/blob" ]
+    [ -f "$a/puppeteer/chrome/entry/blob" ]
+}
+
+app_cache_assert_removed() {
+    local a="$1"
+    [ ! -e "$a/JetBrains/IntelliJIdea2026.2/log/entry" ]
+    [ ! -e "$a/Google/AndroidStudio2026.1/log/entry" ]
+    [ ! -e "$a/Google/Chrome" ]
+    [ ! -e "$a/lutris/installer/some-game" ]
+    [ ! -e "$a/deno/deps/entry" ]
+    [ ! -e "$a/pypoetry/cache/entry" ]
+    [ ! -e "$a/fontconfig" ]
+}
+
+@test "a Flatpak app cache keeps JetBrains LocalHistory, Lutris tokens and what native rules narrow" {
+    v="$HOME/.var/app/com.jetbrains.IntelliJ-IDEA-Community/cache"
+    app_cache_fixture "$v"
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
+    mole_run clean 'clean_rule "x cache" "'"$v"'" "flatpak:com.jetbrains.IntelliJ-IDEA-Community"'
+    [ "$status" -eq 0 ]
+    app_cache_assert_kept "$v"
+    app_cache_assert_removed "$v"
+}
+
+@test "a Snap app cache keeps JetBrains LocalHistory, Lutris tokens and what native rules narrow" {
+    s="$HOME/snap/intellij-idea-community/common/.cache"
+    app_cache_fixture "$s"
+    mole_run clean '_MOLE_PROC_ROOT="'"$TEST_ROOT"'/proc"; mkdir -p "$_MOLE_PROC_ROOT/self"; clean_rule "x cache" "'"$s"'" "snap:intellij-idea-community"'
+    [ "$status" -eq 0 ]
+    app_cache_assert_kept "$s"
+    app_cache_assert_removed "$s"
+}
+
+@test "a Flatpak app cache keeps GPU shader caches unless --gpu-shaders is given" {
+    v="$HOME/.var/app/org.test.Game/cache"
+    for d in mesa_shader_cache mesa_shader_cache_db nvidia fontconfig; do
+        make_cache "$v/$d"
+    done
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
+    mole_run clean 'clean_rule "org.test.Game cache" "'"$v"'" "flatpak:org.test.Game"'
+    [ "$status" -eq 0 ]
+    [ -f "$v/mesa_shader_cache/entry/blob" ]
+    [ -f "$v/mesa_shader_cache_db/entry/blob" ]
+    [ -f "$v/nvidia/entry/blob" ]
+    [ ! -e "$v/fontconfig" ]
+    mole_run clean 'GPU_SHADERS=true; clean_rule "org.test.Game cache" "'"$v"'" "flatpak:org.test.Game"'
+    [ "$status" -eq 0 ]
+    [ ! -e "$v/mesa_shader_cache" ]
+    [ ! -e "$v/mesa_shader_cache_db" ]
+    [ ! -e "$v/nvidia" ]
+}
+
+@test "an app cache dry run sizes exactly the children the real run removes" {
+    v="$HOME/.var/app/org.test.App/cache"
+    app_cache_fixture "$v"
+    fake_command flatpak '[[ "$1" == ps ]] && echo org.other.App'
+    mole_run clean 'DRY_RUN=true; clean_rule "org.test.App cache" "'"$v"'" "flatpak:org.test.App"'
+    [ "$status" -eq 0 ]
+    dry="$output"
+    app_cache_assert_kept "$v"
+    [ -f "$v/fontconfig/entry/blob" ]
+    mole_run clean 'clean_rule "org.test.App cache" "'"$v"'" "flatpak:org.test.App"'
+    real="$output"
+    # 7 children go: two IDE logs' entry, Google/Chrome, the installer game,
+    # deno/deps' entry, pypoetry/cache's entry and fontconfig.
+    [[ "$dry" == *"7 items"* ]]
+    [[ "$real" == *"7 items"* ]]
+    app_cache_assert_kept "$v"
+    app_cache_assert_removed "$v"
+}
+
+@test "every narrowed native cache rule has an app-cache counterpart" {
+    c="$HOME/.cache"
+    for d in JetBrains/IntelliJIdea2026.2/log Google/AndroidStudio2026.1/log thunderbird/p.default/cache2 \
+        webkitgtk/WebKitCache lutris/installer deno/deps pypoetry/cache node/corepack mozilla/firefox; do
+        mkdir -p "$c/$d"
+    done
+    mole_run clean '
+        missing=0
+        while IFS="|" read -r section label root owners selector; do
+            [[ "$root" == "$MOLE_CACHE_HOME/"* ]] || continue
+            rel="${root#"$MOLE_CACHE_HOME/"}"
+            [[ "$rel" == */* || -n "$selector" ]] || continue
+            kind=$(mole_app_cache_name_kind "${rel%%/*}") || { echo "no app-cache entry: ${rel%%/*} ($label)"; missing=1; }
+        done < <(GPU_SHADERS=true mole_clean_rules)
+        for n in spotify huggingface lm-studio ms-playwright Cypress puppeteer; do
+            [[ "$(mole_app_cache_name_kind "$n")" == keep ]] || { echo "not kept: $n"; missing=1; }
+        done
+        exit "$missing"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "a dangling whitelist link stops clean like an unreadable whitelist" {
+    make_cache "$HOME/.cache/thumbnails"
+    mkdir -p "$HOME/.config/mole"
+    ln -s "$TEST_ROOT/gone" "$HOME/.config/mole/whitelist"
+    run bash -c 'SCRIPT_DIR="$MOLE_TEST_REPO" bash "$MOLE_TEST_REPO/bin/clean.sh" < /dev/null'
+    [ "$status" -ne 0 ]
+    [ -f "$HOME/.cache/thumbnails/entry/blob" ]
+    mole_run clean 'mole_whitelist_load && echo loaded || echo refused'
+    [ "$output" = refused ]
+}
+
+@test "a hostile COREPACK_HOME or CARGO_HOME never makes HOME, an XDG base or a protected path a rule root" {
+    mkdir -p "$HOME/.local/share/app" "$HOME/.config/app" "$HOME/Documents/report"
+    for value in "$HOME" "$HOME/" "$HOME/.local/share" "$HOME/.local/share/" "$HOME/.config" "$HOME/.cache" \
+        "$HOME/.local/state" "$HOME/.local" "$HOME/.config/.." "$HOME/./.local/share" "$HOME/.local/share/Trash" \
+        "$HOME/.ssh" "$HOME/.var/app" "$HOME/.local/share/applications"; do
+        COREPACK_HOME="$value" CARGO_HOME="$value" mole_run clean '
+            while IFS="|" read -r section label root owners selector; do
+                [[ "$root" == "$HOME" || "$root" == "$HOME/" ]] && { echo "home: $label"; exit 1; }
+                [[ "$root" == *"/../"* || "$root" == */.. || "$root" == *"/./"* || "$root" == */. ]] && { echo "dots: $label $root"; exit 1; }
+                for base in "$MOLE_CACHE_HOME" "$MOLE_CONFIG_HOME" "$MOLE_DATA_HOME" "$MOLE_STATE_HOME" "$HOME/.local"; do
+                    [[ "${root%/}" == "$base" ]] && { echo "XDG base: $label $root"; exit 1; }
+                    [[ "$base" == "${root%/}/"* ]] && { echo "holds $base: $label $root"; exit 1; }
+                done
+                mole_is_protected_path "${root%/}" && { echo "protected: $label $root"; exit 1; }
+            done < <(mole_clean_rules)
+            echo ok'
+        [ "$status" -eq 0 ] || { echo "value=$value: $output"; return 1; }
+    done
+    COREPACK_HOME="$HOME/.local/share" mole_run clean 'clean_user_rules'
+    [ -d "$HOME/.local/share/app" ]
+    # A folder corepack never wrote to is not followed, whatever it is.
+    COREPACK_HOME="$HOME/Documents" mole_run clean 'mole_clean_rules | grep Corepack'
+    [ "$output" = "Developer tools|Corepack cache|$HOME/.cache/node/corepack|corepack,node,pnpm,yarn" ]
+    COREPACK_HOME="$HOME/Documents" mole_run clean 'clean_user_rules'
+    [ -d "$HOME/Documents/report" ]
+    # A plain folder of its own still works.
+    mkdir -p "$HOME/corepack/v1"
+    COREPACK_HOME="$HOME/corepack" mole_run clean 'mole_clean_rules | grep Corepack'
+    [ "$output" = "Developer tools|Corepack cache|$HOME/corepack|corepack,node,pnpm,yarn" ]
+}
+
+@test "flatpak ps that hangs answers unknown within its bound, and blocks the rule" {
+    make_cache "$HOME/.var/app/org.test.App/cache"
+    fake_command flatpak 'sleep 5; echo org.other.App'
+    mole_run clean 'MOLE_FLATPAK_PS_TIMEOUT=1; start=$SECONDS; rc=0; mole_flatpak_running org.test.App || rc=$?; echo "rc=$rc took=$((SECONDS - start))"'
+    [[ "$output" == "rc=2 took="[0-3] ]] || { echo "$output"; return 1; }
+}
+
+@test "a dry run asks flatpak ps once per run, a real run asks again before each Flatpak rule" {
+    make_cache "$HOME/.var/app/org.a.App/cache/x"
+    make_cache "$HOME/.var/app/org.b.App/cache/x"
+    fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"; [[ "$1" == ps ]] && echo org.other.App'
+    mole_run clean 'DRY_RUN=true; clean_user_rules'
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^ps' "$TEST_ROOT/flatpak.log")" -eq 1 ]
+    rm "$TEST_ROOT/flatpak.log"
+    mole_run clean 'clean_user_rules'
+    [ "$(grep -c '^ps' "$TEST_ROOT/flatpak.log")" -eq 2 ]
+    [ ! -e "$HOME/.var/app/org.a.App/cache/x" ]
+}
+
+@test "the sudo gate: typed password characters go to the sudo prompt, Space skips, q cancels" {
+    run python3 "$MOLE_TEST_REPO/tests/clean_sudo_gate_pty.py"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+# The whitelist file stores rule labels, so renaming a label silently drops
+# every user's whitelist entry for it. A rename needs a migration that rewrites
+# existing whitelist files; then update this list.
+@test "whitelist keys: the rule label set is pinned" {
+    c="$HOME/.cache" g="$HOME/.config" d="$HOME/.local/share"
+    for b in chromium google-chrome google-chrome-beta google-chrome-unstable BraveSoftware/Brave-Browser \
+        BraveSoftware/Brave-Browser-Beta BraveSoftware/Brave-Browser-Nightly microsoft-edge microsoft-edge-beta \
+        microsoft-edge-dev vivaldi; do mkdir -p "$g/$b/ShaderCache"; done
+    for a in Code "Code - OSS" "Code - Insiders" VSCodium Cursor obsidian discord Slack Signal Typora heroic; do
+        mkdir -p "$g/$a/Cache"
+    done
+    for e in .vscode .vscode-insiders .vscode-oss .cursor; do
+        mkdir -p "$HOME/$e/extensions"
+        echo '{}' > "$HOME/$e/extensions/.obsolete"
+    done
+    mkdir -p "$c/thunderbird/p/cache2" "$d/TelegramDesktop/tdata/user_data/cache" "$HOME/.gem/ruby/3.0/cache" \
+        "$c/JetBrains/X/log" "$d/Steam/steamapps/shadercache" \
+        "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache"
+    mole_run clean 'GPU_SHADERS=true; mole_clean_rules | cut -d"|" -f2 | LC_ALL=C sort -u'
+    [ "$status" -eq 0 ]
+    expected="AWS CLI cache
+Android build cache
+Android cache
+Azure CLI logs
+Bazel repository cache
+Brave Beta profile caches
+Brave Nightly profile caches
+Brave cache
+Brave profile caches
+Bun install cache
+Bundler cache
+CPAN build files
+Cargo download cache
+Chromium cache
+Chromium profile caches
+CircleCI cache
+Claude Code old versions
+Code - OSS cache
+Composer cache
+Corepack cache
+Cursor Agent old versions
+Cursor cache
+Deno cache
+Discord cache
+Docker Buildx cache
+ESLint cache
+Electron downloads
+Firefox cache
+GNOME Software cache
+GitHub Actions cache
+GitLab Runner cache
+Go build cache
+Google Chrome Beta profile caches
+Google Chrome Dev profile caches
+Google Chrome cache
+Google Chrome profile caches
+Google Cloud logs
+Gradle notifications
+Heroic cache
+Hex cache
+JetBrains IDE logs
+Lutris cache
+Mesa shader cache
+Mesa shader cache (DB)
+Microsoft Edge Beta profile caches
+Microsoft Edge Dev profile caches
+Microsoft Edge cache
+Microsoft Edge profile caches
+NVIDIA shader cache
+Obsidian cache
+Obsolete Cursor extensions
+Obsolete VS Code Insiders extensions
+Obsolete VS Code extensions
+Obsolete VSCodium extensions
+Oh My Zsh cache
+OpenCode cache
+Parcel cache
+Poetry artifacts
+Poetry cache
+Prettier cache
+Prisma engines cache
+RubyGems package cache
+RubyGems spec cache
+Ruff cache
+Signal cache
+Slack cache
+SonarQube cache
+Steam shader cache
+Telegram cache
+Terraform plugin cache
+Thumbnails
+Thunderbird cache
+Turbo cache
+TypeScript cache
+Typora cache
+VS Code Insiders cache
+VS Code cache
+VSCodium cache
+Vite cache
+Vivaldi cache
+Vivaldi profile caches
+WebKitGTK cache
+Wine downloads
+Yarn cache
+Zen cache
+Zig cache
+kubectl cache
+mise download cache
+mypy cache
+node-gyp build cache
+node-gyp headers
+npm cache
+opam download cache
+paru build cache
+pip cache
+pnpm metadata cache
+pre-commit cache
+pyenv cache
+rustup downloads
+sccache
+uv cache
+webpack cache
+yay build cache"
+    [ "$output" = "$expected" ] || { diff <(echo "$expected") <(echo "$output"); return 1; }
+    # Labels outside the rule table that clean also matches in the whitelist.
+    for label in "Trash" "Package cache" "Journal logs" "Unused Flatpak runtimes" "Unused Flatpak runtimes (system)" \
+        "Snap previous revisions"; do
+        grep -qF "mole_whitelisted \"$label\"" "$MOLE_TEST_REPO/bin/clean.sh" ||
+            grep -qF "label=\"$label\"" "$MOLE_TEST_REPO/bin/clean.sh" || { echo "missing: $label"; return 1; }
+    done
+}
+
+@test "the app-cache sink check refuses a kept folder spelled with a trailing or doubled slash" {
+    mole_run clean 'for rel in "" "Google/" "/Google" "deno/deps/" "thunderbird/p/cache2/" "JetBrains//log/x" "Google/AndroidStudio2026.1" "winetricks" "tracker3" "ibus"; do
+        mole_app_cache_path_ok "$rel" && { echo "accepted: [$rel]"; exit 1; }
+    done
+    for rel in "fontconfig" "Google/Chrome" "JetBrains/IdeaIC2026.2/log/idea.log" "deno/deps/https"; do
+        mole_app_cache_path_ok "$rel" || { echo "refused: [$rel]"; exit 1; }
+    done
+    echo ok'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "an XDG_CACHE_HOME inside another XDG base is redirected, and a trailing slash on it changes nothing" {
+    mkdir -p "$HOME/.config/chromium/Default" "$HOME/.cache/chromium"
+    echo secret > "$HOME/.config/chromium/Default/Login Data"
+    XDG_CACHE_HOME="$HOME/.config" mole_run clean 'cache_home_redirected && echo redirected'
+    [ "$output" = "redirected" ]
+    XDG_CACHE_HOME="$HOME/.config" mole_run clean 'clean_user_rules'
+    [ -f "$HOME/.config/chromium/Default/Login Data" ]
+    XDG_CACHE_HOME="$HOME/.cache/" mole_run clean 'echo "$MOLE_CACHE_HOME"; cache_home_redirected || echo plain'
+    [ "$output" = "$HOME/.cache"$'\n'"plain" ]
 }

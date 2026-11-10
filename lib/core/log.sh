@@ -67,15 +67,6 @@ log_operation() {
     printf '%s\n' "$line" >> "$OPERATIONS_LOG_FILE" 2> /dev/null || true
 }
 
-log_info() { echo -e "${BLUE}$1${NC}"; }
-log_success() {
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $1"
-    note_activity
-}
-log_warning() {
-    echo -e "${YELLOW}$1${NC}"
-    note_activity
-}
 log_error() { echo -e "${YELLOW}${ICON_ERROR}${NC} $1" >&2; }
 debug_log() {
     [[ "${MO_DEBUG:-}" == "1" ]] || return 0

@@ -89,10 +89,23 @@ whitelist_note() {
 }
 
 # 0 when any owner runs, 1 when none does, 2 when a probe cannot tell.
+CLEAN_FLATPAK_PS_STATE=""
+CLEAN_FLATPAK_PS=""
 rule_owner_state() {
     local owners="$1" token probe rc=1
     [[ -n "$owners" ]] || return 1
     if [[ "$owners" == flatpak:* ]]; then
+        # A dry run removes nothing, so one flatpak ps answers for all its
+        # Flatpak rules; a real run asks again right before each rule.
+        if [[ "$DRY_RUN" == "true" ]]; then
+            if [[ -z "$CLEAN_FLATPAK_PS_STATE" ]]; then
+                CLEAN_FLATPAK_PS_STATE=ok
+                CLEAN_FLATPAK_PS=$(mole_flatpak_ps) || CLEAN_FLATPAK_PS_STATE=unknown
+            fi
+            [[ "$CLEAN_FLATPAK_PS_STATE" == ok ]] || return 2
+            mole_flatpak_listed "${owners#flatpak:}" "$CLEAN_FLATPAK_PS" && return 0
+            return 1
+        fi
         mole_flatpak_running "${owners#flatpak:}"
         return
     fi
@@ -138,6 +151,12 @@ cache_home_redirected() {
     local c="$MOLE_CACHE_HOME" real home_real
     [[ -e "$c" || -L "$c" ]] || return 1
     [[ "$c" == "$HOME/"* ]] || return 0
+    # XDG_CACHE_HOME pointed at the config, data or state home (or a folder in
+    # one) would turn "Chromium cache" into the browser profile.
+    local base
+    for base in "$MOLE_CONFIG_HOME" "$MOLE_DATA_HOME" "$MOLE_STATE_HOME"; do
+        [[ "$c" == "$base" || "$c" == "$base/"* || "$base" == "$c/"* ]] && return 0
+    done
     real=$(readlink -f -- "$c" 2> /dev/null) || return 0
     home_real=$(readlink -f -- "$HOME" 2> /dev/null) || return 0
     [[ "$real" == "$home_real${c#"$HOME"}" ]] || return 0
@@ -356,7 +375,7 @@ clean_trash() {
     for e in ${eligible[@]+"${eligible[@]}"}; do
         if mole_remove_cache "$e" "$files" clean "Trash"; then
             removed=$((removed + 1))
-            meta="$info/$(basename -- "$e").trashinfo"
+            meta="$info/${e##*/}.trashinfo"
             [[ -f "$meta" ]] && mole_remove_cache "$meta" "$info" clean "Trash info" || true
         else
             left=$((left + $(mole_path_kb "$e")))
@@ -421,9 +440,11 @@ journal_usage_kb() {
 PACMAN_CACHE_DIR=/var/cache/pacman/pkg
 have_paccache() { command -v paccache > /dev/null 2>&1 && [[ -d "$PACMAN_CACHE_DIR" ]]; }
 have_journal() { command -v journalctl > /dev/null 2>&1; }
-APT_ARCHIVES_DIR="${APT_ARCHIVES_DIR:-/var/cache/apt/archives}"
+# System locations are set here, never from the environment: they decide what
+# runs under sudo. Tests that source this file reassign them.
+APT_ARCHIVES_DIR=/var/cache/apt/archives
 have_apt_cache() { command -v apt-get > /dev/null 2>&1 && command -v dpkg > /dev/null 2>&1 && [[ -d "$APT_ARCHIVES_DIR" ]]; }
-SNAPD_SNAPS_DIR="${SNAPD_SNAPS_DIR:-/var/lib/snapd/snaps}"
+SNAPD_SNAPS_DIR=/var/lib/snapd/snaps
 have_flatpak() { command -v flatpak > /dev/null 2>&1; }
 have_user_flatpak() { have_flatpak && [[ -d "$MOLE_DATA_HOME/flatpak/repo" ]]; }
 SYSTEM_FLATPAK_DIR=/var/lib/flatpak
@@ -449,7 +470,8 @@ sudo_items_phrase() {
 }
 
 # Ask for sudo once, before anything is cleaned, like Mole CLI (macOS): Enter
-# asks for the password, Space skips the sudo items, ESC cancels.
+# or any other key asks for the password, Space skips the sudo items, ESC or q
+# cancels.
 prompt_for_system_clean() {
     [[ "$DRY_RUN" != "true" ]] || return 0
     have_paccache || have_apt_cache || have_journal || return 0
@@ -459,7 +481,7 @@ prompt_for_system_clean() {
         return 0
     fi
     [[ -t 0 ]] || return 0
-    local key attempt=0 what
+    local key what
     what=$(sudo_items_phrase)
     while true; do
         echo -ne "${PURPLE}${ICON_ARROW}${NC} $what. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
@@ -471,20 +493,25 @@ prompt_for_system_clean() {
                 break
                 ;;
             SPACE)
+                # Whatever followed the key (a password that starts with a
+                # space or q) is dropped too, so it never reaches the shell.
+                drain_pending_input
                 echo -e "${GRAY}Skipped${NC}"
                 break
                 ;;
             QUIT)
+                drain_pending_input
                 echo -e "${GRAY}Cancelled${NC}"
                 exit 0
                 ;;
             *)
-                attempt=$((attempt + 1))
+                # Someone typing the password straight away: never a skip
+                # (Mole CLI (macOS)'s rule). The keys already typed are dropped
+                # so none reach the shell, and sudo's own prompt asks.
+                drain_pending_input
                 printf '\r\033[K'
-                if ((attempt >= 2)); then
-                    echo -e "${PURPLE}${ICON_ARROW}${NC} $what. ${GRAY}Skipped${NC}"
-                    break
-                fi
+                mole_sudo_ready && SYSTEM_READY=true
+                break
                 ;;
         esac
     done
@@ -540,6 +567,11 @@ report_coredumps() {
     review_line "Core dumps · $(mole_count_label "$count" dump), $(colorize_human_size "$(bytes_to_human_kb "$kb")"), ${GRAY}sudo rm /var/lib/systemd/coredump/core.*${NC}"
 }
 
+# The system sockets, set here and never from the environment; tests that
+# source this file reassign it (CI containers have the host's
+# /var/run/docker.sock mounted).
+MOLE_DOCKER_SYSTEM_SOCKETS="/var/run/docker.sock /run/docker.sock"
+
 # 0 when a Docker daemon socket exists to ask: DOCKER_HOST's unix path, else
 # the system, Docker Desktop (~/.docker/desktop) and rootless sockets. A tcp
 # DOCKER_HOST is the user's own choice.
@@ -551,9 +583,8 @@ docker_daemon_present() {
         return
     fi
     local sys
-    # MOLE_DOCKER_SYSTEM_SOCKETS lets tests replace the system paths (CI
-    # containers have the host's /var/run/docker.sock mounted).
-    for sys in ${MOLE_DOCKER_SYSTEM_SOCKETS-/var/run/docker.sock /run/docker.sock}; do
+    # shellcheck disable=SC2086  # A space-separated list on purpose.
+    for sys in $MOLE_DOCKER_SYSTEM_SOCKETS; do
         [[ -S "$sys" ]] && return 0
     done
     [[ -S "$HOME/.docker/desktop/docker.sock" ]] && return 0

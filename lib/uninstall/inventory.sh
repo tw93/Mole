@@ -222,7 +222,11 @@ _inventory_pacman() {
     done
 }
 
-MOLE_SYS_APPS_DIR="${MOLE_SYS_APPS_DIR:-/usr/share/applications}" # tests point it elsewhere
+# System locations the inventory reads are set here, never from the
+# environment: they decide what uninstall offers and removes. Tests that source
+# this file reassign them.
+MOLE_SYS_APPS_DIR=/usr/share/applications
+MOLE_PACMAN_DBPATH=/var/lib/pacman
 # Debian and Ubuntu: packages that ship a launcher in /usr/share/applications
 # and that the user (or the installer) asked for, by apt-mark showmanual;
 # dpkg-query -S names the owner. A launcher two packages claim, or a
@@ -292,8 +296,8 @@ _inventory_apt() {
 # /var/lib/snapd/desktop/applications/<snap>_<app>.desktop, so bases, the
 # core snaps and themes, which have none, never show. Size is the current
 # revision's .snap file.
-MOLE_SNAP_DESKTOP_DIR="${MOLE_SNAP_DESKTOP_DIR:-/var/lib/snapd/desktop/applications}"
-MOLE_SNAP_SNAPS_DIR="${MOLE_SNAP_SNAPS_DIR:-/var/lib/snapd/snaps}"
+MOLE_SNAP_DESKTOP_DIR=/var/lib/snapd/desktop/applications
+MOLE_SNAP_SNAPS_DIR=/var/lib/snapd/snaps
 _inventory_snap() {
     command -v snap > /dev/null 2>&1 || return 0
     [[ -d "$MOLE_SNAP_DESKTOP_DIR" ]] || return 0
@@ -707,7 +711,7 @@ mole_pkgbase() {
     local pkg="$1" ver dbpath desc base
     ver=$(mole_c pacman -Q -- "$pkg" 2> /dev/null | awk 'NR == 1 { print $2 }') || ver=""
     if [[ -n "$ver" ]]; then
-        dbpath="${MOLE_PACMAN_DBPATH:-/var/lib/pacman}"
+        dbpath="$MOLE_PACMAN_DBPATH"
         desc="$dbpath/local/$pkg-$ver/desc"
         [[ -r "$desc" ]] && base=$(awk '/^%BASE%$/ { getline; print; exit }' "$desc" 2> /dev/null)
     fi
@@ -823,15 +827,22 @@ mole_leftover_holdback() {
             ;;
         # Flatpak Steam keeps its steamapps library and Bottles its Wine
         # bottles inside the sandbox home; Boxes keeps its disk images there.
-        "$v/com.valvesoftware.Steam" | "$v/com.usebottles.bottles")
+        # Native Bottles and Boxes keep the same in ~/.local/share/<name>.
+        "$v/com.valvesoftware.Steam" | "$v/com.usebottles.bottles" | "$MOLE_DATA_HOME/bottles")
             echo "game library"
             return 0
             ;;
-        "$v/org.gnome.Boxes")
+        "$v/org.gnome.Boxes" | "$MOLE_DATA_HOME/gnome-boxes")
             echo "virtual machines"
             return 0
             ;;
-        "$HOME/.ViberPC")
+        # Messages and keys that exist only on this computer: Viber's synced
+        # history, Signal's and Session's local-only messages, Element's
+        # end-to-end keys, Jami's account. Telegram, Discord and Slack keep
+        # theirs on the server.
+        "$HOME/.ViberPC" | "$v/com.viber.Viber" | "$c/Signal" | "$v/org.signal.Signal" | \
+            "$c/Element" | "$v/im.riot.Riot" | "$c/Session" | "$v/network.loki.Session" | \
+            "$MOLE_DATA_HOME/jami" | "$v/net.jami.Jami")
             echo "chat history"
             return 0
             ;;

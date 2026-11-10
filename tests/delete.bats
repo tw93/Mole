@@ -62,3 +62,16 @@ load helpers
     [ -d "$HOME/.cache/tool/mnt/inside" ]
     [ ! -e "$HOME/.cache/tool/plain" ]
 }
+
+@test "mole_ascii_lowercase lowers ASCII only, under any locale, and runs no program" {
+    mole_run core 'PATH=/nonexistent; LC_ALL=C.UTF-8; v=""; mole_ascii_lowercase v "ÄbC Org.Gnome-X"; printf "[%s]\n" "$v"
+        mole_ascii_lowercase v "$(printf "ABC\n\n")"; printf "[%s]\n" "$v"
+        mole_ascii_lowercase v ""; printf "[%s]\n" "$v"
+        s="Ä"; echo "chars=${#s}"'
+    [ "$status" -eq 0 ]
+    # The caller's locale is back once the function returns.
+    [ "${lines[3]}" = "chars=1" ]
+    [ "${lines[0]}" = "[Äbc org.gnome-x]" ]
+    [ "${lines[1]}" = "[abc]" ]
+    [ "${lines[2]}" = "[]" ]
+}

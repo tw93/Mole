@@ -893,3 +893,43 @@ $TEST_ROOT/usr/bin/tool" ]
         [[ "$output" == *data* ]]
     fi
 }
+
+@test "VM images, Wine bottles and local-only chat stores are held back, native and Flatpak" {
+    mole_run uninstall 'for p in "$HOME/.local/share/gnome-boxes" "$HOME/.local/share/bottles" \
+        "$HOME/.config/Signal" "$HOME/.var/app/org.signal.Signal" "$HOME/.config/Element" "$HOME/.var/app/im.riot.Riot" \
+        "$HOME/.config/Session" "$HOME/.var/app/network.loki.Session" "$HOME/.local/share/jami" "$HOME/.var/app/net.jami.Jami" \
+        "$HOME/.var/app/com.viber.Viber" "$HOME/.config/telegram-desktop" "$HOME/.local/share/gnome-boxes-x"; do
+        printf "%s=%s\n" "${p#"$HOME"/}" "$(mole_leftover_holdback "$p" || echo -)"
+    done'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *".local/share/gnome-boxes=virtual machines"* ]]
+    [[ "$output" == *".local/share/bottles=game library"* ]]
+    for p in .config/Signal .var/app/org.signal.Signal .config/Element .var/app/im.riot.Riot .config/Session \
+        .var/app/network.loki.Session .local/share/jami .var/app/net.jami.Jami .var/app/com.viber.Viber; do
+        [[ "$output" == *"$p=chat history"* ]] || { echo "$p: $output"; return 1; }
+    done
+    [[ "$output" == *".config/telegram-desktop=-"* ]]
+    [[ "$output" == *".local/share/gnome-boxes-x=-"* ]]
+}
+
+@test "--with-data leaves native GNOME Boxes images and Signal messages unselected" {
+    mkdir -p "$HOME/.local/share/gnome-boxes/images" "$HOME/.config/Signal"
+    mole_run uninstall '
+        APP_KIND=(pacman pacman); APP_ID=(gnome-boxes signal-desktop); APP_NAME=(Boxes Signal)
+        APP_DESKTOPS=(org.gnome.Boxes signal-desktop,Signal); APP_EXEC=("" ""); SELECTED=(0 1); WITH_DATA=true
+        package_wants_links() { :; }; collect_leftovers
+        for j in "${!LEFT_PATH[@]}"; do echo "${LEFT_PATH[j]}=${LEFT_ON[j]}"; done'
+    [[ "$output" == *"$HOME/.local/share/gnome-boxes=false"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"$HOME/.config/Signal=false"* ]]
+}
+
+@test "inventory and leftover path overrides in the environment are ignored outside the tests' own assignments" {
+    mkdir -p "$TEST_ROOT/apps" "$TEST_ROOT/db"
+    MOLE_SYS_APPS_DIR="$TEST_ROOT/apps" MOLE_SNAP_DESKTOP_DIR="$TEST_ROOT/apps" MOLE_SNAP_SNAPS_DIR="$TEST_ROOT/apps" \
+        MOLE_PACMAN_DBPATH="$TEST_ROOT/db" mole_run uninstall '
+        echo "apps=$MOLE_SYS_APPS_DIR snapdesk=$MOLE_SNAP_DESKTOP_DIR snaps=$MOLE_SNAP_SNAPS_DIR db=$MOLE_PACMAN_DBPATH"'
+    [ "$output" = "apps=/usr/share/applications snapdesk=/var/lib/snapd/desktop/applications snaps=/var/lib/snapd/snaps db=/var/lib/pacman" ]
+    MOLE_DOCKER_SYSTEM_SOCKETS="$TEST_ROOT/x.sock" APT_ARCHIVES_DIR="$TEST_ROOT/apt" SNAPD_SNAPS_DIR="$TEST_ROOT/snaps" \
+        mole_run clean 'echo "docker=$MOLE_DOCKER_SYSTEM_SOCKETS apt=$APT_ARCHIVES_DIR snaps=$SNAPD_SNAPS_DIR"'
+    [ "$output" = "docker=/var/run/docker.sock /run/docker.sock apt=/var/cache/apt/archives snaps=/var/lib/snapd/snaps" ]
+}
