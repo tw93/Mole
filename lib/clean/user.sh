@@ -2012,10 +2012,13 @@ clean_external_volume_target() {
 
         local size_kb=""
         local size_rc=0
-        size_kb=$(get_path_size_kb "$metadata_file" 2> /dev/null) || size_rc=$?
-        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-        [[ $size_rc -eq 0 ]] || return "$size_rc"
-        [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        # Readable bytes, like every other cleanup total: one unlistable
+        # or missing file must not cancel the rest of the volume's cleanup.
+        size_kb=$(get_path_size_kb "$metadata_file" "" readable 2> /dev/null) || size_rc=$?
+        mole_item_size_continues "$size_rc" || return $?
+        local metadata_size_known=true
+        [[ $size_rc -eq 0 && "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        mole_rc_timeout "$size_rc" && metadata_size_known=false
 
         if [[ "$DRY_RUN" == "true" ]]; then
             if ! _mole_path_matches_identity \
@@ -2023,7 +2026,7 @@ clean_external_volume_target() {
                 continue
             fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$metadata_file" "$size_kb" 1 true || continue
+                record_dry_run_cleanup_target "$metadata_file" "$size_kb" 1 "$metadata_size_known" || continue
             fi
             found_any=true
             cleaned_count=$((cleaned_count + 1))
