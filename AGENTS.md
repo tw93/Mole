@@ -16,7 +16,7 @@ Layout: this file is always loaded and holds the cross-cutting contract. Area ru
 | `.claude/rules/slim.md` | `mo slim`: Intel slice removal scope, seal-aware thinning, verified swap |
 | `.claude/rules/go-tuis.md` | `cmd/analyze` and `cmd/status` Go TUIs |
 | `.claude/rules/install-update.md` | `mole` router pins, `install.sh`, `mo update`, self-heal, install lock, `mo remove` |
-| `.claude/rules/tests.md` | Bats and Go test validity, test lint, CI jobs |
+| `.claude/rules/tests.md` | Bats and Go test validity, test lint, CI jobs, golangci-lint stale-cache fix |
 | `.claude/rules/github.md` | Issue, PR and Discussion replies and closeout, Mole Mac invitation, announcements, issue version preflight |
 | `.claude/rules/readme.md` | README copies in every language |
 
@@ -138,19 +138,17 @@ Public docs and examples should prefer the installed `mo` command. Use `./mole` 
 - When the maintainer reports a defect while testing Mole changes, diagnose it, apply the verified minimal fix, run the required checks, then commit and push the scoped fix as tw93 and report the result without asking again for repair or submission approval. This standing authorization excludes releases and destructive verification.
 - Confirm before changing what users see or type (maintainer 2026-10-04): output, layout or visual effect, interaction, a command's flags or parameters, and default configuration each need the concrete proposed change and the maintainer's yes first; a broad repair or push authorization does not cover them. Internal fixes that leave user behavior unchanged proceed under existing authorization. An unshipped user-facing change waiting for that yes stays isolated; one already pushed is reported, not silently reverted. Work happens in the local checkout, with no PR or cloud environment by default; existing PRs stay open and unmerged, and CI that pushes trigger stays as it is.
 - Treat `.claude/skills/bugs/SKILL.md` as an on-demand router, not a universal review preflight. Load only the linked reference families signaled by deletion evidence, uncertain probes, bounded Shell/macOS work, persisted state or accounting, progress, test validity, or refusal diagnostics. Unrelated documentation, release copy, and administrative work should not pay for incident history.
-- `WORKLOG.md` is an untracked cross-session handoff ledger and is never committed. Durable rules go into this file, a `.claude/rules/` file or a skill; release and queue evidence belongs in the release notes and issue threads. A tracked copy was removed in `0123a42a`, came back with the V1.57.0 triage, and went stale within two days, publishing unsent-email and private-diagnostic bookkeeping.
-- Keep shell code formatted with `./scripts/check.sh --format`.
+- `WORKLOG.md` is an untracked cross-session handoff ledger and is never committed. Durable rules go into this file, a `.claude/rules/` file or a skill; release and queue evidence belongs in the release notes and issue threads. A tracked copy goes stale within days and publishes unsent-email and private-diagnostic bookkeeping.
 - Prefer targeted Bats tests during development; run the full suite before committing.
 - Do not add AI attribution trailers to commits.
 
 ## Verification
 
-- Shell changes: run `./scripts/check.sh --format`, then the relevant Bats test or `MOLE_TEST_NO_AUTH=1 ./scripts/test.sh`. `--format` only formats; CI runs `./scripts/check.sh --no-format`, which is where golangci-lint, ShellCheck and the audit scripts run, so run that before pushing. A green `--format` run let a golangci-lint `modernize` failure reach `main` on 2026-10-10. Test code has its own shellcheck step (`.claude/rules/tests.md`).
+- Shell changes: run `./scripts/check.sh --format`, then the relevant Bats test or `MOLE_TEST_NO_AUTH=1 ./scripts/test.sh`. `--format` only formats; CI runs `./scripts/check.sh --no-format`, which is where golangci-lint, ShellCheck and the audit scripts run, so run that before pushing. Test code has its own shellcheck step (`.claude/rules/tests.md`).
 - `lib/core/sudo.sh` changes: run `MOLE_TEST_NO_AUTH=1 bats tests/manage_sudo.bats`.
 - Go changes: run `go test ./...`.
 - Area changes: run the test command listed for that hotspot in its `.claude/rules/` file; do not guess a narrower verifier.
-- Documentation-only changes: check links and commands.
-- **Incidents are the eval; risk follows paths** (2026-10-26, from the Claude Code team's code review write-up). A fix for anything a user or a published release met adds its `docs/incidents.md` row in the same commit, naming the earliest layer that should have caught it and the Bats, Go or Python test or gate that catches it now; `scripts/audit_incidents.py` (in `check.sh` and the Security Checks job) fails a row whose commits, layer or catcher do not hold, and the weekly audit rescores its prompts against the table. The verification a change needs follows the paths it touches, not who wrote it: `scripts/risk_tier.py`, printed by `check.sh`, names the extra gates for release, CI, install and update, deletion and privileged paths (pass your own files when the worktree holds other work).
+- **Incidents are the eval; risk follows paths.** A fix for anything a user or a published release met adds its `docs/incidents.md` row in the same commit, naming the earliest layer that should have caught it and the Bats, Go or Python test or gate that catches it now; `scripts/audit_incidents.py` (in `check.sh` and the Security Checks job) fails a row whose commits, layer or catcher do not hold, and the weekly audit rescores its prompts against the table. The verification a change needs follows the paths it touches, not who wrote it: `scripts/risk_tier.py`, printed by `check.sh`, names the extra gates for release, CI, install and update, deletion and privileged paths (pass your own files when the worktree holds other work).
 - **Read the suite's own summary line, never a count you invent.** `scripts/test.sh` splits timing-sensitive files into sequential Bats runs whose TAP output differs from the main parallel batch. Counting one output prefix therefore undercounts a complete suite. The judges are the test runner's summary and captured exit status; reconcile any derived count against them before reporting it.
 - **Run the suite with `$TERM` set.** A backgrounded `./scripts/test.sh` inherits no TTY, `tput` fails, and the bats validator dies on a broken pipe partway through, leaving a truncated log and a nonzero exit that looks like a red suite. `TERM=xterm-256color MOLE_TEST_NO_AUTH=1 ./scripts/test.sh` runs to completion. Classify that one as setup, not as a product failure.
 - **A `cancelled` CI run is not a passing one.** Every per-commit workflow except Secrets sets `cancel-in-progress: true` on `${{ github.workflow }}-${{ github.ref }}` (`release.yml` and Secrets set no `concurrency`), so a later push or merge on `main` cancels the checks still running for the previous commit. Land a fix and then merge a queued PR and the fix commit's own `Check` and `Validation` end up `cancelled`, which `gh run list` reports without any red. Verify against the sha that currently contains the change, and read `--json status,conclusion` rather than colors.
@@ -158,13 +156,6 @@ Public docs and examples should prefer the installed `mo` command. Use `./mole` 
 - Never pipe a test, check, or CI run into `tail` or `head`. The pipeline reports the pager's exit code, so a red run reads green. Let it print in full, or capture to a file and check the status separately.
 
 `make check`, `make format`, `make test`, `make test-go`, and `make verify` are wrappers around the scripts above. `make verify` intentionally runs `check` plus Go tests only; use the full Bats suite before risky cleanup, uninstall, or release work.
-
-If `golangci-lint` reports issues from deleted temporary worktrees or non-existent paths, clear its local cache and rerun the linter:
-
-```bash
-golangci-lint cache clean
-golangci-lint run ./cmd/...
-```
 
 ## Release
 
