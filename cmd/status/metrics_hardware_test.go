@@ -87,3 +87,49 @@ func TestCollectFullRunsHardwareInsideConcurrentBurst(t *testing.T) {
 		t.Fatalf("cached hardware changed: %+v, want %+v", again.Hardware, hw)
 	}
 }
+
+// The SPHardware, sw_vers and SPDisplays probes run at once: each stub blocks
+// until all three have started, which a serial chain never reaches. The card
+// still carries every field from its own probe.
+func TestCollectHardwareStaticRunsProbesConcurrently(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("hardware subprocesses only run on darwin")
+	}
+	origRunCmd := runCmd
+	t.Cleanup(func() { runCmd = origRunCmd })
+
+	var started sync.WaitGroup
+	started.Add(3)
+	allStarted := make(chan struct{})
+	go func() { started.Wait(); close(allStarted) }()
+	var overlapped atomic.Int32
+	wait := func() {
+		started.Done()
+		select {
+		case <-allStarted:
+			overlapped.Add(1)
+		case <-time.After(900 * time.Millisecond):
+		}
+	}
+	runCmd = func(_ context.Context, name string, args ...string) (string, error) {
+		wait()
+		switch {
+		case name == "sw_vers":
+			return "26.1\n", nil
+		case name == "system_profiler" && len(args) == 1 && args[0] == "SPHardwareDataType":
+			return "Hardware:\n\n    Hardware Overview:\n\n      Model Name: MacBook Pro\n      Chip: Apple M5 Pro\n", nil
+		case name == "system_profiler" && len(args) == 3 && args[2] == "SPDisplaysDataType":
+			return "Graphics/Displays:\n        Displays:\n          Color LCD:\n            Resolution: 3456 x 2234 Retina\n            UI Looks like: 1728 x 1117 @ 120.00Hz\n", nil
+		}
+		return "", errors.New("unexpected command")
+	}
+
+	hw := collectHardwareStatic()
+	if overlapped.Load() != 3 {
+		t.Fatalf("%d of 3 hardware probes overlapped, want all three to run concurrently", overlapped.Load())
+	}
+	want := HardwareInfo{Model: "MacBook Pro", CPUModel: "Apple M5 Pro", OSVersion: "macOS 26.1", RefreshRate: "120Hz"}
+	if hw != want {
+		t.Fatalf("collectHardwareStatic() = %+v, want %+v", hw, want)
+	}
+}

@@ -72,6 +72,7 @@ func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
 
 	var (
 		disks      []DiskStatus
+		probes     []*diskPlistProbe
 		seenDevice = make(map[string]bool)
 	)
 	for _, part := range partitions {
@@ -123,11 +124,12 @@ func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
 			SmartStatus: smartStatusUnknown,
 			Purgeable:   purgeable,
 		})
+		probes = append(probes, plistProbe)
 		seenDevice[baseDevice] = true
 	}
 
 	if useCorrections {
-		annotateDiskMetadata(disks)
+		annotateDiskMetadataWithProbes(disks, probes)
 	}
 
 	sort.Slice(disks, func(i, j int) bool {
@@ -202,6 +204,15 @@ var (
 )
 
 func annotateDiskMetadata(disks []DiskStatus) {
+	annotateDiskMetadataWithProbes(disks, nil)
+}
+
+// annotateDiskMetadataWithProbes fills External and SmartStatus. probes, when
+// given, is parallel to disks and holds the `diskutil info -plist` read the
+// collection pass already made for that volume; its Internal and SMARTStatus
+// keys answer without a second diskutil call. A volume whose plist lacks
+// either key keeps the text `diskutil info <disk>` read and its fallbacks.
+func annotateDiskMetadataWithProbes(disks []DiskStatus, probes []*diskPlistProbe) {
 	if len(disks) == 0 || runtime.GOOS != "darwin" || !commandExists("diskutil") {
 		return
 	}
@@ -225,7 +236,15 @@ func annotateDiskMetadata(disks []DiskStatus) {
 			continue
 		}
 
-		metadata, err := readDiskMetadata(base)
+		var probe *diskPlistProbe
+		if i < len(probes) {
+			probe = probes[i]
+		}
+		metadata, ok := diskMetadataFromPlistProbe(probe)
+		var err error
+		if !ok {
+			metadata, err = readDiskMetadata(base)
+		}
 		if err != nil {
 			metadata.External = strings.HasPrefix(disks[i].Mount, "/Volumes/")
 		}
@@ -277,17 +296,7 @@ func parseDiskMetadata(out string) (diskMetadata, error) {
 			locationValue = strings.Contains(trim, "External")
 		}
 		if smartValue, ok := strings.CutPrefix(trim, "SMART Status:"); ok {
-			value := strings.ToLower(strings.TrimSpace(smartValue))
-			switch value {
-			case "verified":
-				metadata.SmartStatus = smartStatusVerified
-			case "failing", "failed":
-				metadata.SmartStatus = smartStatusFailing
-			case "not supported", "unsupported":
-				metadata.SmartStatus = smartStatusUnsupported
-			default:
-				metadata.SmartStatus = smartStatusUnknown
-			}
+			metadata.SmartStatus = normalizeSmartStatus(smartValue)
 		}
 	}
 	if !externalFound && locationFound {
@@ -298,6 +307,41 @@ func parseDiskMetadata(out string) (diskMetadata, error) {
 		return metadata, errors.New("diskutil info missing Internal field")
 	}
 	return metadata, nil
+}
+
+func normalizeSmartStatus(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "verified":
+		return smartStatusVerified
+	case "failing", "failed":
+		return smartStatusFailing
+	case "not supported", "unsupported":
+		return smartStatusUnsupported
+	default:
+		return smartStatusUnknown
+	}
+}
+
+// diskMetadataFromPlistProbe reads External and SmartStatus from the plist
+// probe. ok is false when there is no probe, it failed, or either key is
+// absent (some external disks and disk images omit SMARTStatus).
+func diskMetadataFromPlistProbe(probe *diskPlistProbe) (diskMetadata, bool) {
+	if probe == nil {
+		return diskMetadata{}, false
+	}
+	out, err := probe.output()
+	if err != nil {
+		return diskMetadata{}, false
+	}
+	internal, ok := extractPlistBool(out, "Internal")
+	if !ok {
+		return diskMetadata{}, false
+	}
+	smart, ok := extractPlistString(out, "SMARTStatus")
+	if !ok {
+		return diskMetadata{}, false
+	}
+	return diskMetadata{External: !internal, SmartStatus: normalizeSmartStatus(smart)}, true
 }
 
 // diskPlistProbe memoizes one bounded `diskutil info -plist <mount>` read for
@@ -493,6 +537,39 @@ func extractPlistUint(plist string, keys ...string) (uint64, error) {
 	}
 
 	return 0, fmt.Errorf("%s not found", strings.Join(keys, "/"))
+}
+
+// extractPlistBool reads the <true/> or <false/> that follows <key>key</key>.
+func extractPlistBool(plist, key string) (bool, bool) {
+	_, rest, found := strings.Cut(plist, "<key>"+key+"</key>")
+	if !found {
+		return false, false
+	}
+	rest = strings.TrimSpace(rest)
+	switch {
+	case strings.HasPrefix(rest, "<true/>"):
+		return true, true
+	case strings.HasPrefix(rest, "<false/>"):
+		return false, true
+	}
+	return false, false
+}
+
+// extractPlistString reads the <string> value that follows <key>key</key>.
+func extractPlistString(plist, key string) (string, bool) {
+	_, rest, found := strings.Cut(plist, "<key>"+key+"</key>")
+	if !found {
+		return "", false
+	}
+	rest, found = strings.CutPrefix(strings.TrimSpace(rest), "<string>")
+	if !found {
+		return "", false
+	}
+	value, _, found := strings.Cut(rest, "</string>")
+	if !found {
+		return "", false
+	}
+	return value, true
 }
 
 func uint64AbsDiff(a, b uint64) uint64 {
