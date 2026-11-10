@@ -431,6 +431,9 @@ function Main {
         }
     }
 
+    # The British spelling, as Mole CLI (macOS) accepts it.
+    if ($effectiveCommand -eq 'analyse') { $effectiveCommand = 'analyze' }
+
     # Handle version flag
     if ($effectiveVersion) {
         Show-Version

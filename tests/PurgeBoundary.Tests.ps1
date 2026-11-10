@@ -452,3 +452,116 @@ Describe 'Purge leaves an artifact in use alone' {
         $script:ItemsCleaned | Should -Be 1
     }
 }
+
+Describe 'Purge dry run without a console' {
+    BeforeAll {
+        $ast = [Management.Automation.Language.Parser]::ParseFile("$script:RepoRoot\bin\purge.ps1", [ref]$null, [ref]$null)
+        $main = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Main' }, $false)
+        . ([scriptblock]::Create($main.Extent.Text))
+        $DebugMode = $false
+        $Paths = $false
+        $ShowHelp = $false
+        $script:PurgeTestProjects = @(
+            [pscustomobject]@{ Path = 'C:\fixture\one'; DisplayPath = 'C:\fixture\one'; TotalSizeKB = 2; TotalSizeHuman = '2KB'
+                Artifacts = @([pscustomobject]@{ Name = 'node_modules'; SizeHuman = '2KB' }) }
+            [pscustomobject]@{ Path = 'C:\fixture\two'; DisplayPath = 'C:\fixture\two'; TotalSizeKB = 1; TotalSizeHuman = '1KB'
+                Artifacts = @([pscustomobject]@{ Name = 'target'; SizeHuman = '1KB' }) }
+        )
+        function Invoke-PurgeChild([string[]]$Arguments, [string]$UserHome) {
+            $saved = $env:USERPROFILE
+            try {
+                $env:USERPROFILE = $UserHome
+                # Piped input: the selection list cannot wait for a key, it fails.
+                # Continue: the refusal's stderr must not stop this test.
+                $hostPath = (Get-Process -Id $PID).Path
+                $output = & { $ErrorActionPreference = 'Continue'; '' | & $hostPath -NoProfile -ExecutionPolicy Bypass -File "$script:RepoRoot\bin\purge.ps1" @Arguments 2>&1 | Out-String }
+                return @{ ExitCode = $LASTEXITCODE; Output = $output }
+            }
+            finally { $env:USERPROFILE = $saved }
+        }
+        function New-PurgeHome {
+            $userHome = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            $searchRoot = Join-Path $userHome 'projects'
+            $null = New-Item -ItemType Directory -Path (Join-Path $userHome '.config\mole'), $searchRoot
+            Move-Item -LiteralPath (New-PurgeFixture) -Destination (Join-Path $searchRoot 'app1')
+            Move-Item -LiteralPath (New-PurgeFixture -Marker 'Cargo.toml' -Content '[package]' -Artifacts @('target')) -Destination (Join-Path $searchRoot 'app2')
+            Set-Content -LiteralPath (Join-Path $userHome '.config\mole\purge_paths.txt') -Value $searchRoot
+            return $userHome
+        }
+        function Get-PurgeHomeState([string]$UserHome) {
+            # Files only, outside AppData: the PowerShell host itself creates
+            # AppData under a fresh profile, and a folder's write time moves
+            # when the file system settles, neither of which Mole wrote.
+            $hostState = (Join-Path $UserHome 'AppData') + '\'
+            @(Get-ChildItem -LiteralPath $UserHome -Recurse -Force -File |
+                    Where-Object { -not $_.FullName.StartsWith($hostState, [StringComparison]::OrdinalIgnoreCase) } |
+                    Sort-Object FullName | ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }) -join "`n"
+        }
+    }
+
+    BeforeEach {
+        $script:SavedPurgeDryRunEnv = $env:MOLE_DRY_RUN
+        $script:ArtifactsHeldAtScan = 0
+        Set-DryRunMode -Enabled $false
+        Mock Clear-MoleScreen {}
+        Mock Write-Host {}
+        Mock Write-Info {}
+        Mock Get-SearchPaths { @('C:\fixture') }
+        Mock Find-Projects { $script:PurgeTestProjects }
+        Mock Show-ProjectSelectionMenu { return @() }
+        Mock Remove-ProjectArtifacts {}
+        Mock Show-PurgeSummary {}
+        Mock Read-Host { 'n' }
+        Mock Test-MoleInteractiveOutput { $false }
+    }
+
+    AfterEach {
+        $env:MOLE_DRY_RUN = $script:SavedPurgeDryRunEnv
+        Set-DryRunMode -Enabled $false
+    }
+
+    It 'previews every project without opening the selection list' {
+        $DryRun = $true
+        & { Set-StrictMode -Version Latest; Main }
+        Should -Invoke Show-ProjectSelectionMenu -Times 0 -Exactly
+        Should -Invoke Read-Host -Times 0 -Exactly
+        Should -Invoke Remove-ProjectArtifacts -Times 1 -Exactly -ParameterFilter { @($Projects).Count -eq 2 }
+        Should -Invoke Show-PurgeSummary -Times 1 -Exactly
+    }
+
+    It 'opens the selection list for a dry run in a console' {
+        $DryRun = $true
+        Mock Test-MoleInteractiveOutput { $true }
+        & { Set-StrictMode -Version Latest; Main }
+        Should -Invoke Show-ProjectSelectionMenu -Times 1 -Exactly
+        Should -Invoke Remove-ProjectArtifacts -Times 0 -Exactly
+    }
+
+    It 'still needs the selection list for a real run' {
+        $DryRun = $false
+        & { Set-StrictMode -Version Latest; Main }
+        Should -Invoke Show-ProjectSelectionMenu -Times 1 -Exactly
+        Should -Invoke Remove-ProjectArtifacts -Times 0 -Exactly
+    }
+
+    It 'a dry run with piped input and output lists every project and writes nothing' {
+        $userHome = New-PurgeHome
+        $before = Get-PurgeHomeState $userHome
+        $run = Invoke-PurgeChild -Arguments @('-DryRun') -UserHome $userHome
+        $run.ExitCode | Should -Be 0 -Because $run.Output
+        $run.Output | Should -Match 'app1'
+        $run.Output | Should -Match 'app2'
+        $run.Output | Should -Match 'Dry run complete - no changes made'
+        Get-PurgeHomeState $userHome | Should -BeExactly $before
+        Test-Path -LiteralPath (Join-Path $userHome '.config\mole\operations.log') | Should -BeFalse
+    }
+
+    It 'a real run with piped input and output still stops at the selection list' {
+        $userHome = New-PurgeHome
+        $before = Get-PurgeHomeState $userHome
+        $run = Invoke-PurgeChild -Arguments @() -UserHome $userHome
+        $run.ExitCode | Should -Not -Be 0 -Because $run.Output
+        $run.Output | Should -Not -Match 'Purge complete'
+        Get-PurgeHomeState $userHome | Should -BeExactly $before
+    }
+}

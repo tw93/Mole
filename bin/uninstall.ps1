@@ -1502,6 +1502,14 @@ function Main {
         Set-DryRunMode -Enabled $true
     }
 
+    # Without a console there is no list to pick from, so a preview shows what
+    # --list shows. JSON output stays one array, without the summary.
+    if ($script:MoleDryRunMode -and -not (Test-MoleInteractiveOutput)) {
+        Show-UninstallList -ForceRescan:$Rescan
+        if (-not (Test-UninstallListAsJson)) { Show-SummaryBlock -Heading 'Dry run complete - no changes made' }
+        return
+    }
+
     # Clear screen
     Clear-MoleScreen
 

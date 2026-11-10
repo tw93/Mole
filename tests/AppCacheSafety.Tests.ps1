@@ -510,6 +510,18 @@ Describe 'Application cache boundaries' {
         Test-Path -LiteralPath $script:ExportListFile | Should -BeFalse
     }
 
+    It 'Reads the process list <Expected> times for five cache entries in dry-run <Dry>' -ForEach @(
+        @{Dry=$true;Expected=2}, @{Dry=$false;Expected=6}
+    ) {
+        # A preview asks before listing and once after sizing; a real run also asks before each removal.
+        Set-DryRunMode -Enabled $Dry
+        $files = @(foreach ($n in 1..5) { New-CacheFile "$env:APPDATA\Cursor\Cache\entry$n" })
+        Clear-MoleAppCache -Path "$env:APPDATA\Cursor\Cache" -Description 'Cursor cache' -Processes @('Cursor')
+        Should -Invoke Get-Process -Times $Expected -Exactly
+        (Get-CleanupStats).FilesCleaned | Should -Be 5
+        foreach ($file in $files) { Test-Path -LiteralPath $file | Should -Be $Dry }
+    }
+
     It 'Preserves protected stores even when passed to the shared sink directly' {
         $files = @(
             (New-CacheFile "$env:LOCALAPPDATA\pypoetry\Cache\virtualenvs\project\python.exe"),

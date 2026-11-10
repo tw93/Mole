@@ -159,6 +159,12 @@ Describe "mo --help and --version" {
         $output | Should -Match "mo uninstall --dry-run"
     }
 
+    It "Routes the analyse spelling to analyze from the installed File entrypoint" {
+        $output = & { $ErrorActionPreference = "Continue"; & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script:Mole analyse --help 2>&1 | Out-String }
+        $LASTEXITCODE | Should -Be 0
+        $output | Should -Match 'Interactive disk space analyzer'
+    }
+
     It "Returns failure for an unknown command from the installed File entrypoint" {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $script:Mole not-a-command 2>&1 | Out-Null
         $LASTEXITCODE | Should -Be 2
@@ -309,16 +315,20 @@ Describe "Analyze debug routing" {
 Describe "Machine-readable output through installed launcher call shapes" {
     BeforeAll {
         function Invoke-MoleShape {
-            param([string]$Shape, [string]$Mole, [string[]]$Arguments)
+            # -EmptyInput gives the child an empty stdin: with a console as stdin, a
+            # child that reaches a key prompt would wait instead of failing.
+            param([string]$Shape, [string]$Mole, [string[]]$Arguments, [switch]$EmptyInput)
             # Assigning native output captures stdout only, the redirected
             # stream an agent reads; stderr stays out of the JSON.
             if ($Shape -eq "File") {
-                $lines = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Mole @Arguments
+                if ($EmptyInput) { $lines = '' | & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Mole @Arguments }
+                else { $lines = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Mole @Arguments }
             }
             else {
                 $quoted = @($Arguments | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join " "
                 $command = "& '" + $Mole.Replace("'", "''") + "' $quoted; exit `$LASTEXITCODE"
-                $lines = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $command
+                if ($EmptyInput) { $lines = '' | & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $command }
+                else { $lines = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $command }
             }
             [pscustomobject]@{ Text = (@($lines) -join "`n"); ExitCode = $LASTEXITCODE }
         }
@@ -359,6 +369,32 @@ Describe "Machine-readable output through installed launcher call shapes" {
         @($parsed).Count | Should -Be 1
         @($parsed)[0].id | Should -BeExactly "registry:HKLM-test\cached"
         @($parsed)[0].size_bytes | Should -Be 1048576
+        Test-Path -LiteralPath (Join-Path $profile ".config\mole\operations.log") | Should -BeFalse
+    }
+
+    It "Previews the uninstall inventory without a console through <_>" -ForEach @("File", "Command") {
+        $profile = Join-Path $TestDrive ("dry-run-" + $_)
+        $cacheDir = Join-Path $profile ".cache\mole"
+        New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+        $cache = @(
+            [ordered]@{ Name = "Cached Tool"; Publisher = "Contoso"; Version = "3.0"; SizeKB = 1024; SizeHuman = "1.0MB"; SizeChecked = $true
+                InstallLocation = "C:\Tools\Cached"; RegistryKey = "HKLM-test\cached"; PackageFullName = $null; Source = "Registry" }
+        )
+        $cacheFile = Join-Path $cacheDir "app_scan_cache_v7.json"
+        [System.IO.File]::WriteAllText($cacheFile, (ConvertTo-Json -InputObject $cache -Depth 3))
+        $written = (Get-Item -LiteralPath $cacheFile).LastWriteTimeUtc
+        $saved = $env:USERPROFILE
+        try {
+            $env:USERPROFILE = $profile
+            $result = Invoke-MoleShape -Shape $_ -Mole (Join-Path $script:WindowsDir "mole.ps1") -Arguments @("uninstall", "--dry-run") -EmptyInput
+        }
+        finally { $env:USERPROFILE = $saved }
+
+        $result.ExitCode | Should -Be 0
+        $parsed = ConvertFrom-Json -InputObject $result.Text
+        @($parsed).Count | Should -Be 1
+        @($parsed)[0].id | Should -BeExactly "registry:HKLM-test\cached"
+        (Get-Item -LiteralPath $cacheFile).LastWriteTimeUtc | Should -Be $written
         Test-Path -LiteralPath (Join-Path $profile ".config\mole\operations.log") | Should -BeFalse
     }
 

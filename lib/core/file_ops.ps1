@@ -702,6 +702,10 @@ function Remove-SafeItems {
     # A file whose size read as 0 may not have been measured at all.
     $sizeUnknown = $false
     $dryRunPaths = New-Object System.Collections.Generic.List[string]
+    # A preview removes nothing, so one owner check after every entry is sized
+    # answers for the batch; each check enumerates every process. A real run
+    # still asks again right before each removal.
+    $previewEntries = New-Object System.Collections.Generic.List[hashtable]
     # One whitelist read for the batch, not several per path.
     $whitelistState = Get-WhitelistState
     
@@ -732,6 +736,10 @@ function Remove-SafeItems {
         $size = if ($null -ne $validatedTree) { Get-ValidatedTreeSize -Tree $validatedTree } else { Get-PathSize -Path $path }
         if (-not (Test-SafePath $path -WhitelistState $whitelistState) -or -not (Test-MolePathSnapshot $pathSnapshot)) { continue }
 
+        if ($script:MoleDryRunMode -and $null -ne $CanRemove) {
+            $previewEntries.Add(@{ Path = $path; Snapshot = $pathSnapshot; Size = $size; Tree = $validatedTree })
+            continue
+        }
         if (-not (Test-MoleRemovalCondition $CanRemove)) { continue }
         if ($null -eq $validatedTree -and $size -le 0) { $sizeUnknown = $true }
         if (-not (Test-MolePathSnapshot $pathSnapshot)) { continue }
@@ -769,7 +777,17 @@ function Remove-SafeItems {
             Write-MoleOperation -Action "FAILED" -Path $path -Detail $_.Exception.Message
         }
     }
-    
+
+    if ($previewEntries.Count -gt 0 -and (Test-MoleRemovalCondition $CanRemove)) {
+        foreach ($entry in $previewEntries) {
+            if ($null -eq $entry['Tree'] -and $entry['Size'] -le 0) { $sizeUnknown = $true }
+            if (-not (Test-MolePathSnapshot $entry['Snapshot'])) { continue }
+            $totalSize += $entry['Size']
+            $removedCount++
+            $dryRunPaths.Add($entry['Path'])
+        }
+    }
+
     if ($removedCount -gt 0) {
         $sizeKB = [Math]::Ceiling($totalSize / 1024)
         $sizeHuman = Format-ByteSize -Bytes $totalSize

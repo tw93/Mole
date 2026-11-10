@@ -880,8 +880,14 @@ function Main {
     Write-Host "Found $esc[33m$($projects.Count)$esc[0m projects with $esc[33m$totalSizeHuman$esc[0m of artifacts"
     Write-Host ""
 
-    # Project selection
-    $selected = @(Show-ProjectSelectionMenu -Projects $projects)
+    # Project selection. Without a console to pick from, a preview covers every
+    # project, as Mole CLI (macOS) does; a real run still needs the list.
+    if ($script:MoleDryRunMode -and -not (Test-MoleInteractiveOutput)) {
+        $selected = $projects
+    }
+    else {
+        $selected = @(Show-ProjectSelectionMenu -Projects $projects)
+    }
 
     if ($null -eq $selected -or $selected.Count -eq 0) {
         Write-Info "No projects selected"

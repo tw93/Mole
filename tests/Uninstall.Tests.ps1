@@ -161,6 +161,63 @@ Describe "Uninstall selection under strict mode" {
         Should -Invoke Read-Host -Times 0 -Exactly
         Should -Invoke Uninstall-SelectedApps -Times 0 -Exactly
     }
+
+    Context "Dry run without a console" {
+        BeforeEach {
+            $script:SavedDryRunEnv = $env:MOLE_DRY_RUN
+            Mock Show-UninstallList {}
+            Mock Show-SummaryBlock {}
+            Mock Test-UninstallListAsJson { $false }
+            Mock Test-MoleInteractiveOutput { $false }
+        }
+
+        AfterEach {
+            $env:MOLE_DRY_RUN = $script:SavedDryRunEnv
+            Set-DryRunMode -Enabled $false
+        }
+
+        It "Lists the inventory instead of opening the selection list" {
+            $DryRun = $true
+
+            & { Set-StrictMode -Version Latest; Main }
+
+            Should -Invoke Show-UninstallList -Times 1 -Exactly
+            Should -Invoke Show-SummaryBlock -Times 1 -Exactly -ParameterFilter { $Heading -eq 'Dry run complete - no changes made' }
+            Should -Invoke Show-AppSelectionMenu -Times 0 -Exactly
+            Should -Invoke Read-Host -Times 0 -Exactly
+            Should -Invoke Uninstall-SelectedApps -Times 0 -Exactly
+        }
+
+        It "Keeps piped output to the JSON array alone" {
+            $DryRun = $true
+            Mock Test-UninstallListAsJson { $true }
+
+            & { Set-StrictMode -Version Latest; Main }
+
+            Should -Invoke Show-UninstallList -Times 1 -Exactly
+            Should -Invoke Show-SummaryBlock -Times 0 -Exactly
+        }
+
+        It "Opens the selection list for a dry run in a console" {
+            $DryRun = $true
+            Mock Test-MoleInteractiveOutput { $true }
+            Mock Show-AppSelectionMenu { return @() }
+
+            & { Set-StrictMode -Version Latest; Main }
+
+            Should -Invoke Show-AppSelectionMenu -Times 1 -Exactly
+            Should -Invoke Show-UninstallList -Times 0 -Exactly
+        }
+
+        It "Still needs the selection list for a real run" {
+            Mock Show-AppSelectionMenu { return @() }
+
+            & { Set-StrictMode -Version Latest; Main }
+
+            Should -Invoke Show-AppSelectionMenu -Times 1 -Exactly
+            Should -Invoke Show-UninstallList -Times 0 -Exactly
+        }
+    }
 }
 
 Describe "Install folder eligibility" {
