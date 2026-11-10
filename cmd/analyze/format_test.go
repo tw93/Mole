@@ -458,3 +458,21 @@ func TestUnicodeColumnsPreserveGraphemes(t *testing.T) {
 		t.Errorf("split grapheme=%q", got)
 	}
 }
+
+func TestTruncateMiddleNeverExceedsTheColumnBudget(t *testing.T) {
+	// A wide grapheme at the tail cut used to leave the name one cell too wide,
+	// which pushed the size column on CJK and flag names.
+	names := []string{
+		"🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵🇯🇵",
+		"资料备份资料备份资料备份资料备份",
+		"abc资料备份def资料备份ghi资料",
+		"report-2023-final-version-archive.tar.gz",
+	}
+	for _, name := range names {
+		for budget := 1; budget <= 24; budget++ {
+			if got := truncateMiddle(name, budget); displayWidth(got) > budget {
+				t.Errorf("truncateMiddle(%q, %d) = %q is %d cells", name, budget, got, displayWidth(got))
+			}
+		}
+	}
+}
