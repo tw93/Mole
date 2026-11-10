@@ -343,9 +343,34 @@ mole_purge_ppid() {
     done < "$1/status"; } 2> /dev/null || true
     return 0
 }
+# 0 when process folder $1 is the user's, 1 when it is someone else's or the
+# process has exited, 2 when its status cannot be read although it still runs.
+# mole_pid_mine answers 1 for both of the last two, which suits its callers;
+# purge needs to know it missed a process.
+mole_purge_pid_mine() {
+    local key uid found=""
+    [[ -n "$_MOLE_UID" ]] || _MOLE_UID=$(id -u)
+    { while read -r key uid _; do
+        if [[ "$key" == Uid: ]]; then
+            found="$uid"
+            break
+        fi
+    done < "$1/status"; } 2> /dev/null || true
+    if [[ -n "$found" ]]; then
+        [[ "$found" == "$_MOLE_UID" ]]
+        return
+    fi
+    [[ -e "$1" ]] && return 2
+    return 1
+}
+
+# The user's other processes, one pid a line, then MOLE_PURGE_PIDS_DONE. A
+# process it could not place prints MOLE_PURGE_PIDS_UNKNOWN instead of a pid.
+readonly MOLE_PURGE_PIDS_DONE="done"
+readonly MOLE_PURGE_PIDS_UNKNOWN="unknown"
 mole_purge_other_pids() {
     local -A skip=()
-    local pid="$$" comm dir ppid
+    local pid="$$" comm dir ppid rc
     skip[$$]=1
     pid=$(mole_purge_ppid "$_MOLE_PROC_ROOT/$$")
     while [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]]; do
@@ -358,11 +383,18 @@ mole_purge_other_pids() {
     for dir in "$_MOLE_PROC_ROOT"/[0-9]*; do
         pid="${dir##*/}"
         [[ -n "${skip[$pid]:-}" ]] && continue
-        mole_pid_mine "$dir" || continue
+        rc=0
+        mole_purge_pid_mine "$dir" || rc=$?
+        if ((rc == 2)); then
+            printf '%s\n' "$MOLE_PURGE_PIDS_UNKNOWN"
+            continue
+        fi
+        ((rc == 0)) || continue
         # Mole's own helpers (its spinner) start in Mole's folder too.
         [[ "$(mole_purge_ppid "$dir")" == "$$" ]] && continue
         printf '%s\n' "$pid"
     done
+    printf '%s\n' "$MOLE_PURGE_PIDS_DONE"
     return 0
 }
 
@@ -426,8 +458,8 @@ mole_purge_proc_holders() {
 # path arguments, an activated VIRTUAL_ENV, open files and mapped libraries,
 # into MOLE_PURGE_PROC_PATHS. A process elsewhere holding one file of a build
 # folder shows only in the last two.
-# MOLE_PURGE_PROC_OK is false when /proc cannot be read or the open and mapped
-# files could not all be listed, and then every project counts as busy.
+# MOLE_PURGE_PROC_OK is false when /proc cannot be read, a process could not be
+# placed, or the open and mapped files could not all be listed, and then every project counts as busy.
 MOLE_PURGE_PROC_PATHS=()
 MOLE_PURGE_PROC_OK=false
 mole_purge_proc_snapshot() {
@@ -437,7 +469,18 @@ mole_purge_proc_snapshot() {
     MOLE_PURGE_PROC_PATHS=()
     MOLE_PURGE_PROC_OK=false
     [[ -d "$_MOLE_PROC_ROOT/self" ]] || return 2
+    local pids_done=false pids_missed=false
     while IFS= read -r pid; do
+        case "$pid" in
+            "$MOLE_PURGE_PIDS_DONE")
+                pids_done=true
+                continue
+                ;;
+            "$MOLE_PURGE_PIDS_UNKNOWN")
+                pids_missed=true
+                continue
+                ;;
+        esac
         dir="$_MOLE_PROC_ROOT/$pid"
         pid_dirs+=("$dir")
         for path in "$(readlink -- "$dir/cwd" 2> /dev/null)" "$(readlink -- "$dir/exe" 2> /dev/null)"; do
@@ -459,6 +502,8 @@ mole_purge_proc_snapshot() {
             MOLE_PURGE_PROC_PATHS+=("$arg")
         done < "$dir/environ"; } 2> /dev/null || true
     done < <(mole_purge_other_pids)
+    # A process it could not place, or a list cut short, could be the holder.
+    [[ "$pids_done" == true && "$pids_missed" == false ]] || return 2
     local finished=false
     while IFS= read -r -d '' path; do
         case "$path" in

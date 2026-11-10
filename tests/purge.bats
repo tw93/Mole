@@ -316,7 +316,7 @@ fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0
     (cd "$HOME/elsewhere" && exec 3< "$HOME/www/held/dist/server.log" && exec sleep 30) &
     local holder=$!
     sleep 0.2
-    purge_run 'mole_purge_other_pids() { printf "%s\n" 4194000 "'"$holder"'"; }
+    purge_run 'mole_purge_other_pids() { printf "%s\n" 4194000 "'"$holder"'" done; }
         mole_purge_proc_snapshot; echo "rc=$? ok=$MOLE_PURGE_PROC_OK"
         mole_purge_project_busy "$HOME/www/held" "$HOME/www" && echo busy; true'
     kill "$holder" 2> /dev/null || true
@@ -336,6 +336,25 @@ fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0
         [[ "$output" == *busy* ]]
         rm -f "$TEST_ROOT/bin/$tool"
     done
+}
+
+@test "a process whose owner cannot be read, or a cut pid list, fails the snapshot" {
+    local proc="$TEST_ROOT/proc"
+    mkdir -p "$proc/self" "$proc/4100"
+    printf 'Name:\tsecret\nUid:\t%s\t%s\n' "$(id -u)" "$(id -u)" > "$proc/4100/status"
+    chmod 000 "$proc/4100/status"
+    purge_run '_MOLE_PROC_ROOT="'"$proc"'"; set +e
+        mole_purge_pid_mine "'"$proc"'/4100"; echo "unreadable=$?"
+        mole_purge_pid_mine "'"$proc"'/4199"; echo "gone=$?"
+        mole_purge_proc_snapshot; echo "rc=$? ok=$MOLE_PURGE_PROC_OK"
+        mole_purge_other_pids() { printf "%s\n" 4100; }
+        mole_purge_proc_snapshot; echo "cut rc=$? ok=$MOLE_PURGE_PROC_OK"'
+    chmod 644 "$proc/4100/status"
+    [[ "$output" == *"unreadable=2"* ]]
+    [[ "$output" == *"gone=1"* ]]
+    [[ "$output" == *"
+rc=2 ok=false"* ]]
+    [[ "$output" == *"cut rc=2 ok=false"* ]]
 }
 
 @test "only an exited or refused process may fail a listing" {
