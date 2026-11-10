@@ -366,32 +366,60 @@ mole_purge_other_pids() {
     return 0
 }
 
-# Open files and mapped files of the process folders in $@, NUL separated, then
-# MOLE_PURGE_HOLDERS_DONE once all of it was read. xargs reporting 123 means a
-# child failed, which is how a process that exited, or one the kernel will not
-# let this user read (ssh-agent), looks; those hold nothing this can learn.
-# Anything else, a timeout above all (a stuck process can block reading its
-# maps), leaves the end mark out. One process each would cost seconds on a desktop.
+# 0 when listing status $1 finished. xargs reports 123 for any child that failed,
+# so it counts only when error file $2 shows nothing but processes that exited or
+# that the kernel will not let this user read (ssh-agent), which hold nothing
+# this can learn. A find that could not start or ran out of descriptors is also
+# 123, and a timeout (a stuck process can block reading its maps) is 124.
+mole_purge_listing_finished() {
+    [[ "$1" -eq 0 ]] && return 0
+    [[ "$1" -eq 123 && -s "$2" ]] || return 1
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            *": Permission denied" | *": Operation not permitted" | *": No such file or directory" | *": No such process") ;;
+            *) return 1 ;;
+        esac
+    done < "$2"
+    return 0
+}
+
+# 0 when the open and mapped files of the process folders in $2... were all
+# printed, NUL separated, with their errors collected in $1.
+mole_purge_proc_listings() {
+    local errors="$1"
+    shift
+    local -a statuses
+    printf '%s/fd\0' "$@" |
+        timeout "$MOLE_PURGE_PROBE_TIMEOUT" xargs -0 sh -c 'exec find "$@" -mindepth 1 -maxdepth 1 -type l -printf "%l\\0"' sh 2>> "$errors"
+    statuses=("${PIPESTATUS[@]}")
+    mole_purge_listing_finished "${statuses[1]}" "$errors" || return 1
+    # Each listing answers for itself: an error above must not excuse a silent one here.
+    : > "$errors"
+    printf '%s/maps\0' "$@" |
+        timeout "$MOLE_PURGE_PROBE_TIMEOUT" xargs -0 cat 2>> "$errors" |
+        sed -n 's|^[^/]*\(/.*\)$|\1|p' | sort -u | tr '\n' '\0'
+    statuses=("${PIPESTATUS[@]}")
+    mole_purge_listing_finished "${statuses[1]}" "$errors" || return 1
+    [[ "${statuses[2]}" -eq 0 && "${statuses[3]}" -eq 0 && "${statuses[4]}" -eq 0 ]]
+}
+
+# Prints the listings, then MOLE_PURGE_HOLDERS_DONE once all of it was read; any
+# other ending leaves the mark out. One process each would cost seconds on a desktop.
 readonly MOLE_PURGE_HOLDERS_DONE="mole-purge-holders-done"
 mole_purge_proc_holders() {
     set +e
-    local -a statuses
     export LC_ALL=C
     (($# > 0)) || {
         printf '%s\0' "$MOLE_PURGE_HOLDERS_DONE"
         return 0
     }
-    printf '%s/fd\0' "$@" |
-        timeout "$MOLE_PURGE_PROBE_TIMEOUT" xargs -0 sh -c 'exec find "$@" -mindepth 1 -maxdepth 1 -type l -printf "%l\\0"' sh 2> /dev/null
-    statuses=("${PIPESTATUS[@]}")
-    [[ "${statuses[1]}" -eq 0 || "${statuses[1]}" -eq 123 ]] || return 0
-    printf '%s/maps\0' "$@" |
-        timeout "$MOLE_PURGE_PROBE_TIMEOUT" xargs -0 cat 2> /dev/null |
-        sed -n 's|^[^/]*\(/.*\)$|\1|p' | sort -u | tr '\n' '\0'
-    statuses=("${PIPESTATUS[@]}")
-    [[ "${statuses[1]}" -eq 0 || "${statuses[1]}" -eq 123 ]] || return 0
-    [[ "${statuses[2]}" -eq 0 && "${statuses[3]}" -eq 0 && "${statuses[4]}" -eq 0 ]] || return 0
-    printf '%s\0' "$MOLE_PURGE_HOLDERS_DONE"
+    local errors finished=0
+    errors=$(mktemp) || return 0
+    mole_purge_proc_listings "$errors" "$@" || finished=1
+    rm -f "$errors" # SAFE: this function's own mktemp file.
+    ((finished == 0)) && printf '%s\0' "$MOLE_PURGE_HOLDERS_DONE"
+    return 0
 }
 
 # Every folder the user's other processes work in: working folders, programs,

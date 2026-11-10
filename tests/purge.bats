@@ -327,7 +327,7 @@ fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0
 
 @test "an unfinished holder scan fails the snapshot, so every project reads busy" {
     mkdir -p "$HOME/www/idle/dist"
-    for tool in xargs timeout sort; do
+    for tool in xargs timeout sort find cat; do
         printf '#!/bin/sh\nexit 127\n' > "$TEST_ROOT/bin/$tool"
         chmod +x "$TEST_ROOT/bin/$tool"
         purge_run 'set +e; mole_purge_proc_snapshot; echo "rc=$? ok=$MOLE_PURGE_PROC_OK"
@@ -336,6 +336,24 @@ fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0
         [[ "$output" == *busy* ]]
         rm -f "$TEST_ROOT/bin/$tool"
     done
+}
+
+@test "only an exited or refused process may fail a listing" {
+    purge_run 'errors="$HOME/errors"; check() { printf "%s\n" "$1" > "$errors"; mole_purge_listing_finished "$2" "$errors" && echo finished || echo failed; }
+        : > "$errors"; mole_purge_listing_finished 123 "$errors" && echo finished || echo failed
+        check "find: /proc/9/fd: Permission denied" 123
+        check "cat: /proc/9/maps: No such process" 123
+        check "find: /proc/9/fd: Too many open files" 123
+        check "sh: 1: exec: find: not found" 123
+        check "" 0
+        check "cat: /proc/9/maps: No such process" 124'
+    [ "${lines[0]}" = failed ]
+    [ "${lines[1]}" = finished ]
+    [ "${lines[2]}" = finished ]
+    [ "${lines[3]}" = failed ]
+    [ "${lines[4]}" = failed ]
+    [ "${lines[5]}" = finished ]
+    [ "${lines[6]}" = failed ]
 }
 
 @test "menu search matches every word in any order" {
