@@ -24,9 +24,9 @@ func TestStatusWatchProcess(t *testing.T) {
 	if mode == "" {
 		t.Skip("watch subprocess helper")
 	}
-	runCmd = func(_ context.Context, name string, _ ...string) (string, error) {
-		if mode == "process-failed" && name == "memory_pressure" {
-			// This expensive probe runs only during full collection. Count real
+	runCmd = func(_ context.Context, name string, args ...string) (string, error) {
+		if mode == "process-failed" && name == "/usr/sbin/sysctl" && strings.Join(args, " ") == "-n kern.memorystatus_vm_pressure_level" {
+			// This probe runs only during full collection. Count real
 			// dispatches to ensure a process failure cannot restart it each tick.
 			file, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), "full-refreshes"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 			if err != nil {
@@ -37,7 +37,7 @@ func TestStatusWatchProcess(t *testing.T) {
 			if err != nil {
 				return "", err
 			}
-			return "normal", nil
+			return "1\n", nil
 		}
 		return "", errors.New("optional metric unavailable")
 	}
@@ -66,7 +66,7 @@ func TestWatchHonorsIntervalAfterInitialSnapshot(t *testing.T) {
 	for _, mode := range []string{"healthy", "failed", "recover", "process-failed"} {
 		t.Run(mode, func(t *testing.T) {
 			if mode == "process-failed" && runtime.GOOS != "darwin" {
-				t.Skip("memory_pressure is a macOS probe")
+				t.Skip("memory pressure is a macOS probe")
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

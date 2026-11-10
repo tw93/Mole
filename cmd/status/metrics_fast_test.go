@@ -261,7 +261,7 @@ func TestCollectFullKeepsCachedProcessSummaryWhenProcessCollectionFails(t *testi
 
 func TestFullCollectionPublishesIndependentEnrichment(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		t.Skip("memory_pressure is a macOS probe")
+		t.Skip("memory pressure is a macOS probe")
 	}
 	for _, failure := range []string{"error", "panic"} {
 		t.Run(failure, func(t *testing.T) {
@@ -275,10 +275,10 @@ func TestFullCollectionPublishesIndependentEnrichment(t *testing.T) {
 				collectProcessesFunc = origProcesses
 			})
 
-			pressure, total, failDisk := "normal", uint64(2<<30), false
-			runCmd = func(_ context.Context, name string, _ ...string) (string, error) {
-				if name == "memory_pressure" {
-					return pressure, nil
+			level, total, failDisk := "1", uint64(2<<30), false
+			runCmd = func(_ context.Context, name string, args ...string) (string, error) {
+				if name == "/usr/sbin/sysctl" && strings.Join(args, " ") == "-n kern.memorystatus_vm_pressure_level" {
+					return level + "\n", nil
 				}
 				return "", errors.New("optional metric unavailable")
 			}
@@ -314,7 +314,7 @@ func TestFullCollectionPublishesIndependentEnrichment(t *testing.T) {
 			// Published slices must not share ownership with the cache.
 			first.Disks[0].Total = 1
 
-			pressure, failDisk = "warn", true
+			level, failDisk = "2", true
 			for _, collect := range []func() (MetricsSnapshot, error){collector.Collect, collector.CollectProcesses, collector.CollectFast} {
 				snapshot, err := collect()
 				if err == nil || !strings.Contains(err.Error(), "disk probe failed") {
@@ -323,7 +323,7 @@ func TestFullCollectionPublishesIndependentEnrichment(t *testing.T) {
 				assertMetrics(snapshot, "warn", 2<<30)
 			}
 
-			pressure, total, failDisk = "normal", 4<<30, false
+			level, total, failDisk = "1", 4<<30, false
 			for _, collect := range []func() (MetricsSnapshot, error){collector.Collect, collector.CollectProcesses, collector.CollectFast} {
 				snapshot, err := collect()
 				if err != nil {

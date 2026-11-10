@@ -1740,6 +1740,23 @@ func TestRenderMemoryCardHidesSwapSizeOnNarrowWidth(t *testing.T) {
 	}
 }
 
+// Now that the level is real (#1963), normal is the usual answer, so only warn
+// and critical earn a line.
+func TestRenderMemoryCardShowsPressureOnlyWhenItNeedsAttention(t *testing.T) {
+	for pressure, want := range map[string]string{"": "", "normal": "", "warn": "Status warn", "critical": "Status critical"} {
+		card := renderMemoryCard(MemoryStatus{Used: 8 << 30, Total: 16 << 30, Available: 8 << 30, UsedPercent: 50, Pressure: pressure}, 60)
+		got := ""
+		for _, line := range card.lines {
+			if text := stripANSI(line); strings.HasPrefix(text, "Status") {
+				got = text
+			}
+		}
+		if got != want {
+			t.Errorf("pressure %q: status line %q, want %q", pressure, got, want)
+		}
+	}
+}
+
 func TestRenderMemoryCardShowsSwapSizeOnWideWidth(t *testing.T) {
 	card := renderMemoryCard(MemoryStatus{
 		Used:        8 << 30,
