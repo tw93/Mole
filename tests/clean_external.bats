@@ -177,6 +177,70 @@ EOF
     grep -Eq "^$volume/\.TemporaryItems [1-9][0-9]*\$" "$HOME/sinks" || return 1
 }
 
+@test "external cleanup continues when an AppleDouble metadata file size check fails" {
+    local volume="$HOME/External-metadata-fail"
+    mkdir -p "$volume"
+    printf 'data\n' > "$volume/._readable"
+    printf 'data\n' > "$volume/._unreadable"
+    run env VOLUME="$volume" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=true
+PROTECT_FINDER_METADATA=false
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+record_dry_run_cleanup_target() { printf '%s %s\n' "$1" "$2" >> "$HOME/sinks"; }
+get_path_size_kb() {
+    if [[ "$1" == */._unreadable ]]; then
+        return 1
+    fi
+    printf '4\n'
+    return 0
+}
+clean_external_volume_target "$VOLUME"
+EOF
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    grep -Eq "^$volume/\._readable [1-9][0-9]*\$" "$HOME/sinks" || return 1
+    grep -Eq "^$volume/\._unreadable 0\$" "$HOME/sinks" || return 1
+}
+
+@test "external cleanup continues when an AppleDouble metadata file size check times out" {
+    local volume="$HOME/External-metadata-timeout"
+    mkdir -p "$volume"
+    printf 'data\n' > "$volume/._readable"
+    printf 'data\n' > "$volume/._slow"
+    run env VOLUME="$volume" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=true
+PROTECT_FINDER_METADATA=false
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+should_protect_path() { return 1; }
+is_path_whitelisted() { return 1; }
+record_dry_run_cleanup_target() { printf '%s %s known=%s\n' "$1" "$2" "$4" >> "$HOME/sinks"; }
+get_path_size_kb() {
+    if [[ "$1" == */._slow ]]; then
+        return 124
+    fi
+    printf '4\n'
+    return 0
+}
+clean_external_volume_target "$VOLUME"
+EOF
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    grep -Eq "^$volume/\._readable 4 known=true\$" "$HOME/sinks" || return 1
+    grep -Eq "^$volume/\._slow 0 known=false\$" "$HOME/sinks" || return 1
+}
+
 @test "external scan failures name the first cause and keep full diagnostics in logs" {
     for scan in appledouble finder; do
         for dry_run in true false; do
