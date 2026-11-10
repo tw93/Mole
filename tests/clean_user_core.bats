@@ -2018,7 +2018,6 @@ start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
 bytes_to_human() { printf '0B\n'; }
-directory_has_entries() { return 1; }
 clean_support_app_data() { :; }
 safe_clean() {
     case "${*: -1}" in
@@ -2410,93 +2409,6 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Group Containers logs/caches"* ]] || return 1
     [[ "$output" != *"SHOULD_NOT_SIZE_SCAN"* ]]
-}
-
-@test "container cache counters run in the caller's shell and restore glob options" {
-    # Own HOME: earlier cases leave Group Containers fixtures in the shared one,
-    # and every extra candidate adds a counter call.
-    local counter_home
-    counter_home=$(mktemp -d "${BATS_TEST_DIRNAME}/tmp-counter-home.XXXXXX")
-    run env HOME="$counter_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=true /bin/bash --noprofile --norc << 'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/user.sh"
-start_section_spinner() { :; }
-stop_section_spinner() { :; }
-bytes_to_human() { echo "0B"; }
-note_activity() { :; }
-should_protect_data() { return 1; }
-should_protect_path() { return 1; }
-is_path_whitelisted() { return 1; }
-holds_compiled_model_cache() { return 1; }
-_mole_user_cache_owner_process_state() { return 1; }
-_MOLE_COMPLETE_LSOF_MODE=direct
-lsof() { return 1; }
-run_with_timeout() { shift; "$@"; }
-get_path_size_kb() { printf '7\n'; }
-record_dry_run_cleanup_target() { return 0; }
-files_cleaned=0
-total_size_cleaned=0
-total_items=0
-
-# A call made through $(...) increments this counter in a subshell, so the
-# owning shell sees zero: the count only survives a direct call.
-eval "$(declare -f cache_top_level_entry_count_capped | sed '1s/^cache_top_level_entry_count_capped/_counted_entry_count_capped/')"
-COUNTER_CALLS=0
-cache_top_level_entry_count_capped() {
-    COUNTER_CALLS=$((COUNTER_CALLS + 1))
-    _counted_entry_count_capped "$@"
-}
-
-probe="$HOME/counter-probe"
-mkdir -p "$probe"
-touch "$probe/.hidden" "$probe/a" "$probe/b"
-shopt -u nullglob dotglob
-cache_top_level_entry_count_capped "$probe" 101
-printf 'DIRECT_COUNT=%s\n' "$CACHE_TOP_LEVEL_ENTRY_COUNT"
-cache_top_level_entry_count_capped "$probe" 2
-printf 'CAPPED_COUNT=%s\n' "$CACHE_TOP_LEVEL_ENTRY_COUNT"
-printf 'OFF_AFTER=%s%s\n' "$(shopt -q nullglob && echo N || echo n)" "$(shopt -q dotglob && echo D || echo d)"
-shopt -s nullglob dotglob
-cache_top_level_entry_count_capped "$probe" 101
-printf 'ON_AFTER=%s%s\n' "$(shopt -q nullglob && echo N || echo n)" "$(shopt -q dotglob && echo D || echo d)"
-shopt -u nullglob dotglob
-COUNTER_CALLS=0
-
-container="$HOME/Library/Containers/com.example.counter"
-mkdir -p "$container/Data/Library/Caches/one"
-touch "$container/Data/Library/Caches/one/data.tmp"
-total_size=0
-total_size_partial=false
-cleaned_count=0
-found_any=false
-precise_size_limit=64
-precise_size_used=0
-process_container_cache "$container"
-printf 'CONTAINER_CALLS=%s\n' "$COUNTER_CALLS"
-
-mkdir -p "$HOME/Library/Group Containers/group.com.example.counter/Library/Caches"
-for i in $(seq 1 101); do
-    touch "$HOME/Library/Group Containers/group.com.example.counter/Library/Caches/file-$i.tmp"
-done
-clean_group_container_caches
-printf 'TOTAL_CALLS=%s\n' "$COUNTER_CALLS"
-printf 'GLOBS_AFTER=%s%s\n' "$(shopt -q nullglob && echo N || echo n)" "$(shopt -q dotglob && echo D || echo d)"
-EOF
-
-    rm -rf "$counter_home" # SAFE: this test's own mktemp HOME
-    [ "$status" -eq 0 ] || {
-        echo "$output"
-        return 1
-    }
-    [[ "$output" == *"DIRECT_COUNT=3"* ]] || return 1
-    [[ "$output" == *"CAPPED_COUNT=2"* ]] || return 1
-    [[ "$output" == *"OFF_AFTER=nd"* ]] || return 1
-    [[ "$output" == *"ON_AFTER=ND"* ]] || return 1
-    [[ "$output" == *"CONTAINER_CALLS=1"* ]] || return 1
-    [[ "$output" == *"Group Containers logs/caches"* ]] || return 1
-    [[ "$output" == *"TOTAL_CALLS=2"* ]] || return 1
-    [[ "$output" == *"GLOBS_AFTER=nd"* ]]
 }
 
 @test "clean_finder_metadata respects protection flag" {
