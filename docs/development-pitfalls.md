@@ -46,6 +46,16 @@ When copying a source archive from macOS, exclude AppleDouble `._*` files and ex
 
 On physical Windows, keep the isolated temporary root short: fixture GUIDs plus realistic application paths can exceed Windows PowerShell 5.1 path limits before the test reaches production code. File symbolic-link fixtures separately require the creation privilege; do not count a fixture setup refusal as a passed protection test. Record it separately from the privileged VM/CI run. Keep Go deletion fixtures out of the protected Public tree as well: an intended positive fixture there is correctly refused before its target assertion. Never weaken production policy to make that fixture pass.
 
+Pester's `TestDrive` sits under `%LOCALAPPDATA%\Temp`, so a filter such as `-match '\\AppData(\\|$)'` on a full path skips every fixture file and a "nothing changed" snapshot compares two empty lists. Filter relative to the fixture root. Keep such snapshots to files, by size and write time: the PowerShell host creates `AppData` under a fresh `USERPROFILE`, and a folder's write time moves after the fixture is built, neither of which the code under test wrote (2026-11-10, the `mo remove --dry-run` and purge preview tests).
+
+A child process that inherits a console as stdin waits at `[Console]::ReadKey` or `Read-Host` instead of failing. CI has no console, so the same test passes or fails cleanly there and hangs when the suite runs from a desktop session. Give every child an empty stdin (`'' | & powershell.exe ...`), and treat a child still running after a few minutes as this, not as a slow test.
+
+A script without `[CmdletBinding()]` ignores a switch it does not declare. An older `install.ps1` called with `-Uninstall -DryRun` uninstalls for real, and one called with `-DryRun` alone installs. Before passing a new preview switch to a script that may be older than the caller, read its parameters (`(Get-Command -Name $path -CommandType ExternalScript).Parameters`) and refuse when it is missing; when a red run needs the old script, exclude the cases that would run it for real and check afterwards that they did not run.
+
+`[Environment]::GetFolderPath("StartMenu")` returns an empty string when the profile has no Start Menu folder, which a fixture `USERPROFILE` never has, and `Join-Path ''` throws. A default parameter value built from it fails before the function body can decide there is nothing to do.
+
+A test of code that can write machine state (the user PATH, a shortcut) reads the real value first and puts it back in `finally` when it changed, then fails; a broken gate must not cost the test machine a PATH entry.
+
 ## Asynchronous Analyze actions
 
 Two scans can target the same path and still represent different requests. Establish request identity before dispatch, then validate both identity and path when accepting results. Separately test that busy deletion rejects action keys and still permits quit. [lifecycle_test.go](../cmd/analyze/lifecycle_test.go) covers these boundaries; path equality alone or a busy rendering state does not enforce them.
@@ -57,6 +67,8 @@ Cross-compilation proves the Go source builds for Windows; it does not exercise 
 A passing CI run and pushed source do not establish delivery in signed packages. Keep source, native validation and release evidence separate in the development record, and verify the actual release channel before telling users an update contains a fix.
 
 For resolved filesystem roots passed to native executables or System.IO, use `Resolve-Path.ProviderPath`. Its `Path` property can carry a PowerShell provider prefix for UNC shares: PowerShell accepts that spelling, but signtool rejects the file and archive entry slicing uses the wrong root length. The two cases in `Release.Tests.ps1` execute the signing and archive root assignments with distinct provider and native paths; both failed before the fix and passed under PowerShell 5.1 and 7.
+
+On the x64 ThinkPad the complete suite runs from the maintainer's Mac through `mole-windows/scripts/thinkpad/tp.sh` (lease `thinkpad`), used when the VM's host is leased: send the working tree as a tar with `tp.sh put`, unpack it under the user profile, and start a detached runner with `tp.sh ups`, which runs in the signed-in desktop session and writes its logs to files that `tp.sh ps` reads back. Scoop's `pwsh` shim does not start from the SSH service session (`Could not create process`), so PowerShell 7 runs only through `ups`; Windows PowerShell 5.1 runs either way. A non-administrator run fails the two launcher symbolic-link cases. Because `mo update` follows this branch's head for source installs, PowerShell that has never run on Windows is not pushed: both hosts pass on the ThinkPad or the VM first, and CI confirms afterwards.
 
 ## Installer inventory and shared directories
 
