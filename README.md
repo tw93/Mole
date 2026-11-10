@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="1000" />
 </p>
 
-Mole CLI for Linux is an early version, and the latest release is [V0.5.0-linux](https://github.com/tw93/Mole/releases/tag/V0.5.0-linux). Issues and feedback are welcome. It is built first for [Omarchy](https://omarchy.org) and other Arch-based systems, and covers Debian and Ubuntu with apt and Snap. On other distributions the user-level parts work and the package-manager items do not appear.
+Mole CLI for Linux is an early version, and the latest release is [V0.6.0-linux](https://github.com/tw93/Mole/releases/tag/V0.6.0-linux). Issues and feedback are welcome. It is built first for [Omarchy](https://omarchy.org) and other Arch-based systems, and covers Debian and Ubuntu with apt and Snap. On other distributions the user-level parts work and the package-manager items do not appear.
 
 This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole#readme).
 
