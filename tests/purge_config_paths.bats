@@ -316,7 +316,7 @@ EOF
 }
 
 @test "load_purge_config deduplicates case variants on case-insensitive FS" {
-    # Create a real directory so resolve_path_case can cd into it
+    # Create a real directory so mole_purge_resolve_path_case can cd into it
     mkdir -p "$HOME/code"
 
     local config_file="$HOME/.config/mole/purge_paths"

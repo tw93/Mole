@@ -1601,6 +1601,7 @@ git() {
 		bbbb V1.60.0 \
 		cccc V1.60.0-windows \
 		dddd V1.61.0-windows \
+		ffff V1.62.0-linux \
 		eeee v1.30.0-windows
 }
 get_latest_release_tag_from_git
