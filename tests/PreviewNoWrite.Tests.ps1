@@ -8,6 +8,9 @@ BeforeAll {
     . "$script:Root\lib\core\base.ps1"
     . "$script:Root\lib\core\log.ps1"
     . "$script:Root\lib\core\ui.ps1"
+    # The SID, not DOMAIN\name: over SSH USERDOMAIN reads WORKGROUP, icacls cannot map that name, and the
+    # deny was never applied (ThinkPad, 2026-11-10). A deny that did not take fails the test instead.
+    $script:UserSid = '*' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
     function Invoke-NoWriteMole([string[]]$Arguments, [string]$State) {
         $profileRoot = Join-Path ([IO.Path]::GetTempPath()) ("mole-nowrite-" + [guid]::NewGuid().ToString('N'))
@@ -16,8 +19,11 @@ BeforeAll {
         if ($State -eq 'existing') {
             $denied += New-Item -ItemType Directory -Path (Join-Path $profileRoot '.config\mole'), (Join-Path $profileRoot '.cache\mole') | ForEach-Object FullName
         }
-        $user = "$env:USERDOMAIN\$env:USERNAME"
-        foreach ($path in $denied) { icacls $path /deny "${user}:(OI)(CI)(WD,AD)" | Out-Null }
+        $user = $script:UserSid
+        foreach ($path in $denied) {
+            icacls $path /deny "${user}:(OI)(CI)(WD,AD)" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "icacls could not deny writes to $path" }
+        }
         $savedProfile = $env:USERPROFILE
         try {
             $env:USERPROFILE = $profileRoot
@@ -73,11 +79,12 @@ Describe 'Real clean without write access' {
         function New-DeniedFolder {
             $folder = Join-Path ([IO.Path]::GetTempPath()) ("mole-refuse-" + [guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $folder | Out-Null
-            icacls $folder /deny "$env:USERDOMAIN\${env:USERNAME}:(OI)(CI)(WD,AD)" | Out-Null
+            icacls $folder /deny "$($script:UserSid):(OI)(CI)(WD,AD)" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "icacls could not deny writes to $folder" }
             return $folder
         }
         function Remove-DeniedFolder([string]$Folder) {
-            icacls $Folder /remove:d "$env:USERDOMAIN\$env:USERNAME" | Out-Null
+            icacls $Folder /remove:d $script:UserSid | Out-Null
             Remove-Item -LiteralPath $Folder -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
@@ -86,6 +93,15 @@ Describe 'Real clean without write access' {
         $one = New-DeniedFolder
         $two = New-DeniedFolder
         try {
+            # An elevated session holding SeRestorePrivilege (the ThinkPad over SSH) writes through the
+            # deny, since CreateDirectory asks with backup intent, so there is nothing to refuse there.
+            $through = Join-Path $one 'through'
+            try { [System.IO.Directory]::CreateDirectory($through) | Out-Null } catch { $through = '' }
+            if ($through) {
+                [System.IO.Directory]::Delete($through)
+                Set-ItResult -Skipped -Because 'this session writes through a deny ACE (restore privilege)'
+                return
+            }
             Test-CleanCanWrite -Folders @($one, $two) | Should -BeFalse
         }
         finally { Remove-DeniedFolder $one; Remove-DeniedFolder $two }
