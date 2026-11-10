@@ -4,10 +4,12 @@
 _uninstall_disposable_leftover() {
     case "$1" in
         # Data that only lives under Caches: Spotify offline music, Raycast
-        # clipboard-history images, Mullvad Browser's profile root.
+        # clipboard-history images, Mullvad Browser's profile root, Buzz's
+        # Whisper models, installed plugins and user CSS.
         "$HOME/Library/Caches/com.spotify.client" | "$HOME/Library/Caches/com.spotify.client/"*) return 1 ;;
         "$HOME/Library/Caches/com.raycast.macos" | "$HOME/Library/Caches/com.raycast.macos/"*) return 1 ;;
         "$HOME/Library/Caches/MullvadBrowser" | "$HOME/Library/Caches/MullvadBrowser/"*) return 1 ;;
+        "$HOME/Library/Caches/Buzz" | "$HOME/Library/Caches/Buzz/"*) return 1 ;;
         "$HOME/Library/Caches/"* | "$HOME/Library/Logs/"*) return 0 ;;
         *) return 1 ;;
     esac
@@ -21,6 +23,8 @@ _uninstall_disposable_leftover() {
 # them, compared case-insensitively because APFS folds case. Game and ROM
 # libraries that sit inside one app's data root stay unselected too: CrossOver
 # and Whisky bottles hold installed Windows games, OpenEmu holds ROMs and saves.
+# So do virtual machine libraries: the UTM container and VirtualBuddy's
+# Application Support folder hold the VM disks.
 _uninstall_data_preselect_holdback() {
     local path home
     mole_ascii_lowercase path "$1"
@@ -28,7 +32,9 @@ _uninstall_data_preselect_holdback() {
     case "$path" in
         "$home/library/group containers/"*) return 0 ;;
         "$home/library/containers/com.isaacmarovitz.whisky" | \
-            "$home/library/containers/com.isaacmarovitz.whisky/"*)
+            "$home/library/containers/com.isaacmarovitz.whisky/"* | \
+            "$home/library/containers/com.utmapp.utm" | \
+            "$home/library/containers/com.utmapp.utm/"*)
             return 0
             ;;
     esac
@@ -42,6 +48,7 @@ _uninstall_data_preselect_holdback() {
             "$support/firefox" | "$support/firefox/"* | \
             "$support/zen" | "$support/zen/"* | \
             "$support/crossover" | "$support/crossover/"* | \
+            "$support/virtualbuddy" | "$support/virtualbuddy/"* | \
             "$support/openemu" | "$support/openemu/"* | \
             "$support/dolphin" | "$support/dolphin/"* | \
             "$support/pcsx2" | "$support/pcsx2/"* | \

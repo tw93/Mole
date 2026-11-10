@@ -606,8 +606,9 @@ EOF
 }
 
 @test "uninstall keeps cache-resident user data out of automatic removal" {
-	# Raycast keeps clipboard-history images and Mullvad Browser its profile
-	# root under ~/Library/Caches; both become opt-in rows like Spotify.
+	# Raycast keeps clipboard-history images, Mullvad Browser its profile root
+	# and Buzz its Whisper models, plugins and user CSS under ~/Library/Caches;
+	# all become opt-in rows like Spotify.
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/uninstall/review.sh"
@@ -615,11 +616,14 @@ for kept in \
     "$HOME/Library/Caches/com.raycast.macos" \
     "$HOME/Library/Caches/com.raycast.macos/Clipboard" \
     "$HOME/Library/Caches/MullvadBrowser" \
+    "$HOME/Library/Caches/Buzz" \
+    "$HOME/Library/Caches/Buzz/models" \
     "$HOME/Library/Caches/com.spotify.client"; do
     if _uninstall_disposable_leftover "$kept"; then echo "automatic: $kept"; exit 1; fi
 done
 _uninstall_disposable_leftover "$HOME/Library/Caches/com.example.app" || exit 1
 _uninstall_disposable_leftover "$HOME/Library/Caches/com.raycast.macosx" || exit 1
+_uninstall_disposable_leftover "$HOME/Library/Caches/Buzzword" || exit 1
 EOF
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }

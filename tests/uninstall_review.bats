@@ -486,6 +486,35 @@ SH
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "--with-data holds back UTM and VirtualBuddy virtual machine libraries" {
+    run env HOME="$HOME/vm-holdbacks" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SH'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+utm="$HOME/Library/Containers/com.utmapp.UTM"
+buddy="$HOME/Library/Application Support/VirtualBuddy"
+mkdir -p "$utm/Data/Documents/Linux.utm" "$buddy/Linux.vbvm" "$HOME/Library/Application Support/ExampleChat"
+# Both are rows find_app_files really emits for these apps.
+grep -Fx "$utm" <<< "$(find_app_files com.utmapp.UTM UTM)" || exit 1
+grep -Fx "$buddy" <<< "$(find_app_files codes.rambo.VirtualBuddy VirtualBuddy)" || exit 1
+for path in "$utm" "$utm/Data/Documents/Linux.utm" "$buddy" "$buddy/Linux.vbvm"; do
+    _uninstall_data_preselect_holdback "$path" || { echo "selected: $path"; exit 1; }
+done
+if _uninstall_data_preselect_holdback "$utm-backup"; then exit 1; fi
+if _uninstall_data_preselect_holdback "$buddy-backup"; then exit 1; fi
+files=$(printf '%s\n' "$utm" "$HOME/Library/Application Support/ExampleChat")
+encoded=$(printf '%s' "$files" | base64 | tr -d '\n')
+_review_original_details=("UTM|$HOME/Applications/UTM.app|com.utmapp.UTM|1|$encoded|")
+_review_personal_paths=() _review_selected_paths=() _review_auto_files=() _review_personal_files=() _review_app_sizes=()
+calculate_total_size() { printf '1\n'; }
+MOLE_UNINSTALL_WITH_DATA=1 _uninstall_prepare_data_review
+[[ "${_review_personal_paths[*]}" == *com.utmapp.UTM* ]] || exit 1
+[[ "${_review_selected_paths[*]}" != *com.utmapp.UTM* ]] || exit 1
+[[ "${_review_selected_paths[*]}" == *ExampleChat* ]] || exit 1
+SH
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "without Full Disk Access, other apps' container rows are listed unmeasured" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
 set -euo pipefail
