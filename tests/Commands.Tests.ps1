@@ -546,6 +546,11 @@ Describe "Remove Command" {
             $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\remove.ps1" -ShowHelp 2>&1
             $result -join "`n" | Should -Match "Remove Mole|PATH|config"
         }
+
+        It "Should mention dry-run in help" {
+            $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\remove.ps1" -ShowHelp 2>&1
+            $result -join "`n" | Should -Match "--dry-run"
+        }
     }
 }
 

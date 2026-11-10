@@ -11,7 +11,9 @@ param(
     [switch]$CreateShortcut,
     [switch]$Uninstall,
     [switch]$Force,
-    [switch]$ShowHelp
+    [switch]$ShowHelp,
+    # With -Uninstall: name what would be removed and change nothing.
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +112,12 @@ function Write-MoleError {
     param([string]$Message)
     $c = $script:Colors
     Write-Host "  $($c.Red)ERROR$($c.NC) $Message"
+}
+
+function Write-MoleDryRun {
+    param([string]$Message)
+    $c = $script:Colors
+    Write-Host "  $($c.Yellow)DRY$($c.NC)   $Message"
 }
 
 function Get-NormalizedPath {
@@ -242,6 +250,8 @@ function Show-InstallerHelp {
     Write-Host ""
     Write-Host "    $($c.Cyan)-Uninstall$($c.NC)           Remove Mole from system"
     Write-Host ""
+    Write-Host "    $($c.Cyan)-DryRun$($c.NC)              With -Uninstall, show what would be removed"
+    Write-Host ""
     Write-Host "    $($c.Cyan)-Force$($c.NC)               Overwrite existing installation"
     Write-Host ""
     Write-Host "    $($c.Cyan)-ShowHelp$($c.NC)            Show this help message"
@@ -298,7 +308,7 @@ function Add-ToUserPath {
 }
 
 function Remove-FromUserPath {
-    param([string]$Directory)
+    param([string]$Directory, [switch]$DryRun)
 
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 
@@ -306,8 +316,19 @@ function Remove-FromUserPath {
         return $true
     }
 
+    # A PATH that does not hold the folder is left exactly as it is: writing it
+    # back would drop empty segments and store expanded values for nothing.
+    if (@($currentPath -split ";") -notcontains $Directory) {
+        return $true
+    }
+
     $paths = $currentPath -split ";" | Where-Object { $_ -ne $Directory -and $_ -ne "" }
     $newPath = $paths -join ";"
+
+    if ($DryRun) {
+        Write-MoleDryRun "Would remove from PATH: $Directory"
+        return $true
+    }
 
     try {
         [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
@@ -397,8 +418,17 @@ function New-StartMenuShortcut {
 function Remove-StartMenuShortcut {
     param(
         [string]$InstallDir,
-        [string]$ProgramsPath = (Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs")
+        [string]$ProgramsPath = '',
+        [switch]$DryRun
     )
+
+    if (-not $ProgramsPath) {
+        # A profile without a Start Menu folder answers with an empty path:
+        # there is no shortcut to remove, and Join-Path would throw on it.
+        $startMenu = [Environment]::GetFolderPath("StartMenu")
+        if (-not $startMenu) { return $true }
+        $ProgramsPath = Join-Path $startMenu "Programs"
+    }
 
     $moleScript = Join-Path $InstallDir "mole.ps1"
     $shell = New-Object -ComObject WScript.Shell
@@ -409,6 +439,10 @@ function Remove-StartMenuShortcut {
         }
         $arguments = $shell.CreateShortcut($shortcutPath).Arguments
         if (-not $arguments -or $arguments.IndexOf($moleScript, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            continue
+        }
+        if ($DryRun) {
+            Write-MoleDryRun "Would remove shortcut: $shortcutPath"
             continue
         }
         try {
@@ -801,9 +835,12 @@ function Get-MoleInstallNestedFiles {
     )
 }
 
+# With -Planned (a dry run) each path that would go is added to that list
+# instead of removed, and counts as gone when deciding which folders empty.
 function Remove-MoleNestedFiles {
-    param([string]$InstallPath, [string]$Root)
+    param([string]$InstallPath, [string]$Root, $Planned = $null)
 
+    $preview = $null -ne $Planned
     $files = @(Get-MoleInstallNestedFiles | Where-Object { $_.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase) })
     $folders = @($Root)
     Assert-InstallPhysicalPath -Path (Join-Path $InstallPath $Root)
@@ -811,7 +848,8 @@ function Remove-MoleNestedFiles {
         $path = Join-Path $InstallPath $file
         Assert-InstallPhysicalPath -Path $path
         if (Test-Path -LiteralPath $path -PathType Leaf) {
-            Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+            if ($preview) { $Planned.Add((Get-Item -LiteralPath $path -Force).FullName) }
+            else { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
         }
         $folder = Split-Path -Parent $file
         while ($folder) {
@@ -823,8 +861,9 @@ function Remove-MoleNestedFiles {
     foreach ($folder in @($folders | Sort-Object { $_.Length } -Descending)) {
         $path = Join-Path $InstallPath $folder
         if ((Test-Path -LiteralPath $path -PathType Container) -and
-            @(Get-ChildItem -LiteralPath $path -Force).Count -eq 0) {
-            Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+            @(Get-ChildItem -LiteralPath $path -Force | Where-Object { -not $preview -or $Planned -notcontains $_.FullName }).Count -eq 0) {
+            if ($preview) { $Planned.Add((Get-Item -LiteralPath $path -Force).FullName) }
+            else { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
         }
     }
 }
@@ -867,8 +906,14 @@ function Remove-MoleConfigEntry {
     Remove-Item -LiteralPath $Item.FullName -Force -ErrorAction Stop
 }
 
+# -DryRun runs this same path and turns each change into a line naming it, so
+# the preview cannot drift from what a real run removes. Checks and refusals
+# are read-only and run as usual; the config question is answered as y.
 function Uninstall-Mole {
-    Write-Info "Uninstalling Mole..."
+    param([switch]$DryRun)
+
+    if ($DryRun) { Write-MoleDryRun "DRY RUN MODE - No changes will be made" }
+    else { Write-Info "Uninstalling Mole..." }
     Write-Host ""
 
     # Without -InstallDir, remove the install this script belongs to. There is
@@ -905,22 +950,25 @@ function Uninstall-Mole {
         catch {
             Write-MoleError "Cannot remove mo.exe while it is inaccessible or a Mole command runs through it, this one included: $nativeLauncher"
             $removeScript = (Join-Path $installPath 'mole.ps1').Replace("'", "''")
-            Write-Info "Close other Mole sessions, then run in PowerShell: & '$removeScript' remove"
+            $removeCommand = if ($DryRun) { 'remove --dry-run' } else { 'remove' }
+            Write-Info "Close other Mole sessions, then run in PowerShell: & '$removeScript' $removeCommand"
             return $false
         }
     }
 
     # Remove from PATH
-    $null = Remove-FromUserPath -Directory $installPath
+    $null = Remove-FromUserPath -Directory $installPath -DryRun:$DryRun
 
     # Remove shortcut
-    $null = Remove-StartMenuShortcut -InstallDir $installPath
+    $null = Remove-StartMenuShortcut -InstallDir $installPath -DryRun:$DryRun
 
     # Remove only what Mole installed; another app may share the folder
     # (Mole for Windows keeps its license and settings in %LOCALAPPDATA%\Mole).
     $known = Get-MoleInstallEntries
     $nestedRoots = @(Get-MoleInstallNestedFiles | ForEach-Object { ($_ -split '\\')[0] } | Select-Object -Unique)
     $kept = @()
+    $planned = $null
+    if ($DryRun) { $planned = New-Object System.Collections.Generic.List[string] }
     foreach ($entry in @(Get-ChildItem -LiteralPath $installPath -Force)) {
         if ($entry.Name -eq ".git" -and -not $entry.PSIsContainer) {
             $kept += $entry.Name
@@ -928,13 +976,16 @@ function Uninstall-Mole {
         }
         if ($nestedRoots -contains $entry.Name -or ($entry.PSIsContainer -and $known -contains $entry.Name)) {
             try {
-                Remove-MoleNestedFiles -InstallPath $installPath -Root $entry.Name
+                Remove-MoleNestedFiles -InstallPath $installPath -Root $entry.Name -Planned $planned
             }
             catch {
                 Write-MoleError "Failed to remove $($entry.FullName): $_"
                 return $false
             }
-            if (Test-Path -LiteralPath $entry.FullName) { $kept += $entry.Name }
+            if ($DryRun) {
+                if ($planned -notcontains $entry.FullName) { $kept += $entry.Name }
+            }
+            elseif (Test-Path -LiteralPath $entry.FullName) { $kept += $entry.Name }
             continue
         }
         if ($known -notcontains $entry.Name) {
@@ -943,7 +994,8 @@ function Uninstall-Mole {
         }
         try {
             Assert-InstallPhysicalPath -Path $entry.FullName
-            Remove-Item -LiteralPath $entry.FullName -Force -ErrorAction Stop
+            if ($DryRun) { $planned.Add($entry.FullName) }
+            else { Remove-Item -LiteralPath $entry.FullName -Force -ErrorAction Stop }
         }
         catch {
             Write-MoleError "Failed to remove $($entry.FullName): $_"
@@ -952,14 +1004,27 @@ function Uninstall-Mole {
     }
 
     if ($kept.Count -eq 0) {
-        try {
-            Remove-Item -LiteralPath $installPath -Force -ErrorAction Stop
-            Write-Success "Removed directory: $installPath"
+        if ($DryRun) { Write-MoleDryRun "Would remove directory: $installPath" }
+        else {
+            try {
+                Remove-Item -LiteralPath $installPath -Force -ErrorAction Stop
+                Write-Success "Removed directory: $installPath"
+            }
+            catch {
+                Write-MoleError "Failed to remove directory: $_"
+                return $false
+            }
         }
-        catch {
-            Write-MoleError "Failed to remove directory: $_"
-            return $false
+    }
+    elseif ($DryRun) {
+        # A folder that would go takes everything below it, so name only the
+        # outermost path of each removal.
+        foreach ($path in $planned) {
+            if ($planned -notcontains $path.Substring(0, $path.LastIndexOf('\'))) {
+                Write-MoleDryRun "Would remove: $path"
+            }
         }
+        Write-MoleWarning "Would keep $($kept.Count) item(s) Mole did not install: $($kept -join ', ')"
     }
     else {
         Write-Success "Removed Mole from: $installPath"
@@ -977,24 +1042,34 @@ function Uninstall-Mole {
                 $cacheRoot = Get-Item -LiteralPath $cachePath -Force -ErrorAction Stop
                 if ($cacheRoot.PSIsContainer -and
                     -not ($cacheRoot.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-                    Remove-MoleConfigEntry -Item $cacheRoot
-                    if (Get-Command Write-MoleOperation -ErrorAction SilentlyContinue) {
-                        Write-MoleOperation -Action "REMOVED" -Path $cachePath -Detail "cache"
+                    if ($DryRun) { Write-MoleDryRun "Would remove cache: $cachePath" }
+                    else {
+                        Remove-MoleConfigEntry -Item $cacheRoot
+                        if (Get-Command Write-MoleOperation -ErrorAction SilentlyContinue) {
+                            Write-MoleOperation -Action "REMOVED" -Path $cachePath -Detail "cache"
+                        }
+                        Write-Success "Removed cache: $cachePath"
                     }
-                    Write-Success "Removed cache: $cachePath"
                 }
             }
             catch {
-                Write-MoleWarning "Kept cache: $cachePath ($($_.Exception.Message))"
+                if ($DryRun) { Write-MoleWarning "Would keep cache: $cachePath ($($_.Exception.Message))" }
+                else { Write-MoleWarning "Kept cache: $cachePath ($($_.Exception.Message))" }
             }
         }
     }
 
     # Remove config directory if different from install
     $configDir = Join-Path $env:USERPROFILE ".config\mole"
-    if (Test-Path $configDir) {
+    if (Test-Path -LiteralPath $configDir) {
         Write-Info "Found config directory: $configDir"
-        $response = Read-Host "  Remove config files? (y/N)"
+        if ($DryRun) {
+            Write-MoleDryRun "Would ask: Remove config files? (y/N)"
+            $response = "y"
+        }
+        else {
+            $response = Read-Host "  Remove config files? (y/N)"
+        }
         if ($response -eq "y" -or $response -eq "Y") {
             # operations.log is the record of what Mole removed; support reads it after
             # a report, so it outlives the CLI along with its rotated copy.
@@ -1006,24 +1081,31 @@ function Uninstall-Mole {
                 foreach ($item in @(Get-ChildItem -LiteralPath $configDir -Force -ErrorAction Stop)) {
                     Assert-InstallPhysicalPath -Path $configDir
                     if ($item.Name -like 'operations.log*') { $kept += $item.Name; continue }
-                    Remove-MoleConfigEntry -Item $item
+                    if ($DryRun) { Write-MoleDryRun "On y, would remove: $($item.FullName)" }
+                    else { Remove-MoleConfigEntry -Item $item }
                 }
                 if ($kept.Count -eq 0) {
-                    Remove-Item -LiteralPath $configDir -Force -ErrorAction Stop
-                    Write-Success "Removed config: $configDir"
+                    if ($DryRun) { Write-MoleDryRun "On y, would remove config: $configDir" }
+                    else {
+                        Remove-Item -LiteralPath $configDir -Force -ErrorAction Stop
+                        Write-Success "Removed config: $configDir"
+                    }
                 }
+                elseif ($DryRun) { Write-MoleDryRun "On y, would keep: $($kept -join ', ')" }
                 else {
                     Write-Success "Removed config: $configDir (kept $($kept -join ', '))"
                 }
             }
             catch {
-                Write-MoleWarning "Failed to remove config: $_"
+                if ($DryRun) { Write-MoleWarning "On y, would fail to remove config: $_" }
+                else { Write-MoleWarning "Failed to remove config: $_" }
             }
         }
     }
 
     Write-Host ""
-    Write-Success "Mole uninstalled successfully!"
+    if ($DryRun) { Write-Success "Dry run complete - no changes made" }
+    else { Write-Success "Mole uninstalled successfully!" }
     Write-Host ""
     return $true
 }
@@ -1041,7 +1123,11 @@ function Main {
     Show-Banner
 
     if ($Uninstall) {
-        $ok = Uninstall-Mole
+        $ok = Uninstall-Mole -DryRun:$DryRun
+    }
+    elseif ($DryRun) {
+        Write-MoleError "-DryRun works only with -Uninstall; nothing was installed"
+        $ok = $false
     }
     else {
         $ok = Install-Mole

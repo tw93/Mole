@@ -133,7 +133,8 @@ param([switch]$Json, [switch]$Watch, [string]$Interval)
 
     It "Maps <Flag> to <Expected> on the real <Name> command" -ForEach @(
         @{ Name = "uninstall"; Flag = "list"; Expected = "List" },
-        @{ Name = "analyze"; Flag = "json"; Expected = "Json" }
+        @{ Name = "analyze"; Flag = "json"; Expected = "Json" },
+        @{ Name = "remove"; Flag = "dry-run"; Expected = "DryRun" }
     ) {
         $declared = (Get-Command -Name (Join-Path $script:WindowsDir "bin\$Name.ps1") -CommandType ExternalScript).Parameters
         Resolve-CommandParameterName -Parameters $declared -Flag $Flag | Should -Be $Expected
@@ -206,6 +207,61 @@ Describe "mo remove" {
         $LASTEXITCODE | Should -Be 1
         $output | Should -Match ([regex]::Escape($Expected))
         Test-Path (Join-Path $managed "uninstall-called.txt") | Should -BeFalse
+    }
+
+    It "Refuses to preview with an installer that cannot preview <_>" -ForEach @("with --dry-run", "with MOLE_DRY_RUN=1") {
+        # The stand-in installer has no -DryRun parameter, like one from before
+        # the preview existed: it would ignore the switch and uninstall.
+        $saved = $env:MOLE_DRY_RUN
+        try {
+            if ($_ -eq "with --dry-run") {
+                $env:MOLE_DRY_RUN = $null
+                $output = ('' | & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:Fake "bin\remove.ps1") -DryRun 2>&1 | Out-String)
+            }
+            else {
+                $env:MOLE_DRY_RUN = "1"
+                $output = ('' | & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:Fake "bin\remove.ps1") 2>&1 | Out-String)
+            }
+            $code = $LASTEXITCODE
+        }
+        finally { $env:MOLE_DRY_RUN = $saved }
+        $code | Should -Be 1
+        $output | Should -Match "cannot preview removal; nothing was changed"
+        Test-Path (Join-Path $script:Fake "uninstall-called.txt") | Should -BeFalse
+    }
+
+    It "Refuses install.ps1 -DryRun without -Uninstall and installs nothing" {
+        $target = Join-Path $TestDrive "dry-run-install-target"
+        $output = ('' | & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:WindowsDir "install.ps1") -InstallDir $target -DryRun 2>&1 | Out-String)
+        $LASTEXITCODE | Should -Be 1
+        $output | Should -Match "-DryRun works only with -Uninstall"
+        Test-Path -LiteralPath $target | Should -BeFalse
+    }
+
+    It "Returns the refusal's exit code through the router" {
+        $root = Join-Path $TestDrive "remove-exit-code"
+        New-Item -ItemType Directory -Path (Join-Path $root "bin") -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $script:WindowsDir "mole.ps1") -Destination $root
+        Copy-Item -LiteralPath (Join-Path $script:WindowsDir "VERSION") -Destination $root
+        Copy-Item -LiteralPath (Join-Path $script:WindowsDir "lib") -Destination $root -Recurse
+        Copy-Item -LiteralPath (Join-Path $script:WindowsDir "bin\remove.ps1") -Destination (Join-Path $root "bin")
+        Copy-Item -LiteralPath (Join-Path $script:Fake "install.ps1") -Destination $root
+        $profile = Join-Path $TestDrive "remove-exit-code-profile"
+        New-Item -ItemType Directory -Path $profile -Force | Out-Null
+        $savedProfile = $env:USERPROFILE
+        $savedDryRun = $env:MOLE_DRY_RUN
+        try {
+            $env:USERPROFILE = $profile
+            $env:MOLE_DRY_RUN = $null
+            $output = ('' | & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "mole.ps1") remove --dry-run 2>&1 | Out-String)
+            $code = $LASTEXITCODE
+        }
+        finally {
+            $env:USERPROFILE = $savedProfile
+            $env:MOLE_DRY_RUN = $savedDryRun
+        }
+        $code | Should -Be 1 -Because $output
+        Test-Path (Join-Path $root "uninstall-called.txt") | Should -BeFalse
     }
 
     It "Asks with the install path and removes on y" {
@@ -395,6 +451,67 @@ Describe "Machine-readable output through installed launcher call shapes" {
         @($parsed).Count | Should -Be 1
         @($parsed)[0].id | Should -BeExactly "registry:HKLM-test\cached"
         (Get-Item -LiteralPath $cacheFile).LastWriteTimeUtc | Should -Be $written
+        Test-Path -LiteralPath (Join-Path $profile ".config\mole\operations.log") | Should -BeFalse
+    }
+
+    It "Previews Mole removal through <Shape><Label>" -ForEach @(
+        @{ Shape = "File"; FromEnvironment = $false; Label = "" },
+        @{ Shape = "Command"; FromEnvironment = $false; Label = "" },
+        @{ Shape = "File"; FromEnvironment = $true; Label = " with MOLE_DRY_RUN=1" },
+        @{ Shape = "Command"; FromEnvironment = $true; Label = " with MOLE_DRY_RUN=1" }
+    ) {
+        $name = "remove-" + $Shape + $(if ($FromEnvironment) { "-env" } else { "" })
+        $root = Join-Path $TestDrive $name
+        New-Item -ItemType Directory -Path (Join-Path $root "bin") -Force | Out-Null
+        foreach ($file in @("mole.ps1", "VERSION", "install.ps1")) {
+            Copy-Item -LiteralPath (Join-Path $script:WindowsDir $file) -Destination $root
+        }
+        Copy-Item -LiteralPath (Join-Path $script:WindowsDir "lib") -Destination $root -Recurse
+        Copy-Item -LiteralPath (Join-Path $script:WindowsDir "bin\remove.ps1") -Destination (Join-Path $root "bin")
+        $profile = Join-Path $TestDrive ($name + "-profile")
+        New-Item -ItemType Directory -Path (Join-Path $profile ".cache\mole"), (Join-Path $profile ".config\mole") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $profile ".cache\mole\keep.txt") -Value "cache"
+        Set-Content -LiteralPath (Join-Path $profile ".config\mole\whitelist.txt") -Value "config"
+        # Files only, by size and write time; the host may write under AppData.
+        $snapshot = {
+            @(foreach ($folder in @($root, $profile)) {
+                    Get-ChildItem -LiteralPath $folder -Recurse -Force -File |
+                        # Relative to the folder: TestDrive itself sits under AppData\Local\Temp.
+                        Where-Object { $_.FullName.Substring($folder.Length) -notmatch '^\\AppData(\\|$)' } |
+                        ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }
+                }) | Sort-Object
+        }
+        $before = & $snapshot
+        $pathBefore = [Environment]::GetEnvironmentVariable("PATH", "User")
+        $savedProfile = $env:USERPROFILE
+        $savedDryRun = $env:MOLE_DRY_RUN
+        try {
+            $env:USERPROFILE = $profile
+            if ($FromEnvironment) {
+                $env:MOLE_DRY_RUN = "1"
+                $arguments = @("remove")
+            }
+            else {
+                $env:MOLE_DRY_RUN = $null
+                $arguments = @("remove", "--dry-run")
+            }
+            $result = Invoke-MoleShape -Shape $Shape -Mole (Join-Path $root "mole.ps1") -Arguments $arguments -EmptyInput
+        }
+        finally {
+            $env:USERPROFILE = $savedProfile
+            $env:MOLE_DRY_RUN = $savedDryRun
+            # A broken gate must not cost the test machine its PATH value.
+            $pathAfter = [Environment]::GetEnvironmentVariable("PATH", "User")
+            if ($pathAfter -cne $pathBefore) { [Environment]::SetEnvironmentVariable("PATH", $pathBefore, "User") }
+        }
+        $pathAfter | Should -BeExactly $pathBefore -Because "a preview must not write the user PATH"
+
+        $result.ExitCode | Should -Be 0
+        $result.Text | Should -Match "Dry run complete - no changes made"
+        $result.Text | Should -Match ("(?m)Would remove directory: .*" + [regex]::Escape($name) + "\s*$")
+        $result.Text | Should -Match "Would ask: Remove config files\?"
+        $result.Text | Should -Not -Match "Remove Mole from"
+        ((& $snapshot) -join "`n") | Should -BeExactly ($before -join "`n")
         Test-Path -LiteralPath (Join-Path $profile ".config\mole\operations.log") | Should -BeFalse
     }
 

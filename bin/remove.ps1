@@ -4,6 +4,9 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
+    [Alias('dry-run')]
+    [switch]$DryRun,
+
     [Alias('h')]
     [switch]$ShowHelp
 )
@@ -19,7 +22,11 @@ function Show-RemoveHelp {
     Write-Host ""
     Write-Host "$esc[1;35mmo remove$esc[0m - Remove Mole from this system"
     Write-Host ""
-    Write-Host "$esc[33mUsage:$esc[0m mo remove"
+    Write-Host "$esc[33mUsage:$esc[0m mo remove [options]"
+    Write-Host ""
+    Write-Host "$esc[33mOptions:$esc[0m"
+    Write-Host "  --dry-run    Show what would be removed, change nothing"
+    Write-Host "  --help       Show this help message"
     Write-Host ""
     Write-Host "$esc[33mBehavior:$esc[0m"
     Write-Host "  - Removes the current Mole installation directory"
@@ -61,14 +68,25 @@ if (-not (Test-Path $installScript)) {
     exit 1
 }
 
-# Removing Mole is not undoable, so it is never a side effect of a typo.
-$answer = "$(Read-Host "Remove Mole from ${windowsDir}? (y/N)")".Trim()
-if ($answer -ne "y" -and $answer -ne "Y") {
-    Write-Host "Cancelled"
-    exit 0
+$isDryRun = $DryRun -or ($env:MOLE_DRY_RUN -eq '1')
+if ($isDryRun) {
+    # An installer without -DryRun would ignore the switch and uninstall for real.
+    if (-not (Get-Command -Name $installScript -CommandType ExternalScript).Parameters.ContainsKey('DryRun')) {
+        Write-Host "The installer at $installScript cannot preview removal; nothing was changed" -ForegroundColor Red
+        exit 1
+    }
+}
+else {
+    # Removing Mole is not undoable, so it is never a side effect of a typo.
+    $answer = "$(Read-Host "Remove Mole from ${windowsDir}? (y/N)")".Trim()
+    if ($answer -ne "y" -and $answer -ne "Y") {
+        Write-Host "Cancelled"
+        exit 0
+    }
 }
 
 # Reset the automatic status so a caller's earlier native command cannot make a
 # successful uninstall look failed.
 $global:LASTEXITCODE = 0
-& $installScript -InstallDir $windowsDir -Uninstall
+if ($isDryRun) { & $installScript -InstallDir $windowsDir -Uninstall -DryRun }
+else { & $installScript -InstallDir $windowsDir -Uninstall }

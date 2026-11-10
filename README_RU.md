@@ -84,6 +84,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo remove --dry-run
 mo history
 mo history --json
 
