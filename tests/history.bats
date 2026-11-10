@@ -650,6 +650,61 @@ assert sum(s["operation_count"] for s in sessions) == 3, sessions
 '
 }
 
+@test "operation lines with a non-ASCII prefix are never folded into a count record" {
+    # awk splits bytes and Bash splits characters of the user locale, where a
+    # "]" byte can end a GBK or Shift-JIS character. Such a line must reach the
+    # line parser whole; an ASCII run with the same shape is still folded.
+    run /bin/bash -c '
+        source "$1/lib/core/history.sh"
+        printf "[t\\x81] [clean] REMOVED a\n[t\\x81] [clean] TRASHED b\n" | history_condense_operations_log | LC_ALL=C cut -c1 | tr -d "\n"
+        printf " "
+        printf "[t] [clean] REMOVED a\n[t] [clean] TRASHED b\n" | history_condense_operations_log | LC_ALL=C cut -c1 | tr -d "\n"
+    ' _ "$PROJECT_ROOT"
+    [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+    [[ "$output" == "LL LC" ]] || { echo "got: $output"; return 1; }
+}
+
+@test "condensed operation runs count every action and keep breaks the line parser would see" {
+    # history_condense_operations_log folds a run of same-identity lines into
+    # one count record. Lines no parser reads may sit inside a run, while an
+    # irregular line naming another run and lines with an invalid identity
+    # must not be folded into the active session.
+    {
+        printf '%s\n' '# ========== clean run=a session started at 2026-05-24 10:00:00 =========='
+        printf '%s\n' '[2026-05-24 10:00:01] [clean run=a] REMOVED /tmp/1'
+        printf '2026-05-24T10:00:01Z\tclean\tREMOVED\t/tmp/tsv-row-no-parser-reads\n'
+        printf '\n'
+        printf '%s\n' '[2026-05-24 10:00:02] [clean run=a] TRASHED /tmp/2'
+        printf '%s\n' '[2026-05-24 10:00:03] [clean run=a] SKIPPED /tmp/3'
+        printf '%s\n' '[2026-05-24 10:00:03]] [purge run=b] REMOVED /tmp/irregular'
+        printf '%s\n' '[2026-05-24 10:00:04] [clean run=a] FAILED /tmp/4'
+        printf '%s\n' '[2026-05-24 10:00:05] [clean run=a] REBUILT /tmp/5'
+        printf '%s\n' '[2026-05-24 10:00:06] [clean run=a] TASK_FAILED task'
+        printf '%s\n' '[2026-05-24 10:00:07] [clean run=a] WEIRD /tmp/6'
+        printf '[2026-05-24 10:00:07] [clean run=a] REMOVED\r\n'
+        printf '%s\n' '[2026-05-24 10:00:08] [clean run=bad id] REMOVED /tmp/ignored-1'
+        printf '%s\n' '[2026-05-24 10:00:08] [clean run=bad id] REMOVED /tmp/ignored-2'
+        printf '%s\n' '[2026-05-24 10:00:09] [clean run=a] REMOVED /tmp/7'
+        printf '%s\n' '[2026-05-24 10:00:09] [clean run=a] REMOVED /tmp/8'
+        printf '%s\n' '# ========== clean run=a session ended at 2026-05-24 10:01:00, 3 items, 3KB =========='
+        printf '%s' '[2026-05-24 10:02:00] [clean run=a] REMOVED /tmp/after-end-no-newline'
+    } > "$HOME/Library/Logs/mole/operations.log"
+
+    run env HOME="$HOME" "$PROJECT_ROOT/mole" history --json
+    [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+    printf '%s\n' "$output" | python3 -c '
+import json, sys
+sessions = json.load(sys.stdin)["sessions"]
+assert len(sessions) == 3, sessions
+first, purge, later = sorted(sessions, key=lambda s: (s["started_at"], s["command"]))
+assert first["run_id"] == "a" and first["ended_at"] == "2026-05-24 10:01:00", first
+assert first["actions"] == {"removed": 3, "trashed": 1, "skipped": 1, "failed": 1, "rebuilt": 1, "other": 2}, first
+assert first["failed_tasks"] == 1 and first["operation_count"] == 10, first
+assert purge["run_id"] == "b" and purge["actions"]["removed"] == 1 and purge["operation_count"] == 1, purge
+assert later["run_id"] == "a" and later["ended_at"] == "" and later["operation_count"] == 1, later
+'
+}
+
 @test "uninstall signal cleanup ends its run once" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SKIP_MAIN=1 \
         /bin/bash --noprofile --norc <<'EOF'
