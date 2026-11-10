@@ -72,6 +72,10 @@ func parseSPBluetooth(raw string) []BluetoothDevice {
 	var currentName string
 	var connected bool
 	var battery string
+	// macOS lists devices under "Connected:" and "Not Connected:" group headers
+	// and prints no "Connected: Yes" line for each one, so the group a device
+	// sits in is its connection state (#1967).
+	var groupConnected bool
 
 	for line := range strings.Lines(raw) {
 		trim := strings.TrimSpace(line)
@@ -83,6 +87,7 @@ func parseSPBluetooth(raw string) []BluetoothDevice {
 			currentName = ""
 			connected = false
 			battery = ""
+			groupConnected = false
 			continue
 		}
 		if strings.HasPrefix(line, "        ") && strings.HasSuffix(trim, ":") {
@@ -90,8 +95,18 @@ func parseSPBluetooth(raw string) []BluetoothDevice {
 				devices = append(devices, BluetoothDevice{Name: currentName, Connected: connected, Battery: battery})
 			}
 			currentName = strings.TrimSuffix(trim, ":")
-			connected = false
+			connected = groupConnected
 			battery = ""
+			continue
+		}
+		if strings.HasSuffix(trim, ":") {
+			// A group header ends the device before it and decides the state
+			// of the devices after it. It is not an attribute of that device.
+			if currentName != "" {
+				devices = append(devices, BluetoothDevice{Name: currentName, Connected: connected, Battery: battery})
+				currentName = ""
+			}
+			groupConnected = trim == "Connected:"
 			continue
 		}
 		if strings.Contains(trim, "Connected:") {
