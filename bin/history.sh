@@ -31,6 +31,19 @@ history_limit_ok() { [[ "$1" =~ ^[0-9]{1,3}$ ]] && ((10#$1 >= 1 && 10#$1 <= 200)
 #   O <timestamp> <command> <run id> <action> <path> <detail>
 # Rows from before run ids existed are grouped while the command stays the
 # same. Session marker lines and anything unparsable are skipped.
+# Only the newest $1 session records and the newest $1 operation records are
+# shown, so the rest never reach the Bash arrays: a log near its 5 MB rotation
+# holds about 47,000 operations, and appending them all took most of 1.8 s.
+history_keep_newest() {
+    LC_ALL=C awk -v n="$1" '
+        substr($0, 1, 2) == "S\t" { s[++ns] = $0; next }
+        substr($0, 1, 2) == "O\t" { o[++no] = $0; next }
+        END {
+            for (i = (ns > n ? ns - n + 1 : 1); i <= ns; i++) print s[i]
+            for (i = (no > n ? no - n + 1 : 1); i <= no; i++) print o[i]
+        }'
+}
+
 history_parse() {
     LC_ALL=C awk '
     function bucket(a) {
@@ -157,7 +170,7 @@ history_main() {
                 S$'\t'*) sessions+=("${rec#S$'\t'}") ;;
                 O$'\t'*) operations+=("${rec#O$'\t'}") ;;
             esac
-        done < <(history_parse "$log")
+        done < <(history_parse "$log" | history_keep_newest "$HISTORY_LIMIT")
     fi
 
     # Newest first, at most the limit.
