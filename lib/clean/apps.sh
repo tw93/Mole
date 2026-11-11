@@ -218,8 +218,10 @@ _mole_launch_agent_takes_value() {
 # Options known to take no value and to leave the script (or the app `open`
 # runs) as the next argument; `open --args` and `open -b` are not listed. Anything else before the script is not
 # understood and keeps the claim: an unknown option may take a value that
-# would be judged as the script, and inline code (-c, -e, -E, --eval), a
-# module (-m), stdin (-s, a bare "-") and printed code (-p) are never listed.
+# would be judged as the script, and inline code (-c, -e, --eval, perl's -E), a
+# module (-m), stdin (the shells' -s, a bare "-") and printed code (-p) are
+# never listed. Python's -s and -E are listed on purpose: there they mean
+# "no user site" and "ignore the environment" and take no value.
 # npm, npx, bun, bunx, deno, uv and uvx have no list, so any option keeps.
 _mole_launch_agent_flag_known() {
     local runner="$1" arg="$2" letters="" long=""
@@ -230,7 +232,17 @@ _mole_launch_agent_flag_known() {
         ruby) letters="wWd" ;;
         perl) letters="wWTtX" ;;
         node)
-            [[ "$arg" != --*=* ]] || return 0
+            # `--name=value` is one argument, so nothing after it shifts; only
+            # the forms known to leave the script as the next argument pass.
+            # --eval=, --print= and --run= run inline code or a package
+            # script, and any other spelling is not understood.
+            case "$arg" in
+                --max-old-space-size=* | --max-semi-space-size=* | --stack-size=* | \
+                    --inspect=* | --inspect-brk=* | --inspect-port=* | --title=* | \
+                    --require=* | --import=* | --loader=* | --experimental-loader=* | \
+                    --conditions=* | --env-file=* | --input-type=*) return 0 ;;
+                --*=*) return 1 ;;
+            esac
             long="--no-warnings --no-deprecation --enable-source-maps --trace-warnings"
             long="$long --trace-uncaught --expose-gc --abort-on-uncaught-exception"
             long="$long --preserve-symlinks --inspect --inspect-brk --use-strict"
@@ -356,7 +368,14 @@ _mole_launch_agent_mount_config_files() {
 # its file), direct (field 1). Returns 1 when a file exists but cannot be read.
 _mole_launch_agent_read_mount_file() {
     local format="$1" file="$2"
-    [[ -e "$file" ]] || return 0
+    # Absent only on a proven ENOENT; a file this user is denied from seeing
+    # may name mount points, so it keeps every claim.
+    if [[ ! -e "$file" ]]; then
+        local stat_error=""
+        stat_error=$(LC_ALL=C run_with_timeout "$MOLE_TIMEOUT_HINT_SCAN_SEC" /usr/bin/stat -f %N "$file" 2>&1 > /dev/null) && return 1
+        [[ "$stat_error" == *": No such file or directory" ]] || return 1
+        return 0
+    fi
     [[ -r "$file" ]] || return 1
     local first="" second="" rest="" mount_point="" map="" folded="" rc=0
     while read -r first second rest || [[ -n "$first" ]]; do
@@ -403,6 +422,9 @@ _mole_launch_agent_path_provably_missing() {
     [[ "$path" == /* ]] || return 1
     case "$path" in
         */./* | */../* | */. | */.. | *//*) return 1 ;;
+        # /.nofollow/, /.resolve/N/ and /.vol/ are other spellings of the
+        # whole tree, so every guard below would be read past.
+        /.*) return 1 ;;
     esac
     local lower_path="" lower_home="" folder=""
     _mole_launch_agent_fold_path lower_path "$path"

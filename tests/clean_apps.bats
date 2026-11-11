@@ -478,6 +478,8 @@ _assert_launch_agent_claims() {
     _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
     _write_launch_agent_fixture com.example.volumeslower "/volumes/MoleTestNoSuchDisk-$$/bin/agent"
     _write_launch_agent_fixture com.example.firmvolumes "/System/Volumes/Data/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.nofollowvolumes "/.nofollow/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.resolvevolumes "/.resolve/1/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
     _write_launch_agent_fixture com.example.firmdocuments "/System/Volumes/Data$agent_home/Documents/gone/agent"
     _write_launch_agent_fixture com.example.lowerdocuments "$agent_home/documents/gone/agent"
     _write_launch_agent_fixture com.example.upperhome "$upper_home/DOWNLOADS/gone/agent"
@@ -485,6 +487,7 @@ _assert_launch_agent_claims() {
     _scan_launch_agent_claims "$agent_home"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.nofollowvolumes com.example.resolvevolumes
     _assert_launch_agent_claims "$output" keep com.example.volumeslower com.example.firmvolumes \
         com.example.firmdocuments com.example.lowerdocuments com.example.upperhome
 
@@ -610,6 +613,12 @@ SH
     _write_launch_agent_fixture com.example.bashcluster "" "$bin/bash" -lc "$missing"
     _write_launch_agent_fixture com.example.openunknown "" /usr/bin/open -X "$opt/Missing.app"
     _write_launch_agent_fixture com.example.openargs "" /usr/bin/open -e --args "$missing"
+    # node's --name=value forms that run inline code or a package script: the
+    # path after them is an argument to that code, never the script.
+    _write_launch_agent_fixture com.example.nodeevaleq "" "$bin/node" --eval='setInterval(()=>{},1e3)' "$missing"
+    _write_launch_agent_fixture com.example.nodeprinteq "" "$bin/node" --print=1 "$missing"
+    _write_launch_agent_fixture com.example.noderuneq "" "$bin/node" --run=start "$missing"
+    _write_launch_agent_fixture com.example.nodeunknowneq "" "$bin/node" --some-future-flag=x "$missing"
 
     # Understood: a known value option skips its value and a known flag is
     # passed, so the gone script behind them drops the claim.
@@ -655,7 +664,8 @@ SH
     _assert_launch_agent_claims "$output" keep com.example.noderedirect com.example.fishout \
         com.example.npmcache com.example.uvcache com.example.bashstdin com.example.pythondash \
         com.example.perlcode com.example.pythonmodule com.example.pythonmodulearg \
-        com.example.bashcluster com.example.openunknown com.example.openargs
+        com.example.bashcluster com.example.openunknown com.example.openargs \
+        com.example.nodeevaleq com.example.nodeprinteq com.example.noderuneq com.example.nodeunknowneq
     _assert_launch_agent_claims "$output" drop "${dropped[@]}"
 }
 
