@@ -322,7 +322,8 @@ Describe 'Generic game content in install folders' {
         @{Marker='goggame-42.info'}, @{Marker='galaxy-2.0.db'},
         @{Marker='OneGame\goggame-42.info'}, @{Marker='Library\steamapps'}, @{Marker='Library\libraryfolder.vdf'},
         @{Marker='.egstore'}, @{Marker='Fortnite\.egstore'},
-        @{Marker='ext4.vhdx'}, @{Marker='distro-data\ext4.vhdx'}
+        @{Marker='ext4.vhdx'}, @{Marker='distro-data\ext4.vhdx'},
+        @{Marker='machines\dev.vhdx'}, @{Marker='Windows 11.vmdk'}, @{Marker='images\Ubuntu.VDI'}, @{Marker='backup.vhd'}
     ) {
         param($Marker)
         $root = New-TestFolder ('Launcher ' + $Marker.Replace('\', '_'))

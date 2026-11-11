@@ -174,8 +174,10 @@ function Test-MoleInstallContentFree {
                             $folders.Add($entry.FullName)
                         }
                     } elseif ($entry.Name -like 'goggame-*.info' -or
-                        # ext4.vhdx is a WSL distribution's disk (Rancher Desktop keeps its own beside the app).
-                        $entry.Name -in @('galaxy-2.0.db', 'libraryfolder.vdf', 'ext4.vhdx')) { return $false }
+                        $entry.Name -in @('galaxy-2.0.db', 'libraryfolder.vdf') -or
+                        # A virtual disk is a whole system the user built, whatever its name: WSL's ext4.vhdx
+                        # (Rancher Desktop keeps its own beside the app), Hyper-V, VMware and VirtualBox disks.
+                        $entry.Extension -in @('.vhdx', '.vhd', '.vmdk', '.vdi')) { return $false }
                 }
             } finally { $enumerator.Dispose() }
             if (-not (Test-MolePathSnapshot -Snapshot $snapshot)) { return $false }
