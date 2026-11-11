@@ -659,6 +659,27 @@ SH
     _assert_launch_agent_claims drop "${dropped[@]}"
 }
 
+@test "scan_installed_apps keeps multi-line values, env -S and agents past the judging budget" {
+    local agent_home="$HOME/agent-guards"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" gone="$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.control "$gone"
+    _write_launch_agent_fixture com.example.multiline "" /bin/sh $'-x\n' "$gone.sh"
+    _write_launch_agent_fixture com.example.envsplit "" /usr/bin/env -S "$gone arg"
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims drop com.example.control
+    _assert_launch_agent_claims keep com.example.multiline com.example.envsplit
+
+    # A zero budget judges nothing, so even the dead control keeps its claim.
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _scan_launch_agent_claims "$agent_home" MOLE_TIMEOUT_MEDIUM_PROBE_SEC=0
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims keep com.example.control
+}
+
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
     local agent_home="$HOME/agent-dead"
     rm -rf "$agent_home"
