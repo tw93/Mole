@@ -3665,7 +3665,15 @@ _check_large_file_candidates_body() {
 
     _report_large_or_stop "macOS updates cache" "$HOME/Library/Updates" || return $?
 
-    if [[ "${SYSTEM_CLEAN:-false}" != "true" ]] && command -v tmutil > /dev/null 2>&1; then
+    local network_mount_rc=0
+    [[ "${SYSTEM_CLEAN:-false}" == "true" ]] || mole_network_volume_mounted || network_mount_rc=$?
+    if mole_rc_signal "$network_mount_rc"; then
+        _mole_record_clean_cancellation "$network_mount_rc"
+        stop_section_spinner
+        return "$network_mount_rc"
+    fi
+    if [[ "${SYSTEM_CLEAN:-false}" != "true" && $network_mount_rc -eq 1 ]] &&
+        command -v tmutil > /dev/null 2>&1; then
         # Snapshots from other backup apps exist without Time Machine (#1916).
         local snapshot_include_tm=false snapshot_list snapshot_rows=""
         if defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2> /dev/null | grep -qE '^[01]$'; then

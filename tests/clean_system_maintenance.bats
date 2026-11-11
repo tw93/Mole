@@ -601,6 +601,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { echo "1"; }
 
@@ -628,6 +629,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { echo "1"; }
 
@@ -650,6 +652,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { return 1; }
 run_with_timeout() {
@@ -682,6 +685,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { echo "1"; }
 run_with_timeout() {
@@ -708,6 +712,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { echo "1"; }
 run_with_timeout() {
@@ -736,6 +741,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { echo "1"; }
 run_with_timeout() {
@@ -762,6 +768,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 
 defaults() { echo "1"; }
 run_with_timeout() { echo "UNEXPECTED_LISTING"; }
@@ -778,6 +785,120 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"RC=130"* ]] || { echo "$output"; return 1; }
     [[ "$output" != *"UNEXPECTED_LISTING"* ]] || { echo "$output"; return 1; }
+}
+
+@test "mole_network_volume_mounted reads the local flag of every mount table entry" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/snapshots.sh"
+
+LOCAL_TABLE='/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+devfs on /dev (devfs, local, nobrowse)
+map auto_home on /System/Volumes/Data/home (autofs, automounted, nobrowse)
+/dev/disk5s1 on /Volumes/Disk (with) parens (apfs, local, nodev, nosuid, journaled)
+devices -- file:///Users/me/Library/Containers/x/Data/ on /Users/me/DeviceFS (devicefs, local, nodev, nosuid, noowners, fskit, mounted by me)'
+verdict() {
+    local rc=0
+    mole_network_volume_mounted || rc=$?
+    echo "$1=$rc"
+}
+TABLE="$LOCAL_TABLE"
+TABLE_RC=0
+_mole_mount_table() { printf '%s\n' "$TABLE"; return "$TABLE_RC"; }
+verdict local
+TABLE="$LOCAL_TABLE"$'\n''//me@192.168.1.2/share on /Volumes/share (smbfs, nodev, nosuid, mounted by me)'
+verdict smb
+TABLE="$LOCAL_TABLE"$'\n''nas:/export on /Volumes/export (nfs, asynchronous)'
+verdict nfs
+TABLE="$LOCAL_TABLE"$'\n''//me@nas/share on /Volumes/share (apfs, local, copy) (smbfs, nodev, nosuid, mounted by me)'
+verdict smbparen
+TABLE="something this parser does not know"
+verdict unknown
+TABLE=""
+verdict empty
+TABLE="$LOCAL_TABLE"
+TABLE_RC=124
+verdict timeout
+TABLE_RC=130
+verdict signal
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local expected
+    for expected in local=1 smb=0 nfs=0 smbparen=0 unknown=0 empty=0 timeout=0 signal=130; do
+        [[ "$output" == *"$expected"* ]] || { echo "missing $expected"; echo "$output"; return 1; }
+    done
+}
+
+@test "clean_local_snapshots runs no tmutil while a network share is mounted" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+_mole_mount_table() {
+    printf '%s\n' '/dev/disk3s1s1 on / (apfs, local, journaled)' \
+        '//me@nas/share on /Volumes/share (smbfs, nodev, nosuid, mounted by me)'
+}
+
+defaults() { echo "1"; }
+run_with_timeout() { echo "UNEXPECTED_TMUTIL:$*"; }
+tmutil() { echo "UNEXPECTED_TMUTIL:$*"; }
+start_section_spinner(){ echo "SPINNER:$1"; }
+stop_section_spinner(){ :; }
+note_activity(){ :; }
+tm_is_running(){ echo "UNEXPECTED_TM_PROBE"; return 1; }
+
+clean_local_snapshots
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ -z "$output" ] || { echo "$output"; return 1; }
+}
+
+@test "large files lists snapshots with only local volumes and runs no tmutil beside a network share" {
+    local review_home="$HOME/large-review-network-share"
+    mkdir -p "$review_home"
+
+    local mounts
+    for mounts in local share; do
+        rm -f "$review_home/tmutil.calls"
+        run env HOME="$review_home" PROJECT_ROOT="$PROJECT_ROOT" MOUNTS="$mounts" \
+            /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+docker() { return 1; }
+defaults() { return 1; }
+_mole_mount_table() {
+    echo '/dev/disk3s1s1 on / (apfs, local, journaled)'
+    if [[ "$MOUNTS" == share ]]; then
+        echo '//me@nas/share on /Volumes/share (smbfs, nodev, nosuid, mounted by me)'
+    fi
+}
+tmutil() {
+    echo "$*" >> "$HOME/tmutil.calls"
+    printf '%s\n' "Snapshots for disk /:" "com.synology.activebackup.F0yvGv9C"
+}
+run_with_timeout() {
+    shift
+    "$@"
+}
+check_large_file_candidates
+EOF
+        [ "$status" -eq 0 ] || { echo "$mounts: $output"; return 1; }
+        if [[ "$mounts" == local ]]; then
+            grep -qFx "listlocalsnapshots /" "$review_home/tmutil.calls" || { echo "$output"; return 1; }
+            [[ "$output" == *"APFS snapshots · "*"from com.synology.activebackup"* ]] || { echo "$output"; return 1; }
+        else
+            [[ ! -e "$review_home/tmutil.calls" ]] || { cat "$review_home/tmutil.calls"; return 1; }
+            [[ "$output" != *"snapshot"* ]] || { echo "$output"; return 1; }
+            [ -z "$output" ] || { echo "$output"; return 1; }
+        fi
+    done
 }
 
 @test "clean_homebrew skips when cleaned recently" {
