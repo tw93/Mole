@@ -762,6 +762,7 @@ function Get-MoleInstallNestedFiles {
         "cmd\status\proxy_privacy_test.go"
         "cmd\status\testhelpers_test.go"
         "cmd\status\units.go"
+        "cmd\status\units_test.go"
         "cmd\status\usage_test.go"
         "cmd\status\view.go"
         "cmd\status\view_test.go"
