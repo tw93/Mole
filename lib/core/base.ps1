@@ -707,16 +707,27 @@ function Format-ByteSize {
     #>
     param([long]$Bytes)
     
+    # A value that rounds to 1024 at the printed precision is the next unit's
+    # 1 (1048064 bytes is "1.0MB", not "1,024KB"). TB has no next unit.
     if ($Bytes -ge 1TB) {
         return "{0:N2}TB" -f ($Bytes / 1TB)
     }
     elseif ($Bytes -ge 1GB) {
+        if ([math]::Round($Bytes / 1GB, 2, [MidpointRounding]::AwayFromZero) -ge 1024) {
+            return "{0:N2}TB" -f ($Bytes / 1TB)
+        }
         return "{0:N2}GB" -f ($Bytes / 1GB)
     }
     elseif ($Bytes -ge 1MB) {
+        if ([math]::Round($Bytes / 1MB, 1, [MidpointRounding]::AwayFromZero) -ge 1024) {
+            return "{0:N2}GB" -f ($Bytes / 1GB)
+        }
         return "{0:N1}MB" -f ($Bytes / 1MB)
     }
     elseif ($Bytes -ge 1KB) {
+        if ([math]::Round($Bytes / 1KB, 0, [MidpointRounding]::AwayFromZero) -ge 1024) {
+            return "{0:N1}MB" -f ($Bytes / 1MB)
+        }
         return "{0:N0}KB" -f ($Bytes / 1KB)
     }
     else {

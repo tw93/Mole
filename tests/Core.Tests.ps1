@@ -168,6 +168,28 @@ Describe "File Operations Module" {
         It "Should handle large numbers" {
             Format-ByteSize -Bytes 1099511627776 | Should -Be "1.00TB"
         }
+
+        It "Should keep the last value below a unit step in the lower unit" {
+            # Expected strings go through the same format so the digit grouping follows the culture
+            Format-ByteSize -Bytes 1023 | Should -Be "1023B"
+            Format-ByteSize -Bytes 1048063 | Should -Be ("{0:N0}KB" -f 1023)
+            Format-ByteSize -Bytes 1073689395 | Should -Be ("{0:N1}MB" -f 1023.9)
+            Format-ByteSize -Bytes 1099506259066 | Should -Be ("{0:N2}GB" -f 1023.99)
+        }
+
+        It "Should step up instead of printing 1024 in the lower unit" {
+            Format-ByteSize -Bytes 1048064 | Should -Be "1.0MB"
+            Format-ByteSize -Bytes 1073689396 | Should -Be "1.00GB"
+            Format-ByteSize -Bytes 1073741823 | Should -Be "1.00GB"
+            Format-ByteSize -Bytes 1099506259067 | Should -Be "1.00TB"
+            Format-ByteSize -Bytes 1099511627775 | Should -Be "1.00TB"
+        }
+
+        It "Should format an ordinary value in each unit" {
+            Format-ByteSize -Bytes 2048 | Should -Be "2KB"
+            Format-ByteSize -Bytes 5452595 | Should -Be "5.2MB"
+            Format-ByteSize -Bytes 5368709120 | Should -Be "5.00GB"
+        }
     }
 
     Context "Get-PathSize" {
