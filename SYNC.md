@@ -2,6 +2,14 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-11: Analyze never deletes the user's head folders (from Mole for Windows)
+
+Owner of the cross-product row is Mole for Windows' `SYNC.md`, 2026-11-11 Analyze parity read.
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| `mo analyze` refuses the folders Windows creates in the profile, AppData's Local, Roaming and LocalLow, a OneDrive root and the Mole app's own folders; what is inside them can still be deleted | Implemented (Mole CLI (Windows), `8e82beb5`); Implemented (Mole for Windows, `154b001b`); Implemented (Mole Mac, `67e819caf`, the source rule); Pending (Mole CLI (macOS): next check is whether `mo analyze` refuses `~/Documents`, `~/Library` and the iCloud Drive root) | `TestIsProtectedPathFollowsEnvironmentFolders` on windows-latest in Validation (`ok cmd/analyze`); the profile's Downloads moved from its allowed list to its protected one. |
+
 ## 2026-11-11: Size rounding and install-folder content from Mole for Windows
 
 Owner of the cross-product rows is Mole for Windows' `SYNC.md`, 2026-11-11 Audit of 0.21.2 to main.
