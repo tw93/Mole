@@ -1073,10 +1073,21 @@ bytes_to_human() {
     # MB: >= 1,000,000 bytes
     elif ((bytes >= 1000000)); then
         local scaled=$(((bytes * 10 + 500000) / 1000000))
-        printf "%d.%01dMB\n" $((scaled / 10)) $((scaled % 10))
+        if ((scaled >= 10000)); then
+            # Rounds up to 1000.0MB: print it as 1 GB, like the first GB value.
+            printf "1.00GB\n"
+        else
+            printf "%d.%01dMB\n" $((scaled / 10)) $((scaled % 10))
+        fi
     # KB: >= 1,000 bytes (round up to nearest KB instead of decimal)
     elif ((bytes >= 1000)); then
-        printf "%dKB\n" $(((bytes + 500) / 1000))
+        local kb=$(((bytes + 500) / 1000))
+        if ((kb >= 1000)); then
+            # Rounds up to 1000KB: print it as 1 MB, like the first MB value.
+            printf "1.0MB\n"
+        else
+            printf "%dKB\n" "$kb"
+        fi
     else
         printf "%dB\n" "$bytes"
     fi
