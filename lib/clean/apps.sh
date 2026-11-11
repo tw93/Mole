@@ -206,31 +206,55 @@ _mole_launch_agent_takes_value() {
         perl:-I | osascript:-l | osascript:-s) return 0 ;;
         java:-cp | java:-classpath | java:--class-path | java:-p | java:--module-path | \
             java:--upgrade-module-path | java:--add-modules) return 0 ;;
-    esac
-    case "$1" in
-        node | bun | deno)
-            case "$2" in
-                -r | --require | --import | --loader | --experimental-loader | -C | \
-                    --conditions | --env-file | --inspect-port | --title | --input-type) return 0 ;;
-            esac
-            ;;
+        node:-r | node:--require | node:--import | node:--loader | node:--experimental-loader | \
+            node:-C | node:--conditions | node:--env-file | node:--inspect-port | node:--title | \
+            node:--input-type) return 0 ;;
+        open:-i | open:--stdin | open:-o | open:--stdout | open:--stderr | open:--env | \
+            open:-s | open:-u | open:--url | open:--arch) return 0 ;;
     esac
     return 1
 }
 
-# Options after which no script file runs: a module or printed code.
-_mole_launch_agent_scriptless() {
-    case "$1:$2" in
-        python:-m | python3:-m | java:-m | java:--module | node:-p | node:--print | \
-            bun:-p | bun:--print) return 0 ;;
+# Options known to take no value and to leave the script (or the app `open`
+# runs) as the next argument; `open --args` and `open -b` are not listed. Anything else before the script is not
+# understood and keeps the claim: an unknown option may take a value that
+# would be judged as the script, and inline code (-c, -e, -E, --eval), a
+# module (-m), stdin (-s, a bare "-") and printed code (-p) are never listed.
+# npm, npx, bun, bunx, deno, uv and uvx have no list, so any option keeps.
+_mole_launch_agent_flag_known() {
+    local runner="$1" arg="$2" letters="" long=""
+    case "$runner" in
+        sh | bash | zsh) letters="lxvuf" long="--login --noprofile --norc --posix --noediting" ;;
+        fish) letters="lNP" long="--login --no-config --private" ;;
+        python | python3) letters="uBEsSOqIbd" ;;
+        ruby) letters="wWd" ;;
+        perl) letters="wWTtX" ;;
+        node)
+            [[ "$arg" != --*=* ]] || return 0
+            long="--no-warnings --no-deprecation --enable-source-maps --trace-warnings"
+            long="$long --trace-uncaught --expose-gc --abort-on-uncaught-exception"
+            long="$long --preserve-symlinks --inspect --inspect-brk --use-strict"
+            ;;
+        java)
+            case "$arg" in -D?* | -X?*) return 0 ;; esac
+            long="-jar -server -ea -da -esa -dsa --enable-preview -verbose"
+            ;;
+        open) long="-n -g -j -F -W -R -e -t --new --background --hide --fresh --wait-apps --reveal" ;;
     esac
-    return 1
+    case " $long " in *" $arg "*) return 0 ;; esac
+    [[ -n "$letters" && "$arg" == -?* && "$arg" != --* ]] || return 1
+    local cluster="${arg#-}"
+    while [[ -n "$cluster" ]]; do
+        [[ "$letters" == *"${cluster:0:1}"* ]] || return 1
+        cluster="${cluster:1}"
+    done
+    return 0
 }
 
 # Sets _MOLE_LAUNCH_AGENT_TARGET to the absolute path an `open` or interpreter
 # job runs. $1 is the executable, the rest its arguments after argv[0].
-# Returns 1 when there is none to judge: another executable, inline code
-# (`sh -c`, `osascript -e`, `env -S`), a module, a relative path, a bundle id.
+# Returns 1 when there is none to judge: another executable, an option not
+# understood, inline code, a module, a relative path, a bundle id.
 _mole_launch_agent_target() {
     _MOLE_LAUNCH_AGENT_TARGET=""
     local name="" arg=""
@@ -239,24 +263,19 @@ _mole_launch_agent_target() {
     if [[ "$name" == "open" ]]; then
         local expects_app=false skips_value=false
         for arg in "$@"; do
-            [[ "$arg" != "--args" ]] || return 1
             if [[ "$skips_value" == true ]]; then
                 skips_value=false
                 continue
             fi
-            if [[ "$expects_app" != true ]]; then
-                case "$arg" in
-                    -a)
-                        expects_app=true
-                        continue
-                        ;;
-                    -b) return 1 ;;
-                    -i | --stdin | -o | --stdout | --stderr | --env | -s | -u | --url | --arch)
-                        skips_value=true
-                        continue
-                        ;;
-                    -*) continue ;;
-                esac
+            if [[ "$expects_app" != true && "$arg" == -* ]]; then
+                if [[ "$arg" == "-a" ]]; then
+                    expects_app=true
+                elif _mole_launch_agent_takes_value open "$arg"; then
+                    skips_value=true
+                else
+                    _mole_launch_agent_flag_known open "$arg" || return 1
+                fi
+                continue
             fi
             [[ "$arg" == /* ]] || return 1
             _MOLE_LAUNCH_AGENT_TARGET="$arg"
@@ -295,16 +314,12 @@ _mole_launch_agent_target() {
             continue
         fi
         [[ "$arg" != "--" ]] || continue
-        ! _mole_launch_agent_scriptless "$runner" "$arg" || return 1
         if _mole_launch_agent_takes_value "$runner" "$arg"; then
             skips_value=true
             continue
         fi
         if [[ "$arg" == -* ]]; then
-            if [[ "$arg" != --* && "${arg#-}" == *[ce]* ]]; then
-                return 1
-            fi
-            [[ "$arg" != "--eval" && "$arg" != "--command" ]] || return 1
+            _mole_launch_agent_flag_known "$runner" "$arg" || return 1
             continue
         fi
         [[ "$arg" == /* ]] || return 1

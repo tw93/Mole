@@ -584,6 +584,81 @@ SH
     _assert_launch_agent_claims keep com.example.control
 }
 
+@test "scan_installed_apps judges an interpreter's script only past options it knows" {
+    local agent_home="$HOME/agent-options"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/opt/bin" "$agent_home/opt/Live.app"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" opt="$agent_home/opt" tool=""
+    for tool in sh bash zsh fish python python3 ruby perl osascript java node npm uv; do
+        printf '#!/bin/sh\n' > "$opt/bin/$tool"
+        chmod +x "$opt/bin/$tool"
+    done
+    printf '#!/bin/sh\n' > "$opt/live.sh"
+    local bin="$opt/bin" missing="$agent_home/Library/Logs/missing"
+
+    # Not understood: an unknown option, stdin, inline code or a module comes
+    # first, so a missing value or argument is never judged as the script.
+    _write_launch_agent_fixture com.example.noderedirect "" "$bin/node" --redirect-warnings "$missing" "$opt/live.sh"
+    _write_launch_agent_fixture com.example.fishout "" "$bin/fish" -o "$missing" "$opt/live.sh"
+    _write_launch_agent_fixture com.example.npmcache "" "$bin/npm" --cache "$missing" run start
+    _write_launch_agent_fixture com.example.uvcache "" /usr/bin/env uv --cache-dir "$missing" run "$opt/live.sh"
+    _write_launch_agent_fixture com.example.bashstdin "" "$bin/bash" -s "$missing"
+    _write_launch_agent_fixture com.example.pythondash "" "$bin/python3" - "$missing"
+    _write_launch_agent_fixture com.example.perlcode "" "$bin/perl" -E '/x/ and print'
+    _write_launch_agent_fixture com.example.pythonmodule "" "$bin/python3" -m "$missing"
+    _write_launch_agent_fixture com.example.pythonmodulearg "" "$bin/python3" -m runpy "$missing"
+    _write_launch_agent_fixture com.example.bashcluster "" "$bin/bash" -lc "$missing"
+    _write_launch_agent_fixture com.example.openunknown "" /usr/bin/open -X "$opt/Missing.app"
+    _write_launch_agent_fixture com.example.openargs "" /usr/bin/open -e --args "$missing"
+
+    # Understood: a known value option skips its value and a known flag is
+    # passed, so the gone script behind them drops the claim.
+    local -a dropped=()
+    local n=0
+    _drop_case() {
+        n=$((n + 1))
+        _write_launch_agent_fixture "com.example.known$n" "" "$@" "$opt/gone$n"
+        dropped+=("com.example.known$n")
+    }
+    _drop_case "$bin/sh" -o x
+    _drop_case "$bin/sh" --rcfile x
+    _drop_case "$bin/bash" -O x
+    _drop_case "$bin/bash" --init-file x
+    _drop_case "$bin/zsh" +o x
+    _drop_case "$bin/zsh" -o x
+    _drop_case "$bin/fish" -C x
+    _drop_case "$bin/fish" --init-command x
+    _drop_case "$bin/python" -X x
+    _drop_case "$bin/python" -W x
+    _drop_case "$bin/python3" --check-hash-based-pycs x
+    _drop_case "$bin/python3" -X x
+    _drop_case "$bin/ruby" -I x
+    _drop_case "$bin/ruby" -r x
+    _drop_case "$bin/perl" -I x
+    _drop_case "$bin/osascript" -l x
+    _drop_case "$bin/osascript" -s x
+    _drop_case "$bin/java" -cp x -jar
+    _drop_case "$bin/java" --module-path x -jar
+    _drop_case "$bin/node" --require x
+    _drop_case "$bin/node" --env-file x
+    _drop_case "$bin/bash" -lx --noprofile
+    _drop_case "$bin/fish" --no-config
+    _drop_case "$bin/python3" -uB
+    _drop_case "$bin/ruby" -w
+    _drop_case "$bin/perl" -wT
+    _drop_case "$bin/java" -Xmx1g -Dkey=value -jar
+    _drop_case "$bin/node" --no-warnings --max-old-space-size=64
+    _drop_case /usr/bin/open -n -g -a
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims keep com.example.noderedirect com.example.fishout \
+        com.example.npmcache com.example.uvcache com.example.bashstdin com.example.pythondash \
+        com.example.perlcode com.example.pythonmodule com.example.pythonmodulearg \
+        com.example.bashcluster com.example.openunknown com.example.openargs
+    _assert_launch_agent_claims drop "${dropped[@]}"
+}
+
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
     local agent_home="$HOME/agent-dead"
     rm -rf "$agent_home"
