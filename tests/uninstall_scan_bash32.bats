@@ -109,9 +109,9 @@ EOF
     run /bin/bash <<'EOF'
 set -euo pipefail
 eval "$(awk '
-    /^uninstall_print_app_paths_with_mtime\(\)/ { printing = 1 }
+    /^(uninstall_load_item_replacement_globs|uninstall_print_app_paths_with_mtime)\(\)/ { printing = 1 }
     printing { print }
-    printing && /^}$/ { exit }
+    printing && /^}$/ { printing = 0 }
 ' "$PROJECT_ROOT/bin/uninstall.sh")"
 mkdir -p "$HOME/Applications/First.app" "$HOME/Applications/Broken.app"
 cat > "$HOME/stat-stub" <<'STAT'
