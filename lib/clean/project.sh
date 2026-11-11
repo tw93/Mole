@@ -661,22 +661,68 @@ _purge_other_process_matches() {
     _purge_outside_process_among "$matched_pids" "$deadline"
 }
 
-purge_node_project_running() {
-    local project="$1" deadline="${2:-}" probe_timeout evidence rc=0 line saw_cwd=false
-    [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
-    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+# The open-file listing the in-use probes read, left in _PURGE_OPEN_LISTING.
+# A filter pass's snapshot wins. Otherwise a complete listing that finished
+# within the current wall-clock second answers again, so the delete loop and
+# its final guard ask lsof once per second for a whole batch instead of twice
+# per folder each (four machine-wide lsof per folder before, about 15 s for
+# twenty folders). The window matches Mole Mac's sink: anything opened after
+# the listing returned stays unseen for under a second. SECONDS ticks with the
+# wall clock, so an equal stamp, taken when lsof returned, is younger than one
+# second; bash 3.2 has no cheaper monotonic clock, so a clock stepped back by
+# k seconds mid-run can stretch that to k+1. A failed, empty or
+# warning-carrying listing is never kept. Same statuses as the probes:
+# 0 listed, 2 unknown, >128 signal.
+_PURGE_OPEN_LISTING=""
+_PURGE_SINK_LISTING=""
+_PURGE_SINK_LISTING_SECOND=""
+_purge_open_listing() {
+    local deadline="${1:-}" probe_timeout listing rc=0
+    _PURGE_OPEN_LISTING=""
     if [[ -n "${_PURGE_OPEN_SNAPSHOT:-}" ]]; then
-        evidence=$(LC_ALL=C /usr/bin/awk '
-            /^p/ { pid = $0; next }
-            /^f/ { cwd = ($0 == "fcwd"); if (cwd) { print pid; print $0 } next }
-            /^n/ { if (cwd) print; next }
-            { print }' <<< "$_PURGE_OPEN_SNAPSHOT")
-    else
-        # From /, so lsof and its wrappers never list themselves in the project.
-        evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -d cwd -Fn 2>&1) || rc=$?
-        [[ $rc -le 128 ]] || return "$rc"
-        [[ $rc -eq 0 && -n "$evidence" ]] || return 2
+        _PURGE_OPEN_LISTING="$_PURGE_OPEN_SNAPSHOT"
+        return 0
     fi
+    if [[ -n "$_PURGE_SINK_LISTING" && "$_PURGE_SINK_LISTING_SECOND" == "$SECONDS" ]]; then
+        _PURGE_OPEN_LISTING="$_PURGE_SINK_LISTING"
+        return 0
+    fi
+    _PURGE_SINK_LISTING=""
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
+    local error_file="" returned_second
+    # Removed below on every path; the temp root prunes it if Mole dies first.
+    error_file=$(mktemp "$(mole_temp_path_template mole-purge-lsof)" 2> /dev/null) || return 2
+    # From /, so lsof and its wrappers never list themselves in the project.
+    # stderr stays apart: merged into a pipe it can split a name line in two.
+    listing=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -Fn 2> "$error_file") || rc=$?
+    returned_second="$SECONDS"
+    if [[ -s "$error_file" ]]; then
+        rm -f "$error_file" # SAFE: mktemp file this function created
+        [[ $rc -le 128 ]] || return "$rc"
+        return 2 # A warning means some processes went unseen.
+    fi
+    rm -f "$error_file" # SAFE: mktemp file this function created
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -eq 0 && -n "$listing" ]] || return 2
+    _PURGE_OPEN_LISTING="$listing"
+    if ! LC_ALL=C /usr/bin/grep -q '^[^pfn]' <<< "$listing"; then
+        _PURGE_SINK_LISTING="$listing"
+        _PURGE_SINK_LISTING_SECOND="$returned_second"
+    fi
+    return 0
+}
+
+purge_node_project_running() {
+    local project="$1" deadline="${2:-}" evidence rc=0 line saw_cwd=false
+    [[ "$project" == /* && ! "$project" =~ [[:cntrl:]] ]] || return 2
+    _purge_open_listing "$deadline" || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -eq 0 ]] || return 2
+    evidence=$(LC_ALL=C /usr/bin/awk '
+        /^p/ { pid = $0; next }
+        /^f/ { cwd = ($0 == "fcwd"); if (cwd) { print pid; print $0 } next }
+        /^n/ { if (cwd) print; next }
+        { print }' <<< "$_PURGE_OPEN_LISTING")
     local listed_project current_pid=""
     listed_project=$(_purge_lsof_path_form "$project")
     while IFS= read -r line; do
@@ -730,14 +776,11 @@ purge_node_modules_is_protected() {
 # Does a current-user process other than Mole hold a descriptor, mapped binary or
 # cwd inside the artifact, or name it on a command line?
 purge_artifact_in_use() {
-    local artifact="${1%/}" deadline="${2:-}" probe_timeout evidence="${_PURGE_OPEN_SNAPSHOT:-}" rc=0
+    local artifact="${1%/}" deadline="${2:-}" rc=0
     [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
-    if [[ -z "$evidence" ]]; then
-        probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 2
-        evidence=$(cd / && run_with_timeout "$probe_timeout" /usr/sbin/lsof -nP -a -u "$(id -u)" -Fn 2>&1) || rc=$?
-        [[ $rc -le 128 ]] || return "$rc"
-        [[ $rc -eq 0 && -n "$evidence" ]] || return 2
-    fi
+    _purge_open_listing "$deadline" || rc=$?
+    [[ $rc -le 128 ]] || return "$rc"
+    [[ $rc -eq 0 ]] || return 2
 
     local holders=""
     holders=$(TARGET_ARTIFACT="$artifact" TARGET_LISTED="$(_purge_lsof_path_form "$artifact")" LC_ALL=C /usr/bin/awk '
@@ -759,7 +802,7 @@ purge_artifact_in_use() {
         END {
             if (pid == "") exit 20
         }
-    ' <<< "$evidence") || return 2
+    ' <<< "$_PURGE_OPEN_LISTING") || return 2
     if [[ -n "$holders" ]]; then
         rc=0
         _purge_outside_process_among "$holders" "$deadline" || rc=$?
