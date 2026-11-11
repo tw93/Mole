@@ -2,6 +2,15 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-11: Size rounding and install-folder content from Mole for Windows
+
+Owner of the cross-product rows is Mole for Windows' `SYNC.md`, 2026-11-11 Audit of 0.21.2 to main.
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| A size that rounds to 1024 of its unit reads as the next unit in `Format-ByteSize` and the status formatters | Implemented (Mole CLI (Windows), `83778c3f`, with `16c8aaee` listing the new test file for `mo remove`); Implemented (Mole for Windows, `912e4c50`, `bfa31ddf`, the source); Implemented (Mole CLI (macOS), `b90c7fe8`); Not applicable (Mole Mac: the system byte formatter rounds into the next unit itself) | `cmd/status/units_test.go` red on the previous `units.go`; `tests/Core.Tests.ps1` 91 of 91 on Windows 11 ARM64, its step-up case red on the previous `base.ps1`. |
+| An install folder that holds `savegames` or a WSL `ext4.vhdx`, at the root or below one wrapper, is kept | Implemented (Mole CLI (Windows), `0ba92609`); Implemented (Mole for Windows, `c16c1f0b`, the source); Not applicable (Mole CLI (macOS): no uninstall review of launcher or virtual machine folders); Intentional difference (Mole Mac: virtual machine and container data leave with the app there, ticked and to the Trash, maintainer 2026-10-31) | `tests/Uninstall.Tests.ps1` 191 of 191 on Windows 11 ARM64, three new cases red on the previous `uninstall.ps1`. |
+
 ## 2026-11-09: Purge and uninstall rows from Mole CLI (macOS)
 
 Owner of the cross-product row is `SYNC.md` on `main`, 2026-11-09 Artifacts in use and lsof spellings.
