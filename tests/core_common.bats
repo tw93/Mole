@@ -576,6 +576,36 @@ EOF
     [ "$output" = OK ]
 }
 
+@test "bytes_to_human never prints 1000 of a unit that has a next unit" {
+    output="$(
+        HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/lib/core/common.sh"
+bytes_to_human 999499
+bytes_to_human 999500
+bytes_to_human 999999
+bytes_to_human 999949999
+bytes_to_human 999950000
+bytes_to_human 999999999
+bytes_to_human 1000000000
+bytes_to_human 1500000
+EOF
+    )"
+
+    bytes_lines=()
+    while IFS= read -r line; do
+        bytes_lines+=("$line")
+    done <<< "$output"
+
+    [ "${bytes_lines[0]}" = "999KB" ]
+    [ "${bytes_lines[1]}" = "1.0MB" ]
+    [ "${bytes_lines[2]}" = "1.0MB" ]
+    [ "${bytes_lines[3]}" = "999.9MB" ]
+    [ "${bytes_lines[4]}" = "1.00GB" ]
+    [ "${bytes_lines[5]}" = "1.00GB" ]
+    [ "${bytes_lines[6]}" = "1.00GB" ]
+    [ "${bytes_lines[7]}" = "1.5MB" ]
+}
+
 @test "bytes_to_human converts byte counts into readable units" {
     output="$(
         HOME="$HOME" /bin/bash --noprofile --norc << 'EOF'

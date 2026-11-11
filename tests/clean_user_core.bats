@@ -3851,6 +3851,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }
@@ -3877,6 +3878,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
+_mole_mount_table() { echo "/dev/disk3s1s1 on / (apfs, local, journaled)"; }
 start_section_spinner() { :; }
 stop_section_spinner() { :; }
 note_activity() { :; }

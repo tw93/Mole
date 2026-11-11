@@ -44,19 +44,24 @@ func TestBytesBin(t *testing.T) {
 		{"one byte", 1, "1 B"},
 		{"1023 bytes", 1023, "1023 B"},
 
-		{"exactly 1KB", 1 << 10, "1024 B"},
+		{"exactly 1KB", 1 << 10, "1.0 KB"},
 		{"just over 1KB", (1 << 10) + 1, "1.0 KB"},
 		{"1.5KB", 1536, "1.5 KB"},
 
-		{"exactly 1MB", 1 << 20, "1024.0 KB"},
+		{"largest that prints in KB", 1048524, "1023.9 KB"},
+		{"just under 1MB", (1 << 20) - 1, "1.0 MB"},
+		{"exactly 1MB", 1 << 20, "1.0 MB"},
 		{"just over 1MB", (1 << 20) + 1, "1.0 MB"},
 		{"500MB", 500 << 20, "500.0 MB"},
 
-		{"exactly 1GB", 1 << 30, "1024.0 MB"},
+		{"largest that prints in MB", 1073689395, "1023.9 MB"},
+		{"just under 1GB", (1 << 30) - 1, "1.0 GB"},
+		{"exactly 1GB", 1 << 30, "1.0 GB"},
 		{"just over 1GB", (1 << 30) + 1, "1.0 GB"},
 		{"100GB", 100 << 30, "100.0 GB"},
 
-		{"exactly 1TB", 1 << 40, "1024.0 GB"},
+		{"just under 1TB", (1 << 40) - 1, "1.0 TB"},
+		{"exactly 1TB", 1 << 40, "1.0 TB"},
 		{"just over 1TB", (1 << 40) + 1, "1.0 TB"},
 		{"2TB", 2 << 40, "2.0 TB"},
 	}
@@ -87,15 +92,17 @@ func TestBytesBinShort(t *testing.T) {
 		{"999KB", 999 << 10, "999K"},
 
 		{"exactly 1MB", 1 << 20, "1M"},
-		{"just under 1MB", (1 << 20) - 1, "1024K"},
+		{"largest that prints in K", 1048063, "1023K"},
+		{"first that steps up to M", 1048064, "1M"},
+		{"just under 1MB", (1 << 20) - 1, "1M"},
 		{"500MB", 500 << 20, "500M"},
 
 		{"exactly 1GB", 1 << 30, "1G"},
-		{"just under 1GB", (1 << 30) - 1, "1024M"},
+		{"just under 1GB", (1 << 30) - 1, "1G"},
 		{"100GB", 100 << 30, "100G"},
 
 		{"exactly 1TB", 1 << 40, "1T"},
-		{"just under 1TB", (1 << 40) - 1, "1024G"},
+		{"just under 1TB", (1 << 40) - 1, "1T"},
 		{"2TB", 2 << 40, "2T"},
 	}
 
@@ -122,12 +129,16 @@ func TestBytesBinCompact(t *testing.T) {
 		{"exactly 1KB", 1 << 10, "1.0K"},
 		{"1.5KB", 1536, "1.5K"},
 
+		{"largest that prints in K", 1048524, "1023.9K"},
+		{"just under 1MB", (1 << 20) - 1, "1.0M"},
 		{"exactly 1MB", 1 << 20, "1.0M"},
 		{"500MB", 500 << 20, "500.0M"},
 
+		{"just under 1GB", (1 << 30) - 1, "1.0G"},
 		{"exactly 1GB", 1 << 30, "1.0G"},
 		{"100GB", 100 << 30, "100.0G"},
 
+		{"just under 1TB", (1 << 40) - 1, "1.0T"},
 		{"exactly 1TB", 1 << 40, "1.0T"},
 		{"2TB", 2 << 40, "2.0T"},
 	}

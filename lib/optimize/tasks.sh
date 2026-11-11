@@ -978,11 +978,14 @@ opt_spotlight_index_optimize() {
 
 # Remove orphaned Spotlight search-rule entries.
 # Uninstalling an app (especially Mac App Store apps that synced via iCloud)
-# can leave its bundle id behind in com.apple.spotlight EnabledPreferenceRules,
+# can leave its bundle id behind in com.apple.Spotlight EnabledPreferenceRules,
 # showing up as a dead row in System Settings > Spotlight (#1000). macOS never
 # prunes these, so we drop entries whose app is no longer installed.
+# The domain is spelled in Spotlight's own case: cfprefsd keys domains by the
+# exact string, so while Spotlight holds com.apple.Spotlight a lowercase read
+# finds no rules and a lowercase write reaches the file but never Spotlight.
 opt_prune_spotlight_orphan_rules() {
-    local domain="com.apple.spotlight"
+    local domain="com.apple.Spotlight"
     local plist="$HOME/Library/Preferences/${domain}.plist"
 
     if ! defaults read "$domain" EnabledPreferenceRules &> /dev/null; then

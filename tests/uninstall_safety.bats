@@ -1683,6 +1683,54 @@ EOF2
     [[ "$output" != *".foo-update"* ]] || { echo "$output"; return 1; }
 }
 
+@test "an old app copy in Foundation's item-replacement folder is not listed in any locale" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF2'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+root="$HOME/Applications"
+# Spanish written decomposed, as a directory listing returns it.
+es=$(printf '(%s está guardando un documento…)' Sparkle | /usr/bin/iconv -f UTF-8 -t UTF-8-MAC)
+mkdir -p "$root/WhatsApp.app/Contents" \
+    "$root/(A Document Being Saved By Sparkle)/WhatsApp.app/Contents" \
+    "$root/(A Document Being Saved By Sparkle 2)/Old.app/Contents" \
+    "$root/（Sparkle正在保存文稿）/Old.app/Contents" \
+    "$root/$es/Old.app/Contents" \
+    "$root/(Not Being Saved)/Kept.app/Contents" "$root/（不是）/Kept.app/Contents"
+# The decomposed name reached the disk as written (U+0301 is CC 81).
+ls "$root" | LC_ALL=C grep -q $'\xcc\x81' || { echo "no decomposed name on disk"; exit 1; }
+uninstall_print_app_paths_with_mtime "$root" | awk -F '\t' '{ print "LISTED=" $NF }' | sed "s#$HOME#~#"
+uninstall_print_app_search_dirs() { printf '%s\n' "$root"; }
+pkg_receipt_nonstandard_app_paths() { :; }
+uninstall_app_inventory_fingerprint | awk -F '|' '{ print "INVENTORY=" $1 }' | sed "s#$HOME#~#"
+EOF2
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local kind
+    for kind in LISTED INVENTORY; do
+        [[ "$output" == *"$kind=~/Applications/WhatsApp.app"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"$kind=~/Applications/(Not Being Saved)/Kept.app"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"$kind=~/Applications/（不是）/Kept.app"* ]] || { echo "$output"; return 1; }
+    done
+    [[ "$output" != *"Being Saved By"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"正在保存文稿"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"guardando"* ]] || { echo "$output"; return 1; }
+}
+
+@test "item-replacement folder names come from the system's Document.loctable" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF2'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+uninstall_load_item_replacement_globs
+printf '%s\n' "$_MOLE_ITEM_REPLACEMENT_GLOBS" | grep -c . | sed 's/^/COUNT=/'
+printf '%s\n' "$_MOLE_ITEM_REPLACEMENT_GLOBS" | grep -c '%' | sed 's/^/UNCONVERTED=/' || true
+EOF2
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local count="${output#*COUNT=}"
+    count="${count%%$'\n'*}"
+    # 148 templates from 43 locales on macOS 27; fewer means the read broke.
+    [[ "$count" =~ ^[0-9]+$ ]] && ((count >= 80)) || { echo "$output"; return 1; }
+    [[ "$output" == *"UNCONVERTED=0"* ]] || { echo "$output"; return 1; }
+}
+
 @test "an updater staging copy does not count as a surviving sibling but a hidden app does" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF2'
 set -uo pipefail

@@ -397,6 +397,386 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+# Writes a LaunchAgent plist into $AGENT_DIR: $1 label, $2 Program ("" for
+# none), then the ProgramArguments strings.
+_write_launch_agent_fixture() {
+    local label="$1" program="$2"
+    shift 2
+    {
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' "<key>Label</key><string>$label</string>"
+        [[ -z "$program" ]] || printf '<key>Program</key><string>%s</string>\n' "$program"
+        if [[ $# -gt 0 ]]; then
+            printf '%s\n' '<key>ProgramArguments</key><array>'
+            printf '<string>%s</string>\n' "$@"
+            printf '%s\n' '</array>'
+        fi
+        printf '%s\n' '</dict></plist>'
+    } > "$AGENT_DIR/$label.plist"
+}
+
+# Runs scan_installed_apps under the fixture HOME $1; the rest are extra env
+# assignments. MOLE_TEST_PREAMBLE names a file sourced before the scan.
+_scan_launch_agent_claims() {
+    local agent_home="$1"
+    shift
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 "$@" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+[[ -z "${MOLE_TEST_PREAMBLE:-}" ]] || source "$MOLE_TEST_PREAMBLE"
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+}
+
+# Usage: _assert_launch_agent_claims "$output" keep|drop label...
+_assert_launch_agent_claims() {
+    local claims="$1" mode="$2" label=""
+    shift 2
+    for label in "$@"; do
+        if grep -qFx "$label" <<< "$claims"; then
+            [[ "$mode" == keep ]] || { echo "dead agent still claims $label"; grep -F com.example <<< "$claims"; return 1; }
+        else
+            [[ "$mode" == drop ]] || { echo "lost claim $label"; grep -F com.example <<< "$claims"; return 1; }
+        fi
+    done
+}
+
+@test "scan_installed_apps judges Program and never ProgramArguments while the Program key exists" {
+    local agent_home="$HOME/agent-program"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" gone="$agent_home/old/agent"
+    _write_launch_agent_fixture com.example.noprogram "" "$gone" --run
+    _write_launch_agent_fixture com.example.programescaped "$agent_home/opt/a&amp;b/agent" "$gone" --run
+    local label value
+    for label in programempty programarray; do
+        value='<string></string>'
+        [[ "$label" != programarray ]] || value="<array><string>$gone</string></array>"
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict>' \
+            "<key>Label</key><string>com.example.$label</string>" "<key>Program</key>$value" \
+            "<key>ProgramArguments</key><array><string>$gone</string></array>" '</dict></plist>' \
+            > "$AGENT_DIR/com.example.$label.plist"
+    done
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" drop com.example.noprogram
+    _assert_launch_agent_claims "$output" keep com.example.programescaped com.example.programempty \
+        com.example.programarray
+}
+
+@test "scan_installed_apps compares /Volumes and the prompting folders however the path is spelled" {
+    local agent_home="$HOME/agent-spelling"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" upper_home=""
+    upper_home=$(tr '[:lower:]' '[:upper:]' <<< "$agent_home")
+    _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.volumeslower "/volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.firmvolumes "/System/Volumes/Data/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.nofollowvolumes "/.nofollow/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.resolvevolumes "/.resolve/1/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.firmdocuments "/System/Volumes/Data$agent_home/Documents/gone/agent"
+    _write_launch_agent_fixture com.example.lowerdocuments "$agent_home/documents/gone/agent"
+    _write_launch_agent_fixture com.example.upperhome "$upper_home/DOWNLOADS/gone/agent"
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.nofollowvolumes com.example.resolvevolumes
+    _assert_launch_agent_claims "$output" keep com.example.volumeslower com.example.firmvolumes \
+        com.example.firmdocuments com.example.lowerdocuments com.example.upperhome
+
+    _write_launch_agent_fixture com.example.slashhome "$agent_home/Documents/gone/agent"
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _scan_launch_agent_claims "$agent_home/"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" keep com.example.slashhome
+}
+
+@test "scan_installed_apps proves a LaunchAgent path missing by its errno, not by test -e" {
+    local agent_home="$HOME/agent-errno"
+    [[ ! -d "$agent_home" ]] || chmod -R u+rwx "$agent_home"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/Library/Mail/V10" "$agent_home/listless"
+    printf '#!/bin/sh\n' > "$agent_home/Library/Mail/V10/agent"
+    chmod +x "$agent_home/Library/Mail/V10/agent"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents"
+    _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.listless "$agent_home/listless/gone/agent"
+    chmod 311 "$agent_home/listless"
+    _scan_launch_agent_claims "$agent_home"
+    chmod 755 "$agent_home/listless"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.listless
+
+    # A stat probe that times out (a stale NFS or autofs path) keeps the claim.
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _write_launch_agent_fixture com.example.slowprobe "$agent_home/slow/gone/agent"
+    cat > "$agent_home/preamble.sh" <<'SH'
+run_with_timeout() {
+    shift
+    case " $* " in *" /usr/bin/stat "*) return 124 ;; esac
+    "$@"
+}
+SH
+    _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" keep com.example.slowprobe com.example.control
+
+    # A lookup the sandbox denies (as TCC does) is EPERM, not ENOENT.
+    if ! command -v sandbox-exec > /dev/null 2>&1 ||
+        ! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2> /dev/null; then
+        skip "sandbox-exec unavailable"
+    fi
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _write_launch_agent_fixture com.example.denied "$agent_home/Library/Mail/V10/agent"
+    printf '(version 1)\n(allow default)\n(deny file-read-metadata file-read-data (subpath "%s"))\n' \
+        "$agent_home/Library/Mail/V10" > "$agent_home/deny.sb"
+    run sandbox-exec -f "$agent_home/deny.sb" env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" keep com.example.denied
+}
+
+@test "scan_installed_apps keeps the claim of a LaunchAgent under a configured mount point" {
+    local agent_home="$HOME/agent-mounts"
+    [[ ! -d "$agent_home" ]] || chmod -R u+rwx "$agent_home"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/etc"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" etc="$agent_home/etc"
+    printf '# comment\nUUID=1 %s apfs rw\nLABEL=2 %s hfs rw\nLABEL=3 none hfs rw,noauto\n' \
+        "$agent_home/mnt/disk" "$agent_home/mnt/my\\040disk" > "$etc/fstab"
+    printf '+auto_master\n%s\tauto_home\t-nobrowse\n/-\t-static\n/-\t%s\n' \
+        "$agent_home/auto/home" "$etc/auto_direct" > "$etc/auto_master"
+    printf '%s\tnas:/export\n' "$agent_home/direct/share" > "$etc/auto_direct"
+    cat > "$agent_home/preamble.sh" <<SH
+_mole_launch_agent_mount_config_files() {
+    printf '%s\n' "fstab $etc/fstab" "master $etc/auto_master"
+}
+SH
+    _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.fstabdisk "$agent_home/mnt/disk/bin/agent"
+    _write_launch_agent_fixture com.example.fstabspace "$agent_home/mnt/my disk/bin/agent"
+    _write_launch_agent_fixture com.example.masterpoint "$agent_home/auto/home/me/agent"
+    _write_launch_agent_fixture com.example.directmap "$agent_home/direct/share/agent"
+
+    _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.fstabdisk com.example.fstabspace \
+        com.example.masterpoint com.example.directmap
+
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    chmod 000 "$etc/auto_direct"
+    _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
+    chmod 644 "$etc/auto_direct"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" keep com.example.control
+}
+
+@test "scan_installed_apps judges an interpreter's script only past options it knows" {
+    local agent_home="$HOME/agent-options"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/opt/bin" "$agent_home/opt/Live.app"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" opt="$agent_home/opt" tool=""
+    for tool in sh bash zsh fish python python3 ruby perl osascript java node npm uv; do
+        printf '#!/bin/sh\n' > "$opt/bin/$tool"
+        chmod +x "$opt/bin/$tool"
+    done
+    printf '#!/bin/sh\n' > "$opt/live.sh"
+    local bin="$opt/bin" missing="$agent_home/Library/Logs/missing"
+
+    # Not understood: an unknown option, stdin, inline code or a module comes
+    # first, so a missing value or argument is never judged as the script.
+    _write_launch_agent_fixture com.example.noderedirect "" "$bin/node" --redirect-warnings "$missing" "$opt/live.sh"
+    _write_launch_agent_fixture com.example.fishout "" "$bin/fish" -o "$missing" "$opt/live.sh"
+    _write_launch_agent_fixture com.example.npmcache "" "$bin/npm" --cache "$missing" run start
+    _write_launch_agent_fixture com.example.uvcache "" /usr/bin/env uv --cache-dir "$missing" run "$opt/live.sh"
+    _write_launch_agent_fixture com.example.bashstdin "" "$bin/bash" -s "$missing"
+    _write_launch_agent_fixture com.example.pythondash "" "$bin/python3" - "$missing"
+    _write_launch_agent_fixture com.example.perlcode "" "$bin/perl" -E '/x/ and print'
+    _write_launch_agent_fixture com.example.pythonmodule "" "$bin/python3" -m "$missing"
+    _write_launch_agent_fixture com.example.pythonmodulearg "" "$bin/python3" -m runpy "$missing"
+    _write_launch_agent_fixture com.example.bashcluster "" "$bin/bash" -lc "$missing"
+    _write_launch_agent_fixture com.example.openunknown "" /usr/bin/open -X "$opt/Missing.app"
+    _write_launch_agent_fixture com.example.openargs "" /usr/bin/open -e --args "$missing"
+    # node's --name=value forms that run inline code or a package script: the
+    # path after them is an argument to that code, never the script.
+    _write_launch_agent_fixture com.example.nodeevaleq "" "$bin/node" --eval='setInterval(()=>{},1e3)' "$missing"
+    _write_launch_agent_fixture com.example.nodeprinteq "" "$bin/node" --print=1 "$missing"
+    _write_launch_agent_fixture com.example.noderuneq "" "$bin/node" --run=start "$missing"
+    _write_launch_agent_fixture com.example.nodeunknowneq "" "$bin/node" --some-future-flag=x "$missing"
+
+    # Understood: a known value option skips its value and a known flag is
+    # passed, so the gone script behind them drops the claim.
+    local -a dropped=()
+    local n=0
+    _drop_case() {
+        n=$((n + 1))
+        _write_launch_agent_fixture "com.example.known$n" "" "$@" "$opt/gone$n"
+        dropped+=("com.example.known$n")
+    }
+    _drop_case "$bin/sh" -o x
+    _drop_case "$bin/sh" --rcfile x
+    _drop_case "$bin/bash" -O x
+    _drop_case "$bin/bash" --init-file x
+    _drop_case "$bin/zsh" +o x
+    _drop_case "$bin/zsh" -o x
+    _drop_case "$bin/fish" -C x
+    _drop_case "$bin/fish" --init-command x
+    _drop_case "$bin/python" -X x
+    _drop_case "$bin/python" -W x
+    _drop_case "$bin/python3" --check-hash-based-pycs x
+    _drop_case "$bin/python3" -X x
+    _drop_case "$bin/ruby" -I x
+    _drop_case "$bin/ruby" -r x
+    _drop_case "$bin/perl" -I x
+    _drop_case "$bin/osascript" -l x
+    _drop_case "$bin/osascript" -s x
+    _drop_case "$bin/java" -cp x -jar
+    _drop_case "$bin/java" --module-path x -jar
+    _drop_case "$bin/node" --require x
+    _drop_case "$bin/node" --env-file x
+    _drop_case "$bin/bash" -lx --noprofile
+    _drop_case "$bin/fish" --no-config
+    _drop_case "$bin/python3" -uB
+    _drop_case "$bin/ruby" -w
+    _drop_case "$bin/perl" -wT
+    _drop_case "$bin/java" -Xmx1g -Dkey=value -jar
+    _drop_case "$bin/node" --no-warnings --max-old-space-size=64
+    _drop_case /usr/bin/open -n -g -a
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" keep com.example.noderedirect com.example.fishout \
+        com.example.npmcache com.example.uvcache com.example.bashstdin com.example.pythondash \
+        com.example.perlcode com.example.pythonmodule com.example.pythonmodulearg \
+        com.example.bashcluster com.example.openunknown com.example.openargs \
+        com.example.nodeevaleq com.example.nodeprinteq com.example.noderuneq com.example.nodeunknowneq
+    _assert_launch_agent_claims "$output" drop "${dropped[@]}"
+}
+
+@test "scan_installed_apps keeps multi-line values, env -S and agents past the judging budget" {
+    local agent_home="$HOME/agent-guards"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" gone="$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.control "$gone"
+    _write_launch_agent_fixture com.example.multiline "" /bin/sh $'-x\n' "$gone.sh"
+    _write_launch_agent_fixture com.example.envsplit "" /usr/bin/env -S "$gone arg"
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.multiline com.example.envsplit
+
+    # A zero budget judges nothing, so even the dead control keeps its claim.
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _scan_launch_agent_claims "$agent_home" MOLE_TIMEOUT_MEDIUM_PROBE_SEC=0
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims "$output" keep com.example.control
+}
+
+@test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
+    local agent_home="$HOME/agent-dead"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/opt/bin" "$agent_home/opt/Live.app"
+    printf '#!/bin/sh\n' > "$agent_home/opt/bin/live"
+    chmod +x "$agent_home/opt/bin/live"
+    printf '#!/bin/sh\n' > "$agent_home/opt/live.sh"
+    local opt="$agent_home/opt"
+
+    local AGENT_DIR="$agent_home/Library/LaunchAgents"
+    _write_launch_agent_fixture com.example.live "$opt/bin/live"
+    _write_launch_agent_fixture com.example.goneprogram "$opt/bin/gone"
+    _write_launch_agent_fixture com.example.goneargv0 "" "$opt/bin/gone" --flag
+    _write_launch_agent_fixture com.example.openmissing "" /usr/bin/open -a "$opt/Missing.app"
+    _write_launch_agent_fixture com.example.openlive "" /usr/bin/open -n --stdout "$opt/gone.log" "$opt/Live.app"
+    _write_launch_agent_fixture com.example.scriptgone "" /bin/sh "$opt/gone.sh"
+    _write_launch_agent_fixture com.example.scriptlive "" /bin/bash --rcfile "$opt/gone.rc" "$opt/live.sh"
+    _write_launch_agent_fixture com.example.envgone "" /usr/bin/env -u NAME node "$opt/gone.js"
+
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local label
+    for label in com.example.live com.example.openlive com.example.scriptlive; do
+        grep -qFx "$label" <<< "$output" || { echo "missing live claim $label"; grep -F com.example <<< "$output"; return 1; }
+    done
+    for label in com.example.goneprogram com.example.goneargv0 com.example.openmissing \
+        com.example.scriptgone com.example.envgone; do
+        if grep -qFx "$label" <<< "$output"; then
+            echo "dead agent still claims $label"
+            grep -F com.example <<< "$output"
+            return 1
+        fi
+    done
+}
+
+@test "scan_installed_apps keeps the claim of a LaunchAgent it cannot prove dead" {
+    local agent_home="$HOME/agent-doubt"
+    [[ ! -d "$agent_home" ]] || chmod -R u+rwx "$agent_home"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/locked/inner"
+
+    local AGENT_DIR="$agent_home/Library/LaunchAgents"
+    _write_launch_agent_fixture com.example.bare "mole-test-no-such-tool"
+    _write_launch_agent_fixture com.example.relative "" "bin/agent"
+    _write_launch_agent_fixture com.example.volumes "/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.inline "" /bin/zsh -lc "$agent_home/gone.sh"
+    _write_launch_agent_fixture com.example.documents "$agent_home/Documents/gone/agent"
+    _write_launch_agent_fixture com.example.locked "$agent_home/locked/inner/agent"
+    _write_launch_agent_fixture com.example.dotted "$agent_home/gone/../Documents/agent"
+    ln -s "$agent_home/nowhere" "$agent_home/link"
+    _write_launch_agent_fixture com.example.linked "$agent_home/link/agent"
+    _write_launch_agent_fixture com.example.escaped "$agent_home/a&amp;b/agent"
+    : > "$agent_home/Library/LaunchAgents/com.example.empty.plist"
+    printf 'not a plist' > "$agent_home/Library/LaunchAgents/com.example.malformed.plist"
+    _write_launch_agent_fixture com.example.unreadable "$agent_home/gone"
+    chmod 000 "$agent_home/Library/LaunchAgents/com.example.unreadable.plist"
+    chmod 000 "$agent_home/locked"
+
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+    chmod 755 "$agent_home/locked"
+    chmod 644 "$agent_home/Library/LaunchAgents/com.example.unreadable.plist"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local label
+    for label in com.example.bare com.example.relative com.example.volumes \
+        com.example.inline com.example.documents com.example.locked com.example.dotted \
+        com.example.linked com.example.escaped com.example.empty com.example.malformed \
+        com.example.unreadable; do
+        grep -qFx "$label" <<< "$output" || { echo "lost claim $label"; grep -F com.example <<< "$output"; return 1; }
+    done
+}
+
 @test "scan_installed_apps fails closed when scan result aggregation fails" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

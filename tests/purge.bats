@@ -5257,16 +5257,20 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
 project="$HOME/www/name[1]"
+# Each mode is a later second, so it reaches lsof instead of the last listing.
+unset SECONDS
+SECONDS=0
 for mode in cwd args idle error partial signal; do
+    SECONDS=$((SECONDS + 1))
     run_with_timeout() {
         shift
         if [[ "$1" == /usr/sbin/lsof ]]; then
             case "$mode" in
-                cwd) printf 'p123\nn%s/src\n' "$project" ;;
+                cwd) printf 'p123\nfcwd\nn%s/src\n' "$project" ;;
                 error) return 1 ;;
-                partial) printf 'p123\nn/unrelated\n'; echo 'lsof: incomplete visibility' >&2 ;;
+                partial) printf 'p123\nfcwd\nn/unrelated\n'; echo 'lsof: incomplete visibility' >&2 ;;
                 signal) return 143 ;;
-                *) printf 'p123\nn/unrelated\n' ;;
+                *) printf 'p123\nfcwd\nn/unrelated\n' ;;
             esac
         else
             [[ "$1" == pgrep && "$3" == *'name\[1\]'* ]] || return 2
@@ -5595,7 +5599,11 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
 artifact="$HOME/www/app/target"
+# Each mode is a later second, so it reaches lsof instead of the last listing.
+unset SECONDS
+SECONDS=0
 for mode in fd txt cwd args idle error partial signal; do
+    SECONDS=$((SECONDS + 1))
     run_with_timeout() {
         shift
         if [[ "$1" == /usr/sbin/lsof ]]; then
@@ -5981,6 +5989,115 @@ SCRIPT
     [[ "$output" == *"EXITED_RC=1"* ]] || { echo "$output"; return 1; }
     # What Mole itself started is Mole's, the same rule as the project probe.
     [[ "$output" == *"CHILD_RC=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge in-use checks of twenty folders share one lsof listing within a second" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+count_file="$HOME/lsof-count"
+: > "$count_file"
+held=""
+for i in $(seq -w 1 20); do
+    mkdir -p "$HOME/www/p$i/target/debug"
+    touch "$HOME/www/p$i/Cargo.toml"
+done
+held=$(cd "$HOME/www/p07/target" && /bin/pwd -P)
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/sbin/lsof)
+            echo x >> "$count_file"
+            if [[ " $* " == *" -d cwd "* ]]; then
+                printf 'p4242\nfcwd\nn/unrelated\n'
+            else
+                printf 'p4242\nfcwd\nn/unrelated\nf5\nn%s/debug/app.o\n' "$held"
+            fi
+            ;;
+        /bin/ps) printf '4242 1 /bin/sleep\n' ;;
+        pgrep) return 1 ;;
+        *) "$@" ;;
+    esac
+}
+# Unset, SECONDS is a plain variable: every check below happens in one second.
+unset SECONDS
+SECONDS=100
+for i in $(seq -w 1 20); do
+    # The delete loop and the final remove guard each ask once per folder.
+    for pass in loop guard; do
+        rc=0
+        is_protected_purge_artifact "$HOME/www/p$i/target" || rc=$?
+        if [[ "$i" == 07 ]]; then
+            [[ $rc -eq 0 && "$PURGE_PROTECTION_REASON" == in_use ]] || { echo "HELD_NOT_REFUSED=$rc"; exit 1; }
+        else
+            [[ $rc -eq 1 ]] || { echo "IDLE_REFUSED=p$i:$rc:$PURGE_PROTECTION_UNVERIFIED"; exit 1; }
+        fi
+    done
+done
+echo "SAME_SECOND=$(wc -l < "$count_file" | tr -d ' ')"
+SECONDS=101
+rc=0
+is_protected_purge_artifact "$HOME/www/p01/target" || rc=$?
+echo "NEXT_SECOND=$(wc -l < "$count_file" | tr -d ' ')"
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"SAME_SECOND=1"* ]] || { echo "$output"; return 1; }
+    # A listing never answers past the second it finished in.
+    [[ "$output" == *"NEXT_SECOND=2"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge in-use check refuses when lsof fails and never reuses a failed or partial listing" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+count_file="$HOME/lsof-count"
+: > "$count_file"
+mode=fail
+for i in 1 2 3; do
+    mkdir -p "$HOME/www/f$i/target/debug"
+    touch "$HOME/www/f$i/Cargo.toml"
+done
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/sbin/lsof)
+            echo x >> "$count_file"
+            case "$mode" in
+                fail) return 1 ;;
+                partial) printf 'p4242\nfcwd\nn/unrelated\n'; echo 'lsof: WARNING: can not stat' >&2 ;;
+                split) printf 'p4242\nfcwd\nn/unrel\nlsof: WARNING: can not stat\nated\n' ;;
+                *) printf 'p4242\nfcwd\nn/unrelated\n' ;;
+            esac
+            ;;
+        /bin/ps) printf '4242 1 /bin/sleep\n' ;;
+        pgrep) return 1 ;;
+        *) "$@" ;;
+    esac
+}
+unset SECONDS
+SECONDS=100
+for mode in fail partial split; do
+    : > "$count_file"
+    for i in 1 2 3; do
+        rc=0
+        is_protected_purge_artifact "$HOME/www/f$i/target" || rc=$?
+        [[ $rc -eq 0 && "$PURGE_PROTECTION_UNVERIFIED" == true ]] || { echo "NOT_REFUSED=$mode:f$i:$rc"; exit 1; }
+    done
+    echo "$mode=$(wc -l < "$count_file" | tr -d ' ')"
+done
+mode=ok
+: > "$count_file"
+rc=0
+is_protected_purge_artifact "$HOME/www/f1/target" || rc=$?
+echo "OK_RC=$rc OK=$(wc -l < "$count_file" | tr -d ' ')"
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # Each refusal asked lsof itself: nothing failed or partial was kept.
+    [[ "$output" == *"fail=3"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"partial=3"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"split=3"* ]] || { echo "$output"; return 1; }
+    # Within the same second a good listing is asked for afresh and clears.
+    [[ "$output" == *"OK_RC=1 OK=1"* ]] || { echo "$output"; return 1; }
 }
 
 @test "a selected build folder refused because its project runs says so" {

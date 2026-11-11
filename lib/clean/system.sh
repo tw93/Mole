@@ -1431,6 +1431,11 @@ clean_local_snapshots() {
     if ! command -v tmutil > /dev/null 2>&1; then
         return 0
     fi
+    # No tmutil while a network share is mounted (see mole_network_volume_mounted).
+    local network_mount_rc=0
+    mole_network_volume_mounted || network_mount_rc=$?
+    mole_rc_signal "$network_mount_rc" && return "$network_mount_rc"
+    [[ $network_mount_rc -eq 1 ]] || return 0
     # The Time Machine row needs Time Machine configured and idle; snapshots
     # from other backup apps are listed either way (#1916).
     local include_tm=false

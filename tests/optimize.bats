@@ -1017,7 +1017,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "$(dirname "$PLIST")"
 rm -f "$PLIST"
 /usr/libexec/PlistBuddy \
@@ -1054,7 +1054,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "$(dirname "$PLIST")"
 rm -f "$PLIST"
 /usr/libexec/PlistBuddy \
@@ -1094,7 +1094,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "$(dirname "$PLIST")"
 rm -f "$PLIST"
 /usr/libexec/PlistBuddy \
@@ -1123,7 +1123,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "$(dirname "$PLIST")"
 rm -f "$PLIST"
 /usr/libexec/PlistBuddy \
@@ -1152,7 +1152,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "$(dirname "$PLIST")"
 rm -f "$PLIST"
 /usr/libexec/PlistBuddy \
@@ -1182,7 +1182,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "${PLIST%/*}"
 printf '%s' '<plist version="1.0"><dict><key>EnabledPreferenceRules</key><array><string>com.missing.App</string><string>com.apple.Safari</string></array></dict></plist>' > "$PLIST"
 defaults() { case "$1" in read) return 0;; *) echo "UNEXPECTED_WRITE $*";; esac; }
@@ -1207,7 +1207,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/optimize/tasks.sh"
-PLIST="$HOME/Library/Preferences/com.apple.spotlight.plist"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
 mkdir -p "${PLIST%/*}"
 printf '%s' '<plist version="1.0"><dict><key>EnabledPreferenceRules</key><array><string>com.missing.App</string><dict><key>protected</key><true/></dict></array></dict></plist>' > "$PLIST"
 defaults() { case "$1" in read) return 0;; *) echo "UNEXPECTED_WRITE $*";; esac; }
@@ -1216,6 +1216,40 @@ execute_optimization spotlight_orphan_rules_cleanup
 EOF
     [ "$status" -eq 0 ]
     [[ "$output" != *"UNEXPECTED_WRITE"* ]] || return 1
+}
+
+@test "Spotlight rules are read and written in the domain Spotlight itself uses" {
+	# cfprefsd keys domains by exact string: while Spotlight holds
+	# com.apple.Spotlight, com.apple.spotlight reads no rules and a write to it
+	# never reaches Spotlight, even on a case-insensitive volume.
+	for keep in some none; do
+		run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" KEEP="$keep" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/tasks.sh"
+PLIST="$HOME/Library/Preferences/com.apple.Spotlight.plist"
+mkdir -p "${PLIST%/*}"
+rm -f "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :EnabledPreferenceRules array" "$PLIST" >/dev/null 2>&1
+[[ "$KEEP" == none ]] || /usr/libexec/PlistBuddy -c "Add :EnabledPreferenceRules:0 string System.iphoneApps" "$PLIST" >/dev/null 2>&1
+/usr/libexec/PlistBuddy -c "Add :EnabledPreferenceRules: string com.gone.App" "$PLIST" >/dev/null 2>&1
+: > "$HOME/defaults-calls"
+# Recorded in a file: the read's output goes to /dev/null.
+defaults() { echo "DEFAULTS_DOMAIN: $1 $2" >> "$HOME/defaults-calls"; }
+bundle_has_installed_app() { return 1; }
+execute_optimization spotlight_orphan_rules_cleanup
+cat "$HOME/defaults-calls"
+EOF
+		[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+		[[ "$output" == *"Removed 1 orphan"* ]] || { echo "$output"; return 1; }
+		[[ "$output" == *"DEFAULTS_DOMAIN: read com.apple.Spotlight"* ]] || { echo "$output"; return 1; }
+		if [[ "$keep" == none ]]; then
+			[[ "$output" == *"DEFAULTS_DOMAIN: delete com.apple.Spotlight"* ]] || { echo "$output"; return 1; }
+		else
+			[[ "$output" == *"DEFAULTS_DOMAIN: write com.apple.Spotlight"* ]] || { echo "$output"; return 1; }
+		fi
+		[[ "$output" != *"com.apple.spotlight"* ]] || { echo "$output"; return 1; }
+	done
 }
 
 @test "opt_spotlight_index_optimize reports optimal when probes are fast" {
