@@ -107,6 +107,62 @@ func isProtectedPath(path string) bool {
 		return true
 	}
 
+	return isUserHead(absPath)
+}
+
+// profileFolders are the folders Windows creates in a profile.
+var profileFolders = []string{"desktop", "documents", "downloads", "pictures", "videos", "music", "appdata"}
+
+// oneDriveEnvVars name the personal and work OneDrive sync roots, wherever they live.
+var oneDriveEnvVars = []string{"OneDrive", "OneDriveConsumer", "OneDriveCommercial"}
+
+// isUserHead reports whether a lowercased absolute path is the head of the
+// user's own tree, which Analyze never deletes: the folders Windows creates in
+// the profile, AppData's Local, Roaming and LocalLow, a OneDrive root (a
+// deletion there syncs to every device) and the Mole app's own folders. Only
+// the folder itself is refused, except Mole's, refused whole: what a user keeps
+// inside Documents or a OneDrive folder can still be deleted.
+func isUserHead(lowerAbsPath string) bool {
+	trimmed := strings.TrimRight(lowerAbsPath, `\`)
+	same := func(root string) bool {
+		if strings.TrimSpace(root) == "" {
+			return false
+		}
+		clean, err := filepath.Abs(root)
+		return err == nil && trimmed == strings.TrimRight(strings.ToLower(clean), `\`)
+	}
+	for _, home := range []string{os.Getenv("USERPROFILE"), userHomeDir()} {
+		if home == "" {
+			continue
+		}
+		for _, name := range profileFolders {
+			if same(filepath.Join(home, name)) {
+				return true
+			}
+		}
+		for _, store := range []string{"Local", "Roaming", "LocalLow"} {
+			if same(filepath.Join(home, "AppData", store)) {
+				return true
+			}
+		}
+		if cleanHome, err := filepath.Abs(home); err == nil && strings.EqualFold(filepath.Dir(trimmed), strings.TrimRight(cleanHome, `\`)) {
+			if name := filepath.Base(trimmed); name == "onedrive" || strings.HasPrefix(name, "onedrive - ") {
+				return true
+			}
+		}
+	}
+	for _, name := range oneDriveEnvVars {
+		if same(os.Getenv(name)) {
+			return true
+		}
+	}
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		for _, own := range []string{"Mole", "Tw93.Mole"} {
+			if isAtOrBelow(lowerAbsPath, filepath.Join(localAppData, own)) {
+				return true
+			}
+		}
+	}
 	return false
 }
 

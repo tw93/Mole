@@ -90,6 +90,9 @@ func TestIsProtectedPathFollowsEnvironmentFolders(t *testing.T) {
 	t.Setenv("WINDIR", sysRoot)
 	t.Setenv("ProgramFiles", programs)
 	t.Setenv("LOCALAPPDATA", local)
+	t.Setenv("OneDrive", filepath.Join(root, "Cloud", "OneDrive"))
+	t.Setenv("OneDriveConsumer", "")
+	t.Setenv("OneDriveCommercial", "")
 
 	for _, path := range []string{
 		profile,
@@ -98,13 +101,40 @@ func TestIsProtectedPathFollowsEnvironmentFolders(t *testing.T) {
 		filepath.Join(sysRoot, "System32"),
 		filepath.Join(programs, "Vendor", "app.exe"),
 		filepath.Join(local, "Docker", "wsl", "disk.vhdx"),
+		// The head of the user's own tree: the folders Windows creates in the profile,
+		// AppData's three stores, a OneDrive root and the Mole app's own folders.
+		filepath.Join(profile, "Downloads"),
+		filepath.Join(profile, "Documents"),
+		filepath.Join(profile, "desktop"),
+		filepath.Join(profile, "Pictures"),
+		filepath.Join(profile, "Videos"),
+		filepath.Join(profile, "Music"),
+		filepath.Join(profile, "AppData"),
+		local,
+		filepath.Join(profile, "AppData", "Roaming"),
+		filepath.Join(profile, "AppData", "LocalLow"),
+		filepath.Join(profile, "OneDrive"),
+		filepath.Join(profile, "OneDrive - Contoso"),
+		filepath.Join(root, "Cloud", "OneDrive"),
+		filepath.Join(local, "Mole"),
+		filepath.Join(local, "Mole", "logs", "crash.log"),
+		filepath.Join(local, "Tw93.Mole", "current"),
 	} {
 		if !isProtectedPath(path) {
 			t.Errorf("isProtectedPath(%q) = false, expected true", path)
 		}
 	}
 	for _, path := range []string{
-		filepath.Join(profile, "Downloads"),
+		// What a user keeps inside those folders can still be deleted.
+		filepath.Join(profile, "Downloads", "old.iso"),
+		filepath.Join(profile, "Documents", "Taxes"),
+		filepath.Join(profile, "OneDrive", "Old photos"),
+		filepath.Join(root, "Cloud", "OneDrive", "Old photos"),
+		filepath.Join(profile, "OneDriveBackup"),
+		filepath.Join(profile, "source"),
+		filepath.Join(local, "Vendor"),
+		filepath.Join(local, "MoleTools"),
+		filepath.Join(root, "Data", "Documents"),
 		filepath.Join(local, "Temp"),
 		filepath.Join(root, "Apps2"),
 	} {
