@@ -311,7 +311,7 @@ Describe 'Generic game content in install folders' {
         $script:ContentApp = [pscustomobject]@{RegistryKey='selected';MergedKeys=@()}
     }
     It 'Keeps a content folder <Name> inside an otherwise ordinary install' -TestCases @(
-        @{Name='roms'}, @{Name='saves'}, @{Name='states'}, @{Name='bios'}, @{Name='games'}, @{Name='gog games'}
+        @{Name='roms'}, @{Name='saves'}, @{Name='savegames'}, @{Name='states'}, @{Name='bios'}, @{Name='games'}, @{Name='gog games'}
     ) {
         param($Name)
         $root = New-TestFolder ('Emulator ' + $Name)
@@ -321,7 +321,8 @@ Describe 'Generic game content in install folders' {
     It 'Keeps content markers at the root or below one wrapper: <Marker>' -TestCases @(
         @{Marker='goggame-42.info'}, @{Marker='galaxy-2.0.db'},
         @{Marker='OneGame\goggame-42.info'}, @{Marker='Library\steamapps'}, @{Marker='Library\libraryfolder.vdf'},
-        @{Marker='.egstore'}, @{Marker='Fortnite\.egstore'}
+        @{Marker='.egstore'}, @{Marker='Fortnite\.egstore'},
+        @{Marker='ext4.vhdx'}, @{Marker='distro-data\ext4.vhdx'}
     ) {
         param($Marker)
         $root = New-TestFolder ('Launcher ' + $Marker.Replace('\', '_'))

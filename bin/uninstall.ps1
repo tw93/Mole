@@ -166,14 +166,16 @@ function Test-MoleInstallContentFree {
                     $entry = $enumerator.Current
                     if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $false }
                     if ($entry.Attributes -band [IO.FileAttributes]::Directory) {
-                        # .egstore sits in every game the Epic Games Launcher installs.
-                        if ($entry.Name -in @('roms', 'saves', 'states', 'bios', 'games', 'gog games', 'steamapps', '.egstore')) { return $false }
+                        # .egstore sits in every game the Epic Games Launcher installs; savegames is where
+                        # Ubisoft Connect keeps local saves inside its own install folder.
+                        if ($entry.Name -in @('roms', 'saves', 'savegames', 'states', 'bios', 'games', 'gog games', 'steamapps', '.egstore')) { return $false }
                         if ($index -eq 0) {
                             if ($folders.Count -ge 257) { return $false }
                             $folders.Add($entry.FullName)
                         }
                     } elseif ($entry.Name -like 'goggame-*.info' -or
-                        $entry.Name -in @('galaxy-2.0.db', 'libraryfolder.vdf')) { return $false }
+                        # ext4.vhdx is a WSL distribution's disk (Rancher Desktop keeps its own beside the app).
+                        $entry.Name -in @('galaxy-2.0.db', 'libraryfolder.vdf', 'ext4.vhdx')) { return $false }
                 }
             } finally { $enumerator.Dispose() }
             if (-not (Test-MolePathSnapshot -Snapshot $snapshot)) { return $false }
