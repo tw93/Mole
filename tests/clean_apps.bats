@@ -548,6 +548,42 @@ EOF
     _assert_launch_agent_claims keep com.example.denied
 }
 
+@test "scan_installed_apps keeps the claim of a LaunchAgent under a configured mount point" {
+    local agent_home="$HOME/agent-mounts"
+    [[ ! -d "$agent_home" ]] || chmod -R u+rwx "$agent_home"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/etc"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" etc="$agent_home/etc"
+    printf '# comment\nUUID=1 %s apfs rw\nLABEL=2 %s hfs rw\nLABEL=3 none hfs rw,noauto\n' \
+        "$agent_home/mnt/disk" "$agent_home/mnt/my\\040disk" > "$etc/fstab"
+    printf '+auto_master\n%s\tauto_home\t-nobrowse\n/-\t-static\n/-\t%s\n' \
+        "$agent_home/auto/home" "$etc/auto_direct" > "$etc/auto_master"
+    printf '%s\tnas:/export\n' "$agent_home/direct/share" > "$etc/auto_direct"
+    cat > "$agent_home/preamble.sh" <<SH
+_mole_launch_agent_mount_config_files() {
+    printf '%s\n' "fstab $etc/fstab" "master $etc/auto_master"
+}
+SH
+    _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.fstabdisk "$agent_home/mnt/disk/bin/agent"
+    _write_launch_agent_fixture com.example.fstabspace "$agent_home/mnt/my disk/bin/agent"
+    _write_launch_agent_fixture com.example.masterpoint "$agent_home/auto/home/me/agent"
+    _write_launch_agent_fixture com.example.directmap "$agent_home/direct/share/agent"
+
+    _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims drop com.example.control
+    _assert_launch_agent_claims keep com.example.fstabdisk com.example.fstabspace \
+        com.example.masterpoint com.example.directmap
+
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    chmod 000 "$etc/auto_direct"
+    _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
+    chmod 644 "$etc/auto_direct"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims keep com.example.control
+}
+
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
     local agent_home="$HOME/agent-dead"
     rm -rf "$agent_home"

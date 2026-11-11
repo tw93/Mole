@@ -318,16 +318,66 @@ _mole_launch_agent_target() {
 # comparison: lowercased (APFS is case-insensitive by default), trailing
 # slashes dropped, and the /System/Volumes/Data firmlink prefix removed.
 _mole_launch_agent_fold_path() {
-    local folded=""
-    mole_ascii_lowercase folded "$2"
-    while [[ "$folded" == */ && "$folded" != / ]]; do
-        folded="${folded%/}"
+    local _mole_fold_value=""
+    mole_ascii_lowercase _mole_fold_value "$2"
+    while [[ "$_mole_fold_value" == */ && "$_mole_fold_value" != / ]]; do
+        _mole_fold_value="${_mole_fold_value%/}"
     done
-    case "$folded" in
-        /system/volumes/data) folded=/ ;;
-        /system/volumes/data/*) folded="${folded#/system/volumes/data}" ;;
+    case "$_mole_fold_value" in
+        /system/volumes/data) _mole_fold_value=/ ;;
+        /system/volumes/data/*) _mole_fold_value="${_mole_fold_value#/system/volumes/data}" ;;
     esac
-    printf -v "$1" '%s' "$folded"
+    printf -v "$1" '%s' "$_mole_fold_value"
+}
+
+# Prints "<format> <file>" for each file whose mount points keep a claim, since
+# a disk mounted there reads as gone while unplugged. Tests override it.
+_mole_launch_agent_mount_config_files() {
+    printf '%s\n' "fstab /etc/fstab" "master /etc/auto_master"
+}
+
+# Adds the folded mount points one file names to _MOLE_LAUNCH_AGENT_MOUNT_POINTS.
+# Formats: fstab (field 2), master (field 1, with a "/-" direct map read from
+# its file), direct (field 1). Returns 1 when a file exists but cannot be read.
+_mole_launch_agent_read_mount_file() {
+    local format="$1" file="$2"
+    [[ -e "$file" ]] || return 0
+    [[ -r "$file" ]] || return 1
+    local first="" second="" rest="" mount_point="" map="" folded="" rc=0
+    while read -r first second rest || [[ -n "$first" ]]; do
+        case "$first" in "" | "#"* | "+"*) continue ;; esac
+        mount_point="$first"
+        [[ "$format" != fstab ]] || mount_point="$second"
+        if [[ "$format" == master && "$mount_point" == "/-" ]]; then
+            map="$second"
+            case "$map" in "" | -*) continue ;; esac
+            [[ "$map" == /* ]] || map="/etc/$map"
+            _mole_launch_agent_read_mount_file direct "$map" || rc=1
+            continue
+        fi
+        mount_point="${mount_point//\\040/ }"
+        [[ "$mount_point" == /* ]] || continue
+        _mole_launch_agent_fold_path folded "$mount_point"
+        [[ -n "$folded" && "$folded" != / ]] || continue
+        _MOLE_LAUNCH_AGENT_MOUNT_POINTS+=("$folded")
+    done < "$file"
+    return "$rc"
+}
+
+# Loads the configured mount points once per scan. Returns 1 when one of the
+# files could not be read, which keeps every claim.
+_mole_launch_agent_load_mount_points() {
+    if [[ "${_MOLE_LAUNCH_AGENT_MOUNTS_LOADED:-}" != true ]]; then
+        _MOLE_LAUNCH_AGENT_MOUNTS_LOADED=true
+        _MOLE_LAUNCH_AGENT_MOUNTS_RC=0
+        _MOLE_LAUNCH_AGENT_MOUNT_POINTS=()
+        local format="" file=""
+        while read -r format file; do
+            [[ -n "$file" ]] || continue
+            _mole_launch_agent_read_mount_file "$format" "$file" || _MOLE_LAUNCH_AGENT_MOUNTS_RC=1
+        done < <(_mole_launch_agent_mount_config_files)
+    fi
+    return "$_MOLE_LAUNCH_AGENT_MOUNTS_RC"
 }
 
 # Returns 0 only when the path is provably gone: absolute, plainly spelled,
@@ -351,6 +401,13 @@ _mole_launch_agent_path_provably_missing() {
         mole_ascii_lowercase folder "$folder"
         case "$lower_path" in
             "$lower_home/$folder" | "$lower_home/$folder"/*) return 1 ;;
+        esac
+    done
+    _mole_launch_agent_load_mount_points || return 1
+    local mount_point=""
+    for mount_point in ${_MOLE_LAUNCH_AGENT_MOUNT_POINTS[@]+"${_MOLE_LAUNCH_AGENT_MOUNT_POINTS[@]}"}; do
+        case "$lower_path" in
+            "$mount_point" | "$mount_point"/*) return 1 ;;
         esac
     done
     # [[ -e ]] reads a denied lookup (a TCC or sandbox EPERM) as missing, so
