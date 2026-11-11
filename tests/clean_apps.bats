@@ -495,6 +495,59 @@ _assert_launch_agent_claims() {
     _assert_launch_agent_claims keep com.example.slashhome
 }
 
+@test "scan_installed_apps proves a LaunchAgent path missing by its errno, not by test -e" {
+    local agent_home="$HOME/agent-errno"
+    [[ ! -d "$agent_home" ]] || chmod -R u+rwx "$agent_home"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/Library/Mail/V10" "$agent_home/listless"
+    printf '#!/bin/sh\n' > "$agent_home/Library/Mail/V10/agent"
+    chmod +x "$agent_home/Library/Mail/V10/agent"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents"
+    _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.listless "$agent_home/listless/gone/agent"
+    chmod 311 "$agent_home/listless"
+    _scan_launch_agent_claims "$agent_home"
+    chmod 755 "$agent_home/listless"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims drop com.example.control
+    _assert_launch_agent_claims keep com.example.listless
+
+    # A stat probe that times out (a stale NFS or autofs path) keeps the claim.
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _write_launch_agent_fixture com.example.slowprobe "$agent_home/slow/gone/agent"
+    cat > "$agent_home/preamble.sh" <<'SH'
+run_with_timeout() {
+    shift
+    case " $* " in *" /usr/bin/stat "*) return 124 ;; esac
+    "$@"
+}
+SH
+    _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims keep com.example.slowprobe com.example.control
+
+    # A lookup the sandbox denies (as TCC does) is EPERM, not ENOENT.
+    if ! command -v sandbox-exec > /dev/null 2>&1 ||
+        ! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2> /dev/null; then
+        skip "sandbox-exec unavailable"
+    fi
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _write_launch_agent_fixture com.example.denied "$agent_home/Library/Mail/V10/agent"
+    printf '(version 1)\n(allow default)\n(deny file-read-metadata file-read-data (subpath "%s"))\n' \
+        "$agent_home/Library/Mail/V10" > "$agent_home/deny.sb"
+    run sandbox-exec -f "$agent_home/deny.sb" env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" \
+        MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims keep com.example.denied
+}
+
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
     local agent_home="$HOME/agent-dead"
     rm -rf "$agent_home"

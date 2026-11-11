@@ -353,6 +353,16 @@ _mole_launch_agent_path_provably_missing() {
             "$lower_home/$folder" | "$lower_home/$folder"/*) return 1 ;;
         esac
     done
+    # [[ -e ]] reads a denied lookup (a TCC or sandbox EPERM) as missing, so
+    # absence is proven by the errno itself. BSD stat is in every macOS base
+    # system (perl is a deprecated runtime) and reports through strerror, fixed
+    # English under LC_ALL=C; only ENOENT counts. The timeout keeps a stale NFS
+    # or autofs path from blocking the scan, and it runs before any builtin
+    # test touches the path.
+    local stat_error="" stat_rc=0
+    stat_error=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" /usr/bin/env LC_ALL=C \
+        /usr/bin/stat -f %N -- "$path" 2>&1 > /dev/null < /dev/null) || stat_rc=$?
+    [[ $stat_rc -eq 1 && "$stat_error" == *": No such file or directory" ]] || return 1
     local prefix="" component="" rest="${path#/}"
     while [[ -n "$rest" ]]; do
         component="${rest%%/*}"
@@ -369,7 +379,11 @@ _mole_launch_agent_path_provably_missing() {
     local parent="${path%/*}"
     while [[ "$parent" == /* ]]; do
         if [[ -e "$parent" ]]; then
-            [[ -d "$parent" && -x "$parent" ]]
+            [[ -d "$parent" && -x "$parent" ]] || return 1
+            # The nearest existing folder must really list, not only carry the
+            # Unix search bit.
+            run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" /bin/ls -f -- "$parent" \
+                > /dev/null 2>&1 < /dev/null
             return
         fi
         parent="${parent%/*}"
