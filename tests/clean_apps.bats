@@ -469,6 +469,32 @@ _assert_launch_agent_claims() {
         com.example.programarray
 }
 
+@test "scan_installed_apps compares /Volumes and the prompting folders however the path is spelled" {
+    local agent_home="$HOME/agent-spelling"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" upper_home=""
+    upper_home=$(tr '[:lower:]' '[:upper:]' <<< "$agent_home")
+    _write_launch_agent_fixture com.example.control "$agent_home/opt/gone"
+    _write_launch_agent_fixture com.example.volumeslower "/volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.firmvolumes "/System/Volumes/Data/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.firmdocuments "/System/Volumes/Data$agent_home/Documents/gone/agent"
+    _write_launch_agent_fixture com.example.lowerdocuments "$agent_home/documents/gone/agent"
+    _write_launch_agent_fixture com.example.upperhome "$upper_home/DOWNLOADS/gone/agent"
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims drop com.example.control
+    _assert_launch_agent_claims keep com.example.volumeslower com.example.firmvolumes \
+        com.example.firmdocuments com.example.lowerdocuments com.example.upperhome
+
+    _write_launch_agent_fixture com.example.slashhome "$agent_home/Documents/gone/agent"
+    rm -f "$agent_home/.cache/mole/installed_apps_cache"
+    _scan_launch_agent_claims "$agent_home/"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims keep com.example.slashhome
+}
+
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
     local agent_home="$HOME/agent-dead"
     rm -rf "$agent_home"

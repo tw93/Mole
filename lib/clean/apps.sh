@@ -314,6 +314,22 @@ _mole_launch_agent_target() {
     return 1
 }
 
+# Sets the variable named $1 to path $2 as the data volume resolves it for a
+# comparison: lowercased (APFS is case-insensitive by default), trailing
+# slashes dropped, and the /System/Volumes/Data firmlink prefix removed.
+_mole_launch_agent_fold_path() {
+    local folded=""
+    mole_ascii_lowercase folded "$2"
+    while [[ "$folded" == */ && "$folded" != / ]]; do
+        folded="${folded%/}"
+    done
+    case "$folded" in
+        /system/volumes/data) folded=/ ;;
+        /system/volumes/data/*) folded="${folded#/system/volumes/data}" ;;
+    esac
+    printf -v "$1" '%s' "$folded"
+}
+
 # Returns 0 only when the path is provably gone: absolute, plainly spelled,
 # reached through no link, outside /Volumes and the privacy-prompting folders,
 # absent, and its nearest existing ancestor is a folder this user can search.
@@ -321,11 +337,15 @@ _mole_launch_agent_path_provably_missing() {
     local path="$1"
     [[ "$path" == /* ]] || return 1
     case "$path" in
-        /Volumes | /Volumes/* | */./* | */../* | */. | */.. | *//*) return 1 ;;
+        */./* | */../* | */. | */.. | *//*) return 1 ;;
     esac
     local lower_path="" lower_home="" folder=""
-    mole_ascii_lowercase lower_path "$path"
-    mole_ascii_lowercase lower_home "$HOME"
+    _mole_launch_agent_fold_path lower_path "$path"
+    _mole_launch_agent_fold_path lower_home "$HOME"
+    [[ "$lower_home" != / ]] || lower_home=""
+    case "$lower_path" in
+        /volumes | /volumes/*) return 1 ;;
+    esac
     for folder in Desktop Documents Downloads "Library/Mobile Documents" \
         "Library/CloudStorage" "Library/Containers" "Library/Group Containers"; do
         mole_ascii_lowercase folder "$folder"
