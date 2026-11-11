@@ -432,15 +432,15 @@ cat "$HOME/installed.txt"
 EOF
 }
 
-# Usage: _assert_launch_agent_claims keep|drop label...
+# Usage: _assert_launch_agent_claims "$output" keep|drop label...
 _assert_launch_agent_claims() {
-    local mode="$1" label=""
-    shift
+    local claims="$1" mode="$2" label=""
+    shift 2
     for label in "$@"; do
-        if grep -qFx "$label" <<< "$output"; then
-            [[ "$mode" == keep ]] || { echo "dead agent still claims $label"; grep -F com.example <<< "$output"; return 1; }
+        if grep -qFx "$label" <<< "$claims"; then
+            [[ "$mode" == keep ]] || { echo "dead agent still claims $label"; grep -F com.example <<< "$claims"; return 1; }
         else
-            [[ "$mode" == drop ]] || { echo "lost claim $label"; grep -F com.example <<< "$output"; return 1; }
+            [[ "$mode" == drop ]] || { echo "lost claim $label"; grep -F com.example <<< "$claims"; return 1; }
         fi
     done
 }
@@ -464,8 +464,8 @@ _assert_launch_agent_claims() {
 
     _scan_launch_agent_claims "$agent_home"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims drop com.example.noprogram
-    _assert_launch_agent_claims keep com.example.programescaped com.example.programempty \
+    _assert_launch_agent_claims "$output" drop com.example.noprogram
+    _assert_launch_agent_claims "$output" keep com.example.programescaped com.example.programempty \
         com.example.programarray
 }
 
@@ -484,15 +484,15 @@ _assert_launch_agent_claims() {
 
     _scan_launch_agent_claims "$agent_home"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims drop com.example.control
-    _assert_launch_agent_claims keep com.example.volumeslower com.example.firmvolumes \
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.volumeslower com.example.firmvolumes \
         com.example.firmdocuments com.example.lowerdocuments com.example.upperhome
 
     _write_launch_agent_fixture com.example.slashhome "$agent_home/Documents/gone/agent"
     rm -f "$agent_home/.cache/mole/installed_apps_cache"
     _scan_launch_agent_claims "$agent_home/"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims keep com.example.slashhome
+    _assert_launch_agent_claims "$output" keep com.example.slashhome
 }
 
 @test "scan_installed_apps proves a LaunchAgent path missing by its errno, not by test -e" {
@@ -509,8 +509,8 @@ _assert_launch_agent_claims() {
     _scan_launch_agent_claims "$agent_home"
     chmod 755 "$agent_home/listless"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims drop com.example.control
-    _assert_launch_agent_claims keep com.example.listless
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.listless
 
     # A stat probe that times out (a stale NFS or autofs path) keeps the claim.
     rm -f "$agent_home/.cache/mole/installed_apps_cache"
@@ -524,7 +524,7 @@ run_with_timeout() {
 SH
     _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims keep com.example.slowprobe com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.slowprobe com.example.control
 
     # A lookup the sandbox denies (as TCC does) is EPERM, not ENOENT.
     if ! command -v sandbox-exec > /dev/null 2>&1 ||
@@ -545,7 +545,7 @@ scan_installed_apps "$HOME/installed.txt"
 cat "$HOME/installed.txt"
 EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims keep com.example.denied
+    _assert_launch_agent_claims "$output" keep com.example.denied
 }
 
 @test "scan_installed_apps keeps the claim of a LaunchAgent under a configured mount point" {
@@ -572,8 +572,8 @@ SH
 
     _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims drop com.example.control
-    _assert_launch_agent_claims keep com.example.fstabdisk com.example.fstabspace \
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.fstabdisk com.example.fstabspace \
         com.example.masterpoint com.example.directmap
 
     rm -f "$agent_home/.cache/mole/installed_apps_cache"
@@ -581,7 +581,7 @@ SH
     _scan_launch_agent_claims "$agent_home" MOLE_TEST_PREAMBLE="$agent_home/preamble.sh"
     chmod 644 "$etc/auto_direct"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims keep com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.control
 }
 
 @test "scan_installed_apps judges an interpreter's script only past options it knows" {
@@ -652,11 +652,11 @@ SH
 
     _scan_launch_agent_claims "$agent_home"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims keep com.example.noderedirect com.example.fishout \
+    _assert_launch_agent_claims "$output" keep com.example.noderedirect com.example.fishout \
         com.example.npmcache com.example.uvcache com.example.bashstdin com.example.pythondash \
         com.example.perlcode com.example.pythonmodule com.example.pythonmodulearg \
         com.example.bashcluster com.example.openunknown com.example.openargs
-    _assert_launch_agent_claims drop "${dropped[@]}"
+    _assert_launch_agent_claims "$output" drop "${dropped[@]}"
 }
 
 @test "scan_installed_apps keeps multi-line values, env -S and agents past the judging budget" {
@@ -670,14 +670,14 @@ SH
 
     _scan_launch_agent_claims "$agent_home"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims drop com.example.control
-    _assert_launch_agent_claims keep com.example.multiline com.example.envsplit
+    _assert_launch_agent_claims "$output" drop com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.multiline com.example.envsplit
 
     # A zero budget judges nothing, so even the dead control keeps its claim.
     rm -f "$agent_home/.cache/mole/installed_apps_cache"
     _scan_launch_agent_claims "$agent_home" MOLE_TIMEOUT_MEDIUM_PROBE_SEC=0
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    _assert_launch_agent_claims keep com.example.control
+    _assert_launch_agent_claims "$output" keep com.example.control
 }
 
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
