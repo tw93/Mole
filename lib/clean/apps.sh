@@ -359,7 +359,19 @@ _mole_launch_agent_path_provably_missing() {
 
 # Returns 1 only when the agent's job provably cannot run; 0 keeps its claim.
 _mole_launch_agent_job_can_run() {
-    local plist="$1" executable=""
+    local plist="$1" executable="" whole="" whole_rc=0
+    # launchd runs Program whenever the key exists, so a Program that is there
+    # but not understood keeps the claim rather than falling back to
+    # ProgramArguments[0]; only a plist that reads whole and names no Program
+    # key at all is judged by its arguments.
+    whole=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" /usr/bin/plutil \
+        -convert xml1 -o - "$plist" < /dev/null 2> /dev/null) || whole_rc=$?
+    [[ $whole_rc -eq 0 && -n "$whole" ]] || return 0
+    if [[ "$whole" == *"<key>Program</key>"* ]]; then
+        _mole_launch_agent_plist_strings "$plist" Program string || return 0
+        [[ ${#_MOLE_LAUNCH_AGENT_STRINGS[@]} -eq 1 && -n "${_MOLE_LAUNCH_AGENT_STRINGS[0]}" ]] || return 0
+        executable="${_MOLE_LAUNCH_AGENT_STRINGS[0]}"
+    fi
     local -a arguments=()
     local arguments_known=false
     if _mole_launch_agent_plist_strings "$plist" ProgramArguments array; then
@@ -367,10 +379,6 @@ _mole_launch_agent_job_can_run() {
         if [[ ${#_MOLE_LAUNCH_AGENT_STRINGS[@]} -gt 0 ]]; then
             arguments=("${_MOLE_LAUNCH_AGENT_STRINGS[@]}")
         fi
-    fi
-    if _mole_launch_agent_plist_strings "$plist" Program string &&
-        [[ ${#_MOLE_LAUNCH_AGENT_STRINGS[@]} -eq 1 ]]; then
-        executable="${_MOLE_LAUNCH_AGENT_STRINGS[0]}"
     fi
     if [[ -z "$executable" && "$arguments_known" == true && ${#arguments[@]} -gt 0 ]]; then
         executable="${arguments[0]}"

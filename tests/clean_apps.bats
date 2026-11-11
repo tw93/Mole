@@ -416,6 +416,59 @@ _write_launch_agent_fixture() {
     } > "$AGENT_DIR/$label.plist"
 }
 
+# Runs scan_installed_apps under the fixture HOME $1; the rest are extra env
+# assignments. MOLE_TEST_PREAMBLE names a file sourced before the scan.
+_scan_launch_agent_claims() {
+    local agent_home="$1"
+    shift
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 "$@" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+[[ -z "${MOLE_TEST_PREAMBLE:-}" ]] || source "$MOLE_TEST_PREAMBLE"
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+}
+
+# Usage: _assert_launch_agent_claims keep|drop label...
+_assert_launch_agent_claims() {
+    local mode="$1" label=""
+    shift
+    for label in "$@"; do
+        if grep -qFx "$label" <<< "$output"; then
+            [[ "$mode" == keep ]] || { echo "dead agent still claims $label"; grep -F com.example <<< "$output"; return 1; }
+        else
+            [[ "$mode" == drop ]] || { echo "lost claim $label"; grep -F com.example <<< "$output"; return 1; }
+        fi
+    done
+}
+
+@test "scan_installed_apps judges Program and never ProgramArguments while the Program key exists" {
+    local agent_home="$HOME/agent-program"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents"
+    local AGENT_DIR="$agent_home/Library/LaunchAgents" gone="$agent_home/old/agent"
+    _write_launch_agent_fixture com.example.noprogram "" "$gone" --run
+    _write_launch_agent_fixture com.example.programescaped "$agent_home/opt/a&amp;b/agent" "$gone" --run
+    local label value
+    for label in programempty programarray; do
+        value='<string></string>'
+        [[ "$label" != programarray ]] || value="<array><string>$gone</string></array>"
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict>' \
+            "<key>Label</key><string>com.example.$label</string>" "<key>Program</key>$value" \
+            "<key>ProgramArguments</key><array><string>$gone</string></array>" '</dict></plist>' \
+            > "$AGENT_DIR/com.example.$label.plist"
+    done
+
+    _scan_launch_agent_claims "$agent_home"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    _assert_launch_agent_claims drop com.example.noprogram
+    _assert_launch_agent_claims keep com.example.programescaped com.example.programempty \
+        com.example.programarray
+}
+
 @test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
     local agent_home="$HOME/agent-dead"
     rm -rf "$agent_home"
