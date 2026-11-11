@@ -730,6 +730,88 @@ EOF
     }
 }
 
+# Homebrew zap stanzas name folders in the user's own folders: Audacity's
+# rmdirs ~/Documents/Audacity4 and every Ableton Live cask trashes ~/Music/Ableton
+# (136 casks in the 2026-11 catalog, none under Downloads yet). Mole never reads
+# zap stanzas and always runs `brew uninstall --cask` without --zap, so neither
+# Mole's list nor Homebrew may reach those folders, even with every data row
+# selected and folders named after the app sitting in all six user roots.
+@test "batch uninstall of a cask whose zap names user folders never lists or removes them" {
+    local fixture_home
+    fixture_home=$(mktemp -d "$HOME/zap-user-folders.XXXXXX")
+    mkdir -p "$fixture_home/Applications/Audacity.app" \
+        "$fixture_home/Library/Application Support/audacity" \
+        "$fixture_home/Library/Caches/Audacity" \
+        "$fixture_home/Documents/Audacity4" "$fixture_home/Music/Ableton"
+    touch "$fixture_home/Documents/Audacity4/project.aup3" "$fixture_home/Music/Ableton/set.als"
+    local root
+    for root in Documents Desktop Downloads Pictures Movies Music; do
+        mkdir -p "$fixture_home/$root/Audacity" "$fixture_home/$root/org.audacityteam.audacity4"
+        touch "$fixture_home/$root/Audacity/keep" "$fixture_home/$root/org.audacityteam.audacity4/keep"
+    done
+
+    run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+export MOLE_DELETE_MODE=trash
+export MOLE_TEST_TRASH_DIR="$HOME/test-trash" MOLE_TEST_NO_AUTH=1
+request_sudo_access() { return 0; }
+ensure_sudo_session() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+force_kill_app() { return 0; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+run_with_timeout() { shift; "$@"; }
+get_brew_cask_name() { echo "audacity"; return 0; }
+is_brew_cask_installed() { return 1; }
+brew() {
+    echo "brew call: $*" >> "$HOME/brew_calls.log"
+    rm -rf "$HOME/Applications/Audacity.app"
+    return 0
+}
+
+selected_apps=("0|$HOME/Applications/Audacity.app|Audacity|org.audacityteam.audacity4|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+mole_test_select_all_uninstall_data
+printf 'd\n' | MOLE_TEST_MODE=1 batch_uninstall_applications
+
+grep -qE -- "^brew call: uninstall --cask .*audacity$" "$HOME/brew_calls.log" || { echo "brew not used"; exit 1; }
+! grep -q -- "--zap" "$HOME/brew_calls.log" || { echo "zap ran"; exit 1; }
+[[ ! -d "$HOME/Library/Application Support/audacity" ]] || { echo "selected data kept"; exit 1; }
+[[ ! -d "$HOME/Library/Caches/Audacity" ]] || { echo "cache kept"; exit 1; }
+[[ -f "$HOME/Documents/Audacity4/project.aup3" ]] || { echo "zap rmdir target removed"; exit 1; }
+[[ -f "$HOME/Music/Ableton/set.als" ]] || { echo "zap trash target removed"; exit 1; }
+for root in Documents Desktop Downloads Pictures Movies Music; do
+    [[ -f "$HOME/$root/Audacity/keep" ]] || { echo "$root name folder removed"; exit 1; }
+    [[ -f "$HOME/$root/org.audacityteam.audacity4/keep" ]] || { echo "$root bundle folder removed"; exit 1; }
+done
+EOF
+
+    [ "$status" -eq 0 ] || {
+        printf 'exit status: %s\n%s\n' "$status" "$output"
+        return 1
+    }
+    local root
+    for root in Documents Desktop Downloads Pictures Movies Music; do
+        [[ "$output" != *"$fixture_home/$root/"* && "$output" != *"~/$root/"* ]] || {
+            printf 'listed a %s path\n%s\n' "$root" "$output"
+            return 1
+        }
+    done
+}
+
 # --with-data (#1746) only changes the starting selection of the data review.
 run_with_data_batch() {
     local mode="$1"
