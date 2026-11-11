@@ -84,7 +84,10 @@ mole_network_volume_mounted() {
     local line="" options=""
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
-        [[ "$line" == *" ("*")" ]] || return 0
+        if [[ "$line" != *" ("*")" ]]; then
+            debug_log "Snapshot rows skipped: unparsed mount table line: $line"
+            return 0
+        fi
         options="${line##* (}"
         options="${options%)}"
         [[ "${options%%,*}" != "autofs" ]] || continue

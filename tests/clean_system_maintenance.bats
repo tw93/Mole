@@ -792,6 +792,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/snapshots.sh"
+debug_log() { echo "DEBUG: $*"; }
 
 LOCAL_TABLE='/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
 devfs on /dev (devfs, local, nobrowse)
@@ -829,6 +830,8 @@ EOF
     for expected in local=1 smb=0 nfs=0 smbparen=0 unknown=0 empty=0 timeout=0 signal=130; do
         [[ "$output" == *"$expected"* ]] || { echo "missing $expected"; echo "$output"; return 1; }
     done
+    [[ "$output" == *"DEBUG: Snapshot rows skipped: unparsed mount table line: something this parser does not know"* ]] ||
+        { echo "the unparsed line was not logged"; echo "$output"; return 1; }
 }
 
 @test "clean_local_snapshots runs no tmutil while a network share is mounted" {
