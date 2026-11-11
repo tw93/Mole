@@ -146,6 +146,243 @@ publish_installed_apps_cache() {
     return 0
 }
 
+# A LaunchAgent plist's name claims that bundle id's data for the orphan scan
+# only while its job can still run. A dead agent kept its app's leftovers out
+# of `mo clean` forever, as the Mac app found with an agent that opened a
+# deleted helper through /usr/bin/open. Every doubt keeps the claim: a plist
+# that cannot be read or is not understood, a program named without an
+# absolute path (launchd resolves it through PATH), a path on /Volumes (an
+# unplugged disk reads as gone), a path behind a link, inside a folder whose
+# lookup can raise a privacy prompt, or behind a folder that cannot be searched.
+
+# Prints the strings a plist key holds, one per line, in
+# _MOLE_LAUNCH_AGENT_STRINGS. Returns 1 when the key is absent, unreadable, or
+# holds anything but plain one-line strings (a value with "&" is XML-escaped and
+# is not decoded here, so it counts as not understood).
+_mole_launch_agent_plist_strings() {
+    local plist="$1" key="$2" expect="$3"
+    _MOLE_LAUNCH_AGENT_STRINGS=()
+    local xml="" rc=0
+    xml=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" /usr/bin/plutil \
+        -extract "$key" xml1 -expect "$expect" -o - "$plist" < /dev/null 2> /dev/null) || rc=$?
+    [[ $rc -eq 0 && -n "$xml" ]] || return 1
+    local line="" string_re='^[[:space:]]*<string>(.*)</string>$'
+    local empty_re='^[[:space:]]*<string/>$'
+    while IFS= read -r line; do
+        case "$line" in
+            '<?xml '* | '<!DOCTYPE '* | '<plist version='* | '</plist>' | \
+                '<array>' | '</array>' | '<array/>') continue ;;
+        esac
+        if [[ "$line" =~ $string_re ]]; then
+            [[ "${BASH_REMATCH[1]}" != *'&'* ]] || return 1
+            _MOLE_LAUNCH_AGENT_STRINGS+=("${BASH_REMATCH[1]}")
+        elif [[ "$line" =~ $empty_re ]]; then
+            _MOLE_LAUNCH_AGENT_STRINGS+=("")
+        else
+            return 1
+        fi
+    done <<< "$xml"
+    return 0
+}
+
+_mole_launch_agent_is_interpreter() {
+    case "$1" in
+        sh | bash | zsh | fish | env | node | npx | npm | bun | bunx | deno | \
+            python | python3 | uv | uvx | ruby | perl | java | osascript) return 0 ;;
+    esac
+    return 1
+}
+
+# Interpreter options whose next argument is a value, never the script.
+_mole_launch_agent_takes_value() {
+    case "$1:$2" in
+        sh:-o | sh:+o | sh:-O | sh:+O | sh:--rcfile | sh:--init-file) return 0 ;;
+        bash:-o | bash:+o | bash:-O | bash:+O | bash:--rcfile | bash:--init-file) return 0 ;;
+        zsh:-o | zsh:+o | zsh:-O | zsh:+O | zsh:--rcfile | zsh:--init-file) return 0 ;;
+        fish:-C | fish:--init-command) return 0 ;;
+        python:-X | python:-W | python:--check-hash-based-pycs) return 0 ;;
+        python3:-X | python3:-W | python3:--check-hash-based-pycs) return 0 ;;
+        ruby:-I | ruby:-r | ruby:-C | ruby:-E | ruby:--encoding) return 0 ;;
+        perl:-I | osascript:-l | osascript:-s) return 0 ;;
+        java:-cp | java:-classpath | java:--class-path | java:-p | java:--module-path | \
+            java:--upgrade-module-path | java:--add-modules) return 0 ;;
+    esac
+    case "$1" in
+        node | bun | deno)
+            case "$2" in
+                -r | --require | --import | --loader | --experimental-loader | -C | \
+                    --conditions | --env-file | --inspect-port | --title | --input-type) return 0 ;;
+            esac
+            ;;
+    esac
+    return 1
+}
+
+# Options after which no script file runs: a module or printed code.
+_mole_launch_agent_scriptless() {
+    case "$1:$2" in
+        python:-m | python3:-m | java:-m | java:--module | node:-p | node:--print | \
+            bun:-p | bun:--print) return 0 ;;
+    esac
+    return 1
+}
+
+# Sets _MOLE_LAUNCH_AGENT_TARGET to the absolute path an `open` or interpreter
+# job runs. $1 is the executable, the rest its arguments after argv[0].
+# Returns 1 when there is none to judge: another executable, inline code
+# (`sh -c`, `osascript -e`, `env -S`), a module, a relative path, a bundle id.
+_mole_launch_agent_target() {
+    _MOLE_LAUNCH_AGENT_TARGET=""
+    local name="" arg=""
+    mole_ascii_lowercase name "${1##*/}"
+    shift
+    if [[ "$name" == "open" ]]; then
+        local expects_app=false skips_value=false
+        for arg in "$@"; do
+            [[ "$arg" != "--args" ]] || return 1
+            if [[ "$skips_value" == true ]]; then
+                skips_value=false
+                continue
+            fi
+            if [[ "$expects_app" != true ]]; then
+                case "$arg" in
+                    -a)
+                        expects_app=true
+                        continue
+                        ;;
+                    -b) return 1 ;;
+                    -i | --stdin | -o | --stdout | --stderr | --env | -s | -u | --url | --arch)
+                        skips_value=true
+                        continue
+                        ;;
+                    -*) continue ;;
+                esac
+            fi
+            [[ "$arg" == /* ]] || return 1
+            _MOLE_LAUNCH_AGENT_TARGET="$arg"
+            return 0
+        done
+        return 1
+    fi
+    _mole_launch_agent_is_interpreter "$name" || return 1
+    local runner="$name"
+    if [[ "$name" == "env" ]]; then
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                -S*) return 1 ;;
+                -u | -P | -L | -U | -C)
+                    shift
+                    [[ $# -eq 0 ]] || shift
+                    ;;
+                -* | *=*) shift ;;
+                *) break ;;
+            esac
+        done
+        [[ $# -gt 0 ]] || return 1
+        local command="$1"
+        shift
+        mole_ascii_lowercase runner "${command##*/}"
+        if ! _mole_launch_agent_is_interpreter "$runner"; then
+            [[ "$command" == /* ]] || return 1
+            _MOLE_LAUNCH_AGENT_TARGET="$command"
+            return 0
+        fi
+    fi
+    local skips_value=false
+    for arg in "$@"; do
+        if [[ "$skips_value" == true ]]; then
+            skips_value=false
+            continue
+        fi
+        [[ "$arg" != "--" ]] || continue
+        ! _mole_launch_agent_scriptless "$runner" "$arg" || return 1
+        if _mole_launch_agent_takes_value "$runner" "$arg"; then
+            skips_value=true
+            continue
+        fi
+        if [[ "$arg" == -* ]]; then
+            if [[ "$arg" != --* && "${arg#-}" == *[ce]* ]]; then
+                return 1
+            fi
+            [[ "$arg" != "--eval" && "$arg" != "--command" ]] || return 1
+            continue
+        fi
+        [[ "$arg" == /* ]] || return 1
+        _MOLE_LAUNCH_AGENT_TARGET="$arg"
+        return 0
+    done
+    return 1
+}
+
+# Returns 0 only when the path is provably gone: absolute, plainly spelled,
+# reached through no link, outside /Volumes and the privacy-prompting folders,
+# absent, and its nearest existing ancestor is a folder this user can search.
+_mole_launch_agent_path_provably_missing() {
+    local path="$1"
+    [[ "$path" == /* ]] || return 1
+    case "$path" in
+        /Volumes | /Volumes/* | */./* | */../* | */. | */.. | *//*) return 1 ;;
+    esac
+    local lower_path="" lower_home="" folder=""
+    mole_ascii_lowercase lower_path "$path"
+    mole_ascii_lowercase lower_home "$HOME"
+    for folder in Desktop Documents Downloads "Library/Mobile Documents" \
+        "Library/CloudStorage" "Library/Containers" "Library/Group Containers"; do
+        mole_ascii_lowercase folder "$folder"
+        case "$lower_path" in
+            "$lower_home/$folder" | "$lower_home/$folder"/*) return 1 ;;
+        esac
+    done
+    local prefix="" component="" rest="${path#/}"
+    while [[ -n "$rest" ]]; do
+        component="${rest%%/*}"
+        if [[ "$rest" == */* ]]; then
+            rest="${rest#*/}"
+        else
+            rest=""
+        fi
+        prefix="$prefix/$component"
+        [[ ! -L "$prefix" ]] || return 1
+        [[ -e "$prefix" ]] || break
+    done
+    [[ ! -e "$path" ]] || return 1
+    local parent="${path%/*}"
+    while [[ "$parent" == /* ]]; do
+        if [[ -e "$parent" ]]; then
+            [[ -d "$parent" && -x "$parent" ]]
+            return
+        fi
+        parent="${parent%/*}"
+    done
+    return 0
+}
+
+# Returns 1 only when the agent's job provably cannot run; 0 keeps its claim.
+_mole_launch_agent_job_can_run() {
+    local plist="$1" executable=""
+    local -a arguments=()
+    local arguments_known=false
+    if _mole_launch_agent_plist_strings "$plist" ProgramArguments array; then
+        arguments_known=true
+        if [[ ${#_MOLE_LAUNCH_AGENT_STRINGS[@]} -gt 0 ]]; then
+            arguments=("${_MOLE_LAUNCH_AGENT_STRINGS[@]}")
+        fi
+    fi
+    if _mole_launch_agent_plist_strings "$plist" Program string &&
+        [[ ${#_MOLE_LAUNCH_AGENT_STRINGS[@]} -eq 1 ]]; then
+        executable="${_MOLE_LAUNCH_AGENT_STRINGS[0]}"
+    fi
+    if [[ -z "$executable" && "$arguments_known" == true && ${#arguments[@]} -gt 0 ]]; then
+        executable="${arguments[0]}"
+    fi
+    [[ -n "$executable" ]] || return 0
+    ! _mole_launch_agent_path_provably_missing "$executable" || return 1
+    [[ "$arguments_known" == true ]] || return 0
+    _mole_launch_agent_target "$executable" ${arguments[@]+"${arguments[@]:1}"} || return 0
+    ! _mole_launch_agent_path_provably_missing "$_MOLE_LAUNCH_AGENT_TARGET" || return 1
+    return 0
+}
+
 # Orphaned app data (30+ days inactive). Env: DRY_RUN
 # Usage: scan_installed_apps "output_file"
 scan_installed_apps() {
@@ -353,10 +590,25 @@ scan_installed_apps() {
             -name "*.plist" -type f -print0 > "$agent_paths_file" 2> /dev/null; then
             exit 1
         fi
-        local agent_path=""
+        # Judging reads at most a few plutil answers per plist (about 5ms
+        # each); past the budget the remaining agents keep their claim.
+        local agent_path="" agents_judged=0 agents_dead=0
+        local agents_started_at=$SECONDS judge_budget="${MOLE_TIMEOUT_MEDIUM_PROBE_SEC%%.*}"
+        [[ "$judge_budget" =~ ^[0-9]+$ ]] || judge_budget=5
         while IFS= read -r -d '' agent_path; do
+            if ((SECONDS - agents_started_at < judge_budget)); then
+                agents_judged=$((agents_judged + 1))
+                if ! _mole_launch_agent_job_can_run "$agent_path"; then
+                    agents_dead=$((agents_dead + 1))
+                    printf 'launch agent cannot run, claims nothing: %s\n' "$agent_path" \
+                        >> "$scan_tmp_dir/perf.list"
+                    continue
+                fi
+            fi
             basename "$agent_path" .plist
         done < "$agent_paths_file" > "$scan_tmp_dir/agents.txt"
+        printf 'launch agents: %s judged, %s dead, %ss\n' "$agents_judged" "$agents_dead" \
+            "$((SECONDS - agents_started_at))" >> "$scan_tmp_dir/perf.list"
     ) < /dev/null &
     auxiliary_pids+=($!)
     debug_log "Waiting for $((${#app_scan_pids[@]} + ${#auxiliary_pids[@]})) background processes"

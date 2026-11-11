@@ -397,6 +397,112 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+# Writes a LaunchAgent plist into $AGENT_DIR: $1 label, $2 Program ("" for
+# none), then the ProgramArguments strings.
+_write_launch_agent_fixture() {
+    local label="$1" program="$2"
+    shift 2
+    {
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' "<key>Label</key><string>$label</string>"
+        [[ -z "$program" ]] || printf '<key>Program</key><string>%s</string>\n' "$program"
+        if [[ $# -gt 0 ]]; then
+            printf '%s\n' '<key>ProgramArguments</key><array>'
+            printf '<string>%s</string>\n' "$@"
+            printf '%s\n' '</array>'
+        fi
+        printf '%s\n' '</dict></plist>'
+    } > "$AGENT_DIR/$label.plist"
+}
+
+@test "scan_installed_apps drops the claim of a LaunchAgent whose job provably cannot run" {
+    local agent_home="$HOME/agent-dead"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/opt/bin" "$agent_home/opt/Live.app"
+    printf '#!/bin/sh\n' > "$agent_home/opt/bin/live"
+    chmod +x "$agent_home/opt/bin/live"
+    printf '#!/bin/sh\n' > "$agent_home/opt/live.sh"
+    local opt="$agent_home/opt"
+
+    local AGENT_DIR="$agent_home/Library/LaunchAgents"
+    _write_launch_agent_fixture com.example.live "$opt/bin/live"
+    _write_launch_agent_fixture com.example.goneprogram "$opt/bin/gone"
+    _write_launch_agent_fixture com.example.goneargv0 "" "$opt/bin/gone" --flag
+    _write_launch_agent_fixture com.example.openmissing "" /usr/bin/open -a "$opt/Missing.app"
+    _write_launch_agent_fixture com.example.openlive "" /usr/bin/open -n --stdout "$opt/gone.log" "$opt/Live.app"
+    _write_launch_agent_fixture com.example.scriptgone "" /bin/sh "$opt/gone.sh"
+    _write_launch_agent_fixture com.example.scriptlive "" /bin/bash --rcfile "$opt/gone.rc" "$opt/live.sh"
+    _write_launch_agent_fixture com.example.envgone "" /usr/bin/env -u NAME node "$opt/gone.js"
+
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local label
+    for label in com.example.live com.example.openlive com.example.scriptlive; do
+        grep -qFx "$label" <<< "$output" || { echo "missing live claim $label"; grep -F com.example <<< "$output"; return 1; }
+    done
+    for label in com.example.goneprogram com.example.goneargv0 com.example.openmissing \
+        com.example.scriptgone com.example.envgone; do
+        if grep -qFx "$label" <<< "$output"; then
+            echo "dead agent still claims $label"
+            grep -F com.example <<< "$output"
+            return 1
+        fi
+    done
+}
+
+@test "scan_installed_apps keeps the claim of a LaunchAgent it cannot prove dead" {
+    local agent_home="$HOME/agent-doubt"
+    [[ ! -d "$agent_home" ]] || chmod -R u+rwx "$agent_home"
+    rm -rf "$agent_home"
+    mkdir -p "$agent_home/Library/LaunchAgents" "$agent_home/locked/inner"
+
+    local AGENT_DIR="$agent_home/Library/LaunchAgents"
+    _write_launch_agent_fixture com.example.bare "mole-test-no-such-tool"
+    _write_launch_agent_fixture com.example.relative "" "bin/agent"
+    _write_launch_agent_fixture com.example.volumes "/Volumes/MoleTestNoSuchDisk-$$/bin/agent"
+    _write_launch_agent_fixture com.example.inline "" /bin/zsh -lc "$agent_home/gone.sh"
+    _write_launch_agent_fixture com.example.documents "$agent_home/Documents/gone/agent"
+    _write_launch_agent_fixture com.example.locked "$agent_home/locked/inner/agent"
+    _write_launch_agent_fixture com.example.dotted "$agent_home/gone/../Documents/agent"
+    ln -s "$agent_home/nowhere" "$agent_home/link"
+    _write_launch_agent_fixture com.example.linked "$agent_home/link/agent"
+    _write_launch_agent_fixture com.example.escaped "$agent_home/a&amp;b/agent"
+    : > "$agent_home/Library/LaunchAgents/com.example.empty.plist"
+    printf 'not a plist' > "$agent_home/Library/LaunchAgents/com.example.malformed.plist"
+    _write_launch_agent_fixture com.example.unreadable "$agent_home/gone"
+    chmod 000 "$agent_home/Library/LaunchAgents/com.example.unreadable.plist"
+    chmod 000 "$agent_home/locked"
+
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+debug_log() { :; }
+scan_installed_apps "$HOME/installed.txt"
+cat "$HOME/installed.txt"
+EOF
+    chmod 755 "$agent_home/locked"
+    chmod 644 "$agent_home/Library/LaunchAgents/com.example.unreadable.plist"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local label
+    for label in com.example.bare com.example.relative com.example.volumes \
+        com.example.inline com.example.documents com.example.locked com.example.dotted \
+        com.example.linked com.example.escaped com.example.empty com.example.malformed \
+        com.example.unreadable; do
+        grep -qFx "$label" <<< "$output" || { echo "lost claim $label"; grep -F com.example <<< "$output"; return 1; }
+    done
+}
+
 @test "scan_installed_apps fails closed when scan result aggregation fails" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
