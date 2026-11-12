@@ -859,6 +859,8 @@ func findLargeFilesWithSpotlight(ctx context.Context, root string, minSize int64
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		// strings.Lines keeps the terminator; a path with it never stats.
+		line = strings.TrimSuffix(line, "\n")
 		if line == "" {
 			continue
 		}

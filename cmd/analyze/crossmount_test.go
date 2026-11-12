@@ -262,28 +262,17 @@ func TestSpotlightLargeFilesStopAtMountPoints(t *testing.T) {
 	}
 
 	originalRunner := spotlightQueryRunner
+	spotlightQueryRunner = func(_ context.Context, _, _ string) ([]byte, error) {
+		return []byte(localBig + "\n" + fx.mountedBig + "\n"), nil
+	}
 	t.Cleanup(func() { spotlightQueryRunner = originalRunner })
-	spotlightPaths := func(path string) []string {
-		t.Helper()
-		spotlightQueryRunner = func(_ context.Context, _, _ string) ([]byte, error) {
-			return []byte(path + "\n"), nil
-		}
-		files, err := findLargeFilesWithSpotlight(context.Background(), fx.root, 1)
-		if err != nil {
-			t.Fatalf("findLargeFilesWithSpotlight(%s) returned error: %v", path, err)
-		}
-		paths := make([]string, 0, len(files))
-		for _, file := range files {
-			paths = append(paths, file.Path)
-		}
-		return paths
-	}
 
-	// Positive control: a local candidate is kept.
-	if got := spotlightPaths(localBig); len(got) != 1 || got[0] != localBig {
-		t.Fatalf("Spotlight large files = %q, want [%s]", got, localBig)
+	files, err := findLargeFilesWithSpotlight(context.Background(), fx.root, 1)
+	if err != nil {
+		t.Fatalf("findLargeFilesWithSpotlight returned error: %v", err)
 	}
-	if got := spotlightPaths(fx.mountedBig); len(got) != 0 {
-		t.Fatalf("Spotlight large files = %q, want none from the mounted volume", got)
+	// Positive control: the local candidate is kept; the mounted one is not.
+	if len(files) != 1 || files[0].Path != localBig {
+		t.Fatalf("Spotlight large files = %+v, want only %s", files, localBig)
 	}
 }
