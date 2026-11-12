@@ -113,6 +113,8 @@ function Invoke-GitCommand {
         [string[]]$Arguments
     )
 
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     $previousNativeErrorPreference = $null
     $hasNativeErrorPreference = $false
 
@@ -139,6 +141,7 @@ function Invoke-GitCommand {
         }
     }
     finally {
+        $ErrorActionPreference = $previousErrorActionPreference
         if ($hasNativeErrorPreference) {
             $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
         }

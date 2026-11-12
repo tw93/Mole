@@ -80,8 +80,63 @@ Describe "Git proxy helpers stay identical in the installer and the updater" {
         Get-FunctionText -Path $script:QuickInstall -Name $_ | Should -BeExactly (Get-FunctionText -Path $script:Updater -Name $_)
     }
 
+    # git writes progress such as "From https://github.com/tw93/Mole" to stderr even
+    # on success, and Windows PowerShell 5.1 under a Stop preference throws on the
+    # first stderr line of a native command merged with 2>&1. update.ps1 lowered the
+    # preference for its git calls; quick-install.ps1 did not, so refreshing an
+    # existing source install failed with that line as the error (support mail
+    # 2026-11-11). One shared definition keeps the two from drifting again.
+    It "Defines Invoke-GitCommand the same way in both scripts" {
+        Get-FunctionText -Path $script:QuickInstall -Name "Invoke-GitCommand" | Should -BeExactly (Get-FunctionText -Path $script:Updater -Name "Invoke-GitCommand")
+    }
+
     It "Sends the proxy arguments with every git call in <_>" -ForEach @("bin\update.ps1", "quick-install.ps1") {
         $text = Get-FunctionText -Path (Join-Path $script:WindowsDir $_) -Name "Invoke-GitCommand"
         $text | Should -Match ([regex]::Escape('$gitArguments += @(Get-GitProxyArguments)'))
+    }
+}
+
+Describe "Invoke-GitCommand under Windows PowerShell 5.1" {
+    It "Returns git's exit code instead of throwing on its stderr progress in <_>" -ForEach @("bin\update.ps1", "quick-install.ps1") {
+        $powershell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        if (-not (Test-Path -LiteralPath $powershell)) { Set-ItResult -Skipped -Because "Windows PowerShell 5.1 is not installed"; return }
+
+        $work = Join-Path ([System.IO.Path]::GetTempPath()) ("mole-git-stderr-" + [guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $work | Out-Null
+        try {
+            # A real native git stand-in: progress on stderr, success exit code.
+            Set-Content -LiteralPath (Join-Path $work "git.cmd") -Value "@echo From https://github.com/tw93/Mole 1>&2`r`n@exit /b 0" -Encoding ASCII
+            $helper = Get-FunctionText -Path (Join-Path $script:WindowsDir $_) -Name "Invoke-GitCommand"
+            $probe = @"
+`$ErrorActionPreference = 'Stop'
+`$env:PATH = '$work;' + `$env:PATH
+function Get-GitProxyArguments { @() }
+$helper
+try {
+    `$result = Invoke-GitCommand -Arguments @('pull', '--ff-only', 'origin', 'windows')
+    "exit=`$(`$result.ExitCode) pref=`$ErrorActionPreference"
+} catch {
+    "threw=`$_"
+}
+"@
+            $probePath = Join-Path $work "probe.ps1"
+            Set-Content -LiteralPath $probePath -Value $probe -Encoding UTF8
+
+            $start = New-Object System.Diagnostics.ProcessStartInfo
+            $start.FileName = $powershell
+            $start.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$probePath`""
+            $start.UseShellExecute = $false
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            $process = [System.Diagnostics.Process]::Start($start)
+            $stdout = $process.StandardOutput.ReadToEnd()
+            $null = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+
+            $stdout.Trim() | Should -Be "exit=0 pref=Stop"
+        }
+        finally {
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
