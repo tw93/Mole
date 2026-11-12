@@ -1098,61 +1098,79 @@ clean_support_app_data() {
     safe_clean ~/Library/Messages/Caches/Previews/StickerCache/* "Messages preview sticker cache"
 }
 
-# App caches (merged: macOS system caches + Sandboxed apps).
-# Runs in the caller's shell and returns the count in
-# CACHE_TOP_LEVEL_ENTRY_COUNT: it is called once per container, and a command
-# substitution plus two $(shopt -p) captures cost three forks each time.
-cache_top_level_entry_count_capped() {
+# Complete, NUL-delimited directory snapshots for the container cache scans.
+# A Bash glob opens the directory before any loop checkpoint can run (#1973).
+# Keep both enumeration and sorting in the bounded producer, discard partial
+# output on failure, and reuse the snapshot for counting and cleanup. Callers
+# own the array so nested scans cannot replace another caller's candidates.
+_container_cache_list_entries() {
     local dir="$1"
-    local cap="${2:-101}"
-    local count=0
-    local restore_nullglob=false
-    local restore_dotglob=false
-    shopt -q nullglob || restore_nullglob=true
-    shopt -q dotglob || restore_dotglob=true
-    shopt -s nullglob dotglob
-
-    local item
-    for item in "$dir"/*; do
-        [[ -e "$item" ]] || continue
-        count=$((count + 1))
-        if ((count >= cap)); then
-            break
+    local entries_file="${2:-}"
+    local owns_entries_file=false
+    _MOLE_CONTAINER_CACHE_ENTRIES=()
+    local timeout_seconds
+    if ! timeout_seconds=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" \
+        "${_MOLE_CLEAN_SECTION_DEADLINE:-}"); then
+        debug_log "Container cache scan budget exhausted: $dir"
+        return 1
+    fi
+    if [[ -z "$entries_file" ]]; then
+        entries_file=$(create_temp_file) || return 1
+        owns_entries_file=true
+    fi
+    local scan_rc=0
+    run_with_timeout "$timeout_seconds" "$FIND_BSD" "$dir" \
+        -mindepth 1 -maxdepth 1 -print0 > "$entries_file" 2> /dev/null || scan_rc=$?
+    if [[ $scan_rc -eq 0 ]]; then
+        if timeout_seconds=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" \
+            "${_MOLE_CLEAN_SECTION_DEADLINE:-}"); then
+            # BSD sort can silently truncate malformed UTF-8 records in a
+            # UTF-8 locale, even with -z. Paths remain byte strings here.
+            LC_ALL=C run_with_timeout "$timeout_seconds" /usr/bin/sort -z -o "$entries_file" \
+                "$entries_file" 2> /dev/null || scan_rc=$?
+        else
+            scan_rc=1
         fi
-    done
-
-    [[ "$restore_nullglob" == "true" ]] && shopt -u nullglob
-    [[ "$restore_dotglob" == "true" ]] && shopt -u dotglob
-
-    [[ "$count" =~ ^[0-9]+$ ]] || count=0
-    CACHE_TOP_LEVEL_ENTRY_COUNT=$count
-    return 0
+    fi
+    if [[ $scan_rc -eq 0 ]]; then
+        local item
+        while IFS= read -r -d '' item; do
+            if _mole_clean_section_budget_spent; then
+                scan_rc=1
+                break
+            fi
+            [[ -e "$item" ]] || continue
+            _MOLE_CONTAINER_CACHE_ENTRIES+=("$item")
+        done < "$entries_file"
+    fi
+    if [[ "$owns_entries_file" == true ]]; then
+        rm -f "$entries_file" # SAFE: exact create_temp_file output owned by this scan
+    fi
+    [[ $scan_rc -eq 0 ]] && return 0
+    _MOLE_CONTAINER_CACHE_ENTRIES=()
+    if mole_rc_signal "$scan_rc"; then
+        _mole_record_clean_cancellation "$scan_rc"
+        return "$scan_rc"
+    fi
+    debug_log "Container cache listing incomplete: $dir (status $scan_rc)"
+    return 1
 }
 
-directory_has_entries() {
-    local dir="$1"
-    [[ -d "$dir" ]] || return 1
+# One scratch file per scan, reused only after its complete contents have been
+# copied into the caller's array. Registering a new temp file per directory
+# exhausted the scan budget even for hundreds of readable, one-file caches.
+_container_cache_scan_finish() {
+    stop_section_spinner
+    if [[ -n "${1:-}" ]]; then
+        rm -f "$1" # SAFE: exact create_temp_file output owned by the calling scan
+    fi
+}
 
-    local _nullglob_state
-    local _dotglob_state
-    _nullglob_state=$(shopt -p nullglob || true)
-    _dotglob_state=$(shopt -p dotglob || true)
-    shopt -s nullglob dotglob
-
-    local item
-    for item in "$dir"/*; do
-        if [[ -e "$item" ]]; then
-            # eval: restore shopt state captured by $(shopt -p)
-            eval "$_nullglob_state"
-            eval "$_dotglob_state"
-            return 0
-        fi
-    done
-
-    # eval: restore shopt state captured by $(shopt -p)
-    eval "$_nullglob_state"
-    eval "$_dotglob_state"
-    return 1
+# Same wording as the Cloud & Office budget line in bin/clean.sh.
+_container_cache_budget_note() {
+    [[ "$1" == true ]] || return 0
+    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $2 · ${GRAY}time limit reached, skipped remaining items${NC}"
+    note_activity
 }
 
 # Rendered wallpaper bitmaps the wallpaper agent keeps in its container: one
@@ -1325,19 +1343,38 @@ clean_app_caches() {
     local precise_size_limit="${MOLE_CONTAINER_CACHE_PRECISE_SIZE_LIMIT:-64}"
     [[ "$precise_size_limit" =~ ^[0-9]+$ ]] || precise_size_limit=64
     local precise_size_used=0
-    local _ng_state
-    _ng_state=$(shopt -p nullglob || true)
-    shopt -s nullglob
+    local _MOLE_CLEAN_SECTION_DEADLINE=$((SECONDS + MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC))
+    local budget_hit=false
+    local -a _MOLE_CONTAINER_CACHE_ENTRIES=()
     local container_rc=0
-    for container_dir in "$containers_dir"/*; do
-        [[ -d "$container_dir/Data/Library/Caches" ]] || continue
-        process_container_cache "$container_dir" || container_rc=$?
-        [[ $container_rc -eq 0 ]] || break
-    done
-    # eval: restore shopt state captured by $(shopt -p)
-    eval "$_ng_state"
-    stop_section_spinner
+    local scan_file=""
+    if scan_file=$(create_temp_file); then
+        _container_cache_list_entries "$containers_dir" "$scan_file" || container_rc=$?
+    else
+        scan_file=""
+        debug_log "Cannot create sandboxed app cache listing"
+    fi
+    if [[ $container_rc -ne 0 ]] && ! mole_rc_signal "$container_rc"; then
+        container_rc=0
+    fi
+    if [[ ${#_MOLE_CONTAINER_CACHE_ENTRIES[@]} -gt 0 ]]; then
+        local container_dir
+        for container_dir in "${_MOLE_CONTAINER_CACHE_ENTRIES[@]}"; do
+            if _mole_clean_section_budget_spent; then
+                debug_log "Sandboxed app cache scan budget exhausted"
+                total_size_partial=true
+                break
+            fi
+            [[ "${container_dir##*/}" != .* ]] || continue
+            [[ -d "$container_dir/Data/Library/Caches" ]] || continue
+            process_container_cache "$container_dir" "$scan_file" || container_rc=$?
+            [[ $container_rc -eq 0 ]] || break
+        done
+    fi
+    _mole_clean_section_budget_spent && budget_hit=true
+    _container_cache_scan_finish "$scan_file"
     [[ $container_rc -eq 0 ]] || return "$container_rc"
+    _MOLE_CLEAN_SECTION_DEADLINE=""
 
     if [[ "$found_any" == "true" ]]; then
         if [[ "$DRY_RUN" == "true" ]]; then
@@ -1362,6 +1399,7 @@ clean_app_caches() {
         mole_add_cleaned_row "$cleaned_count" "$total_size"
         note_activity
     fi
+    _container_cache_budget_note "$budget_hit" "Sandboxed app caches"
 
     clean_group_container_caches || return $?
     clean_handoff_pasteboard_cache || return $?
@@ -1439,10 +1477,13 @@ process_container_cache() {
     local cache_dir="$container_dir/Data/Library/Caches"
     [[ -d "$cache_dir" ]] || return 0
     [[ -L "$cache_dir" ]] && return 0
-    local item_count
-    cache_top_level_entry_count_capped "$cache_dir" 101
-    item_count=$CACHE_TOP_LEVEL_ENTRY_COUNT
-    [[ "$item_count" =~ ^[0-9]+$ ]] || item_count=0
+    local -a _MOLE_CONTAINER_CACHE_ENTRIES=()
+    local scan_rc=0
+    _container_cache_list_entries "$cache_dir" "${2:-}" || scan_rc=$?
+    if mole_rc_signal "$scan_rc"; then
+        return "$scan_rc"
+    fi
+    local item_count=${#_MOLE_CONTAINER_CACHE_ENTRIES[@]}
     [[ "$item_count" -eq 0 ]] && return 0
     local measure_item_sizes=true
     if [[ "$item_count" -gt 100 ]]; then
@@ -1452,13 +1493,13 @@ process_container_cache() {
         total_size_partial=true
     fi
 
-    local _nullglob_state
-    local _dotglob_state
-    _nullglob_state=$(shopt -p nullglob || true)
-    _dotglob_state=$(shopt -p dotglob || true)
-    shopt -s nullglob dotglob
     local item
-    for item in "$cache_dir"/*; do
+    for item in "${_MOLE_CONTAINER_CACHE_ENTRIES[@]}"; do
+        if _mole_clean_section_budget_spent; then
+            debug_log "Sandboxed app cache scan budget exhausted: $cache_dir"
+            total_size_partial=true
+            break
+        fi
         [[ -e "$item" ]] || continue
         [[ -L "$item" ]] && continue
         if holds_compiled_model_cache "$item"; then
@@ -1478,9 +1519,6 @@ process_container_cache() {
             item_size_kb=$(get_path_size_kb "$item" 2> /dev/null) || size_rc=$?
             if [[ $size_rc -ne 0 ]]; then
                 _mole_record_clean_cancellation "$size_rc"
-                # eval: restore shopt state captured by $(shopt -p)
-                eval "$_nullglob_state"
-                eval "$_dotglob_state"
                 return "$size_rc"
             fi
             [[ "$item_size_kb" =~ ^[0-9]+$ ]] || item_size_kb=0
@@ -1507,9 +1545,6 @@ process_container_cache() {
         fi
         if [[ $action_rc -ge 128 ]]; then
             _mole_record_clean_cancellation "$action_rc"
-            # eval: restore shopt state captured by $(shopt -p)
-            eval "$_nullglob_state"
-            eval "$_dotglob_state"
             return "$action_rc"
         fi
         [[ $action_rc -eq 0 ]] || continue
@@ -1517,19 +1552,13 @@ process_container_cache() {
         cleaned_count=$((cleaned_count + 1))
         found_any=true
     done
-    # eval: restore shopt state captured by $(shopt -p)
-    eval "$_nullglob_state"
-    eval "$_dotglob_state"
+    return 0
 }
 
 # Group Containers safe cleanup (logs for protected apps, caches/tmp for non-protected apps).
 clean_group_container_caches() {
     local group_containers_dir="$HOME/Library/Group Containers"
     [[ -d "$group_containers_dir" ]] || return 0
-    if ! directory_has_entries "$group_containers_dir"; then
-        return 0
-    fi
-
     start_section_spinner "Scanning Group Containers..."
     local total_size=0
     local total_size_partial=false
@@ -1537,12 +1566,34 @@ clean_group_container_caches() {
     local found_any=false
     local _MOLE_CONTAINER_CACHE_PROBE_DEADLINE=""
 
-    local container_dir
-    local group_nullglob_state
-    group_nullglob_state=$(shopt -p nullglob || true)
-    shopt -s nullglob
+    local _MOLE_CLEAN_SECTION_DEADLINE=$((SECONDS + MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC))
+    local budget_hit=false
+    local -a _MOLE_CONTAINER_CACHE_ENTRIES=()
+    local scan_rc=0
+    local scan_file=""
+    if ! scan_file=$(create_temp_file); then
+        stop_section_spinner
+        debug_log "Cannot create Group Container cache listing"
+        return 0
+    fi
+    _container_cache_list_entries "$group_containers_dir" "$scan_file" || scan_rc=$?
+    if mole_rc_signal "$scan_rc"; then
+        _container_cache_scan_finish "$scan_file"
+        return "$scan_rc"
+    fi
+    if [[ ${#_MOLE_CONTAINER_CACHE_ENTRIES[@]} -eq 0 ]]; then
+        _container_cache_scan_finish "$scan_file"
+        return 0
+    fi
 
-    for container_dir in "$group_containers_dir"/*; do
+    local container_dir
+    for container_dir in "${_MOLE_CONTAINER_CACHE_ENTRIES[@]}"; do
+        if _mole_clean_section_budget_spent; then
+            debug_log "Group Container cache scan budget exhausted"
+            total_size_partial=true
+            break
+        fi
+        [[ "${container_dir##*/}" != .* ]] || continue
         [[ -d "$container_dir" ]] || continue
         [[ -L "$container_dir" ]] && continue
         # Skip containers we cannot read (avoids repeated TCC/privacy prompts on macOS).
@@ -1561,13 +1612,28 @@ clean_group_container_caches() {
         if [[ -d "$HOME/Library/Containers/$container_id" ]]; then
             local _ext_match=false
             local _ext_entry
-            for _ext_entry in "$HOME/Library/Containers/$container_id/"*Safari* \
-                "$HOME/Library/Containers/$container_id/"*safari*; do
-                if [[ -e "$_ext_entry" ]]; then
-                    _ext_match=true
-                    break
-                fi
-            done
+            scan_rc=0
+            _container_cache_list_entries "$HOME/Library/Containers/$container_id" "$scan_file" || scan_rc=$?
+            if mole_rc_signal "$scan_rc"; then
+                _container_cache_scan_finish "$scan_file"
+                return "$scan_rc"
+            fi
+            [[ $scan_rc -eq 0 ]] || continue
+            if [[ ${#_MOLE_CONTAINER_CACHE_ENTRIES[@]} -gt 0 ]]; then
+                for _ext_entry in "${_MOLE_CONTAINER_CACHE_ENTRIES[@]}"; do
+                    if _mole_clean_section_budget_spent; then
+                        _ext_match=true
+                        break
+                    fi
+                    [[ "${_ext_entry##*/}" != .* && -e "$_ext_entry" ]] || continue
+                    case "${_ext_entry##*/}" in
+                        *Safari* | *safari*)
+                            _ext_match=true
+                            break
+                            ;;
+                    esac
+                done
+            fi
             if [[ "$_ext_match" == "true" ]]; then
                 continue
             fi
@@ -1595,6 +1661,10 @@ clean_group_container_caches() {
 
         local candidate
         for candidate in "${candidates[@]}"; do
+            if _mole_clean_section_budget_spent; then
+                total_size_partial=true
+                break
+            fi
             [[ -d "$candidate" ]] || continue
             [[ -L "$candidate" ]] && continue
             if is_path_whitelisted "$candidate" 2> /dev/null; then
@@ -1602,26 +1672,27 @@ clean_group_container_caches() {
             fi
 
             local item
-            local quick_count
-            cache_top_level_entry_count_capped "$candidate" 101
-            quick_count=$CACHE_TOP_LEVEL_ENTRY_COUNT
-            [[ "$quick_count" =~ ^[0-9]+$ ]] || quick_count=0
+            scan_rc=0
+            _container_cache_list_entries "$candidate" "$scan_file" || scan_rc=$?
+            if mole_rc_signal "$scan_rc"; then
+                _container_cache_scan_finish "$scan_file"
+                return "$scan_rc"
+            fi
+            local quick_count=${#_MOLE_CONTAINER_CACHE_ENTRIES[@]}
             [[ "$quick_count" -eq 0 ]] && continue
 
             local candidate_size_kb=0
             local candidate_changed=false
-            local candidate_nullglob_state
-            local candidate_dotglob_state
-            candidate_nullglob_state=$(shopt -p nullglob || true)
-            candidate_dotglob_state=$(shopt -p dotglob || true)
-            shopt -s nullglob dotglob
-
             local candidate_size_known=true
             if [[ "$quick_count" -gt 100 ]]; then
                 total_size_partial=true
                 candidate_size_known=false
             fi
-            for item in "$candidate"/*; do
+            for item in "${_MOLE_CONTAINER_CACHE_ENTRIES[@]}"; do
+                if _mole_clean_section_budget_spent; then
+                    total_size_partial=true
+                    break
+                fi
                 [[ -e "$item" ]] || continue
                 [[ -L "$item" ]] && continue
                 if should_protect_path "$item" 2> /dev/null ||
@@ -1636,10 +1707,7 @@ clean_group_container_caches() {
                     item_size=$(get_path_size_kb "$item" 2> /dev/null) || size_rc=$?
                     [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
                     if [[ $size_rc -ne 0 ]]; then
-                        # eval: restore shopt state captured by $(shopt -p)
-                        eval "$candidate_nullglob_state"
-                        eval "$candidate_dotglob_state"
-                        eval "$group_nullglob_state"
+                        _container_cache_scan_finish "$scan_file"
                         return "$size_rc"
                     fi
                     [[ "$item_size" =~ ^[0-9]+$ ]] || item_size=0
@@ -1670,20 +1738,13 @@ clean_group_container_caches() {
                 fi
                 if [[ $action_rc -ge 128 ]]; then
                     _mole_record_clean_cancellation "$action_rc"
-                    # eval: restore shopt state captured by $(shopt -p)
-                    eval "$candidate_nullglob_state"
-                    eval "$candidate_dotglob_state"
-                    eval "$group_nullglob_state"
+                    _container_cache_scan_finish "$scan_file"
                     return "$action_rc"
                 fi
                 [[ $action_rc -eq 0 ]] || continue
                 candidate_changed=true
                 candidate_size_kb=$((candidate_size_kb + item_size))
             done
-            # eval: restore shopt state captured by $(shopt -p)
-            eval "$candidate_nullglob_state"
-            eval "$candidate_dotglob_state"
-
             if [[ "$candidate_changed" == "true" ]]; then
                 total_size=$((total_size + candidate_size_kb))
                 cleaned_count=$((cleaned_count + 1))
@@ -1691,10 +1752,8 @@ clean_group_container_caches() {
             fi
         done
     done
-    # eval: restore shopt state captured by $(shopt -p)
-    eval "$group_nullglob_state"
-
-    stop_section_spinner
+    _mole_clean_section_budget_spent && budget_hit=true
+    _container_cache_scan_finish "$scan_file"
 
     if [[ "$found_any" == "true" ]]; then
         if [[ "$DRY_RUN" == "true" ]]; then
@@ -1719,6 +1778,7 @@ clean_group_container_caches() {
         mole_add_cleaned_row "$cleaned_count" "$total_size"
         note_activity
     fi
+    _container_cache_budget_note "$budget_hit" "Group Containers logs/caches"
 }
 
 resolve_existing_path() {
