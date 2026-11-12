@@ -222,39 +222,19 @@ function Build-TuiBinary {
     }
 }
 
-# Compares a source checkout's native tool sources with its release tag:
-# "match" when they are identical, "upstream" when they are clean and differ only
-# by commits after that tag (HEAD descends from it), and "unknown" otherwise.
-# Caller Git overrides can redirect the worktree or index, so they read unknown.
-function Get-TuiSourceReleaseRelation {
-    param([string]$WindowsDir, [string]$Name, [string]$Version)
+# Whether a source checkout's Git answers can be trusted: caller Git overrides
+# can redirect the worktree or index, so they count as untrusted.
+function Test-TuiSourceGitTrusted {
+    param([string]$WindowsDir)
 
     if (-not (Test-Path -LiteralPath (Join-Path $WindowsDir ".git")) -or
         -not (Get-Command git -ErrorAction SilentlyContinue)) {
-        return "unknown"
+        return $false
     }
     foreach ($overrideName in @("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS")) {
-        if ([Environment]::GetEnvironmentVariable($overrideName)) { return "unknown" }
+        if ([Environment]::GetEnvironmentVariable($overrideName)) { return $false }
     }
-    $savedPreference = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        $paths = @("cmd/$Name", "go.mod", "go.sum")
-        $dirty = & git -C $WindowsDir -c core.fsmonitor=false status --porcelain --untracked-files=all -- @paths 2>$null
-        if ($LASTEXITCODE -ne 0 -or $dirty) { return "unknown" }
-        foreach ($tag in @("V$Version-windows", "v$Version-windows")) {
-            & git -C $WindowsDir -c core.fsmonitor=false diff --quiet --no-ext-diff --no-textconv $tag -- @paths 2>$null
-            if ($LASTEXITCODE -eq 0) { return "match" }
-        }
-        foreach ($tag in @("V$Version-windows", "v$Version-windows")) {
-            & git -C $WindowsDir merge-base --is-ancestor $tag HEAD 2>$null
-            if ($LASTEXITCODE -eq 0) { return "upstream" }
-        }
-        return "unknown"
-    }
-    finally {
-        $ErrorActionPreference = $savedPreference
-    }
+    return $true
 }
 
 # A source refresh may use a release binary only when its source is unchanged.
@@ -262,16 +242,69 @@ function Get-TuiSourceReleaseRelation {
 function Test-TuiSourceMatchesRelease {
     param([string]$WindowsDir, [string]$Name, [string]$Version)
 
-    return (Get-TuiSourceReleaseRelation -WindowsDir $WindowsDir -Name $Name -Version $Version) -eq "match"
+    if (-not (Test-TuiSourceGitTrusted -WindowsDir $WindowsDir)) {
+        return $false
+    }
+    $savedPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $paths = @("cmd/$Name", "go.mod", "go.sum")
+        $dirty = & git -C $WindowsDir -c core.fsmonitor=false status --porcelain --untracked-files=all -- @paths 2>$null
+        if ($LASTEXITCODE -ne 0 -or $dirty) { return $false }
+        foreach ($tag in @("V$Version-windows", "v$Version-windows")) {
+            & git -C $WindowsDir -c core.fsmonitor=false diff --quiet --no-ext-diff --no-textconv $tag -- @paths 2>$null
+            if ($LASTEXITCODE -eq 0) { return $true }
+        }
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $savedPreference
+    }
 }
 
-# True when the source is clean and HEAD descends from its release tag, so the
-# release binary is that same tool minus the commits after it. Uncommitted edits
-# never qualify; a local commit cannot be told apart from an upstream one here.
-function Test-TuiSourceIsUpstreamOfRelease {
-    param([string]$WindowsDir, [string]$Name, [string]$Version)
+# Release versions a clean source may fall back to when it cannot build its own
+# tool, newest first: the tags in HEAD's history, at most three. A tag already in
+# the history makes its release that same tool minus the commits after it; the
+# next ones cover a version bump whose tag or release is not published yet.
+# Uncommitted edits to the tool return none; a local commit cannot be told apart
+# from an upstream one here.
+function Get-TuiFallbackReleaseVersions {
+    param([string]$WindowsDir, [string]$Name)
 
-    return (Get-TuiSourceReleaseRelation -WindowsDir $WindowsDir -Name $Name -Version $Version) -eq "upstream"
+    if (-not (Test-TuiSourceGitTrusted -WindowsDir $WindowsDir)) {
+        return @()
+    }
+    $savedPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $paths = @("cmd/$Name", "go.mod", "go.sum")
+        $dirty = & git -C $WindowsDir -c core.fsmonitor=false status --porcelain --untracked-files=all -- @paths 2>$null
+        if ($LASTEXITCODE -ne 0 -or $dirty) { return @() }
+        $tags = @(& git -C $WindowsDir tag --merged HEAD --list "V*-windows" "v*-windows" 2>$null)
+        if ($LASTEXITCODE -ne 0) { return @() }
+        # Sorted here, not by git: its version sort orders V and v tags apart, so
+        # the old v1.30.0-windows came before V1.44.0-windows.
+        $parsed = @()
+        foreach ($tag in $tags) {
+            if ([string]$tag -match '^[Vv]((\d+\.\d+\.\d+)(?:-([0-9A-Za-z.]+))?)-windows$') {
+                $parsed += [pscustomobject]@{
+                    Version    = $Matches[1]
+                    Core       = [version]$Matches[2]
+                    IsRelease  = -not $Matches[3]
+                    Prerelease = [string]$Matches[3]
+                }
+            }
+        }
+        $versions = @()
+        foreach ($entry in ($parsed | Sort-Object -Property Core, IsRelease, Prerelease -Descending)) {
+            if ($versions -notcontains $entry.Version) { $versions += $entry.Version }
+            if ($versions.Count -ge 3) { break }
+        }
+        return $versions
+    }
+    finally {
+        $ErrorActionPreference = $savedPreference
+    }
 }
 
 function Ensure-TuiBinary {
@@ -327,27 +360,29 @@ function Ensure-TuiBinary {
         }
     }
 
-    # A source install whose tool changed after the release, with no Go and no
-    # copy to keep, would otherwise have no tool until the next release: every
-    # commit to cmd/ after a tag left fresh installs without status and analyze.
-    # The verified release build is what zip, winget and Scoop users run, so it
-    # is used, and said, only when the change came after that tag in a clean
-    # tree. Uncommitted edits and an existing older copy keep the build-only rule.
-    if (-not $existingBin -and $sourceInstall -and -not $restoreTried) {
+    # A clean source install that could not build its tool would otherwise have
+    # none, or fail every refresh, until a release matched it again: every commit
+    # to cmd/ after a tag left Go-less installs without status and analyze. The
+    # newest verified release in HEAD's history is what zip, winget and Scoop
+    # users run, so it is used instead, over an existing copy too; a failed
+    # download leaves that copy in place.
+    if ($sourceInstall) {
         try {
-            if (Test-TuiSourceIsUpstreamOfRelease -WindowsDir $WindowsDir -Name $Name -Version $Version) {
-                if (Get-Command go -ErrorAction SilentlyContinue) {
-                    Write-TuiBinaryStatus "Building the newer $Name source failed. Using the v$Version release build instead." -Color Yellow
-                }
-                else {
-                    Write-TuiBinaryStatus "This source has $Name changes newer than the v$Version release. Using the release build; install Go to build them." -Color Yellow
-                }
-                $fallbackResult = Restore-PrebuiltTuiBinary -Name $Name -WindowsDir $WindowsDir -DestinationPath $DestinationPath -Version $Version
+            foreach ($fallbackVersion in @(Get-TuiFallbackReleaseVersions -WindowsDir $WindowsDir -Name $Name)) {
+                if ($restoreTried -and $fallbackVersion -eq $Version) { continue }
+                $fallbackResult = Restore-PrebuiltTuiBinary -Name $Name -WindowsDir $WindowsDir -DestinationPath $DestinationPath -Version $fallbackVersion
                 if ($fallbackResult -eq "ok") {
+                    if (Get-Command go -ErrorAction SilentlyContinue) {
+                        Write-TuiBinaryStatus "Building $Name failed, so the v$fallbackVersion release build is used." -Color Yellow
+                    }
+                    else {
+                        Write-TuiBinaryStatus "Using the v$fallbackVersion release build of $Name." -Color Gray
+                    }
                     return $DestinationPath
                 }
                 if ($fallbackResult -eq "mismatch") {
                     Write-TuiBinaryStatus $mismatchMessage -Color Red
+                    return $null
                 }
             }
         }
