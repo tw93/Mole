@@ -70,6 +70,11 @@ var overviewDuIgnoreNames = map[string]bool{
 	// when most entries are cloud placeholders. Keep the overview responsive;
 	// users can still drill into the folder explicitly when they need it.
 	"Mobile Documents": true,
+	// File Provider domains (Dropbox, Google Drive, OneDrive, Proton Drive)
+	// hold cloud-only folders too, and walking them asks the provider to
+	// materialize each listing. Mole Mac turns materialization off for the
+	// same walk (17143ac4c); the overview skips them like Mobile Documents.
+	"CloudStorage": true,
 }
 
 var foldDirs = map[string]bool{

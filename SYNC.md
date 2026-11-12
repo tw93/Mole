@@ -283,3 +283,10 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 | `mo remove --dry-run` | Released earlier (Mole CLI (macOS), Mole CLI (Linux)); Implemented (Mole CLI (Windows), `bec984bb`, CLI-SYNC-19) | The preview is a `-DryRun` switch on `Uninstall-Mole` in `install.ps1`, so it runs the removal's own path; `mo remove` there now returns its script's exit code. |
 | Tuning and switches are not environment variables | Released earlier (Mole CLI (macOS): AGENTS.md treats a new variable as a setting); Implemented (Mole CLI (Linux), `954da7d7`: `MO_PURGE_PROBE_TIMEOUT`, `MO_PURGE_WALK_TIMEOUT` and `MOLE_NO_UPDATE_CHECK` removed, maintainer decision 2026-11-10); Not applicable (Mole CLI (Windows): it reads none) | The purge bounds are fixed globals and the update notice has no switch. |
 
+
+## 2026-11-12 Analyze head folders and CloudStorage
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo analyze` refuses to move `~/Library`, Documents, Desktop, Downloads, Pictures, Movies, Music and every direct child of `~/Library` or `/Library`, compared by case and file identity; what is inside stays deletable | Implemented (Mole CLI (macOS), `d3d162a9`); Implemented (Mole Mac: the source rule); Implemented (Mole CLI (Windows) and Mole for Windows: the same rule on Windows folders) | `TestAnalyzeDeleteRefusesHeadFoldersButNotTheirContents`, failing on the previous code; an independent review probed slashes, case, the Data firmlink, a linked Library and an empty HOME. |
+| The overview skips `~/Library/CloudStorage` like `Mobile Documents`, and the overview cache schema moves to 11 | Implemented (Mole CLI (macOS), `d3d162a9`); Implemented (Mole Mac: the source); Not applicable (Mole CLI (Windows), Mole for Windows: they read the recall attributes) | `TestOverviewSkipsCloudOnlyFolderRoots`. Drilling into `~/Library` still walks CloudStorage, as it walks Mobile Documents. |
