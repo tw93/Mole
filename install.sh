@@ -122,9 +122,11 @@ latest_version() {
         body=$(fetch -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/$REPO/releases?per_page=100&page=$page") || return 1
         # Each release lists tag_name, then prerelease; a prerelease never counts.
+        # awk reads the whole page: exiting at the first match kills grep with
+        # SIGPIPE on a full page, and pipefail then discards the match (#1984).
         tag=$(grep -oE '"tag_name": *"[^"]*"|"prerelease": *(true|false)' <<< "$body" |
             awk -F'"' 'function ok() { return t ~ /^V[0-9]+\.[0-9]+\.[0-9]+-linux$/ && !pre }
-                /tag_name/ { if (ok()) { print t; done = 1; exit } t = $4; pre = 0; next }
+                /tag_name/ { if (!done && ok()) { print t; done = 1 } t = $4; pre = 0; next }
                 /prerelease/ && /true/ { pre = 1 }
                 END { if (!done && ok()) print t }') || tag=""
         if [[ -n "$tag" ]]; then
@@ -223,7 +225,7 @@ mole_go_toolchain() {
     local site json name sum unpacked old
     for site in https://go.dev https://golang.google.cn; do
         json=$(fetch "$site/dl/?mode=json") || continue
-        name=$(grep -oE "\"filename\": *\"go[0-9.]+\.linux-$GO_ARCH\.tar\.gz\"" <<< "$json" | head -1 | awk -F'"' '{print $4}')
+        name=$(grep -oE "\"filename\": *\"go[0-9.]+\.linux-$GO_ARCH\.tar\.gz\"" <<< "$json" | awk -F'"' 'NR == 1 { print $4 }')
         [[ -n "$name" ]] || continue
         sum=$(awk -v n="$name" 'index($0, "\"" n "\"") { f = 1 } f && /"sha256"/ { gsub(/[^0-9a-f]/, "", $2); print $2; exit }' FS=: <<< "$json")
         [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || continue

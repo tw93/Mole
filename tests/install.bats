@@ -105,3 +105,16 @@ install_release() {
     run bash "$REPO/install.sh" --latest
     [ "$status" -eq 3 ]
 }
+
+@test "a Linux release early on a full releases page is still found (#1984)" {
+    # Larger than a pipe buffer, so grep is still writing when the tag is seen.
+    fake_command curl 'case "$*" in
+        *"&page=1") printf "[{\"tag_name\": \"V0.6.0-linux\", \"prerelease\": false}"
+            for i in $(seq 1 4000); do printf ", {\"tag_name\": \"V1.%s.0-windows\", \"prerelease\": false}" "$i"; done
+            printf "]\n" ;;
+        *) printf "[]\n" ;;
+    esac'
+    run bash "$REPO/install.sh" --latest
+    [ "$status" -eq 0 ]
+    [ "$output" = "0.6.0" ]
+}
