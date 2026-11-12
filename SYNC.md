@@ -302,10 +302,22 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
-| `mo clean`'s Large files review reports `~/.colima/_lima` as "Colima VM data" beside the Lima row, report-only like it (#1970) | Implemented (Mole CLI (macOS)); Implemented (Mole Mac: `SystemDataCatalog` already names Colima's embedded Lima); Not applicable (Mole CLI (Windows), Mole CLI (Linux): no Large files review; Mole for Windows: no Colima on Windows) | `large files measures each row once, at most four at a time, and prints them in order`, `large files queues every fixed review row for early measurement`, both red without the row. Orphaned Lima data disks stay a separate design. |
+| `mo clean`'s Large files review reports `~/.colima/_lima` as "Colima VM data" beside the Lima row, report-only like it (#1970) | Implemented (Mole CLI (macOS), `5066e7fd`); Implemented (Mole Mac: `SystemDataCatalog` already names Colima's embedded Lima); Not applicable (Mole CLI (Windows), Mole CLI (Linux): no Large files review; Mole for Windows: no Colima on Windows) | `large files measures each row once, at most four at a time, and prints them in order`, `large files queues every fixed review row for early measurement`, both red without the row. Orphaned Lima data disks stay a separate design. |
 
 ## 2026-11-12 Analyze stops at mount points
 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
-| `mo analyze` no longer descends into a volume mounted below the scanned path, like `du -x`: the mount point stays a browsable 0-byte row and opening it scans that volume (#1979, #1980) | Implemented (Mole CLI (macOS)); Implemented (Mole Mac: Analyze's size walk never crosses `st_dev`, `analyze.md`); Not applicable (Mole CLI (Windows): `isLinkEntry` lists name-surrogate reparse points, volume mount folders included, without following them; Mole for Windows: `FileIdExtdDirectoryInfo` reads the same reparse points as links; Mole CLI (Linux): outside this model) | `TestScanPathConcurrentStopsAtMountPoints`, `TestLiveScanStopsAtMountPoints`, `TestFinishLiveScanKeepsMountRows`, `TestSpotlightLargeFilesStopAtMountPoints` and siblings. On macOS 26.7 `/Users`, `/Applications` and `/System/Library` share the root's `st_dev`, so `mo analyze /` keeps them. |
+| `mo analyze` no longer descends into a volume mounted below the scanned path, like `du -x`: the mount point stays a browsable 0-byte row and opening it scans that volume (#1979, #1980) | Implemented (Mole CLI (macOS), `f8c2fd3b`); Implemented (Mole Mac: Analyze's size walk never crosses `st_dev`, `analyze.md`); Not applicable (Mole CLI (Windows): `isLinkEntry` lists name-surrogate reparse points, volume mount folders included, without following them; Mole for Windows: `FileIdExtdDirectoryInfo` reads the same reparse points as links; Mole CLI (Linux): outside this model) | `TestScanPathConcurrentStopsAtMountPoints`, `TestLiveScanStopsAtMountPoints`, `TestFinishLiveScanKeepsMountRows`, `TestSpotlightLargeFilesStopAtMountPoints` and siblings. On macOS 26.7 `/Users`, `/Applications` and `/System/Library` share the root's `st_dev`, so `mo analyze /` keeps them. |
+
+## 2026-11-12 Sandbox cache listing is bounded
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean` lists each sandbox container's caches through `find` under the real timeout wrapper and the section deadline; a listing that fails or times out drops its partial candidates and the scan moves on, and the container sweeps take their own section budget (#1973, #1974) | Implemented (Mole CLI (macOS), `2dd073d2`); Not applicable (Mole Mac: `sandboxedAppCachePairs` reads each container's `Caches` with one in-process `contentsOfDirectory`, only with Full Disk Access, with no glob or per-entry probe, and sizes run under the bounded size probes; Mole CLI (Windows), Mole for Windows: no sandbox containers, only named `Packages` paths; Mole CLI (Linux): outside this model) | `failed container enumerations discard partial candidates and continue (#1973)`, `a blocked container listing is stopped by the real timeout wrapper (#1973)`, full CI on the PR head. |
+
+## 2026-11-12 Analyze keeps every Spotlight result
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo analyze`'s Spotlight large-file query kept only its last result line, since `strings.Lines` left the newline on each path; every line is now trimmed, so Spotlight's list can replace the walk's when it finds more (#1986) | Implemented (Mole CLI (macOS), `5487a011`); Not applicable (Mole Mac: `LargestFilesFinder` splits `mdfind` output on newlines, which drops them; Mole CLI (Windows), Mole for Windows: no Spotlight; Mole CLI (Linux): outside this model) | `TestSpotlightKeepsEveryOutputLine`, red on the old loop; `TestSpotlightLargeFilesStopAtMountPoints` now sends both candidates through one query. |
