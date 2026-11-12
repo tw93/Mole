@@ -442,6 +442,38 @@ Describe 'Release source equivalence' {
         Add-Content -LiteralPath (Join-Path $script:SourceFixture 'cmd\analyze\main.go') -Value '// changed'
         Test-TuiSourceMatchesRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeFalse
     }
+    It 'Reads a committed change after the tag as upstream, and local edits or a missing tag as neither' {
+        Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeFalse
+        Add-Content -LiteralPath (Join-Path $script:SourceFixture 'cmd\analyze\main.go') -Value '// upstream'
+        & git -C $script:SourceFixture add .
+        $tree = & git -C $script:SourceFixture write-tree
+        $parent = & git -C $script:SourceFixture rev-parse HEAD
+        $commit = & git -C $script:SourceFixture -c user.name=Fixture -c user.email=fixture@example.invalid commit-tree $tree -p $parent -m upstream
+        & git -C $script:SourceFixture update-ref HEAD $commit
+        Test-TuiSourceMatchesRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeFalse
+        Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeTrue
+        Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.8' | Should -BeFalse
+        Add-Content -LiteralPath (Join-Path $script:SourceFixture 'cmd\analyze\main.go') -Value '// local'
+        Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeFalse
+    }
+    It 'Reads a HEAD beside the tag, or an inherited Git override, as not upstream' {
+        Add-Content -LiteralPath (Join-Path $script:SourceFixture 'cmd\analyze\main.go') -Value '// sibling'
+        & git -C $script:SourceFixture add .
+        $tree = & git -C $script:SourceFixture write-tree
+        $sibling = & git -C $script:SourceFixture -c user.name=Fixture -c user.email=fixture@example.invalid commit-tree $tree -m sibling
+        & git -C $script:SourceFixture update-ref HEAD $sibling
+        Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeFalse
+        $tagged = & git -C $script:SourceFixture rev-parse V9.9.9-windows
+        $child = & git -C $script:SourceFixture -c user.name=Fixture -c user.email=fixture@example.invalid commit-tree $tree -p $tagged -m upstream
+        & git -C $script:SourceFixture update-ref HEAD $child
+        Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeTrue
+        $saved = $env:GIT_INDEX_FILE
+        try {
+            $env:GIT_INDEX_FILE = Join-Path $script:SourceFixture '.git\index'
+            Test-TuiSourceIsUpstreamOfRelease -WindowsDir $script:SourceFixture -Name analyze -Version '9.9.9' | Should -BeFalse
+        }
+        finally { $env:GIT_INDEX_FILE = $saved }
+    }
 }
 
 Describe 'Native build replacement' {
@@ -542,12 +574,43 @@ Describe 'Review regressions: first native launch' {
         New-Item -ItemType Directory -Path (Join-Path $script:Root '.git') -Force | Out-Null
         Mock Get-Command { $null } -ParameterFilter { $Name -eq 'go' }
         Mock Test-TuiSourceMatchesRelease { $false }
+        Mock Test-TuiSourceIsUpstreamOfRelease { $false }
         Mock Restore-PrebuiltTuiBinary { 'ok' }
     }
     It 'Does not download a different release for missing <_>' -ForEach @('analyze','status') {
         $result = Ensure-TuiBinary -Name $_ -WindowsDir $script:Root -DestinationPath (Join-Path $script:Root "$_.exe") -SourcePath "./cmd/$_" -Version '1.34.0'
         $result | Should -BeNullOrEmpty
         Should -Invoke Restore-PrebuiltTuiBinary -Times 0 -Exactly
+    }
+    # A fresh install from the windows branch after a cmd/ commit, with no Go,
+    # had neither tool until the next release (mail report, 2026-11-12).
+    It 'Uses the verified release build for missing <_> when only upstream commits changed it' -ForEach @('analyze','status') {
+        Mock Test-TuiSourceIsUpstreamOfRelease { $true }
+        $destination = Join-Path $script:Root "$_.exe"
+        Ensure-TuiBinary -Name $_ -WindowsDir $script:Root -DestinationPath $destination -SourcePath "./cmd/$_" -Version '1.34.0' -Refresh | Should -Be $destination
+        Should -Invoke Restore-PrebuiltTuiBinary -Times 1 -Exactly
+    }
+    It 'Keeps an existing tool instead of the older release build on refresh' {
+        Mock Test-TuiSourceIsUpstreamOfRelease { $true }
+        New-Item -ItemType Directory -Path (Join-Path $script:Root 'bin') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:Root 'bin\analyze.exe') -Value 'old'
+        Ensure-TuiBinary -Name analyze -WindowsDir $script:Root -DestinationPath (Join-Path $script:Root 'bin\analyze.exe') -SourcePath './cmd/analyze' -Version '1.34.0' -Refresh | Should -BeNullOrEmpty
+        Should -Invoke Restore-PrebuiltTuiBinary -Times 0 -Exactly
+    }
+    It 'Falls back to the release build after a failed build of the newer source' {
+        Mock Test-TuiSourceIsUpstreamOfRelease { $true }
+        Mock Get-Command { [pscustomobject]@{ Name='go' } } -ParameterFilter { $Name -eq 'go' }
+        Mock Build-TuiBinary { $false }
+        $destination = Join-Path $script:Root 'status.exe'
+        Ensure-TuiBinary -Name status -WindowsDir $script:Root -DestinationPath $destination -SourcePath './cmd/status' -Version '1.34.0' 6>$null | Should -Be $destination
+        Should -Invoke Build-TuiBinary -Times 1 -Exactly
+        Should -Invoke Restore-PrebuiltTuiBinary -Times 1 -Exactly
+    }
+    It 'Does not report success when the release build fails its checksum' {
+        Mock Test-TuiSourceIsUpstreamOfRelease { $true }
+        Mock Restore-PrebuiltTuiBinary { 'mismatch' }
+        Ensure-TuiBinary -Name status -WindowsDir $script:Root -DestinationPath (Join-Path $script:Root 'status.exe') -SourcePath './cmd/status' -Version '1.34.0' 6>$null | Should -BeNullOrEmpty
+        Should -Invoke Restore-PrebuiltTuiBinary -Times 1 -Exactly
     }
     It 'Allows the release binary when the source is equivalent' {
         Mock Test-TuiSourceMatchesRelease { $true }

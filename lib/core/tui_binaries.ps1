@@ -222,35 +222,56 @@ function Build-TuiBinary {
     }
 }
 
-# A source refresh may use a release binary only when its source is unchanged.
-# Unknown or locally edited sources require a build, not an older tagged binary.
-function Test-TuiSourceMatchesRelease {
+# Compares a source checkout's native tool sources with its release tag:
+# "match" when they are identical, "upstream" when they are clean and differ only
+# by commits after that tag (HEAD descends from it), and "unknown" otherwise.
+# Caller Git overrides can redirect the worktree or index, so they read unknown.
+function Get-TuiSourceReleaseRelation {
     param([string]$WindowsDir, [string]$Name, [string]$Version)
 
     if (-not (Test-Path -LiteralPath (Join-Path $WindowsDir ".git")) -or
         -not (Get-Command git -ErrorAction SilentlyContinue)) {
-        return $false
+        return "unknown"
     }
-    # Caller Git overrides can redirect the worktree or index. Without a
-    # trustworthy source comparison, build locally instead of claiming parity.
     foreach ($overrideName in @("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS")) {
-        if ([Environment]::GetEnvironmentVariable($overrideName)) { return $false }
+        if ([Environment]::GetEnvironmentVariable($overrideName)) { return "unknown" }
     }
     $savedPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
         $paths = @("cmd/$Name", "go.mod", "go.sum")
         $dirty = & git -C $WindowsDir -c core.fsmonitor=false status --porcelain --untracked-files=all -- @paths 2>$null
-        if ($LASTEXITCODE -ne 0 -or $dirty) { return $false }
+        if ($LASTEXITCODE -ne 0 -or $dirty) { return "unknown" }
         foreach ($tag in @("V$Version-windows", "v$Version-windows")) {
             & git -C $WindowsDir -c core.fsmonitor=false diff --quiet --no-ext-diff --no-textconv $tag -- @paths 2>$null
-            if ($LASTEXITCODE -eq 0) { return $true }
+            if ($LASTEXITCODE -eq 0) { return "match" }
         }
-        return $false
+        foreach ($tag in @("V$Version-windows", "v$Version-windows")) {
+            & git -C $WindowsDir merge-base --is-ancestor $tag HEAD 2>$null
+            if ($LASTEXITCODE -eq 0) { return "upstream" }
+        }
+        return "unknown"
     }
     finally {
         $ErrorActionPreference = $savedPreference
     }
+}
+
+# A source refresh may use a release binary only when its source is unchanged.
+# Unknown or locally edited sources require a build, not an older tagged binary.
+function Test-TuiSourceMatchesRelease {
+    param([string]$WindowsDir, [string]$Name, [string]$Version)
+
+    return (Get-TuiSourceReleaseRelation -WindowsDir $WindowsDir -Name $Name -Version $Version) -eq "match"
+}
+
+# True when the source is clean and HEAD descends from its release tag, so the
+# release binary is that same tool minus the commits after it. Uncommitted edits
+# never qualify; a local commit cannot be told apart from an upstream one here.
+function Test-TuiSourceIsUpstreamOfRelease {
+    param([string]$WindowsDir, [string]$Name, [string]$Version)
+
+    return (Get-TuiSourceReleaseRelation -WindowsDir $WindowsDir -Name $Name -Version $Version) -eq "upstream"
 }
 
 function Ensure-TuiBinary {
@@ -272,10 +293,13 @@ function Ensure-TuiBinary {
         $Version = Get-MoleVersionFromScriptFile -WindowsDir $WindowsDir
     }
 
+    $mismatchMessage = "The downloaded $Name tool did not match its published checksum and was deleted. Run 'mo update' and try again, or report it at https://github.com/tw93/Mole/issues."
     $restoreResult = "unavailable"
+    $restoreTried = $false
+    $sourceInstall = Test-Path -LiteralPath (Join-Path $WindowsDir ".git")
     try {
-        $sourceInstall = Test-Path -LiteralPath (Join-Path $WindowsDir ".git")
         if ((-not $Refresh -and -not $sourceInstall) -or (Test-TuiSourceMatchesRelease -WindowsDir $WindowsDir -Name $Name -Version $Version)) {
+            $restoreTried = $true
             $restoreResult = Restore-PrebuiltTuiBinary -Name $Name -WindowsDir $WindowsDir -DestinationPath $DestinationPath -Version $Version
         }
     }
@@ -288,7 +312,7 @@ function Ensure-TuiBinary {
     # A checksum mismatch means the published file is not the one released;
     # stop here instead of quietly building something else.
     if ($restoreResult -eq "mismatch") {
-        Write-TuiBinaryStatus "The downloaded $Name tool did not match its published checksum and was deleted. Run 'mo update' and try again, or report it at https://github.com/tw93/Mole/issues." -Color Red
+        Write-TuiBinaryStatus $mismatchMessage -Color Red
         return $null
     }
 
@@ -300,6 +324,35 @@ function Ensure-TuiBinary {
         }
         catch {
             Write-TuiBinaryStatus "Failed to prepare $Name tool: $_" -Color Yellow
+        }
+    }
+
+    # A source install whose tool changed after the release, with no Go and no
+    # copy to keep, would otherwise have no tool until the next release: every
+    # commit to cmd/ after a tag left fresh installs without status and analyze.
+    # The verified release build is what zip, winget and Scoop users run, so it
+    # is used, and said, only when the change came after that tag in a clean
+    # tree. Uncommitted edits and an existing older copy keep the build-only rule.
+    if (-not $existingBin -and $sourceInstall -and -not $restoreTried) {
+        try {
+            if (Test-TuiSourceIsUpstreamOfRelease -WindowsDir $WindowsDir -Name $Name -Version $Version) {
+                if (Get-Command go -ErrorAction SilentlyContinue) {
+                    Write-TuiBinaryStatus "Building the newer $Name source failed. Using the v$Version release build instead." -Color Yellow
+                }
+                else {
+                    Write-TuiBinaryStatus "This source has $Name changes newer than the v$Version release. Using the release build; install Go to build them." -Color Yellow
+                }
+                $fallbackResult = Restore-PrebuiltTuiBinary -Name $Name -WindowsDir $WindowsDir -DestinationPath $DestinationPath -Version $Version
+                if ($fallbackResult -eq "ok") {
+                    return $DestinationPath
+                }
+                if ($fallbackResult -eq "mismatch") {
+                    Write-TuiBinaryStatus $mismatchMessage -Color Red
+                }
+            }
+        }
+        catch {
+            Write-TuiBinaryStatus "Failed to restore prebuilt $Name tool: $_" -Color Yellow
         }
     }
 
