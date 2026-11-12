@@ -1685,6 +1685,47 @@ func TestSpotlightConsumerStopsWhenScanIsCanceled(t *testing.T) {
 	}
 }
 
+// mdfind prints one path per line. Every candidate must survive parsing,
+// not only the last one, which is the only line without a trailing newline.
+func TestSpotlightKeepsEveryOutputLine(t *testing.T) {
+	root := t.TempDir()
+	if isInFoldedDir(root) {
+		// Spotlight drops candidates under folded names such as "tmp", so
+		// nothing could be returned when TMPDIR sits below one.
+		t.Skipf("temp dir %s is below a folded directory", root)
+	}
+	var paths []string
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		path := filepath.Join(root, name)
+		if err := os.WriteFile(path, []byte(strings.Repeat("x", 4096)), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+		paths = append(paths, path)
+	}
+
+	originalRunner := spotlightQueryRunner
+	spotlightQueryRunner = func(_ context.Context, _, _ string) ([]byte, error) {
+		return []byte(strings.Join(paths, "\n") + "\n"), nil
+	}
+	t.Cleanup(func() {
+		spotlightQueryRunner = originalRunner
+	})
+
+	files, err := findLargeFilesWithSpotlight(context.Background(), root, 1)
+	if err != nil {
+		t.Fatalf("findLargeFilesWithSpotlight returned error: %v", err)
+	}
+	got := make(map[string]bool, len(files))
+	for _, file := range files {
+		got[file.Path] = true
+	}
+	for _, path := range paths {
+		if !got[path] {
+			t.Fatalf("Spotlight result is missing %s; got %+v", path, files)
+		}
+	}
+}
+
 func TestScanCmdTreatsWarmedCacheAsStale(t *testing.T) {
 	home := scanHome(t)
 	t.Setenv("HOME", home)
