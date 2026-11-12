@@ -66,6 +66,10 @@ readonly MOLE_TIMEOUT_PKG_CLEANUP_SEC="${MOLE_TIMEOUT_PKG_CLEANUP_SEC:-20}"
 readonly MOLE_TIMEOUT_DISK_VERIFY_SEC="${MOLE_TIMEOUT_DISK_VERIFY_SEC:-30}"
 readonly MOLE_TIMEOUT_HINT_SCAN_SEC="${MOLE_TIMEOUT_HINT_SCAN_SEC:-15}"
 readonly MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC="${MOLE_CLOUD_OFFICE_SECTION_BUDGET_SEC:-300}"
+# Sandbox and Group Container cache sweeps each get their own wall-clock budget.
+# It bounds blocked directory listings (#1973) without cutting short a normal
+# sweep: 800 readable containers took about 14 seconds to offer.
+readonly MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC="${MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC:-120}"
 
 # True when a cooperative clean-section wall clock has elapsed (#1513).
 _mole_clean_section_budget_spent() {

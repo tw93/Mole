@@ -18,7 +18,8 @@ run_container_scan_fixture() {
         SCAN_SCOPE="$scope" SCAN_STATUS="$scan_status" DRY_RUN="$dry_run" \
         LC_ALL=en_US.UTF-8 \
         MOLE_TEST_NO_AUTH=1 MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 \
-        MOLE_TIMEOUT_MEDIUM_PROBE_SEC=2 MOLE_TIMEOUT_HINT_SCAN_SEC=15 /bin/bash --noprofile --norc <<'EOF'
+        MOLE_TIMEOUT_MEDIUM_PROBE_SEC=2 MOLE_TIMEOUT_HINT_SCAN_SEC=0 \
+        MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC=15 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/user.sh"
@@ -157,6 +158,7 @@ EOF
         [[ "$output" != *"ACTION=Library/Containers/.hidden-container"* ]] || return 1
         [[ "$output" != *"ACTION="*"Caches/link"* ]] || return 1
         [[ "$output" == *"RC=0 CANCEL=0 SPINNER=off"* ]] || return 1
+        [[ "$output" != *"time limit reached"* ]] || return 1
     done
 }
 
@@ -217,6 +219,8 @@ EOF
         [[ "$output" == *"ACTION=Library/Containers/com.example.a/Data/Library/Caches/payload"* ]] || return 1
         [[ "$output" != *"ACTION="*"Caches/zlater"* ]] || return 1
         [[ "$output" != *"ACTION=Library/Containers/com.example.z/"* ]] || return 1
+        [[ "$output" == *"Sandboxed app caches · "*"time limit reached, skipped remaining items"* ]] || return 1
+        [[ "$output" != *"Group Containers logs/caches · "*"time limit reached"* ]] || return 1
         [[ "$output" == *LATER_SECTION* ]] || return 1
     done
 }
@@ -236,6 +240,8 @@ EOF
         [[ "$output" == *"ITEMS=5 SIZE=35"* ]] || return 1
         [[ "$output" == *"ACTION=Library/Group Containers/group.com.example.a/Library/Caches/payload"* ]] || return 1
         [[ "$output" != *"ACTION=Library/Group Containers/group.com.example.z/"* ]] || return 1
+        [[ "$output" == *"Group Containers logs/caches · "*"time limit reached, skipped remaining items"* ]] || return 1
+        [[ "$output" != *"Sandboxed app caches · "*"time limit reached"* ]] || return 1
         [[ "$output" == *LATER_SECTION* ]] || return 1
     done
 }

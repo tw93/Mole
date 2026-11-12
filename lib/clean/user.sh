@@ -1166,6 +1166,13 @@ _container_cache_scan_finish() {
     fi
 }
 
+# Same wording as the Cloud & Office budget line in bin/clean.sh.
+_container_cache_budget_note() {
+    [[ "$1" == true ]] || return 0
+    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $2 · ${GRAY}time limit reached, skipped remaining items${NC}"
+    note_activity
+}
+
 # Rendered wallpaper bitmaps the wallpaper agent keeps in its container: one
 # uncompressed BMP per picture and display size, named
 # `<sha256>-<width>-<height>-<n>-<hex>.bmp`. The agent never prunes them (a
@@ -1336,7 +1343,8 @@ clean_app_caches() {
     local precise_size_limit="${MOLE_CONTAINER_CACHE_PRECISE_SIZE_LIMIT:-64}"
     [[ "$precise_size_limit" =~ ^[0-9]+$ ]] || precise_size_limit=64
     local precise_size_used=0
-    local _MOLE_CLEAN_SECTION_DEADLINE=$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC))
+    local _MOLE_CLEAN_SECTION_DEADLINE=$((SECONDS + MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC))
+    local budget_hit=false
     local -a _MOLE_CONTAINER_CACHE_ENTRIES=()
     local container_rc=0
     local scan_file=""
@@ -1363,6 +1371,7 @@ clean_app_caches() {
             [[ $container_rc -eq 0 ]] || break
         done
     fi
+    _mole_clean_section_budget_spent && budget_hit=true
     _container_cache_scan_finish "$scan_file"
     [[ $container_rc -eq 0 ]] || return "$container_rc"
     _MOLE_CLEAN_SECTION_DEADLINE=""
@@ -1390,6 +1399,7 @@ clean_app_caches() {
         mole_add_cleaned_row "$cleaned_count" "$total_size"
         note_activity
     fi
+    _container_cache_budget_note "$budget_hit" "Sandboxed app caches"
 
     clean_group_container_caches || return $?
     clean_handoff_pasteboard_cache || return $?
@@ -1556,7 +1566,8 @@ clean_group_container_caches() {
     local found_any=false
     local _MOLE_CONTAINER_CACHE_PROBE_DEADLINE=""
 
-    local _MOLE_CLEAN_SECTION_DEADLINE=$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC))
+    local _MOLE_CLEAN_SECTION_DEADLINE=$((SECONDS + MOLE_CONTAINER_CACHE_SECTION_BUDGET_SEC))
+    local budget_hit=false
     local -a _MOLE_CONTAINER_CACHE_ENTRIES=()
     local scan_rc=0
     local scan_file=""
@@ -1741,6 +1752,7 @@ clean_group_container_caches() {
             fi
         done
     done
+    _mole_clean_section_budget_spent && budget_hit=true
     _container_cache_scan_finish "$scan_file"
 
     if [[ "$found_any" == "true" ]]; then
@@ -1766,6 +1778,7 @@ clean_group_container_caches() {
         mole_add_cleaned_row "$cleaned_count" "$total_size"
         note_activity
     fi
+    _container_cache_budget_note "$budget_hit" "Group Containers logs/caches"
 }
 
 resolve_existing_path() {
