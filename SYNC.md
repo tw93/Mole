@@ -2,6 +2,14 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-12: Native tools for a source install ahead of its release
+
+Owner of the row is this branch (support mail 2026-11-12, I-26).
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| A source install with no copy of `status.exe` or `analyze.exe` and no successful Go build uses the checksum-verified release build when its clean HEAD descends from the release tag, instead of having no tool until the next release | Implemented (Mole CLI (Windows), `ead9c74d`); Not applicable (Mole CLI (macOS): its installer already downloads the release binary and falls back to the latest tag); Not applicable (Mole for Windows and Mole Mac: they ship their own packages and build no tools at install) | `Uses the verified release build for missing <_> when only upstream commits changed it`, `Reads a HEAD beside the tag, or an inherited Git override, as not upstream`; ARM64 VM fresh-clone repro and fix receipt in `ead9c74d` |
+
 ## 2026-11-12: Source install refresh under Windows PowerShell 5.1
 
 Owner of the row is this branch (support mail 2026-11-11).
