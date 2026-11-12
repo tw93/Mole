@@ -418,11 +418,12 @@ scanChildren:
 			if rootDevice.isMountPoint(fullPath, child) {
 				atomic.AddInt64(dirsScanned, 1)
 				trySend(ctx, entryChan, dirEntry{
-					Name:  child.Name(),
-					Path:  fullPath,
-					Size:  0,
-					State: scanComplete,
-					IsDir: true,
+					Name:    child.Name(),
+					Path:    fullPath,
+					Size:    0,
+					State:   scanComplete,
+					IsDir:   true,
+					IsMount: true,
 				}, scanSendTimeout)
 				continue
 			}
@@ -849,6 +850,7 @@ func findLargeFilesWithSpotlight(ctx context.Context, root string, minSize int64
 	if err != nil {
 		return nil, err
 	}
+	rootDevice := scanDeviceOf(root)
 
 	h := &largeFileHeap{}
 	heap.Init(h)
@@ -877,6 +879,11 @@ func findLargeFilesWithSpotlight(ctx context.Context, root string, minSize int64
 		}
 
 		if info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+
+		// mdfind -onlyin crosses mount points; the walk does not (#1979).
+		if rootDevice.isOtherDevice(line, info) {
 			continue
 		}
 
@@ -1359,6 +1366,15 @@ func (d scanDevice) isMountPoint(path string, entry fs.DirEntry) bool {
 	}
 	info, err := entry.Info()
 	if err != nil {
+		return false
+	}
+	return d.isOtherDevice(path, info)
+}
+
+// isOtherDevice is isMountPoint for a caller that already holds the FileInfo,
+// such as a Spotlight candidate, which can name a file below a mount point.
+func (d scanDevice) isOtherDevice(path string, info fs.FileInfo) bool {
+	if !d.ok {
 		return false
 	}
 	dev, ok := fileDevice(path, info)

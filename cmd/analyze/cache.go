@@ -71,7 +71,7 @@ func snapshotFromModel(m model) historyEntry {
 func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 	filtered := make([]dirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Size > 0 || entry.State != scanComplete {
+		if !entry.hiddenWhenEmpty() {
 			filtered = append(filtered, entry)
 		}
 	}

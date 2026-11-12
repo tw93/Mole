@@ -148,6 +148,7 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 	isRootDir := root == "/"
 	home := os.Getenv("HOME")
 	isHomeDir := home != "" && root == home
+	rootDevice := scanDeviceOf(root)
 
 	entries := make([]dirEntry, 0, len(children))
 	targets := make([]liveScanTarget, 0, len(children))
@@ -190,6 +191,20 @@ func readLiveScanInitialEntries(root string, limiter *scanLimiter) (scanResult, 
 				continue
 			}
 			if isRootDir && skipSystemDirs[child.Name()] {
+				continue
+			}
+
+			// A mounted volume keeps its row but is not queued: scanning it
+			// as its own target would measure it from its own device (#1979).
+			if rootDevice.isMountPoint(fullPath, child) {
+				entries = append(entries, dirEntry{
+					Name:    child.Name(),
+					Path:    fullPath,
+					Size:    0,
+					State:   scanComplete,
+					IsDir:   true,
+					IsMount: true,
+				})
 				continue
 			}
 

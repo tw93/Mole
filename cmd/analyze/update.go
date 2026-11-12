@@ -745,7 +745,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if len(m.entries) > 0 && m.selected > 0 {
 			m.noteLiveCursorMove()
 			next := m.selected - 1
-			for next > 0 && m.entries[next].Size == 0 {
+			for next > 0 && m.entries[next].Size == 0 && !m.entries[next].IsMount {
 				next--
 			}
 			m.selected = next
@@ -765,7 +765,7 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if len(m.entries) > 0 && m.selected < len(m.entries)-1 {
 			m.noteLiveCursorMove()
 			next := m.selected + 1
-			for next < len(m.entries)-1 && m.entries[next].Size == 0 {
+			for next < len(m.entries)-1 && m.entries[next].Size == 0 && !m.entries[next].IsMount {
 				next++
 			}
 			m.selected = next
