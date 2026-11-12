@@ -10,13 +10,21 @@ Owner of the row is this branch (support mail 2026-11-11).
 |---|---|---|
 | `quick-install.ps1` lowers the error preference around git like `bin/update.ps1`, so git's stderr progress no longer fails a source refresh in Windows PowerShell 5.1 | Implemented (Mole CLI (Windows), `8b43e8d8`); Not applicable (Mole for Windows: installs from its own package and runs no git); Not applicable (Mole CLI (macOS) and Mole Mac: Bash and Swift have no stderr-as-error semantics) | `Defines Invoke-GitCommand the same way in both scripts`, `Returns git's exit code instead of throwing on its stderr progress in <_>`; red-run and real-git receipts in `8b43e8d8` |
 
+## 2026-11-12: Mole CLI (macOS) commits read for this branch
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| A launch agent stops claiming leftovers only when what it runs is proven absent (`4a6236ef`, `98b08c7c`, `c6cdc612`, `77aa5a28`, `15513fd3`, `f903353e`, `d9181d3b`), and no tmutil runs while a network share is mounted (`6bb932a6`, `3506c087`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): no launchd or Time Machine; its leftover scan has no service-claim rule of this shape) | Owner of the Mole Mac row is `mole-mac/SYNC.md` |
+| Spotlight rules in `com.apple.Spotlight` (`f5b4bba3`), one shared lsof listing for purge in-use checks (`a11221aa`), Foundation's item-replacement folder skipped in discovery (`609a7eaa`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): no Spotlight, lsof or Foundation replace folder) | |
+| `mo analyze` skips `~/Library/CloudStorage` in its overview (`d3d162a9`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): `cmd/analyze/disk_size.go` already reads the recall attributes) | |
+
 ## 2026-11-11: Analyze never deletes the user's head folders (from Mole for Windows)
 
 Owner of the cross-product row is Mole for Windows' `SYNC.md`, 2026-11-11 Analyze parity read.
 
 | Change | Destinations | Evidence and next check |
 |---|---|---|
-| `mo analyze` refuses the folders Windows creates in the profile, AppData's Local, Roaming and LocalLow, a OneDrive root and the Mole app's own folders; what is inside them can still be deleted | Implemented (Mole CLI (Windows), `8e82beb5`); Implemented (Mole for Windows, `154b001b`); Implemented (Mole Mac, `67e819caf`, the source rule); Pending (Mole CLI (macOS): next check is whether `mo analyze` refuses `~/Documents`, `~/Library` and the iCloud Drive root) | `TestIsProtectedPathFollowsEnvironmentFolders` on windows-latest in Validation (`ok cmd/analyze`); the profile's Downloads moved from its allowed list to its protected one. |
+| `mo analyze` refuses the folders Windows creates in the profile, AppData's Local, Roaming and LocalLow, a OneDrive root and the Mole app's own folders; what is inside them can still be deleted | Implemented (Mole CLI (Windows), `8e82beb5`); Implemented (Mole for Windows, `154b001b`); Implemented (Mole Mac, `67e819caf`, the source rule); Implemented (Mole CLI (macOS), `d3d162a9`: `mo analyze` refuses the home's standard folders and every direct child of `~/Library` or `/Library`; the iCloud Drive root was already refused) | `TestIsProtectedPathFollowsEnvironmentFolders` on windows-latest in Validation (`ok cmd/analyze`); the profile's Downloads moved from its allowed list to its protected one. |
 
 ## 2026-11-11: Size rounding and install-folder content from Mole for Windows
 
