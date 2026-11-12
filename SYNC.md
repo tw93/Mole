@@ -4,11 +4,11 @@ This is the synchronization entry point for **Mole CLI (Windows)**, branch `wind
 
 ## 2026-11-12: Native tools for a source install ahead of its release
 
-Owner of the row is this branch (support mail 2026-11-12, I-26).
+Owner of the row is this branch (support mail 2026-11-12, I-26 and I-27).
 
 | Change | Destinations | Evidence and next check |
 |---|---|---|
-| A source install with no copy of `status.exe` or `analyze.exe` and no successful Go build uses the checksum-verified release build when its clean HEAD descends from the release tag, instead of having no tool until the next release | Implemented (Mole CLI (Windows), `ead9c74d`); Not applicable (Mole CLI (macOS): its installer already downloads the release binary and falls back to the latest tag); Not applicable (Mole for Windows and Mole Mac: they ship their own packages and build no tools at install) | `Uses the verified release build for missing <_> when only upstream commits changed it`, `Reads a HEAD beside the tag, or an inherited Git override, as not upstream`; ARM64 VM fresh-clone repro and fix receipt in `ead9c74d` |
+| A clean source install that cannot build `status.exe` or `analyze.exe` uses the newest checksum-verified release among the tags in HEAD's history, on first use and on every refresh, instead of having no tool or failing `mo update` until the next release | Implemented (Mole CLI (Windows), `ead9c74d`, `f9603ca4`); Not applicable (Mole CLI (macOS): its installer already downloads the release binary and falls back to the latest tag); Not applicable (Mole for Windows and Mole Mac: they ship their own packages and build no tools at install) | `Uses the verified release build for missing <_> when only upstream commits changed it`, `Refreshes both tools from the release build without Go when the source is ahead of it`, `Offers the tags in HEAD history newest first, and none for local edits, a HEAD beside the tags or a Git override`; ARM64 VM fresh-clone, refresh and version-bump receipts in `f9603ca4` |
 
 ## 2026-11-12: Source install refresh under Windows PowerShell 5.1
 
