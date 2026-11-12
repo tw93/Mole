@@ -366,6 +366,7 @@ func scanPathConcurrentWithLimiter(ctx context.Context, root string, filesScanne
 	isRootDir := root == "/"
 	home := os.Getenv("HOME")
 	isHomeDir := home != "" && root == home
+	rootDevice := scanDeviceOf(root)
 
 scanChildren:
 	for _, child := range children {
@@ -409,6 +410,20 @@ scanChildren:
 
 			// Skip system dirs at root.
 			if isRootDir && skipSystemDirs[child.Name()] {
+				continue
+			}
+
+			// A mount point stays a browsable row, but its volume is not
+			// part of this directory's size.
+			if rootDevice.isMountPoint(fullPath, child) {
+				atomic.AddInt64(dirsScanned, 1)
+				trySend(ctx, entryChan, dirEntry{
+					Name:  child.Name(),
+					Path:  fullPath,
+					Size:  0,
+					State: scanComplete,
+					IsDir: true,
+				}, scanSendTimeout)
 				continue
 			}
 
@@ -738,6 +753,7 @@ func calculateDirSizeFastWithLimiter(ctx context.Context, root string, limiter *
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
+	rootDevice := scanDeviceOf(root)
 	concurrency := min(runtime.NumCPU()*cpuMultiplier, maxWorkers)
 	sem := make(chan struct{}, concurrency)
 	if limiter != nil && limiter.fastSem != nil {
@@ -771,6 +787,9 @@ func calculateDirSizeFastWithLimiter(ctx context.Context, root string, limiter *
 			if entry.IsDir() {
 				subDir := filepath.Join(dirPath, entry.Name())
 				atomic.AddInt64(dirsScanned, 1)
+				if rootDevice.isMountPoint(subDir, entry) {
+					continue
+				}
 
 				select {
 				case sem <- struct{}{}:
@@ -1214,6 +1233,7 @@ func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path stri
 func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, excludePath string, ignoreNames []string) (int64, error) {
 	var total int64
 	var failures scanFailures
+	rootDevice := scanDeviceOf(path)
 	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -1230,6 +1250,9 @@ func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, exclud
 			return filepath.SkipDir
 		}
 		if d.IsDir() {
+			if p != path && rootDevice.isMountPoint(p, d) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		info, err := d.Info()
@@ -1296,6 +1319,50 @@ func getActualFileSize(_ string, info fs.FileInfo) int64 {
 		return actualSize
 	}
 	return info.Size()
+}
+
+// fileDevice reports the device that holds a stat result. It is a variable so
+// tests can present a directory as a mount point without attaching a volume.
+var fileDevice = func(_ string, info fs.FileInfo) (uint64, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return uint64(stat.Dev), true
+}
+
+// scanDevice is the file system a traversal stays on, like `du -x`. A mounted
+// volume below the scanned path (a simulator runtime, a disk image, a network
+// share) holds data that is not on this disk, so counting it would report
+// space the user cannot reclaim here (#1979). A zero value never matches, so
+// an unreadable root falls back to crossing nothing out.
+type scanDevice struct {
+	dev uint64
+	ok  bool
+}
+
+func scanDeviceOf(root string) scanDevice {
+	info, err := os.Stat(root)
+	if err != nil {
+		return scanDevice{}
+	}
+	dev, ok := fileDevice(root, info)
+	return scanDevice{dev: dev, ok: ok}
+}
+
+// isMountPoint reports whether the directory entry at path lives on another
+// file system than the scan root. An entry whose device cannot be read is
+// treated as local so a stat failure never hides data.
+func (d scanDevice) isMountPoint(path string, entry fs.DirEntry) bool {
+	if !d.ok {
+		return false
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return false
+	}
+	dev, ok := fileDevice(path, info)
+	return ok && dev != d.dev
 }
 
 func getLastAccessTimeFromInfo(info fs.FileInfo) time.Time {
