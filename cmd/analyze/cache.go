@@ -35,7 +35,8 @@ import (
 // v9: mixed clone/hardlink groups deduplicate together; bounded lists use path ties.
 // v10: shortened directory listings must refresh before they are browsed.
 // v11: the overview leaves CloudStorage out of the User Library total.
-const cacheSchemaVersion = 11
+// v12: traversal stops at mount points, so v11 totals can include mounted volumes.
+const cacheSchemaVersion = 12
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`
@@ -70,7 +71,7 @@ func snapshotFromModel(m model) historyEntry {
 func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 	filtered := make([]dirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Size > 0 || entry.State != scanComplete {
+		if !entry.hiddenWhenEmpty() {
 			filtered = append(filtered, entry)
 		}
 	}

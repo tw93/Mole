@@ -76,6 +76,15 @@ type dirEntry struct {
 	Size       int64
 	IsDir      bool
 	LastAccess time.Time
+	// IsMount marks a directory on another file system than the scan root.
+	// Its size is not counted here, but the row stays browsable (#1979).
+	IsMount bool
+}
+
+// hiddenWhenEmpty reports whether a finished entry with no bytes is noise
+// that listings drop. A mount point reads 0 on purpose and stays visible.
+func (e dirEntry) hiddenWhenEmpty() bool {
+	return e.Size == 0 && e.State == scanComplete && !e.IsMount
 }
 
 type fileEntry struct {
