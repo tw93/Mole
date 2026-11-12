@@ -297,3 +297,9 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 | --- | --- | --- |
 | `mo status` picks the precision of a network or disk rate from the rounded value, so 0.996 and 9.97 MB/s read `1.0 MB/s` and `10 MB/s`, not `1.00` and `10.0` (#1981) | Implemented (Mole CLI (macOS), `397ee6ef`); Implemented (Mole CLI (Windows), `cfab29df`, CLI-SYNC-22); Implemented (Mole CLI (Linux), `0cd36a36`); Not applicable (Mole Mac and Mole for Windows: `NetworkMetrics.staysBelowNextUnit` and `StatusFormat.NetworkRate` already round first) | `TestFormatRate`, `TestFormatRateCompact` on each CLI. |
 | `mo analyze` shows 999,950 items and up as `1.0M`, not `1000.0k` (#1976) | Implemented (Mole CLI (macOS), `6a688120`); Implemented (Mole CLI (Windows), `cfab29df`, CLI-SYNC-22); Implemented (Mole CLI (Linux): it already stepped up); Not applicable (Mole Mac and Mole for Windows: no item-count label of this form) | `TestFormatNumber`. |
+
+## 2026-11-12 Colima VM data in Large files
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean`'s Large files review reports `~/.colima/_lima` as "Colima VM data" beside the Lima row, report-only like it (#1970) | Implemented (Mole CLI (macOS)); Implemented (Mole Mac: `SystemDataCatalog` already names Colima's embedded Lima); Not applicable (Mole CLI (Windows), Mole CLI (Linux): no Large files review; Mole for Windows: no Colima on Windows) | `large files measures each row once, at most four at a time, and prints them in order`, `large files queues every fixed review row for early measurement`, both red without the row. Orphaned Lima data disks stay a separate design. |

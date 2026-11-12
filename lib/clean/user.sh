@@ -3272,6 +3272,7 @@ _large_prefetch_queue_rows() {
         "$HOME"/Library/Group\ Containers/*dev.orbstack/data \
         "$HOME/OrbStack" \
         "$HOME/.lima" \
+        "$HOME/.colima/_lima" \
         "$HOME/.m2/repository" \
         "$HOME/.ivy2/cache" \
         "$HOME/.nuget/packages" \
@@ -3760,6 +3761,7 @@ _check_large_file_candidates_body() {
         _report_large_or_stop "OrbStack data" "$orbstack_data" || return $?
     done
     _report_large_or_stop "Lima data" "$HOME/.lima" || return $?
+    _report_large_or_stop "Colima VM data" "$HOME/.colima/_lima" || return $?
     _report_large_or_stop "Maven local repository" "$HOME/.m2/repository" || return $?
     _report_large_or_stop "Ivy local repository" "$HOME/.ivy2/cache" || return $?
     _report_large_or_stop "NuGet packages" "$HOME/.nuget/packages" || return $?
