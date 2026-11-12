@@ -303,3 +303,9 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
 | `mo clean`'s Large files review reports `~/.colima/_lima` as "Colima VM data" beside the Lima row, report-only like it (#1970) | Implemented (Mole CLI (macOS)); Implemented (Mole Mac: `SystemDataCatalog` already names Colima's embedded Lima); Not applicable (Mole CLI (Windows), Mole CLI (Linux): no Large files review; Mole for Windows: no Colima on Windows) | `large files measures each row once, at most four at a time, and prints them in order`, `large files queues every fixed review row for early measurement`, both red without the row. Orphaned Lima data disks stay a separate design. |
+
+## 2026-11-12 Analyze stops at mount points
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo analyze` no longer descends into a volume mounted below the scanned path, like `du -x`: the mount point stays a browsable 0-byte row and opening it scans that volume (#1979, #1980) | Implemented (Mole CLI (macOS)); Implemented (Mole Mac: Analyze's size walk never crosses `st_dev`, `analyze.md`); Not applicable (Mole CLI (Windows): `isLinkEntry` lists name-surrogate reparse points, volume mount folders included, without following them; Mole for Windows: `FileIdExtdDirectoryInfo` reads the same reparse points as links; Mole CLI (Linux): outside this model) | `TestScanPathConcurrentStopsAtMountPoints`, `TestLiveScanStopsAtMountPoints`, `TestFinishLiveScanKeepsMountRows`, `TestSpotlightLargeFilesStopAtMountPoints` and siblings. On macOS 26.7 `/Users`, `/Applications` and `/System/Library` share the root's `st_dev`, so `mo analyze /` keeps them. |
