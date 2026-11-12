@@ -418,10 +418,14 @@ _write_launch_agent_fixture() {
 
 # Runs scan_installed_apps under the fixture HOME $1; the rest are extra env
 # assignments. MOLE_TEST_PREAMBLE names a file sourced before the scan.
+# Judging shares MOLE_TIMEOUT_MEDIUM_PROBE_SEC as its wall-clock budget, and
+# past it agents keep their claim, so a loaded CI runner kept claims a fixture
+# expected dropped. The helper gives a wide budget; a caller's own value wins.
 _scan_launch_agent_claims() {
     local agent_home="$1"
     shift
-    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 "$@" /bin/bash --noprofile --norc <<'EOF'
+    run env HOME="$agent_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 \
+        MOLE_TIMEOUT_MEDIUM_PROBE_SEC=60 "$@" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"

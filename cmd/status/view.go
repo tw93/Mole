@@ -1064,15 +1064,18 @@ func colorizeTemp(t float64) string {
 	}
 }
 
+// formatRate picks the precision from the rounded value, so a rate just under
+// a boundary (0.996, 9.97) prints as "1.0 MB/s" or "10 MB/s" instead of
+// "1.00 MB/s" or "10.0 MB/s".
 func formatRate(mb float64) string {
 	if mb < 0.01 {
 		return "0 MB/s"
 	}
-	if mb < 1 {
-		return fmt.Sprintf("%.2f MB/s", mb)
+	if s := fmt.Sprintf("%.2f", mb); mb < 1 && s != "1.00" {
+		return s + " MB/s"
 	}
-	if mb < 10 {
-		return fmt.Sprintf("%.1f MB/s", mb)
+	if s := fmt.Sprintf("%.1f", mb); mb < 10 && s != "10.0" {
+		return s + " MB/s"
 	}
 	return fmt.Sprintf("%.0f MB/s", mb)
 }
@@ -1081,8 +1084,8 @@ func formatRateCompact(mb float64) string {
 	if mb < 0.01 {
 		return "0"
 	}
-	if mb < 10 {
-		return fmt.Sprintf("%.1f", mb)
+	if s := fmt.Sprintf("%.1f", mb); mb < 10 && s != "10.0" {
+		return s
 	}
 	return fmt.Sprintf("%.0f", mb)
 }
