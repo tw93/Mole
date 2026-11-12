@@ -433,6 +433,9 @@ namespace Mole {
 # list still protects the long path a walk yields. Normalized forms are built
 # once per distinct entry, not once per candidate.
 $script:MoleProtectedPathFormCache = @{}
+# The UWP Packages root for each LOCALAPPDATA value, so a candidate check does
+# not run Join-Path again.
+$script:MolePackagesRootCache = @{}
 
 function Get-MoleProtectedPathForms {
     param([string]$Protected)
@@ -478,10 +481,23 @@ function Test-MoleProtectedPathForm {
         return $true
     }
 
+    # A tree walk checks every entry against every protected entry, so read the
+    # forms Get-MoleProtectedPathForms already built straight from its cache.
+    # A function call per protected entry cost more than all the comparisons.
+    $formCache = $script:MoleProtectedPathFormCache
+
     # UWP data stays protected. Only automatic clean may reach the named Teams
     # WebView profile's three disposable leaves; user whitelist rules still win.
-    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        foreach ($packages in (Get-MoleProtectedPathForms -Protected (Join-Path $env:LOCALAPPDATA 'Packages'))) {
+    $localAppData = $env:LOCALAPPDATA
+    if (-not [string]::IsNullOrWhiteSpace($localAppData)) {
+        $packagesRoot = $script:MolePackagesRootCache[$localAppData]
+        if ($null -eq $packagesRoot) {
+            $packagesRoot = Join-Path $localAppData 'Packages'
+            $script:MolePackagesRootCache[$localAppData] = $packagesRoot
+        }
+        $forms = $formCache[$packagesRoot]
+        if ($null -eq $forms) { $forms = Get-MoleProtectedPathForms -Protected $packagesRoot }
+        foreach ($packages in $forms) {
             if ($normalizedPath -eq $packages -or $normalizedPath.StartsWith($packages + '\', [StringComparison]::OrdinalIgnoreCase)) {
                 $relative = $normalizedPath.Substring($packages.Length)
                 $teamsCache = '^\\MSTeams_8wekyb3d8bbwe\\LocalCache\\Microsoft\\MSTeams\\EBWebView\\[^\\]+\\(Cache|Code Cache|GPUCache)(\\|$)'
@@ -495,7 +511,9 @@ function Test-MoleProtectedPathForm {
             continue
         }
 
-        foreach ($normalizedProtected in (Get-MoleProtectedPathForms -Protected $protected)) {
+        $forms = $formCache[$protected]
+        if ($null -eq $forms) { $forms = Get-MoleProtectedPathForms -Protected $protected }
+        foreach ($normalizedProtected in $forms) {
             if ($normalizedPath -eq $normalizedProtected) {
                 return $true
             }
@@ -507,7 +525,9 @@ function Test-MoleProtectedPathForm {
             continue
         }
 
-        foreach ($normalizedProtected in (Get-MoleProtectedPathForms -Protected $protected)) {
+        $forms = $formCache[$protected]
+        if ($null -eq $forms) { $forms = Get-MoleProtectedPathForms -Protected $protected }
+        foreach ($normalizedProtected in $forms) {
             if ($normalizedPath -eq $normalizedProtected -or
                 $normalizedPath.StartsWith("$normalizedProtected\", [StringComparison]::OrdinalIgnoreCase)) {
                 return $true
