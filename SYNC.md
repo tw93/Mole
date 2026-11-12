@@ -2,6 +2,14 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-12: Source install refresh under Windows PowerShell 5.1
+
+Owner of the row is this branch (support mail 2026-11-11).
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| `quick-install.ps1` lowers the error preference around git like `bin/update.ps1`, so git's stderr progress no longer fails a source refresh in Windows PowerShell 5.1 | Implemented (Mole CLI (Windows), `8b43e8d8`); Not applicable (Mole for Windows: installs from its own package and runs no git); Not applicable (Mole CLI (macOS) and Mole Mac: Bash and Swift have no stderr-as-error semantics) | `Defines Invoke-GitCommand the same way in both scripts`, `Returns git's exit code instead of throwing on its stderr progress in <_>`; red-run and real-git receipts in `8b43e8d8` |
+
 ## 2026-11-11: Analyze never deletes the user's head folders (from Mole for Windows)
 
 Owner of the cross-product row is Mole for Windows' `SYNC.md`, 2026-11-11 Analyze parity read.
