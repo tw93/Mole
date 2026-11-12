@@ -23,11 +23,13 @@ func TestFormatRate(t *testing.T) {
 		{"at threshold", 0.01, "0.01 MB/s"},
 		{"small rate", 0.5, "0.50 MB/s"},
 		{"just under 1", 0.99, "0.99 MB/s"},
+		{"rounds up to 1", 0.996, "1.0 MB/s"},
 
 		// Medium rates (1 to < 10): 1 decimal place.
 		{"exactly 1", 1.0, "1.0 MB/s"},
 		{"medium rate", 5.5, "5.5 MB/s"},
 		{"just under 10", 9.9, "9.9 MB/s"},
+		{"rounds up to 10", 9.97, "10 MB/s"},
 
 		// Large rates (>= 10): no decimal places.
 		{"exactly 10", 10.0, "10 MB/s"},
@@ -42,6 +44,26 @@ func TestFormatRate(t *testing.T) {
 				t.Errorf("formatRate(%v) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatRateCompact(t *testing.T) {
+	tests := []struct {
+		input float64
+		want  string
+	}{
+		{0, "0"},
+		{0.5, "0.5"},
+		{9.9, "9.9"},
+		{9.97, "10"},
+		{10, "10"},
+		{123.4, "123"},
+	}
+
+	for _, tt := range tests {
+		if got := formatRateCompact(tt.input); got != tt.want {
+			t.Errorf("formatRateCompact(%v) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 

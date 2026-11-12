@@ -63,7 +63,10 @@ func formatNumber(n int64) string {
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)
 	}
-	if n < 1000000 {
+	// Compare against the threshold the label rounds to, not the raw count:
+	// 999,950 printed with one decimal in thousands is "1000.0k", which
+	// should read as the next unit, the same way units.BytesSI steps up.
+	if n < 999950 {
 		return fmt.Sprintf("%.1fk", float64(n)/1000)
 	}
 	return fmt.Sprintf("%.1fM", float64(n)/1000000)
