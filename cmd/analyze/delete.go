@@ -335,6 +335,9 @@ func isProtectedAnalyzeDeletePath(path string) bool {
 	if isCriticalAnalyzeDeletePath(cleanPath) {
 		return true
 	}
+	if isLibraryHeadFolder(cleanPath, "/Library") {
+		return true
+	}
 
 	homeRoots := protectedAnalyzeHomeRoots()
 	if len(homeRoots) == 0 {
@@ -343,6 +346,10 @@ func isProtectedAnalyzeDeletePath(path string) bool {
 
 	for _, homeRoot := range homeRoots {
 		if cleanPath == homeRoot || isSameExistingPath(cleanPath, homeRoot) {
+			return true
+		}
+		if isAnalyzeHeadHomeFolder(cleanPath, homeRoot) ||
+			isLibraryHeadFolder(cleanPath, filepath.Join(homeRoot, "Library")) {
 			return true
 		}
 
@@ -473,6 +480,33 @@ func isCriticalAnalyzeDeletePath(path string) bool {
 		}
 	}
 	return false
+}
+
+// analyzeHeadHomeFolders are the folders macOS creates in a home and relies
+// on. Moving one whole breaks every app that keeps state there, so analyze
+// refuses the folder itself and keeps what is inside it deletable, the same
+// head-of-the-tree rule as Mole Mac's canTrashFromAnalyze.
+var analyzeHeadHomeFolders = []string{"Library", "Documents", "Desktop", "Downloads", "Pictures", "Movies", "Music"}
+
+func isAnalyzeHeadHomeFolder(path, homeRoot string) bool {
+	for _, name := range analyzeHeadHomeFolders {
+		folder := filepath.Join(homeRoot, name)
+		// APFS is case-insensitive by default, so ~/documents names the same folder.
+		if strings.EqualFold(path, folder) || isSameExistingPath(path, folder) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLibraryHeadFolder reports a direct child of a Library folder (Caches,
+// Preferences, Application Support): analyze offers what is inside instead.
+func isLibraryHeadFolder(path, library string) bool {
+	parent := filepath.Dir(path)
+	if parent == path {
+		return false
+	}
+	return strings.EqualFold(parent, library) || isDirectChildOfExistingRoot(path, library)
 }
 
 // isICloudStructuralPath reports iCloud Drive's own folders: Mobile Documents,

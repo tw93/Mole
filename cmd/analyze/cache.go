@@ -34,7 +34,8 @@ import (
 // v8: APFS clones that share every block count once, so v7 totals can be inflated.
 // v9: mixed clone/hardlink groups deduplicate together; bounded lists use path ties.
 // v10: shortened directory listings must refresh before they are browsed.
-const cacheSchemaVersion = 10
+// v11: the overview leaves CloudStorage out of the User Library total.
+const cacheSchemaVersion = 11
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`

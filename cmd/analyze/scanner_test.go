@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -510,5 +512,19 @@ func TestUserLibraryOverviewDeduplicatesHardlinks(t *testing.T) {
 	}
 	if got != kb*1024 {
 		t.Fatalf("Library size = %d, single du = %d; hardlinks must count once", got, kb*1024)
+	}
+}
+
+func TestOverviewSkipsCloudOnlyFolderRoots(t *testing.T) {
+	library := t.TempDir()
+	for _, name := range []string{"Mobile Documents", "CloudStorage", "Caches"} {
+		if err := os.MkdirAll(filepath.Join(library, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := overviewIgnoreNamesForPath(library)
+	sort.Strings(got)
+	if want := []string{"CloudStorage", "Mobile Documents"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("overviewIgnoreNamesForPath = %v, want %v", got, want)
 	}
 }
