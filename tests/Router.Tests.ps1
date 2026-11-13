@@ -141,7 +141,7 @@ param([switch]$Json, [switch]$Watch, [string]$Interval)
     }
 
     It "Shows help for every real command" -ForEach @(
-        "clean", "uninstall", "optimize", "analyze", "status", "purge", "update", "remove"
+        "clean", "uninstall", "optimize", "analyze", "status", "purge", "installer", "update", "remove"
     ) {
         $declared = (Get-Command -Name (Join-Path $script:WindowsDir "bin\$_.ps1") -CommandType ExternalScript).Parameters
         Resolve-CommandParameterName -Parameters $declared -Flag "help" | Should -Be "ShowHelp"

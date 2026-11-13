@@ -32,7 +32,7 @@ TIERS = [
     ("deletion", "a dry run first (mo <command> --dry-run); a Pester case red on the old code; "
                  "scripts/test.ps1 under Windows PowerShell 5.1; SECURITY_AUDIT.md claims rechecked", [
         "lib/core/base.ps1", "lib/core/file_ops.ps1", "lib/clean/*", "bin/clean.ps1", "bin/uninstall.ps1",
-        "bin/purge.ps1", "bin/optimize.ps1", "cmd/analyze/delete.go", "cmd/analyze/oplog.go",
+        "bin/purge.ps1", "bin/installer.ps1", "bin/optimize.ps1", "cmd/analyze/delete.go", "cmd/analyze/oplog.go",
         "cmd/analyze/protect_windows.go", "cmd/analyze/recycle_guard_windows.go", "cmd/analyze/cleanable.go",
     ]),
 ]

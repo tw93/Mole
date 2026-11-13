@@ -496,11 +496,12 @@ SMOKE = [
     (["--version"], r"\d+\.\d+"),
     (["--help"], r"mo clean"),
     *[([cmd, "--help"], r"\S") for cmd in (
-        "clean", "uninstall", "analyze", "status", "optimize", "purge", "history", "update", "remove")],
+        "clean", "uninstall", "analyze", "status", "optimize", "purge", "installer", "history", "update", "remove")],
     (["history"], r"\S"),
     (["clean", "--dry-run"], r"Dry run"),
     (["optimize", "--dry-run"], r"\S"),
     (["purge", "--dry-run"], r"\S"),
+    (["installer", "--dry-run"], r"\S"),
 ]
 
 

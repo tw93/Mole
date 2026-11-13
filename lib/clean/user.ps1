@@ -1,5 +1,5 @@
 # Mole - User Cleanup Module
-# Cleans user-level temporary files, caches, and downloads
+# Cleans user-level temporary files and caches
 
 #Requires -Version 5.1
 Set-StrictMode -Version Latest

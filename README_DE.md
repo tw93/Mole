@@ -70,6 +70,7 @@ mo optimize                  # Caches & Dienste aktualisieren
 mo analyze                   # Visuelle Festplattenanalyse
 mo status                    # Live-Dashboard zur Systemgesundheit
 mo purge                     # Build-Artefakte von Projekten bereinigen
+mo installer                 # Installationsdateien finden und entfernen
 
 mo update                    # Mole aktualisieren
 mo remove                    # Mole von diesem PC entfernen
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ Füge `-CreateShortcut` für einen Eintrag im Startmenü hinzu. Zum Deinstallier
 
 ## Sicherheit
 
-Mole kann Dateien löschen. Deshalb prüft es Pfade und schützt System- und Profilordner. `uninstall`, `purge` und `remove` fragen vor jedem Entfernen nach einer Bestätigung. Kann Mole nicht belegen, dass eine Änderung sicher ist, überspringt es sie.
+Mole kann Dateien löschen. Deshalb prüft es Pfade und schützt System- und Profilordner. `uninstall`, `purge`, `installer` und `remove` fragen vor jedem Entfernen nach einer Bestätigung. Kann Mole nicht belegen, dass eine Änderung sicher ist, überspringt es sie.
 
 - `clean`, `uninstall` und `purge` löschen Dateien, überprüfe sie also zuerst mit `--dry-run` und bei Bedarf mit `--debug`
 - `clean` und `purge` löschen endgültig; verifizierte `uninstall`-Reste landen im Papierkorb, der Uninstaller der App behält sein eigenes Verhalten, und in `mo analyze` gelöschte Dateien landen ebenfalls im Papierkorb, außer Elementen, die zu groß dafür sind und die Windows endgültig zu löschen anbietet
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 Findet Build-Artefakte (`node_modules`, `target`, `build`, `dist`, `venv` und mehr) in deinen Projektordnern und lässt dich auswählen, welche Projekte bereinigt werden; solange du nichts wählst, ist nichts ausgewählt. Die durchsuchten Ordner konfigurierst du mit `mo purge --paths`.
+
+### Installationsdateien (Installer)
+
+```powershell
+mo installer --dry-run
+```
+
+Findet Windows-Installer-Pakete (`.msi`) in deinem Downloads-Ordner, die seit mindestens 14 Tagen dort liegen, und lässt dich auswählen, welche in den Papierkorb verschoben werden; ausgewählt ist nichts, bis du wählst. Aufgelistet werden nur Dateien, deren Inhalt wirklich eine Installer-Datenbank ist, und eine noch geöffnete Datei wird übersprungen.
 
 ## Community
 

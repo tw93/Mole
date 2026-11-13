@@ -5,7 +5,7 @@ function Test-MoleUpdateNoticeAllowed {
     param([string]$CommandName, [string[]]$Arguments)
     if (-not (Test-MoleInteractiveOutput) -or [Console]::IsErrorRedirected) { return $false }
     if ($env:MOLE_DRY_RUN -eq '1') { return $false }
-    if ($CommandName -and $CommandName -notin @('clean', 'uninstall', 'optimize', 'purge', 'analyze', 'status')) { return $false }
+    if ($CommandName -and $CommandName -notin @('clean', 'uninstall', 'optimize', 'purge', 'installer', 'analyze', 'status')) { return $false }
     foreach ($argument in $Arguments) {
         if ($argument -match '^--?(json|ndjson|watch|help|h|version|v|list|dry-run|whitelist)([=:]|$)') { return $false }
     }

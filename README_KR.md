@@ -70,6 +70,7 @@ mo optimize                  # 캐시와 서비스 새로고침
 mo analyze                   # 시각적 디스크 탐색기
 mo status                    # 실시간 시스템 상태 대시보드
 mo purge                     # 프로젝트 빌드 결과물 정리
+mo installer                 # 설치 파일 정리: 설치 파일 탐색 및 삭제
 
 mo update                    # Mole 업데이트
 mo remove                    # 이 PC에서 Mole 삭제
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 ## 안전성 및 신뢰성
 
-Mole은 파일을 삭제할 수 있으므로 경로를 검증하고, 시스템 및 프로필 위치를 보호합니다. `uninstall`, `purge`, `remove` 명령은 삭제 전에 확인을 요청합니다. 안전하게 변경할 수 있다고 확인할 수 없는 항목은 건너뜁니다.
+Mole은 파일을 삭제할 수 있으므로 경로를 검증하고, 시스템 및 프로필 위치를 보호합니다. `uninstall`, `purge`, `installer`, `remove` 명령은 삭제 전에 확인을 요청합니다. 안전하게 변경할 수 있다고 확인할 수 없는 항목은 건너뜁니다.
 
 - `clean`, `uninstall`, `purge` 명령은 파일을 삭제할 수 있으므로 먼저 `--dry-run`으로 확인하고 필요 시 `--debug`를 함께 사용하세요
 - `clean`과 `purge`는 영구 삭제하며, 검증된 `uninstall` 잔여 파일은 휴지통으로 이동하고 앱 자체의 제거 프로그램은 기존 동작을 유지합니다. `mo analyze`에서 삭제한 파일도 휴지통으로 이동됩니다. 휴지통에 들어가지 않는 큰 항목은 Windows가 영구 삭제할지 먼저 묻습니다
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 프로젝트 폴더에서 빌드 결과물(`node_modules`, `target`, `build`, `dist`, `venv` 등)을 찾아, 정리할 프로젝트를 직접 선택할 수 있게 합니다. 직접 선택하기 전에는 아무것도 선택되어 있지 않습니다. 검사할 폴더는 `mo purge --paths`로 구성하세요.
+
+### 설치 패키지 정리 (Installer)
+
+```powershell
+mo installer --dry-run
+```
+
+다운로드 폴더에 14일 이상 있었던 Windows 설치 패키지(`.msi`)를 찾아, 휴지통으로 옮길 파일을 직접 선택할 수 있게 합니다. 직접 선택하기 전에는 아무것도 선택되어 있지 않습니다. 내용이 실제 설치 데이터베이스인 파일만 표시하며, 아직 열려 있는 파일은 건너뜁니다.
 
 ## 커뮤니티
 

@@ -70,6 +70,7 @@ mo optimize                  # キャッシュとサービスのリフレッシ�
 mo analyze                   # ディスク分析：容量の内訳を可視化
 mo status                    # システムの健康度をリアルタイム表示
 mo purge                     # プロジェクトのビルド生成物を整理
+mo installer                 # インストーラ整理：インストーラファイルの探索と削除
 
 mo update                    # Moleを更新
 mo remove                    # このPCからMoleを削除
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 ## 安全性
 
-Moleはファイルを削除できるため、パスを検証し、システム領域とユーザープロファイルの場所を保護します。`uninstall`、`purge`、`remove` は、削除の前に必ず確認を求めます。安全に変更できると確認できない項目は、スキップします。
+Moleはファイルを削除できるため、パスを検証し、システム領域とユーザープロファイルの場所を保護します。`uninstall`、`purge`、`installer`、`remove` は、削除の前に必ず確認を求めます。安全に変更できると確認できない項目は、スキップします。
 
 - `clean`、`uninstall`、`purge` はファイル削除を伴うため、事前に `--dry-run` で確認し、必要に応じて `--debug` を併用してください
 - `clean` と `purge` は完全に削除します。確認済みの `uninstall` の残存ファイルはごみ箱へ移動し、アプリ自身のアンインストーラーは元の動作を保ちます。`mo analyze` で削除したファイルもごみ箱へ移動されます。ごみ箱に入らない大きな項目は、完全に削除するかを Windows が先に確認します
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 プロジェクトフォルダ内のビルド生成物（`node_modules`、`target`、`build`、`dist`、`venv` など）を検出し、整理するプロジェクトを選べます。選択するまでは何も選ばれません。スキャン対象のフォルダは `mo purge --paths` で設定します。
+
+### インストーラ整理（Installer）
+
+```powershell
+mo installer --dry-run
+```
+
+ダウンロードフォルダに14日以上置かれているWindowsインストーラ（`.msi`）を検出し、ごみ箱へ移動するファイルを選べます。選択するまでは何も選ばれません。中身が実際のインストーラデータベースであるファイルだけを表示し、開いたままのファイルはスキップします。
 
 ## コミュニティ
 

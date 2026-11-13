@@ -111,6 +111,17 @@ Describe "Purge Command" {
     }
 }
 
+Describe "Installer Command" {
+    Context "Help Display" {
+        It "Shows help that names the scope and the Recycle Bin" {
+            $result = & powershell -ExecutionPolicy Bypass -File "$script:BinDir\installer.ps1" -ShowHelp 2>&1
+            $LASTEXITCODE | Should -Be 0
+            $result -join "`n" | Should -Match "\.msi"
+            $result -join "`n" | Should -Match "Recycle Bin"
+        }
+    }
+}
+
 Describe "Analyze Command" {
     Context "Help Display" {
         It "Should show help without error" {

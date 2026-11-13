@@ -70,6 +70,7 @@ mo optimize                  # 刷新缓存与服务
 mo analyze                   # 磁盘空间浏览
 mo status                    # 实时系统健康看板
 mo purge                     # 清理项目构建产物
+mo installer                 # 查找并删除安装包
 
 mo update                    # 检查并更新 Mole
 mo remove                    # 从这台电脑上完全卸载 Mole
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 ## 安全机制
 
-Mole 会删除文件，所以会先校验路径、保护系统和用户配置目录，`uninstall`、`purge` 与 `remove` 删除前都会请你确认，无法确认安全的项目一律跳过。
+Mole 会删除文件，所以会先校验路径、保护系统和用户配置目录，`uninstall`、`purge`、`installer` 与 `remove` 删除前都会请你确认，无法确认安全的项目一律跳过。
 
 - `clean`、`uninstall` 与 `purge` 会删除文件，可先用 `--dry-run` 预览，需要时加上 `--debug`
 - `clean` 与 `purge` 是永久删除，已核实的 `uninstall` 残留会放进回收站，应用自身的卸载器保留其原有行为，`mo analyze` 中删除的文件也会放进回收站，放不进回收站的大项目 Windows 会先询问是否永久删除
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 在你的项目目录里找出构建产物（`node_modules`、`target`、`build`、`dist`、`venv` 等），由你挑选要清理的项目，选择之前什么都不会勾选，扫描的目录可以用 `mo purge --paths` 配置。
+
+### 安装包清理（Installer）
+
+```powershell
+mo installer --dry-run
+```
+
+在下载文件夹里找出放了 14 天以上的 Windows 安装包（`.msi`），由你挑选要放进回收站的文件，选择之前什么都不会勾选，只列出内容确实是安装包的文件，还开着的文件会跳过。
 
 ## 社区反馈
 

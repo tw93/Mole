@@ -163,6 +163,7 @@ function Show-MainHelp {
     Write-HelpRow "mo analyze" "Explore disk usage"
     Write-HelpRow "mo status" "Monitor system health"
     Write-HelpRow "mo purge" "Remove old project artifacts"
+    Write-HelpRow "mo installer" "Find and remove installer files"
     Write-HelpRow "mo history" "Review cleanup activity"
     Write-HelpRow "mo update" "Update to latest version"
     Write-HelpRow "mo remove" "Remove Mole from system"
@@ -175,6 +176,7 @@ function Show-MainHelp {
     Write-HelpRow "mo optimize --dry-run" "Preview optimization"
     Write-HelpRow "mo uninstall --dry-run" "Preview app uninstall"
     Write-HelpRow "mo purge --dry-run" "Preview project purge"
+    Write-HelpRow "mo installer --dry-run" "Preview installer cleanup"
     Write-HelpRow "mo remove --dry-run" "Preview Mole removal"
     Write-HelpRow "mo purge --paths" "Configure scan directories"
     Write-HelpRow "mo history --json" "Export cleanup history"
@@ -305,7 +307,7 @@ function Invoke-MoleCommand {
     }
 
     # A previous native command must not make a help-only invocation fail.
-    if ($CommandName -in @("analyze", "status", "history", "uninstall", "purge", "clean", "remove")) { $global:LASTEXITCODE = 0 }
+    if ($CommandName -in @("analyze", "status", "history", "uninstall", "purge", "installer", "clean", "remove")) { $global:LASTEXITCODE = 0 }
 
     # Execute the command script with arguments using splatting
     # This properly handles switch parameters passed as strings
@@ -381,7 +383,7 @@ function Invoke-MoleCommand {
     finally {
         if ($debugSession) { Complete-MoleDebugSession }
     }
-    if ($CommandName -in @("analyze", "status", "history", "uninstall", "purge", "clean", "remove")) {
+    if ($CommandName -in @("analyze", "status", "history", "uninstall", "purge", "installer", "clean", "remove")) {
         $script:MoleExitCode = $LASTEXITCODE
     }
 }
@@ -453,7 +455,7 @@ function Main {
         $updateContext = Start-MoleUpdateCheck -RootDir $script:MOLE_ROOT -Version $script:MOLE_VER -Method (Get-MoleInstallMethod -RootDir $script:MOLE_ROOT)
     }
     if ($effectiveCommand) {
-        $validCommands = @("clean", "uninstall", "analyze", "status", "optimize", "purge", "history", "update", "remove")
+        $validCommands = @("clean", "uninstall", "analyze", "status", "optimize", "purge", "installer", "history", "update", "remove")
 
         if ($effectiveCommand -in $validCommands) {
             Invoke-MoleCommand -CommandName $effectiveCommand -Arguments $effectiveArguments

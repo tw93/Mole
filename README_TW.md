@@ -70,6 +70,7 @@ mo optimize                  # 重新整理快取與服務
 mo analyze                   # 磁碟空間瀏覽
 mo status                    # 即時系統健康儀表板
 mo purge                     # 清理專案建置產物
+mo installer                 # 尋找並刪除安裝檔
 
 mo update                    # 檢查並更新 Mole
 mo remove                    # 從這台電腦上完全解除安裝 Mole
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 ## 安全機制
 
-Mole 會刪除檔案，所以會先校驗路徑、保護系統和使用者設定資料夾，`uninstall`、`purge` 與 `remove` 刪除前都會請你確認，無法確認安全的項目一律跳過。
+Mole 會刪除檔案，所以會先校驗路徑、保護系統和使用者設定資料夾，`uninstall`、`purge`、`installer` 與 `remove` 刪除前都會請你確認，無法確認安全的項目一律跳過。
 
 - `clean`、`uninstall` 與 `purge` 會刪除檔案，可先用 `--dry-run` 預覽，需要時加上 `--debug`
 - `clean` 與 `purge` 是永久刪除，已核實的 `uninstall` 殘留會放進資源回收筒，應用程式自身的解除安裝程式保留其原有行為，`mo analyze` 中刪除的檔案也會放進資源回收筒，放不進資源回收筒的大項目 Windows 會先詢問是否永久刪除
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 在你的專案資料夾裡找出建置產物（`node_modules`、`target`、`build`、`dist`、`venv` 等），由你挑選要清理的專案，選擇之前什麼都不會勾選，掃描的資料夾可以用 `mo purge --paths` 設定。
+
+### 安裝檔清理（Installer）
+
+```powershell
+mo installer --dry-run
+```
+
+在下載資料夾裡找出放了 14 天以上的 Windows 安裝檔（`.msi`），由你挑選要移到資源回收筒的檔案，選擇之前什麼都不會勾選，只列出內容確實是安裝檔的檔案，仍在開啟中的檔案會略過。
 
 ## 社群回饋
 

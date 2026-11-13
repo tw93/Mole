@@ -70,6 +70,7 @@ mo optimize                  # Refresh caches & services
 mo analyze                   # Visual disk explorer
 mo status                    # Live system health dashboard
 mo purge                     # Clean project build artifacts
+mo installer                 # Find and remove installer files
 
 mo update                    # Update Mole
 mo remove                    # Remove Mole from this PC
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ Add `-CreateShortcut` for a Start Menu entry. To uninstall, run `mo remove`.
 
 ## Safety
 
-Mole can delete files, so it validates paths and protects system and profile locations. `uninstall`, `purge`, and `remove` ask for confirmation before removing anything. When Mole cannot prove an item is safe to change, it skips it.
+Mole can delete files, so it validates paths and protects system and profile locations. `uninstall`, `purge`, `installer`, and `remove` ask for confirmation before removing anything. When Mole cannot prove an item is safe to change, it skips it.
 
 - `clean`, `uninstall`, and `purge` can delete files, so review them with `--dry-run` first and add `--debug` when needed
 - `clean` and `purge` delete permanently; verified `uninstall` leftovers go to the Recycle Bin, the app's own uninstaller keeps its own behavior, and files deleted in `mo analyze` go to the Recycle Bin, except items too large for it, which Windows offers to delete permanently
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 Finds build artifacts (`node_modules`, `target`, `build`, `dist`, `venv`, and more) in your project folders and lets you pick which projects to clean; nothing is selected until you choose. Configure the scanned folders with `mo purge --paths`.
+
+### Installer
+
+```powershell
+mo installer --dry-run
+```
+
+Finds Windows Installer packages (`.msi`) in your Downloads folder that arrived at least 14 days ago and lets you pick which ones to move to the Recycle Bin; nothing is selected until you choose. Only files whose contents are a real installer database are listed, and a file that is still open is skipped.
 
 ## Community
 

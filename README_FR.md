@@ -70,6 +70,7 @@ mo optimize                  # Actualiser les caches et services
 mo analyze                   # Explorateur visuel de disque
 mo status                    # Tableau de bord de santé système en direct
 mo purge                     # Nettoyer les fichiers de build de projets
+mo installer                 # Trouver et supprimer les fichiers d'installation
 
 mo update                    # Mettre à jour Mole
 mo remove                    # Supprimer Mole de ce PC
@@ -84,6 +85,7 @@ mo clean --dry-run
 mo uninstall --dry-run
 mo optimize --dry-run
 mo purge --dry-run
+mo installer --dry-run
 mo remove --dry-run
 mo history
 mo history --json
@@ -114,7 +116,7 @@ Ajoutez `-CreateShortcut` pour créer une entrée dans le menu Démarrer. Pour d
 
 ## Sécurité
 
-Mole peut supprimer des fichiers ; il valide donc les chemins et protège les emplacements du système et du profil. `uninstall`, `purge` et `remove` demandent une confirmation avant de supprimer quoi que ce soit. Quand Mole ne peut pas prouver qu'un élément peut être modifié sans risque, il l'ignore.
+Mole peut supprimer des fichiers ; il valide donc les chemins et protège les emplacements du système et du profil. `uninstall`, `purge`, `installer` et `remove` demandent une confirmation avant de supprimer quoi que ce soit. Quand Mole ne peut pas prouver qu'un élément peut être modifié sans risque, il l'ignore.
 
 - `clean`, `uninstall` et `purge` suppriment des fichiers : prévisualisez toujours leurs actions avec `--dry-run`, complété au besoin de `--debug`
 - `clean` et `purge` suppriment définitivement ; les restes vérifiés d'`uninstall` vont dans la Corbeille, le désinstalleur de l'application conserve son propre comportement, et les fichiers supprimés dans `mo analyze` vont aussi dans la Corbeille, sauf les éléments trop volumineux pour elle, que Windows propose de supprimer définitivement
@@ -187,6 +189,14 @@ mo purge --dry-run
 ```
 
 Repère les artefacts de build (`node_modules`, `target`, `build`, `dist`, `venv`, et plus) dans vos dossiers de projets et vous laisse choisir les projets à nettoyer ; rien n'est sélectionné tant que vous n'avez pas choisi. Configurez les dossiers analysés avec `mo purge --paths`.
+
+### Fichiers d'installation (Installer)
+
+```powershell
+mo installer --dry-run
+```
+
+Repère les paquets Windows Installer (`.msi`) présents dans votre dossier Téléchargements depuis au moins 14 jours et vous laisse choisir ceux à placer dans la Corbeille ; rien n'est sélectionné tant que vous n'avez pas choisi. Seuls les fichiers dont le contenu est une vraie base d'installation sont listés, et un fichier encore ouvert est ignoré.
 
 ## Communauté
 
