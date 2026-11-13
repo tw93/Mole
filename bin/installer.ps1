@@ -62,8 +62,24 @@ function Show-InstallerHelp {
     Write-Host ""
 }
 
+# Only a real user's profile, strictly under the Users root, has a Downloads
+# to look at. Run as SYSTEM or with an odd USERPROFILE, nothing is scanned.
 function Get-InstallerDownloadsFolder {
-    return (Join-Path $env:USERPROFILE 'Downloads')
+    try {
+        $profileDir = [IO.Path]::GetFullPath($env:USERPROFILE).TrimEnd('\')
+        $listed = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -ErrorAction Stop).ProfilesDirectory
+        $usersRoot = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($listed)).TrimEnd('\')
+    }
+    catch { return $null }
+    if (-not (Test-InstallerStrictlyUnder -Path $profileDir -Root $usersRoot)) { return $null }
+    return (Join-Path $profileDir 'Downloads')
+}
+
+function Test-InstallerStrictlyUnder {
+    param([string]$Path, [string]$Root)
+    if ([string]::IsNullOrEmpty($Path) -or [string]::IsNullOrEmpty($Root)) { return $false }
+    $prefix = $Root.TrimEnd('\') + '\'
+    return $Path.Length -gt $prefix.Length -and $Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
 }
 
 # Shape only: a direct child of Downloads, a plain file, an .msi name with
@@ -162,6 +178,7 @@ function Find-DownloadedInstallers {
     param([string]$Downloads = (Get-InstallerDownloadsFolder), [datetime]$NowUtc = [datetime]::UtcNow)
 
     $result = @{ Items = @(); Held = 0 }
+    if ([string]::IsNullOrEmpty($Downloads)) { return $result }
     if (-not (Test-Path -LiteralPath $Downloads -PathType Container)) { return $result }
     # A junction or symbolic link on Downloads or any folder above it means the
     # files belong somewhere else; leave them alone.

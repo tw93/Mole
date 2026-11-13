@@ -119,7 +119,7 @@ Ajoutez `-CreateShortcut` pour créer une entrée dans le menu Démarrer. Pour d
 Mole peut supprimer des fichiers ; il valide donc les chemins et protège les emplacements du système et du profil. `uninstall`, `purge`, `installer` et `remove` demandent une confirmation avant de supprimer quoi que ce soit. Quand Mole ne peut pas prouver qu'un élément peut être modifié sans risque, il l'ignore.
 
 - `clean`, `uninstall` et `purge` suppriment des fichiers : prévisualisez toujours leurs actions avec `--dry-run`, complété au besoin de `--debug`
-- `clean` et `purge` suppriment définitivement ; les restes vérifiés d'`uninstall` vont dans la Corbeille, le désinstalleur de l'application conserve son propre comportement, et les fichiers supprimés dans `mo analyze` vont aussi dans la Corbeille, sauf les éléments trop volumineux pour elle, que Windows propose de supprimer définitivement
+- `clean` et `purge` suppriment définitivement ; les restes vérifiés d'`uninstall` et les installateurs choisis dans `mo installer` vont dans la Corbeille, le désinstalleur de l'application conserve son propre comportement, et les fichiers supprimés dans `mo analyze` vont aussi dans la Corbeille, sauf les éléments trop volumineux pour elle, que Windows propose de supprimer définitivement
 - Exécutez Mole avec votre compte utilisateur habituel ; les étapes au niveau système sont ignorées sauf si PowerShell est lancé en tant qu'administrateur
 - Protégez des chemins avec `mo clean --whitelist`
 - Les opérations de nettoyage sont consignées dans `%USERPROFILE%\.config\mole\operations.log` ; consultez-les avec `mo history` ou désactivez la journalisation avec `MO_NO_OPLOG=1`

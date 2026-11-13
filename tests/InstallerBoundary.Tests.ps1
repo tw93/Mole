@@ -81,6 +81,14 @@ Describe 'Installer discovery' {
         Get-OfferedNames $downloads | Should -Be @('large-sector.msi')
     }
 
+    It 'looks only in a profile strictly under the Users root' {
+        Test-InstallerStrictlyUnder -Path 'C:\Users\ann' -Root 'C:\Users' | Should -BeTrue
+        Test-InstallerStrictlyUnder -Path 'C:\Users' -Root 'C:\Users' | Should -BeFalse
+        Test-InstallerStrictlyUnder -Path 'C:\UsersX\ann' -Root 'C:\Users' | Should -BeFalse
+        Test-InstallerStrictlyUnder -Path 'C:\Windows\System32\config\systemprofile' -Root 'C:\Users' | Should -BeFalse
+        Find-DownloadedInstallers -Downloads $null | ForEach-Object { @($_.Items).Count } | Should -Be 0
+    }
+
     It 'never offers an executable, even one holding an installer database' {
         $downloads = New-Downloads
         $null = New-Installer -Folder $downloads -Name 'setup.exe'
