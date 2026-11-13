@@ -1197,6 +1197,11 @@ func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path stri
 		failures.record(err)
 	}
 
+	// du -x stays on the device of its own operand, so a child that is itself
+	// a mount point would be measured as the whole mounted volume. A single
+	// du over path would never enter it; skip it here to match.
+	rootDevice := scanDeviceOf(path)
+
 	var wg sync.WaitGroup
 	workerCount := min(max(runtime.NumCPU()*2, 2), 8)
 	sem := make(chan struct{}, workerCount)
@@ -1218,6 +1223,9 @@ func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path stri
 				continue
 			}
 			atomic.AddInt64(&total, getActualFileSize(fullPath, info))
+			continue
+		}
+		if rootDevice.isMountPoint(fullPath, entry) {
 			continue
 		}
 

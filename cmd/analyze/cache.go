@@ -36,7 +36,8 @@ import (
 // v10: shortened directory listings must refresh before they are browsed.
 // v11: the overview leaves CloudStorage out of the User Library total.
 // v12: traversal stops at mount points, so v11 totals can include mounted volumes.
-const cacheSchemaVersion = 12
+// v13: the Home and old-Downloads overview totals stop at mount points too.
+const cacheSchemaVersion = 13
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`
