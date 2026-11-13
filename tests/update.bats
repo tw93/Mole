@@ -584,6 +584,40 @@ SCRIPT
 	fi
 }
 
+@test "nightly commit lookup keeps the SHA from a large GitHub response" {
+	run /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/update.sh"
+expected_commit="e31d46faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+commit_response_file="$HOME/large-commit.json"
+# The commit endpoint includes up to 300 file objects, each with another SHA
+# and a potentially large patch. Small responses can hide an early pipe close.
+{
+	printf '{\n  "sha": "%s",\n  "files": [\n' "$expected_commit"
+	for ((i = 0; i < 300; i++)); do
+		if [[ "$i" -gt 0 ]]; then printf ',\n'; fi
+		printf '    {\n      "sha": "%040d",\n      "filename": "file-%s",\n      "patch": "%16384s"\n    }' "$i" "$i" ''
+	done
+	printf '\n  ]\n}\n'
+} > "$commit_response_file"
+curl() { cat "$commit_response_file"; }
+mole_git_runs_quietly() {
+	touch "$HOME/git-fallback"
+	return 1
+}
+
+background_commit=$(get_latest_commit_from_github api-only)
+printf 'background=<%s>\n' "$background_commit"
+[[ "$background_commit" == "$expected_commit" ]] || exit 1
+explicit_commit=$(get_latest_commit_from_github)
+printf 'explicit=<%s>\n' "$explicit_commit"
+[[ "$explicit_commit" == "$expected_commit" ]] || exit 1
+[[ ! -e "$HOME/git-fallback" ]] || exit 1
+INNER
+
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "background nightly checks skip the git fallback while explicit lookups retain it" {
 	local fake_bin="$TEST_ROOT/fake-bin"
 	local curl_url_log="$TEST_ROOT/curl.urls"
