@@ -321,3 +321,9 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
 | `mo analyze`'s Spotlight large-file query kept only its last result line, since `strings.Lines` left the newline on each path; every line is now trimmed, so Spotlight's list can replace the walk's when it finds more (#1986) | Implemented (Mole CLI (macOS), `5487a011`); Not applicable (Mole Mac: `LargestFilesFinder` splits `mdfind` output on newlines, which drops them; Mole CLI (Windows), Mole for Windows: no Spotlight; Mole CLI (Linux): outside this model) | `TestSpotlightKeepsEveryOutputLine`, red on the old loop; `TestSpotlightLargeFilesStopAtMountPoints` now sends both candidates through one query. |
+
+## 2026-11-12 CloudStorage project caches past provider temp folders
+
+| Change | Destinations | Evidence and next check |
+| --- | --- | --- |
+| `mo clean`'s project-cache scan prunes `.tmp` folders, so an unreadable Google Drive `.tmp` no longer makes BSD `find` exit 1 and discard every match from `~/Library/CloudStorage`; other traversal errors still discard the root (#1988, #1990) | Implemented (Mole CLI (macOS), `601471d7`); Not applicable (Mole Mac: `enumerateProjectArtifacts` lists each directory with `contentsOfDirectory` and skips an unreadable one, so one blocked folder never drops the root; Mole CLI (Windows), Mole for Windows: no CloudStorage project-cache scan; Mole CLI (Linux): outside this model) | `scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)` and `scan_project_cache_root still discards results for other unreadable CloudStorage folders (#1988)`, on real BSD `find` with a mode-000 folder, plus full CI on the PR head. |
