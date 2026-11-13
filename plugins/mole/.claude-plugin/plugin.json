@@ -1,6 +1,6 @@
 {
   "name": "mole",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Drive the Mole CLI (mo) safely on macOS and Windows: find what uses disk space, preview cleanup with --dry-run, uninstall apps, and read system health and cleanup history.",
   "author": {
     "name": "Tw93",

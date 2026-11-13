@@ -35,6 +35,8 @@ is updated and removed through that package manager; `mo update` and
 | `mo optimize` | **Starts immediately, no confirmation.** It ends with a y/N question about System File Checker, which takes minutes | Agent after consent; SFC is the user's call in their own console |
 | `mo purge --dry-run` | Prints the project count and total, then opens a selection list that reads keys from a console; without one it errors out or waits | User. `mo purge --help` lists the folders it scans, and the agent may run that |
 | `mo purge` | Selection list and a y/N confirmation | User |
+| `mo installer --dry-run` | 1.45.0 and newer. Preview of `.msi` installers in Downloads that are at least 14 days old; without a console it previews them all, with one it opens a selection list | Agent |
+| `mo installer` | 1.45.0 and newer. Selection list and a y/N confirmation; chosen files go to the Recycle Bin | User |
 | `mo uninstall --dry-run` | Selection list, needs a console | User |
 | `mo uninstall` | Selection list, then each app's own uninstaller | User |
 | `mo clean --whitelist` | Opens the whitelist in Notepad and waits | User, or edit the file (below) |
@@ -45,7 +47,7 @@ pick by its `name`; the selection list supports type-to-search. Ask them to run
 `mo uninstall --dry-run` first, which names the uninstaller each app would use.
 The vendor's uninstaller decides what it removes inside its own folder, such as
 a game library or local saves; warn the user when the app keeps data there. There is no
-`--yes` on any Windows command, and no installer or slim command.
+`--yes` on any Windows command, and no slim command.
 
 Administrator steps belong to the user: they open PowerShell with "Run as
 administrator" and run the command there. The agent never tries to elevate. If
@@ -61,6 +63,7 @@ Some uninstallers show their own UAC prompt or wizard.
   vendor wrote it. Afterwards Mole moves a verified leftover install folder to
   the Recycle Bin, never deleting it permanently.
 - Files deleted inside the interactive `mo analyze` go to the Recycle Bin.
+- `mo installer` moves the `.msi` files the user picks to the Recycle Bin.
 - `mo purge` targets build output and dependency folders (`node_modules`,
   `target`, `build`, `dist`, `venv` and similar). Build output rebuilds
   offline; dependency folders need a download. Git-tracked content and nested
