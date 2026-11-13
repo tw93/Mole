@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -158,6 +160,60 @@ func TestGetDirectoryLogicalSizeStopsAtMountPoints(t *testing.T) {
 	}
 	if size != fx.localSize {
 		t.Fatalf("size = %d, want %d (contents of the mounted volume must not count)", size, fx.localSize)
+	}
+}
+
+// The Home overview row skips ~/Library by running du once per child, and
+// du -x stays on the device of its own operand, so a child that is a mount
+// point must not reach du at all.
+func TestDuSkippingImmediateChildStopsAtMountPoints(t *testing.T) {
+	fx := newCrossMountFixture(t)
+	library := filepath.Join(fx.root, "Library")
+	if err := os.MkdirAll(library, 0o755); err != nil {
+		t.Fatalf("create Library: %v", err)
+	}
+
+	var mu sync.Mutex
+	var measured []string
+	_, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), fx.root, library, func(path string) (int64, error) {
+		mu.Lock()
+		measured = append(measured, path)
+		mu.Unlock()
+		return 1 << 20, nil
+	})
+	if err != nil {
+		t.Fatalf("getDirectorySizeFromDuSkippingImmediateChild: %v", err)
+	}
+
+	local := filepath.Join(fx.root, "local")
+	if len(measured) != 1 || measured[0] != local {
+		t.Fatalf("measured %#v, want only %s (the mount point must not be measured)", measured, local)
+	}
+}
+
+func TestOldDownloadsStopsAtMountPoints(t *testing.T) {
+	dir := t.TempDir()
+	local := filepath.Join(dir, "old-folder")
+	mountPoint := filepath.Join(dir, "mnt")
+	writeFileWithSize(t, filepath.Join(local, "data.bin"), 64<<10)
+	writeFileWithSize(t, filepath.Join(mountPoint, "runtime.bin"), 1<<20)
+	oldTime := time.Now().AddDate(0, 0, -100)
+	for _, path := range []string{local, mountPoint} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatalf("age %s: %v", path, err)
+		}
+	}
+	useMountedDirectoryStub(t, mountPoint)
+
+	size, err := measureOldDownloads(context.Background(), dir, 90)
+	if err != nil {
+		t.Fatalf("measureOldDownloads: %v", err)
+	}
+	if size < 64<<10 {
+		t.Fatalf("size = %d, want the old local folder counted", size)
+	}
+	if size >= 1<<20 {
+		t.Fatalf("size = %d, contents of the mounted volume must not count", size)
 	}
 }
 

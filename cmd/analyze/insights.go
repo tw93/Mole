@@ -120,6 +120,7 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 	if err != nil {
 		return 0, err
 	}
+	rootDevice := scanDeviceOf(dir)
 
 	for _, entry := range entries {
 		if ctx.Err() != nil {
@@ -139,6 +140,11 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 
 		if info.ModTime().Before(cutoff) {
 			if entry.IsDir() {
+				// du -x on a mount point measures the mounted volume, which
+				// is not part of Downloads.
+				if rootDevice.isOtherDevice(filepath.Join(dir, entry.Name()), info) {
+					continue
+				}
 				// Use du for directories.
 				size, err := getDirectorySizeFromDuWithExcludeAndIgnores(ctx, filepath.Join(dir, entry.Name()), "", nil, overviewDuTimeout)
 				failures.record(err)
