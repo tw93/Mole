@@ -210,7 +210,7 @@ EOF
 }
 
 @test "sandbox enumeration shares a deadline across containers and inner items (#1973)" {
-    local mode
+    local mode budget_note
     for mode in true false; do
         run_container_scan_fixture budget 0 "$mode"
         [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -219,14 +219,14 @@ EOF
         [[ "$output" == *"ACTION=Library/Containers/com.example.a/Data/Library/Caches/payload"* ]] || return 1
         [[ "$output" != *"ACTION="*"Caches/zlater"* ]] || return 1
         [[ "$output" != *"ACTION=Library/Containers/com.example.z/"* ]] || return 1
-        [[ "$output" == *"Sandboxed app caches · "*"time limit reached, skipped remaining items"* ]] || return 1
-        [[ "$output" != *"Group Containers logs/caches · "*"time limit reached"* ]] || return 1
+        budget_note=$(printf '%s\n' "$output" | grep -F "time limit reached, skipped remaining items") || { echo "$output"; return 1; }
+        [[ "$budget_note" == *"Sandboxed app caches · "* && "$budget_note" != *$'\n'* ]] || { echo "$output"; return 1; }
         [[ "$output" == *LATER_SECTION* ]] || return 1
     done
 }
 
 @test "Group Container scans retain Safari extensions and stop at their own deadline (#1973)" {
-    local mode
+    local mode budget_note
     for mode in true false; do
         run_container_scan_fixture safari-present 0 "$mode"
         [ "$status" -eq 0 ] || { echo "$output"; return 1; }
@@ -240,8 +240,8 @@ EOF
         [[ "$output" == *"ITEMS=5 SIZE=35"* ]] || return 1
         [[ "$output" == *"ACTION=Library/Group Containers/group.com.example.a/Library/Caches/payload"* ]] || return 1
         [[ "$output" != *"ACTION=Library/Group Containers/group.com.example.z/"* ]] || return 1
-        [[ "$output" == *"Group Containers logs/caches · "*"time limit reached, skipped remaining items"* ]] || return 1
-        [[ "$output" != *"Sandboxed app caches · "*"time limit reached"* ]] || return 1
+        budget_note=$(printf '%s\n' "$output" | grep -F "time limit reached, skipped remaining items") || { echo "$output"; return 1; }
+        [[ "$budget_note" == *"Group Containers logs/caches · "* && "$budget_note" != *$'\n'* ]] || { echo "$output"; return 1; }
         [[ "$output" == *LATER_SECTION* ]] || return 1
     done
 }
