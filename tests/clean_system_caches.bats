@@ -1941,6 +1941,76 @@ EOF
 	((elapsed < 4))
 }
 
+@test "scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)" {
+    [[ "$EUID" -ne 0 ]] || skip "root can read mode-000 directories"
+
+    run env HOME="$BATS_TEST_TMPDIR/cloud-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+root="$HOME/Library/CloudStorage"
+blocked="$root/GoogleDrive-blocked/.tmp"
+drive="$root/GoogleDrive-readable"
+mkdir -p "$blocked/hidden/__pycache__" "$drive/.tmp/hidden/__pycache__" \
+    "$drive/next-app/.next/cache" "$drive/python-app/__pycache__" \
+    "$drive/flutter-app/.dart_tool" "$drive/.tmp-other/__pycache__"
+touch "$drive/.tmp/hidden/__pycache__/hidden.pyc" \
+    "$drive/next-app/package.json" "$drive/python-app/pyproject.toml" \
+    "$drive/python-app/__pycache__/module.pyc" "$drive/flutter-app/pubspec.yaml" \
+    "$drive/.tmp-other/pyproject.toml" "$drive/.tmp-other/__pycache__/module.pyc"
+trap 'chmod 700 "$blocked"' EXIT
+chmod 000 "$blocked"
+
+# Exercise the reporter's actual BSD find failure, not a scripted status.
+raw_rc=0
+"$FIND_BSD" -P "$root" -maxdepth 9 -mount -type d -print > "$HOME/raw.out" 2> "$HOME/raw.err" || raw_rc=$?
+[[ $raw_rc -eq 1 ]] || exit 1
+grep -Fq "$blocked: Permission denied" "$HOME/raw.err" || exit 1
+project_cache_root_is_walkable "$root"
+scan_rc=0
+scan_project_cache_root "$root" "$HOME/matches" || scan_rc=$?
+printf 'RAW_FIND_RC=%s SCAN_RC=%s\n' "$raw_rc" "$scan_rc"
+cat "$HOME/matches"
+grep -Fxq "$drive/next-app"$'\t'"$drive/next-app/.next" "$HOME/matches" || exit 1
+grep -Fxq "$drive/python-app"$'\t'"$drive/python-app/__pycache__" "$HOME/matches" || exit 1
+grep -Fxq "$drive/flutter-app"$'\t'"$drive/flutter-app/.dart_tool" "$HOME/matches" || exit 1
+grep -Fxq "$drive/.tmp-other"$'\t'"$drive/.tmp-other/__pycache__" "$HOME/matches" || exit 1
+EOF
+
+    printf '%s\n' "$output"
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"RAW_FIND_RC=1 SCAN_RC=0"* ]] || return 1
+    [[ "$output" != *"/.tmp/"* ]] || return 1
+}
+
+@test "scan_project_cache_root still discards results for other unreadable CloudStorage folders (#1988)" {
+    [[ "$EUID" -ne 0 ]] || skip "root can read mode-000 directories"
+
+    run env HOME="$BATS_TEST_TMPDIR/cloud-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+root="$HOME/Library/CloudStorage"
+blocked="$root/GoogleDrive-test/private"
+mkdir -p "$blocked" "$root/GoogleDrive-test/app/.next/cache"
+touch "$root/GoogleDrive-test/app/package.json"
+trap 'chmod 700 "$blocked"' EXIT
+chmod 000 "$blocked"
+raw_rc=0
+"$FIND_BSD" -P "$root" -maxdepth 9 -mount -type d -print > "$HOME/raw.out" 2> "$HOME/raw.err" || raw_rc=$?
+[[ $raw_rc -eq 1 ]] || exit 1
+grep -Fq "$blocked: Permission denied" "$HOME/raw.err" || exit 1
+grep -Fxq "$root/GoogleDrive-test/app/.next" "$HOME/raw.out" || exit 1
+scan_rc=0
+scan_project_cache_root "$root" "$HOME/matches" || scan_rc=$?
+printf 'SCAN_RC=%s BYTES=%s\n' "$scan_rc" "$(wc -c < "$HOME/matches" | tr -d ' ')"
+EOF
+
+    printf '%s\n' "$output"
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == "SCAN_RC=1 BYTES=0" ]] || return 1
+}
+
 @test "scan_project_cache_root prunes conda and site-packages" {
     mkdir -p "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg1/__pycache__"
     mkdir -p "$HOME/Projects/miniconda3/lib/python3.11/site-packages/pkg2/__pycache__"
