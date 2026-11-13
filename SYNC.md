@@ -2,6 +2,14 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-13: Old installer files in Downloads (from Mole for Windows and Mole CLI (macOS))
+
+Owner of the row is this branch; the scope is Mole for Windows' CLEAN-05 and the command shape is Mole CLI (macOS)'s `mo installer` (maintainer 2026-11-13: sync the GUI's installer cleanup to the Windows CLI).
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| `mo installer` lists each `.msi` directly in `%USERPROFILE%\Downloads` that arrived at least 14 days ago and whose compound-file root carries the MSI class ID, skips one open elsewhere, preselects nothing, asks y/N and moves the chosen files to the Recycle Bin after rechecking each at the sink | Implemented (Mole CLI (Windows), `f5b20be2`); Implemented (Mole for Windows, `c92a1ac3`, CLEAN-05, the source rule); Intentional difference (Mole CLI (macOS): its `mo installer` covers `.dmg`, `.pkg`, `.iso`, `.xip` and installer `.zip` in more folders, macOS formats with no Windows counterpart); Not applicable (Mole Mac: its Clean Installers section, `DownloadedInstallerPolicy`, is the macOS rule set this row does not change) | `tests/InstallerBoundary.Tests.ps1` 13 passed on Windows PowerShell 5.1.26100.9974 and pwsh 7 in the ARM64 VM, with the router, command, install and update-notice suites (177 passed); a dry run there listed a real MSI from `C:\Windows\Installer` and not an `.msp` renamed to `.msi`. Pending: `skills/mole/references/windows.md` on `main` still says the Windows CLI has no installer command; next check, change it with the Windows CLI release that ships `mo installer` |
+
 ## 2026-11-12: Native tools for a source install ahead of its release
 
 Owner of the row is this branch (support mail 2026-11-12, I-26 and I-27).
@@ -22,9 +30,9 @@ Owner of the row is this branch (support mail 2026-11-11).
 
 | Change | Destinations | Evidence and next check |
 |---|---|---|
-| A launch agent stops claiming leftovers only when what it runs is proven absent (`4a6236ef`, `98b08c7c`, `c6cdc612`, `77aa5a28`, `15513fd3`, `f903353e`, `d9181d3b`), and no tmutil runs while a network share is mounted (`6bb932a6`, `3506c087`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): no launchd or Time Machine; its leftover scan has no service-claim rule of this shape) | Owner of the Mole Mac row is `mole-mac/SYNC.md` |
-| Spotlight rules in `com.apple.Spotlight` (`f5b4bba3`), one shared lsof listing for purge in-use checks (`a11221aa`), Foundation's item-replacement folder skipped in discovery (`609a7eaa`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): no Spotlight, lsof or Foundation replace folder) | |
-| `mo analyze` skips `~/Library/CloudStorage` in its overview (`d3d162a9`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): `cmd/analyze/disk_size.go` already reads the recall attributes) | |
+| A launch agent stops claiming leftovers only when what it runs is proven absent (`4a6236ef`, `98b08c7c`, `c6cdc612`, `77aa5a28`, `15513fd3`, `f903353e`, `d9181d3b`), and no tmutil runs while a network share is mounted (`6bb932a6`, `3506c087`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): no launchd or Time Machine; its leftover scan has no service-claim rule of this shape); Not applicable (Mole for Windows: no launchd or Time Machine on Windows) | Owner of the Mole Mac row is `mole-mac/SYNC.md` |
+| Spotlight rules in `com.apple.Spotlight` (`f5b4bba3`), one shared lsof listing for purge in-use checks (`a11221aa`), Foundation's item-replacement folder skipped in discovery (`609a7eaa`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): no Spotlight, lsof or Foundation replace folder); Not applicable (Mole for Windows: the same macOS-only facilities) | |
+| `mo analyze` skips `~/Library/CloudStorage` in its overview (`d3d162a9`) | Implemented (Mole CLI (macOS)); Not applicable (Mole CLI (Windows): `cmd/analyze/disk_size.go` already reads the recall attributes); Not applicable (Mole for Windows: `~/Library/CloudStorage` is a macOS path) | |
 
 ## 2026-11-11: Analyze never deletes the user's head folders (from Mole for Windows)
 
