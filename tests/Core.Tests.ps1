@@ -296,6 +296,45 @@ Describe "File Operations Module" {
         It "Should not protect temp directories" {
             Test-ProtectedPath -Path $env:TEMP | Should -Be $false
         }
+
+        It "Should check a candidate against cached protected forms without rebuilding them" {
+            # A tree walk runs this once per entry; a function call per protected
+            # entry made the check several times slower than its comparisons.
+            $candidate = Join-Path $TestDrive "cached-forms\entry.txt"
+            Test-ProtectedPath -Path $candidate | Should -Be $false
+            Mock Get-MoleProtectedPathForms { @() }
+            Test-ProtectedPath -Path $candidate | Should -Be $false
+            Should -Invoke Get-MoleProtectedPathForms -Times 0 -Exactly
+        }
+
+        It "Should protect UWP package data under the current LOCALAPPDATA after it changes" {
+            $savedLocalAppData = $env:LOCALAPPDATA
+            $first = Join-Path $TestDrive ("local-a-" + [guid]::NewGuid().ToString("N"))
+            $second = Join-Path $TestDrive ("local-b-" + [guid]::NewGuid().ToString("N"))
+            try {
+                $env:LOCALAPPDATA = $first
+                Test-ProtectedPath -Path (Join-Path $first "Packages\App\LocalState") | Should -Be $true
+                $env:LOCALAPPDATA = $second
+                Test-ProtectedPath -Path (Join-Path $second "Packages\App\LocalState") | Should -Be $true
+                Test-ProtectedPath -Path (Join-Path $first "Packages\App\LocalState") | Should -Be $false
+            }
+            finally {
+                $env:LOCALAPPDATA = $savedLocalAppData
+            }
+        }
+
+        It "Should honor a protected entry added after earlier checks" {
+            $savedProtectedPaths = $script:ProtectedPaths
+            $target = Join-Path $TestDrive ("late-protected-" + [guid]::NewGuid().ToString("N"))
+            try {
+                Test-ProtectedPath -Path (Join-Path $target "child") | Should -Be $false
+                $script:ProtectedPaths = @($script:ProtectedPaths + $target)
+                Test-ProtectedPath -Path (Join-Path $target "child") | Should -Be $true
+            }
+            finally {
+                $script:ProtectedPaths = $savedProtectedPaths
+            }
+        }
     }
 
     Context "Test-SafePath" {
