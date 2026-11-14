@@ -1970,6 +1970,31 @@ SCRIPT
     [ -f "$target_dir/file2.log" ] || return 1
 }
 
+@test "the V1.36.3 aged sweep of ~/.claude/projects keeps every transcript folder" {
+    local projects="$HOME/.claude/projects"
+    local control="$TEST_DIR/aged-control"
+    mkdir -p "$projects/-Users-me-app" "$projects/-Users-me-old" "$control/old-dir"
+    touch "$projects/-Users-me-app/0b6c9f0e-1111-4222-8333-944455556666.jsonl"
+    touch -t 202601010000 "$projects/-Users-me-old" "$projects/-Users-me-app" "$control/old-dir"
+
+    # The exact call V1.36.3 shipped in clean_dev_misc, beside a control
+    # folder of the same age that ordinary policy does remove.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJECTS="$projects" CONTROL="$control" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+safe_find_delete "$PROJECTS" "*" 7 d || printf 'RC=%s\n' "$?"
+safe_find_delete "$CONTROL" "*" 7 d || printf 'RC=%s\n' "$?"
+# The same sweep one level up, aimed at an aged ~/.claude itself.
+touch -t 202601010000 "$HOME/.claude"
+safe_find_delete "$HOME" ".claude" 7 d || printf 'RC=%s\n' "$?"
+SCRIPT
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -d "$control/old-dir" ] || { echo "control folder survived: $output"; return 1; }
+    [ -d "$projects/-Users-me-old" ] || return 1
+    [ -f "$projects/-Users-me-app/0b6c9f0e-1111-4222-8333-944455556666.jsonl" ]
+}
+
 @test "safe_sudo_find_delete dry run records targets once and tracks count (#1865)" {
     local target_dir="$TEST_DIR/sudo-find-dry-run-once"
     mkdir -p "$target_dir"

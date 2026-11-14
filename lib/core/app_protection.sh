@@ -557,6 +557,21 @@ should_protect_path() {
             */.codex/cache/codex_app_directory | */.codex/cache/codex_app_directory/*)
             return 0
             ;;
+        # Claude Code keeps every conversation transcript, its file snapshots
+        # and the prompt history under ~/.claude. V1.36.3 aged out whole
+        # ~/.claude/projects folders as if they were logs; nothing there is
+        # rebuildable. Same three entries the Windows CLI protects, plus the
+        # exact ~/.claude root so a delete one level up cannot take them along;
+        # its other children (~/.claude/worktrees for purge) stay reachable.
+        # Character classes cover the case-insensitive APFS spellings.
+        "${HOME%/}"/.[Cc][Ll][Aa][Uu][Dd][Ee] | "${HOME%/}"/.[Cc][Ll][Aa][Uu][Dd][Ee]/ | \
+            */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Pp][Rr][Oo][Jj][Ee][Cc][Tt][Ss] | \
+            */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Pp][Rr][Oo][Jj][Ee][Cc][Tt][Ss]/* | \
+            */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Ff][Ii][Ll][Ee]-[Hh][Ii][Ss][Tt][Oo][Rr][Yy] | \
+            */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Ff][Ii][Ll][Ee]-[Hh][Ii][Ss][Tt][Oo][Rr][Yy]/* | \
+            */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Hh][Ii][Ss][Tt][Oo][Rr][Yy].[Jj][Ss][Oo][Nn][Ll])
+            return 0
+            ;;
         # Bluetooth and WiFi configurations
         */ByHost/com.apple.bluetooth.* | */ByHost/com.apple.wifi.*)
             return 0
