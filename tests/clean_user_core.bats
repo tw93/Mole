@@ -5023,7 +5023,7 @@ EOF
 }
 
 @test "clean_handoff_pasteboard_cache continues on non-signal size failure and stops on signal" {
-    local size_rc mode case_home pb want_timeouts want_known
+    local size_rc mode case_home pb want_timeouts want_known first_target second_target
     for size_rc in 1 124 130; do
         for mode in dry real; do
             case_home="$BATS_TEST_TMPDIR/pb-size-$size_rc-$mode"
@@ -5047,7 +5047,12 @@ fi
 note_activity() { :; }
 is_path_whitelisted() { return 1; }
 get_path_size_kb() {
-    if [[ "$1" == *"stale-a" ]]; then
+    local first=""
+    if [[ ! -e "$HOME/first-target" ]]; then
+        printf '%s\n' "$1" > "$HOME/first-target"
+    fi
+    IFS= read -r first < "$HOME/first-target" || true
+    if [[ "$1" == "$first" ]]; then
         return "$SIZE_RC"
     fi
     echo 4
@@ -5078,9 +5083,16 @@ EOF
                     want_known=false
                 fi
                 [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=$want_timeouts"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=2"* ]] || { echo "$output"; return 1; }
+                [ -f "$case_home/first-target" ] || return 1
+                IFS= read -r first_target < "$case_home/first-target" || true
+                second_target="$pb/stale-b"
+                if [[ "$first_target" == "$pb/stale-b" ]]; then
+                    second_target="$pb/stale-a"
+                fi
                 if [[ "$mode" == "dry" ]]; then
-                    grep -Fxq "$pb/stale-a|$want_known" "$case_home/preview" || return 1
-                    grep -Fxq "$pb/stale-b|true" "$case_home/preview" || return 1
+                    grep -Fxq "$first_target|$want_known" "$case_home/preview" || return 1
+                    grep -Fxq "$second_target|true" "$case_home/preview" || return 1
                 else
                     [ ! -e "$pb/stale-a" ] || return 1
                     [ ! -e "$pb/stale-b" ] || return 1
