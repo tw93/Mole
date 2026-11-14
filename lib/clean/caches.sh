@@ -948,10 +948,15 @@ clean_python_bytecode_cache_group() {
 
         local size_kb=""
         local size_rc=0
-        size_kb=$(get_path_size_kb "$cache_dir") || size_rc=$?
-        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-        [[ $size_rc -eq 0 ]] || return "$size_rc"
-        [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        size_kb=$(get_path_size_kb "$cache_dir" "" readable 2> /dev/null) || size_rc=$?
+        mole_item_size_continues "$size_rc" || {
+            local stop_rc=$?
+            stop_section_spinner
+            return "$stop_rc"
+        }
+        local size_known=true
+        [[ $size_rc -eq 0 && "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        mole_rc_timeout "$size_rc" && size_known=false
 
         local guard_rc=0
         _project_cache_final_guard "$cache_dir" || guard_rc=$?
@@ -959,7 +964,7 @@ clean_python_bytecode_cache_group() {
         [[ $guard_rc -eq 0 ]] || continue
         if [[ "$DRY_RUN" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$cache_dir" "$size_kb" 1 true || continue
+                record_dry_run_cleanup_target "$cache_dir" "$size_kb" 1 "$size_known" || continue
             elif declare -f register_dry_run_cleanup_target > /dev/null 2>&1; then
                 register_dry_run_cleanup_target "$cache_dir" || continue
             fi

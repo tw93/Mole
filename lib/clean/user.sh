@@ -713,10 +713,11 @@ _clean_chromium_old_versions() {
             fi
             local size_kb=""
             local size_rc=0
-            size_kb=$(get_path_size_kb "$dir") || size_rc=$?
-            [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-            [[ $size_rc -eq 0 ]] || return "$size_rc"
-            size_kb="${size_kb:-0}"
+            size_kb=$(get_path_size_kb "$dir" "" readable 2> /dev/null) || size_rc=$?
+            mole_item_size_continues "$size_rc" || return $?
+            local size_known=true
+            [[ $size_rc -eq 0 && "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+            mole_rc_timeout "$size_rc" && size_known=false
             process_state=0
             "$running_probe" || process_state=$?
             if [[ $process_state -ne 1 ]]; then
@@ -727,7 +728,7 @@ _clean_chromium_old_versions() {
 
             if [[ "$DRY_RUN" == "true" ]]; then
                 if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                    record_dry_run_cleanup_target "$dir" "$size_kb" 1 true || continue
+                    record_dry_run_cleanup_target "$dir" "$size_kb" 1 "$size_known" || continue
                 fi
                 total_size=$((total_size + size_kb))
                 cleaned_count=$((cleaned_count + 1))
@@ -995,10 +996,11 @@ clean_edge_updater_old_versions() {
     for dir in "${cleanable_dirs[@]}"; do
         local size_kb=""
         local size_rc=0
-        size_kb=$(get_path_size_kb "$dir") || size_rc=$?
-        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-        [[ $size_rc -eq 0 ]] || return "$size_rc"
-        size_kb="${size_kb:-0}"
+        size_kb=$(get_path_size_kb "$dir" "" readable 2> /dev/null) || size_rc=$?
+        mole_item_size_continues "$size_rc" || return $?
+        local size_known=true
+        [[ $size_rc -eq 0 && "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        mole_rc_timeout "$size_rc" && size_known=false
         process_state=0
         is_microsoft_edge_running || process_state=$?
         if [[ $process_state -ne 1 ]]; then
@@ -1008,7 +1010,7 @@ clean_edge_updater_old_versions() {
         fi
         if [[ "$DRY_RUN" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$dir" "$size_kb" 1 true || continue
+                record_dry_run_cleanup_target "$dir" "$size_kb" 1 "$size_known" || continue
             fi
             total_size=$((total_size + size_kb))
             cleaned_count=$((cleaned_count + 1))
@@ -1429,19 +1431,20 @@ clean_handoff_pasteboard_cache() {
         fi
         local item_kb=""
         local size_rc=0
-        item_kb=$(get_path_size_kb "$item" 2> /dev/null) || size_rc=$?
-        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-        [[ $size_rc -eq 0 ]] || return "$size_rc"
-        [[ "$item_kb" =~ ^[0-9]+$ ]] || item_kb=0
+        item_kb=$(get_path_size_kb "$item" "" readable 2> /dev/null) || size_rc=$?
+        mole_item_size_continues "$size_rc" || return $?
+        local size_known=true
+        [[ $size_rc -eq 0 && "$item_kb" =~ ^[0-9]+$ ]] || item_kb=0
+        mole_rc_timeout "$size_rc" && size_known=false
         if [[ "$DRY_RUN" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$item" "$item_kb" 1 true || continue
+                record_dry_run_cleanup_target "$item" "$item_kb" 1 "$size_known" || continue
             fi
             cleaned_count=$((cleaned_count + 1))
             total_kb=$((total_kb + item_kb))
             continue
         fi
-        if safe_remove "$item" true 2> /dev/null; then
+        if safe_remove "$item" true "$item_kb" 2> /dev/null; then
             cleaned_count=$((cleaned_count + 1))
             total_kb=$((total_kb + item_kb))
         fi
@@ -2489,13 +2492,16 @@ clean_tart_caches() {
     [[ -d "$cache_root" ]] || return 0
     command -v tart > /dev/null 2>&1 || return 0
 
-    local cache_size_kb=0
+    local cache_size_kb=""
     local size_rc=0
-    cache_size_kb=$(get_path_size_kb "$cache_root" 2> /dev/null) || size_rc=$?
-    [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-    [[ $size_rc -eq 0 ]] || return "$size_rc"
-    [[ "$cache_size_kb" =~ ^[0-9]+$ ]] || cache_size_kb=0
-    [[ "$cache_size_kb" -gt 0 ]] || return 0
+    cache_size_kb=$(get_path_size_kb "$cache_root" "" readable 2> /dev/null) || size_rc=$?
+    if [[ $size_rc -eq 0 ]]; then
+        [[ "$cache_size_kb" =~ ^[0-9]+$ ]] || cache_size_kb=0
+        [[ "$cache_size_kb" -gt 0 ]] || return 0
+    else
+        mole_item_size_continues "$size_rc" || return $?
+        cache_size_kb=""
+    fi
 
     if is_path_whitelisted "$cache_root"; then
         if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -2519,10 +2525,14 @@ clean_tart_caches() {
         return 0
     fi
 
-    local cache_size_human
-    cache_size_human=$(bytes_to_human "$((cache_size_kb * 1024))")
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Tart caches · would prune items older than ${MOLE_ORPHAN_AGE_DAYS} days (${cache_size_human})"
+        if [[ -n "$cache_size_kb" ]]; then
+            local cache_size_human
+            cache_size_human=$(bytes_to_human "$((cache_size_kb * 1024))")
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Tart caches · would prune items older than ${MOLE_ORPHAN_AGE_DAYS} days (${cache_size_human})"
+        else
+            echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Tart caches · would prune items older than ${MOLE_ORPHAN_AGE_DAYS} days (size unknown)"
+        fi
         echo -e "    ${GRAY}tart prune --entries caches --older-than ${MOLE_ORPHAN_AGE_DAYS}${NC}"
         note_activity
         return 0
@@ -2566,17 +2576,29 @@ clean_tart_caches() {
         return 0
     fi
 
-    local remaining_kb=0
-    size_rc=0
-    remaining_kb=$(get_path_size_kb "$cache_root" 2> /dev/null) || size_rc=$?
-    [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-    [[ $size_rc -eq 0 ]] || return "$size_rc"
-    [[ "$remaining_kb" =~ ^[0-9]+$ ]] || remaining_kb=0
-    local reclaimed_kb=$((cache_size_kb - remaining_kb))
-    [[ "$reclaimed_kb" -ge 0 ]] || reclaimed_kb=0
+    local reclaimed_kb=0
+    local reclaimed_known=false
+    local post_rc=0
+    if [[ -n "$cache_size_kb" ]]; then
+        local remaining_kb=0
+        remaining_kb=$(get_path_size_kb "$cache_root" "" readable 2> /dev/null) || post_rc=$?
+        if [[ $post_rc -eq 0 ]]; then
+            [[ "$remaining_kb" =~ ^[0-9]+$ ]] || remaining_kb=0
+            reclaimed_kb=$((cache_size_kb - remaining_kb))
+            [[ "$reclaimed_kb" -ge 0 ]] || reclaimed_kb=0
+            reclaimed_known=true
+        fi
+    fi
 
-    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned, $(bytes_to_human "$((reclaimed_kb * 1024))") reclaimed"
+    if [[ "$reclaimed_known" == "true" ]]; then
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned, $(bytes_to_human "$((reclaimed_kb * 1024))") reclaimed"
+    else
+        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned"
+    fi
     note_activity
+    if [[ $post_rc -ne 0 ]]; then
+        mole_item_size_continues "$post_rc" || return $?
+    fi
 }
 
 clean_virtualization_tools() {
@@ -3044,10 +3066,11 @@ clean_cached_device_firmware() {
         [[ $guard_rc -eq 0 ]] || return 0
         local size_kb=""
         local size_rc=0
-        size_kb=$(get_path_size_kb "$ipsw") || size_rc=$?
-        [[ $size_rc -eq 0 ]] || _mole_record_clean_cancellation "$size_rc"
-        [[ $size_rc -eq 0 ]] || return "$size_rc"
-        size_kb="${size_kb:-0}"
+        size_kb=$(get_path_size_kb "$ipsw" "" readable 2> /dev/null) || size_rc=$?
+        mole_item_size_continues "$size_rc" || return $?
+        local size_known=true
+        [[ $size_rc -eq 0 && "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        mole_rc_timeout "$size_rc" && size_known=false
         if [[ "$DRY_RUN" == "true" ]]; then
             guard_rc=0
             _cached_device_firmware_delete_guard "$ipsw" || guard_rc=$?
@@ -3058,7 +3081,7 @@ clean_cached_device_firmware() {
             [[ $guard_rc -eq 0 ]] || return 0
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
                 local record_rc=0
-                record_dry_run_cleanup_target "$ipsw" "$size_kb" 1 true || record_rc=$?
+                record_dry_run_cleanup_target "$ipsw" "$size_kb" 1 "$size_known" || record_rc=$?
                 if mole_rc_timeout_or_signal "$record_rc"; then
                     _mole_record_clean_cancellation "$record_rc"
                     return "$record_rc"
