@@ -486,3 +486,70 @@ clean_cached_device_firmware
 EOF
     [ "$status" -eq 0 ]
 }
+
+@test "clean_cached_device_firmware continues on non-signal size failure and stops on signal" {
+    local size_rc mode case_home want_timeouts want_known
+    for size_rc in 1 124 130; do
+        for mode in dry real; do
+            case_home="$BATS_TEST_TMPDIR/fw-size-$size_rc-$mode"
+            mkdir -p "$case_home/Library/iTunes/iPhone Software Updates" "$case_home/Library/iTunes/Apple TV Software Updates"
+            printf firmware > "$case_home/Library/iTunes/iPhone Software Updates/first.ipsw"
+            printf firmware > "$case_home/Library/iTunes/Apple TV Software Updates/later.ipsw"
+
+            run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" SIZE_RC="$size_rc" MODE="$mode" \
+                MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 MOLE_CLEAN_SIZING_TIMEOUTS=0 \
+                /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+if [[ "$MODE" == "dry" ]]; then
+    DRY_RUN=true
+else
+    DRY_RUN=false
+fi
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+_mole_paths_have_open_handle() { return 1; }
+get_path_size_kb() {
+    if [[ "$1" == *"first.ipsw" ]]; then
+        return "$SIZE_RC"
+    fi
+    echo 10
+}
+record_dry_run_cleanup_target() {
+    printf '%s|%s\n' "$1" "$4" >> "$HOME/preview"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+rc=0
+clean_cached_device_firmware || rc=$?
+printf 'RC=%s CANCEL=%s TIMEOUTS=%s CLEANED=%s\n' "$rc" "${MOLE_CLEAN_CANCEL_STATUS:-0}" "${MOLE_CLEAN_SIZING_TIMEOUTS:-0}" "$files_cleaned"
+EOF
+
+            [ "$status" -eq 0 ] || { echo "$size_rc/$mode: $output"; return 1; }
+            if [[ "$size_rc" -eq 130 ]]; then
+                [[ "$output" == *"RC=130 CANCEL=130"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=0"* ]] || { echo "$output"; return 1; }
+                [ ! -e "$case_home/preview" ] || return 1
+                [ -f "$case_home/Library/iTunes/iPhone Software Updates/first.ipsw" ] || return 1
+                [ -f "$case_home/Library/iTunes/Apple TV Software Updates/later.ipsw" ] || return 1
+            else
+                want_timeouts=0
+                want_known=true
+                if [[ "$size_rc" -eq 124 ]]; then
+                    want_timeouts=1
+                    want_known=false
+                fi
+                [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=$want_timeouts"* ]] || { echo "$output"; return 1; }
+                if [[ "$mode" == "dry" ]]; then
+                    grep -Fxq "$case_home/Library/iTunes/iPhone Software Updates/first.ipsw|$want_known" "$case_home/preview" || return 1
+                    grep -Fxq "$case_home/Library/iTunes/Apple TV Software Updates/later.ipsw|true" "$case_home/preview" || return 1
+                else
+                    [ ! -e "$case_home/Library/iTunes/iPhone Software Updates/first.ipsw" ] || return 1
+                    [ ! -e "$case_home/Library/iTunes/Apple TV Software Updates/later.ipsw" ] || return 1
+                fi
+            fi
+        done
+    done
+}

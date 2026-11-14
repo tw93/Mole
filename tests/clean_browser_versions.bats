@@ -852,3 +852,71 @@ EOF
     [[ "$output" == *"BROWSER_RC:124 CANCEL:124"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_EDGE_CLEAN"* ]]
 }
+
+@test "old browser and updater cleanup continues on non-signal size failure and stops on signal" {
+    local target size_rc case_home want_timeouts want_known
+    for target in chrome edge_updater; do
+        for size_rc in 1 124 130; do
+            case_home="$BATS_TEST_TMPDIR/browser-size-$target-$size_rc"
+            mkdir -p "$case_home"
+
+            run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" TARGET="$target" SIZE_RC="$size_rc" \
+                DRY_RUN=true MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 MOLE_CLEAN_SIZING_TIMEOUTS=0 \
+                /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+pgrep() { return 1; }
+plutil() { return 1; }
+is_path_whitelisted() { return 1; }
+note_activity() { :; }
+debug_log() { :; }
+get_path_size_kb() {
+    if [[ "$1" == *"117.0"* ]]; then
+        return "$SIZE_RC"
+    fi
+    echo 10
+}
+record_dry_run_cleanup_target() {
+    printf '%s|%s\n' "$1" "$4" >> "$HOME/preview"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+rc=0
+if [[ "$TARGET" == "chrome" ]]; then
+    versions_dir="$HOME/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions"
+    mkdir -p "$versions_dir/117.0" "$versions_dir/118.0" "$versions_dir/119.0"
+    ln -s "119.0" "$versions_dir/Current"
+    touch -t 202401010000 "$versions_dir/117.0" "$versions_dir/118.0"
+    touch -t 202402010000 "$versions_dir/119.0"
+    export MOLE_CHROME_APP_PATHS="$HOME/Applications/Google Chrome.app"
+    clean_chrome_old_versions || rc=$?
+else
+    updater_dir="$HOME/Library/Application Support/Microsoft/EdgeUpdater/apps/msedge-stable"
+    mkdir -p "$updater_dir/117.0" "$updater_dir/118.0" "$updater_dir/119.0"
+    clean_edge_updater_old_versions || rc=$?
+fi
+printf 'RC=%s CANCEL=%s TIMEOUTS=%s CLEANED=%s\n' "$rc" "${MOLE_CLEAN_CANCEL_STATUS:-0}" "${MOLE_CLEAN_SIZING_TIMEOUTS:-0}" "$files_cleaned"
+EOF
+
+            [ "$status" -eq 0 ] || { echo "$target/$size_rc: $output"; return 1; }
+            if [[ "$size_rc" -eq 130 ]]; then
+                [[ "$output" == *"RC=130 CANCEL=130"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=0"* ]] || { echo "$output"; return 1; }
+                [ ! -e "$case_home/preview" ] || return 1
+            else
+                want_timeouts=0
+                want_known=true
+                if [[ "$size_rc" -eq 124 ]]; then
+                    want_timeouts=1
+                    want_known=false
+                fi
+                [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=$want_timeouts"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=2"* ]] || { echo "$output"; return 1; }
+                grep -q "117.0|$want_known$" "$case_home/preview" || return 1
+                grep -q "118.0|true$" "$case_home/preview" || return 1
+            fi
+        done
+    done
+}

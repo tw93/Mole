@@ -5021,3 +5021,83 @@ EOF
     [[ "$test_part" == *"PATHS:$HOME/override/Brave.app"* ]] || return 1
     [[ "$test_part" == *"VOLUMES:$HOME/override/volumes"* ]]
 }
+
+@test "clean_handoff_pasteboard_cache continues on non-signal size failure and stops on signal" {
+    local size_rc mode case_home pb want_timeouts want_known first_target second_target
+    for size_rc in 1 124 130; do
+        for mode in dry real; do
+            case_home="$BATS_TEST_TMPDIR/pb-size-$size_rc-$mode"
+            pb="$case_home/Library/Group Containers/group.com.apple.coreservices.useractivityd/shared-pasteboard"
+            mkdir -p "$pb/stale-a" "$pb/stale-b"
+            echo "payload" > "$pb/stale-a/data"
+            echo "payload" > "$pb/stale-b/data"
+            touch -t 202001010000 "$pb/stale-a" "$pb/stale-b"
+
+            run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" SIZE_RC="$size_rc" MODE="$mode" \
+                MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 MOLE_CLEAN_SIZING_TIMEOUTS=0 \
+                /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+if [[ "$MODE" == "dry" ]]; then
+    DRY_RUN=true
+else
+    DRY_RUN=false
+fi
+note_activity() { :; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() {
+    local first=""
+    if [[ ! -e "$HOME/first-target" ]]; then
+        printf '%s\n' "$1" > "$HOME/first-target"
+    fi
+    IFS= read -r first < "$HOME/first-target" || true
+    if [[ "$1" == "$first" ]]; then
+        return "$SIZE_RC"
+    fi
+    echo 4
+}
+record_dry_run_cleanup_target() {
+    printf '%s|%s\n' "$1" "$4" >> "$HOME/preview"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+rc=0
+clean_handoff_pasteboard_cache || rc=$?
+printf 'RC=%s CANCEL=%s TIMEOUTS=%s CLEANED=%s\n' "$rc" "${MOLE_CLEAN_CANCEL_STATUS:-0}" "${MOLE_CLEAN_SIZING_TIMEOUTS:-0}" "$files_cleaned"
+EOF
+
+            [ "$status" -eq 0 ] || { echo "$size_rc/$mode: $output"; return 1; }
+            if [[ "$size_rc" -eq 130 ]]; then
+                [[ "$output" == *"RC=130 CANCEL=130"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=0"* ]] || { echo "$output"; return 1; }
+                [ ! -e "$case_home/preview" ] || return 1
+                [ -e "$pb/stale-a" ] || return 1
+                [ -e "$pb/stale-b" ] || return 1
+            else
+                want_timeouts=0
+                want_known=true
+                if [[ "$size_rc" -eq 124 ]]; then
+                    want_timeouts=1
+                    want_known=false
+                fi
+                [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=$want_timeouts"* ]] || { echo "$output"; return 1; }
+                [[ "$output" == *"CLEANED=2"* ]] || { echo "$output"; return 1; }
+                [ -f "$case_home/first-target" ] || return 1
+                IFS= read -r first_target < "$case_home/first-target" || true
+                second_target="$pb/stale-b"
+                if [[ "$first_target" == "$pb/stale-b" ]]; then
+                    second_target="$pb/stale-a"
+                fi
+                if [[ "$mode" == "dry" ]]; then
+                    grep -Fxq "$first_target|$want_known" "$case_home/preview" || return 1
+                    grep -Fxq "$second_target|true" "$case_home/preview" || return 1
+                else
+                    [ ! -e "$pb/stale-a" ] || return 1
+                    [ ! -e "$pb/stale-b" ] || return 1
+                fi
+            fi
+        done
+    done
+}
