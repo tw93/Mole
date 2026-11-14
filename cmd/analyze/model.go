@@ -331,10 +331,54 @@ func (m *model) hydrateOverviewEntries() {
 	m.totalSize = sumKnownEntrySizes(m.entries)
 	m.scanState = entryScanState(m.entries)
 	m.scanTransient = false
+	m.ensureVisibleOverviewSelection()
 }
 
 func (m *model) sortOverviewEntriesBySize() {
 	sortDirEntriesBySize(m.entries)
+	m.ensureVisibleOverviewSelection()
+}
+
+// ensureVisibleOverviewSelection moves overview selection onto a rendered row
+// when at least one non-hidden entry exists.
+func (m *model) ensureVisibleOverviewSelection() {
+	if !m.inOverviewMode() || len(m.entries) == 0 {
+		return
+	}
+	if m.selected >= 0 && m.selected < len(m.entries) && !m.entries[m.selected].hiddenWhenEmpty() {
+		return
+	}
+	for i := range m.entries {
+		if !m.entries[i].hiddenWhenEmpty() {
+			m.selected = i
+			return
+		}
+	}
+}
+
+func (m *model) moveEntrySelection(delta int) {
+	if len(m.entries) == 0 || (delta != -1 && delta != 1) {
+		return
+	}
+	next := m.selected + delta
+	for next >= 0 && next < len(m.entries) && m.entries[next].hiddenWhenEmpty() {
+		next += delta
+	}
+	if next < 0 || next >= len(m.entries) {
+		return
+	}
+	m.noteLiveCursorMove()
+	m.selected = next
+	if delta < 0 {
+		if m.selected < m.offset {
+			m.offset = m.selected
+		}
+		return
+	}
+	viewport := calculateViewport(m.height, false)
+	if m.selected >= m.offset+viewport {
+		m.offset = m.selected - viewport + 1
+	}
 }
 
 func (m *model) getScanProgress() (files, dirs, bytes int64) {

@@ -580,6 +580,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.totalSize = sumKnownEntrySizes(m.entries)
 			m.scanState = entryScanState(m.entries)
+			m.ensureVisibleOverviewSelection()
 
 			if msg.Err != nil {
 				label := "Size unavailable"
@@ -742,16 +743,8 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.largeOffset = m.largeSelected
 				}
 			}
-		} else if len(m.entries) > 0 && m.selected > 0 {
-			m.noteLiveCursorMove()
-			next := m.selected - 1
-			for next > 0 && m.entries[next].Size == 0 && !m.entries[next].IsMount {
-				next--
-			}
-			m.selected = next
-			if m.selected < m.offset {
-				m.offset = m.selected
-			}
+		} else {
+			m.moveEntrySelection(-1)
 		}
 	case "down", "j", "J":
 		if m.showLargeFiles {
@@ -762,17 +755,8 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.largeOffset = m.largeSelected - viewport + 1
 				}
 			}
-		} else if len(m.entries) > 0 && m.selected < len(m.entries)-1 {
-			m.noteLiveCursorMove()
-			next := m.selected + 1
-			for next < len(m.entries)-1 && m.entries[next].Size == 0 && !m.entries[next].IsMount {
-				next++
-			}
-			m.selected = next
-			viewport := calculateViewport(m.height, false)
-			if m.selected >= m.offset+viewport {
-				m.offset = m.selected - viewport + 1
-			}
+		} else {
+			m.moveEntrySelection(1)
 		}
 	case "enter", "right", "l", "L":
 		if m.showLargeFiles {
@@ -1232,6 +1216,7 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 		m.scanning = false
 		m.scanTransient = false
 		m.viewNeedsRefresh = false
+		m.ensureVisibleOverviewSelection()
 		if hasPendingOverviewEntries(m.entries) {
 			m.totalSize = sumKnownEntrySizes(m.entries)
 			m.scanState = entryScanState(m.entries)
@@ -1297,10 +1282,13 @@ func (m *model) switchToOverviewMode() tea.Cmd {
 }
 
 func (m model) enterSelectedDir() (tea.Model, tea.Cmd) {
-	if len(m.entries) == 0 {
+	if len(m.entries) == 0 || m.selected < 0 || m.selected >= len(m.entries) {
 		return m, nil
 	}
 	selected := m.entries[m.selected]
+	if m.inOverviewMode() && selected.hiddenWhenEmpty() {
+		return m, nil
+	}
 	if selected.IsDir {
 		m.cancelLiveScan()
 		// Drilling in commits and drops any active directory filter so the parent
