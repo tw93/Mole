@@ -2523,6 +2523,36 @@ EOF
     [[ "$closed" == *"SAFE_CLEAN:Brave cache"* ]]
 }
 
+@test "clean_browsers defers a running browser's Caches root before sizing it" {
+    mkdir -p "$HOME/Library/Caches/Google/Chrome/Default/Cache" \
+        "$HOME/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache" \
+        "$HOME/Library/Application Support/BraveSoftware/Brave-Browser"
+    touch "$HOME/Library/Caches/Google/Chrome/Default/Cache/data_0" \
+        "$HOME/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache/data_0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { :; }
+# bin/clean.sh's guarded engine sizes every target before asking its guard.
+safe_clean_guarded() { echo "SIZED:${!#}"; return 75; }
+defer_cleanup_family() { echo "DEFER:$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+pgrep() { [[ "$2" == *"Google Chrome"* || "$2" == *"Brave Browser"* ]]; }
+clean_browsers
+EOF
+    rm -rf "$HOME/Library/Caches/Google" "$HOME/Library/Caches/BraveSoftware" \
+        "$HOME/Library/Application Support/BraveSoftware"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"SIZED:Chrome cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SIZED:Brave cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"DEFER:Chrome"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"DEFER:Brave"* ]]
+}
+
 @test "clean_browsers fails closed when the Chrome process probe errors" {
     local chrome_support="$HOME/Library/Application Support/Google/Chrome"
     rm -rf "$chrome_support"
