@@ -327,3 +327,13 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 | Change | Destinations | Evidence and next check |
 | --- | --- | --- |
 | `mo clean`'s project-cache scan prunes `.tmp` folders, so an unreadable Google Drive `.tmp` no longer makes BSD `find` exit 1 and discard every match from `~/Library/CloudStorage`; other traversal errors still discard the root (#1988, #1990) | Implemented (Mole CLI (macOS), `601471d7`); Not applicable (Mole Mac: `enumerateProjectArtifacts` lists each directory with `contentsOfDirectory` and skips an unreadable one, so one blocked folder never drops the root; Mole CLI (Windows), Mole for Windows: no CloudStorage project-cache scan; Mole CLI (Linux): outside this model) | `scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)` and `scan_project_cache_root still discards results for other unreadable CloudStorage folders (#1988)`, on real BSD `find` with a mode-000 folder, plus full CI on the PR head. |
+
+## 2026-11-14 Nightly commit lookup on large responses
+
+Source-only fix for Mole CLI (macOS), `c7cc36f3`: `get_latest_commit_from_github` parses the complete commit JSON with `plutil`, so an early-closing pipe cannot discard the top-level SHA when the response includes many file objects. API-only and explicit lookups pass the new 300-file regression without using the Git fallback. The complete local runner passes in a fresh shared worktree; this is not a package release.
+
+| Product | Status | Current consumer |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source | `lib/manage/update.sh:get_latest_commit_from_github`, `tests/update.bats` (`nightly commit lookup keeps the SHA from a large GitHub response`). |
+| Mole CLI (Linux) | Intentional difference | `install.sh:latest_commit` at `d68d06b0` requests `application/vnd.github.sha` and validates the raw SHA; it has no JSON file-list pipeline to repair. Source reviewed, not a Linux runtime test. |
+| Mole CLI (Windows) | Not applicable | `bin/update.ps1` at `2c6e8e99` updates source with Git; its stable update metadata in `lib/core/update_check.ps1` uses `Invoke-RestMethod`, not this Nightly commit parser. Source reviewed, not a Windows runtime test. |
