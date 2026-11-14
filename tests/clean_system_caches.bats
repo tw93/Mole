@@ -1934,9 +1934,12 @@ EOF
 
 	printf '%s\n' "$output" # shown only when this case fails, and it failed once on CI without it
 	[ "$status" -eq 0 ] || return 1
-	local elapsed
-	elapsed=$(printf '%s\n' "$output" | sed -n 's/.*ELAPSED=\([0-9][0-9]*\).*/\1/p')
-	[[ "$output" == STATUS=124*" BYTES=0" ]] || return 1
+	# A stub killed at the deadline may print "dirname: stdout: Broken pipe"
+	# into the merged output, so judge only the result line.
+	local result elapsed
+	result=$(printf '%s\n' "$output" | grep '^STATUS=' || true)
+	elapsed=$(printf '%s\n' "$result" | sed -n 's/.*ELAPSED=\([0-9][0-9]*\).*/\1/p')
+	[[ "$result" == STATUS=124*" BYTES=0" ]] || return 1
 	[[ "$elapsed" =~ ^[0-9]+$ ]] || return 1
 	((elapsed < 4))
 }

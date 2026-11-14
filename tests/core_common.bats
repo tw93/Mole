@@ -978,6 +978,35 @@ EOF2
     done
 }
 
+@test "should_protect_path protects Claude Code transcripts, file history and prompt history" {
+    for claude_state_path in \
+        "$HOME/.claude/projects" \
+        "$HOME/.claude/projects/-Users-me-app" \
+        "$HOME/.claude/projects/-Users-me-app/0b6c9f0e-1111-4222-8333-944455556666.jsonl" \
+        "$HOME/.claude/file-history" \
+        "$HOME/.claude/file-history/0b6c9f0e-1111-4222-8333-944455556666/1" \
+        "$HOME/.claude/history.jsonl" \
+        "$HOME/.claude" \
+        "$HOME/.Claude/projects/-Users-me-app" \
+        "$HOME/.CLAUDE/History.jsonl"; do
+        result=$(HOME="$HOME" TARGET_PATH="$claude_state_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+        [ "$result" = "protected" ] || { echo "not protected: $claude_state_path"; return 1; }
+    done
+
+    # A HOME set with a trailing slash still names the same root.
+    local root_path="$HOME/.claude"
+    result=$(HOME="$HOME/" TARGET_PATH="$root_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+    [ "$result" = "protected" ] || { echo "root not protected with HOME ending in /"; return 1; }
+
+    # A prefix sibling is not the transcript folder, and the root's other
+    # children (purge's worktree container) stay reachable.
+    local sibling_path
+    for sibling_path in "$HOME/.claude/projects-old" "$HOME/.claude/worktrees/feature"; do
+        result=$(HOME="$HOME" TARGET_PATH="$sibling_path" /bin/bash --noprofile --norc -c 'source "$PROJECT_ROOT/lib/core/common.sh"; should_protect_path "$TARGET_PATH" && echo "protected" || echo "not-protected"')
+        [ "$result" = "not-protected" ] || { echo "protected: $sibling_path"; return 1; }
+    done
+}
+
 @test "should_protect_data covers Raycast wildcard variants" {
     for id in com.raycast.macos com.raycast.shared com.raycast.macos.BrowserExtension com.raycast-x.macos; do
         result=$(HOME="$HOME" /bin/bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/core/common.sh'; should_protect_data '$id' && echo 'protected' || echo 'not-protected'")
