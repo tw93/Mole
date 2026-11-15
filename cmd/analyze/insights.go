@@ -167,8 +167,13 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 
 		if info.ModTime().Before(cutoff) {
 			if entry.IsDir() {
-				// Use du for directories.
-				size, err := getDirectorySizeFromDuWithExcludeAndIgnores(ctx, filepath.Join(dir, entry.Name()), "", nil, overviewDuTimeout)
+				child := filepath.Join(dir, entry.Name())
+				// du measures the filesystem of its own operand, so a share or
+				// FUSE mount here would count as the whole remote volume.
+				if isForeignMountPath(child) {
+					continue
+				}
+				size, err := getDirectorySizeFromDuWithExcludeAndIgnores(ctx, child, "", nil, overviewDuTimeout)
 				failures.record(err)
 				total += size
 			} else {

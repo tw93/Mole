@@ -35,7 +35,9 @@ import (
 // v11: walks and du stop at mounts of another filesystem but follow btrfs
 // subvolumes of the same one, so v10 totals can include an sshfs or overlay
 // mount and miss @log or @pkg.
-const cacheSchemaVersion = 11
+// v12: the old-Downloads overview total skips a share or FUSE mount that is
+// itself a child of Downloads.
+const cacheSchemaVersion = 12
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`

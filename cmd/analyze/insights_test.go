@@ -229,3 +229,38 @@ func TestMeasureInsightSizeFallsBackToOverview(t *testing.T) {
 		t.Error("expected non-zero size")
 	}
 }
+
+// du measures the filesystem of its own operand, so a share mounted directly
+// under Downloads must not reach du at all.
+func TestOldDownloadsSkipsAForeignMountChild(t *testing.T) {
+	dir := t.TempDir()
+	local := filepath.Join(dir, "old-folder")
+	remote := filepath.Join(dir, "remote")
+	for _, path := range []string{local, remote} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(local, "a.bin"), make([]byte, 64<<10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "b.bin"), make([]byte, 4<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().AddDate(0, 0, -100)
+	for _, path := range []string{local, remote} {
+		if err := os.Chtimes(path, oldTime, oldTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	useMountTable(t, newMountTable(parseMountInfo("1 0 8:2 / / rw,relatime - ext4 /dev/sda2 rw\n"+
+		"2 1 0:50 / "+remote+" rw,relatime - fuse.sshfs u@nas:/srv rw\n")))
+
+	size, err := measureOldDownloads(context.Background(), dir, 90)
+	if err != nil {
+		t.Fatalf("measureOldDownloads: %v", err)
+	}
+	if size <= 0 || size >= 1<<20 {
+		t.Fatalf("size %d, want only old-folder (about 64 KB), the sshfs mount excluded", size)
+	}
+}
