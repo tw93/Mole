@@ -206,3 +206,52 @@ def in_terminal(command):
 def mo_command(*args):
     """A shell command that runs this Mole with args, for in_terminal."""
     return shlex.join([MOLE, *args])
+
+
+def config_path(name):
+    """A file in Mole's config folder ($XDG_CONFIG_HOME/mole), as the CLI reads it."""
+    base = os.environ.get("XDG_CONFIG_HOME") or ""
+    if not base.startswith("/"):
+        base = os.path.join(GLib.get_home_dir(), ".config")
+    return os.path.join(base.rstrip("/"), "mole", name)
+
+
+def read_config(path):
+    """The lines of a config file the CLI reads; [] when there is none. A
+    broken link raises, as the CLI refuses it: writing a new file in its place
+    would drop what the linked file holds."""
+    if os.path.islink(path) and not os.path.exists(path):
+        raise OSError(2, "broken link", path)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().splitlines()
+    except FileNotFoundError:
+        return []
+
+
+def is_entry(line):
+    return bool(line.strip()) and not line.strip().startswith("#")
+
+
+def merge_entries(lines, entries):
+    """The file's lines with only `entries` left: comments and blank lines stay
+    where they were, dropped entries go, new ones are added at the end."""
+    kept = [ln for ln in lines if not is_entry(ln) or ln.strip() in entries]
+    present = {ln.strip() for ln in kept if is_entry(ln)}
+    return kept + [e for e in entries if e not in present]
+
+
+def write_config(path, lines):
+    """Replace the file in one rename. A linked file is written where the link
+    points, so the link (a dotfiles checkout) keeps working."""
+    target = os.path.realpath(path)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    tmp = f"{target}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("".join(line + "\n" for line in lines))
+        os.replace(tmp, target)
+    except OSError:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise

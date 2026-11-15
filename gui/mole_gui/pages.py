@@ -9,7 +9,7 @@ from datetime import datetime
 from gi.repository import Adw, Gio, GLib, Graphene, Gsk, Gtk, Pango
 
 from . import cli
-from .base import LineFileDialog, Page, RunDialog, config_path, confirm, dim_label, flat_button, plan_dialog, row, tag
+from .base import LineFileDialog, Page, RunDialog, confirm, dim_label, flat_button, plan_dialog, row, tag
 
 HOME = GLib.get_home_dir()
 
@@ -380,7 +380,7 @@ class CleanPage(ReportPage):
 
     def __init__(self, win):
         super().__init__(win)
-        self.whitelist = config_path("whitelist")
+        self.whitelist = cli.config_path("whitelist")
         keep = Gtk.Button(icon_name="security-high-symbolic", tooltip_text="Kept Items")
         keep.connect("clicked", lambda *_: LineFileDialog(
             win, "Kept Items", self.whitelist,
@@ -408,10 +408,7 @@ class CleanPage(ReportPage):
     def set_kept(self, label, keep):
         """Add or drop a rule label in the whitelist clean reads."""
         try:
-            with open(self.whitelist, encoding="utf-8") as f:
-                lines = f.read().splitlines()
-        except FileNotFoundError:
-            lines = []
+            lines = cli.read_config(self.whitelist)
         except OSError as e:
             self.win.toast(f"Cannot read the whitelist: {e.strerror}")
             return
@@ -419,11 +416,7 @@ class CleanPage(ReportPage):
         if keep:
             lines.append(label)
         try:
-            os.makedirs(os.path.dirname(self.whitelist), exist_ok=True)
-            tmp = self.whitelist + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-            os.replace(tmp, self.whitelist)
+            cli.write_config(self.whitelist, lines)
         except OSError as e:
             self.win.toast(f"Cannot save the whitelist: {e.strerror}")
             return
@@ -594,7 +587,7 @@ class PurgePage(CheckListPage):
         super().__init__(win)
         paths = Gtk.Button(icon_name="folder-new-symbolic", tooltip_text="Scan Folders")
         paths.connect("clicked", lambda *_: LineFileDialog(
-            win, "Scan Folders", config_path("purge_paths"),
+            win, "Scan Folders", cli.config_path("purge_paths"),
             "Purge looks only in these folders. With none listed, it finds project folders in your home.",
             on_saved=self.load))
         self.header.pack_end(paths)

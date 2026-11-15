@@ -47,3 +47,36 @@ print('ok')"
     [ "$status" -eq 0 ]
     [ "$output" == ok ]
 }
+
+@test "the whitelist check boxes refuse a broken link and write a linked file where it points" {
+    mkdir -p "$HOME/.config/mole" "$HOME/dotfiles"
+    ln -s "$HOME/dotfiles/whitelist" "$HOME/.config/mole/whitelist"
+    # CleanPage.set_kept is what a check box calls; a stand-in window collects toasts.
+    local toggle="import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1')
+from types import SimpleNamespace
+from mole_gui import pages
+toasts = []
+page = SimpleNamespace(whitelist='$HOME/.config/mole/whitelist', win=SimpleNamespace(toast=toasts.append))
+pages.CleanPage.set_kept(page, 'npm cache', True)
+print(toasts[-1])"
+    gui_python "$toggle"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "Cannot read the whitelist"* ]]
+    [ -L "$HOME/.config/mole/whitelist" ]
+
+    printf '# kept\nThumbnails\n' > "$HOME/dotfiles/whitelist"
+    gui_python "$toggle"
+    [ "$status" -eq 0 ]
+    [ -L "$HOME/.config/mole/whitelist" ]
+    [ "$(cat "$HOME/dotfiles/whitelist")" == $'# kept\nThumbnails\nnpm cache' ]
+}
+
+@test "the kept-items dialog keeps comments in place when entries change" {
+    gui_python "from mole_gui import cli
+lines = ['# caches', 'Thumbnails', '', '# my folders', '~/keep', 'npm cache']
+out = cli.merge_entries(lines, ['~/keep', 'npm cache', 'Trash'])
+assert out == ['# caches', '', '# my folders', '~/keep', 'npm cache', 'Trash'], out
+print('ok')"
+    [ "$status" -eq 0 ]
+    [ "$output" == ok ]
+}

@@ -225,12 +225,7 @@ def plan_dialog(win, title, args, actions):
     return dialog
 
 
-def config_path(name):
-    """A file in Mole's config folder ($XDG_CONFIG_HOME/mole), as the CLI reads it."""
-    base = os.environ.get("XDG_CONFIG_HOME") or ""
-    if not base.startswith("/"):
-        base = os.path.join(GLib.get_home_dir(), ".config")
-    return os.path.join(base.rstrip("/"), "mole", name)
+
 
 
 class LineFileDialog(Adw.Dialog):
@@ -240,15 +235,13 @@ class LineFileDialog(Adw.Dialog):
     def __init__(self, win, title, path, description, folders=True, typed_hint="", on_saved=None):
         super().__init__(title=title, content_width=560, content_height=520)
         self.win, self.path, self.on_saved = win, path, on_saved
-        self.comments, entries = [], []
         try:
-            with open(path, encoding="utf-8") as f:
-                for line in f.read().splitlines():
-                    (self.comments if line.strip().startswith("#") or not line.strip() else entries).append(line.strip())
-        except FileNotFoundError:
-            pass
+            self.lines = cli.read_config(path)
         except OSError as e:
+            # Saving over a file that could not be read would drop its entries.
             win.toast(f"Cannot read {os.path.basename(path)}: {e.strerror}")
+            return
+        entries = [ln.strip() for ln in self.lines if cli.is_entry(ln)]
 
         self.group = Adw.PreferencesGroup(description=GLib.markup_escape_text(description))
         self.rows = []
@@ -307,13 +300,8 @@ class LineFileDialog(Adw.Dialog):
         Gtk.FileDialog(title="Choose a Folder").select_folder(self.win, None, done)
 
     def save(self):
-        lines = [c for c in self.comments if c] + [r.entry for r in self.rows]
         try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n" if lines else "")
-            os.replace(tmp, self.path)
+            cli.write_config(self.path, cli.merge_entries(self.lines, [r.entry for r in self.rows]))
         except OSError as e:
             self.win.toast(f"Cannot save {os.path.basename(self.path)}: {e.strerror}")
             return
