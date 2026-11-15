@@ -1858,6 +1858,20 @@ EOF
     [ "$status" -eq 1 ]
 }
 
+@test "safe_find_delete refuses an age that is not plain whole days" {
+    local dir="$HOME/find-age-check"
+    mkdir -p "$dir"
+    touch -t 202001010000 "$dir/old.tmp"
+    local age
+    for age in 08 x 7d "a[0]" -1; do
+        run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; safe_find_delete '$dir' '*.tmp' '$age' 'f' 2>&1"
+        [ "$status" -eq 1 ] || { echo "age=$age $output"; rm -rf "$dir"; return 1; }
+        [[ "$output" == *"Invalid age"* ]] || { echo "age=$age $output"; rm -rf "$dir"; return 1; }
+        [ -e "$dir/old.tmp" ] || { echo "age=$age removed the file"; rm -rf "$dir"; return 1; }
+    done
+    rm -rf "$dir"
+}
+
 @test "safe_find_delete preserves scan signals in real and dry-run cleanup" {
     local dry_run signal
     for dry_run in 0 1; do
@@ -2807,12 +2821,19 @@ printf 'RC=%s\nCOUNT=%s\n' "$rc" "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}"
 bad=0
 safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "60x" "f" "1" 2> /dev/null || bad=$?
 printf 'BAD=%s\n' "$bad"
+for leading_zero in 08 08m; do
+    bad=0
+    safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "$leading_zero" "f" "1" 2> /dev/null || bad=$?
+    printf 'BAD_%s=%s\n' "$leading_zero" "$bad"
+done
 SCRIPT
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"COUNT=1"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"BAD=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BAD_08=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BAD_08m=1"* ]] || { echo "$output"; return 1; }
     [[ ! -e "$idle_file" ]] || return 1
     [[ -e "$fresh_file" ]]
 }

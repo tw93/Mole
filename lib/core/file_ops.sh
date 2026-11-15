@@ -3494,6 +3494,13 @@ safe_find_delete() {
         return 1
     fi
 
+    # Whole days only, without a leading zero, before `[[ -gt ]]` evaluates it
+    # as arithmetic.
+    if [[ ! "$age_days" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        log_error "Invalid age: $age_days, must be a non-negative integer of days"
+        return 1
+    fi
+
     debug_log "Finding in $base_dir: $pattern, age: ${age_days}d, type: $type_filter"
 
     local find_args=("-maxdepth" "5" "-name" "$pattern" "-type" "$type_filter")
@@ -3628,10 +3635,12 @@ safe_sudo_find_delete() {
     # the same find test.
     local age_test="-mtime"
     local age_value="$age_days"
-    if [[ "$age_days" =~ ^([0-9]+)m$ ]]; then
+    # No leading zero: `[[ 08 -gt 0 ]]` is an invalid octal number, which
+    # would drop the age test from the scan while the recheck kept it.
+    if [[ "$age_days" =~ ^(0|[1-9][0-9]*)m$ ]]; then
         age_test="-mmin"
         age_value="${BASH_REMATCH[1]}"
-    elif [[ ! "$age_days" =~ ^[0-9]+$ ]]; then
+    elif [[ ! "$age_days" =~ ^(0|[1-9][0-9]*)$ ]]; then
         log_error "Invalid age: $age_days, must be a non-negative integer of days or <N>m minutes"
         return 1
     fi
