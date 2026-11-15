@@ -493,8 +493,8 @@ Tag `V1.45.0-windows` at `386f0652` (`VERSION` and `$script:MoleDefaultVersion` 
 
 Source baseline: `59f3dc5a` on the `windows` branch. The scanner now reads Windows directory records and shares file IDs across one scan. It counts each file ID once per volume. Later links show 0 B. Directory totals and JSON use the same accounting. A scan with duplicate links bypasses result reuse.
 
-Native Windows Go tests passed. They cover cross-directory links, live scanning, old Downloads, junction safety, and directory records. Linux-hosted Go tests, Windows x64 build, and Windows vet passed. PowerShell 5.1 parsed `install.ps1` and the benchmark script. The install inventory covers every file in its listed folders. Pester 6 was unavailable on this host.
+Native Windows Go tests passed. They cover cross-directory links, live scanning, old Downloads, junction safety, and directory records. Linux-hosted Go tests, Windows x64 build, and Windows vet passed. PowerShell 5.1 parsed `install.ps1`. The install inventory covers every file in its listed folders. Pester 6 was unavailable on this host.
 
 An NTFS fixture held 30,000 files and 70,000 extra links in 2,000 folders. Its unique allocation was 2,073,501,696 bytes. The prior scanner reported 6,911,541,248 bytes. The new scanner reported 2,073,501,696 bytes. Across five runs, median scan time was 0.27 seconds before and 0.24 seconds after. Peak working set rose from 24 MiB to 31 MiB.
 
-A second fixture held 100,000 files and no extra links. Both scanners reported 768,000,000 bytes. Across five runs, median time rose from 0.26 to 0.29 seconds. Peak working set rose from 39 MiB to 46 MiB. These short runs varied. The second fixture exceeded the benchmark script's 3% time target. No package or release is recorded here.
+A second fixture held 100,000 files and no extra links. Both scanners reported 768,000,000 bytes. Across five runs, median time rose from 0.26 to 0.29 seconds. Peak working set rose from 39 MiB to 46 MiB. These short runs varied. The second fixture exceeded the 3% time target. No package or release is recorded here.

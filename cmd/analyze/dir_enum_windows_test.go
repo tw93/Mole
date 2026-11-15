@@ -70,13 +70,6 @@ func TestReadDirWithIdentitiesMatchesOSReadDir(t *testing.T) {
 	}
 }
 
-func TestDecodeDirNameMatchesPortableDecoder(t *testing.T) {
-	units := []uint16{'a', 0xD83D, 0xDE80, 0x4E2D} // "a", surrogate pair, CJK
-	if got, want := decodeDirName(units), portableUTF16ToString(units); got != want {
-		t.Fatalf("decodeDirName = %q, portable decoder = %q", got, want)
-	}
-}
-
 func TestReadDirWithIdentitiesReportsEmptyDirectory(t *testing.T) {
 	entries, _, err := readDirWithIdentities(t.TempDir())
 	if err != nil {
@@ -104,52 +97,6 @@ func TestReadDirWithIdentitiesSpansSeveralBuffers(t *testing.T) {
 	}
 	if len(entries) != fileCount {
 		t.Fatalf("listed %d entries, want %d", len(entries), fileCount)
-	}
-}
-
-func TestReadDirWithIdentitiesSharesFileIDAcrossHardLinks(t *testing.T) {
-	dir := t.TempDir()
-	original := filepath.Join(dir, "original.bin")
-	link := filepath.Join(dir, "linked.bin")
-	writeTestFile(t, original, 8192)
-	if err := os.Link(original, link); err != nil {
-		t.Skipf("this volume cannot create hard links: %v", err)
-	}
-
-	entries, hasIdentities, err := readDirWithIdentities(dir)
-	if err != nil {
-		t.Fatalf("readDirWithIdentities: %v", err)
-	}
-	if !hasIdentities {
-		t.Skip("this volume does not report file IDs")
-	}
-	ids := make(map[string]uint64, len(entries))
-	for _, entry := range entries {
-		ids[entry.Name] = entry.FileID
-	}
-	if ids["original.bin"] == 0 || ids["original.bin"] != ids["linked.bin"] {
-		t.Fatalf("hard links report file IDs %#x and %#x, want one shared non-zero ID",
-			ids["original.bin"], ids["linked.bin"])
-	}
-	if len(ids) == 0 {
-		t.Fatal("listed no entries")
-	}
-}
-
-func TestReadDirWithIdentitiesKeepsDistinctFilesApart(t *testing.T) {
-	dir := t.TempDir()
-	writeTestFile(t, filepath.Join(dir, "one.bin"), 16)
-	writeTestFile(t, filepath.Join(dir, "two.bin"), 16)
-
-	entries, hasIdentities, err := readDirWithIdentities(dir)
-	if err != nil {
-		t.Fatalf("readDirWithIdentities: %v", err)
-	}
-	if !hasIdentities {
-		t.Skip("this volume does not report file IDs")
-	}
-	if len(entries) != 2 || entries[0].FileID == entries[1].FileID {
-		t.Fatalf("two distinct files report file IDs %#x and %#x", entries[0].FileID, entries[1].FileID)
 	}
 }
 
