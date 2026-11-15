@@ -918,7 +918,11 @@ clean_clang_module_cache() {
     local resolver_rc=0
     darwin_user_cache=$(mole_darwin_user_cache_root) || resolver_rc=$?
     if [[ $resolver_rc -ne 0 ]]; then
-        mole_rc_timeout_or_signal "$resolver_rc" && return "$resolver_rc"
+        if mole_rc_timeout "$resolver_rc"; then
+            debug_log "Skipping Clang module cache: DARWIN_USER_CACHE_DIR lookup timed out"
+            return 0
+        fi
+        mole_rc_signal "$resolver_rc" && return "$resolver_rc"
         return 0
     fi
 
@@ -4419,7 +4423,7 @@ clean_dev_other_langs() {
     # DENO_DIR mixes remote imports with origin storage and downloaded runtime
     # payloads. The owner clean command resets the whole root, so Mole keeps it
     # review-only and the generic user-cache sweep excludes it as well.
-    clean_clang_module_cache
+    clean_clang_module_cache || return $?
 }
 # CI/CD and DevOps caches.
 clean_dev_cicd() {

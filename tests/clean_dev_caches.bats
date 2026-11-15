@@ -2896,6 +2896,61 @@ EOF
     [ -d "$outside_root/private-data" ]
 }
 
+@test "clean_clang_module_cache skips only Clang cleanup on resolver timeout and keeps a signal sticky" {
+    local darwin_cache="$HOME/clang-resolver-cache"
+    local trace="$HOME/clang-resolver.trace"
+    mkdir -p "$darwin_cache/clang/module-cache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        DARWIN_CACHE="$darwin_cache" CLANG_TRACE="$trace" \
+        /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+MOLE_CURRENT_COMMAND=clean
+clang_module_cache_process_state() { return 1; }
+note_activity() { :; }
+later_step() { LATER=ran; }
+safe_clean() {
+    local description="${!#}"
+    if [[ "$description" == "Clang module cache" ]]; then
+        printf 'CLEAN:%s\n' "$1" >> "$CLANG_TRACE"
+    fi
+    return 0
+}
+run_with_timeout() {
+    shift
+    if [[ "${1:-}" == "/usr/bin/getconf" && "${2:-}" == "DARWIN_USER_CACHE_DIR" ]]; then
+        [[ "$RESOLVER_FAIL_RC" -eq 0 ]] || return "$RESOLVER_FAIL_RC"
+        printf '%s\n' "$DARWIN_CACHE"
+        return 0
+    fi
+    return 0
+}
+
+for RESOLVER_FAIL_RC in 0 124 1 130 143; do
+    MOLE_CLEAN_CANCEL_STATUS=0
+    : > "$CLANG_TRACE"
+    rc=0
+    _run_developer_cleanup_step clean_dev_other_langs || rc=$?
+    LATER=skipped
+    _run_developer_cleanup_step later_step || true
+    cleans=$(wc -l < "$CLANG_TRACE" | tr -d ' ')
+    printf 'RC_IN=%s RC=%s CANCEL=%s LATER=%s CLEANS=%s\n' \
+        "$RESOLVER_FAIL_RC" "$rc" "$MOLE_CLEAN_CANCEL_STATUS" "$LATER" "$cleans"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC_IN=0 RC=0 CANCEL=0 LATER=ran CLEANS=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC_IN=124 RC=0 CANCEL=0 LATER=ran CLEANS=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC_IN=1 RC=0 CANCEL=0 LATER=ran CLEANS=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC_IN=130 RC=130 CANCEL=130 LATER=skipped CLEANS=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC_IN=143 RC=143 CANCEL=143 LATER=skipped CLEANS=0"* ]] || { echo "$output"; return 1; }
+    rm -rf "$darwin_cache" "$trace" # SAFE: test fixture paths under the temporary HOME
+}
+
 @test "clean_dev_rust honors CARGO_HOME and RUSTUP_HOME when absolute" {
     # mise and friends relocate cargo/rustup via env; hardcoded ~/.cargo misses
     # the live cache (issue #1378). Scope stays redundant download copies only.
