@@ -100,27 +100,6 @@ history_parse() {
     }' "$@"
 }
 
-json_string() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\t'/\\t}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    if [[ "$s" == *[[:cntrl:]]* ]]; then
-        local out="" c i LC_ALL=C
-        for ((i = 0; i < ${#s}; i++)); do
-            c="${s:i:1}"
-            case "$c" in
-                [[:cntrl:]]) out+=$(printf '\\u%04x' "'$c") ;;
-                *) out+="$c" ;;
-            esac
-        done
-        s="$out"
-    fi
-    printf '"%s"' "$s"
-}
-
 history_main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
