@@ -856,8 +856,9 @@ get_latest_commit_from_github() {
         response=$(wget --timeout="${MOLE_LOOKUP_MAX_TIME:-3}" --tries=1 -qO- \
             "https://api.github.com/repos/tw93/mole/commits/main" 2> /dev/null || true)
     fi
-    sha=$(printf '%s\n' "$response" |
-        grep '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' | head -1 | sed -E 's/.*"sha"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/') || sha=""
+    # Read the whole response: head can SIGPIPE a large commit's file list,
+    # causing pipefail to discard a valid SHA before the fallback decision.
+    sha=$(/usr/bin/plutil -extract sha raw -o - - <<< "$response" 2> /dev/null) || sha=""
     if [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
         printf '%s\n' "$sha"
         return 0
