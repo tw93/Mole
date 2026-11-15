@@ -55,9 +55,11 @@ emit_fish_completions() {
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l debug -d "Show detailed logs"\n' "$cmd"
     printf 'complete -f -c %s -n "__fish_seen_subcommand_from purge" -l help -s h -d "Show help"\n' "$cmd"
     printf '\n'
-    printf 'complete -f -c %s -n "not __fish_mole_no_subcommand" -a bash -d "generate bash completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
-    printf 'complete -f -c %s -n "not __fish_mole_no_subcommand" -a zsh -d "generate zsh completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
-    printf 'complete -f -c %s -n "not __fish_mole_no_subcommand" -a fish -d "generate fish completion" -n "__fish_see_subcommand_path completion"\n' "$cmd"
+    local shell_name
+    for shell_name in bash zsh fish; do
+        printf 'complete -f -c %s -n "__fish_seen_subcommand_from completion; and not __fish_seen_subcommand_from bash zsh fish" -a %s -d "generate %s completion"\n' \
+            "$cmd" "$shell_name" "$shell_name"
+    done
 }
 
 # A dotfile chain is followed to its final file; a broken link or a cycle
@@ -450,9 +452,6 @@ EOF
         printf '        end\n'
         printf '    end\n'
         printf '    return 0\n'
-        printf 'end\n\n'
-        printf 'function __fish_see_subcommand_path\n'
-        printf '    string match -q -- "completion" (commandline -opc)[1]\n'
         printf 'end\n'
         ;;
     *)

@@ -266,3 +266,18 @@ RC
 	[ ! -f "$HOME/.config/fish/completions/mo.fish" ]
 }
 
+@test "completion fish completes shell names only under completion subcommand" {
+	run "$PROJECT_ROOT/bin/completion.sh" fish
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+	local cmd shell_name expected
+	for cmd in mole mo; do
+		for shell_name in bash zsh fish; do
+			expected="complete -f -c $cmd -n \"__fish_seen_subcommand_from completion; and not __fish_seen_subcommand_from bash zsh fish\" -a $shell_name -d \"generate $shell_name completion\""
+			[[ "$output" == *"$expected"* ]] || return 1
+		done
+	done
+
+	! grep -qE 'complete .* -n .* -n ' <<< "$output" || return 1
+	[[ "$output" != *"__fish_see_subcommand_path"* ]]
+}
