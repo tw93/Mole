@@ -700,8 +700,10 @@ class AnalyzePage(Page):
         self.back.set_sensitive(self.path != "/")
         if self.cancellable:
             self.cancellable.cancel()
-        self.cancellable = Gio.Cancellable()
-        cli.run_json(["analyze", "--json", self.path], self.show_tree, self.cancellable)
+        self.cancellable = cancellable = Gio.Cancellable()
+        # A replaced scan's reply ("cancelled") must not cover the new one.
+        cli.run_json(["analyze", "--json", self.path],
+                     lambda data, err: cancellable.is_cancelled() or self.show_tree(data, err), cancellable)
 
     def open(self, path):
         self.path = path

@@ -154,6 +154,9 @@ class RunDialog(Adw.Dialog):
         header = Adw.HeaderBar(show_end_title_buttons=False)
         self.spinner = Gtk.Spinner(spinning=True)
         header.pack_start(self.spinner)
+        self.stop_button = Gtk.Button(label="Stop")
+        self.stop_button.connect("clicked", lambda *_: self.proc and cli.stop(self.proc))
+        header.pack_start(self.stop_button)
         self.close_button = Gtk.Button(label="Close", sensitive=False)
         self.close_button.add_css_class("suggested-action")
         self.close_button.connect("clicked", lambda *_: self.close())
@@ -170,7 +173,7 @@ class RunDialog(Adw.Dialog):
         self.end_mark = self.buffer.create_mark(None, self.buffer.get_end_iter(), False)
         self.set_can_close(False)
         self.present(win)
-        cli.stream(argv, self.append, self.finish)
+        self.proc = cli.stream(argv, self.append, self.finish)
 
     def append(self, line):
         self.buffer.insert(self.buffer.get_end_iter(), line + "\n")
@@ -179,6 +182,7 @@ class RunDialog(Adw.Dialog):
     def finish(self, ok):
         self.spinner.set_spinning(False)
         self.spinner.set_visible(False)
+        self.stop_button.set_visible(False)
         self.close_button.set_sensitive(True)
         self.set_can_close(True)
         self.ok = ok

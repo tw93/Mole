@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 
 from gi.repository import Gio, GLib
 
@@ -27,13 +28,32 @@ def _launcher(merge_stderr=False):
     return launcher
 
 
+def _spawn(launcher, argv):
+    # Its own process group, so stop() also ends the helpers mo starts
+    # (analyze-go, du, find), not only the router's bash.
+    return launcher.spawnv(["setsid", *argv])
+
+
+def stop(proc):
+    """End a command started by run or stream, with everything it started."""
+    pid = proc.get_identifier()
+    if pid:
+        try:
+            os.killpg(int(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
 def run(args, callback, cancellable=None):
-    """Run `mo <args>` and call callback(ok, stdout, stderr) on the main loop."""
+    """Run `mo <args>` and call callback(ok, stdout, stderr) on the main loop.
+    Cancelling ends the command too."""
     try:
-        proc = _launcher().spawnv([MOLE, *args])
+        proc = _spawn(_launcher(), [MOLE, *args])
     except GLib.Error as err:
         callback(False, "", err.message)
         return None
+    if cancellable is not None:
+        cancellable.connect(lambda *_: stop(proc))
 
     def done(p, result):
         try:
@@ -67,7 +87,7 @@ def stream(argv, on_line, on_exit):
     try:
         launcher = _launcher(merge_stderr=True)
         launcher.set_flags(Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
-        proc = launcher.spawnv(argv)
+        proc = _spawn(launcher, argv)
     except GLib.Error as err:
         on_line(err.message)
         on_exit(False)
