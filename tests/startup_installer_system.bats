@@ -173,7 +173,7 @@ PY
 @test "mo completion prints scripts that list every router command" {
     run bash "$REPO/mole" completion bash
     [ "$status" -eq 0 ]
-    for c in clean uninstall installer startup system history; do [[ "$output" == *"$c "* ]] || return 1; done
+    for c in clean uninstall installer startup system gui history; do [[ "$output" == *"$c "* ]] || return 1; done
     run bash -c "eval \"\$(bash '$REPO/mole' completion bash)\"; COMP_WORDS=(mo sta); COMP_CWORD=1; _mole_complete; echo \"\${COMPREPLY[*]}\""
     [ "$output" == "status startup" ]
     run bash "$REPO/mole" completion fish

@@ -292,6 +292,8 @@ if [[ "$NIGHTLY" == true ]]; then
     for f in mole mo install.sh LICENSE README.md; do cp -- "$WORK/source/$f" "$stage/"; done
     cp -- "$WORK/source"/bin/*.sh "$stage/bin/"
     cp -R -- "$WORK/source/lib" "$stage/lib"
+    mkdir -p "$stage/gui"
+    cp -R -- "$WORK/source/gui/mole_gui" "$WORK/source/gui/fit.mole.Mole.png" "$stage/gui/"
     printf '%s\n' "$VERSION" > "$stage/VERSION"
     printf '%s\n' "$COMMIT" > "$stage/NIGHTLY"
 
@@ -418,6 +420,27 @@ for name in mo mole; do
     ln -sfn -- "$INSTALL_ROOT/mole" "$link"
 done
 ok "Installed Mole $VERSION to $INSTALL_ROOT"
+
+# The window's launcher, only where it can open (GTK 4, libadwaita, PyGObject).
+# Rewritten on every install so it always points at this tree.
+launcher="$DATA_HOME/applications/fit.mole.Mole.desktop"
+# A path holding a character the desktop-entry spec makes Exec escape gets none.
+if [[ "$INSTALL_ROOT" != *[\"\`\$\\%]* ]] &&
+    /usr/bin/python3 -c 'import gi; gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")' > /dev/null 2>&1 &&
+    [[ ! -L "$launcher" ]] && mkdir -p "$DATA_HOME/applications"; then
+    cat > "$launcher" << DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Mole
+Comment=Clean caches, uninstall apps and check the system
+Exec="$INSTALL_ROOT/mole" gui
+Icon=$INSTALL_ROOT/gui/fit.mole.Mole.png
+Terminal=false
+Categories=System;Utility;
+Keywords=clean;cache;disk;uninstall;startup;
+StartupWMClass=fit.mole.Mole
+DESKTOP
+fi
 
 # shellcheck disable=SC2016 # the export line is shown literally
 case ":$PATH:" in

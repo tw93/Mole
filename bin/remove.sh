@@ -43,6 +43,9 @@ for name in mo mole; do
     link="$HOME/.local/bin/$name"
     [[ -L "$link" && "$(readlink -- "$link")" == "$install_root/mole" ]] && targets+=("$link")
 done
+# The window's launcher install.sh wrote, only while it still starts this tree.
+launcher="$MOLE_DATA_HOME/applications/fit.mole.Mole.desktop"
+[[ -f "$launcher" && ! -L "$launcher" ]] && grep -qF "Exec=\"$install_root/mole\" gui" "$launcher" && targets+=("$launcher")
 for dir in "$MOLE_CONFIG_HOME/mole" "$MOLE_CACHE_HOME/mole" "$MOLE_STATE_DIR"; do
     [[ -d "$dir" && ! -L "$dir" ]] && targets+=("$dir")
 done

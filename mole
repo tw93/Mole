@@ -98,6 +98,7 @@ MOLE_COMMANDS=(
     "installer:Remove installer files"
     "startup:Manage apps that start at login"
     "system:Check restart, kernels and updates"
+    "gui:Open the Mole window"
     "completion:Set up shell tab completion"
     "history:Review cleanup activity"
     "update:Update to latest version"
@@ -253,7 +254,7 @@ main() {
         fi
     done
     case "${args[0]:-}" in
-        clean | uninstall | optimize | analyze | status | purge | history | update | remove | installer | startup | system | completion)
+        clean | uninstall | optimize | analyze | status | purge | history | update | remove | installer | startup | system | gui | completion)
             [[ "${MO_DEBUG:-}" == 1 ]] && mole_debug_session_start "${args[0]}"
             run_mole_command "$SCRIPT_DIR/bin/${args[0]}.sh" "${args[@]:1}"
             ;;

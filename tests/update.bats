@@ -398,7 +398,7 @@ nightly_source() {
     local top="$TEST_ROOT/src/Mole-$SHA"
     rm -rf "$TEST_ROOT/src"
     mkdir -p "$top/tests" "$top/cmd/trash" "$top/.github"
-    cp -R "$REPO/lib" "$REPO/bin" "$REPO/mole" "$REPO/mo" "$REPO/install.sh" "$REPO/LICENSE" "$REPO/README.md" "$REPO/go.mod" "$top/"
+    cp -R "$REPO/lib" "$REPO/bin" "$REPO/gui" "$REPO/mole" "$REPO/mo" "$REPO/install.sh" "$REPO/LICENSE" "$REPO/README.md" "$REPO/go.mod" "$top/"
     rm -f "$top"/bin/*-go
     echo "$1" > "$top/VERSION"
     [[ "${2:-}" == main ]] && sed -i '2s/.*/# Mole - installer for macOS./' "$top/install.sh"

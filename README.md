@@ -32,6 +32,7 @@ This branch has its own code, written for Linux paths and tools. The look, the k
 - **Installer**: Moves `.deb`, `.rpm`, `.iso`, `.AppImage` and other installer files left in Downloads and on the Desktop to the Trash
 - **Startup**: Turns apps that start at login and your own systemd user services on or off, without deleting anything
 - **System**: Reports a pending restart, installed kernels, broken packages, updates, journal size and crash reports, with the command for each
+- **Window**: `mo gui` opens a GTK 4 and libadwaita window with every tool above
 
 ## Install
 
@@ -75,6 +76,7 @@ mo startup                 # apps and services that start at login
 mo startup disable steam.desktop
 mo system                  # restart, kernels, updates, crash reports
 mo system --json
+mo gui                     # the window
 mo completion bash         # tab completion (bash, zsh, fish)
 ```
 
@@ -163,6 +165,16 @@ mo purge --paths
 <img src="./docs/img/purge-linux.png" alt="mo purge project list" width="1000" />
 
 Scans `~/www`, `~/dev`, `~/Projects`, `~/code` and similar folders, plus any home folder that holds a project, or only the folders listed in `~/.config/mole/purge_paths`. Folders changed in the last 7 days and projects a program works in start unselected; the rest start selected. Outside a terminal, `--yes` removes only what is older than 7 days.
+
+### Window
+
+```bash
+mo gui
+```
+
+<img src="./docs/img/gui-linux.png" alt="Mole window" width="1000" />
+
+A native GNOME window (GTK 4, libadwaita) with Overview, Clean, Uninstall, Project Purge, Installers, Disk Usage, Optimize, System, Startup Apps and History. It runs the same `mo` commands for every report and change, so the rules above hold in the window too. Steps that need a password or a package manager's own confirmation (system caches, apt and Snap removals, the commands System suggests) open in a terminal. The installer adds a "Mole" launcher to the app grid when GTK 4, libadwaita and PyGObject are present; on Ubuntu and Debian they come from `sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`.
 
 ### Installer, Startup and System
 

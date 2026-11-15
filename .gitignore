@@ -100,3 +100,6 @@ mole_guidelines.md
 # Built Go helpers (make build)
 /bin/*-go
 /release/
+
+# Python bytecode (gui/)
+__pycache__/

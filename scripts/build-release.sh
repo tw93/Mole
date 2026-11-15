@@ -31,6 +31,9 @@ for pair in x86_64:amd64 aarch64:arm64; do
     cp mole mo install.sh VERSION LICENSE README.md "$stage/"
     cp bin/*.sh "$stage/bin/"
     cp -R lib "$stage/lib"
+    mkdir -p "$stage/gui"
+    cp -R gui/mole_gui gui/fit.mole.Mole.png "$stage/gui/"
+    rm -rf "$stage/gui/mole_gui/__pycache__" # SAFE: build output inside the release stage.
     for tool in trash status analyze; do
         GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
             -o "$stage/bin/$tool-go" "./cmd/$tool"
