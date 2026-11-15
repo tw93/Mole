@@ -5234,23 +5234,50 @@ func TestCursorNavigationSkipsHiddenEdgesAndStopsOnUnavailableRows(t *testing.T)
 		}
 	})
 
-	t.Run("live cursor does not freeze sort when only hidden rows lie ahead", func(t *testing.T) {
+	t.Run("overview cursor does not freeze sort when only hidden rows lie ahead", func(t *testing.T) {
 		m := model{
-			path:                "/fixture",
+			path:                "/",
+			isOverview:          true,
 			width:               80,
 			height:              24,
-			scanning:            true,
 			liveSortMode:        liveSortFreezeOnMove,
 			autoSortLiveEntries: true,
 			entries: []dirEntry{
-				{Name: "active", Path: "/fixture/active", Size: 4096, IsDir: true, State: scanComplete},
-				{Name: "empty", Path: "/fixture/empty", Size: 0, IsDir: true, State: scanComplete},
+				{Name: "Home", Path: "/Users/test", Size: 4096, IsDir: true, State: scanComplete},
+				{Name: "uv Cache", Path: "/Users/test/.cache/uv", Size: 0, IsDir: true, State: scanComplete},
 			},
 		}
 		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
 		m = updated.(model)
 		if m.selected != 0 || !m.autoSortLiveEntries {
 			t.Fatalf("got selected=%d autoSort=%t, want selected=0 autoSort=true", m.selected, m.autoSortLiveEntries)
+		}
+	})
+
+	t.Run("directory listing cursor reaches every rendered row, zero-byte ones included", func(t *testing.T) {
+		m := model{
+			path:   "/fixture",
+			width:  80,
+			height: 24,
+			entries: []dirEntry{
+				{Name: "active", Path: "/fixture/active", Size: 4096, IsDir: true, State: scanComplete},
+				{Name: "empty.log", Path: "/fixture/empty.log", Size: 0, State: scanComplete},
+				{Name: "notes", Path: "/fixture/notes", Size: 0, IsDir: true, State: scanComplete},
+			},
+		}
+		for want := 1; want <= 2; want++ {
+			updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyDown})
+			m = updated.(model)
+			if m.selected != want {
+				t.Fatalf("down landed on %d, want %d", m.selected, want)
+			}
+		}
+		if !strings.Contains(ansi.Strip(m.View()), "▶") {
+			t.Fatalf("cursor marker disappeared from the listing:\n%s", ansi.Strip(m.View()))
+		}
+		updated, _ := m.updateKey(tea.KeyMsg{Type: tea.KeyUp})
+		if got := updated.(model).selected; got != 1 {
+			t.Fatalf("up landed on %d, want 1", got)
 		}
 	})
 

@@ -360,8 +360,10 @@ func (m *model) moveEntrySelection(delta int) {
 	if len(m.entries) == 0 || (delta != -1 && delta != 1) {
 		return
 	}
+	// Only the overview hides empty rows; a directory listing renders every
+	// entry, zero-byte files included, so the cursor visits each one.
 	next := m.selected + delta
-	for next >= 0 && next < len(m.entries) && m.entries[next].hiddenWhenEmpty() {
+	for m.inOverviewMode() && next >= 0 && next < len(m.entries) && m.entries[next].hiddenWhenEmpty() {
 		next += delta
 	}
 	if next < 0 || next >= len(m.entries) {
