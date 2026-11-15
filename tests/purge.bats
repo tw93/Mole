@@ -4947,13 +4947,15 @@ EOF
 	printf '%s\n' "$sig" > "$project/CACHEDIR.TAG"
 	printf '%s\n' "$sig" > "$project/c/CACHEDIR.TAG"
 
-	# The second pass makes the container's single walk time out, so the same
-	# fixture is found again through child units with shifted depth limits.
+	# Force a timeout on the second pass so child units exercise shifted depth
+	# limits. This checks coverage, not elapsed time: leave the ordinary scans
+	# their normal budget instead of racing a two-second deadline under CI load.
 	local stub="$HOME/find-1666-parity"
 	cat > "$stub" <<'STUB'
 #!/bin/bash
+printf '%s\n' "$1" >> "$BOX/walks-$FALLBACK"
 if [[ "$FALLBACK" == 1 && "$1" == "$BOX/container" && " $* " != *" -maxdepth 1 "* && " $* " != *" -maxdepth 0 "* ]]; then
-	exec /bin/sleep 20
+	exit 124
 fi
 exec /usr/bin/find "$@"
 STUB
@@ -4963,7 +4965,7 @@ STUB
 	local fallback removed
 	for fallback in 0 1; do
 		run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" BOX="$box" STUB="$stub" FALLBACK="$fallback" FLOW="$(_purge_unit_flow_script)" \
-			MO_USE_FIND=1 MO_PURGE_SCAN_TIMEOUT_SEC=2 /bin/bash --noprofile --norc <<'EOF'
+			MO_USE_FIND=1 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/project.sh"
@@ -4978,6 +4980,7 @@ EOF
 		[[ "$removed" == "$expected" ]] || { echo "FALLBACK=$fallback GOT=$removed"; echo "$output"; rm -rf "$box" "$stub"; return 1; }
 		[[ "$output" != *"Skipped"* ]] || { echo "$output"; rm -rf "$box" "$stub"; return 1; }
 	done
+	grep -Fxq -- "$container/x" "$box/walks-1" || { rm -rf "$box" "$stub"; return 1; }
 	rm -rf "$box" "$stub"
 }
 
