@@ -786,13 +786,15 @@ report_snap_revisions() {
 # Prints the refusal behind an error line, or fails when the line is anything
 # else. Only the text after the last ": " counts, since mktemp quotes the path.
 _clean_write_refusal() {
-    local message="${1##*: }"
-    case "$message" in
-        "Operation not permitted" | "Permission denied" | "Read-only file system")
-            printf '%s' "$message"
+    local message="${1##*: }" reason
+    # uutils (Ubuntu 25.10 and later) words it "Permission denied (os error
+    # 13) at path ...", GNU ends the line with the reason itself.
+    for reason in "Operation not permitted" "Permission denied" "Read-only file system"; do
+        if [[ "$message" == "$reason" || "$1" == *": $reason (os error "* ]]; then
+            printf '%s' "$reason"
             return 0
-            ;;
-    esac
+        fi
+    done
     return 1
 }
 
