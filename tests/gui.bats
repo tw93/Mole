@@ -108,3 +108,33 @@ print('ok')"
     [ "$status" -eq 0 ]
     [ "$output" == ok ]
 }
+
+@test "the uninstall dialog reads the plan uninstall really prints" {
+    mkdir -p "$HOME/Apps" "$HOME/.local/share/applications" "$HOME/.cache/tool" "$HOME/.config/tool"
+    head -c 8192 /dev/zero > "$HOME/Apps/Tool.AppImage"
+    head -c 4096 /dev/zero > "$HOME/.cache/tool/blob"
+    printf '[Desktop Entry]\nName=Tool\nExec=%s\n' "$HOME/Apps/Tool.AppImage" > "$HOME/.local/share/applications/tool.desktop"
+    mole_run uninstall 'DRY_RUN=true
+        load_apps() {
+            APP_KIND=(appimage); APP_ID=(tool); APP_NAME=(Tool); APP_DESKTOPS=(tool)
+            APP_EXEC=("$HOME/Apps/Tool.AppImage"); APP_SCOPE=(user); APP_KB=(8)
+        }
+        match_names() { SELECTED=(0); }
+        run_once false'
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$TEST_ROOT/plan.txt"
+    gui_python "from mole_gui import cli
+plan, summary = cli.parse_uninstall_plan(open('$TEST_ROOT/plan.txt').read())
+import re
+goes = [x['path'] for x in plan['leftovers'] if x['goes']]
+kept = [x['path'] for x in plan['leftovers'] if not x['goes']]
+assert goes == ['~/.local/share/applications/tool.desktop', '~/Apps/Tool.AppImage', '~/.cache/tool'], goes
+assert kept == ['~/.config/tool'], kept
+# Sizes depend on the filesystem's block size; only their form is pinned.
+assert all(re.fullmatch(r'[0-9.]+[KMGT]?B', x['size']) for x in plan['leftovers']), plan['leftovers']
+assert [n['text'].split(':')[0] for n in plan['notes']] == ['Leftovers to Trash'], plan['notes']
+assert 'Would remove: 1 app' in summary, summary
+print('ok')"
+    [ "$status" -eq 0 ]
+    [ "$output" == ok ]
+}
