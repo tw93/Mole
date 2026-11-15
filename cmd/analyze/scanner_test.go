@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -71,8 +70,8 @@ func TestGetDirectorySizeFromDuSkippingImmediateChildDoesNotMeasureExcludedPath(
 	}
 
 	var measured []string
-	size, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), base, excluded, func(path string) (int64, error) {
-		measured = append(measured, path)
+	size, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), base, excluded, func(paths ...string) (int64, error) {
+		measured = append(measured, paths...)
 		return 100, nil
 	})
 	if err != nil {
@@ -130,28 +129,24 @@ func TestGetDirectorySizeFromDuMeasuresUserLibraryInOneTraversal(t *testing.T) {
 	}
 }
 
-func TestOverviewPerChildDuPoolBelongsToOneMeasurement(t *testing.T) {
-	workers := min(max(runtime.NumCPU()*2, 2), 8)
+func TestOverviewDuDoesNotWaitForOtherMeasurements(t *testing.T) {
 	stuckBase := t.TempDir()
-	for i := range workers + 2 {
-		if err := os.MkdirAll(filepath.Join(stuckBase, fmt.Sprintf("child-%d", i)), 0o755); err != nil {
-			t.Fatalf("mkdir child: %v", err)
-		}
+	if err := os.MkdirAll(filepath.Join(stuckBase, "child"), 0o755); err != nil {
+		t.Fatalf("mkdir child: %v", err)
 	}
 	freshBase := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(freshBase, "child"), 0o755); err != nil {
 		t.Fatalf("mkdir child: %v", err)
 	}
 
-	// Hold every permit of one measurement on children that never finish,
-	// the way a cancelled Home refresh can while its du processes wind down.
+	// A cancelled Home refresh may still be winding down its du process.
 	release := make(chan struct{})
 	stuckDone := make(chan struct{})
-	var started atomic.Int64
+	started := make(chan struct{})
 	go func() {
 		defer close(stuckDone)
-		_, _ = getDirectorySizeFromDuSkippingImmediateChild(context.Background(), stuckBase, filepath.Join(stuckBase, "Library"), func(string) (int64, error) {
-			started.Add(1)
+		_, _ = getDirectorySizeFromDuSkippingImmediateChild(context.Background(), stuckBase, filepath.Join(stuckBase, "Library"), func(...string) (int64, error) {
+			close(started)
 			<-release
 			return 100, nil
 		})
@@ -161,20 +156,17 @@ func TestOverviewPerChildDuPoolBelongsToOneMeasurement(t *testing.T) {
 		<-stuckDone
 	}()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for started.Load() < int64(workers) {
-		if time.Now().After(deadline) {
-			t.Fatalf("expected %d concurrent du workers, saw %d", workers, started.Load())
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first measurement did not start")
 	}
 
-	// A new measurement gets its own permits instead of queueing behind the
-	// stuck one.
+	// A new measurement must not queue behind the stuck one.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var calls atomic.Int64
-	_, err := getDirectorySizeFromDuSkippingImmediateChild(ctx, freshBase, filepath.Join(freshBase, "Library"), func(string) (int64, error) {
+	_, err := getDirectorySizeFromDuSkippingImmediateChild(ctx, freshBase, filepath.Join(freshBase, "Library"), func(...string) (int64, error) {
 		calls.Add(1)
 		return 100, nil
 	})
@@ -512,6 +504,117 @@ func TestUserLibraryOverviewDeduplicatesHardlinks(t *testing.T) {
 	}
 	if got != kb*1024 {
 		t.Fatalf("Library size = %d, single du = %d; hardlinks must count once", got, kb*1024)
+	}
+}
+
+func TestHomeOverviewDeduplicatesHardlinks(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		link     string
+		fallback bool
+	}{
+		{"same-child", "Documents/linked.bin", false},
+		{"sibling-directories", "Projects/linked.bin", false},
+		{"root-and-directory", "linked.bin", false},
+		{"newlines-in-name", "Projects/linked\n999999\ttotal\n", false},
+		{"argument-limit-fallback", "Projects/linked.bin", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			original := filepath.Join(home, "Documents", "original.bin")
+			writeFileWithSize(t, original, 1<<20)
+			// Only the immediate Library is excluded. A nested one remains
+			// part of Home, so a basename-wide -I Library is not a fix.
+			library := filepath.Join(home, "Library")
+			writeFileWithSize(t, filepath.Join(library, "excluded.bin"), 2<<20)
+			writeFileWithSize(t, filepath.Join(home, "Projects", "Library", "included.bin"), 128<<10)
+			link := filepath.Join(home, tc.link)
+			if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Link(original, link); err != nil {
+				t.Fatal(err)
+			}
+			// The excluded fixture contains only an independent file, so
+			// subtracting its size from one whole-Home walk is a reference
+			// that preserves cross-child links and the nested Library.
+			duSize := func(path string) int64 {
+				t.Helper()
+				out, err := exec.Command("/usr/bin/du", "-skPx", path).Output()
+				if err != nil {
+					t.Fatal(err)
+				}
+				kb, err := strconv.ParseInt(strings.Fields(string(out))[0], 10, 64)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return kb * 1024
+			}
+			want := duSize(home) - duSize(library)
+			if tc.fallback {
+				// Exceed Darwin's exec argument/environment limit without
+				// creating thousands of directories. No du process can start.
+				t.Setenv("MOLE_TEST_OVERSIZED_ENV", strings.Repeat("x", 1<<20))
+			}
+			got, err := measureOverviewSize(context.Background(), home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("Home size = %d, single walk minus excluded Library = %d; hardlinks must count once", got, want)
+			}
+		})
+	}
+}
+
+func TestHomeOverviewPreservesPartialDuTotal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fixture requires an unprivileged user")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeFileWithSize(t, filepath.Join(home, "Documents", "readable"), 4096)
+	locked := filepath.Join(home, "locked")
+	writeFileWithSize(t, filepath.Join(locked, "unreadable"), 1<<20)
+	writeFileWithSize(t, filepath.Join(home, "Library", "excluded"), 2<<20)
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	size, err := measureOverviewSize(context.Background(), home)
+	if !isPermissionFailure(err) || size < 4096 || size >= 1<<20 {
+		t.Fatalf("Home lost its readable subtotal or denial: size=%d err=%v", size, err)
+	}
+	cached, state, err := loadStoredOverviewMeasurement(home)
+	if err != nil || cached != size || state != scanPartial {
+		t.Fatalf("Home subtotal was not stored as partial: size=%d state=%s err=%v", cached, state, err)
+	}
+}
+
+func TestHomeOverviewDoesNotFollowTopLevelSymlinks(t *testing.T) {
+	for _, dangling := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dangling=%t", dangling), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			writeFileWithSize(t, filepath.Join(home, "Library", "excluded"), 2<<20)
+			target := filepath.Join(t.TempDir(), "outside")
+			if !dangling {
+				writeFileWithSize(t, target, 1<<20)
+			}
+			link := filepath.Join(home, "link")
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Lstat(link)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := measureOverviewSize(context.Background(), home)
+			if err != nil || got != getActualFileSize(link, info) {
+				t.Fatalf("Home followed a symlink: size=%d err=%v", got, err)
+			}
+		})
 	}
 }
 
