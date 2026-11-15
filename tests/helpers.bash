@@ -50,3 +50,8 @@ fake_proc() {
     [[ "$exe" != - ]] && ln -s "$exe" "$root/$pid/exe"
     if [[ $# -gt 0 ]]; then printf '%s\0' "$@" > "$root/$pid/cmdline"; else : > "$root/$pid/cmdline"; fi
 }
+
+# A sleep that still runs when copied under another name, for fake owner
+# processes: uutils' multicall sleep (Ubuntu 25.10 and later) dispatches on
+# argv[0] and refuses a renamed copy; those systems also ship GNU's as gnusleep.
+sleep_binary() { command -v gnusleep || command -v sleep; }
