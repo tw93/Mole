@@ -145,9 +145,10 @@ func walkIdBothDirBuffer(buf []byte, visit func(idBothDirEntry) error) error {
 		if next == 0 {
 			return nil
 		}
-		if next < idBothDirNameOffset || next > remaining-idBothDirNameOffset {
+		minNext := (idBothDirNameOffset + nameBytes + 7) &^ 7
+		if next < minNext || next%8 != 0 || next > remaining-idBothDirNameOffset {
 			return &malformedDirBufferError{
-				reason: fmt.Sprintf("record at %d points to %d, outside the %d bytes that remain", offset, next, remaining),
+				reason: fmt.Sprintf("record at %d points to invalid record boundary %d within %d bytes", offset, next, remaining),
 			}
 		}
 		offset += next

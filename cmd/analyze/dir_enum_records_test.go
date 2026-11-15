@@ -5,6 +5,7 @@ package main
 // matches the layout the file system writes.
 
 import (
+	"encoding/binary"
 	"errors"
 	"strings"
 	"testing"
@@ -164,6 +165,14 @@ func TestWalkIdBothDirBufferRejectsBrokenLayouts(t *testing.T) {
 	first := func(buffer []byte) *idBothDirRecord {
 		return (*idBothDirRecord)(unsafe.Pointer(&buffer[0]))
 	}
+	pointAtFakeRecord := func(next uint32) []byte {
+		buffer := valid()
+		first(buffer).NextEntryOffset = next
+		binary.LittleEndian.PutUint32(buffer[int(next):], 0)
+		binary.LittleEndian.PutUint32(buffer[int(next)+60:], 2)
+		binary.LittleEndian.PutUint16(buffer[int(next)+idBothDirNameOffset:], 'x')
+		return buffer
+	}
 
 	cases := []struct {
 		name   string
@@ -190,6 +199,8 @@ func TestWalkIdBothDirBufferRejectsBrokenLayouts(t *testing.T) {
 			first(buffer).NextEntryOffset = idBothDirNameOffset - 1
 			return buffer
 		}},
+		{"next offset inside name", func() []byte { return pointAtFakeRecord(112) }},
+		{"next offset is not aligned", func() []byte { return pointAtFakeRecord(121) }},
 		{"next offset past buffer", func() []byte {
 			buffer := valid()
 			first(buffer).NextEntryOffset = uint32(len(buffer) + 1)
