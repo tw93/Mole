@@ -116,7 +116,7 @@ class Window(Adw.ApplicationWindow):
 
     def about(self):
         Adw.AboutDialog(
-            application_name="Mole", application_icon="user-trash-full-symbolic", version=version(),
+            application_name="Mole", application_icon="fit.mole.Mole", version=version(),
             developer_name="Mole contributors", website="https://mole.fit", issue_url="https://github.com/tw93/Mole/issues",
             license_type=Gtk.License.GPL_3_0, comments="Deep clean and maintain your Linux desktop.",
         ).present(self)
@@ -130,7 +130,11 @@ class App(Adw.Application):
         Adw.Application.do_startup(self)
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        display = Gdk.Display.get_default()
+        Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        # gui/fit.mole.Mole.png, found by the app id as an unthemed icon.
+        Gtk.IconTheme.get_for_display(display).add_search_path(os.path.join(cli.ROOT, "gui"))
+        Gtk.Window.set_default_icon_name(self.get_application_id())
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", lambda *_: self.quit())
         self.add_action(quit_action)
