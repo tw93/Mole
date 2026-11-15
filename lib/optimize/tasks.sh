@@ -209,7 +209,6 @@ flush_dns_cache() {
 opt_cache_refresh() {
     local cleaned_cache_size=0
     local removed_count=0
-    local remove_timed_out=0
     local remove_failed=0
     local refresh_failed=0
     local quicklook_refreshed=0
@@ -281,13 +280,11 @@ opt_cache_refresh() {
         local remove_rc=0
         safe_remove "${removable_targets[$index]}" true \
             "${removable_sizes[$index]}" > /dev/null 2>&1 || remove_rc=$?
-        if mole_rc_signal "$remove_rc"; then
+        if mole_rc_timeout_or_signal "$remove_rc"; then
             return "$remove_rc"
         elif [[ $remove_rc -eq 0 ]]; then
             removed_count=$((removed_count + 1))
             cleaned_cache_size=$((cleaned_cache_size + removable_sizes[index]))
-        elif mole_rc_timeout "$remove_rc"; then
-            remove_timed_out=$((remove_timed_out + 1))
         else
             remove_failed=$((remove_failed + 1))
         fi
@@ -300,9 +297,6 @@ opt_cache_refresh() {
     if [[ $icons_refreshed -eq 1 ]]; then
         opt_msg "Icon services cache rebuilt"
     fi
-    if [[ $remove_timed_out -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Timed out removing $remove_timed_out Finder cache target(s)"
-    fi
     if [[ $remove_failed -gt 0 ]]; then
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to remove $remove_failed Finder cache target(s)"
     fi
@@ -311,7 +305,7 @@ opt_cache_refresh() {
     fi
     optimize_task_result_from_counts \
         "$((removed_count + quicklook_refreshed + icons_refreshed))" \
-        "$((remove_timed_out + remove_failed + refresh_failed))"
+        "$((remove_failed + refresh_failed))"
 }
 
 # Removed: opt_maintenance_scripts - macOS handles log rotation automatically via launchd
@@ -331,7 +325,6 @@ opt_saved_state_cleanup() {
     local state_dir="$HOME/Library/Saved Application State"
     local removed=0
     local scan_failed=0
-    local remove_timed_out=0
     local remove_failed=0
 
     if [[ -d "$state_dir" ]]; then
@@ -348,12 +341,9 @@ opt_saved_state_cleanup() {
             > "$scan_file" 2> /dev/null || scan_rc=$?
         if [[ $scan_rc -ne 0 ]]; then
             : > "$scan_file" || true
+            # A scan timeout fails only this task; a signal still cancels.
             mole_rc_signal "$scan_rc" && return "$scan_rc"
-            if mole_rc_timeout "$scan_rc"; then
-                echo -e "  ${YELLOW}${ICON_WARNING}${NC} Saved state scan timed out"
-            else
-                echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan old saved states"
-            fi
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan old saved states"
             scan_failed=1
         fi
         while IFS= read -r -d '' state_path; do
@@ -362,30 +352,25 @@ opt_saved_state_cleanup() {
             fi
             local remove_rc=0
             safe_remove "$state_path" true > /dev/null 2>&1 || remove_rc=$?
-            if mole_rc_signal "$remove_rc"; then
+            if mole_rc_timeout_or_signal "$remove_rc"; then
                 return "$remove_rc"
             elif [[ $remove_rc -eq 0 ]]; then
                 removed=$((removed + 1))
-            elif mole_rc_timeout "$remove_rc"; then
-                remove_timed_out=$((remove_timed_out + 1))
             else
                 remove_failed=$((remove_failed + 1))
             fi
         done < "$scan_file"
     fi
 
-    if [[ $scan_failed -eq 0 && $remove_timed_out -eq 0 && $remove_failed -eq 0 ]]; then
+    if [[ $scan_failed -eq 0 && $remove_failed -eq 0 ]]; then
         opt_msg "App saved states optimized"
     elif [[ $removed -gt 0 ]]; then
         opt_msg "Removed $removed old saved state(s)"
     fi
-    if [[ $remove_timed_out -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Timed out removing $remove_timed_out old saved state(s)"
-    fi
     if [[ $remove_failed -gt 0 ]]; then
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to remove $remove_failed old saved state(s)"
     fi
-    optimize_task_result_from_counts "$removed" "$((scan_failed + remove_timed_out + remove_failed))"
+    optimize_task_result_from_counts "$removed" "$((scan_failed + remove_failed))"
 }
 
 # Removed: opt_swap_cleanup - Direct virtual memory operations pose system crash risk
@@ -1306,22 +1291,21 @@ opt_launch_agents_cleanup() {
         fi
     done
 
-    if [[ $broken_count -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $broken_count Launch Agent(s) point at a missing program · left in ~/Library/LaunchAgents"
-    fi
-
-    if [[ $timed_out_count -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Timed out inspecting $timed_out_count Launch Agent(s)"
-        optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_FAILED"
-        return 0
-    fi
-
-    if [[ $broken_count -eq 0 ]]; then
+    # A plist that could not be read in time is unknown: it is never called
+    # healthy, and the task counts as failed in the summary line.
+    if [[ $broken_count -eq 0 && $timed_out_count -eq 0 ]]; then
         opt_msg "Launch Agents all healthy"
         optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_UNCHANGED"
         return 0
     fi
 
+    if [[ $broken_count -gt 0 ]]; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $broken_count Launch Agent(s) point at a missing program · left in ~/Library/LaunchAgents"
+    fi
+    if [[ $timed_out_count -gt 0 ]]; then
+        optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_FAILED"
+        return 0
+    fi
     optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_ATTENTION"
 }
 
@@ -1389,7 +1373,6 @@ opt_shared_file_list_repair() {
 
     local repaired=0
     local scan_failed=0
-    local remove_timed_out=0
     local remove_failed=0
     local scan_file=""
     if ! scan_file=$(mktemp_file "optimize-shared-file-lists"); then
@@ -1406,9 +1389,10 @@ opt_shared_file_list_repair() {
         > "$scan_file" 2> "${scan_err_file:-/dev/null}" || scan_rc=$?
     if [[ $scan_rc -ne 0 ]]; then
         : > "$scan_file" || true
+        # A scan timeout fails only this task; a signal still cancels.
         mole_rc_signal "$scan_rc" && return "$scan_rc"
         if mole_rc_timeout "$scan_rc"; then
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Shared file list scan timed out"
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan shared file lists"
             scan_failed=1
         else
             # Permission-only errors make the scan unavailable. Mixed errors or
@@ -1442,12 +1426,10 @@ opt_shared_file_list_repair() {
             if [[ "${MOLE_DRY_RUN:-0}" != "1" ]]; then
                 safe_remove "$sfl_file" true > /dev/null 2>&1 || remove_rc=$?
             fi
-            if mole_rc_signal "$remove_rc"; then
+            if mole_rc_timeout_or_signal "$remove_rc"; then
                 return "$remove_rc"
             elif [[ $remove_rc -eq 0 ]]; then
                 repaired=$((repaired + 1))
-            elif mole_rc_timeout "$remove_rc"; then
-                remove_timed_out=$((remove_timed_out + 1))
             else
                 remove_failed=$((remove_failed + 1))
             fi
@@ -1456,16 +1438,13 @@ opt_shared_file_list_repair() {
 
     if [[ $repaired -gt 0 ]]; then
         opt_msg "Repaired $repaired corrupted shared file list(s)"
-    elif [[ $scan_failed -eq 0 && $remove_timed_out -eq 0 && $remove_failed -eq 0 ]]; then
+    elif [[ $scan_failed -eq 0 && $remove_failed -eq 0 ]]; then
         opt_msg "Shared file lists all healthy"
-    fi
-    if [[ $remove_timed_out -gt 0 ]]; then
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Timed out repairing $remove_timed_out corrupted shared file list(s)"
     fi
     if [[ $remove_failed -gt 0 ]]; then
         echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to repair $remove_failed corrupted shared file list(s)"
     fi
-    optimize_task_result_from_counts "$repaired" "$((scan_failed + remove_timed_out + remove_failed))"
+    optimize_task_result_from_counts "$repaired" "$((scan_failed + remove_failed))"
 }
 
 # Resolve the live Notification Center SQLite database.
