@@ -393,7 +393,8 @@ EOF
                 fi
                 [[ "$output" == *"RC=0 CANCEL=0 TIMEOUTS=$want_timeouts"* ]] || { echo "$output"; return 1; }
                 if [[ "$phase" == "dry" ]]; then
-                    [[ "$output" == *"would prune items older than 30 days (size unknown)"* ]] || { echo "$output"; return 1; }
+                    [[ "$output" == *"would prune items older than 30 days"* ]] || { echo "$output"; return 1; }
+                    [[ "$output" != *"size unknown"* ]] || { echo "$output"; return 1; }
                     [ ! -e "$case_home/tart-called" ] || return 1
                 else
                     [ -e "$case_home/tart-called" ] || return 1
