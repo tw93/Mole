@@ -2,6 +2,13 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-15: Analyze overview fixes from Mole CLI (macOS) (#1992, #1996)
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| The Home and old-Downloads overview totals stop at a mount point that is itself a child, since `du -x` measures its operand's volume (`main` #1992); Mole CLI (Linux) skips a foreign mount child of Downloads | Implemented (Mole CLI (macOS), #1992); Implemented (Mole CLI (Linux), `997e44d2`); Not applicable (Mole CLI (Windows): `measureOldDownloads` walks with `calculateDirSizeFast` and skips `isLinkEntry`, which covers junctions and mounted-folder reparse points, `cmd/analyze/platform_windows.go`); Not applicable (Mole Mac, Mole for Windows: their own scanners) | Read at `origin/windows` 2026-11-15. |
+| The analyze cursor steps over only the overview rows that are hidden when empty, so a directory listing reaches its zero-byte rows (`main` #1996) | Implemented (Mole CLI (macOS), `060fba8b`); Not applicable (Mole CLI (Windows), Mole CLI (Linux): no row is hidden when empty, so no skip loop exists); Not applicable (Mole Mac, Mole for Windows: no terminal cursor) | `cmd/analyze` grep for hidden empty rows on both branches, 2026-11-15. |
+
 ## 2026-11-13: Old installer files in Downloads (from Mole for Windows and Mole CLI (macOS))
 
 Owner of the row is this branch; the scope is Mole for Windows' CLEAN-05 and the command shape is Mole CLI (macOS)'s `mo installer` (maintainer 2026-11-13: sync the GUI's installer cleanup to the Windows CLI).
