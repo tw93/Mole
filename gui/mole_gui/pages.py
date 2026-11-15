@@ -9,7 +9,7 @@ from datetime import datetime
 from gi.repository import Adw, Gio, GLib, Graphene, Gsk, Gtk, Pango
 
 from . import cli
-from .base import LineFileDialog, Page, RunDialog, confirm, dim_label, flat_button, plan_dialog, row, tag
+from .base import LineFileDialog, Page, RunDialog, confirm, dim_label, flat_button, row, tag
 
 HOME = GLib.get_home_dir()
 
@@ -516,27 +516,149 @@ class UninstallPage(Page):
             r.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
             r.set_activatable(True)
             r.set_tooltip_text("Uninstall…")
-            r.connect("activated", lambda _r, a=app: self.plan(a))
+            r.connect("activated", lambda _r, a=app, i=icon: self.plan(a, i))
             self.listbox.append(r)
         self.box.append(self.listbox)
         self.show_content()
 
-    def plan(self, app):
-        name = app["uninstall_name"]
-        if app["kind"] in self.LOCAL_KINDS:
-            actions = [("Uninstall", "destructive-action", lambda: self.remove_here(app))]
+    def plan(self, app, icon):
+        UninstallDialog(self, app, icon, app["kind"] in self.LOCAL_KINDS)
+
+
+class UninstallDialog(Adw.Dialog):
+    """One app's uninstall as rows: what moves to the Trash, what stays, then
+    the result. The console button shows the CLI's own output instead."""
+
+    def __init__(self, page, app, icon, local):
+        super().__init__(title=f"Uninstall {app['name']}", content_width=560, content_height=580)
+        self.page, self.app, self.icon, self.local = page, app, icon, local
+        self.state = "loading"
+        self.run_text = []
+
+        self.buffer = Gtk.TextBuffer()
+        console = Gtk.TextView(buffer=self.buffer, editable=False, monospace=True, cursor_visible=False,
+                               wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=12, bottom_margin=12,
+                               left_margin=12, right_margin=12)
+        self.console_button = Gtk.ToggleButton(icon_name="utilities-terminal-symbolic", tooltip_text="Output")
+        self.console_button.connect("toggled", lambda *_: self.views.set_visible_child_name(
+            "console" if self.console_button.get_active() else self.state))
+
+        self.views = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, vexpand=True)
+        self.views.add_named(Adw.StatusPage(child=Gtk.Spinner(spinning=True, width_request=32, height_request=32)),
+                             "loading")
+        self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24, margin_top=12,
+                               margin_bottom=24, margin_start=12, margin_end=12)
+        self.views.add_named(Gtk.ScrolledWindow(child=Adw.Clamp(child=self.content), vexpand=True), "plan")
+        self.views.add_named(Adw.StatusPage(title="Uninstalling…", child=Gtk.Spinner(
+            spinning=True, width_request=32, height_request=32)), "running")
+        self.result = Adw.StatusPage()
+        self.views.add_named(self.result, "done")
+        self.views.add_named(Gtk.ScrolledWindow(child=console, vexpand=True), "console")
+
+        header = Adw.HeaderBar()
+        header.pack_start(self.console_button)
+        self.bar = Gtk.Box(spacing=12, halign=Gtk.Align.END, margin_top=12, margin_bottom=12,
+                           margin_start=12, margin_end=12)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self.close())
+        self.go = Gtk.Button(label="Uninstall" if local else "Continue in Terminal", sensitive=False)
+        self.go.add_css_class("destructive-action" if local else "suggested-action")
+        self.go.connect("clicked", lambda *_: self.start())
+        self.bar.append(cancel)
+        self.bar.append(self.go)
+        toolbar = Adw.ToolbarView(content=self.views)
+        toolbar.add_top_bar(header)
+        toolbar.add_bottom_bar(self.bar)
+        self.set_child(toolbar)
+        self.present(page.win)
+        cli.run(["uninstall", "--dry-run", app["uninstall_name"]], self.show_plan)
+
+    def set_state(self, name):
+        self.state = name
+        if not self.console_button.get_active():
+            self.views.set_visible_child_name(name)
+
+    def log(self, text):
+        self.buffer.insert(self.buffer.get_end_iter(), text + "\n")
+
+    def show_plan(self, ok, out, err):
+        text = cli.strip(out + err).strip()
+        self.log(text)
+        if not ok:
+            self.show_result("dialog-error-symbolic", "Cannot Uninstall", (text.splitlines() or [""])[-1])
+            return
+        plan, _ = cli.parse_uninstall_plan(text)
+        head = Gtk.Box(spacing=18)
+        image = Gtk.Image(pixel_size=64)
+        if self.icon:
+            image.set_from_gicon(self.icon)
         else:
-            actions = [("Continue in Terminal", "suggested-action", lambda: self.remove_in_terminal(app))]
-        plan_dialog(self.win, f"Uninstall {app['name']}", ["uninstall", "--dry-run", name], actions)
+            image.set_from_icon_name("application-x-executable")
+        head.append(image)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER)
+        title = Gtk.Label(label=self.app["name"], xalign=0, wrap=True)
+        title.add_css_class("title-2")
+        sub = Gtk.Label(label=" · ".join(x for x in (self.app["source"], self.app.get("size")) if x), xalign=0)
+        sub.add_css_class("dimmed")
+        sub.add_css_class("dim-label")
+        names.append(title)
+        names.append(sub)
+        head.append(names)
+        self.content.append(head)
 
-    def remove_here(self, app):
-        RunDialog(self.win, f"Uninstall {app['name']}", [cli.MOLE, "uninstall", "--yes", app["uninstall_name"]],
-                  lambda ok: self.load())
+        groups = [("Moves to the Trash", [x for x in plan["leftovers"] if x["goes"]], "user-trash-symbolic"),
+                  ("Kept", [x for x in plan["leftovers"] if not x["goes"]], "folder-symbolic")]
+        for title_text, items, icon in groups:
+            if not items:
+                continue
+            group = Adw.PreferencesGroup(title=title_text)
+            for x in items:
+                r = row(x["path"], x["note"], icon=icon, suffix=x["size"])
+                group.add(r)
+            self.content.append(group)
+        if plan["notes"]:
+            group = Adw.PreferencesGroup()
+            for n in plan["notes"]:
+                group.add(row(n["text"], icon="dialog-warning-symbolic" if n["warning"] else "dialog-information-symbolic"))
+            self.content.append(group)
+        self.go.set_sensitive(True)
+        self.set_state("plan")
 
-    def remove_in_terminal(self, app):
-        # The package manager asks for the password and confirms its own plan.
-        if not cli.in_terminal(cli.mo_command("uninstall", app["uninstall_name"])):
-            self.win.toast("No terminal app found")
+    def start(self):
+        if not self.local:
+            # The package manager asks for the password and confirms its own plan.
+            if not cli.in_terminal(cli.mo_command("uninstall", self.app["uninstall_name"])):
+                self.page.win.toast("No terminal app found")
+            self.close()
+            return
+        self.bar.set_visible(False)
+        self.set_can_close(False)
+        self.set_state("running")
+        self.log("")
+        cli.stream([cli.MOLE, "uninstall", "--yes", self.app["uninstall_name"]], self.run_line, self.finished)
+
+    def run_line(self, line):
+        self.run_text.append(line)
+        self.log(line)
+
+    def finished(self, ok):
+        self.set_can_close(True)
+        _, summary = cli.parse_uninstall_plan("\n".join(self.run_text))
+        if ok:
+            # The title already names the app; "Removed: <app>" would repeat it.
+            details = [ln for ln in summary[1:] if not ln.startswith("Removed:")]
+            self.show_result("object-select-symbolic", f"{self.app['name']} Uninstalled", "\n".join(details))
+        else:
+            last = [ln.strip() for ln in self.run_text if ln.strip() and not ln.startswith("=====")]
+            self.show_result("dialog-error-symbolic", "Uninstall Failed", "\n".join(summary) or (last or [""])[-1])
+        self.page.load()
+
+    def show_result(self, icon, title, description):
+        self.result.set_icon_name(icon)
+        self.result.set_title(title)
+        self.result.set_description(GLib.markup_escape_text(description))
+        self.bar.set_visible(False)
+        self.set_state("done")
 
 
 class CheckListPage(Page):

@@ -160,6 +160,39 @@ def parse_report(text):
     return sections, summary
 
 
+
+def parse_uninstall_plan(text):
+    """Split `mo uninstall --dry-run <app>` output into what goes and what stays.
+
+    Lines look like "➤ App Kind · size", "  ● ~/path  12MB" (moves to the
+    Trash), "  ○ ~/path  12MB (kept, note)" and indented notes, "◎" marking a
+    warning. Returns ({leftovers: [{path, size, goes, note}], notes:
+    [{text, warning}]}, summary lines)."""
+    plan, summary, in_summary = {"leftovers": [], "notes": []}, [], False
+    for raw in strip(text).splitlines():
+        line = raw.rstrip()
+        if line.startswith("====="):
+            in_summary = not in_summary
+            continue
+        body = line.strip()
+        if in_summary:
+            if body:
+                summary.append(body)
+            continue
+        if not body or line.startswith(_SECTION):
+            continue
+        glyph = body[:1]
+        if glyph in ("●", "○"):
+            path, _, tail = body[1:].strip().rpartition("  ")
+            size, _, note = tail.strip().partition(" (")
+            note = note.rstrip(")").removeprefix("kept").lstrip(", ")
+            plan["leftovers"].append({"path": path.strip(), "size": size, "goes": glyph == "●", "note": note})
+        elif glyph == "◎":
+            plan["notes"].append({"text": body[1:].strip(), "warning": True})
+        else:
+            plan["notes"].append({"text": body, "warning": False})
+    return plan, summary
+
 def size_bytes(text):
     m = _SIZE.search(text or "")
     return int(float(m.group(1)) * _UNITS[m.group(2)]) if m else 0

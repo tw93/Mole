@@ -80,3 +80,31 @@ print('ok')"
     [ "$status" -eq 0 ]
     [ "$output" == ok ]
 }
+
+@test "the uninstall dialog parses what goes, what stays and the notes of a plan" {
+    gui_python "from mole_gui import cli
+text = '''
+➤ Code apt · 380MB
+  ● ~/.cache/Code  12.0MB
+  ○ ~/.config/Code  40.0MB (kept, holds settings)
+  ○ ~/.vscode  1.0MB (kept)
+  User services stopped and disabled first: code-sync.service
+  ◎ apt also removes the packages that depend on these: code-insiders
+
+======================================================================
+Dry run complete - no changes made
+Would remove: 1 app
+======================================================================
+'''
+plan, summary = cli.parse_uninstall_plan(text)
+assert plan['leftovers'] == [
+    {'path': '~/.cache/Code', 'size': '12.0MB', 'goes': True, 'note': ''},
+    {'path': '~/.config/Code', 'size': '40.0MB', 'goes': False, 'note': 'holds settings'},
+    {'path': '~/.vscode', 'size': '1.0MB', 'goes': False, 'note': ''},
+], plan['leftovers']
+assert [n['warning'] for n in plan['notes']] == [False, True], plan['notes']
+assert summary == ['Dry run complete - no changes made', 'Would remove: 1 app'], summary
+print('ok')"
+    [ "$status" -eq 0 ]
+    [ "$output" == ok ]
+}

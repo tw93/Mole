@@ -190,48 +190,6 @@ class RunDialog(Adw.Dialog):
             self.on_done(ok)
 
 
-def plan_dialog(win, title, args, actions):
-    """Show `mo <args>` output (a dry run) with action buttons under it.
-    actions: [(label, style, callback)]; each closes the dialog first."""
-    dialog = Adw.Dialog(title=title, content_width=640, content_height=520)
-    header = Adw.HeaderBar()
-    buffer = Gtk.TextBuffer()
-    view = Gtk.TextView(buffer=buffer, editable=False, monospace=True, cursor_visible=False,
-                        wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=12, bottom_margin=12,
-                        left_margin=12, right_margin=12)
-    spinner = Gtk.Spinner(spinning=True, halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER,
-                          width_request=32, height_request=32)
-    stack = Gtk.Stack()
-    stack.add_named(spinner, "loading")
-    stack.add_named(Gtk.ScrolledWindow(child=view, vexpand=True), "plan")
-    bar = Gtk.Box(spacing=12, halign=Gtk.Align.END, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
-    buttons = []
-    for label, style, callback in actions:
-        button = Gtk.Button(label=label, sensitive=False)
-        if style:
-            button.add_css_class(style)
-        button.connect("clicked", lambda _b, cb=callback: (dialog.close(), cb()))
-        bar.append(button)
-        buttons.append(button)
-    toolbar = Adw.ToolbarView(content=stack)
-    toolbar.add_top_bar(header)
-    toolbar.add_bottom_bar(bar)
-    dialog.set_child(toolbar)
-    dialog.present(win)
-
-    def done(ok, out, err):
-        buffer.set_text(cli.strip(out + err).strip())
-        stack.set_visible_child_name("plan")
-        for button in buttons:
-            button.set_sensitive(ok)
-
-    cli.run(args, done)
-    return dialog
-
-
-
-
-
 class LineFileDialog(Adw.Dialog):
     """Edit a one-entry-per-line config file the CLI reads (purge_paths,
     whitelist). Comment lines are kept; the CLI still validates each entry."""
