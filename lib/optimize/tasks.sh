@@ -53,7 +53,7 @@ opt_existing_path_size_kb() {
     local size_kb=0
     local size_rc=0
     size_kb=$(get_path_size_kb "$path" 2> /dev/null) || size_rc=$?
-    mole_rc_timeout_or_signal "$size_rc" && return "$size_rc"
+    mole_rc_signal "$size_rc" && return "$size_rc"
     [[ $size_rc -eq 0 ]] || size_kb=0
     opt_numeric_kb "$size_kb"
 }
@@ -253,7 +253,7 @@ opt_cache_refresh() {
         local size_kb=0
         local size_rc=0
         size_kb=$(opt_existing_path_size_kb "$target_path") || size_rc=$?
-        mole_rc_timeout_or_signal "$size_rc" && return "$size_rc"
+        mole_rc_signal "$size_rc" && return "$size_rc"
         [[ $size_rc -eq 0 ]] || size_kb=0
         removable_targets+=("$target_path")
         removable_sizes+=("$size_kb")
@@ -341,7 +341,8 @@ opt_saved_state_cleanup() {
             > "$scan_file" 2> /dev/null || scan_rc=$?
         if [[ $scan_rc -ne 0 ]]; then
             : > "$scan_file" || true
-            mole_rc_timeout_or_signal "$scan_rc" && return "$scan_rc"
+            # A scan timeout fails only this task; a signal still cancels.
+            mole_rc_signal "$scan_rc" && return "$scan_rc"
             echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan old saved states"
             scan_failed=1
         fi
@@ -1242,6 +1243,7 @@ opt_launch_agents_cleanup() {
     fi
 
     local broken_count=0
+    local timed_out_count=0
 
     for plist in "$agents_dir"/*.plist; do
         [[ -f "$plist" ]] || continue
@@ -1251,13 +1253,21 @@ opt_launch_agents_cleanup() {
         binary=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
             /usr/libexec/PlistBuddy -c "Print :Program" \
             "$plist" 2> /dev/null) || plist_rc=$?
-        mole_rc_timeout_or_signal "$plist_rc" && return "$plist_rc"
+        mole_rc_signal "$plist_rc" && return "$plist_rc"
+        if mole_rc_timeout "$plist_rc"; then
+            timed_out_count=$((timed_out_count + 1))
+            continue
+        fi
         if [[ -z "$binary" ]]; then
             plist_rc=0
             binary=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
                 /usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" \
                 "$plist" 2> /dev/null) || plist_rc=$?
-            mole_rc_timeout_or_signal "$plist_rc" && return "$plist_rc"
+            mole_rc_signal "$plist_rc" && return "$plist_rc"
+            if mole_rc_timeout "$plist_rc"; then
+                timed_out_count=$((timed_out_count + 1))
+                continue
+            fi
         fi
 
         # Only an absolute path that is genuinely missing counts as broken.
@@ -1271,7 +1281,7 @@ opt_launch_agents_cleanup() {
             label=$(run_with_timeout "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
                 /usr/libexec/PlistBuddy -c "Print :Label" \
                 "$plist" 2> /dev/null) || plist_rc=$?
-            mole_rc_timeout_or_signal "$plist_rc" && return "$plist_rc"
+            mole_rc_signal "$plist_rc" && return "$plist_rc"
             [[ -n "$label" ]] || label="$(basename "$plist" .plist)"
             # Label and Program come from a third-party plist, so escape
             # sequences in them must not reach the terminal.
@@ -1281,13 +1291,21 @@ opt_launch_agents_cleanup() {
         fi
     done
 
-    if [[ $broken_count -eq 0 ]]; then
+    # A plist that could not be read in time is unknown: it is never called
+    # healthy, and the task counts as failed in the summary line.
+    if [[ $broken_count -eq 0 && $timed_out_count -eq 0 ]]; then
         opt_msg "Launch Agents all healthy"
         optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_UNCHANGED"
         return 0
     fi
 
-    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $broken_count Launch Agent(s) point at a missing program · left in ~/Library/LaunchAgents"
+    if [[ $broken_count -gt 0 ]]; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} $broken_count Launch Agent(s) point at a missing program · left in ~/Library/LaunchAgents"
+    fi
+    if [[ $timed_out_count -gt 0 ]]; then
+        optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_FAILED"
+        return 0
+    fi
     optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_ATTENTION"
 }
 
@@ -1371,27 +1389,33 @@ opt_shared_file_list_repair() {
         > "$scan_file" 2> "${scan_err_file:-/dev/null}" || scan_rc=$?
     if [[ $scan_rc -ne 0 ]]; then
         : > "$scan_file" || true
-        mole_rc_timeout_or_signal "$scan_rc" && return "$scan_rc"
-        # Permission-only errors make the scan unavailable. Mixed errors or
-        # an unreadable diagnostic keep the ordinary failed outcome.
-        local permission_only=false
-        if [[ -n "$scan_err_file" && -s "$scan_err_file" ]]; then
-            local permission_pattern='(Permission denied|Operation not permitted)( \(os error [0-9]+\))?\.?$'
-            local permission_scan_rc=0
-            grep -Ev -e "$permission_pattern" -e '^$' "$scan_err_file" \
-                > /dev/null || permission_scan_rc=$?
-            if [[ $permission_scan_rc -eq 1 ]] &&
-                grep -Eq "$permission_pattern" "$scan_err_file"; then
-                permission_only=true
+        # A scan timeout fails only this task; a signal still cancels.
+        mole_rc_signal "$scan_rc" && return "$scan_rc"
+        if mole_rc_timeout "$scan_rc"; then
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan shared file lists"
+            scan_failed=1
+        else
+            # Permission-only errors make the scan unavailable. Mixed errors or
+            # an unreadable diagnostic keep the ordinary failed outcome.
+            local permission_only=false
+            if [[ -n "$scan_err_file" && -s "$scan_err_file" ]]; then
+                local permission_pattern='(Permission denied|Operation not permitted)( \(os error [0-9]+\))?\.?$'
+                local permission_scan_rc=0
+                grep -Ev -e "$permission_pattern" -e '^$' "$scan_err_file" \
+                    > /dev/null || permission_scan_rc=$?
+                if [[ $permission_scan_rc -eq 1 ]] &&
+                    grep -Eq "$permission_pattern" "$scan_err_file"; then
+                    permission_only=true
+                fi
             fi
+            if [[ "$permission_only" == "true" ]]; then
+                echo -e "  ${GRAY}-${NC} Shared file lists not readable (check directory permissions and Full Disk Access)"
+                optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_UNAVAILABLE"
+                return 0
+            fi
+            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan shared file lists"
+            scan_failed=1
         fi
-        if [[ "$permission_only" == "true" ]]; then
-            echo -e "  ${GRAY}-${NC} Shared file lists not readable (check directory permissions and Full Disk Access)"
-            optimize_task_result "$MOLE_OPTIMIZE_OUTCOME_UNAVAILABLE"
-            return 0
-        fi
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Failed to scan shared file lists"
-        scan_failed=1
     fi
     while IFS= read -r -d '' sfl_file; do
         [[ -f "$sfl_file" ]] || continue
