@@ -2126,15 +2126,20 @@ clean_external_volume_target() {
 
 # Browser caches (Safari/Chrome/Edge/Firefox).
 clean_browsers() {
-    # Refusal reason for the Arc, Brave, Vivaldi, and QQ Browser process guards.
+    # Refusal reason for the browser process guards below.
     local _MOLE_CLEAN_GUARD_REASON=""
     safe_clean ~/Library/Caches/com.apple.Safari/* "Safari cache"
     # Chrome/Chromium. The Caches root holds the live HTTP disk cache, so it
     # waits for Chrome to quit like the Application Support leaves below; an
-    # empty or whitelisted root is not worth a deferral.
+    # empty or whitelisted root is not worth a deferral. Ask before sizing:
+    # walking a running Brave's 1.1GB root took 2s only to defer it.
     if mole_cleanup_targets_exist "$HOME/Library/Caches/Google/Chrome"/*; then
-        _user_safe_clean_process_guarded is_google_chrome_running "Chrome" "Chrome cache" \
-            ~/Library/Caches/Google/Chrome/* "Chrome cache" || true
+        if mole_clean_process_guard is_google_chrome_running "Chrome started"; then
+            _user_safe_clean_process_guarded is_google_chrome_running "Chrome" "Chrome cache" \
+                ~/Library/Caches/Google/Chrome/* "Chrome cache" || true
+        else
+            mole_report_guard_stop "Chrome cache" mole_defer_cleanup_family "Chrome"
+        fi
     fi
     # Do not clean Chromium Service Worker ScriptCache. Even when the browser is
     # closed, removing MV3 extension bytecode can break extension service
@@ -2254,8 +2259,12 @@ clean_browsers() {
     fi
     if [[ -d ~/Library/Application\ Support/BraveSoftware ]]; then
         if mole_cleanup_targets_exist "$HOME/Library/Caches/BraveSoftware/Brave-Browser"/*; then
-            _user_safe_clean_process_guarded is_brave_browser_running "Brave" "Brave cache" \
-                ~/Library/Caches/BraveSoftware/Brave-Browser/* "Brave cache" || true
+            if mole_clean_process_guard is_brave_browser_running "Brave started"; then
+                _user_safe_clean_process_guarded is_brave_browser_running "Brave" "Brave cache" \
+                    ~/Library/Caches/BraveSoftware/Brave-Browser/* "Brave cache" || true
+            else
+                mole_report_guard_stop "Brave cache" mole_defer_cleanup_family "Brave"
+            fi
         fi
         local _brave_profile
         if mole_clean_process_guard is_brave_browser_running "Brave started"; then
