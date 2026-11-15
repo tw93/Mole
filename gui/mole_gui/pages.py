@@ -670,7 +670,13 @@ class InstallerPage(CheckListPage):
         paths = [p for p, _ in self.selected()]
 
         def done(ok, out, err):
-            self.win.toast(f"{len(paths)} files moved to the Trash" if ok else cli.strip(err or out).strip().splitlines()[-1])
+            # The CLI checks each file again before the move; one opened since stays.
+            moved = sum(1 for ln in cli.strip(out).splitlines() if ln.strip().startswith("✓"))
+            if ok:
+                self.win.toast(f"{moved} of {len(paths)} files moved to the Trash" if moved < len(paths)
+                               else f"{moved} {'file' if moved == 1 else 'files'} moved to the Trash")
+            else:
+                self.win.toast((cli.strip(err or out).strip().splitlines() or ["Could not move them"])[-1])
             self.load()
 
         cli.run(["installer", "--yes", *paths], done)

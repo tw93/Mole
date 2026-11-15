@@ -187,7 +187,11 @@ def trash(paths, callback):
         return
 
     def done(p, result):
-        _, out, err = p.communicate_utf8_finish(result)
+        try:
+            _, out, err = p.communicate_utf8_finish(result)
+        except GLib.Error as e:
+            callback(False, e.message)
+            return
         callback(p.get_successful(), (out or err or "").strip())
 
     proc.communicate_utf8_async(None, None, done)
