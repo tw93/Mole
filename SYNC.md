@@ -2,6 +2,12 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-15: Analyze hard-link sizes
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| Count each hard-linked file once per scan | Implemented in the Mole CLI (Windows) worktree from `59f3dc5a`; source only. Implemented in Mole CLI (macOS) at `5dd93fe3` through `(dev, ino)`. Mole CLI (Linux) and Mole for Windows: Pending source check. Mole Mac: Pending source check. | Native Windows Go tests passed. The 100,000-entry NTFS fixtures and limits are in [the development record](docs/development-record.md). Check the unavailable products' scanners before transfer. No release receipt exists. |
+
 ## 2026-11-15: Analyze overview fixes from Mole CLI (macOS) (#1992, #1996)
 
 | Change | Destinations | Evidence and next check |

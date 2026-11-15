@@ -102,6 +102,40 @@ func (p *scanPublication) finish(action func()) {
 type scanLimiter struct {
 	entrySem chan struct{}
 	walkSem  chan struct{}
+	seen     [32]scanSeenShard
+	deduped  atomic.Bool
+}
+
+type scanSeenShard struct {
+	mu      sync.Mutex
+	volumes map[uint32]map[uint64]struct{}
+}
+
+func (l *scanLimiter) countFile(path string, entry scanDirEntry, info os.FileInfo) (int64, bool) {
+	if l != nil && entry.fallback == nil && entry.record.FileID != 0 && entry.record.Attributes&0x400 == 0 {
+		id := entry.record.FileID
+		volume := entry.record.VolumeSerial
+		shard := &l.seen[(id^(id>>32)^uint64(volume))%uint64(len(l.seen))]
+		shard.mu.Lock()
+		if shard.volumes == nil {
+			shard.volumes = make(map[uint32]map[uint64]struct{}, 1)
+		}
+		files := shard.volumes[volume]
+		if files == nil {
+			files = make(map[uint64]struct{})
+			shard.volumes[volume] = files
+		}
+		_, loaded := files[id]
+		if !loaded {
+			files[id] = struct{}{}
+		}
+		shard.mu.Unlock()
+		if loaded {
+			l.deduped.Store(true)
+			return 0, true
+		}
+	}
+	return diskSize(path, info), false
 }
 
 func newScanLimiter(childCount int) *scanLimiter {
@@ -186,7 +220,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 	if err := ctx.Err(); err != nil {
 		return scanResult{}, err
 	}
-	children, err := os.ReadDir(root)
+	children, err := readScanEntries(root)
 	if err != nil {
 		return scanResult{}, err
 	}
@@ -295,7 +329,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 				var result scanResult
 				if shouldFoldDirWithPath(name, fullPath) {
 					size, err := calculateDirSizeFast(ctx, fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
-					result = scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err)}
+					result = scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), dedupedHardlink: limiter.deduped.Load()}
 				} else {
 					result = scanSubdir(ctx, fullPath, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 				}
@@ -309,11 +343,12 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 				}
 				atomic.AddInt64(dirsScanned, 1)
 				trySend(ctx, entryChan, dirEntry{
-					Name:  name,
-					Path:  fullPath,
-					Size:  result.TotalSize,
-					State: result.State,
-					IsDir: true,
+					Name:            name,
+					Path:            fullPath,
+					Size:            result.TotalSize,
+					State:           result.State,
+					IsDir:           true,
+					DedupedHardlink: result.dedupedHardlink,
 				}, scanSendTimeout)
 			}
 			if limiter.tryAcquireEntry() {
@@ -334,16 +369,17 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 			noteFailure(err)
 			continue
 		}
-		size := diskSize(fullPath, info)
+		size, duplicate := limiter.countFile(fullPath, child, info)
 		atomic.AddInt64(&total, size)
 		localFilesScanned++
 		localBytesScanned += size
 
 		trySend(ctx, entryChan, dirEntry{
-			Name:       child.Name(),
-			Path:       fullPath,
-			Size:       size,
-			LastAccess: lastAccessTime(info),
+			Name:            child.Name(),
+			Path:            fullPath,
+			Size:            size,
+			DedupedHardlink: duplicate,
+			LastAccess:      lastAccessTime(info),
 		}, scanSendTimeout)
 
 		if !shouldSkipFileForLargeTracking(fullPath) && size >= atomic.LoadInt64(&largeFileMinSize) {
@@ -391,6 +427,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 		LargeFiles:       largeFiles,
 		TotalSize:        total,
 		TotalFiles:       localFilesScanned + subtreeFilesScanned.Load(),
+		dedupedHardlink:  limiter.deduped.Load(),
 		transientFailure: transient.Load(),
 	}, nil
 }
@@ -487,7 +524,7 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 			currentPath.Store(dirPath)
 		}
 
-		entries, err := os.ReadDir(dirPath)
+		entries, err := readScanEntries(dirPath)
 		if err != nil {
 			failures.record(err)
 			return
@@ -523,7 +560,8 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 				failures.record(err)
 				continue
 			}
-			localBytes += diskSize(filepath.Join(dirPath, entry.Name()), info)
+			size, _ := limiter.countFile(filepath.Join(dirPath, entry.Name()), entry, info)
+			localBytes += size
 			localFiles++
 		}
 

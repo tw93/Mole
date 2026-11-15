@@ -59,12 +59,13 @@ func isTransientFailure(err error) bool {
 }
 
 type dirEntry struct {
-	State      scanState
-	Name       string
-	Path       string
-	Size       int64
-	IsDir      bool
-	LastAccess time.Time
+	State           scanState
+	Name            string
+	Path            string
+	Size            int64
+	DedupedHardlink bool
+	IsDir           bool
+	LastAccess      time.Time
 }
 
 type fileEntry struct {
@@ -74,11 +75,12 @@ type fileEntry struct {
 }
 
 type scanResult struct {
-	State      scanState
-	Entries    []dirEntry
-	LargeFiles []fileEntry
-	TotalSize  int64
-	TotalFiles int64
+	State           scanState
+	Entries         []dirEntry
+	LargeFiles      []fileEntry
+	TotalSize       int64
+	TotalFiles      int64
+	dedupedHardlink bool
 	// transientFailure is true when some coverage was lost to a failure that
 	// may not recur (see isPermissionFailure). Such a result is refreshed on
 	// the next visit instead of being reused.
@@ -86,7 +88,7 @@ type scanResult struct {
 }
 
 func (r scanResult) reusable() bool {
-	return r.State == scanComplete || (r.State == scanPartial && !r.transientFailure)
+	return !r.dedupedHardlink && (r.State == scanComplete || (r.State == scanPartial && !r.transientFailure))
 }
 
 type historyEntry struct {
@@ -487,7 +489,7 @@ func snapshotFromModel(m model) historyEntry {
 func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 	filtered := make([]dirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Size > 0 || entry.State != scanComplete {
+		if entry.Size > 0 || entry.State != scanComplete || entry.DedupedHardlink {
 			filtered = append(filtered, entry)
 		}
 	}

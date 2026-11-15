@@ -105,8 +105,9 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 	var failures scanFailures
 	cutoff := time.Now().AddDate(0, 0, -daysOld)
 	var total int64
+	limiter := newScanLimiter(0)
 
-	entries, err := os.ReadDir(dir)
+	entries, err := readScanEntries(dir)
 	if err != nil {
 		return 0, err
 	}
@@ -129,11 +130,12 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 			continue
 		}
 		if entry.IsDir() {
-			size, err := calculateDirSizeFast(ctx, filepath.Join(dir, entry.Name()), nil, nil, nil, nil, nil)
+			size, err := calculateDirSizeFast(ctx, filepath.Join(dir, entry.Name()), limiter, nil, nil, nil, nil)
 			failures.record(err)
 			total += size
 		} else {
-			total += diskSize(filepath.Join(dir, entry.Name()), info)
+			size, _ := limiter.countFile(filepath.Join(dir, entry.Name()), entry, info)
+			total += size
 		}
 	}
 
