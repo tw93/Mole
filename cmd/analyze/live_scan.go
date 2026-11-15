@@ -148,6 +148,7 @@ func readLiveScanInitialEntriesWithLimiter(root string, limiter *scanLimiter) (s
 	largeFiles := make([]fileEntry, 0)
 	var totalSize int64
 	var totalFiles int64
+	containsDedupedHardlink := false
 	state := scanComplete
 	transient := false
 
@@ -205,6 +206,7 @@ func readLiveScanInitialEntriesWithLimiter(root string, limiter *scanLimiter) (s
 			continue
 		}
 		size, duplicate := limiter.countFile(fullPath, child, info)
+		containsDedupedHardlink = containsDedupedHardlink || duplicate
 		totalSize += size
 		totalFiles++
 		entries = append(entries, dirEntry{
@@ -221,7 +223,7 @@ func readLiveScanInitialEntriesWithLimiter(root string, limiter *scanLimiter) (s
 
 	sortDirEntriesBySize(entries)
 	largeFiles = topLargeFiles(largeFiles)
-	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state, transientFailure: transient, dedupedHardlink: limiter.deduped.Load()}, targets, nil
+	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state, transientFailure: transient, dedupedHardlink: limiter.deduped.Load(), containsDedupedHardlink: containsDedupedHardlink}, targets, nil
 }
 
 func runLiveScan(
@@ -288,7 +290,7 @@ func runLiveScan(
 				Size:            result.TotalSize,
 				State:           result.State,
 				IsDir:           true,
-				DedupedHardlink: result.dedupedHardlink,
+				DedupedHardlink: result.containsDedupedHardlink,
 			}
 			mu.Lock()
 			entriesByPath[target.path] = entry
@@ -354,13 +356,14 @@ func runLiveScan(
 		state = scanPartial
 	}
 	result := scanResult{
-		State:            state,
-		Entries:          finalEntries,
-		LargeFiles:       largeFiles,
-		TotalSize:        totalSize.Load(),
-		TotalFiles:       totalFiles.Load(),
-		dedupedHardlink:  limiter.deduped.Load(),
-		transientFailure: transient.Load(),
+		State:                   state,
+		Entries:                 finalEntries,
+		LargeFiles:              largeFiles,
+		TotalSize:               totalSize.Load(),
+		TotalFiles:              totalFiles.Load(),
+		dedupedHardlink:         limiter.deduped.Load(),
+		containsDedupedHardlink: limiter.deduped.Load(),
+		transientFailure:        transient.Load(),
 	}
 
 	stream.publish(liveScanEventMsg{id: id, path: root, kind: liveScanComplete, result: result})
@@ -431,11 +434,11 @@ func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan ch
 	}
 
 	if target.kind == liveScanTargetFoldedDirectory {
-		size, err := calculateDirSizeFast(ctx, target.path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+		size, containsDeduped, err := calculateDirSizeFastWithDedup(ctx, target.path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 		if ctx.Err() != nil {
 			return scanResult{}, ctx.Err()
 		}
-		return scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err)}, nil
+		return scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), dedupedHardlink: limiter.deduped.Load(), containsDedupedHardlink: containsDeduped}, nil
 	}
 
 	result := scanSubdir(ctx, target.path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)

@@ -75,12 +75,15 @@ type fileEntry struct {
 }
 
 type scanResult struct {
-	State           scanState
-	Entries         []dirEntry
-	LargeFiles      []fileEntry
-	TotalSize       int64
-	TotalFiles      int64
+	State      scanState
+	Entries    []dirEntry
+	LargeFiles []fileEntry
+	TotalSize  int64
+	TotalFiles int64
+	// This flag keeps scan-order-dependent results out of reusable caches.
 	dedupedHardlink bool
+	// This flag keeps a zero-byte directory visible when its own subtree has duplicate links.
+	containsDedupedHardlink bool
 	// transientFailure is true when some coverage was lost to a failure that
 	// may not recur (see isPermissionFailure). Such a result is refreshed on
 	// the next visit instead of being reused.

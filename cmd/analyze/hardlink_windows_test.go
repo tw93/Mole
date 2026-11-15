@@ -82,6 +82,85 @@ func TestLiveInitialScanStartsWithFreshFileIdentities(t *testing.T) {
 	}
 }
 
+func TestLiveFoldedDirectoryWithCrossDirectoryHardLinksIsNotReusable(t *testing.T) {
+	root := t.TempDir()
+	folded := filepath.Join(root, "node_modules")
+	if err := os.Mkdir(folded, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := filepath.Join(root, "shared.bin")
+	if err := os.WriteFile(original, make([]byte, 1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(original, filepath.Join(folded, "shared-link.bin")); err != nil {
+		t.Skipf("the test volume cannot create hard links: %v", err)
+	}
+
+	limiter := newScanLimiter(0)
+	initial, targets, err := readLiveScanInitialEntriesWithLimiter(root, limiter)
+	if err != nil || initial.TotalSize != 1024 || len(targets) != 1 {
+		t.Fatalf("initial scan = %+v, targets %+v, error %v", initial, targets, err)
+	}
+	if targets[0].kind != liveScanTargetFoldedDirectory {
+		t.Fatalf("target kind = %v, want folded directory", targets[0].kind)
+	}
+	ctx := context.Background()
+	stream := newLiveScanEventStream(newScanPublication(ctx, nil), len(targets))
+	runLiveScan(ctx, 1, root, initial, targets, limiter, new(int64), new(int64), new(int64), nil, stream)
+	var foldedResult, finalResult scanResult
+	var sawFolded, sawComplete bool
+	for len(stream.events) > 0 {
+		event := <-stream.events
+		if event.kind == liveScanChildDone {
+			foldedResult = event.result
+			sawFolded = true
+		}
+		if event.kind == liveScanComplete {
+			finalResult = event.result
+			sawComplete = true
+		}
+	}
+	if !sawFolded || foldedResult.TotalSize != 0 || !foldedResult.dedupedHardlink || !foldedResult.containsDedupedHardlink || foldedResult.reusable() {
+		t.Fatalf("folded result = %+v, received %v", foldedResult, sawFolded)
+	}
+	if !sawComplete || finalResult.TotalSize != 1024 || len(filterNonEmptyEntries(finalResult.Entries)) != 2 {
+		t.Fatalf("final result = %+v, received %v", finalResult, sawComplete)
+	}
+}
+
+func TestUnrelatedEmptyDirectoriesStayHiddenAfterHardlinkDedup(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"left", "right", "empty-a", "empty-b", "normal"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original := filepath.Join(root, "left", "shared.bin")
+	if err := os.WriteFile(original, make([]byte, 1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(original, filepath.Join(root, "right", "shared-link.bin")); err != nil {
+		t.Skipf("the test volume cannot create hard links: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "normal", "unique.bin"), make([]byte, 512), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := scanPathConcurrentAllEntries(context.Background(), root, new(int64), new(int64), new(int64), nil)
+	if err != nil || result.TotalSize != 1536 || !result.dedupedHardlink || !result.containsDedupedHardlink {
+		t.Fatalf("scan = %+v, error %v", result, err)
+	}
+	visible := filterNonEmptyEntries(result.Entries)
+	if len(visible) != 3 {
+		t.Fatalf("visible entries = %+v, want left, right, and normal", visible)
+	}
+	for _, entry := range visible {
+		if entry.Name == "empty-a" || entry.Name == "empty-b" {
+			t.Fatalf("unrelated empty directory remains visible: %+v", entry)
+		}
+	}
+}
+
 func TestScanWithoutHardLinksKeepsFileSizes(t *testing.T) {
 	root := t.TempDir()
 	for index, name := range []string{"one.bin", "two.bin"} {
