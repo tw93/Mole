@@ -719,8 +719,10 @@ clean_deep_system() {
     # scan: macOS buries the bytes in the opaque "System Data" bucket, and a
     # stuck (re)download can leave hundreds of GB of ~1GB CFNetworkDownload_*.tmp
     # files behind (#1253). Scope the removal to the idleassetsd temp dir and to
-    # that exact aborted-download name, older than the temp-file retention
-    # window, so an in-progress download (recent mtime) is never touched. macOS
+    # that exact aborted-download name, untouched for an hour, so an in-progress
+    # download (recent mtime) is never touched. A day-based window never fired:
+    # macOS empties the temp dir at every restart and a jetsam kill loop writes
+    # a fresh ~1GB file every few minutes, so no file lives a week (#1994). macOS
     # re-fetches assets on demand, so the removal is non-destructive. The locator
     # needs sudo because the whole tree is root-owned; safe_sudo_find_delete then
     # re-applies the shared protection and whitelist gates per file.
@@ -745,7 +747,7 @@ clean_deep_system() {
                 fi
                 local idle_tmp_rc=0
                 safe_sudo_find_delete "$idle_tmp_dir" "CFNetworkDownload_*.tmp" \
-                    "$MOLE_TEMP_FILE_AGE_DAYS" "f" "5" "$system_cleanup_deadline" || idle_tmp_rc=$?
+                    "60m" "f" "5" "$system_cleanup_deadline" || idle_tmp_rc=$?
                 if [[ $idle_tmp_rc -ge 128 ]]; then
                     idle_tmp_status=$idle_tmp_rc
                     break

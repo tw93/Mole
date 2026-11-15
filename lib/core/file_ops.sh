@@ -3623,8 +3623,16 @@ safe_sudo_find_delete() {
         log_error "Invalid type filter: $type_filter, must be 'f' or 'd'"
         return 1
     fi
-    if [[ ! "$age_days" =~ ^[0-9]+$ ]]; then
-        log_error "Invalid age: $age_days, must be a non-negative integer"
+    # Age is whole days, or whole minutes written as `<N>m` for a target whose
+    # files never live a day (#1994). Scan and the per-file recheck below use
+    # the same find test.
+    local age_test="-mtime"
+    local age_value="$age_days"
+    if [[ "$age_days" =~ ^([0-9]+)m$ ]]; then
+        age_test="-mmin"
+        age_value="${BASH_REMATCH[1]}"
+    elif [[ ! "$age_days" =~ ^[0-9]+$ ]]; then
+        log_error "Invalid age: $age_days, must be a non-negative integer of days or <N>m minutes"
         return 1
     fi
     if [[ ! "$max_depth" =~ ^[1-5]$ ]]; then
@@ -3749,7 +3757,7 @@ safe_sudo_find_delete() {
         return "$link_rc"
     fi
 
-    debug_log "Finding, sudo, in $base_dir: $pattern, age: ${age_days}d, type: $type_filter"
+    debug_log "Finding, sudo, in $base_dir: $pattern, age: $age_test +$age_value, type: $type_filter"
 
     local find_args=("-maxdepth" "$max_depth")
     local match_all_names=false
@@ -3774,8 +3782,8 @@ safe_sudo_find_delete() {
         fi
     fi
     find_args+=("-type" "$type_filter")
-    if [[ "$age_days" -gt 0 ]]; then
-        find_args+=("-mtime" "+$age_days")
+    if [[ "$age_value" -gt 0 ]]; then
+        find_args+=("$age_test" "+$age_value")
     fi
 
     # Materialize the completed scan before deleting anything. Process
@@ -3978,8 +3986,9 @@ safe_sudo_find_delete() {
                 _mole_bounded_sudo "$batch_timeout" \
                     -n xargs -0 /bin/sh -c '
                         stat_tool=$1
-                        age_days=$2
-                        shift 2
+                        age_test=$2
+                        age_value=$3
+                        shift 3
                         for record do
                             dev=${record%%:*}
                             rest=${record#*:}
@@ -3988,8 +3997,8 @@ safe_sudo_find_delete() {
                             mtime=${rest%%:*}
                             path=${rest#*:}
                             expected=$dev:$ino:$mtime
-                            if [ "$age_days" -gt 0 ]; then
-                                actual=$(/usr/bin/find "$path" -maxdepth 0 -type f -mtime "+$age_days" \
+                            if [ "$age_value" -gt 0 ]; then
+                                actual=$(/usr/bin/find "$path" -maxdepth 0 -type f "$age_test" "+$age_value" \
                                     -exec "$stat_tool" -f%d:%i:%m {} \; 2>/dev/null) || continue
                             else
                                 actual=$($stat_tool -f%d:%i:%m "$path" 2>/dev/null) || continue
@@ -3998,7 +4007,7 @@ safe_sudo_find_delete() {
                             /bin/rm -f -- "$path" || exit 1
                             printf "%s\0" "$path"
                         done
-                    ' sh "$STAT_BSD" "$age_days" > "$batch_result_file" 2> /dev/null || batch_rc=$?
+                    ' sh "$STAT_BSD" "$age_test" "$age_value" > "$batch_result_file" 2> /dev/null || batch_rc=$?
 
             local batch_ts=""
             local batch_command=""

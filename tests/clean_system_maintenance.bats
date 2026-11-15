@@ -373,7 +373,7 @@ sudo() {
     return 0
 }
 safe_sudo_find_delete() {
-    echo "safe_sudo_find_delete:$1:$2" >> "$CALL_LOG"
+    echo "safe_sudo_find_delete:$1:$2:$3" >> "$CALL_LOG"
     if [[ "$1" == "$IDLE_DIR" ]]; then
         MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1
     else
@@ -397,7 +397,9 @@ EOF
     [ "$status" -eq 0 ]
     # Scoped to the idleassetsd temp dir and the aborted-download name only:
     # never a bare CFNetworkDownload_*.tmp sweep across all of /private/var/folders.
-    [[ "$output" == *"safe_sudo_find_delete:/private/var/folders/zz/abcdef/T/com.apple.idleassetsd:CFNetworkDownload_*.tmp"* ]] || return 1
+    # An hour idle, not the day-based temp window: the folder empties at every
+    # restart, so its files never live a week (#1994).
+    [[ "$output" == *"safe_sudo_find_delete:/private/var/folders/zz/abcdef/T/com.apple.idleassetsd:CFNetworkDownload_*.tmp:60m"* ]] || return 1
     [[ "$output" == *"SUCCESS:Stale wallpaper downloads"* ]] || return 1
 }
 

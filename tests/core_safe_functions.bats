@@ -2768,6 +2768,55 @@ SCRIPT
     [[ "$output" != *"REMOVED $target_file"* ]]
 }
 
+@test "safe_sudo_find_delete minute ages remove only files idle that long, at scan and recheck (#1994)" {
+    local target_dir="$TEST_DIR/sudo-minute-age-target"
+    local idle_file="$target_dir/CFNetworkDownload_idle.tmp"
+    local fresh_file="$target_dir/CFNetworkDownload_fresh.tmp"
+    mkdir -p "$target_dir"
+    touch "$idle_file" "$fresh_file"
+    touch -t "$(/bin/date -v-2H '+%Y%m%d%H%M.%S')" "$idle_file"
+    touch -t "$(/bin/date -v-10M '+%Y%m%d%H%M.%S')" "$fresh_file"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" \
+        MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        test)
+            shift
+            command test "$@"
+            ;;
+        find)
+            shift
+            command find "$@"
+            ;;
+        xargs)
+            shift
+            command xargs "$@"
+            ;;
+        *) "$@" ;;
+    esac
+}
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "60m" "f" "1" || rc=$?
+printf 'RC=%s\nCOUNT=%s\n' "$rc" "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}"
+bad=0
+safe_sudo_find_delete "$TARGET_DIR" "CFNetworkDownload_*.tmp" "60x" "f" "1" 2> /dev/null || bad=$?
+printf 'BAD=%s\n' "$bad"
+SCRIPT
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"COUNT=1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"BAD=1"* ]] || { echo "$output"; return 1; }
+    [[ ! -e "$idle_file" ]] || return 1
+    [[ -e "$fresh_file" ]]
+}
+
 @test "safe_sudo_find_delete keeps a path replaced after identity capture" {
     local target_dir="$TEST_DIR/sudo-identity-replace-target"
     local target_file="$target_dir/old.log"
