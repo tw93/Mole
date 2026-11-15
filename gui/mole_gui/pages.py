@@ -334,7 +334,10 @@ class ReportPage(Page):
         self.run_button.set_sensitive(True)
         self.show_content()
 
-    def item_row(self, item):
+    # Width of the leading slot; Clean sets it to its check box's so every title lines up.
+    prefix_width = -1
+
+    def item_row(self, item, prefix=None):
         icons = {
             "ok": "object-select-symbolic",
             "skipped": "media-playback-pause-symbolic",
@@ -342,18 +345,24 @@ class ReportPage(Page):
             "attention": "dialog-warning-symbolic",
             "error": "dialog-error-symbolic",
         }
+        if prefix is None and (item["kind"] in icons or self.prefix_width > 0):
+            prefix = Gtk.Image(icon_name=icons.get(item["kind"], ""), width_request=self.prefix_width)
         subtitle = item["detail"]
         if item["hints"]:
             subtitle = "\n".join(filter(None, [subtitle, *item["hints"]]))
         if item["subs"]:
             r = Adw.ExpanderRow(title=GLib.markup_escape_text(item["label"]), subtitle=GLib.markup_escape_text(subtitle))
-            r.add_prefix(Gtk.Image(icon_name=icons.get(item["kind"], "")))
+            if prefix is not None:
+                r.add_prefix(prefix)
             for sub in item["subs"]:
                 child = Adw.ActionRow(title=GLib.markup_escape_text(sub))
                 child.add_css_class("monospace")
                 r.add_row(child)
             return r
-        return row(item["label"], subtitle, icon=icons.get(item["kind"]))
+        r = row(item["label"], subtitle)
+        if prefix is not None:
+            r.add_prefix(prefix)
+        return r
 
     def ask_run(self):
         confirm(self.win, f"{self.run_title}?", self.run_body(), self.run_label, self.run, destructive=False)
@@ -380,6 +389,7 @@ class CleanPage(ReportPage):
 
     def __init__(self, win):
         super().__init__(win)
+        self.prefix_width = Gtk.CheckButton().measure(Gtk.Orientation.HORIZONTAL, -1)[1]
         self.whitelist = cli.config_path("whitelist")
         keep = Gtk.Button(icon_name="security-high-symbolic", tooltip_text="Kept Items")
         keep.connect("clicked", lambda *_: LineFileDialog(
@@ -393,16 +403,16 @@ class CleanPage(ReportPage):
                 "Steps that need your password are skipped here; use Open in Terminal for them.")
 
     def item_row(self, item):
-        r = super().item_row(item)
         whitelisted = "whitelist" in item["detail"]
-        if item["kind"] in ("dry", "skipped") and (item["bytes"] or whitelisted) and not isinstance(r, Adw.ExpanderRow):
-            check = Gtk.CheckButton(active=not whitelisted, valign=Gtk.Align.CENTER,
-                                    tooltip_text="Clean this; uncheck to keep it (whitelist)")
-            check.connect("toggled", lambda c, label=item["label"]: self.set_kept(label, not c.get_active()))
-            r.add_prefix(check)
-            r.set_activatable_widget(check)
-            if item["bytes"]:
-                r.add_suffix(dim_label(cli.human(item["bytes"])))
+        if item["kind"] not in ("dry", "skipped") or not (item["bytes"] or whitelisted) or item["subs"]:
+            return super().item_row(item)
+        check = Gtk.CheckButton(active=not whitelisted, valign=Gtk.Align.CENTER,
+                                tooltip_text="Clean this; uncheck to keep it (whitelist)")
+        check.connect("toggled", lambda c, label=item["label"]: self.set_kept(label, not c.get_active()))
+        r = super().item_row(item, prefix=check)
+        r.set_activatable_widget(check)
+        if item["bytes"]:
+            r.add_suffix(dim_label(cli.human(item["bytes"])))
         return r
 
     def set_kept(self, label, keep):
