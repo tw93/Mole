@@ -9,7 +9,7 @@ from datetime import datetime
 from gi.repository import Adw, Gio, GLib, Graphene, Gsk, Gtk, Pango
 
 from . import cli
-from .base import LineFileDialog, Page, RunDialog, confirm, dim_label, flat_button, row, tag
+from .base import LineFileDialog, Page, RunDialog, confirm, dim_label, flat_button, output_view, row, tag
 
 HOME = GLib.get_home_dir()
 
@@ -536,9 +536,7 @@ class UninstallDialog(Adw.Dialog):
         self.run_text = []
 
         self.buffer = Gtk.TextBuffer()
-        console = Gtk.TextView(buffer=self.buffer, editable=False, monospace=True, cursor_visible=False,
-                               wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=12, bottom_margin=12,
-                               left_margin=12, right_margin=12)
+        console = output_view(self.buffer)
         self.console_button = Gtk.ToggleButton(icon_name="utilities-terminal-symbolic", tooltip_text="Output")
         self.console_button.connect("toggled", lambda *_: self.views.set_visible_child_name(
             "console" if self.console_button.get_active() else self.state))
@@ -557,6 +555,10 @@ class UninstallDialog(Adw.Dialog):
 
         header = Adw.HeaderBar()
         header.pack_start(self.console_button)
+        self.proc = None
+        self.stop_button = Gtk.Button(label="Stop", visible=False)
+        self.stop_button.connect("clicked", lambda *_: self.proc and cli.stop(self.proc))
+        header.pack_end(self.stop_button)
         self.bar = Gtk.Box(spacing=12, halign=Gtk.Align.END, margin_top=12, margin_bottom=12,
                            margin_start=12, margin_end=12)
         cancel = Gtk.Button(label="Cancel")
@@ -606,19 +608,23 @@ class UninstallDialog(Adw.Dialog):
         head.append(names)
         self.content.append(head)
 
-        groups = [("Moves to the Trash", [x for x in plan["leftovers"] if x["goes"]], "user-trash-symbolic"),
-                  ("Kept", [x for x in plan["leftovers"] if not x["goes"]], "folder-symbolic")]
-        for title_text, items, icon in groups:
+        # The plan's total belongs under the group it counts, not as a note.
+        total = next((n for n in plan["notes"] if n["text"].startswith("Leftovers to Trash:")), None)
+        notes = [n for n in plan["notes"] if n is not total]
+        groups = [("Moves to the Trash", [x for x in plan["leftovers"] if x["goes"]], "user-trash-symbolic",
+                   total["text"].split(":", 1)[1].strip() if total else ""),
+                  ("Kept", [x for x in plan["leftovers"] if not x["goes"]], "folder-symbolic", "")]
+        for title_text, items, icon, description in groups:
             if not items:
                 continue
-            group = Adw.PreferencesGroup(title=title_text)
+            group = Adw.PreferencesGroup(title=title_text, description=GLib.markup_escape_text(description))
             for x in items:
                 r = row(x["path"], x["note"], icon=icon, suffix=x["size"])
                 group.add(r)
             self.content.append(group)
-        if plan["notes"]:
+        if notes:
             group = Adw.PreferencesGroup()
-            for n in plan["notes"]:
+            for n in notes:
                 group.add(row(n["text"], icon="dialog-warning-symbolic" if n["warning"] else "dialog-information-symbolic"))
             self.content.append(group)
         self.go.set_sensitive(True)
@@ -635,13 +641,15 @@ class UninstallDialog(Adw.Dialog):
         self.set_can_close(False)
         self.set_state("running")
         self.log("")
-        cli.stream([cli.MOLE, "uninstall", "--yes", self.app["uninstall_name"]], self.run_line, self.finished)
+        self.stop_button.set_visible(True)
+        self.proc = cli.stream([cli.MOLE, "uninstall", "--yes", self.app["uninstall_name"]], self.run_line, self.finished)
 
     def run_line(self, line):
         self.run_text.append(line)
         self.log(line)
 
     def finished(self, ok):
+        self.stop_button.set_visible(False)
         self.set_can_close(True)
         _, summary = cli.parse_uninstall_plan("\n".join(self.run_text))
         if ok:

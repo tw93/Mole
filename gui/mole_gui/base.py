@@ -145,6 +145,13 @@ def confirm(win, heading, body, action_label, on_confirm, destructive=True):
     dialog.present(win)
 
 
+def output_view(buffer):
+    """A read-only monospace view of a command's output."""
+    return Gtk.TextView(buffer=buffer, editable=False, monospace=True, cursor_visible=False,
+                        wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=12, bottom_margin=12,
+                        left_margin=12, right_margin=12)
+
+
 class RunDialog(Adw.Dialog):
     """Show a command's output line by line while it runs."""
 
@@ -162,9 +169,7 @@ class RunDialog(Adw.Dialog):
         self.close_button.connect("clicked", lambda *_: self.close())
         header.pack_end(self.close_button)
         self.buffer = Gtk.TextBuffer()
-        view = Gtk.TextView(buffer=self.buffer, editable=False, monospace=True, cursor_visible=False,
-                            wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=12, bottom_margin=12,
-                            left_margin=12, right_margin=12)
+        view = output_view(self.buffer)
         self.view = view
         scrolled = Gtk.ScrolledWindow(child=view, vexpand=True)
         toolbar = Adw.ToolbarView(content=scrolled)
