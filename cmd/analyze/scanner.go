@@ -38,7 +38,9 @@ type scanFailures struct {
 var duBinary = findDuBinary()
 
 func findDuBinary() string {
-	for _, p := range []string{"/usr/bin/du", "/bin/du"} {
+	// Ubuntu 26.10 makes /usr/bin/du the uutils one, which ignores the
+	// backslash escapes in --exclude; GNU du stays installed as gnudu.
+	for _, p := range []string{"/usr/bin/gnudu", "/usr/bin/du", "/bin/du"} {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
