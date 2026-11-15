@@ -330,7 +330,7 @@ Source heads read on 2026-11-10: `main` at `1baecd15`, `windows` at `075215a8`, 
 
 ## 2026-11-14 Nightly commit lookup on large responses
 
-Source-only fix for Mole CLI (macOS), `c7cc36f3`: `get_latest_commit_from_github` parses the complete commit JSON with `plutil`, so an early-closing pipe cannot discard the top-level SHA when the response includes many file objects. API-only and explicit lookups pass the new 300-file regression without using the Git fallback. The complete local runner passes in a fresh shared worktree; this is not a package release.
+Source-only fix for Mole CLI (macOS), `fc4316b0`: `get_latest_commit_from_github` parses the complete commit JSON with `plutil`, so an early-closing pipe cannot discard the top-level SHA when the response includes many file objects. API-only and explicit lookups pass the new 300-file regression without using the Git fallback. The complete local runner passes in a fresh shared worktree; this is not a package release.
 
 | Product | Status | Current consumer |
 | --- | --- | --- |
