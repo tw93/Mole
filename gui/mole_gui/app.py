@@ -29,6 +29,50 @@ def version():
         return "unknown"
 
 
+def main_menu():
+    """The header bar's main menu."""
+    menu = Gio.Menu()
+    menu.append_section(None, mole_section())
+    menu.append("About Mole", "win.about")
+    return menu
+
+
+def mole_section():
+    section = Gio.Menu()
+    section.append("Open Terminal Menu", "win.terminal")
+    section.append("Update Mole", "win.update")
+    section.append("Remove Mole…", "win.remove")
+    return section
+
+
+def menu_bar():
+    """Exported over D-Bus for global menu bars (GNOME Shell extensions, KDE);
+    Adwaita windows do not draw it themselves. No menu is named Mole: the
+    global menu shows the app's name next to these already."""
+    file_menu = Gio.Menu()
+    file_menu.append_section(None, mole_section())
+    quit_section = Gio.Menu()
+    quit_section.append("Quit", "app.quit")
+    file_menu.append_section(None, quit_section)
+    view = Gio.Menu()
+    sections = {}
+    for cls in PAGES:
+        if cls.section not in sections:
+            sections[cls.section] = Gio.Menu()
+            view.append_section(None, sections[cls.section])
+        sections[cls.section].append(cls.title, f"win.page::{cls.__name__}")
+    refresh = Gio.Menu()
+    refresh.append("Refresh", "win.refresh")
+    view.append_section(None, refresh)
+    help_menu = Gio.Menu()
+    help_menu.append("About Mole", "win.about")
+    bar = Gio.Menu()
+    bar.append_submenu("File", file_menu)
+    bar.append_submenu("View", view)
+    bar.append_submenu("Help", help_menu)
+    return bar
+
+
 class Window(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Mole", default_width=1100, default_height=760)
@@ -47,13 +91,8 @@ class Window(Adw.ApplicationWindow):
             self.sidebar.append(item)
         self.sidebar.connect("row-activated", lambda _l, r: self.open(r.page))
 
-        menu = Gio.Menu()
-        menu.append("Open Terminal Menu", "win.terminal")
-        menu.append("Update Mole", "win.update")
-        menu.append("Remove Mole…", "win.remove")
-        menu.append("About Mole", "win.about")
         side_header = Adw.HeaderBar()
-        side_header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, tooltip_text="Main Menu"))
+        side_header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=main_menu(), tooltip_text="Main Menu"))
         side_toolbar = Adw.ToolbarView(content=Gtk.ScrolledWindow(child=self.sidebar, hscrollbar_policy=Gtk.PolicyType.NEVER))
         side_toolbar.add_top_bar(side_header)
         sidebar_page = Adw.NavigationPage(title="Mole", child=side_toolbar)
@@ -76,6 +115,8 @@ class Window(Adw.ApplicationWindow):
             ("remove", lambda *_: self.in_terminal("remove"), None),
             ("open-path", lambda _a, p: Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(p.get_string()).get_uri(), None), "s"),
             ("trash-path", lambda _a, p: self.pages["AnalyzePage"].trash(p.get_string()), "s"),
+            ("page", lambda _a, p: self.show_page(p.get_string()), "s"),
+            ("refresh", lambda *_: self.split.get_content().load(), None),
         ):
             action = Gio.SimpleAction.new(name, GLib.VariantType.new(kind) if kind else None)
             action.connect("activate", callback)
@@ -139,6 +180,10 @@ class App(Adw.Application):
         quit_action.connect("activate", lambda *_: self.quit())
         self.add_action(quit_action)
         self.set_accels_for_action("app.quit", ["<Control>q"])
+        self.set_accels_for_action("win.refresh", ["<Control>r", "F5"])
+        for i, cls in enumerate(PAGES[:10]):
+            self.set_accels_for_action(f"win.page::{cls.__name__}", [f"<Control>{(i + 1) % 10}"])
+        self.set_menubar(menu_bar())
 
     def do_activate(self):
         (self.get_active_window() or Window(self)).present()
