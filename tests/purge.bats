@@ -4838,6 +4838,12 @@ SH
 # skips every sibling under the same root.
 _purge_unit_flow_script() {
 	cat <<'EOF_FLOW'
+# These tests judge walk coverage. The open-file and authored-content probes
+# run under the scan deadline and an unknown answer keeps a target silently, so
+# on a loaded CI runner one candidate went missing at random; the probes have
+# their own tests.
+purge_artifact_in_use() { return 1; }
+purge_artifact_has_authored_content() { return 1; }
 get_dir_size_kb() { echo 4; }
 is_recently_modified() { _PURGE_ACTIVITY_STATE=old; return 1; }
 purge_target_activity_still_safe() { return 0; }
