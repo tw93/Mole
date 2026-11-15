@@ -137,6 +137,7 @@ in_use_reason() {
 }
 
 F_PATH=()
+F_REAL=()
 F_KIND=()
 F_KB=()
 F_AGE=()
@@ -164,6 +165,7 @@ scan() {
                 fi
             fi
             F_PATH+=("$path")
+            F_REAL+=("$real")
             F_KIND+=("$kind")
             F_KB+=("$(mole_path_kb "$path")")
             F_AGE+=("$age")
@@ -244,7 +246,7 @@ pick_named() {
         found=""
         real=$(readlink -m -- "$want")
         for i in "${!F_PATH[@]}"; do
-            [[ "$(readlink -m -- "${F_PATH[i]}")" == "$real" ]] && found="$i" && break
+            [[ "${F_REAL[i]}" == "$real" ]] && found="$i" && break
         done
         if [[ -z "$found" ]]; then
             log_error "Not an installer Mole found: $want"
@@ -327,7 +329,7 @@ main() {
     paths=()
     local -a still=()
     for i in "${PICKED[@]}"; do
-        reason=$(in_use_reason "$(readlink -m -- "${F_PATH[i]}")" "${F_KIND[i]}" "$launchers" "$open" "$open_ok")
+        reason=$(in_use_reason "${F_REAL[i]}" "${F_KIND[i]}" "$launchers" "$open" "$open_ok")
         if [[ -n "$reason" ]]; then
             echo -e "  ${GRAY}${ICON_EMPTY} ${F_PATH[i]##*/} · ${reason}, stays${NC}"
             log_operation installer SKIPPED "${F_PATH[i]}" "$reason"

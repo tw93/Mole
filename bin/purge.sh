@@ -236,11 +236,12 @@ choose() {
 # FOLDERs named on the command line must be ones the scan found; any other
 # path is refused, never removed.
 pick_named() {
-    local want i found
+    local want i found real
     for want in "${WANTED[@]}"; do
         found=""
+        real=$(readlink -m -- "$want")
         for i in "${!P_PATH[@]}"; do
-            [[ "${P_PATH[i]}" == "$(readlink -m -- "$want")" ]] && found="$i" && break
+            [[ "${P_PATH[i]}" == "$real" ]] && found="$i" && break
         done
         if [[ -z "$found" ]]; then
             log_error "Not build output purge found: $want"
