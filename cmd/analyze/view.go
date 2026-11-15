@@ -232,7 +232,7 @@ func (m model) View() string {
 					sizeVal := entry.Size
 					// Hide entries that have been scanned and are empty (standard dirs
 					// are never 0 bytes; only insight dirs in unused tool paths are).
-					if sizeVal == 0 && entry.State == scanComplete {
+					if entry.hiddenWhenEmpty() {
 						continue
 					}
 					barValue := max(sizeVal, 0)
