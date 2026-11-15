@@ -379,3 +379,49 @@ rc=2 ok=false"* ]]
     run python3 "$MOLE_TEST_REPO/tests/menu_search_pty.py"
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+
+@test "mo purge --json lists what was found and changes nothing" {
+    make_node_project "$HOME/www/old"
+    make_node_project "$HOME/www/new"
+    touch "$HOME/www/new/node_modules"
+    run bash "$REPO/mole" purge --json < /dev/null
+    [ "$status" -eq 0 ]
+    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); s={i["project"].rsplit("/",1)[1]: i["state"] for i in d["items"]}; assert s == {"old": "old", "new": "recent"}, s' "$output"
+    [ -d "$HOME/www/old/node_modules" ]
+    [ ! -s "$HOME/.local/state/mole/operations.log" ]
+}
+
+@test "mo purge --yes FOLDER removes exactly the named folders, recent included, and refuses others" {
+    make_node_project "$HOME/www/old"
+    make_node_project "$HOME/www/new"
+    make_node_project "$HOME/www/other"
+    touch "$HOME/www/new/node_modules"
+    run bash "$REPO/mole" purge --yes "$HOME/www/new/node_modules" < /dev/null
+    [ "$status" -eq 0 ]
+    [ ! -e "$HOME/www/new/node_modules" ]
+    [ -d "$HOME/www/old/node_modules" ]
+    [ -d "$HOME/www/other/node_modules" ]
+    run bash "$REPO/mole" purge --yes "$HOME/www/old" < /dev/null
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Not build output purge found"* ]]
+    [ -d "$HOME/www/old/node_modules" ]
+    [ -f "$HOME/www/old/package.json" ]
+}
+
+@test "mo purge --dry-run FOLDER previews exactly the named folder, and a busy named folder is kept" {
+    make_node_project "$HOME/www/old"
+    make_node_project "$HOME/www/new"
+    make_node_project "$HOME/www/busy"
+    touch "$HOME/www/new/node_modules"
+    run bash "$REPO/mole" purge --dry-run "$HOME/www/new/node_modules" < /dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"~/www/new"*"node_modules"*"dry"* ]]
+    [[ "$output" == *"~/www/old"*"kept unless picked"* ]]
+    [[ "$output" == *"Would free:"*"1 folder"* ]]
+    (cd "$HOME/www/busy" && exec sleep 30) &
+    OWNER_PID=$!
+    sleep 0.2
+    run bash "$REPO/mole" purge --yes "$HOME/www/busy/node_modules" < /dev/null
+    [ -d "$HOME/www/busy/node_modules" ]
+    [[ "$output" == *"Not build output purge found"* || "$output" == *"kept, in use"* ]]
+}

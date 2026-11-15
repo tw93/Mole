@@ -14,14 +14,17 @@ source "$SCRIPT_DIR/lib/purge/scan.sh"
 DRY_RUN=false
 PATHS_MODE=false
 ASSUME_YES=false
+PURGE_JSON=false
+WANTED=()
 for arg in "$@"; do
     case "$arg" in
         --dry-run | -n) DRY_RUN=true ;;
         --paths) PATHS_MODE=true ;;
         --yes | -y) ASSUME_YES=true ;;
+        --json) PURGE_JSON=true ;;
         --debug) export MO_DEBUG=1 ;;
         -h | --help)
-            echo "Usage: mo purge [OPTIONS]"
+            echo "Usage: mo purge [OPTIONS] [FOLDER...]"
             echo ""
             echo "Remove build output of your projects (node_modules, target, build, .venv"
             echo "and others). Folders changed in the last 7 days start unselected."
@@ -30,15 +33,18 @@ for arg in "$@"; do
             echo "  --dry-run, -n     Preview without making changes"
             echo "  --paths           Show and edit the folders purge scans"
             echo "  --yes, -y         Remove what is older than 7 days without asking (needed outside a terminal)"
+            echo "                    or, with FOLDERs, exactly those (each must be one purge found)"
+            echo "  --json            List what purge found as JSON"
             echo "  --debug           Show detailed operation logs"
             echo "  -h, --help        Show this help message"
             exit 0
             ;;
-        *)
+        -*)
             echo "Unknown option: $arg" >&2
             echo "Use 'mo purge --help' for supported options." >&2
             exit 1
             ;;
+        *) WANTED+=("$arg") ;;
     esac
 done
 export DRY_RUN
@@ -227,6 +233,46 @@ choose() {
     [[ ${#PICKED[@]} -gt 0 ]]
 }
 
+# FOLDERs named on the command line must be ones the scan found; any other
+# path is refused, never removed.
+pick_named() {
+    local want i found
+    for want in "${WANTED[@]}"; do
+        found=""
+        for i in "${!P_PATH[@]}"; do
+            [[ "${P_PATH[i]}" == "$(readlink -m -- "$want")" ]] && found="$i" && break
+        done
+        if [[ -z "$found" ]]; then
+            log_error "Not build output purge found: $want"
+            return 1
+        fi
+        PICKED+=("$found")
+    done
+}
+
+print_json() {
+    SCAN_ROOTS=()
+    SCAN_INCOMPLETE=()
+    scan > /dev/null || {
+        echo "Cannot read $(mole_display_path "$MOLE_PURGE_CONFIG_FILE")" >&2
+        return 1
+    }
+    local i sep="" root rsep=""
+    printf '{\n  "roots": ['
+    for root in "${SCAN_ROOTS[@]+"${SCAN_ROOTS[@]}"}"; do
+        printf '%s%s' "$rsep" "$(json_string "$root")"
+        rsep=", "
+    done
+    printf '],\n  "items": ['
+    for i in "${!P_PATH[@]}"; do
+        printf '%s\n    {"path": %s, "project": %s, "name": %s, "size_kb": %s, "state": %s, "mtime": %d}' "$sep" \
+            "$(json_string "${P_PATH[i]}")" "$(json_string "${P_PATH[i]%/*}")" "$(json_string "${P_PATH[i]##*/}")" \
+            "${P_KB[i]:-null}" "$(json_string "${P_STATE[i]}")" "${P_MTIME[i]:-0}"
+        sep=","
+    done
+    printf '\n  ]\n}\n'
+}
+
 # Everything checked again right before the folder goes: what it is, who
 # works in it, and (unless the user picked a recent row on purpose) its age.
 recheck() {
@@ -254,6 +300,10 @@ main() {
     mole_refuse_root
     if [[ "$PATHS_MODE" == true ]]; then
         show_paths
+        exit $?
+    fi
+    if [[ "$PURGE_JSON" == true ]]; then
+        print_json
         exit $?
     fi
     if [[ "$DRY_RUN" != true && "$ASSUME_YES" != true && ! (-t 0 && -t 1) ]]; then
@@ -290,7 +340,9 @@ main() {
     mapfile -t order < <(for i in "${!P_PATH[@]}"; do printf '%s\t%s\n' "${P_KB[i]:-0}" "$i"; done | sort -t$'\t' -k1,1nr | cut -f2)
 
     local i
-    if [[ "$DRY_RUN" == true || "$ASSUME_YES" == true ]]; then
+    if [[ ${#WANTED[@]} -gt 0 ]]; then
+        pick_named || exit 1
+    elif [[ "$DRY_RUN" == true || "$ASSUME_YES" == true ]]; then
         for i in "${order[@]}"; do
             default_on "$i" && PICKED+=("$i")
         done
@@ -302,8 +354,11 @@ main() {
 
     if [[ "$DRY_RUN" == true ]]; then
         local kb=0 n=0 unknown=0
+        local -A picked=()
+        for i in "${PICKED[@]+"${PICKED[@]}"}"; do picked[$i]=1; done
         for i in "${order[@]}"; do
-            if default_on "$i"; then
+            # Exactly what the real run would take: the named folders, or the old ones.
+            if [[ -n "${picked[$i]:-}" ]]; then
                 echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $(row_text "$i") ${YELLOW}dry${NC}"
                 [[ -n "${P_KB[i]}" ]] && kb=$((kb + P_KB[i])) || unknown=$((unknown + 1))
                 n=$((n + 1))
