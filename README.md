@@ -29,6 +29,9 @@ This branch has its own code, written for Linux paths and tools. The look, the k
 - **Purge**: Removes build output such as `node_modules` and `target` from projects untouched for a week
 - **History**: Lists what Mole removed, moved to the Trash or skipped, by run
 - **Status**: Shows live CPU, memory, disks, network, temperatures, GPU and battery with a health score
+- **Installer**: Moves `.deb`, `.rpm`, `.iso`, `.AppImage` and other installer files left in Downloads and on the Desktop to the Trash
+- **Startup**: Turns apps that start at login and your own systemd user services on or off, without deleting anything
+- **System**: Reports a pending restart, installed kernels, broken packages, updates, journal size and crash reports, with the command for each
 
 ## Install
 
@@ -66,6 +69,13 @@ mo purge --dry-run         # preview
 mo purge --paths           # folders purge scans
 mo history                 # what Mole changed, by run
 mo history --json
+mo installer               # pick installer files to move to the Trash
+mo installer --dry-run
+mo startup                 # apps and services that start at login
+mo startup disable steam.desktop
+mo system                  # restart, kernels, updates, crash reports
+mo system --json
+mo completion bash         # tab completion (bash, zsh, fish)
 ```
 
 In the menus: arrow keys or `j`/`k` to move, `Space` to select, `Enter` to confirm, `/` to filter, `q` to quit.
@@ -153,6 +163,16 @@ mo purge --paths
 <img src="./docs/img/purge-linux.png" alt="mo purge project list" width="1000" />
 
 Scans `~/www`, `~/dev`, `~/Projects`, `~/code` and similar folders, plus any home folder that holds a project, or only the folders listed in `~/.config/mole/purge_paths`. Folders changed in the last 7 days and projects a program works in start unselected; the rest start selected. Outside a terminal, `--yes` removes only what is older than 7 days.
+
+### Installer, Startup and System
+
+```bash
+mo installer
+mo startup
+mo system
+```
+
+`mo installer` finds installer files two levels deep in Downloads and on the Desktop and moves the ones you pick to the Trash; an AppImage that a launcher starts or that is running stays. `mo startup` lists the XDG autostart entries GNOME's Startup Applications shows and the services in `~/.config/systemd/user`; turning a system entry off writes a `Hidden=true` copy to `~/.config/autostart`, the override the autostart spec defines, so turning it on again restores it. `mo system` only reads: a pending restart and the packages behind it, installed kernels, broken packages, upgradable packages, journal size and Apport crash reports. Failed services, packages apt would autoremove and leftover configuration are in `mo optimize`.
 
 ## Community
 
