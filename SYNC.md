@@ -337,3 +337,15 @@ Source-only fix for Mole CLI (macOS), `fc4316b0`: `get_latest_commit_from_github
 | Mole CLI (macOS) | Implemented in source | `lib/manage/update.sh:get_latest_commit_from_github`, `tests/update.bats` (`nightly commit lookup keeps the SHA from a large GitHub response`). |
 | Mole CLI (Linux) | Intentional difference | `install.sh:latest_commit` at `d68d06b0` requests `application/vnd.github.sha` and validates the raw SHA; it has no JSON file-list pipeline to repair. Source reviewed, not a Linux runtime test. |
 | Mole CLI (Windows) | Not applicable | `bin/update.ps1` at `2c6e8e99` updates source with Git; its stable update metadata in `lib/core/update_check.ps1` uses `Invoke-RestMethod`, not this Nightly commit parser. Source reviewed, not a Windows runtime test. |
+
+## 2026-11-15 Home overview hardlink accounting
+
+Source: Mole CLI (macOS), `7c83bad6`. The Home measurement passes its included immediate children to one `du` so file identities are shared across them and top-level files. It still omits only the immediate `~/Library` and mounted children. The bounded Go fallback also shares the existing identity set; overview cache schema 14 rejects old totals. Real-hardlink regressions fail on the prior main and pass here. This is a source change, not a verified package release.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source | `cmd/analyze/scanner.go:getDirectorySizeFromDuSkippingImmediateChild`, `TestHomeOverviewDeduplicatesHardlinks` and the neighboring permission/symlink/mount tests. |
+| Mole CLI (Linux) | Pending | At `4de579cc`, Home excludes the immediate `.cache` through independent per-child `du` calls. Unchanged source run on Ubuntu 25.10 aarch64 reports 2097152 B for one 1048576 B file through both the real CLI and the Home measurement; uutils 0.2.2 and GNU du 9.5 agree, while the directory scanner deduplicates. Tracked in [#2013](https://github.com/tw93/Mole/issues/2013); its current CONTRIBUTING accepts issues rather than PRs. |
+| Mole CLI (Windows) | Not applicable to this du repair | At `59f3dc5a`, `measureOverviewSize` uses `walkDirSize`, excluding AppData. Its file-ID/hardlink work remains the separate draft [#2012](https://github.com/tw93/Mole/pull/2012); no Windows runtime claim is made here. |
+
+The Mole Mac and Mole for Windows consumers remain unverified in this task.

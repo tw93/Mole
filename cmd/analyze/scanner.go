@@ -958,7 +958,7 @@ func measureOverviewSizeWithPublication(ctx context.Context, path string, public
 	defer cancel()
 	ignoreNames := overviewIgnoreNamesForPath(path)
 	size, err := getDirectorySizeFromDuWithExcludeAndIgnores(ctx, path, excludePath, ignoreNames, overviewDuTimeout)
-	if err != nil && size == 0 && ctx.Err() == nil {
+	if err != nil && (size == 0 || errors.Is(err, syscall.E2BIG)) && ctx.Err() == nil {
 		size, err = getDirectoryLogicalSizeWithExclude(ctx, path, excludePath, ignoreNames)
 	}
 	if overviewMeasurementStorable(size, err) {
@@ -1042,19 +1042,27 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		}
 	}
 
-	runDuSize := func(target string) (int64, error) {
-		if _, err := os.Stat(target); err != nil {
-			return 0, err
+	runDuSize := func(targets ...string) (int64, error) {
+		if len(targets) == 0 {
+			return 0, nil
+		}
+		if len(targets) == 1 {
+			if _, err := os.Lstat(targets[0]); err != nil {
+				return 0, err
+			}
 		}
 
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
 		args := []string{"-skPx"}
+		if len(targets) > 1 {
+			args = append(args, "-c")
+		}
 		for _, ignoreName := range ignoreNames {
 			args = append(args, "-I", ignoreName)
 		}
-		args = append(args, target)
+		args = append(args, targets...)
 		cmd := exec.CommandContext(ctx, duBinary, args...)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -1063,7 +1071,14 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		activeDu.Add(1)
 		runErr := cmd.Run()
 		activeDu.Add(-1)
-		fields := strings.Fields(stdout.String())
+		output := stdout.String()
+		if len(targets) > 1 {
+			// The final -c total shares du's hardlink set across operands.
+			// Parse only that line: file names can contain tabs and newlines.
+			output = strings.TrimSuffix(output, "\n")
+			output = output[strings.LastIndexByte(output, '\n')+1:]
+		}
+		fields := strings.Fields(output)
 		if ctx.Err() != nil {
 			runErr = ctx.Err()
 		} else if runErr != nil && duReportedOnlyPermissionDenials(stderr.Bytes()) {
@@ -1076,9 +1091,9 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		}
 		if len(fields) == 0 {
 			if runErr != nil {
-				return 0, fmt.Errorf("du failed for %s: %w", target, runErr)
+				return 0, fmt.Errorf("du failed for %s: %w", path, runErr)
 			}
-			return 0, fmt.Errorf("du output empty for %s", target)
+			return 0, fmt.Errorf("du output empty for %s", path)
 		}
 		kb, parseErr := strconv.ParseInt(fields[0], 10, 64)
 		if parseErr != nil {
@@ -1090,7 +1105,7 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		// Nonzero exits may still carry useful bytes for readable descendants.
 		// Keep both the bytes and the failure; do not trigger another full walk.
 		if runErr != nil {
-			return kb * 1024, fmt.Errorf("du incomplete for %s: %w", target, runErr)
+			return kb * 1024, fmt.Errorf("du incomplete for %s: %w", path, runErr)
 		}
 		return kb * 1024, nil
 	}
@@ -1169,7 +1184,7 @@ func overviewIgnoreNamesForPath(path string) []string {
 	return ignoreNames
 }
 
-func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path string, excludePath string, runDuSize func(string) (int64, error)) (int64, error) {
+func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path string, excludePath string, runDuSize func(...string) (int64, error)) (int64, error) {
 	path = filepath.Clean(path)
 	excludePath = filepath.Clean(excludePath)
 
@@ -1192,7 +1207,7 @@ func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path stri
 	var total int64
 	var failures scanFailures
 	if info, err := os.Lstat(path); err == nil {
-		atomic.AddInt64(&total, getActualFileSize(path, info))
+		total = getActualFileSize(path, info)
 	} else {
 		failures.record(err)
 	}
@@ -1202,55 +1217,38 @@ func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path stri
 	// du over path would never enter it; skip it here to match.
 	rootDevice := scanDeviceOf(path)
 
-	var wg sync.WaitGroup
-	workerCount := min(max(runtime.NumCPU()*2, 2), 8)
-	sem := make(chan struct{}, workerCount)
-
+	operands := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if ctx.Err() != nil {
-			failures.record(ctx.Err())
-			break
+			return total, ctx.Err()
 		}
 		fullPath := filepath.Join(path, entry.Name())
 		if filepath.Clean(fullPath) == excludePath {
 			continue
 		}
 
-		if entry.Type()&fs.ModeSymlink != 0 || !entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				failures.record(err)
-				continue
-			}
-			atomic.AddInt64(&total, getActualFileSize(fullPath, info))
+		if entry.IsDir() && rootDevice.isMountPoint(fullPath, entry) {
 			continue
 		}
-		if rootDevice.isMountPoint(fullPath, entry) {
-			continue
-		}
-
-		if err := acquireScanPermit(ctx, sem); err != nil {
-			failures.record(err)
-			break
-		}
-		wg.Go(func() {
-			defer func() { <-sem }()
-
-			size, err := runDuSize(fullPath)
-			failures.record(err)
-			atomic.AddInt64(&total, size)
-		})
+		operands = append(operands, fullPath)
 	}
 
-	wg.Wait()
+	// Independent du processes cannot deduplicate links between children,
+	// including a link directly in Home and another inside a directory.
+	if len(operands) == 0 {
+		return total, failures.err()
+	}
+	size, err := runDuSize(operands...)
+	failures.record(err)
 
-	return total, failures.err()
+	return total + size, failures.err()
 }
 
 func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, excludePath string, ignoreNames []string) (int64, error) {
 	var total int64
 	var failures scanFailures
 	rootDevice := scanDeviceOf(path)
+	var seen sync.Map
 	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -1277,7 +1275,8 @@ func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, exclud
 			failures.record(err)
 			return nil
 		}
-		total += getActualFileSize(p, info)
+		size, _ := countableFileSize(p, info, &seen)
+		total += size
 		return nil
 	})
 	failures.record(err)

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -173,12 +172,9 @@ func TestDuSkippingImmediateChildStopsAtMountPoints(t *testing.T) {
 		t.Fatalf("create Library: %v", err)
 	}
 
-	var mu sync.Mutex
 	var measured []string
-	_, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), fx.root, library, func(path string) (int64, error) {
-		mu.Lock()
-		measured = append(measured, path)
-		mu.Unlock()
+	_, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), fx.root, library, func(paths ...string) (int64, error) {
+		measured = append(measured, paths...)
 		return 1 << 20, nil
 	})
 	if err != nil {
@@ -186,8 +182,9 @@ func TestDuSkippingImmediateChildStopsAtMountPoints(t *testing.T) {
 	}
 
 	local := filepath.Join(fx.root, "local")
-	if len(measured) != 1 || measured[0] != local {
-		t.Fatalf("measured %#v, want only %s (the mount point must not be measured)", measured, local)
+	rootFile := filepath.Join(fx.root, "root.txt")
+	if len(measured) != 2 || measured[0] != local || measured[1] != rootFile {
+		t.Fatalf("measured %#v, want %s and %s (the mount point must not be measured)", measured, local, rootFile)
 	}
 }
 
