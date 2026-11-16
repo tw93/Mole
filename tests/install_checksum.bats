@@ -897,10 +897,12 @@ EOF
 	run "$timeout_cmd" 3 env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PATH="/usr/bin:/bin" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 mole_source_installer
-run_install_probe_with_timeout 1 /bin/bash -c 'exit 0' || {
-	echo "UNEXPECTED_FAST_PROBE_FAILURE"
+fast_rc=0
+run_install_probe_with_timeout 1 /bin/bash -c 'exit 0' || fast_rc=$?
+if [[ $fast_rc -ne 0 ]]; then
+	echo "UNEXPECTED_FAST_PROBE_FAILURE rc=$fast_rc"
 	exit 1
-}
+fi
 if run_install_probe_with_timeout 0.1 /bin/bash -c 'trap "" TERM; sleep 5 & wait'; then
 	echo "UNEXPECTED_PROBE_SUCCESS"
 	exit 1
