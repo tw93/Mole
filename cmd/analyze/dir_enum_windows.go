@@ -56,7 +56,7 @@ func readDirIdentityRecords(path string) ([]idBothDirEntry, error) {
 		_ = windows.CloseHandle(handle)
 	}()
 
-	volumeSerial, err := requireIdentitySupport(handle, path)
+	volumeSerial, fileReference, err := requireIdentitySupport(handle, path)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +83,7 @@ func readDirIdentityRecords(path string) ([]idBothDirEntry, error) {
 		class = windows.FileIdBothDirectoryInfo
 		decodeErr := walkIDBothDirBuffer(buffer, func(entry idBothDirEntry) error {
 			entry.VolumeSerial = volumeSerial
+			entry.FileReference = fileReference
 			entries = append(entries, entry)
 			return nil
 		})
@@ -115,14 +116,16 @@ func openDirEnumHandle(path string) (windows.Handle, error) {
 
 // requireIdentitySupport asks the volume whether this directory can report file
 // IDs. os.ReadDir runs the same probe for every directory handle.
-func requireIdentitySupport(handle windows.Handle, path string) (uint32, error) {
+// The file system name tells whether file IDs are NTFS file references.
+func requireIdentitySupport(handle windows.Handle, path string) (uint32, bool, error) {
 	var volumeSerial uint32
 	var flags uint32
-	if err := windows.GetVolumeInformationByHandle(handle, nil, 0, &volumeSerial, nil, &flags, nil, 0); err != nil {
-		return 0, fmt.Errorf("%w: %s: %v", errIdentitiesUnavailable, path, err)
+	var fileSystem [windows.MAX_PATH + 1]uint16
+	if err := windows.GetVolumeInformationByHandle(handle, nil, 0, &volumeSerial, nil, &flags, &fileSystem[0], uint32(len(fileSystem))); err != nil {
+		return 0, false, fmt.Errorf("%w: %s: %v", errIdentitiesUnavailable, path, err)
 	}
 	if volumeSerial == 0 || flags&fileSupportsObjectIDs == 0 || flags&fileSupportsOpenByFileID == 0 {
-		return 0, fmt.Errorf("%w: %s", errIdentitiesUnavailable, path)
+		return 0, false, fmt.Errorf("%w: %s", errIdentitiesUnavailable, path)
 	}
-	return volumeSerial, nil
+	return volumeSerial, windows.UTF16ToString(fileSystem[:]) == "NTFS", nil
 }

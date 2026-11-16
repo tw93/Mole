@@ -102,8 +102,11 @@ func (p *scanPublication) finish(action func()) {
 type scanLimiter struct {
 	entrySem chan struct{}
 	walkSem  chan struct{}
-	seen     [32]scanSeenShard
-	deduped  atomic.Bool
+	// records holds one *recordBitmap per NTFS volume serial; seen keeps
+	// the IDs of every other file system, whose IDs are not dense.
+	records sync.Map
+	seen    [32]scanSeenShard
+	deduped atomic.Bool
 }
 
 type scanSeenShard struct {
@@ -115,6 +118,13 @@ func (l *scanLimiter) countFile(path string, entry scanDirEntry, info os.FileInf
 	if l != nil && entry.fallback == nil && entry.record.FileID != 0 && entry.record.Attributes&fileAttributeReparsePoint == 0 {
 		id := entry.record.FileID
 		volume := entry.record.VolumeSerial
+		if entry.record.FileReference && id&ntfsRecordMask < maxDenseRecord {
+			if l.recordBitmap(volume).add(id & ntfsRecordMask) {
+				return diskSize(path, info), false
+			}
+			l.deduped.Store(true)
+			return 0, true
+		}
 		shard := &l.seen[(id^(id>>32)^uint64(volume))%uint64(len(l.seen))]
 		shard.mu.Lock()
 		if shard.volumes == nil {
@@ -136,6 +146,14 @@ func (l *scanLimiter) countFile(path string, entry scanDirEntry, info os.FileInf
 		}
 	}
 	return diskSize(path, info), false
+}
+
+func (l *scanLimiter) recordBitmap(volume uint32) *recordBitmap {
+	if bitmap, ok := l.records.Load(volume); ok {
+		return bitmap.(*recordBitmap)
+	}
+	bitmap, _ := l.records.LoadOrStore(volume, new(recordBitmap))
+	return bitmap.(*recordBitmap)
 }
 
 func newScanLimiter(childCount int) *scanLimiter {

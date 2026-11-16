@@ -81,8 +81,11 @@ const idBothDirRecordSlack = int(unsafe.Sizeof(idBothDirRecord{})) - idBothDirNa
 // AllocationSize is zero when the entry came from the os.ReadDir fallback,
 // which cannot report either.
 type idBothDirEntry struct {
-	Name           string
-	VolumeSerial   uint32
+	Name         string
+	VolumeSerial uint32
+	// FileReference is true on NTFS, where FileID is a file reference whose
+	// low 48 bits are the dense MFT record number.
+	FileReference  bool
 	FileID         uint64
 	Size           int64
 	AllocationSize int64
