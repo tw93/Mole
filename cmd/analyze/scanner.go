@@ -333,7 +333,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 				var result scanResult
 				if shouldFoldDirWithPath(name, fullPath) {
 					size, containsDeduped, err := calculateDirSizeFastWithDedup(ctx, fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
-					result = scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), dedupedHardlink: limiter.deduped.Load(), containsDedupedHardlink: containsDeduped}
+					result = scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), containsDedupedHardlink: containsDeduped}
 				} else {
 					result = scanSubdir(ctx, fullPath, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 				}
@@ -434,7 +434,6 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 		LargeFiles:              largeFiles,
 		TotalSize:               total,
 		TotalFiles:              localFilesScanned + subtreeFilesScanned.Load(),
-		dedupedHardlink:         limiter.deduped.Load(),
 		containsDedupedHardlink: containsDedupedHardlink.Load(),
 		transientFailure:        transient.Load(),
 	}, nil

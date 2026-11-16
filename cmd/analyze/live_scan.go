@@ -223,7 +223,7 @@ func readLiveScanInitialEntriesWithLimiter(root string, limiter *scanLimiter) (s
 
 	sortDirEntriesBySize(entries)
 	largeFiles = topLargeFiles(largeFiles)
-	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state, transientFailure: transient, dedupedHardlink: limiter.deduped.Load(), containsDedupedHardlink: containsDedupedHardlink}, targets, nil
+	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state, transientFailure: transient, containsDedupedHardlink: containsDedupedHardlink}, targets, nil
 }
 
 func runLiveScan(
@@ -361,7 +361,6 @@ func runLiveScan(
 		LargeFiles:              largeFiles,
 		TotalSize:               totalSize.Load(),
 		TotalFiles:              totalFiles.Load(),
-		dedupedHardlink:         limiter.deduped.Load(),
 		containsDedupedHardlink: limiter.deduped.Load(),
 		transientFailure:        transient.Load(),
 	}
@@ -438,7 +437,7 @@ func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan ch
 		if ctx.Err() != nil {
 			return scanResult{}, ctx.Err()
 		}
-		return scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), dedupedHardlink: limiter.deduped.Load(), containsDedupedHardlink: containsDeduped}, nil
+		return scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), containsDedupedHardlink: containsDeduped}, nil
 	}
 
 	result := scanSubdir(ctx, target.path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)

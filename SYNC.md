@@ -6,7 +6,7 @@ This is the synchronization entry point for **Mole CLI (Windows)**, branch `wind
 
 | Change | Destinations | Evidence and next check |
 |---|---|---|
-| Count each hard-linked file once per scan | Implemented in the Mole CLI (Windows) worktree from `59f3dc5a`; source only. Implemented in Mole CLI (macOS) at `5dd93fe3` through `(dev, ino)`. Mole CLI (Linux) and Mole for Windows: Pending source check. Mole Mac: Pending source check. | Native Windows Go tests passed. The 100,000-entry NTFS fixtures and limits are in [the development record](docs/development-record.md). Check the unavailable products' scanners before transfer. No release receipt exists. |
+| Count each hard-linked file once per scan | Mole CLI (Windows): Implemented in source (#2012), reading the volume serial and file ID from directory records; later links show 0 B. Mole CLI (macOS): already deduplicates by `(dev, ino)`, and its Home row across children since #2014. Mole CLI (Linux): already deduplicates by `(dev, ino)`, Home row across children since `linux` `644a643e` (#2013). Mole for Windows: already deduplicates through `src/Mole.Core/DiskScan/FileIdSet.cs`, at `cc671f01`. Mole Mac: not checked in this task. | Native Windows Go tests passed on the contributor's host; `GOOS=windows go vet ./cmd/...` and the Windows test build pass. Fixtures and memory are in [the development record](docs/development-record.md). Next check: Mole for Windows keeps one bit per MFT record (256 KiB for 2 million records) where this scanner keeps a hash entry per file (about 85 MiB sampled at 1,000,000 files); port that if memory matters. No release receipt exists. |
 
 ## 2026-11-15: Analyze overview fixes from Mole CLI (macOS) (#1992, #1996)
 

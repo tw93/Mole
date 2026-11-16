@@ -34,7 +34,7 @@ func TestScanCountsCrossDirectoryHardLinksOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != scanComplete || result.TotalSize != 4096 || result.TotalFiles != 3 || !result.dedupedHardlink {
+	if result.State != scanComplete || result.TotalSize != 4096 || result.TotalFiles != 3 || !result.containsDedupedHardlink {
 		t.Fatalf("scan = %+v; want one 4096-byte file across three entries", result)
 	}
 	var sum int64
@@ -45,7 +45,7 @@ func TestScanCountsCrossDirectoryHardLinksOnce(t *testing.T) {
 			zeroRows++
 		}
 	}
-	if sum != result.TotalSize || zeroRows != 2 || result.reusable() {
+	if sum != result.TotalSize || zeroRows != 2 || !result.reusable() {
 		t.Fatalf("rows sum to %d with %d zero rows; total %d, reusable %v", sum, zeroRows, result.TotalSize, result.reusable())
 	}
 	if len(filterNonEmptyEntries(result.Entries)) != 3 {
@@ -76,7 +76,7 @@ func TestLiveInitialScanStartsWithFreshFileIdentities(t *testing.T) {
 		if err != nil || len(targets) != 0 || result.TotalSize != 1024 || result.TotalFiles != 2 {
 			t.Fatalf("run %d: result %+v, targets %+v, error %v", run, result, targets, err)
 		}
-		if !result.dedupedHardlink || result.reusable() {
+		if !result.containsDedupedHardlink {
 			t.Fatalf("run %d: duplicate state lost", run)
 		}
 	}
@@ -120,7 +120,7 @@ func TestLiveFoldedDirectoryWithCrossDirectoryHardLinksIsNotReusable(t *testing.
 			sawComplete = true
 		}
 	}
-	if !sawFolded || foldedResult.TotalSize != 0 || !foldedResult.dedupedHardlink || !foldedResult.containsDedupedHardlink || foldedResult.reusable() {
+	if !sawFolded || foldedResult.TotalSize != 0 || !foldedResult.containsDedupedHardlink {
 		t.Fatalf("folded result = %+v, received %v", foldedResult, sawFolded)
 	}
 	if !sawComplete || finalResult.TotalSize != 1024 || len(filterNonEmptyEntries(finalResult.Entries)) != 2 {
@@ -147,7 +147,7 @@ func TestUnrelatedEmptyDirectoriesStayHiddenAfterHardlinkDedup(t *testing.T) {
 	}
 
 	result, err := scanPathConcurrentAllEntries(context.Background(), root, new(int64), new(int64), new(int64), nil)
-	if err != nil || result.TotalSize != 1536 || !result.dedupedHardlink || !result.containsDedupedHardlink {
+	if err != nil || result.TotalSize != 1536 || !result.containsDedupedHardlink {
 		t.Fatalf("scan = %+v, error %v", result, err)
 	}
 	visible := filterNonEmptyEntries(result.Entries)
@@ -169,7 +169,7 @@ func TestScanWithoutHardLinksKeepsFileSizes(t *testing.T) {
 		}
 	}
 	result, err := scanPathConcurrentAllEntries(context.Background(), root, new(int64), new(int64), new(int64), nil)
-	if err != nil || result.TotalSize != 3072 || result.TotalFiles != 2 || result.dedupedHardlink {
+	if err != nil || result.TotalSize != 3072 || result.TotalFiles != 2 || result.containsDedupedHardlink {
 		t.Fatalf("scan = %+v, %v; want 3072 bytes and no duplicates", result, err)
 	}
 	if len(result.Entries) != 2 || len(filterNonEmptyEntries(result.Entries)) != 2 {

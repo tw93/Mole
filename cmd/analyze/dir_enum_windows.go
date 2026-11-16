@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"sync"
 	"syscall"
 
@@ -42,21 +41,6 @@ var dirEnumBufferPool = sync.Pool{New: func() any {
 	buffer := make([]byte, dirEnumBufferSize)
 	return &buffer
 }}
-
-// readDirWithIdentities lists path with FILE_ID_BOTH_DIR_INFO. hasIdentities is
-// false when the volume cannot answer; entries then come from os.ReadDir with
-// FileID and AllocationSize zero.
-func readDirWithIdentities(path string) (entries []idBothDirEntry, hasIdentities bool, err error) {
-	entries, err = readDirIdentityRecords(path)
-	if err == nil {
-		return entries, true, nil
-	}
-	if !errors.Is(err, errIdentitiesUnavailable) {
-		return nil, false, err
-	}
-	fallback, fallbackErr := readDirWithoutIdentities(path)
-	return fallback, false, fallbackErr
-}
 
 // readDirIdentityRecords opens path once and decodes every record the file
 // system returns. The handle lives only for this call, the same lifetime
@@ -141,36 +125,4 @@ func requireIdentitySupport(handle windows.Handle, path string) (uint32, error) 
 		return 0, fmt.Errorf("%w: %s", errIdentitiesUnavailable, path)
 	}
 	return volumeSerial, nil
-}
-
-// readDirWithoutIdentities lists path through os.ReadDir. This is the fallback
-// for a volume that cannot report file IDs, so the numbers match the walker's
-// pre-change output and no deduplication may use them.
-func readDirWithoutIdentities(path string) ([]idBothDirEntry, error) {
-	dirEntries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]idBothDirEntry, 0, len(dirEntries))
-	for _, dirEntry := range dirEntries {
-		info, infoErr := dirEntry.Info()
-		if infoErr != nil {
-			return nil, &fs.PathError{Op: "readdir", Path: path, Err: infoErr}
-		}
-		entry := idBothDirEntry{Name: dirEntry.Name(), Size: info.Size()}
-		if data, ok := info.Sys().(*syscall.Win32FileAttributeData); ok {
-			entry.Attributes = data.FileAttributes
-			entry.CreationTime = fileTimestampFrom(data.CreationTime)
-			entry.LastAccessTime = fileTimestampFrom(data.LastAccessTime)
-			entry.LastWriteTime = fileTimestampFrom(data.LastWriteTime)
-		}
-		entries = append(entries, entry)
-	}
-	return entries, nil
-}
-
-// fileTimestampFrom converts a syscall.Filetime to the layout fileTimestamp
-// expects. Both halves are already 32-bit.
-func fileTimestampFrom(value syscall.Filetime) fileTimestamp {
-	return fileTimestamp{LowDateTime: uint32(value.LowDateTime), HighDateTime: uint32(value.HighDateTime)}
 }

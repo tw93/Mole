@@ -80,8 +80,6 @@ type scanResult struct {
 	LargeFiles []fileEntry
 	TotalSize  int64
 	TotalFiles int64
-	// This flag keeps scan-order-dependent results out of reusable caches.
-	dedupedHardlink bool
 	// This flag keeps a zero-byte directory visible when its own subtree has duplicate links.
 	containsDedupedHardlink bool
 	// transientFailure is true when some coverage was lost to a failure that
@@ -91,7 +89,7 @@ type scanResult struct {
 }
 
 func (r scanResult) reusable() bool {
-	return !r.dedupedHardlink && (r.State == scanComplete || (r.State == scanPartial && !r.transientFailure))
+	return r.State == scanComplete || (r.State == scanPartial && !r.transientFailure)
 }
 
 type historyEntry struct {

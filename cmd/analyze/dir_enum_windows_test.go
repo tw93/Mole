@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestReadDirWithIdentitiesMatchesOSReadDir(t *testing.T) {
+func TestReadDirIdentityRecordsMatchesOSReadDir(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "report.bin"), 4096)
 	writeTestFile(t, filepath.Join(dir, "notes.txt"), 11)
@@ -21,12 +22,12 @@ func TestReadDirWithIdentitiesMatchesOSReadDir(t *testing.T) {
 		t.Fatalf("mkdir child: %v", err)
 	}
 
-	entries, hasIdentities, err := readDirWithIdentities(dir)
-	if err != nil {
-		t.Fatalf("readDirWithIdentities: %v", err)
-	}
-	if !hasIdentities {
+	entries, err := readDirIdentityRecords(dir)
+	if errors.Is(err, errIdentitiesUnavailable) {
 		t.Skip("this volume does not report file IDs")
+	}
+	if err != nil {
+		t.Fatalf("readDirIdentityRecords: %v", err)
 	}
 	if len(entries) != 4 {
 		t.Fatalf("listed %d entries, want 4", len(entries))
@@ -70,17 +71,17 @@ func TestReadDirWithIdentitiesMatchesOSReadDir(t *testing.T) {
 	}
 }
 
-func TestReadDirWithIdentitiesReportsEmptyDirectory(t *testing.T) {
-	entries, _, err := readDirWithIdentities(t.TempDir())
+func TestReadDirIdentityRecordsReportsEmptyDirectory(t *testing.T) {
+	entries, err := readScanEntries(t.TempDir())
 	if err != nil {
-		t.Fatalf("readDirWithIdentities: %v", err)
+		t.Fatalf("readScanEntries: %v", err)
 	}
 	if len(entries) != 0 {
 		t.Fatalf("empty directory listed %d entries", len(entries))
 	}
 }
 
-func TestReadDirWithIdentitiesSpansSeveralBuffers(t *testing.T) {
+func TestReadDirIdentityRecordsSpansSeveralBuffers(t *testing.T) {
 	dir := t.TempDir()
 	name := strings.Repeat("n", 150)
 	const fileCount = 800 // about 264 KB of names, past the 64 KiB buffer
@@ -88,12 +89,12 @@ func TestReadDirWithIdentitiesSpansSeveralBuffers(t *testing.T) {
 		writeTestFile(t, filepath.Join(dir, fmt.Sprintf("%s%03d", name, index)), 1)
 	}
 
-	entries, hasIdentities, err := readDirWithIdentities(dir)
-	if err != nil {
-		t.Fatalf("readDirWithIdentities: %v", err)
-	}
-	if !hasIdentities {
+	entries, err := readDirIdentityRecords(dir)
+	if errors.Is(err, errIdentitiesUnavailable) {
 		t.Skip("this volume does not report file IDs")
+	}
+	if err != nil {
+		t.Fatalf("readDirIdentityRecords: %v", err)
 	}
 	if len(entries) != fileCount {
 		t.Fatalf("listed %d entries, want %d", len(entries), fileCount)
