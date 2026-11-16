@@ -899,7 +899,7 @@ fake_snap_proc() {
 }
 
 @test "only an explicit refusal counts, so a full disk still cleans" {
-    mole_run clean 'for line in "mktemp: failed: No space left on device" "x: Permission denied" "x: Read-only file system" "x: Operation not permitted" "/tmp/Permission denied: Input/output error"; do
+    mole_run clean 'for line in "mktemp: failed: No space left on device" "x: Permission denied" "x: Read-only file system" "x: Operation not permitted" "/tmp/Permission denied: Input/output error" "mktemp: failed to create file via template '\''/h/.cache/tmp.XXXXXXXXXX'\'': Permission denied (os error 13) at path \"/h/.cache/tmp.Ab12Cd34Ef\"" "mktemp: failed to create file via template '\''/h/.cache/tmp.XXXXXXXXXX'\'': No space left on device (os error 28) at path \"/h/.cache/tmp.Ab12Cd34Ef\""; do
         if reason=$(_clean_write_refusal "$line"); then echo "refused=$reason"; else echo "carries on"; fi
     done'
     [ "${lines[0]}" = "carries on" ]
@@ -907,6 +907,9 @@ fake_snap_proc() {
     [ "${lines[2]}" = "refused=Read-only file system" ]
     [ "${lines[3]}" = "refused=Operation not permitted" ]
     [ "${lines[4]}" = "carries on" ]
+    # uutils mktemp puts the reason before "(os error N) at path ..."
+    [ "${lines[5]}" = "refused=Permission denied" ]
+    [ "${lines[6]}" = "carries on" ]
 }
 
 # Under a Flatpak or Snap app's cache folder (the app's own XDG cache), a name

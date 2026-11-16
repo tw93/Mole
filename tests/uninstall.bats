@@ -507,12 +507,16 @@ kept_orphan_run_once() {
     # A name longer than comm: no exe, argv[0] another name.
     fake_proc "$pr/e" 104 "$me" telegram-deskto - launcher
     fake_proc "$pr/f" 105 "$other" telegram-deskto /usr/bin/telegram-desktop /usr/bin/telegram-desktop
+    # A bare "/" argument (Flatpak's bwrap --bind / /) must not end the probe.
+    fake_proc "$pr/m" 106 "$me" bwrap /usr/bin/bwrap bwrap --bind / /
     mole_run core '
         for r in a b c; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_files_running /usr/bin/keepassxc || rc=$?; echo "$r=$rc"; done
         _MOLE_PROC_ROOT='"$pr"'/d; rc=0; mole_files_running /usr/lib/code/out/main.js || rc=$?; echo "d=$rc"
         for r in e f; do _MOLE_PROC_ROOT='"$pr"'/$r; rc=0; mole_process_running telegram-desktop || rc=$?; echo "$r=$rc"; done
+        _MOLE_PROC_ROOT='"$pr"'/m; rc=0; mole_files_running /usr/bin/keepassxc || rc=$?; echo "m=$rc"
         _MOLE_PROC_ROOT='"$pr"'/none; rc=0; mole_files_running /usr/bin/keepassxc || rc=$?; echo "none=$rc"'
     [ "$status" -eq 0 ]
+    [[ " ${lines[*]} " == *" m=1 "* ]]
     [[ " ${lines[*]} " == *" a=1 "* ]]
     [[ " ${lines[*]} " == *" b=2 "* ]]
     [[ " ${lines[*]} " == *" c=1 "* ]]

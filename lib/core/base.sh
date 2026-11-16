@@ -311,7 +311,10 @@ mole_files_running() {
             [[ "$word" == -*=/* ]] && word="${word#*=}"
             [[ "$word" == /* ]] || continue
             word="${word%/}"
-            [[ -n "${own[$word]:-}" ]] && return 0
+            # "/" itself (bwrap --bind / /) leaves an empty key; under set -u
+            # bash 5.2 and 5.3 treat it as a bad subscript and end the shell,
+            # whatever || follows.
+            [[ -n "$word" && -n "${own[$word]:-}" ]] && return 0
         done 2> /dev/null < "$pid/cmdline" || true
         if [[ -z "$exe" && ${#short15[@]} -gt 0 ]]; then
             comm=""
