@@ -52,6 +52,9 @@ func isLinkEntry(entry fs.DirEntry) bool {
 }
 
 func lastAccessTime(info fs.FileInfo) time.Time {
+	if scanned, ok := info.(scanFileInfo); ok {
+		return filetimeToTime(scanned.record.LastAccessTime)
+	}
 	data, ok := info.Sys().(*syscall.Win32FileAttributeData)
 	if !ok {
 		return time.Time{}
@@ -348,6 +351,9 @@ func requireRecycleBinVolume(absPath string) ([]uint16, error) {
 // diskSize reads the attributes FindNextFile already returned; only a
 // placeholder, sparse or compressed file costs one extra metadata query.
 func diskSize(path string, info fs.FileInfo) int64 {
+	if scanned, ok := info.(scanFileInfo); ok {
+		return onDiskSize(path, scanned.record.Size, scanned.record.Attributes, compressedFileSize)
+	}
 	data, ok := info.Sys().(*syscall.Win32FileAttributeData)
 	if !ok {
 		return info.Size()

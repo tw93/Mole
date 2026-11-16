@@ -2,6 +2,12 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-15: Analyze hard-link sizes
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| Count each hard-linked file once per scan | Mole CLI (Windows): Implemented in source (#2012), reading the volume serial and file ID from directory records; later links show 0 B. Mole CLI (macOS): already deduplicates by `(dev, ino)`, and its Home row across children since #2014. Mole CLI (Linux): already deduplicates by `(dev, ino)`, Home row across children since `linux` `644a643e` (#2013). Mole for Windows: already deduplicates through `src/Mole.Core/DiskScan/FileIdSet.cs`, at `cc671f01`. Mole Mac: not checked in this task. | Native Windows Go tests passed on the contributor's host; `GOOS=windows go vet ./cmd/...` and the Windows test build pass. Fixtures and memory are in [the development record](docs/development-record.md). Next check: Mole for Windows keeps one bit per MFT record (256 KiB for 2 million records) where this scanner keeps a hash entry per file (about 85 MiB sampled at 1,000,000 files); port that if memory matters. No release receipt exists. |
+
 ## 2026-11-15: Analyze overview fixes from Mole CLI (macOS) (#1992, #1996)
 
 | Change | Destinations | Evidence and next check |

@@ -59,12 +59,13 @@ func isTransientFailure(err error) bool {
 }
 
 type dirEntry struct {
-	State      scanState
-	Name       string
-	Path       string
-	Size       int64
-	IsDir      bool
-	LastAccess time.Time
+	State           scanState
+	Name            string
+	Path            string
+	Size            int64
+	DedupedHardlink bool
+	IsDir           bool
+	LastAccess      time.Time
 }
 
 type fileEntry struct {
@@ -79,6 +80,8 @@ type scanResult struct {
 	LargeFiles []fileEntry
 	TotalSize  int64
 	TotalFiles int64
+	// This flag keeps a zero-byte directory visible when its own subtree has duplicate links.
+	containsDedupedHardlink bool
 	// transientFailure is true when some coverage was lost to a failure that
 	// may not recur (see isPermissionFailure). Such a result is refreshed on
 	// the next visit instead of being reused.
@@ -487,7 +490,7 @@ func snapshotFromModel(m model) historyEntry {
 func filterNonEmptyEntries(entries []dirEntry) []dirEntry {
 	filtered := make([]dirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Size > 0 || entry.State != scanComplete {
+		if entry.Size > 0 || entry.State != scanComplete || entry.DedupedHardlink {
 			filtered = append(filtered, entry)
 		}
 	}

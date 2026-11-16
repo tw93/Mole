@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -92,7 +91,7 @@ func startLiveScanCmd(id int64, path string, publication *scanPublication, files
 		}
 
 		limiter := newScanLimiter(0)
-		initial, targets, err := readLiveScanInitialEntries(path)
+		initial, targets, err := readLiveScanInitialEntriesWithLimiter(path, limiter)
 		if err != nil {
 			publication.cancel()
 			return liveScanStartMsg{id: id, path: path, err: err}
@@ -133,7 +132,11 @@ func startLiveScanCmd(id int64, path string, publication *scanPublication, files
 }
 
 func readLiveScanInitialEntries(root string) (scanResult, []liveScanTarget, error) {
-	children, err := os.ReadDir(root)
+	return readLiveScanInitialEntriesWithLimiter(root, newScanLimiter(0))
+}
+
+func readLiveScanInitialEntriesWithLimiter(root string, limiter *scanLimiter) (scanResult, []liveScanTarget, error) {
+	children, err := readScanEntries(root)
 	if err != nil {
 		return scanResult{}, nil, err
 	}
@@ -145,6 +148,7 @@ func readLiveScanInitialEntries(root string) (scanResult, []liveScanTarget, erro
 	largeFiles := make([]fileEntry, 0)
 	var totalSize int64
 	var totalFiles int64
+	containsDedupedHardlink := false
 	state := scanComplete
 	transient := false
 
@@ -201,14 +205,16 @@ func readLiveScanInitialEntries(root string) (scanResult, []liveScanTarget, erro
 			transient = transient || isTransientFailure(err)
 			continue
 		}
-		size := diskSize(fullPath, info)
+		size, duplicate := limiter.countFile(fullPath, child, info)
+		containsDedupedHardlink = containsDedupedHardlink || duplicate
 		totalSize += size
 		totalFiles++
 		entries = append(entries, dirEntry{
-			Name:       child.Name(),
-			Path:       fullPath,
-			Size:       size,
-			LastAccess: lastAccessTime(info),
+			Name:            child.Name(),
+			Path:            fullPath,
+			Size:            size,
+			DedupedHardlink: duplicate,
+			LastAccess:      lastAccessTime(info),
 		})
 		if !shouldSkipFileForLargeTracking(fullPath) && size >= largeFileWarmupMinSize {
 			largeFiles = append(largeFiles, fileEntry{Name: child.Name(), Path: fullPath, Size: size})
@@ -217,7 +223,7 @@ func readLiveScanInitialEntries(root string) (scanResult, []liveScanTarget, erro
 
 	sortDirEntriesBySize(entries)
 	largeFiles = topLargeFiles(largeFiles)
-	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state, transientFailure: transient}, targets, nil
+	return scanResult{Entries: entries, TotalSize: totalSize, TotalFiles: totalFiles, LargeFiles: largeFiles, State: state, transientFailure: transient, containsDedupedHardlink: containsDedupedHardlink}, targets, nil
 }
 
 func runLiveScan(
@@ -279,11 +285,12 @@ func runLiveScan(
 			}
 
 			entry := dirEntry{
-				Name:  target.name,
-				Path:  target.path,
-				Size:  result.TotalSize,
-				State: result.State,
-				IsDir: true,
+				Name:            target.name,
+				Path:            target.path,
+				Size:            result.TotalSize,
+				State:           result.State,
+				IsDir:           true,
+				DedupedHardlink: result.containsDedupedHardlink,
 			}
 			mu.Lock()
 			entriesByPath[target.path] = entry
@@ -349,12 +356,13 @@ func runLiveScan(
 		state = scanPartial
 	}
 	result := scanResult{
-		State:            state,
-		Entries:          finalEntries,
-		LargeFiles:       largeFiles,
-		TotalSize:        totalSize.Load(),
-		TotalFiles:       totalFiles.Load(),
-		transientFailure: transient.Load(),
+		State:                   state,
+		Entries:                 finalEntries,
+		LargeFiles:              largeFiles,
+		TotalSize:               totalSize.Load(),
+		TotalFiles:              totalFiles.Load(),
+		containsDedupedHardlink: limiter.deduped.Load(),
+		transientFailure:        transient.Load(),
 	}
 
 	stream.publish(liveScanEventMsg{id: id, path: root, kind: liveScanComplete, result: result})
@@ -425,11 +433,11 @@ func scanLiveTarget(ctx context.Context, target liveScanTarget, largeFileChan ch
 	}
 
 	if target.kind == liveScanTargetFoldedDirectory {
-		size, err := calculateDirSizeFast(ctx, target.path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+		size, containsDeduped, err := calculateDirSizeFastWithDedup(ctx, target.path, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 		if ctx.Err() != nil {
 			return scanResult{}, ctx.Err()
 		}
-		return scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err)}, nil
+		return scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), containsDedupedHardlink: containsDeduped}, nil
 	}
 
 	result := scanSubdir(ctx, target.path, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)

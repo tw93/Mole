@@ -102,6 +102,40 @@ func (p *scanPublication) finish(action func()) {
 type scanLimiter struct {
 	entrySem chan struct{}
 	walkSem  chan struct{}
+	seen     [32]scanSeenShard
+	deduped  atomic.Bool
+}
+
+type scanSeenShard struct {
+	mu      sync.Mutex
+	volumes map[uint32]map[uint64]struct{}
+}
+
+func (l *scanLimiter) countFile(path string, entry scanDirEntry, info os.FileInfo) (int64, bool) {
+	if l != nil && entry.fallback == nil && entry.record.FileID != 0 && entry.record.Attributes&fileAttributeReparsePoint == 0 {
+		id := entry.record.FileID
+		volume := entry.record.VolumeSerial
+		shard := &l.seen[(id^(id>>32)^uint64(volume))%uint64(len(l.seen))]
+		shard.mu.Lock()
+		if shard.volumes == nil {
+			shard.volumes = make(map[uint32]map[uint64]struct{}, 1)
+		}
+		files := shard.volumes[volume]
+		if files == nil {
+			files = make(map[uint64]struct{})
+			shard.volumes[volume] = files
+		}
+		_, loaded := files[id]
+		if !loaded {
+			files[id] = struct{}{}
+		}
+		shard.mu.Unlock()
+		if loaded {
+			l.deduped.Store(true)
+			return 0, true
+		}
+	}
+	return diskSize(path, info), false
 }
 
 func newScanLimiter(childCount int) *scanLimiter {
@@ -186,7 +220,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 	if err := ctx.Err(); err != nil {
 		return scanResult{}, err
 	}
-	children, err := os.ReadDir(root)
+	children, err := readScanEntries(root)
 	if err != nil {
 		return scanResult{}, err
 	}
@@ -200,6 +234,7 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 	var subtreeFilesScanned atomic.Int64
 	var incomplete atomic.Bool
 	var transient atomic.Bool
+	var containsDedupedHardlink atomic.Bool
 	noteFailure := func(err error) {
 		incomplete.Store(true)
 		if isTransientFailure(err) {
@@ -207,6 +242,9 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 		}
 	}
 	noteChildResult := func(result scanResult) {
+		if result.containsDedupedHardlink {
+			containsDedupedHardlink.Store(true)
+		}
 		if result.State != scanComplete {
 			incomplete.Store(true)
 		}
@@ -294,8 +332,8 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 				}
 				var result scanResult
 				if shouldFoldDirWithPath(name, fullPath) {
-					size, err := calculateDirSizeFast(ctx, fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
-					result = scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err)}
+					size, containsDeduped, err := calculateDirSizeFastWithDedup(ctx, fullPath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+					result = scanResult{TotalSize: size, State: measurementState(size, err), transientFailure: isTransientFailure(err), containsDedupedHardlink: containsDeduped}
 				} else {
 					result = scanSubdir(ctx, fullPath, largeFileChan, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 				}
@@ -309,11 +347,12 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 				}
 				atomic.AddInt64(dirsScanned, 1)
 				trySend(ctx, entryChan, dirEntry{
-					Name:  name,
-					Path:  fullPath,
-					Size:  result.TotalSize,
-					State: result.State,
-					IsDir: true,
+					Name:            name,
+					Path:            fullPath,
+					Size:            result.TotalSize,
+					State:           result.State,
+					IsDir:           true,
+					DedupedHardlink: result.containsDedupedHardlink,
 				}, scanSendTimeout)
 			}
 			if limiter.tryAcquireEntry() {
@@ -334,16 +373,20 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 			noteFailure(err)
 			continue
 		}
-		size := diskSize(fullPath, info)
+		size, duplicate := limiter.countFile(fullPath, child, info)
+		if duplicate {
+			containsDedupedHardlink.Store(true)
+		}
 		atomic.AddInt64(&total, size)
 		localFilesScanned++
 		localBytesScanned += size
 
 		trySend(ctx, entryChan, dirEntry{
-			Name:       child.Name(),
-			Path:       fullPath,
-			Size:       size,
-			LastAccess: lastAccessTime(info),
+			Name:            child.Name(),
+			Path:            fullPath,
+			Size:            size,
+			DedupedHardlink: duplicate,
+			LastAccess:      lastAccessTime(info),
 		}, scanSendTimeout)
 
 		if !shouldSkipFileForLargeTracking(fullPath) && size >= atomic.LoadInt64(&largeFileMinSize) {
@@ -386,12 +429,13 @@ func scanPathConcurrentWithLimit(ctx context.Context, root string, entryLimit in
 		state = scanPartial
 	}
 	return scanResult{
-		State:            state,
-		Entries:          entries,
-		LargeFiles:       largeFiles,
-		TotalSize:        total,
-		TotalFiles:       localFilesScanned + subtreeFilesScanned.Load(),
-		transientFailure: transient.Load(),
+		State:                   state,
+		Entries:                 entries,
+		LargeFiles:              largeFiles,
+		TotalSize:               total,
+		TotalFiles:              localFilesScanned + subtreeFilesScanned.Load(),
+		containsDedupedHardlink: containsDedupedHardlink.Load(),
+		transientFailure:        transient.Load(),
 	}, nil
 }
 
@@ -451,10 +495,20 @@ func calculateDirSizeFast(ctx context.Context, root string, limiter *scanLimiter
 	return walkDirSize(ctx, root, "", limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
 }
 
+func calculateDirSizeFastWithDedup(ctx context.Context, root string, limiter *scanLimiter, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (int64, bool, error) {
+	return walkDirSizeWithDedup(ctx, root, "", limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+}
+
 // walkDirSize is calculateDirSizeFast with one immediate child of root left
 // out, which keeps the overview's Home row from counting AppData twice.
 func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLimiter, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (int64, error) {
+	size, _, err := walkDirSizeWithDedup(ctx, root, excludePath, limiter, filesScanned, dirsScanned, bytesScanned, currentPath)
+	return size, err
+}
+
+func walkDirSizeWithDedup(ctx context.Context, root, excludePath string, limiter *scanLimiter, filesScanned, dirsScanned, bytesScanned *int64, currentPath *atomic.Value) (int64, bool, error) {
 	var total atomic.Int64
+	var containsDedupedHardlink atomic.Bool
 	var wg sync.WaitGroup
 	var failures scanFailures
 
@@ -487,7 +541,7 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 			currentPath.Store(dirPath)
 		}
 
-		entries, err := os.ReadDir(dirPath)
+		entries, err := readScanEntries(dirPath)
 		if err != nil {
 			failures.record(err)
 			return
@@ -523,7 +577,11 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 				failures.record(err)
 				continue
 			}
-			localBytes += diskSize(filepath.Join(dirPath, entry.Name()), info)
+			size, duplicate := limiter.countFile(filepath.Join(dirPath, entry.Name()), entry, info)
+			if duplicate {
+				containsDedupedHardlink.Store(true)
+			}
+			localBytes += size
 			localFiles++
 		}
 
@@ -540,7 +598,7 @@ func walkDirSize(ctx context.Context, root, excludePath string, limiter *scanLim
 	wg.Wait()
 
 	failures.record(ctx.Err())
-	return total.Load(), failures.err()
+	return total.Load(), containsDedupedHardlink.Load(), failures.err()
 }
 
 var (
