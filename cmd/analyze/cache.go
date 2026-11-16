@@ -37,7 +37,8 @@ import (
 // mount and miss @log or @pkg.
 // v12: the old-Downloads overview total skips a share or FUSE mount that is
 // itself a child of Downloads.
-const cacheSchemaVersion = 12
+// v13: Home totals count a file hard-linked across its children once.
+const cacheSchemaVersion = 13
 
 type overviewSizeSnapshot struct {
 	Size          int64     `json:"size"`

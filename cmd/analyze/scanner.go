@@ -964,7 +964,7 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		}
 	}
 
-	runDuSize := func(target string) (int64, error) {
+	runDuSize := func(target string, excludePaths ...string) (int64, error) {
 		if _, err := os.Stat(target); err != nil {
 			return 0, err
 		}
@@ -972,7 +972,8 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, duBinary, duSizeArgs(target, ignoreNames, currentMountTable().foreignMountsUnder(target))...)
+		excludes := append(currentMountTable().foreignMountsUnder(target), excludePaths...)
+		cmd := exec.CommandContext(ctx, duBinary, duSizeArgs(target, ignoreNames, excludes)...)
 		cmd.Env = append(os.Environ(), "LC_ALL=C")
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -1016,7 +1017,18 @@ func getDirectorySizeFromDuWithExcludeAndIgnores(ctx context.Context, path strin
 	// When excluding a path (e.g., ~/.cache), subtract only that exact directory instead of ignoring every ".cache"
 	if excludePath != "" {
 		if filepath.Dir(filepath.Clean(excludePath)) == filepath.Clean(path) {
-			return getDirectorySizeFromDuSkippingImmediateChild(ctx, path, excludePath, runDuSize)
+			// One traversal keeps du's hardlink set shared across every child
+			// and the files directly in path. Separate du runs per child, or
+			// several operands to uutils du 0.2, count a link once per run.
+			// The literal path pattern drops only this child; nested
+			// directories with the same name stay counted.
+			root := filepath.Clean(path)
+			if info, err := os.Lstat(root); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+				if resolved, err := filepath.EvalSymlinks(root); err == nil {
+					root = resolved
+				}
+			}
+			return runDuSize(root, filepath.Join(root, filepath.Base(excludePath)))
 		}
 
 		totalSize, err := runDuSize(path)
@@ -1087,82 +1099,10 @@ func overviewIgnoreNamesForPath(path string) []string {
 	return ignoreNames
 }
 
-func getDirectorySizeFromDuSkippingImmediateChild(ctx context.Context, path string, excludePath string, runDuSize func(string) (int64, error)) (int64, error) {
-	path = filepath.Clean(path)
-	excludePath = filepath.Clean(excludePath)
-
-	rel, err := filepath.Rel(path, excludePath)
-	if err != nil {
-		return 0, err
-	}
-	if rel == "." || rel == ".." || filepath.IsAbs(rel) || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return 0, fmt.Errorf("exclude path is outside base: %s", excludePath)
-	}
-	if strings.Contains(rel, string(os.PathSeparator)) {
-		return 0, fmt.Errorf("exclude path is not an immediate child: %s", excludePath)
-	}
-
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return 0, err
-	}
-
-	var total int64
-	var failures scanFailures
-	if info, err := os.Lstat(path); err == nil {
-		atomic.AddInt64(&total, getActualFileSize(path, info))
-	} else {
-		failures.record(err)
-	}
-
-	var wg sync.WaitGroup
-	workerCount := min(max(runtime.NumCPU()*2, 2), 8)
-	sem := make(chan struct{}, workerCount)
-
-	for _, entry := range entries {
-		if ctx.Err() != nil {
-			failures.record(ctx.Err())
-			break
-		}
-		fullPath := filepath.Join(path, entry.Name())
-		if filepath.Clean(fullPath) == excludePath {
-			continue
-		}
-		if entry.IsDir() && isForeignMountPath(fullPath) {
-			continue
-		}
-
-		if entry.Type()&fs.ModeSymlink != 0 || !entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				failures.record(err)
-				continue
-			}
-			atomic.AddInt64(&total, getActualFileSize(fullPath, info))
-			continue
-		}
-
-		if err := acquireScanPermit(ctx, sem); err != nil {
-			failures.record(err)
-			break
-		}
-		wg.Go(func() {
-			defer func() { <-sem }()
-
-			size, err := runDuSize(fullPath)
-			failures.record(err)
-			atomic.AddInt64(&total, size)
-		})
-	}
-
-	wg.Wait()
-
-	return total, failures.err()
-}
-
 func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, excludePath string, ignoreNames []string) (int64, error) {
 	var total int64
 	var failures scanFailures
+	var seen sync.Map
 	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -1186,7 +1126,8 @@ func getDirectoryLogicalSizeWithExclude(ctx context.Context, path string, exclud
 			failures.record(err)
 			return nil
 		}
-		total += getActualFileSize(p, info)
+		size, _ := countableFileSize(p, info, &seen)
+		total += size
 		return nil
 	})
 	failures.record(err)

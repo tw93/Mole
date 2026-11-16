@@ -7,12 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -52,33 +50,6 @@ func TestGetDirectoryLogicalSizeWithExclude(t *testing.T) {
 	}
 	if excluding != 400 {
 		t.Fatalf("expected 400 bytes when excluding top-level Library, got %d", excluding)
-	}
-}
-
-func TestGetDirectorySizeFromDuSkippingImmediateChildDoesNotMeasureExcludedPath(t *testing.T) {
-	base := t.TempDir()
-	excluded := filepath.Join(base, "Library")
-	included := filepath.Join(base, "Documents")
-	if err := os.MkdirAll(excluded, 0o755); err != nil {
-		t.Fatalf("mkdir excluded: %v", err)
-	}
-	if err := os.MkdirAll(included, 0o755); err != nil {
-		t.Fatalf("mkdir included: %v", err)
-	}
-
-	var measured []string
-	size, err := getDirectorySizeFromDuSkippingImmediateChild(context.Background(), base, excluded, func(path string) (int64, error) {
-		measured = append(measured, path)
-		return 100, nil
-	})
-	if err != nil {
-		t.Fatalf("getDirectorySizeFromDuSkippingImmediateChild: %v", err)
-	}
-	if size < 100 {
-		t.Fatalf("expected included directory size in total, got %d", size)
-	}
-	if len(measured) != 1 || measured[0] != included {
-		t.Fatalf("expected to measure only %s, measured %#v", included, measured)
 	}
 }
 
@@ -126,56 +97,44 @@ func TestGetDirectorySizeFromDuMeasuresUserLibraryInOneTraversal(t *testing.T) {
 	}
 }
 
-func TestOverviewPerChildDuPoolBelongsToOneMeasurement(t *testing.T) {
-	workers := min(max(runtime.NumCPU()*2, 2), 8)
-	stuckBase := t.TempDir()
-	for i := range workers + 2 {
-		if err := os.MkdirAll(filepath.Join(stuckBase, fmt.Sprintf("child-%d", i)), 0o755); err != nil {
-			t.Fatalf("mkdir child: %v", err)
+func TestHomeOverviewCountsHardlinksAcrossChildrenOnce(t *testing.T) {
+	if _, err := os.Stat(duBinary); err != nil {
+		t.Skip("du not installed")
+	}
+	useMountTable(t, newMountTable(nil))
+	home := t.TempDir()
+	const mib = 1024 * 1024
+	original := filepath.Join(home, "Documents", "original.bin")
+	writeFileWithSize(t, original, mib)
+	if err := os.MkdirAll(filepath.Join(home, "Projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []string{filepath.Join(home, "Projects", "linked.bin"), filepath.Join(home, "top.bin")} {
+		if err := os.Link(original, link); err != nil {
+			t.Skipf("hard links unsupported here: %v", err)
 		}
 	}
-	freshBase := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(freshBase, "child"), 0o755); err != nil {
-		t.Fatalf("mkdir child: %v", err)
-	}
+	writeFileWithSize(t, filepath.Join(home, homeCacheDirName, "skipped.bin"), 2*mib)
+	writeFileWithSize(t, filepath.Join(home, "Projects", homeCacheDirName, "nested.bin"), 3*mib)
 
-	// Hold every permit of one measurement on children that never finish,
-	// the way a cancelled Home refresh can while its du processes wind down.
-	release := make(chan struct{})
-	stuckDone := make(chan struct{})
-	var started atomic.Int64
-	go func() {
-		defer close(stuckDone)
-		_, _ = getDirectorySizeFromDuSkippingImmediateChild(context.Background(), stuckBase, filepath.Join(stuckBase, "Library"), func(string) (int64, error) {
-			started.Add(1)
-			<-release
-			return 100, nil
-		})
-	}()
-	defer func() {
-		close(release)
-		<-stuckDone
-	}()
-
-	deadline := time.Now().Add(5 * time.Second)
-	for started.Load() < int64(workers) {
-		if time.Now().After(deadline) {
-			t.Fatalf("expected %d concurrent du workers, saw %d", workers, started.Load())
+	excludePath := filepath.Join(home, homeCacheDirName)
+	for name, measure := range map[string]func() (int64, error){
+		"du": func() (int64, error) {
+			return getDirectorySizeFromDuWithExcludeAndIgnores(context.Background(), home, excludePath, nil, duTimeout)
+		},
+		"logical": func() (int64, error) {
+			return getDirectoryLogicalSizeWithExclude(context.Background(), home, excludePath, nil)
+		},
+	} {
+		size, err := measure()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
-		time.Sleep(time.Millisecond)
-	}
-
-	// A new measurement gets its own permits instead of queueing behind the
-	// stuck one.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	var calls atomic.Int64
-	_, err := getDirectorySizeFromDuSkippingImmediateChild(ctx, freshBase, filepath.Join(freshBase, "Library"), func(string) (int64, error) {
-		calls.Add(1)
-		return 100, nil
-	})
-	if err != nil || calls.Load() != 1 {
-		t.Fatalf("a stuck measurement held this one's permits: du calls=%d err=%v", calls.Load(), err)
+		// One copy of the linked file plus the nested cache; the immediate
+		// .cache stays out. Directory blocks add at most a few KiB.
+		if size < 4*mib || size >= 4*mib+256*1024 {
+			t.Fatalf("%s Home total = %d, want one 1 MiB link plus the 3 MiB nested cache", name, size)
+		}
 	}
 }
 
