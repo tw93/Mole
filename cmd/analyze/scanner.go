@@ -112,7 +112,7 @@ type scanSeenShard struct {
 }
 
 func (l *scanLimiter) countFile(path string, entry scanDirEntry, info os.FileInfo) (int64, bool) {
-	if l != nil && entry.fallback == nil && entry.record.FileID != 0 && entry.record.Attributes&0x400 == 0 {
+	if l != nil && entry.fallback == nil && entry.record.FileID != 0 && entry.record.Attributes&fileAttributeReparsePoint == 0 {
 		id := entry.record.FileID
 		volume := entry.record.VolumeSerial
 		shard := &l.seen[(id^(id>>32)^uint64(volume))%uint64(len(l.seen))]

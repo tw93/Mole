@@ -19,9 +19,17 @@ type scanDirEntry struct {
 
 const dedupReparseTag = 0x80000013
 
+// readIdentityRecords is readDirIdentityRecords; tests replace it to reach the
+// fallback branches without a misbehaving file system driver.
+var readIdentityRecords = readDirIdentityRecords
+
 func readScanEntries(path string) ([]scanDirEntry, error) {
-	records, err := readDirIdentityRecords(path)
-	if errors.Is(err, errIdentitiesUnavailable) {
+	records, err := readIdentityRecords(path)
+	// A volume without file IDs, or a third-party driver (WinFsp, Dokan) that
+	// claims them but writes records the walker cannot decode, still lists
+	// through os.ReadDir; only that directory loses hard-link deduplication.
+	var malformed *malformedDirBufferError
+	if errors.Is(err, errIdentitiesUnavailable) || errors.As(err, &malformed) {
 		entries, fallbackErr := os.ReadDir(path)
 		if fallbackErr != nil {
 			return nil, fallbackErr

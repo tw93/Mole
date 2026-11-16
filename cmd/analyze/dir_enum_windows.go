@@ -38,7 +38,7 @@ func init() {
 }
 
 var dirEnumBufferPool = sync.Pool{New: func() any {
-	buffer := make([]byte, dirEnumBufferSize)
+	buffer := make([]byte, dirEnumBufferSize, dirEnumBufferSize+idBothDirRecordSlack)
 	return &buffer
 }}
 
@@ -81,7 +81,7 @@ func readDirIdentityRecords(path string) ([]idBothDirEntry, error) {
 			return nil, &fs.PathError{Op: "GetFileInformationByHandleEx", Path: path, Err: callErr}
 		}
 		class = windows.FileIdBothDirectoryInfo
-		decodeErr := walkIdBothDirBuffer(buffer, func(entry idBothDirEntry) error {
+		decodeErr := walkIDBothDirBuffer(buffer, func(entry idBothDirEntry) error {
 			entry.VolumeSerial = volumeSerial
 			entries = append(entries, entry)
 			return nil

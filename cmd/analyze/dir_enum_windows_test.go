@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +99,28 @@ func TestReadDirIdentityRecordsSpansSeveralBuffers(t *testing.T) {
 	}
 	if len(entries) != fileCount {
 		t.Fatalf("listed %d entries, want %d", len(entries), fileCount)
+	}
+}
+
+func TestReadScanEntriesFallsBackWhenRecordsCannotBeDecoded(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "kept.bin"), 7)
+	previous := readIdentityRecords
+	t.Cleanup(func() { readIdentityRecords = previous })
+	for name, failure := range map[string]error{
+		"malformed":   &fs.PathError{Op: "readdir", Path: dir, Err: &malformedDirBufferError{reason: "test"}},
+		"unavailable": fmt.Errorf("%w: %s", errIdentitiesUnavailable, dir),
+	} {
+		readIdentityRecords = func(string) ([]idBothDirEntry, error) { return nil, failure }
+		entries, err := readScanEntries(dir)
+		if err != nil || len(entries) != 1 || entries[0].Name() != "kept.bin" || entries[0].fallback == nil {
+			t.Fatalf("%s: entries %+v, error %v; want the os.ReadDir listing", name, entries, err)
+		}
+	}
+	other := &fs.PathError{Op: "readdir", Path: dir, Err: syscall.ERROR_ACCESS_DENIED}
+	readIdentityRecords = func(string) ([]idBothDirEntry, error) { return nil, other }
+	if _, err := readScanEntries(dir); !errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+		t.Fatalf("an access failure must not be masked by the fallback, got %v", err)
 	}
 }
 

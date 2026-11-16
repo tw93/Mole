@@ -55,18 +55,27 @@ type idBothDirRecord struct {
 const (
 	// idBothDirNameOffset is where the name starts inside a record.
 	idBothDirNameOffset = 104
-	// idBothDirRecordSize is the fixed part plus one UTF-16 unit, padded to
-	// the 8-byte alignment the fields require.
-	idBothDirRecordSize = 112
+	// fileAttributeReparsePoint is FILE_ATTRIBUTE_REPARSE_POINT, spelled out
+	// so the portable scanner can test it without the windows package.
+	fileAttributeReparsePoint = 0x400
 	// filetimeTicksPerSecond and filetimeUnixEpoch convert a FILETIME, which
 	// counts 100 ns ticks since 1601-01-01, to Unix time.
 	filetimeTicksPerSecond = int64(10_000_000)
 	filetimeUnixEpoch      = int64(116_444_736_000_000_000)
 )
 
-// A layout drift must fail the build, not a scan. This array length is zero
-// only when the structure is exactly idBothDirRecordSize bytes.
-var _ = [1]struct{}{}[int(unsafe.Sizeof(idBothDirRecord{}))-idBothDirRecordSize]
+// A layout drift must fail the build, not a scan. Each array length is zero
+// only when the field sits at its Win32 offset. The offsets, not the size, are
+// pinned: 386 aligns uint64 to 4 bytes, so its trailing padding differs.
+var (
+	_ = [1]struct{}{}[int(unsafe.Offsetof(idBothDirRecord{}.FileID))-96]
+	_ = [1]struct{}{}[int(unsafe.Offsetof(idBothDirRecord{}.FileName))-idBothDirNameOffset]
+)
+
+// idBothDirRecordSlack is how far the fixed structure can reach past the last
+// record's name. The walker views each record through the full structure, so
+// a buffer keeps this many spare bytes after the region the file system fills.
+const idBothDirRecordSlack = int(unsafe.Sizeof(idBothDirRecord{})) - idBothDirNameOffset
 
 // idBothDirEntry is one decoded directory entry. FileID is zero and
 // AllocationSize is zero when the entry came from the os.ReadDir fallback,
@@ -106,12 +115,12 @@ func (e *malformedDirBufferError) Error() string {
 	return "malformed directory record buffer: " + e.reason
 }
 
-// walkIdBothDirBuffer decodes every record in buf and calls visit for each
+// walkIDBothDirBuffer decodes every record in buf and calls visit for each
 // entry, skipping the "." and ".." entries the way os.ReadDir does. It returns
 // at the first error, including a broken NextEntryOffset or a name that runs
 // past the buffer: a silent skip would drop bytes from a total that claims to
 // be complete.
-func walkIdBothDirBuffer(buf []byte, visit func(idBothDirEntry) error) error {
+func walkIDBothDirBuffer(buf []byte, visit func(idBothDirEntry) error) error {
 	if len(buf) == 0 {
 		return nil
 	}
@@ -136,7 +145,7 @@ func walkIdBothDirBuffer(buf []byte, visit func(idBothDirEntry) error) error {
 		}
 		name := decodeDirName(unsafe.Slice(&record.FileName[0], nameBytes/2))
 		if name != "." && name != ".." {
-			if err := visit(decodeIdBothDirRecord(record, name)); err != nil {
+			if err := visit(decodeIDBothDirRecord(record, name)); err != nil {
 				return err
 			}
 		}
@@ -155,9 +164,9 @@ func walkIdBothDirBuffer(buf []byte, visit func(idBothDirEntry) error) error {
 	}
 }
 
-// decodeIdBothDirRecord copies the fields this package uses into a value that
+// decodeIDBothDirRecord copies the fields this package uses into a value that
 // does not alias the record buffer.
-func decodeIdBothDirRecord(record *idBothDirRecord, name string) idBothDirEntry {
+func decodeIDBothDirRecord(record *idBothDirRecord, name string) idBothDirEntry {
 	return idBothDirEntry{
 		Name:           name,
 		FileID:         record.FileID,

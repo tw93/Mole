@@ -23,10 +23,10 @@ type testDirRecord struct {
 	reparseTag uint32
 }
 
-// encodeIdBothDirBuffer builds one buffer the way the file system does: records
+// encodeIDBothDirBuffer builds one buffer the way the file system does: records
 // back to back, each padded to 8 bytes, and every NextEntryOffset set except the
 // last. The caller can then corrupt a field to test a rejection path.
-func encodeIdBothDirBuffer(records []testDirRecord) []byte {
+func encodeIDBothDirBuffer(records []testDirRecord) []byte {
 	sizes := make([]int, len(records))
 	total := 0
 	for index, record := range records {
@@ -58,22 +58,19 @@ func encodeIdBothDirBuffer(records []testDirRecord) []byte {
 	return buffer
 }
 
-func collectIdBothDirEntries(t *testing.T, buffer []byte) []idBothDirEntry {
+func collectIDBothDirEntries(t *testing.T, buffer []byte) []idBothDirEntry {
 	t.Helper()
 	var entries []idBothDirEntry
-	if err := walkIdBothDirBuffer(buffer, func(entry idBothDirEntry) error {
+	if err := walkIDBothDirBuffer(buffer, func(entry idBothDirEntry) error {
 		entries = append(entries, entry)
 		return nil
 	}); err != nil {
-		t.Fatalf("walkIdBothDirBuffer returned %v", err)
+		t.Fatalf("walkIDBothDirBuffer returned %v", err)
 	}
 	return entries
 }
 
-func TestIdBothDirRecordLayoutMatchesWin32Offsets(t *testing.T) {
-	if got := unsafe.Sizeof(idBothDirRecord{}); got != idBothDirRecordSize {
-		t.Fatalf("record size = %d, want %d", got, idBothDirRecordSize)
-	}
+func TestIDBothDirRecordLayoutMatchesWin32Offsets(t *testing.T) {
 	offsets := []struct {
 		name string
 		got  uintptr
@@ -94,14 +91,14 @@ func TestIdBothDirRecordLayoutMatchesWin32Offsets(t *testing.T) {
 	}
 }
 
-func TestWalkIdBothDirBufferDecodesEveryField(t *testing.T) {
-	buffer := encodeIdBothDirBuffer([]testDirRecord{
+func TestWalkIDBothDirBufferDecodesEveryField(t *testing.T) {
+	buffer := encodeIDBothDirBuffer([]testDirRecord{
 		{name: "a.bin", fileID: 0x8000_0000_0000_0001, size: 4096, allocation: 4096, attributes: 0x20},
 		{name: "项目 数据", fileID: 42, size: 9_000_000_000, allocation: 1_048_576, attributes: 0x120},
 		{name: "junction", fileID: 7, size: 0, allocation: 0, attributes: 0x400, reparseTag: 0xA0000003},
 	})
 
-	entries := collectIdBothDirEntries(t, buffer)
+	entries := collectIDBothDirEntries(t, buffer)
 	if len(entries) != 3 {
 		t.Fatalf("decoded %d entries, want 3", len(entries))
 	}
@@ -122,15 +119,15 @@ func TestWalkIdBothDirBufferDecodesEveryField(t *testing.T) {
 	}
 }
 
-func TestWalkIdBothDirBufferSkipsDotEntriesAndKeepsHiddenNames(t *testing.T) {
-	buffer := encodeIdBothDirBuffer([]testDirRecord{
+func TestWalkIDBothDirBufferSkipsDotEntriesAndKeepsHiddenNames(t *testing.T) {
+	buffer := encodeIDBothDirBuffer([]testDirRecord{
 		{name: ".", fileID: 1},
 		{name: "..", fileID: 2},
 		{name: ".hidden", fileID: 3},
 		{name: "..leading-dots.txt", fileID: 4},
 	})
 
-	entries := collectIdBothDirEntries(t, buffer)
+	entries := collectIDBothDirEntries(t, buffer)
 	if len(entries) != 2 {
 		t.Fatalf("decoded %d entries, want 2", len(entries))
 	}
@@ -139,8 +136,8 @@ func TestWalkIdBothDirBufferSkipsDotEntriesAndKeepsHiddenNames(t *testing.T) {
 	}
 }
 
-func TestWalkIdBothDirBufferAcceptsEmptyBuffer(t *testing.T) {
-	if err := walkIdBothDirBuffer(nil, func(idBothDirEntry) error {
+func TestWalkIDBothDirBufferAcceptsEmptyBuffer(t *testing.T) {
+	if err := walkIDBothDirBuffer(nil, func(idBothDirEntry) error {
 		t.Fatal("visit called for an empty buffer")
 		return nil
 	}); err != nil {
@@ -148,19 +145,19 @@ func TestWalkIdBothDirBufferAcceptsEmptyBuffer(t *testing.T) {
 	}
 }
 
-func TestWalkIdBothDirBufferPropagatesVisitError(t *testing.T) {
+func TestWalkIDBothDirBufferPropagatesVisitError(t *testing.T) {
 	sentinel := errors.New("stop")
-	buffer := encodeIdBothDirBuffer([]testDirRecord{{name: "a", fileID: 1}, {name: "b", fileID: 2}})
+	buffer := encodeIDBothDirBuffer([]testDirRecord{{name: "a", fileID: 1}, {name: "b", fileID: 2}})
 
-	err := walkIdBothDirBuffer(buffer, func(idBothDirEntry) error { return sentinel })
+	err := walkIDBothDirBuffer(buffer, func(idBothDirEntry) error { return sentinel })
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("walk returned %v, want the visit error", err)
 	}
 }
 
-func TestWalkIdBothDirBufferRejectsBrokenLayouts(t *testing.T) {
+func TestWalkIDBothDirBufferRejectsBrokenLayouts(t *testing.T) {
 	valid := func() []byte {
-		return encodeIdBothDirBuffer([]testDirRecord{{name: "a.bin", fileID: 1}, {name: "b.bin", fileID: 2}})
+		return encodeIDBothDirBuffer([]testDirRecord{{name: "a.bin", fileID: 1}, {name: "b.bin", fileID: 2}})
 	}
 	first := func(buffer []byte) *idBothDirRecord {
 		return (*idBothDirRecord)(unsafe.Pointer(&buffer[0]))
@@ -215,7 +212,7 @@ func TestWalkIdBothDirBufferRejectsBrokenLayouts(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := walkIdBothDirBuffer(testCase.mutate(), func(idBothDirEntry) error { return nil })
+			err := walkIDBothDirBuffer(testCase.mutate(), func(idBothDirEntry) error { return nil })
 			if err == nil {
 				t.Fatal("walk accepted a broken buffer")
 			}
