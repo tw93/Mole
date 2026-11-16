@@ -82,7 +82,7 @@ func TestLiveInitialScanStartsWithFreshFileIdentities(t *testing.T) {
 	}
 }
 
-func TestLiveFoldedDirectoryWithCrossDirectoryHardLinksIsNotReusable(t *testing.T) {
+func TestLiveFoldedDirectoryWithCrossDirectoryHardLinksCountsTheLinkOnce(t *testing.T) {
 	root := t.TempDir()
 	folded := filepath.Join(root, "node_modules")
 	if err := os.Mkdir(folded, 0o755); err != nil {
