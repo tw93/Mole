@@ -340,12 +340,12 @@ Source-only fix for Mole CLI (macOS), `fc4316b0`: `get_latest_commit_from_github
 
 ## 2026-11-15 Home overview hardlink accounting
 
-Source: Mole CLI (macOS), `7c83bad6`. The Home measurement passes its included immediate children to one `du` so file identities are shared across them and top-level files. It still omits only the immediate `~/Library` and mounted children. The bounded Go fallback also shares the existing identity set; overview cache schema 14 rejects old totals. Real-hardlink regressions fail on the prior main and pass here. This is a source change, not a verified package release.
+Source: Mole CLI (macOS), `3c4f01d8` (#2014). The Home measurement passes its included immediate children to one `du` so file identities are shared across them and top-level files. It still omits only the immediate `~/Library` and mounted children. The bounded Go fallback also shares the existing identity set; overview cache schema 14 rejects old totals. Real-hardlink regressions fail on the prior main and pass here. This is a source change, not a verified package release.
 
 | Product | Status | Consumer and evidence |
 | --- | --- | --- |
 | Mole CLI (macOS) | Implemented in source | `cmd/analyze/scanner.go:getDirectorySizeFromDuSkippingImmediateChild`, `TestHomeOverviewDeduplicatesHardlinks` and the neighboring permission/symlink/mount tests. |
-| Mole CLI (Linux) | Pending | At `4de579cc`, Home excludes the immediate `.cache` through independent per-child `du` calls. Unchanged source run on Ubuntu 25.10 aarch64 reports 2097152 B for one 1048576 B file through both the real CLI and the Home measurement; uutils 0.2.2 and GNU du 9.5 agree, while the directory scanner deduplicates. Tracked in [#2013](https://github.com/tw93/Mole/issues/2013); its current CONTRIBUTING accepts issues rather than PRs. |
+| Mole CLI (Linux) | Implemented in source | `644a643e` on `linux` (#2013). uutils du 0.2.2, Ubuntu 25.10's default, counts hard links per operand even within one `du -c`, so Linux runs a single `du` over Home with the literal `~/.cache` path excluded rather than this repair's operand list. `TestHomeOverviewCountsHardlinksAcrossChildrenOnce` fails on the old code and passes on the new one under GNU du 9.1 and uutils du 0.2.2 on the devbox. |
 | Mole CLI (Windows) | Not applicable to this du repair | At `59f3dc5a`, `measureOverviewSize` uses `walkDirSize`, excluding AppData. Its file-ID/hardlink work remains the separate draft [#2012](https://github.com/tw93/Mole/pull/2012); no Windows runtime claim is made here. |
 
 The Mole Mac and Mole for Windows consumers remain unverified in this task.
