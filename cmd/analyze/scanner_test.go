@@ -469,3 +469,26 @@ func TestUserLibraryOverviewDeduplicatesHardlinks(t *testing.T) {
 		t.Fatalf("Library size = %d, single du = %d; hardlinks must count once", got, kb*1024)
 	}
 }
+
+func TestFindDuBinaryPrefersGNUDuOverUutilsDu(t *testing.T) {
+	dir := t.TempDir()
+	gnudu := filepath.Join(dir, "gnudu")
+	du := filepath.Join(dir, "du")
+	for _, p := range []string{gnudu, du} {
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := findDuBinary([]string{gnudu, du}); got != gnudu {
+		t.Fatalf("findDuBinary = %q, want gnudu %q", got, gnudu)
+	}
+	if err := os.Remove(gnudu); err != nil {
+		t.Fatal(err)
+	}
+	if got := findDuBinary([]string{gnudu, du}); got != du {
+		t.Fatalf("findDuBinary without gnudu = %q, want %q", got, du)
+	}
+	if duCandidates[0] != "/usr/bin/gnudu" {
+		t.Fatalf("duCandidates = %v, want /usr/bin/gnudu first", duCandidates)
+	}
+}

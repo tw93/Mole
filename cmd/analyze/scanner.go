@@ -35,12 +35,14 @@ type scanFailures struct {
 // duBinary is GNU du. The size probe passes --exclude patterns and parses
 // "du: <message>: <strerror>" errors under LC_ALL=C. A var only so tests can
 // point it at a stub.
-var duBinary = findDuBinary()
+var duBinary = findDuBinary(duCandidates)
 
-func findDuBinary() string {
-	// Ubuntu 26.10 makes /usr/bin/du the uutils one, which ignores the
-	// backslash escapes in --exclude; GNU du stays installed as gnudu.
-	for _, p := range []string{"/usr/bin/gnudu", "/usr/bin/du", "/bin/du"} {
+// Ubuntu 25.10 makes /usr/bin/du the uutils one, which ignores the backslash
+// escapes in --exclude; GNU du stays installed as gnudu, so it goes first.
+var duCandidates = []string{"/usr/bin/gnudu", "/usr/bin/du", "/bin/du"}
+
+func findDuBinary(candidates []string) string {
+	for _, p := range candidates {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
