@@ -17,6 +17,15 @@ func TestCommandLineQuotesEveryArgument(t *testing.T) {
 	}
 }
 
+func TestCommandLineDoublesTypographicQuotes(t *testing.T) {
+	// PowerShell ends a single-quoted string at U+2018 to U+201B as well as at ', so each is doubled.
+	got := commandLine("C:\\Users\\John O\u2019Brien\\scoop\\apps\\mole\\current\\mole.ps1", []string{"\u2018a\u201ab\u201b"})
+	want := "& 'C:\\Users\\John O\u2019\u2019Brien\\scoop\\apps\\mole\\current\\mole.ps1' '\u2018\u2018a\u201a\u201ab\u201b\u201b'; exit $LASTEXITCODE"
+	if got != want {
+		t.Fatalf("commandLine:\n got %s\nwant %s", got, want)
+	}
+}
+
 func TestCommandLineWithoutArgumentsOpensTheMenu(t *testing.T) {
 	got := commandLine(`C:\Mole\mole.ps1`, nil)
 	want := `& 'C:\Mole\mole.ps1'; exit $LASTEXITCODE`

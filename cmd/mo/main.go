@@ -110,6 +110,18 @@ func commandLine(script string, args []string) string {
 	return strings.Join(parts, " ") + "; exit $LASTEXITCODE"
 }
 
+// singleQuotes are the characters PowerShell accepts as a single quote: the
+// ASCII one and the typographic U+2018 to U+201B. Inside a single-quoted
+// literal any of them ends the string unless it is doubled, so a profile path
+// such as C:\Users\John O’Brien broke every command (tw93/Mole#2021).
+var singleQuotes = strings.NewReplacer(
+	"'", "''",
+	"\u2018", "\u2018\u2018",
+	"\u2019", "\u2019\u2019",
+	"\u201a", "\u201a\u201a",
+	"\u201b", "\u201b\u201b",
+)
+
 func quote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	return "'" + singleQuotes.Replace(value) + "'"
 }
