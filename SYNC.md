@@ -2,6 +2,12 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-17: Curly quotes in the launcher's script path (#2021)
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| `mo.exe` doubles U+2018 to U+201B as well as `'` when it quotes the `mole.ps1` path, since PowerShell reads all of them as single quotes and a profile like `John O’Brien` failed every command with "The string is missing the terminator" | Mole CLI (Windows): Implemented `1953a0c2`. Mole for Windows: Implemented `d126f87d` (its Scoop runner quoted `scoop.ps1` the same way). Mole CLI (macOS): Not applicable (no PowerShell launcher). Mole Mac: Not applicable (no PowerShell). | `TestCommandLineDoublesTypographicQuotes`; ThinkPad with a curly-quote install path: old `mo.exe` exit 1 with the terminator error, new one exit 0 (`mo --version`). Released: next Mole CLI (Windows) tag; the source install from `quick-install.ps1` (writes `mo.cmd` with `-File`) is unaffected. |
+
 ## 2026-11-15: Analyze hard-link sizes
 
 | Change | Destinations | Evidence and next check |
