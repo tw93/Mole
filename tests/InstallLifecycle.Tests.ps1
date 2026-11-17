@@ -10,6 +10,44 @@ BeforeAll {
     $script:Colors = @{ Red=''; Green=''; Yellow=''; Blue=''; Cyan=''; Gray=''; NC='' }
 }
 
+Describe 'Native launcher literal arguments' {
+    BeforeAll {
+        $script:NativeLauncher = Join-Path $TestDrive 'native-mo.exe'
+        Push-Location $script:RepoRoot
+        try {
+            & go build -o $script:NativeLauncher ./cmd/mo
+            if ($LASTEXITCODE -ne 0) { throw 'Could not build the native launcher' }
+        }
+        finally { Pop-Location }
+    }
+
+    It 'Preserves quote U+<Code> in the native script path and arguments' -ForEach @(
+        @{ Code = '0027'; Value = 0x0027 }
+        @{ Code = '2018'; Value = 0x2018 }
+        @{ Code = '2019'; Value = 0x2019 }
+        @{ Code = '201A'; Value = 0x201A }
+        @{ Code = '201B'; Value = 0x201B }
+    ) {
+        $root = Join-Path $TestDrive ('O' + [char]$Value + 'Brien-' + $Code)
+        $null = New-Item -ItemType Directory -Path $root
+        $launcher = Join-Path $root 'mo.exe'
+        Copy-Item -LiteralPath $script:NativeLauncher -Destination $launcher
+        @'
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject @($args) -Compress)))
+exit 7
+'@ | Set-Content -LiteralPath (Join-Path $root 'mole.ps1') -Encoding ASCII
+        $argument = 'literal ' + [char]$Value + ' $env:USERPROFILE ' + [char]0x201C + 'double' + [char]0x201D + [char]0x201E
+        $output = & $launcher '--version' $argument
+        $LASTEXITCODE | Should -Be 7
+        @($output).Count | Should -Be 1
+        $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string]$output))
+        $actual = ConvertFrom-Json $json
+        @($actual).Count | Should -Be 2
+        $actual[0] | Should -BeExactly '--version'
+        $actual[1] | Should -BeExactly $argument
+    }
+}
+
 Describe 'Source native tool refresh' {
     BeforeEach {
         $script:Root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))

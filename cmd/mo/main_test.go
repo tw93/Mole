@@ -25,6 +25,16 @@ func TestCommandLineWithoutArgumentsOpensTheMenu(t *testing.T) {
 	}
 }
 
+func TestCommandLineQuotesSmartSingleQuotes(t *testing.T) {
+	got := commandLine("C:\\Users\\O\u2019Brien\\mole.ps1", []string{
+		"\u2018left", "right\u2019", "low\u201a", "reversed\u201b", "\u201cquoted\u201d\u201e",
+	})
+	want := "& 'C:\\Users\\O\u2019\u2019Brien\\mole.ps1' '\u2018\u2018left' 'right\u2019\u2019' 'low\u201a\u201a' 'reversed\u201b\u201b' '\u201cquoted\u201d\u201e'; exit $LASTEXITCODE"
+	if got != want {
+		t.Fatalf("commandLine:\n got %s\nwant %s", got, want)
+	}
+}
+
 func TestPowerShellCandidatesTryWindowsPowerShellFirst(t *testing.T) {
 	t.Setenv("SystemRoot", `C:\TestWindows`)
 	got := powerShellCandidates()

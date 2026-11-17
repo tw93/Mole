@@ -2,8 +2,7 @@
 //
 // Package managers that can only expose an executable (winget portable
 // installs) put this on PATH as `mo`. It passes every argument through as a
-// literal PowerShell string, the same call shape as the mo.cmd launcher that
-// install.ps1 writes, and returns the script's exit code.
+// literal PowerShell string and returns the script's exit code.
 package main
 
 import (
@@ -110,6 +109,16 @@ func commandLine(script string, args []string) string {
 	return strings.Join(parts, " ") + "; exit $LASTEXITCODE"
 }
 
+// PowerShell also treats these Unicode characters as single-quote delimiters.
+// Double each delimiter to preserve it inside a single-quoted literal.
+var singleQuoteEscaper = strings.NewReplacer(
+	"'", "''",
+	"\u2018", "\u2018\u2018",
+	"\u2019", "\u2019\u2019",
+	"\u201a", "\u201a\u201a",
+	"\u201b", "\u201b\u201b",
+)
+
 func quote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	return "'" + singleQuoteEscaper.Replace(value) + "'"
 }
