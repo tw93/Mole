@@ -1577,7 +1577,7 @@ start_cleanup() {
     DRY_RUN_TOTAL_PARTIAL=false
 
     if [[ -t 1 ]]; then
-        printf '\033[2J\033[H'
+        printf '\033[H\033[2J\033[3J'
     fi
     printf '\n'
     # Both system and external-volume previews publish the same candidate ledger.
