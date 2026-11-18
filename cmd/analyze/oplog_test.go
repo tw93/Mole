@@ -156,7 +156,10 @@ func TestAnalyzeAuditReportsAnUnwritableLog(t *testing.T) {
 }
 
 func TestLogSizeTextMatchesShellBytesToHuman(t *testing.T) {
-	cases := map[int64]string{0: "0B", 999: "999B", 1000: "1KB", 1499: "1KB", 1_500_000: "1.5MB", 2_345_000_000: "2.35GB"}
+	cases := map[int64]string{
+		0: "0B", 999: "999B", 1000: "1KB", 1499: "1KB", 999_499: "999KB", 999_500: "1.0MB", 999_999: "1.0MB",
+		1_500_000: "1.5MB", 999_949_999: "999.9MB", 999_950_000: "1.00GB", 2_345_000_000: "2.35GB",
+	}
 	for in, want := range cases {
 		if got := logSizeText(in); got != want {
 			t.Errorf("logSizeText(%d) = %q, want %q", in, got, want)
