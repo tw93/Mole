@@ -200,13 +200,14 @@ mole_git_repo_root() {
     printf '%s\n' "$MOLE_GIT_REPO_ROOT"
 }
 
-# The developer directory xcode-select names, asked once per run and kept in
-# MOLE_GIT_SELECTED_DEVELOPER_DIR without a subshell. Every Git probe asked it
-# before, about 150 times in one purge or clean dry run. Only an answer is kept;
-# a timeout or failure is asked again next time. Nothing is asked when Git is
-# not Apple's shim or DEVELOPER_DIR already names the tools. A caller that runs
-# probes in subshells calls this first, so they all reuse one answer. Returns
-# 0, 2 when xcode-select failed, 124 at the deadline, or a signal status.
+# The developer directory xcode-select names, kept in
+# MOLE_GIT_SELECTED_DEVELOPER_DIR without a subshell, so a shell and the
+# subshells it starts afterwards ask once instead of once per Git probe.
+# Only an answer is kept; a timeout or failure is asked again next time.
+# Nothing is asked when Git is not Apple's shim or DEVELOPER_DIR already names
+# the tools. A caller that runs probes in subshells calls this first, so they
+# all reuse one answer. Returns 0, 2 when xcode-select failed, 124 at the
+# deadline, or a signal status.
 MOLE_GIT_SELECTED_DEVELOPER_DIR=""
 mole_git_selected_developer_dir() {
     local deadline="${1:-}" probe_timeout="" git_bin="" answer="" probe_rc=0
