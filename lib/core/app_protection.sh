@@ -1175,7 +1175,7 @@ _mole_uninstall_embedded_bundle_ids() {
             xpc | appex) ;;
             app)
                 case "$bundle_root" in
-                    "$app_path/Contents/Library/LoginItems/"*) ;;
+                    "$app_path/Contents/Library/LoginItems/"* | "$app_path/Contents/Preferences/"*) ;;
                     *) continue ;;
                 esac
                 ;;
