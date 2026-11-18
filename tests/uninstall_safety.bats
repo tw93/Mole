@@ -2021,3 +2021,30 @@ grep -qF "$APP" "$HOME/playcover-du.log" || exit 4
 EOF
 	[ "$status" -eq 0 ] || { printf 'exit %s\n%s\n' "$status" "$output"; return 1; }
 }
+
+@test "embedded bundle ids include a helper app under Contents/Preferences (#2027)" {
+	app="$HOME/Applications/Alfred 4.app"
+	helper="$app/Contents/Preferences/Alfred Preferences.app/Contents"
+	mkdir -p "$helper"
+	cat > "$helper/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.runningwithcrayons.Alfred-Preferences</string>
+</dict>
+</plist>
+PLIST
+
+	result="$(
+		HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+_mole_uninstall_embedded_bundle_ids "$HOME/Applications/Alfred 4.app" com.runningwithcrayons.Alfred
+SCRIPT
+	)"
+
+	[[ "$result" == *"com.runningwithcrayons.Alfred-Preferences"* ]]
+}
