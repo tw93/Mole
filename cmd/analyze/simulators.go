@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -31,10 +30,8 @@ var simulatorRuntimePattern = regexp.MustCompile(`^com\.apple\.CoreSimulator\.Si
 var activeSimulatorCommands atomic.Int64
 
 type simulatorInfo struct {
-	name     string
-	runtime  string
-	state    string
-	lastUsed time.Time
+	name    string
+	runtime string
 }
 
 type simulatorMetadataMsg struct {
@@ -87,7 +84,7 @@ func parseSimulatorPlist(data []byte, uuid string) (simulatorInfo, error) {
 	if fields["UDID"].XMLName.Local != "string" || !strings.EqualFold(fields["UDID"].Text, uuid) {
 		return simulatorInfo{}, errors.New("simulator identifier mismatch")
 	}
-	info := simulatorInfo{state: "Unknown"}
+	info := simulatorInfo{}
 	if fields["name"].XMLName.Local == "string" {
 		info.name = strings.TrimSpace(strings.Map(func(char rune) rune {
 			if unicode.IsControl(char) {
@@ -103,22 +100,6 @@ func parseSimulatorPlist(data []byte, uuid string) (simulatorInfo, error) {
 				platform = "visionOS"
 			}
 			info.runtime = platform + " " + strings.ReplaceAll(parts[2], "-", ".")
-		}
-	}
-	if fields["state"].XMLName.Local == "integer" {
-		if state, found := map[string]string{
-			"0": "Creating", "1": "Shutdown", "2": "Booting", "3": "Booted", "4": "Shutting down",
-		}[strings.TrimSpace(fields["state"].Text)]; found {
-			info.state = state
-		}
-	}
-	if fields["isDeleted"].XMLName.Local == "true" {
-		info.state = "Deleted"
-	}
-	if fields["lastUsedAt"].XMLName.Local == "date" {
-		info.lastUsed, _ = time.Parse(time.RFC3339, strings.TrimSpace(fields["lastUsedAt"].Text))
-		if info.lastUsed.After(time.Now()) {
-			info.lastUsed = time.Time{}
 		}
 	}
 	return info, nil
@@ -226,74 +207,4 @@ func (m model) entryDisplayName(entry dirEntry) string {
 		name += " · " + info.runtime
 	}
 	return name + " · " + entry.Name[:8]
-}
-
-func (m model) simulatorDetailLines() []string {
-	if m.showLargeFiles || m.inOverviewMode() || m.selected < 0 || m.selected >= len(m.entries) {
-		return nil
-	}
-	entry := m.entries[m.selected]
-	if !isSimulatorEntry(entry) {
-		return nil
-	}
-	info := m.simulators[entry.Path]
-	name, runtime, state, used := info.name, info.runtime, info.state, "Unknown"
-	if name == "" {
-		name = "Unknown device"
-	}
-	if runtime == "" {
-		runtime = "Unknown OS"
-	}
-	if state == "" {
-		state = "Unknown"
-	}
-	if !info.lastUsed.IsZero() {
-		used = info.lastUsed.Local().Format("2006-01-02")
-	}
-	text := truncateMiddle(name+" · "+runtime, max(m.width, 40)) + "\nUUID: " + filepath.Base(entry.Path) +
-		"\nLast used: " + used + " · Recorded state: " + state
-	return strings.Split(ansi.Hardwrap(text, max(m.width, 40), true), "\n")
-}
-
-func (m model) entryViewport() int {
-	if m.height <= 0 {
-		return calculateViewport(m.height, false)
-	}
-	reserved := len(m.simulatorDetailLines())
-	if lines := m.simulatorConfirmationLines(); len(lines) > 0 {
-		reserved += len(lines) + 1
-	}
-	return calculateViewport(max(1, m.height-reserved), false)
-}
-
-func (m model) hasSimulatorDeleteTarget() bool {
-	if m.showLargeFiles {
-		return false
-	}
-	if len(m.multiSelected) > 0 {
-		for _, entry := range m.entries {
-			if m.multiSelected[entry.Path] && isSimulatorEntry(entry) {
-				return true
-			}
-		}
-		return false
-	}
-	return m.deleteTarget != nil && isSimulatorEntry(*m.deleteTarget)
-}
-
-func (m model) simulatorConfirmationLines() []string {
-	if !m.deleteConfirm || m.deleteTarget == nil || !m.hasSimulatorDeleteTarget() {
-		return nil
-	}
-	label := m.entryDisplayName(*m.deleteTarget)
-	size := measuredSizeLabel(m.deleteTarget.Size, m.deleteTarget.State)
-	if len(m.multiSelected) > 1 {
-		label = fmt.Sprintf("%d items", len(m.multiSelected))
-		total, state := m.selectedEntryMeasurement()
-		size = measuredSizeLabel(total, state)
-	}
-	text := "Move to Trash: " + truncateMiddle(label, max(m.width, 40)) + ", " + size +
-		"\nSimulator device: includes installed apps and their data." +
-		"\nPress Enter to confirm | Esc cancel"
-	return strings.Split(ansi.Hardwrap(text, max(m.width, 40), true), "\n")
 }

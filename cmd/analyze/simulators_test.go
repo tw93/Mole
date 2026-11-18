@@ -72,11 +72,8 @@ func TestSimulatorMetadataXMLAndBinary(t *testing.T) {
 			}
 			m = loadSimulatorFixture(t, m)
 			info, found := m.simulators[path]
-			if !found || info.name != "iPhone Test" || info.runtime != "iOS 26.5" || info.state != "Booted" {
+			if !found || info.name != "iPhone Test" || info.runtime != "iOS 26.5" {
 				t.Fatalf("incorrect device metadata: %+v", info)
-			}
-			if got := info.lastUsed.UTC().Format(time.RFC3339); got != "2025-01-02T03:04:05Z" {
-				t.Fatalf("last-used date = %q", got)
 			}
 			if m.entries[0].Name != simulatorTestUUID || m.entries[0].Path != path {
 				t.Fatal("metadata changed the underlying filesystem identity")
@@ -103,17 +100,15 @@ func TestSimulatorMetadataUnknownAndMalformed(t *testing.T) {
 			if (err != nil) != test.fail {
 				t.Fatalf("parse error = %v, want failure %t", err, test.fail)
 			}
-			if !test.fail && (info.state != "Unknown" || !info.lastUsed.IsZero()) {
-				t.Fatalf("missing fields invented activity: %+v", info)
+			if !test.fail && (info.name != "" || info.runtime != "") {
+				t.Fatalf("missing fields invented a device: %+v", info)
 			}
 		})
 	}
 	plist := simulatorTestPlist(simulatorTestUUID, "中文 &amp; 👩‍💻&#10;Device")
-	plist = strings.Replace(plist, "<integer>3</integer>", "<string>3</string>", 1)
-	plist = strings.Replace(plist, "2025-01-02T03:04:05Z", "2999-01-02T03:04:05Z", 1)
 	info, err := parseSimulatorPlist([]byte(plist), simulatorTestUUID)
-	if err != nil || info.name != "中文 & 👩‍💻 Device" || info.state != "Unknown" || !info.lastUsed.IsZero() {
-		t.Fatalf("unsafe text or unverified activity: %+v, %v", info, err)
+	if err != nil || info.name != "中文 & 👩‍💻 Device" {
+		t.Fatalf("unsafe text in device name: %+v, %v", info, err)
 	}
 }
 
@@ -211,10 +206,8 @@ func TestSimulatorViewFilterAndConfirmationKeepPath(t *testing.T) {
 	m.entryFilter = ""
 	m.applyEntryFilter()
 	view := ansi.Strip(m.View())
-	for _, text := range []string{"iPhone Test", "iOS 26.5", "UUID: " + simulatorTestUUID, "Last used:", "Recorded state: Booted"} {
-		if !strings.Contains(view, text) {
-			t.Fatalf("view missing %q:\n%s", text, view)
-		}
+	if !strings.Contains(view, "iPhone Test · iOS 26.5 · 12345678") {
+		t.Fatalf("row does not name the device:\n%s", view)
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
 	m = updated.(model)
@@ -222,13 +215,12 @@ func TestSimulatorViewFilterAndConfirmationKeepPath(t *testing.T) {
 		t.Fatal("confirmation lost the original device path")
 	}
 	view = ansi.Strip(m.View())
-	if !strings.Contains(view, "Move to Trash: iPhone Test · iOS 26.5 · 12345678") ||
-		!strings.Contains(view, "includes installed apps and their data") {
-		t.Fatalf("confirmation does not identify the device and its contents:\n%s", view)
+	if !strings.Contains(view, "Move to Trash: iPhone Test · iOS 26.5 · 12345678") {
+		t.Fatalf("confirmation does not identify the device:\n%s", view)
 	}
 }
 
-func TestSimulatorMetadataFailureKeepsUUIDAndUnknownActivity(t *testing.T) {
+func TestSimulatorMetadataFailureKeepsUUID(t *testing.T) {
 	m, path := simulatorFixture(t)
 	m = loadSimulatorFixture(t, m)
 	if err := os.Remove(filepath.Join(path, "device.plist")); err != nil {
@@ -238,48 +230,8 @@ func TestSimulatorMetadataFailureKeepsUUIDAndUnknownActivity(t *testing.T) {
 	if got := m.entryDisplayName(m.entries[0]); got != simulatorTestUUID {
 		t.Fatalf("failed read retained an old label: %q", got)
 	}
-	view := ansi.Strip(m.View())
-	if !strings.Contains(view, "Last used: Unknown · Recorded state: Unknown") {
-		t.Fatalf("missing activity was not shown as unknown:\n%s", view)
-	}
-	if strings.Contains(view, "iPhone Test") {
+	if strings.Contains(ansi.Strip(m.View()), "iPhone Test") {
 		t.Fatal("failed metadata refresh retained an old name")
-	}
-}
-
-func TestSimulatorNarrowRowsAndViewport(t *testing.T) {
-	m, path := simulatorFixture(t)
-	m = loadSimulatorFixture(t, m)
-	info := m.simulators[path]
-	info.name = "中文 iPhone 👩‍💻 e\u0301 " + strings.Repeat("long ", 12)
-	m.simulators[path] = info
-	for _, width := range []int{40, 60, 80, 99} {
-		m.width = width
-		view := m.View()
-		for line := range strings.SplitSeq(view, "\n") {
-			if strings.Contains(line, "○") && displayWidth(line) > width {
-				t.Fatalf("%d-column device row overflowed: %q (%d)", width, ansi.Strip(line), displayWidth(line))
-			}
-		}
-		for _, line := range m.simulatorDetailLines() {
-			if displayWidth(line) > width {
-				t.Fatalf("%d-column detail overflowed: %q", width, line)
-			}
-		}
-		if m.entryViewport()+len(m.simulatorDetailLines())+6 > m.height {
-			t.Fatalf("details overflow the viewport at width %d", width)
-		}
-	}
-	m.width = 60
-	m.deleteConfirm = true
-	m.deleteTarget = &m.entries[0]
-	for _, line := range m.simulatorConfirmationLines() {
-		if displayWidth(line) > m.width {
-			t.Fatalf("confirmation overflowed: %q", line)
-		}
-	}
-	if m.entryViewport()+len(m.simulatorDetailLines())+len(m.simulatorConfirmationLines())+7 > m.height {
-		t.Fatal("confirmation does not reserve terminal space")
 	}
 }
 
@@ -298,36 +250,6 @@ func TestSimulatorMetadataRefreshPrunesHiddenSelections(t *testing.T) {
 	}
 }
 
-func TestSimulatorConfirmationKeepsSelectedRowVisible(t *testing.T) {
-	m, path := simulatorFixture(t)
-	m = loadSimulatorFixture(t, m)
-	info := m.simulators[path]
-	for index := range 25 {
-		uuid := fmt.Sprintf("%08X-1234-1234-1234-123456789ABC", index)
-		entry := dirEntry{Name: uuid, Path: filepath.Join(m.path, uuid), IsDir: true, Size: 100}
-		m.entriesAll = append(m.entriesAll, entry)
-		m.simulators[entry.Path] = info
-	}
-	m.entries = m.entriesAll
-	m.selected = len(m.entries) - 1
-	m.clampEntrySelection()
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	m = updated.(model)
-	if m.selected < m.offset || m.selected >= m.offset+m.entryViewport() {
-		t.Fatal("confirmation hid its selected row")
-	}
-	updated, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
-	m = updated.(model)
-	if m.selected < m.offset || m.selected >= m.offset+m.entryViewport() {
-		t.Fatal("terminal resize hid the selected row")
-	}
-	for line := range strings.SplitSeq(ansi.Strip(m.View()), "\n") {
-		if strings.Contains(line, "Move to Trash") && displayWidth(line) > m.width {
-			t.Fatal("confirmation was clipped after terminal resize")
-		}
-	}
-}
-
 func TestSimulatorMetadataDoesNotChangePendingConfirmation(t *testing.T) {
 	m, path := simulatorFixture(t)
 	m = loadSimulatorFixture(t, m)
@@ -335,7 +257,7 @@ func TestSimulatorMetadataDoesNotChangePendingConfirmation(t *testing.T) {
 	m.deleteTarget = &m.entries[0]
 	updated, _ := m.Update(simulatorMetadataMsg{
 		id: m.simulatorProbeID, path: m.path,
-		devices: map[string]simulatorInfo{path: {name: "Different name", state: "Shutdown"}},
+		devices: map[string]simulatorInfo{path: {name: "Different name"}},
 	})
 	got := updated.(model)
 	if got.simulators[path].name != "iPhone Test" || got.deleteTarget.Path != path {
@@ -367,5 +289,31 @@ func TestSimulatorMetadataNavigationAndLiveScan(t *testing.T) {
 	}})
 	if got := updated.(model).entryDisplayName(m.entries[0]); !strings.Contains(got, "iPhone Test") {
 		t.Fatal("live sizing dropped simulator metadata")
+	}
+}
+
+func TestSimulatorMetadataProbesOnlyTheDevicesDirectory(t *testing.T) {
+	m, _ := simulatorFixture(t)
+	m.path = filepath.Dir(m.path)
+	if command := m.refreshSimulatorMetadata(); command != nil {
+		t.Fatal("another directory started a device metadata probe")
+	}
+}
+
+func TestSimulatorNamesReplaceOnlyDeviceRows(t *testing.T) {
+	m, path := simulatorFixture(t)
+	m = loadSimulatorFixture(t, m)
+	info := m.simulators[path]
+	elsewhere := filepath.Join(t.TempDir(), simulatorTestUUID)
+	m.simulators[elsewhere] = info
+	cases := []dirEntry{
+		{Name: simulatorTestUUID, Path: elsewhere, IsDir: true},
+		{Name: simulatorTestUUID, Path: path, IsDir: false},
+		{Name: "renamed", Path: path, IsDir: true},
+	}
+	for _, entry := range cases {
+		if got := m.entryDisplayName(entry); got != entry.Name {
+			t.Fatalf("%+v displayed as %q", entry, got)
+		}
 	}
 }

@@ -374,17 +374,13 @@ func (m *model) moveEntrySelection(delta int) {
 	}
 	m.noteLiveCursorMove()
 	m.selected = next
-	if m.path == simulatorDevicesPath() {
-		m.clampEntrySelection()
-		return
-	}
 	if delta < 0 {
 		if m.selected < m.offset {
 			m.offset = m.selected
 		}
 		return
 	}
-	viewport := m.entryViewport()
+	viewport := calculateViewport(m.height, false)
 	if m.selected >= m.offset+viewport {
 		m.offset = m.selected - viewport + 1
 	}
@@ -415,7 +411,7 @@ func (m *model) clampEntrySelection() {
 	if m.selected < 0 {
 		m.selected = 0
 	}
-	viewport := m.entryViewport()
+	viewport := calculateViewport(m.height, false)
 	maxOffset := max(len(m.entries)-viewport, 0)
 	if m.offset > maxOffset {
 		m.offset = maxOffset

@@ -354,9 +354,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, metadataCmd)
 		}
 	}
-	if next.path == simulatorDevicesPath() && next.deleteConfirm != m.deleteConfirm {
-		next.clampEntrySelection()
-	}
 	return next, cmd
 }
 
@@ -389,9 +386,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if m.path == simulatorDevicesPath() {
-			m.clampEntrySelection()
-		}
 		return m, nil
 	case deleteProgressMsg:
 		if msg.done {

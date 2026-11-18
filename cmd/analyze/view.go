@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"unicode"
-
-	"github.com/charmbracelet/x/ansi"
 )
 
 // View renders the TUI.
@@ -295,7 +293,7 @@ func (m model) View() string {
 			} else {
 				maxSize := maxDirEntrySize(m.entries)
 
-				viewport := m.entryViewport()
+				viewport := calculateViewport(m.height, false)
 				indexWidth := max(2, len(strconv.Itoa(len(m.entries))))
 				nameWidth := calculateNameWidth(m.width) - (indexWidth - 2)
 				start := max(m.offset, 0)
@@ -353,30 +351,7 @@ func (m model) View() string {
 
 					displayIndex := idx + 1
 
-					if m.path == simulatorDevicesPath() && m.width > 0 && m.width < 100 {
-						if idx == m.selected && !isMultiSelected {
-							nameColor = colorCyan
-						}
-						compactWidth := max(1, m.width-indexWidth-25)
-						label := m.entryDisplayName(entry)
-						if info, found := m.simulators[entry.Path]; found && isSimulatorEntry(entry) && info.name != "" {
-							label = info.name
-							if info.runtime != "" {
-								label += " · " + info.runtime
-							}
-						}
-						label = padName(ansi.Truncate(label, compactWidth, "…"), compactWidth)
-						fmt.Fprintf(&b, "%s%s %s%*d.%s %s%s%s %s%10s%s %s%s%s\n",
-							entryPrefix, selectIcon, numColor, indexWidth, displayIndex, colorReset,
-							nameColor, label, colorReset, sizeColor, size, colorReset,
-							percentColor, percentStr, colorReset)
-						continue
-					}
-
 					hintLabel := entryHintLabel(entry)
-					if isSimulatorEntry(entry) {
-						hintLabel = ""
-					}
 					activityMarker := "|"
 					if entry.IsDir && m.liveScanningPaths != nil && m.liveScanningPaths[entry.Path] {
 						activityMarker = fmt.Sprintf("%s%s%s%s", colorCyan, colorBold, spinnerFrames[m.spinner], colorReset)
@@ -396,9 +371,6 @@ func (m model) View() string {
 		}
 	}
 
-	for _, line := range m.simulatorDetailLines() {
-		fmt.Fprintf(&b, "%s%s%s\n", colorGray, line, colorReset)
-	}
 	fmt.Fprintln(&b)
 	if m.inOverviewMode() {
 		if len(m.history) > 0 {
@@ -467,11 +439,7 @@ func (m model) View() string {
 			}
 		}
 
-		if lines := m.simulatorConfirmationLines(); len(lines) > 0 {
-			for _, line := range lines {
-				fmt.Fprintf(&b, "%s%s%s\n", colorYellow, line, colorReset)
-			}
-		} else if deleteCount > 1 {
+		if deleteCount > 1 {
 			fmt.Fprintf(&b, "%sMove to Trash:%s %d items, %s  %sPress Enter to confirm  |  ESC cancel%s\n",
 				colorRed, colorReset,
 				deleteCount, measuredSizeLabel(totalDeleteSize, deleteState),
