@@ -1519,7 +1519,7 @@ filter_protected_artifacts() {
     fi
 
     local -a items=() probe_pids=()
-    local item item_index probe_pid done_pid probe_slot wait_status stop_status=0
+    local item item_index probe_pid done_pid probe_slot wait_status stop_status=0 developer_dir_rc developer_dir_asked=false
     while IFS= read -r item; do
         if [[ "$deadline" =~ ^[0-9]+$ && $SECONDS -ge $deadline ]]; then
             stop_status=124
@@ -1528,6 +1528,17 @@ filter_protected_artifacts() {
         if [[ -n "$cancel_file" && ! -f "$cancel_file" ]]; then
             stop_status=130
             break
+        fi
+        # Asked once, before the first worker inside a repository forks, so the
+        # workers share one answer. A failed answer is left to each probe.
+        if [[ "$developer_dir_asked" == false ]] && mole_find_git_repo_root "$item"; then
+            developer_dir_asked=true
+            developer_dir_rc=0
+            mole_git_selected_developer_dir "$deadline" || developer_dir_rc=$?
+            if [[ $developer_dir_rc -gt 128 ]]; then
+                stop_status=$developer_dir_rc
+                break
+            fi
         fi
         items+=("$item")
         item_index=$((${#items[@]} - 1))
