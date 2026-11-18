@@ -4420,8 +4420,8 @@ dart_analysis_process_state() {
         -f '(^|/)analysis_server(_aot)?[.]dart[.]snapshot([[:space:]]|$)'
 }
 
-# Keep the directory identities captured before enumeration, including across
-# the shared cleaner's first process probe before it takes its own snapshots.
+# The shared cleaner probes processes before taking its own snapshots.
+# Keep the earlier identities to catch a directory swap during that probe.
 dart_analysis_cache_state() {
     local process_state=0
     dart_analysis_process_state || process_state=$?
@@ -4433,9 +4433,8 @@ dart_analysis_cache_state() {
     return 1
 }
 
-# Dart's createByteStore uses this exact leaf for regenerable analysis bytes;
-# ~/.dartServer also holds plugin state, so neither the parent nor siblings
-# (including the newer .analysis-cache) are cleanup targets. Measured: 4.96 GiB.
+# Dart's createByteStore uses this leaf for rebuildable analysis data.
+# Keep .dartServer and its other children, including plugins and .analysis-cache.
 clean_dart_analysis_cache() {
     local container_root="$HOME/.dartServer"
     local cache_root="$container_root/.analysis-driver"
