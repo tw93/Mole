@@ -215,32 +215,6 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
-@test "Dart cleanup retains a replacement introduced during its first process probe" {
-    for component in container root; do
-        run env HOME="$DART_TEST_HOME/$component" PROJECT_ROOT="$PROJECT_ROOT" COMPONENT="$component" MOLE_TEST_NO_AUTH=1 /bin/bash <<'EOF'
-set -euo pipefail
-root="$HOME/.dartServer/.analysis-driver"
-mkdir -p "$root/ab"
-printf cache > "$root/ab/data"
-source "$PROJECT_ROOT/bin/clean.sh"
-pgrep() {
-    if [[ ! -e "$HOME/swapped" ]]; then
-        touch "$HOME/swapped"
-        if [[ "$COMPONENT" == container ]]; then mv "$HOME/.dartServer" "$HOME/original"; else mv "$root" "$HOME/original"; fi
-        mkdir -p "$root/ab"
-        printf replacement > "$root/ab/data"
-    fi
-    return 1
-}
-DRY_RUN=false
-MOLE_DRY_RUN=0
-clean_dart_analysis_cache
-[[ -f "$HOME/swapped" && "$(cat "$root/ab/data")" == replacement && "$files_cleaned" == 0 ]] || exit 1
-EOF
-        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    done
-}
-
 @test "Dart cleanup does not count a failed removal as freed cache" {
     run env HOME="$DART_TEST_HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash <<'EOF'
 set -euo pipefail

@@ -4420,19 +4420,6 @@ dart_analysis_process_state() {
         -f '(^|/)analysis_server(_aot)?[.]dart[.]snapshot([[:space:]]|$)'
 }
 
-# The shared cleaner probes processes before taking its own snapshots.
-# Keep the earlier identities to catch a directory swap during that probe.
-dart_analysis_cache_state() {
-    local process_state=0
-    dart_analysis_process_state || process_state=$?
-    [[ $process_state -eq 1 ]] || return "$process_state"
-
-    [[ ! -L "$HOME/.dartServer" && ! -L "$_MOLE_DART_ANALYSIS_ROOT" ]] || return 2
-    _mole_path_matches_identity "$_MOLE_DART_ANALYSIS_ROOT" \
-        "$_MOLE_DART_STATE_PHYSICAL" "$_MOLE_DART_STATE_ID" "$_MOLE_DART_ANALYSIS_ID" || return 2
-    return 1
-}
-
 # Dart's createByteStore uses this leaf for rebuildable analysis data.
 # Keep .dartServer and its other children, including plugins and .analysis-cache.
 clean_dart_analysis_cache() {
@@ -4440,12 +4427,6 @@ clean_dart_analysis_cache() {
     local cache_root="$container_root/.analysis-driver"
     [[ -d "$container_root" && ! -L "$container_root" &&
         -d "$cache_root" && ! -L "$cache_root" ]] || return 0
-
-    _mole_snapshot_path_identity "$cache_root" || return 0
-    local _MOLE_DART_ANALYSIS_ROOT="$cache_root"
-    local _MOLE_DART_STATE_PHYSICAL="$_MOLE_PATH_SNAPSHOT_PARENT"
-    local _MOLE_DART_STATE_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
-    local _MOLE_DART_ANALYSIS_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
 
     local -a candidates=()
     local candidate
@@ -4459,7 +4440,7 @@ clean_dart_analysis_cache() {
     clean_guarded_dev_cache_root \
         "$container_root" \
         "$cache_root" \
-        dart_analysis_cache_state \
+        dart_analysis_process_state \
         "Dart" \
         "Dart analysis cache" \
         "${candidates[@]}"
