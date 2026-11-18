@@ -2,6 +2,14 @@
 
 This is the synchronization entry point for **Mole CLI (Windows)**, branch `windows` of `tw93/Mole`. Workflow and the four canonical product names are in [AGENTS.md](AGENTS.md#product-synchronization). Source review baseline: `ab9e2b7e`, 2026-10-15, Asia/Singapore. The initial source/record review did not establish runtime acceptance or release delivery; dated receipts below keep those layers separate. Record reconciliation on 2026-10-25 froze `windows` at `9c408d72` and `main` at `2fb59782`, both matching their remote refs after that initial fetch. Release candidate source heads are `main` at `8eb31131` and `windows` at `b04cb5ac`; dated earlier receipts below keep their original scope.
 
+## 2026-11-18: AI command-line tools' superseded releases (from Mole for Windows and Mole CLI (macOS))
+
+Maintainer 2026-11-18: bring the GUI's AI-03 cleanup to this branch. The contract is Mole for Windows' measured Windows layouts and Mole CLI (macOS)'s `clean_dev_ai_agents` command shape.
+
+| Change | Destinations | Evidence and next check |
+|---|---|---|
+| `mo clean` removes the releases Claude Code, Codex, Cursor Agent and GitHub Copilot CLI keep after an update, under Developer tools, keeping each tool's running release (read from its launcher, junctions and markers), anything a process has open or mapped (Restart Manager, rechecked in the removal guard) and everything when a home is linked, locked, staged or unreadable | Implemented (Mole CLI (Windows), `642b6e3e`); Implemented (Mole for Windows, the source of the layouts); Implemented (Mole CLI (macOS), `clean_dev_ai_agents` on macOS paths); Implemented (Mole Mac, its own paths) | Physical x64 PC: `tests/AiCliOldVersions.Tests.ps1` 16 passed under Windows PowerShell 5.1 and pwsh 7 with each guard red-run alone, `scripts/test.ps1 -NoGo` 999 passed (two launcher symbolic-link cases fail there on the previous HEAD too), `mo clean --dry-run` exit 0. Delivery: next `windows` release |
+
 ## 2026-11-17: Curly quotes in the launcher's script path (#2021)
 
 | Change | Destinations | Evidence and next check |
@@ -182,7 +190,7 @@ Delivery: released in [V1.40.0-windows](https://github.com/tw93/Mole/releases/ta
 Frozen sources after fetch: Mole CLI (macOS) `91e440bb` on `main`, Mole CLI (Windows) `08031c5e` on `windows`, both matching their remote refs. Mole CLI (macOS) `ea7abfc9..709efa56` adopted five Mole Mac safety rules; each was checked against this branch's own consumers, and none needs a Windows change. Source reading only; nothing here is a release.
 
 - Spotlight orphan-rule pruning (#1878) and Mail attachment copies: Not applicable, no Spotlight or Apple Mail on Windows.
-- An old AI CLI release a running session still has open: Not applicable, this branch does not clean superseded Claude Code, cursor-agent or Copilot releases; `lib/core/base.ps1` only protects `.claude` session state.
+- An old AI CLI release a running session still has open: Not applicable at the time, since this branch did not clean superseded Claude Code, cursor-agent or Copilot releases; since 2026-11-18 it does, and a release a process has open is kept (see that entry).
 - The llama.cpp model store: Not applicable, no generic `%LOCALAPPDATA%` sweep exists here, so `%LOCALAPPDATA%\llama.cpp` is never a cleanup candidate; cleanup targets are named paths.
 - Uninstall wording for Recycle Bin bytes: Not applicable, `bin/uninstall.ps1` reports app counts only. `Show-CleanupSummary` in `bin/clean.ps1` said "Tracked cleanup" here; the section below changes it to "Removed", which stays accurate because recycled bytes never enter `TotalSizeCleaned`.
 

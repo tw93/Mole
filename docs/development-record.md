@@ -2,6 +2,12 @@
 
 This is the handoff record for the `windows` branch of `tw93/Mole`, not the paid Windows app or the macOS CLI. Read [AGENTS.md](../AGENTS.md) and the area rules in `.claude/rules/` for current policy and [development pitfalls](development-pitfalls.md) for reusable lessons. Git history retains individual edits; this file records completed batches and their delivery boundaries. Recheck live state before resuming work.
 
+## 2026-11-18: AI CLI superseded releases
+
+Baseline `e9f92fcb`, source `642b6e3e`. `Clear-AiCliOldVersions` in `lib/clean/dev.ps1` removes the old releases of Claude Code, Codex, Cursor Agent and Copilot CLI with the layouts measured on Windows; rules are in `.claude/rules/clean.md`, residual risk in `SECURITY_AUDIT.md`. An independent review before the commit found two defects that disabled part of the feature (Cursor's name-form count threw under strict mode on Windows PowerShell 5.1; Codex compared an 8.3 profile spelling with a junction's long target) and eight smaller ones, all fixed.
+
+On the ThinkPad X1 (x64): the new Pester file passes 16 of 16 under 5.1 and pwsh 7, and each of six guards turns it red when removed alone. `scripts/test.ps1 -NoGo` passed 999. Its two launcher symbolic-link failures also fail on the baseline there. The inventory case fails once any earlier test leaves `Microsoft\Windows\PowerShell\ModuleAnalysisCache` in the working directory, which the baseline's full run leaves as well; in a fresh checkout it passes. An unelevated Restart Manager named an exe a highest-privilege task ran. A folder holding a running exe still renamed, so a rename-first sink was rejected. A desktop-session AMSI scan of every script matched nothing; the line Defender blocked in another script that day was the positive control.
+
 ## 2026-11-01: Cache owners, Berry dependencies and charge-limit notice
 
 Baseline `9bb9b24c`. The source batch guards Adobe Common media/peak cache cleanup and Yarn Classic with the existing owner predicate, preserves named Yarn Berry dependency stores at the shared clean sink, and adds the charge-limit consequence to the existing uninstall confirmation and dry-run preview. The Adobe wildcard Cache, CameraRaw and Temp branches are unchanged: the media-owner boundary does not establish their owners.
