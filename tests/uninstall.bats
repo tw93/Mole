@@ -872,6 +872,71 @@ fi
 EOF
 }
 
+# Alfred 4.app writes to Application Support/Alfred, its CFBundleName (#2027).
+run_numbered_app_batch() {
+    local survivor="$1"
+    local fixture_home
+    fixture_home=$(mktemp -d "$HOME/numbered-fixture.XXXXXX")
+    local plist='<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>%s</string><key>CFBundleName</key><string>Alfred</string></dict></plist>'
+    mkdir -p "$fixture_home/Applications/Alfred 4.app/Contents" \
+        "$fixture_home/Library/Application Support/Alfred"
+    # shellcheck disable=SC2059 # The fixture plist is the format string.
+    printf "$plist" com.runningwithcrayons.Alfred > "$fixture_home/Applications/Alfred 4.app/Contents/Info.plist"
+    touch "$fixture_home/Library/Application Support/Alfred/prefs.plist"
+    if [[ "$survivor" == yes ]]; then
+        # Another root and another bundle id, so only the batch family check sees it.
+        mkdir -p "$fixture_home/OtherApps/Alfred 5.app/Contents"
+        # shellcheck disable=SC2059 # The fixture plist is the format string.
+        printf "$plist" com.runningwithcrayons.Alfred5 > "$fixture_home/OtherApps/Alfred 5.app/Contents/Info.plist"
+    fi
+
+    run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+source "$PROJECT_ROOT/tests/helpers/uninstall.bash"
+mole_test_isolate_uninstall_inventory
+_MOLE_UNINSTALL_LIVE_APP_ROOTS+=("$HOME/OtherApps")
+brew() { :; }
+export MOLE_DELETE_MODE=trash
+export MOLE_TEST_TRASH_DIR="$HOME/test-trash" MOLE_TEST_NO_AUTH=1
+request_sudo_access() { return 0; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+enter_alt_screen() { :; }
+leave_alt_screen() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+remove_apps_from_dock() { :; }
+drain_pending_input() { :; }
+pgrep() { return 1; }
+pkill() { return 0; }
+sudo() { return 0; }
+
+selected_apps=("0|$HOME/Applications/Alfred 4.app|Alfred 4|com.runningwithcrayons.Alfred|0|Never")
+files_cleaned=0
+total_items=0
+total_size_cleaned=0
+MOLE_UNINSTALL_WITH_DATA=1
+printf '\n' | MOLE_TEST_MODE=1 batch_uninstall_applications
+[[ ! -d "$HOME/Applications/Alfred 4.app" ]] || { echo "app kept"; exit 1; }
+if [[ -e "$HOME/Library/Application Support/Alfred" ]]; then echo "ALFRED_DATA=kept"; else echo "ALFRED_DATA=removed"; fi
+EOF
+}
+
+@test "uninstall of a numbered app offers its CFBundleName data folder (#2027)" {
+    run_numbered_app_batch no
+    [ "$status" -eq 0 ] || { printf 'exit status: %s\n%s\n' "$status" "$output"; return 1; }
+    [[ "$output" == *"ALFRED_DATA=removed"* ]] || { printf '%s\n' "$output"; return 1; }
+}
+
+@test "uninstall of a numbered app keeps the data folder a differently identified build still uses (#2027)" {
+    run_numbered_app_batch yes
+    [ "$status" -eq 0 ] || { printf 'exit status: %s\n%s\n' "$status" "$output"; return 1; }
+    [[ "$output" == *"ALFRED_DATA=kept"* ]] || { printf '%s\n' "$output"; return 1; }
+}
+
 @test "uninstall --with-data preselects personal data and Enter removes it" {
     run_with_data_batch enter
     [ "$status" -eq 0 ] || {

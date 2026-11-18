@@ -605,6 +605,52 @@ EOF
     [[ "$result" == *".config/zed"* ]]
 }
 
+_naming_write_bundle_name() {
+    mkdir -p "$1/Contents"
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleName</key><string>%s</string></dict></plist>\n' "$2" > "$1/Contents/Info.plist"
+}
+
+@test "find_app_files takes a numbered app's folders under its CFBundleName (#2027)" {
+    local app="$HOME/apps/Alfred 4.app"
+    _naming_write_bundle_name "$app" "Alfred"
+    mkdir -p "$HOME/Library/Application Support/Alfred"
+
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps" find_app_files com.runningwithcrayons.Alfred "Alfred 4" "$app")
+    [[ "$result" == *"/Application Support/Alfred"* ]]
+}
+
+@test "find_app_files keeps a numbered app's short-name folder without CFBundleName agreeing (#2027)" {
+    local app="$HOME/apps/Studio 3.app"
+    mkdir -p "$HOME/Library/Application Support/Studio"
+
+    _naming_write_bundle_name "$app" "Studio 3"
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps" find_app_files com.example.studio3 "Studio 3" "$app")
+    [[ "$result" != *"/Application Support/Studio"* ]] || return 1
+
+    rm -f "$app/Contents/Info.plist"
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps" find_app_files com.example.studio3 "Studio 3" "$app")
+    [[ "$result" != *"/Application Support/Studio"* ]]
+}
+
+@test "find_app_files never derives a common word from a numbered app's CFBundleName (#2027)" {
+    local app="$HOME/apps/Helper 2.app"
+    _naming_write_bundle_name "$app" "Helper"
+    mkdir -p "$HOME/Library/Application Support/Helper"
+
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps" find_app_files com.example.helper2 "Helper 2" "$app")
+    [[ "$result" != *"/Application Support/Helper"* ]]
+}
+
+@test "find_app_files leaves Alfred's folder to Alfred 5 while it is installed (#2027)" {
+    local app="$HOME/apps/Alfred 4.app"
+    _naming_write_bundle_name "$app" "Alfred"
+    _naming_write_bundle_name "$HOME/apps/Alfred 5.app" "Alfred"
+    mkdir -p "$HOME/Library/Application Support/Alfred"
+
+    result=$(MOLE_TEST_MODE=1 MOLE_TEST_APP_FAMILY_ROOT="$HOME/apps" find_app_files com.runningwithcrayons.Alfred4 "Alfred 4" "$app")
+    [[ "$result" != *"/Application Support/Alfred"* ]]
+}
+
 @test "find_shared_app_paths reaches a localized short name's folder through the bundle product token" {
     local shared="$HOME/Shared"
     mkdir -p "$shared/UURemote" "$shared/UURemote Data" "$shared/UUPlayer" "$shared/Other"

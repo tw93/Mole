@@ -1296,9 +1296,11 @@ _mole_app_family_sibling_installed() {
     return 1
 }
 
-# The base name an app's family shares: "Zed Nightly" and "Zed" are both "Zed".
+# The base name an app's family shares: "Zed Nightly" and "Zed" are both "Zed",
+# and so are "Alfred 4" and "Alfred 5" (#2027). This list only narrows what an
+# uninstall takes, so a release number counts without bundle evidence.
 _mole_app_family_suffixes="Nightly|Beta|Alpha|Dev|Canary|Preview|Insider|Edge|Stable|Release|RC|LTS"
-_mole_app_family_suffixes+="|Developer Edition|Technology Preview"
+_mole_app_family_suffixes+="|Developer Edition|Technology Preview|[0-9]+"
 
 # Print the lowercase name leaves ("zed", "zed-nightly"...) of the family that
 # another installed build still uses, or nothing when no other build is
@@ -1367,6 +1369,21 @@ find_app_files() {
     version_suffixes+="|Developer Edition|Technology Preview"
     if [[ "$app_name" =~ ^(.+)[[:space:]]+(${version_suffixes})$ ]]; then
         base_name="${BASH_REMATCH[1]}"
+    fi
+    # "Alfred 4.app" writes to "Application Support/Alfred", its CFBundleName
+    # (#2027). A trailing release number is dropped only when the bundle itself
+    # names the shorter product; a file name alone proves nothing.
+    if [[ "$base_name" == "$app_name" && -n "$app_path" &&
+        "$app_name" =~ ^(.+)[[:space:]]+[0-9]+$ ]]; then
+        local numbered_base="${BASH_REMATCH[1]}" bundle_short_name=""
+        if [[ -f "$app_path/Contents/Info.plist" ]]; then
+            bundle_short_name=$(/usr/bin/plutil -extract CFBundleName raw \
+                "$app_path/Contents/Info.plist" 2> /dev/null) || bundle_short_name=""
+        fi
+        if [[ "$bundle_short_name" == "$numbered_base" ]] &&
+            ! _mole_uninstall_is_common_app_name "$numbered_base"; then
+            base_name="$numbered_base"
+        fi
     fi
     local base_lowercase=$(echo "$base_name" | /usr/bin/tr '[:upper:]' '[:lower:]') # "Zed" -> "zed"
 
