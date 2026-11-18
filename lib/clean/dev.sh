@@ -4408,6 +4408,64 @@ clean_dev_ai_agents() {
     clean_claude_desktop_bundled_versions "$keep_previous"
 }
 
+dart_analysis_process_state() {
+    # The analyzer can run as a VM snapshot or an AOT executable. Keep the
+    # cache while any Dart runtime runs, including copies outside PATH.
+    mole_pgrep_any \
+        -x dart \
+        -x dartvm \
+        -x dartaotruntime \
+        -x dart_aot_runtime \
+        -x analysis_server \
+        -f '(^|/)analysis_server(_aot)?[.]dart[.]snapshot([[:space:]]|$)'
+}
+
+# Keep the directory identities captured before enumeration, including across
+# the shared cleaner's first process probe before it takes its own snapshots.
+dart_analysis_cache_state() {
+    local process_state=0
+    dart_analysis_process_state || process_state=$?
+    [[ $process_state -eq 1 ]] || return "$process_state"
+
+    [[ ! -L "$HOME/.dartServer" && ! -L "$_MOLE_DART_ANALYSIS_ROOT" ]] || return 2
+    _mole_path_matches_identity "$_MOLE_DART_ANALYSIS_ROOT" \
+        "$_MOLE_DART_STATE_PHYSICAL" "$_MOLE_DART_STATE_ID" "$_MOLE_DART_ANALYSIS_ID" || return 2
+    return 1
+}
+
+# Dart's createByteStore uses this exact leaf for regenerable analysis bytes;
+# ~/.dartServer also holds plugin state, so neither the parent nor siblings
+# (including the newer .analysis-cache) are cleanup targets. Measured: 4.96 GiB.
+clean_dart_analysis_cache() {
+    local container_root="$HOME/.dartServer"
+    local cache_root="$container_root/.analysis-driver"
+    [[ -d "$container_root" && ! -L "$container_root" &&
+        -d "$cache_root" && ! -L "$cache_root" ]] || return 0
+
+    _mole_snapshot_path_identity "$cache_root" || return 0
+    local _MOLE_DART_ANALYSIS_ROOT="$cache_root"
+    local _MOLE_DART_STATE_PHYSICAL="$_MOLE_PATH_SNAPSHOT_PARENT"
+    local _MOLE_DART_STATE_ID="$_MOLE_PATH_SNAPSHOT_PARENT_ID"
+    local _MOLE_DART_ANALYSIS_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+
+    local -a candidates=()
+    local candidate
+    for candidate in "$cache_root"/* "$cache_root"/.[!.]* "$cache_root"/..?*; do
+        [[ -e "$candidate" || -L "$candidate" ]] || continue
+        [[ ! -L "$candidate" ]] || continue
+        candidates+=("$candidate")
+    done
+    [[ ${#candidates[@]} -gt 0 ]] || return 0
+
+    clean_guarded_dev_cache_root \
+        "$container_root" \
+        "$cache_root" \
+        dart_analysis_cache_state \
+        "Dart" \
+        "Dart analysis cache" \
+        "${candidates[@]}"
+}
+
 # Other language tool caches.
 clean_dev_other_langs() {
     safe_clean ~/.composer/cache/* "PHP Composer cache (legacy)"
@@ -4418,6 +4476,7 @@ clean_dev_other_langs() {
     # build. Both stay off the delete path and are surfaced by
     # `check_large_file_candidates` (lib/clean/user.sh) for review instead.
     # safe_clean ~/.pub-cache/* "Dart Pub cache"
+    clean_dart_analysis_cache || return $?
     safe_clean ~/.cache/bazel/* "Bazel cache"
     safe_clean ~/.cache/zig/* "Zig cache"
     # DENO_DIR mixes remote imports with origin storage and downloaded runtime
