@@ -98,7 +98,7 @@ From a 2026-11-09 review of `main` and `windows` fixes against this branch. Each
 | Status shows resize guidance when the dashboard cannot fit | `main` `275036d6` (#1904) | Implemented (released in V0.6.0-linux) | Height-driven, so the PSI, zram and btrfs rows count: 22 rows at width 120, 35 at width 80. `cmd/status/short_height_test.go`. |
 | `mo history` stays fast near the log's rotation size | `main` `0afbb83c` (awk condenser) | Implemented, by another route (released in V0.6.0-linux) | The parser here was already awk; the cost was appending every record to Bash arrays. `history_keep_newest` passes on only the newest `--limit` sessions and operations. Devbox, 5 MB log of 47,740 lines: 1.8 s to 0.1 s (text), 1.8 s to 0.15 s (`--json`); output byte-identical to the previous code at limits 1, 5, 20 and 200. |
 
-## Implemented on `linux` after 0.6.0 (not released)
+## Implemented on `linux` after 0.6.0 (released in V0.7.0-linux on 2026-11-18)
 
 | Contract | Source | Status | Verification |
 | --- | --- | --- | --- |
