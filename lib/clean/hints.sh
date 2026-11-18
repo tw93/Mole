@@ -7,26 +7,6 @@ mole_hints_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1090
 source "$mole_hints_dir/purge_shared.sh"
 
-# Quick reminder probe for project build artifacts handled by `mo purge`.
-# Designed to be very fast: shallow directory checks only, no deep find scans.
-# shellcheck disable=SC2329
-load_quick_purge_hint_paths() {
-    local config_file="$HOME/.config/mole/purge_paths"
-    local -a paths=()
-
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && paths+=("$line")
-    done < <(mole_purge_read_paths_config "$config_file" 2> /dev/null)
-
-    if [[ ${#paths[@]} -eq 0 ]]; then
-        paths=("${MOLE_PURGE_DEFAULT_SEARCH_PATHS[@]}")
-    fi
-
-    if [[ ${#paths[@]} -gt 0 ]]; then
-        printf '%s\n' "${paths[@]}"
-    fi
-}
-
 # shellcheck disable=SC2329
 hint_get_path_size_kb_with_timeout() {
     local path="$1"
@@ -55,18 +35,37 @@ hint_get_path_size_kb_with_timeout() {
 }
 
 # shellcheck disable=SC2329
+hint_find_local_dirs() {
+    local timeout_seconds="$1" skip_dataless="$2" print_arg="$3"
+    shift 3
+
+    local -a prune=()
+    if [[ "$skip_dataless" == true ]]; then
+        prune=(-type d -flags +dataless -prune -o)
+    fi
+    run_with_timeout "$timeout_seconds" "$FIND_BSD" "$@" ${prune[@]+"${prune[@]}"} \
+        -type d "$print_arg" < /dev/null 2> /dev/null
+}
+
+# Follow a configured root or artifact symlink just as [[ -d ]] does.
+# shellcheck disable=SC2329
+hint_is_local_dir() {
+    local path="$1" timeout_seconds="$2" skip_dataless="$3"
+    local found
+    found=$(hint_find_local_dirs "$timeout_seconds" "$skip_dataless" -print -H -f "$path" -- -maxdepth 0) || return $?
+    [[ -n "$found" ]]
+}
+
+# shellcheck disable=SC2329
 hint_collect_child_dirs_with_timeout() {
     local parent="$1"
     local output_file="$2"
     local timeout_seconds="${3:-1}"
+    local skip_dataless="${4:-false}"
 
-    [[ -d "$parent" ]] || return 1
-    : > "$output_file" || return 1
-
-    # 1s: shallow directory listing should be near-instant on healthy local
-    # paths. Slow/cloud-backed roots are skipped so `mo clean` never appears
-    # stuck while rendering this non-destructive hint.
-    run_with_timeout "$timeout_seconds" "$FIND_BSD" "$parent" -mindepth 1 -maxdepth 1 -type d -print0 > "$output_file" 2> /dev/null
+    # Keep online-only children out of the list before the caller checks paths
+    # inside them. Skip a listing that stalls on a cloud or network root.
+    hint_find_local_dirs "$timeout_seconds" "$skip_dataless" -print0 "$parent" -mindepth 1 -maxdepth 1 > "$output_file"
 }
 
 # shellcheck disable=SC2329
@@ -187,10 +186,34 @@ record_project_artifact_hint() {
 }
 
 # shellcheck disable=SC2329
-is_quick_purge_project_root() {
-    mole_purge_is_project_root "$1"
+hint_record_project_dir_artifacts() {
+    local directory="$1" skip_dataless="$2" scan_deadline="$3"
+    shift 3
+    local target_name candidate probe_rc
+
+    for target_name in "$@"; do
+        if [[ $SECONDS -ge $scan_deadline ]]; then
+            PROJECT_ARTIFACT_HINT_TRUNCATED=true
+            PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+            break
+        fi
+        candidate="$directory/$target_name"
+        [[ -d "$candidate" ]] || continue
+        if [[ "$skip_dataless" == true ]]; then
+            # du would enter a dataless artifact even if its parent is local.
+            probe_rc=0
+            hint_is_local_dir "$candidate" 1 true || probe_rc=$?
+            if mole_rc_timeout "$probe_rc"; then
+                PROJECT_ARTIFACT_HINT_TRUNCATED=true
+                PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+            fi
+            [[ $probe_rc -eq 0 ]] || continue
+        fi
+        record_project_artifact_hint "$candidate"
+    done
 }
 
+# Shallow, read-only reminder for build artifacts handled by `mo purge`.
 # shellcheck disable=SC2329
 probe_project_artifact_hints() {
     PROJECT_ARTIFACT_HINT_DETECTED=false
@@ -222,11 +245,21 @@ probe_project_artifact_hints() {
     done < <(mole_purge_quick_hint_target_names)
 
     local -a scan_roots=()
+    local configured_roots=true
     while IFS= read -r path; do
         [[ -n "$path" ]] && scan_roots+=("$path")
-    done < <(load_quick_purge_hint_paths)
+    done < <(mole_purge_read_paths_config "$HOME/.config/mole/purge_paths" literal 2> /dev/null)
+    if [[ ${#scan_roots[@]} -eq 0 ]]; then
+        scan_roots=("${MOLE_PURGE_DEFAULT_SEARCH_PATHS[@]}")
+        configured_roots=false
+    fi
 
-    [[ ${#scan_roots[@]} -eq 0 ]] && return 0
+    # As in purge, keep scanning on macOS versions whose find lacks dataless.
+    local skip_dataless=false
+    if [[ $SECONDS -lt $scan_deadline ]] &&
+        run_with_timeout "$list_timeout_seconds" "$FIND_BSD" / -maxdepth 0 -flags +dataless < /dev/null > /dev/null 2>&1; then
+        skip_dataless=true
+    fi
 
     # Fairness: avoid one very large root exhausting the entire scan budget.
     if [[ $max_projects_per_root -le 0 ]]; then
@@ -237,7 +270,7 @@ probe_project_artifact_hints() {
 
     local scanned_projects=0
     local stop_scan=false
-    local root project_dir nested_dir target_name candidate
+    local root project_dir nested_dir root_probe_rc
     local project_dirs_file nested_dirs_file
 
     for root in "${scan_roots[@]}"; do
@@ -246,13 +279,22 @@ probe_project_artifact_hints() {
             PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
             break
         fi
-        [[ -d "$root" ]] || continue
+        root_probe_rc=0
+        hint_is_local_dir "$root" "$list_timeout_seconds" "$skip_dataless" || root_probe_rc=$?
+        if mole_rc_timeout "$root_probe_rc"; then
+            PROJECT_ARTIFACT_HINT_TRUNCATED=true
+            PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
+        fi
+        [[ $root_probe_rc -eq 0 ]] || continue
+        if [[ "$configured_roots" == true ]]; then
+            root=$(mole_purge_resolve_path_case "$root")
+        fi
         # In-place spinner text swap per root: a multi-second walk with a
         # static label reads as a hang, a moving path reads as progress.
         start_section_spinner "Scanning projects · ${root/#$HOME/~}"
         local root_projects_scanned=0
 
-        if is_quick_purge_project_root "$root"; then
+        if mole_purge_is_project_root "$root"; then
             scanned_projects=$((scanned_projects + 1))
             root_projects_scanned=$((root_projects_scanned + 1))
             if [[ $scanned_projects -gt $max_projects ]]; then
@@ -261,12 +303,7 @@ probe_project_artifact_hints() {
                 break
             fi
 
-            for target_name in "${target_names[@]}"; do
-                candidate="$root/$target_name"
-                if [[ -d "$candidate" ]]; then
-                    record_project_artifact_hint "$candidate"
-                fi
-            done
+            hint_record_project_dir_artifacts "$root" "$skip_dataless" "$scan_deadline" "${target_names[@]}"
         fi
         [[ "$stop_scan" == "true" ]] && break
 
@@ -280,7 +317,7 @@ probe_project_artifact_hints() {
             PROJECT_ARTIFACT_HINT_TRUNCATED=true
             continue
         }
-        if ! hint_collect_child_dirs_with_timeout "$root" "$project_dirs_file" "$list_timeout_seconds"; then
+        if ! hint_collect_child_dirs_with_timeout "$root" "$project_dirs_file" "$list_timeout_seconds" "$skip_dataless"; then
             PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
             PROJECT_ARTIFACT_HINT_TRUNCATED=true
             rm -f "$project_dirs_file"
@@ -313,12 +350,7 @@ probe_project_artifact_hints() {
                 break
             fi
 
-            for target_name in "${target_names[@]}"; do
-                candidate="$project_dir/$target_name"
-                if [[ -d "$candidate" ]]; then
-                    record_project_artifact_hint "$candidate"
-                fi
-            done
+            hint_record_project_dir_artifacts "$project_dir" "$skip_dataless" "$scan_deadline" "${target_names[@]}"
             [[ "$stop_scan" == "true" ]] && break
 
             if [[ $SECONDS -ge $scan_deadline ]]; then
@@ -334,7 +366,7 @@ probe_project_artifact_hints() {
                 PROJECT_ARTIFACT_HINT_TRUNCATED=true
                 continue
             }
-            if ! hint_collect_child_dirs_with_timeout "$project_dir" "$nested_dirs_file" "$list_timeout_seconds"; then
+            if ! hint_collect_child_dirs_with_timeout "$project_dir" "$nested_dirs_file" "$list_timeout_seconds" "$skip_dataless"; then
                 PROJECT_ARTIFACT_HINT_SCAN_SKIPPED=true
                 PROJECT_ARTIFACT_HINT_TRUNCATED=true
                 rm -f "$nested_dirs_file"
@@ -365,12 +397,7 @@ probe_project_artifact_hints() {
                     break
                 fi
 
-                for target_name in "${target_names[@]}"; do
-                    candidate="$nested_dir/$target_name"
-                    if [[ -d "$candidate" ]]; then
-                        record_project_artifact_hint "$candidate"
-                    fi
-                done
+                hint_record_project_dir_artifacts "$nested_dir" "$skip_dataless" "$scan_deadline" "${target_names[@]}"
             done < "$nested_dirs_file"
             rm -f "$nested_dirs_file"
 
