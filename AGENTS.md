@@ -28,7 +28,7 @@ Changes that come to this branch from the paid app:
 
 Changes that stay out:
 
-- GUI-only capabilities: third-party app updates, startup management, Doctor, tray, the treemap and MFT-based Analyze, deeper Status metrics, AI cleanup.
+- GUI-only capabilities: third-party app updates, startup management, Doctor, tray, the treemap and MFT-based Analyze, deeper Status metrics, the AI cleanup page (sessions, worktrees, models). The AI command-line tools' superseded releases are in `mo clean` (maintainer 2026-11-18, as `main` already cleans them).
 - The elevated batch protocol.
 - The measured per-app uninstall leftover catalog.
 

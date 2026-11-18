@@ -826,6 +826,7 @@ function Get-MoleInstallNestedFiles {
         "tests\CleanupBoundary.Tests.ps1"
         "tests\CleanupTargets.Tests.ps1"
         "tests\AppCacheSafety.Tests.ps1"
+        "tests\AiCliOldVersions.Tests.ps1"
         "tests\Commands.Tests.ps1"
         "tests\Core.Tests.ps1"
         "tests\DryRun.Tests.ps1"

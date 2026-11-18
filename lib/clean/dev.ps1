@@ -678,6 +678,343 @@ function Clear-GitCaches {
 }
 
 # ============================================================================
+# AI command-line tools' old releases
+# ============================================================================
+# Claude Code, Codex, Cursor Agent and GitHub Copilot CLI each update by
+# installing a complete new release beside the old one and never remove it.
+# Every layout below was read on Windows by installing an older release and
+# updating it; none matches the macOS paths. Which release runs is read from
+# what each tool itself reads, and anything that cannot be settled keeps every
+# release. A release a process still runs is kept too: a running exe opens and
+# reads freely with no sharing, so only the Restart Manager can tell, and it
+# also names an exe that was renamed while running.
+
+$script:MoleAiSemver = '^\d{1,9}\.\d{1,9}\.\d{1,9}$'
+$script:MoleAiCursorVersion = '^\d{4}\.\d{2}\.\d{2}(-\d{2}-\d{2}-\d{2})?-[a-f0-9]+$'
+$script:MoleAiCodexRelease = '^\d{1,9}\.\d{1,9}\.\d{1,9}([-.][0-9A-Za-z.]{1,64})?-(x86_64|aarch64)-pc-windows-msvc$'
+$script:MoleAiClaudeRenamed = '^claude\.exe\.old\.\d{1,20}(\.\d{1,10})?$'
+$script:MoleAiMaxCodeFiles = 1024
+$script:MoleAiMaxWalkEntries = 50000
+
+# Orders release names as their tools do: runs of digits by value, the rest by
+# ordinal text, so 1.0.114 is newer than 1.0.9.
+function Compare-MoleVersionName {
+    param([string]$A, [string]$B)
+
+    $i = 0; $j = 0
+    while ($i -lt $A.Length -and $j -lt $B.Length) {
+        if ([char]::IsDigit($A[$i]) -and [char]::IsDigit($B[$j])) {
+            $si = $i; $sj = $j
+            while ($i -lt $A.Length -and [char]::IsDigit($A[$i])) { $i++ }
+            while ($j -lt $B.Length -and [char]::IsDigit($B[$j])) { $j++ }
+            $x = $A.Substring($si, $i - $si).TrimStart('0')
+            $y = $B.Substring($sj, $j - $sj).TrimStart('0')
+            if ($x.Length -ne $y.Length) { return [Math]::Sign($x.Length - $y.Length) }
+            $digits = [string]::CompareOrdinal($x, $y)
+            if ($digits -ne 0) { return [Math]::Sign($digits) }
+            continue
+        }
+        $c = [string]::CompareOrdinal([string]$A[$i], [string]$B[$j])
+        if ($c -ne 0) { return [Math]::Sign($c) }
+        $i++; $j++
+    }
+    return [Math]::Sign(($A.Length - $i) - ($B.Length - $j))
+}
+
+# $true when a process has any of these files open or mapped, $false when none
+# does, $null when the Restart Manager could not answer (treated as in use).
+function Test-MoleFilesInUse {
+    param([string[]]$Paths)
+
+    # Nothing to ask about is no evidence that nothing runs.
+    if ($null -eq $Paths -or $Paths.Count -eq 0) { return $null }
+    try {
+        if (-not ('Mole.RestartManagerProbe' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace Mole {
+    public static class RestartManagerProbe {
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+        private static extern int RmStartSession(out uint session, int flags, StringBuilder key);
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+        private static extern int RmRegisterResources(uint session, uint files, string[] names, uint apps, IntPtr unique, uint services, string[] serviceNames);
+        [DllImport("rstrtmgr.dll")]
+        private static extern int RmGetList(uint session, out uint needed, ref uint count, IntPtr info, out uint reasons);
+        [DllImport("rstrtmgr.dll")]
+        private static extern int RmEndSession(uint session);
+        // 1 in use, 0 free, -1 unknown.
+        public static int InUse(string[] paths) {
+            uint session;
+            if (RmStartSession(out session, 0, new StringBuilder(64)) != 0) return -1;
+            try {
+                for (int i = 0; i < paths.Length; i += 256) {
+                    int n = Math.Min(256, paths.Length - i);
+                    string[] batch = new string[n];
+                    Array.Copy(paths, i, batch, 0, n);
+                    if (RmRegisterResources(session, (uint)n, batch, 0, IntPtr.Zero, 0, null) != 0) return -1;
+                }
+                uint needed, count = 0, reasons;
+                int rc = RmGetList(session, out needed, ref count, IntPtr.Zero, out reasons);
+                if (rc == 234) return 1;
+                if (rc != 0) return -1;
+                return needed > 0 ? 1 : 0;
+            }
+            finally { RmEndSession(session); }
+        }
+    }
+}
+'@ -ErrorAction Stop
+        }
+        $answer = [Mole.RestartManagerProbe]::InUse([string[]]$Paths)
+    }
+    catch {
+        Write-Debug "Restart Manager could not answer: $_"
+        return $null
+    }
+    if ($answer -eq 1) { return $true }
+    if ($answer -eq 0) { return $false }
+    return $null
+}
+
+# Whether a process runs from a release: the file itself for a single-file
+# release, else its .exe, .dll and .node files, at most 1024. More than that,
+# none at all (an interpreter outside it may run it), a link inside or an
+# unreadable folder answer $null.
+function Test-MoleAiReleaseInUse {
+    param([string]$Path)
+
+    if ([IO.File]::Exists($Path)) { return Test-MoleFilesInUse -Paths @($Path) }
+    $code = New-Object System.Collections.Generic.List[string]
+    $pending = New-Object System.Collections.Generic.Stack[string]
+    $pending.Push($Path)
+    $seen = 0
+    try {
+        while ($pending.Count -gt 0) {
+            foreach ($item in @(Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop)) {
+                if (++$seen -gt $script:MoleAiMaxWalkEntries) { return $null }
+                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $null }
+                if ($item.PSIsContainer) { $pending.Push($item.FullName); continue }
+                if ($item.Extension -in @('.exe', '.dll', '.node')) {
+                    if ($code.Count -ge $script:MoleAiMaxCodeFiles) { return $null }
+                    $code.Add($item.FullName)
+                }
+            }
+        }
+    }
+    catch {
+        return $null
+    }
+    if ($code.Count -eq 0) { return $null }
+    return Test-MoleFilesInUse -Paths $code.ToArray()
+}
+
+function Test-MoleAiLinked {
+    param($Item)
+    return ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+}
+
+# The plain folders (or files) directly in $Container whose names pass
+# $IsRelease, less the newest by $OrderOf (every entry tied with it) and the
+# pinned names. One release offers nothing. Any listing error offers nothing.
+function Get-MoleAiSuperseded {
+    param(
+        [string]$Container,
+        [scriptblock]$IsRelease,
+        [scriptblock]$OrderOf,
+        [string[]]$Pins = @()
+    )
+
+    $entries = @(Get-ChildItem -LiteralPath $Container -Force -ErrorAction Stop |
+        Where-Object { $_.PSIsContainer -and -not (Test-MoleAiLinked $_) -and (& $IsRelease $_) })
+    if ($entries.Count -lt 2) { return @() }
+    $newest = $null
+    foreach ($e in $entries) {
+        $key = & $OrderOf $e.Name
+        if ($null -eq $newest -or (Compare-MoleVersionName $key $newest) -gt 0) { $newest = $key }
+    }
+    return @($entries | Where-Object {
+            (Compare-MoleVersionName (& $OrderOf $_.Name) $newest) -lt 0 -and $Pins -notcontains $_.Name
+        } | ForEach-Object { $_.FullName })
+}
+
+function Test-MoleAiDirectChild {
+    param([string]$Path, [string]$Parent)
+    if (-not $Path) { return $false }
+    $p = $Parent.TrimEnd('\')
+    return $Path.StartsWith("$p\", [StringComparison]::OrdinalIgnoreCase) -and $Path.IndexOf('\', $p.Length + 1) -lt 0
+}
+
+# The length of the plain ~\.local\bin\claude.exe, or $null while Claude's
+# state cannot be trusted: no such launcher, a link, or the install lock folder
+# holding anything or unreadable.
+function Get-MoleClaudeLauncherLength {
+    $locks = Join-Path $env:USERPROFILE '.local\state\claude\locks'
+    if (Test-Path -LiteralPath $locks) {
+        $lockItem = Get-Item -LiteralPath $locks -Force -ErrorAction Stop
+        if (-not $lockItem.PSIsContainer -or (Test-MoleAiLinked $lockItem)) { return $null }
+        if (@(Get-ChildItem -LiteralPath $locks -Force -ErrorAction Stop).Count -gt 0) { return $null }
+    }
+    $launcher = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+    if (-not [IO.File]::Exists($launcher)) { return $null }
+    $item = Get-Item -LiteralPath $launcher -Force -ErrorAction Stop
+    if ((Test-MoleAiLinked $item) -or $item.Length -le 0) { return $null }
+    return [long]$item.Length
+}
+
+function Get-MoleClaudeOldVersions {
+    param([string]$Root)
+    $launcherLength = Get-MoleClaudeLauncherLength
+    if ($null -eq $launcherLength) { return @() }
+    $versions = @(Get-ChildItem -LiteralPath $Root -Force -File -ErrorAction Stop |
+        Where-Object { $_.Name -match $script:MoleAiSemver -and -not (Test-MoleAiLinked $_) })
+    # A launcher no version matches is not one Claude's installer copied.
+    if ($versions.Count -lt 2 -or -not ($versions | Where-Object { $_.Length -eq $launcherLength })) { return @() }
+    $newest = $null
+    foreach ($v in $versions) { if ($null -eq $newest -or (Compare-MoleVersionName $v.Name $newest) -gt 0) { $newest = $v.Name } }
+    return @($versions | Where-Object { (Compare-MoleVersionName $_.Name $newest) -lt 0 -and $_.Length -ne $launcherLength } |
+        ForEach-Object { $_.FullName })
+}
+
+# The launcher copies an update renamed because they were running.
+function Get-MoleClaudeRenamedLaunchers {
+    param([string]$Root)
+    if ($null -eq (Get-MoleClaudeLauncherLength)) { return @() }
+    return @(Get-ChildItem -LiteralPath $Root -Force -File -ErrorAction Stop |
+        Where-Object { $_.Name -match $script:MoleAiClaudeRenamed -and -not (Test-MoleAiLinked $_) } |
+        ForEach-Object { $_.FullName })
+}
+
+function Get-MoleCodexOldReleases {
+    param([string]$Root)
+    # The installer can put the PATH launcher elsewhere; Mole would not see which release it runs.
+    if ($env:CODEX_INSTALL_DIR) { return @() }
+    if (Test-Path -LiteralPath (Join-Path $Root 'install.lock.d')) { return @() }
+    $lockFile = Join-Path $Root 'install.lock'
+    if ([IO.File]::Exists($lockFile)) {
+        # Shared with nobody: any other handle on it, as an install holds, makes this fail.
+        try { ([IO.File]::Open($lockFile, 'Open', 'Read', 'None')).Dispose() }
+        catch { return @() }
+    }
+    # Junction targets come back in their final spelling (long names, real
+    # case), so the folder they must sit in is read the same way, and releases
+    # are then pinned by name.
+    $releases = (Resolve-MoleExistingPathInfo -Path (Join-Path $Root 'releases')).Path
+    if (-not $releases) { return @() }
+    $current = Get-Item -LiteralPath (Join-Path $Root 'current') -Force -ErrorAction SilentlyContinue
+    if ($null -eq $current -or -not (Test-MoleAiLinked $current)) { return @() }
+    $live = (Resolve-MoleExistingPathInfo -Path $current.FullName).Path
+    if (-not (Test-MoleAiDirectChild $live $releases)) { return @() }
+    $liveItem = Get-Item -LiteralPath $live -Force -ErrorAction Stop
+    if (-not $liveItem.PSIsContainer -or (Test-MoleAiLinked $liveItem)) { return @() }
+    $pins = @(Split-Path -Leaf $live)
+    # The launcher on PATH is a second junction, to a release's bin; an install
+    # stopped between moving the two leaves them on different releases.
+    $visible = Join-Path $env:LOCALAPPDATA 'Programs\OpenAI\Codex\bin'
+    $visibleItem = Get-Item -LiteralPath $visible -Force -ErrorAction SilentlyContinue
+    if ($null -ne $visibleItem -and (Test-MoleAiLinked $visibleItem)) {
+        $bin = (Resolve-MoleExistingPathInfo -Path $visible).Path
+        if (-not $bin -or (Split-Path -Leaf $bin) -ne 'bin') { return @() }
+        $release = Split-Path -Parent $bin
+        if (-not (Test-MoleAiDirectChild $release $releases)) { return @() }
+        $pins += (Split-Path -Leaf $release)
+    }
+    $marker = Join-Path $Root 'auto-update-version'
+    if (Test-Path -LiteralPath $marker) {
+        $markerItem = Get-Item -LiteralPath $marker -Force -ErrorAction Stop
+        if ($markerItem.PSIsContainer -or (Test-MoleAiLinked $markerItem) -or $markerItem.Length -eq 0 -or $markerItem.Length -gt 256) { return @() }
+        $name = [IO.File]::ReadAllText($marker, (New-Object System.Text.UTF8Encoding($false, $true))).Trim()
+        if ($name -notmatch $script:MoleAiCodexRelease) { return @() }
+        $pins += $name
+    }
+    return Get-MoleAiSuperseded -Container $releases -Pins $pins -OrderOf { param($n) $n } -IsRelease {
+        param($e) $e.Name -match $script:MoleAiCodexRelease -and [IO.File]::Exists((Join-Path $e.FullName 'bin\codex.exe'))
+    }
+}
+
+# Cursor's launcher runs the version folder with the newest date, so every
+# folder of that date stays.
+function Get-MoleCursorAgentOldReleases {
+    param([string]$Root)
+    if (-not [IO.File]::Exists((Join-Path $Root 'cursor-agent.ps1')) -and -not [IO.File]::Exists((Join-Path $Root 'cursor-agent.cmd'))) { return @() }
+    $versions = Join-Path $Root 'versions'
+    if (-not [IO.Directory]::Exists($versions) -or (Test-Path -LiteralPath (Join-Path $versions '.promote-lock'))) { return @() }
+    $all = @(Get-ChildItem -LiteralPath $versions -Force -ErrorAction Stop)
+    if ($all | Where-Object { $_.Name -like '*.new' }) { return @() }
+    $children = @($all | Where-Object { $_.PSIsContainer })
+    # A mid-2026 launcher read only the short name form, so with both forms the
+    # newest date may not be what runs.
+    $forms = @($children | Where-Object { $_.Name -match $script:MoleAiCursorVersion } |
+        ForEach-Object { $_.Name.Split('-').Length } | Sort-Object -Unique)
+    if ($forms.Count -gt 1) { return @() }
+    return Get-MoleAiSuperseded -Container $versions -OrderOf { param($n) $n.Split('-')[0] } -IsRelease {
+        param($e) $e.Name -match $script:MoleAiCursorVersion
+    }
+}
+
+# Copilot runs the newest unpacked release: only releases older than the newest
+# complete one go.
+function Get-MoleCopilotOldReleases {
+    param([string]$Root)
+    return Get-MoleAiSuperseded -Container $Root -OrderOf { param($n) $n } -IsRelease {
+        param($e) $e.Name -match $script:MoleAiSemver -and [IO.File]::Exists((Join-Path $e.FullName '.extraction-complete'))
+    }
+}
+
+function Get-MoleAiCliHomes {
+    $profileRoot = $env:USERPROFILE
+    $local = $env:LOCALAPPDATA
+    return @(
+        @{ Label = 'Claude Code old version'; Root = (Join-Path $profileRoot '.local\share\claude\versions'); Read = 'Get-MoleClaudeOldVersions' }
+        @{ Label = 'Claude Code old version'; Root = (Join-Path $profileRoot '.local\bin'); Read = 'Get-MoleClaudeRenamedLaunchers' }
+        @{ Label = 'Codex old version'; Root = (Join-Path $profileRoot '.codex\packages\standalone'); Read = 'Get-MoleCodexOldReleases' }
+        @{ Label = 'Cursor Agent old version'; Root = (Join-Path $local 'cursor-agent'); Read = 'Get-MoleCursorAgentOldReleases' }
+        @{ Label = 'GitHub Copilot CLI old version'; Root = (Join-Path $local 'copilot\pkg\win32-x64'); Read = 'Get-MoleCopilotOldReleases' }
+        @{ Label = 'GitHub Copilot CLI old version'; Root = (Join-Path $local 'copilot\pkg\win32-arm64'); Read = 'Get-MoleCopilotOldReleases' }
+    )
+}
+
+# Every superseded release as @{ Path; Label; Root; Read }. A home reached
+# through a link, or one whose reading fails, offers nothing.
+function Get-MoleAiCliOldReleases {
+    if (-not $env:USERPROFILE -or -not $env:LOCALAPPDATA) { return @() }
+    foreach ($aiHome in Get-MoleAiCliHomes) {
+        if (-not [IO.Directory]::Exists($aiHome.Root)) { continue }
+        if (-not (Get-MolePathSnapshot -Path $aiHome.Root)) { continue }
+        try { $paths = @(& $aiHome.Read -Root $aiHome.Root) }
+        catch {
+            Write-Debug "$($aiHome.Label) kept: $($aiHome.Root) could not be read: $_"
+            continue
+        }
+        foreach ($path in $paths) { @{ Path = $path; Label = $aiHome.Label; Root = $aiHome.Root; Read = $aiHome.Read } }
+    }
+}
+
+# Right before the delete: the release is still superseded as its home reads
+# now and nothing runs from it. An update since the scan may have made it the
+# one in use, or a process may have started from it.
+function Test-MoleAiReleaseStillOld {
+    param([string]$Path)
+    if (-not (@(Get-MoleAiCliOldReleases) | Where-Object { $_.Path -eq $Path })) { return $false }
+    return (Test-MoleAiReleaseInUse -Path $Path) -eq $false
+}
+
+function Clear-AiCliOldVersions {
+    <#
+    .SYNOPSIS
+        Remove the releases AI command-line tools keep after an update
+    #>
+    foreach ($release in @(Get-MoleAiCliOldReleases)) {
+        if ((Test-MoleAiReleaseInUse -Path $release.Path) -ne $false) {
+            Write-Debug "$($release.Label) kept: $($release.Path) is in use or its use is unknown"
+            continue
+        }
+        $null = Remove-SafeItem -Path $release.Path -Description $release.Label -Guard { param($Path) Test-MoleAiReleaseStillOld -Path $Path }
+    }
+}
+
+# ============================================================================
 # Main Developer Tools Cleanup Function
 # ============================================================================
 
@@ -737,6 +1074,9 @@ function Invoke-DevToolsCleanup {
     
     # Git
     Clear-GitCaches
+
+    # AI command-line tools' superseded releases (Claude Code, Codex, Cursor Agent, Copilot)
+    Clear-AiCliOldVersions
     
     Stop-Section
 }
