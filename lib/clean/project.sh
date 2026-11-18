@@ -1509,6 +1509,13 @@ filter_protected_artifacts() {
 
     local _PURGE_OPEN_SNAPSHOT=""
     _purge_take_lsof_snapshots "$deadline"
+    # Asked before the probe workers fork, so they share one answer.
+    local developer_dir_rc=0
+    mole_git_selected_developer_dir "$deadline" || developer_dir_rc=$?
+    if [[ $developer_dir_rc -gt 128 ]]; then
+        rm -f "$results" 2> /dev/null || true # SAFE: exact probe result scratch file owned by this filter
+        return "$developer_dir_rc"
+    fi
 
     local max_probe_jobs
     max_probe_jobs=$(get_optimal_parallel_jobs io)

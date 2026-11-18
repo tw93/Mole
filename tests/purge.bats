@@ -165,6 +165,45 @@ EOF
     [[ "$output" != *UNEXPECTED_GIT_SHIM* ]]
 }
 
+@test "purge Git probes ask xcode-select once and never keep a failed answer" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+unset DEVELOPER_DIR
+mkdir -p "$HOME/repo/.git" "$HOME/repo/build" "$HOME/repo/dist" "$HOME/dev/usr/bin"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/dev/usr/bin/git"
+chmod +x "$HOME/dev/usr/bin/git"
+command() {
+    if [[ "$*" == '-v git' ]]; then echo /usr/bin/git; else builtin command "$@"; fi
+}
+xcode_select_state=fail
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/bin/xcode-select)
+            echo asked >> "$HOME/xcode-select.calls"
+            [[ "$xcode_select_state" == ok ]] || return 1
+            echo "$HOME/dev"
+            ;;
+        *) "$@" ;;
+    esac
+}
+rc=0
+mole_path_has_git_tracked_files "$HOME/repo/build" || rc=$?
+[[ $rc -eq 2 ]] || exit 1
+xcode_select_state=ok
+for path in build dist build; do
+    rc=0
+    mole_path_has_git_tracked_files "$HOME/repo/$path" || rc=$?
+    [[ $rc -eq 1 ]] || exit 1
+done
+(mole_git_ls_files "$HOME/repo" '' "$HOME/repo" > /dev/null) || exit 1
+wc -l < "$HOME/xcode-select.calls" | tr -d ' '
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = "2" ]
+}
+
 @test "purge node_modules requires an install record and preserves modified packages" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
