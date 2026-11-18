@@ -346,7 +346,33 @@ func (m *model) selectEntryPath(path string) {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.update(msg)
+	next := updated.(model)
+	_, initializing := msg.(initializeMsg)
+	if initializing || next.path != m.path || (next.liveScanID != 0 && next.liveScanID != m.liveScanID) {
+		if metadataCmd := next.refreshSimulatorMetadata(); metadataCmd != nil {
+			cmd = tea.Batch(cmd, metadataCmd)
+		}
+	}
+	return next, cmd
+}
+
+func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case simulatorMetadataMsg:
+		if msg.id != m.simulatorProbeID || msg.path != m.path || m.deleting || m.deleteConfirm {
+			return m, nil
+		}
+		selectedPath := m.selectedEntryPath()
+		m.simulators = msg.devices
+		m.applyEntryFilter()
+		m.selectEntryPath(selectedPath)
+		for path := range m.multiSelected {
+			if !slices.ContainsFunc(m.entries, func(entry dirEntry) bool { return entry.Path == path }) {
+				delete(m.multiSelected, path)
+			}
+		}
+		return m, nil
 	case initializeMsg:
 		var cmd tea.Cmd
 		if m.inOverviewMode() {
@@ -1385,10 +1411,13 @@ func scanOverviewPathCmd(path string, index int, publication *scanPublication) t
 // exec.CommandContext can only kill a child while its parent is alive, so a
 // quit that does not wait would leave du walking the tree with no deadline.
 func (m *model) stopMeasurementsForExit() {
+	if m.simulatorCancel != nil {
+		m.simulatorCancel()
+	}
 	m.cancelLiveScan()
 	m.cancelOverviewScans(nil)
 	m.cancelBackgroundCacheWrites(nil)
-	for deadline := time.Now().Add(duExitWait); activeDu.Load() > 0 && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(duExitWait); (activeDu.Load() > 0 || activeSimulatorCommands.Load() > 0) && time.Now().Before(deadline); {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
