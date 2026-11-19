@@ -845,7 +845,8 @@ note_activity() { :; }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 has_sudo_session() { return 1; }
-ensure_sudo_session() { touch "$HOME/xcode-started"; return 0; }
+mole_report_program_status() { echo "STATUS:$*"; }
+ensure_sudo_session() { echo AUTH; touch "$HOME/xcode-started"; return 0; }
 _sim_runtime_size_kb() { echo 1; }
 _xcode_xctest_devices_process_running() {
     [[ -e "$HOME/xcode-started" ]] && return 0
@@ -862,6 +863,7 @@ EOF
         echo "$output"
         return 1
     }
+    [[ "$output" == *$'STATUS:blocked auth\nAUTH\nSTATUS:working'* ]] || return 1
     [[ "$output" != *"Xcode documentation cache · stopped"* ]] || return 1
     [[ "$output" != *"UNEXPECTED_REMOVE"* ]]
 }
@@ -1081,16 +1083,24 @@ source "$PROJECT_ROOT/lib/clean/dev.sh"
 note_activity() { :; }
 pgrep() { return 1; }
 _coresimulator_booted_device_state() { return 1; }
-has_sudo_session() { return 0; }
+has_sudo_session() { [[ "$cached" == yes ]]; }
+mole_report_program_status() { echo "STATUS:$*"; }
+ensure_sudo_session() { echo AUTH; return 1; }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 get_path_size_kb() { echo 3; }
 safe_sudo_remove() { echo "REMOVE:$1"; }
+cached=no
+clean_xcode_system_coresimulator_caches
+echo CACHED
+cached=yes
 clean_xcode_system_coresimulator_caches
 printf 'COUNTERS:%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
 EOF
 
     [ "$status" -eq 0 ]
+    [[ "${output%%CACHED*}" == $'STATUS:blocked auth\nAUTH\nSTATUS:working\n'*"skipped (sudo denied)"* ]] || return 1
+    [[ "${output#*CACHED}" != *STATUS:* ]] || return 1
     [[ "$output" == *"REMOVE:$cache_root/dyld"* ]] || return 1
     [[ "$output" == *"REMOVE:$cache_root/metadata"* ]] || return 1
     [[ "$output"$'\n' != *"REMOVE:$cache_root"$'\n'* ]] || return 1

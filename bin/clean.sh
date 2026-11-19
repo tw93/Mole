@@ -549,6 +549,7 @@ read_clean_sudo_password_remainder() {
 
 prompt_for_system_clean() {
     local prompt_attempt=0
+    mole_report_program_status blocked permission
     while true; do
         echo -ne "${PURPLE}${ICON_ARROW}${NC} System caches need sudo. ${GREEN}Enter${NC} continue, ${GRAY}Space${NC} skip: "
 
@@ -559,6 +560,7 @@ prompt_for_system_clean() {
         # starts typing their password) proceeds to authentication.
         if [[ "$choice" == "QUIT" ]]; then
             echo -e " ${GRAY}Canceled${NC}"
+            CLEAN_STATUS_ON_SUCCESS=idle
             exit 0
         fi
 
@@ -569,6 +571,7 @@ prompt_for_system_clean() {
             break
         elif [[ "$choice" == "ENTER" ]]; then
             printf "\r\033[K" # Clear the prompt line
+            mole_report_program_status blocked auth
             if ensure_sudo_session "System cleanup requires admin access"; then
                 SYSTEM_CLEAN=true
                 echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
@@ -582,6 +585,7 @@ prompt_for_system_clean() {
         elif [[ "$choice" == CHAR:* ]]; then
             local typed_password="${choice#CHAR:}"
             local password_remainder=""
+            mole_report_program_status blocked auth
             read_clean_sudo_password_remainder password_remainder
             typed_password="${typed_password}${password_remainder}"
 
@@ -610,9 +614,12 @@ prompt_for_system_clean() {
             echo -e "${YELLOW}${ICON_WARNING}${NC} Press Enter to continue, or Space to skip"
         fi
     done
+    mole_report_program_status working
 }
 
 CLEANUP_DONE=false
+# Set once a cleanup or preview starts. Escape cancels with a zero exit code.
+CLEAN_STATUS_ON_SUCCESS=""
 # shellcheck disable=SC2329
 cleanup() {
     local signal="${1:-EXIT}"
@@ -633,6 +640,13 @@ cleanup() {
     stop_sudo_session
 
     show_cursor
+
+    [[ -n "$CLEAN_STATUS_ON_SUCCESS" ]] || return 0
+    case "$exit_code" in
+        0) mole_report_program_status "$CLEAN_STATUS_ON_SUCCESS" ;;
+        130 | 143) mole_report_program_status idle ;; # SIGINT or SIGTERM, including from a cleanup step.
+        *) mole_report_program_status error ;;
+    esac
 }
 
 trap 'cleanup EXIT $?' EXIT
@@ -2254,6 +2268,8 @@ main() {
         shift
     done
 
+    CLEAN_STATUS_ON_SUCCESS="done"
+    mole_report_program_status working
     refuse_cleanup_without_write_access || exit 1
     start_cleanup
     hide_cursor

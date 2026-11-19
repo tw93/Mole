@@ -1737,6 +1737,15 @@ check_android_ndk() {
     check_multiple_versions "$ndk_dir" "Android NDK versions" "$newest"
 }
 
+_xcode_ensure_sudo_session() {
+    has_sudo_session && return 0
+    local auth_rc=0
+    mole_report_program_status blocked auth
+    ensure_sudo_session "$1" || auth_rc=$?
+    mole_report_program_status working
+    return "$auth_rc"
+}
+
 clean_xcode_documentation_cache() {
     # Honor the command-wide choice before scanning or requesting credentials.
     [[ "${SYSTEM_CLEAN:-true}" == "true" ]] || return 0
@@ -1838,12 +1847,10 @@ clean_xcode_documentation_cache() {
         return 0
     fi
 
-    if ! has_sudo_session; then
-        if ! ensure_sudo_session "Cleaning Xcode documentation cache requires admin access"; then
-            echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache · skipped (sudo denied)"
-            note_activity
-            return 0
-        fi
+    if ! _xcode_ensure_sudo_session "Cleaning Xcode documentation cache requires admin access"; then
+        echo -e "  ${GRAY}${ICON_WARNING}${NC} Xcode documentation cache · skipped (sudo denied)"
+        note_activity
+        return 0
     fi
 
     local removed_count=0
@@ -2284,12 +2291,10 @@ clean_xcode_system_coresimulator_caches() {
         return 0
     fi
 
-    if ! has_sudo_session; then
-        if ! ensure_sudo_session "Cleaning Xcode Simulator system cache requires admin access"; then
-            echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode Simulator system cache · skipped (sudo denied)"
-            note_activity
-            return 0
-        fi
+    if ! _xcode_ensure_sudo_session "Cleaning Xcode Simulator system cache requires admin access"; then
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode Simulator system cache · skipped (sudo denied)"
+        note_activity
+        return 0
     fi
 
     local removed_count=0

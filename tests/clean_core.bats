@@ -995,6 +995,11 @@ SCRIPT
     [[ "$output" == *"MOLE_SUDO_KEEPALIVE_PID=keepalive-pid"* ]]
 }
 
+@test "mo clean emits OSC 7501 at lifecycle transitions only on terminal stderr" {
+    run python3 "$PROJECT_ROOT/tests/clean_program_status_pty.py"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "clean main restores the terminal and exits with an interrupted cleanup status" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 \
         /bin/bash --noprofile --norc <<'SCRIPT'
