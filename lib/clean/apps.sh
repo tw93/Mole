@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ORPHAN_AGE_THRESHOLD=${MOLE_ORPHAN_AGE_DAYS:-30}
 readonly CLAUDE_VM_ORPHAN_AGE_THRESHOLD=7
 readonly ORPHAN_AGE_WALK_BUDGET_SEC=60
-readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v3:complete"
+readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v4:complete"
 # Args: $1=target_dir, $2=label, optional $3=scan stderr file, $4...=find exclusions
 clean_ds_store_tree() {
     local target="$1"
@@ -634,6 +634,12 @@ scan_installed_apps() {
                     local playcover_bundle=""
                     if playcover_bundle=$(mole_playcover_alias_target "$app_path" 2> /dev/null); then
                         plist_path="$playcover_bundle/Info.plist"
+                    fi
+                fi
+                if [[ ! -f "$plist_path" ]]; then
+                    local netbird_plist=""
+                    if netbird_plist=$(mole_netbird_flat_info_plist "$app_path"); then
+                        plist_path="$netbird_plist"
                     fi
                 fi
                 local bundle_id=""

@@ -32,6 +32,22 @@ _MOLE_BUNDLE_RESOLVER_APP_ROOTS=(
     "$HOME/Library/Input Methods"
 )
 
+# NetBird ships the plist and executable at the top of its macOS app bundle.
+mole_netbird_flat_info_plist() {
+    local app="$1"
+    case "${app##*/}" in
+        [Nn]et[Bb]ird\ UI.[aA][pP][pP]) ;;
+        *) return 1 ;;
+    esac
+    local info="$app/Info.plist"
+    local executable="$app/netbird-ui"
+    [[ ! -e "$app/Contents" && ! -L "$app/Contents" &&
+        -f "$info" && ! -L "$info" && -f "$executable" && -x "$executable" && ! -L "$executable" ]] || return 1
+    [[ "$(/usr/bin/plutil -extract CFBundleIdentifier raw "$info" 2> /dev/null)" == "io.netbird.client" &&
+    "$(/usr/bin/plutil -extract CFBundleExecutable raw "$info" 2> /dev/null)" == "netbird-ui" ]] || return 1
+    printf '%s\n' "$info"
+}
+
 # Return 0 if some installed app either has the given CFBundleIdentifier, or
 # registers a privileged helper with that ID via SMJobBless
 # (Contents/Library/LaunchServices/<id>). Return 1 otherwise.
@@ -149,7 +165,9 @@ bundle_has_installed_app() {
                 break
             fi
             info="$app/Contents/Info.plist"
-            [[ -f "$info" ]] || continue
+            if [[ ! -f "$info" ]]; then
+                info=$(mole_netbird_flat_info_plist "$app") || continue
+            fi
             local plist_timeout=""
             plist_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \
                 "$deadline_seconds") || {

@@ -369,8 +369,11 @@ _process_project_cache_scan_file() {
     local scan_file="$2"
     local processed_file="$3"
 
-    while IFS= read -r match_path; do
-        [[ -z "$match_path" ]] && continue
+    while IFS= read -r -d '' match_path; do
+        # fd appends a separator to directory results.
+        match_path="${match_path%/}"
+        # The match ledger uses tab and newline delimiters.
+        [[ "$match_path" == *$'\t'* || "$match_path" == *$'\n'* ]] && continue
         # Skip __pycache__ dirs with no .pyc/.pyo files (empty or already cleaned)
         if [[ "${match_path##*/}" == "__pycache__" ]]; then
             pycache_has_bytecode "$match_path" || continue
@@ -393,7 +396,7 @@ project_cache_root_is_walkable() {
     [[ "$root" == "$HOME/Library/CloudStorage" ]] || return 0
     local probe_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
     run_with_timeout "$probe_timeout" "$FIND_BSD" -P "$root" -mindepth 2 -maxdepth 2 \
-        -type d -print -quit < /dev/null > /dev/null 2>&1
+        -flags +dataless -prune -o -type d -print -quit < /dev/null > /dev/null 2>&1
 }
 
 # Scan a project root for supported build caches while pruning heavy subtrees.
@@ -413,14 +416,42 @@ scan_project_cache_root() {
     # the scan past its timeout on a busy disk and skip the whole root. Leave
     # .tmp staging trees alone too: unreadable File Provider internals must not
     # make an otherwise readable CloudStorage root fail its scan.
-    local -a find_args=(
-        "$FIND_BSD" -P "$root" -maxdepth 9 -mount
-        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".tmp" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".build-*" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" ")"
-        -prune -o
-        -type d
-        "(" -name ".next" -o -name "__pycache__" -o -name ".dart_tool" ")"
-        -print
-    )
+    local -a prune_names=(Library .Trash node_modules .tmp .git .svn .hg .venv venv
+        .pnpm-store .fvm DerivedData Pods miniconda3 anaconda3 miniforge3 mambaforge site-packages
+        target .build ".build-*" .gradle Index.noindex _cacache)
+    local -a walk_args=()
+    local name cloud_path=false using_fd=false
+    for name in "${prune_names[@]}"; do
+        # shellcheck disable=SC2053 # The prune list contains a glob.
+        [[ "${root%/}" == */$name ]] && return 0
+    done
+    if mole_purge_is_cloud_synced_path "$root"; then
+        cloud_path=true
+    fi
+    local root_name="${root%/}"
+    root_name="${root_name##*/}"
+    if [[ "$cloud_path" == "false" && ! -L "${root%/}" && "$FIND_BSD" == "/usr/bin/find" &&
+        "$root_name" != .next && "$root_name" != __pycache__ && "$root_name" != .dart_tool ]] &&
+        command -v fd > /dev/null 2>&1; then
+        using_fd=true
+        walk_args=(fd --threads 2 --show-errors --hidden --no-ignore --case-sensitive
+            --one-file-system --max-depth 9 --type directory --print0)
+        for name in "${prune_names[@]}"; do
+            walk_args+=(--exclude "$name")
+        done
+        walk_args+=(-- '^(\.next|__pycache__|\.dart_tool)$' "$root")
+    else
+        walk_args=("$FIND_BSD" -P "$root" -maxdepth 9 -mount "(")
+        for name in "${prune_names[@]}"; do
+            walk_args+=(-name "$name" -o)
+        done
+        # Entering a dataless directory can make its provider fetch it.
+        if [[ "$cloud_path" == "true" ]]; then
+            walk_args+=(-flags +dataless -o)
+        fi
+        walk_args+=(-false ")" -prune -o -type d
+            "(" -name .next -o -name __pycache__ -o -name .dart_tool ")" -print0)
+    fi
 
     local scan_budget
     scan_budget=$(mole_purge_timeout_budget_seconds "$scan_timeout" 6)
@@ -436,7 +467,11 @@ scan_project_cache_root() {
     }
     stage_timeout=$(_mole_timeout_with_deadline "$scan_timeout" "$scan_deadline") || status=$?
     if [[ $status -eq 0 ]]; then
-        run_with_timeout "$stage_timeout" "${find_args[@]}" > "$scan_file" 2> /dev/null || status=$?
+        run_with_timeout "$stage_timeout" "${walk_args[@]}" > "$scan_file" 2> "$processed_file" || status=$?
+        # fd can print traversal errors and still exit zero.
+        if [[ "$using_fd" == "true" && $status -eq 0 && -s "$processed_file" ]]; then
+            status=1
+        fi
     fi
 
     if [[ $status -ne 0 ]]; then
@@ -449,6 +484,7 @@ scan_project_cache_root() {
         return "$status"
     fi
 
+    : > "$processed_file"
     if [[ -s "$scan_file" ]]; then
         stage_timeout=$(_mole_timeout_with_deadline "$scan_timeout" "$scan_deadline") || status=$?
         if [[ $status -eq 0 ]]; then
@@ -483,14 +519,14 @@ project_cache_group_root() {
     local cache_path="$2"
     local candidate
 
-    candidate=$(dirname "$cache_path")
+    candidate="${cache_path%/*}"
     while [[ -n "$candidate" && "$candidate" != "/" ]]; do
         if mole_purge_is_project_root "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
         fi
         [[ "$candidate" == "$scan_root" ]] && break
-        candidate=$(dirname "$candidate")
+        candidate="${candidate%/*}"
     done
 
     printf '%s\n' "$scan_root"

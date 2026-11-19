@@ -107,7 +107,7 @@ source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/apps.sh"
 
 mkdir -p "$HOME/.cache/mole" "$HOME/Applications/Present.app/Contents"
-printf '%s\n%s\n' "com.example.Missing" "# mole-installed-apps-cache:v2:complete" > "$HOME/.cache/mole/installed_apps_cache"
+printf '%s\n%s\n' "com.example.Missing" "# mole-installed-apps-cache:v3:complete" > "$HOME/.cache/mole/installed_apps_cache"
 cat > "$HOME/Applications/Present.app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -4442,6 +4442,40 @@ EOF
 		echo "$output"
 		return 1
 	}
+}
+
+@test "installed-app scan recognizes the flat NetBird bundle and rejects an incomplete copy" {
+    run env HOME="$HOME/netbird-scan" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+app="$HOME/Applications/Netbird UI.app"
+mkdir -p "$app"
+cat > "$app/Info.plist" <<'PLIST'
+<?xml version="1.0"?>
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>io.netbird.client</string>
+    <key>CFBundleExecutable</key><string>netbird-ui</string>
+</dict></plist>
+PLIST
+touch "$app/netbird-ui"
+chmod +x "$app/netbird-ui"
+# Limit app enumeration to the fixture even when the host has NetBird installed.
+find() {
+    case "$1" in
+        "$HOME/Applications"|*/LaunchAgents) /usr/bin/find "$@" ;;
+    esac
+}
+scan_installed_apps "$HOME/installed.txt"
+grep -Fxq io.netbird.client "$HOME/installed.txt" || exit 1
+rm -f "$HOME/.cache/mole/installed_apps_cache"
+chmod -x "$app/netbird-ui"
+if scan_installed_apps "$HOME/incomplete.txt"; then
+    exit 1
+fi
+[[ "$MOLE_APP_SCAN_FAILURE_DETAIL" == "~/Applications/Netbird UI.app" ]]
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "installed-app scan skips an iOS app with a dangling WrappedBundle symlink" {
