@@ -1458,6 +1458,7 @@ verdict same_id_any_case com.Foo.Bar COM.FOO.BAR /A/Foo.app /A/Other.app
 verdict channel_name_any_case com.a.x com.b.y "/A/Zed Nightly.app" /A/ZED.app
 verdict suffix_strip_is_case_sensitive com.a.x com.b.y "/A/Zed nightly.app" /A/Zed.app
 verdict unrelated com.a.x com.b.y /A/Alpha.app /A/Beta.app
+verdict release_number_name com.a.x com.b.y "/A/Alfred 4.app" "/A/Alfred 5.app"
 verdict one_letter_names com.a.x com.b.y /A/X.app /A/x.app
 rc=0
 uninstall_live_bundle_has_other_install com.example.selected "$selected" || rc=$?
@@ -1481,6 +1482,7 @@ EOF
     [[ "$output" == *"channel_name_any_case=shared"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"suffix_strip_is_case_sensitive=open"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"unrelated=open"* && "$output" == *"one_letter_names=open"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"release_number_name=shared"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"scan_rc=1"* && "$output" == *"rows_rc=1"* && "$output" == *"names=[]"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"scan_with_sibling_rc=0"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"tr_execs=0"* ]] || { echo "$output"; return 1; }

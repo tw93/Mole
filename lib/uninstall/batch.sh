@@ -1868,7 +1868,10 @@ _uninstall_strip_version_suffix_into() {
     local _strip_value="$2"
     local version_suffixes="Nightly|Beta|Alpha|Dev|Canary|Preview|Insider|Edge|Stable|Release|RC|LTS"
     version_suffixes+="|Developer Edition|Technology Preview"
-    if [[ "$_strip_value" =~ ^(.+)[[:space:]]+(${version_suffixes})$ ]]; then
+    # A trailing release number too ("Alfred 4" is "Alfred", #2027). Broader
+    # than find_app_files, which also wants CFBundleName to agree, because here
+    # a wider match only keeps more of a survivor's data.
+    if [[ "$_strip_value" =~ ^(.+)[[:space:]]+(${version_suffixes}|[0-9]+)$ ]]; then
         _strip_value="${BASH_REMATCH[1]}"
     fi
     printf -v "$1" '%s' "$_strip_value"

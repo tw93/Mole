@@ -734,7 +734,12 @@ _project_cache_final_guard() {
         repo="$MOLE_GIT_REPO_ROOT"
         [[ "$repo" != "$physical" ]] || return 1
         mole_git_path_spec "$repo" "$physical"
-        evidence=$(mole_git_ls_files "$repo" "$git_deadline" "$repo" -- "$MOLE_GIT_PATH_SPEC") || rc=$?
+        # Out here, not in the subshell below, so later guards reuse the answer.
+        mole_git_selected_developer_dir "$git_deadline" || rc=$?
+        [[ $rc -le 128 ]] || return "$rc"
+        if [[ $rc -eq 0 ]]; then
+            evidence=$(mole_git_ls_files "$repo" "$git_deadline" "$repo" -- "$MOLE_GIT_PATH_SPEC") || rc=$?
+        fi
         [[ $rc -le 128 ]] || return "$rc"
         if [[ $rc -ne 0 || -n "$evidence" ]]; then
             debug_log "Keeping project cache after Git recheck: $path (status $rc)"

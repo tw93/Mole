@@ -278,6 +278,9 @@ type model struct {
 	liveEntriesDirty    bool
 	autoSortLiveEntries bool
 	liveSortMode        liveSortMode
+	simulators          map[string]simulatorInfo
+	simulatorProbeID    uint64
+	simulatorCancel     context.CancelFunc
 }
 
 func (m model) inOverviewMode() bool {
@@ -537,7 +540,6 @@ func markRemovedOverviewRowsPending(entries []dirEntry, removedPaths []string) {
 
 func fileEntryName(f fileEntry) string { return f.Name }
 func fileEntryPath(f fileEntry) string { return f.Path }
-func dirEntryName(e dirEntry) string   { return e.Name }
 func dirEntryPath(e dirEntry) string   { return e.Path }
 
 // filterMatches reports whether an item with the given name and path matches a
@@ -596,7 +598,7 @@ func (m *model) resetLargeFilter() {
 // the current query. The directory view is the drill-down list (m.entries) in
 // non-overview mode.
 func (m *model) applyEntryFilter() {
-	m.entries = filterByQuery(m.entriesAll, m.entryFilter, dirEntryName, dirEntryPath)
+	m.entries = filterByQuery(m.entriesAll, m.entryFilter, m.entryDisplayName, dirEntryPath)
 	m.clampEntrySelection()
 }
 

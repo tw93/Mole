@@ -165,6 +165,82 @@ EOF
     [[ "$output" != *UNEXPECTED_GIT_SHIM* ]]
 }
 
+@test "purge Git probes ask xcode-select once and never keep a failed answer" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+unset DEVELOPER_DIR
+mkdir -p "$HOME/repo/.git" "$HOME/repo/build" "$HOME/repo/dist" "$HOME/dev/usr/bin"
+printf '#!/bin/sh\nexit 0\n' > "$HOME/dev/usr/bin/git"
+chmod +x "$HOME/dev/usr/bin/git"
+command() {
+    if [[ "$*" == '-v git' ]]; then echo /usr/bin/git; else builtin command "$@"; fi
+}
+xcode_select_state=fail
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/bin/xcode-select)
+            echo asked >> "$HOME/xcode-select.calls"
+            [[ "$xcode_select_state" == ok ]] || return 1
+            echo "$HOME/dev"
+            ;;
+        *) "$@" ;;
+    esac
+}
+rc=0
+mole_path_has_git_tracked_files "$HOME/repo/build" || rc=$?
+[[ $rc -eq 2 ]] || exit 1
+xcode_select_state=ok
+for path in build dist build; do
+    rc=0
+    mole_path_has_git_tracked_files "$HOME/repo/$path" || rc=$?
+    [[ $rc -eq 1 ]] || exit 1
+done
+(mole_git_ls_files "$HOME/repo" '' "$HOME/repo" > /dev/null) || exit 1
+wc -l < "$HOME/xcode-select.calls" | tr -d ' '
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = "2" ]
+}
+
+@test "purge filter asks xcode-select once for its workers and never without a repository" {
+    # Outside the checkout, so plain/build is not inside Mole's own repository.
+    local filter_home="$BATS_TEST_TMPDIR/filter-home"
+    mkdir -p "$filter_home"
+    run env HOME="$filter_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+unset DEVELOPER_DIR
+mkdir -p "$HOME/repo/.git" "$HOME/repo/a" "$HOME/repo/b" "$HOME/repo/c" "$HOME/plain/build"
+command() {
+    if [[ "$*" == '-v git' ]]; then echo /usr/bin/git; else builtin command "$@"; fi
+}
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/bin/xcode-select) echo asked >> "$HOME/xcode-select.calls"; echo "$HOME/dev" ;;
+        *) "$@" ;;
+    esac
+}
+_purge_take_lsof_snapshots() { :; }
+is_protected_purge_artifact() {
+    # Like the real probe, only a path inside a repository asks.
+    if mole_find_git_repo_root "$1"; then mole_git_selected_developer_dir ''; fi
+    return 1
+}
+calls() { [[ -f "$HOME/xcode-select.calls" ]] && wc -l < "$HOME/xcode-select.calls" | tr -d ' ' || echo 0; }
+: | filter_protected_artifacts > /dev/null
+printf '%s\n' "$HOME/plain/build" | filter_protected_artifacts > /dev/null
+echo "outside=$(calls)"
+printf '%s\n' "$HOME/repo/a" "$HOME/repo/b" "$HOME/repo/c" | filter_protected_artifacts > /dev/null
+echo "repo=$(calls)"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"outside=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"repo=1"* ]]
+}
+
 @test "purge node_modules requires an install record and preserves modified packages" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
