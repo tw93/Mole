@@ -2104,14 +2104,6 @@ perform_cleanup() {
         done < <(emit_free_space_summary "$initial_free_space_kb" "$free_space_target")
     fi
 
-    # Caches of running apps are deferred silently: skipping them is Mole's
-    # ordinary behavior, not news, and for always-on tools (Codex, browsers)
-    # a summary line here appeared on every single run. Preview still lists
-    # what would be cleaned, and the ledger stays visible under --debug.
-    if [[ ${#DEFERRED_CLEANUP_FAMILIES[@]} -gt 0 ]]; then
-        debug_log "Deferred while active: $(format_deferred_cleanup_families)"
-    fi
-
     if [[ "$DRY_RUN" == "true" &&
         ($total_size_cleaned -gt 0 || "$DRY_RUN_TOTAL_PARTIAL" == "true" || $files_cleaned -gt 0) ]]; then
         if publish_clean_preview_file; then
@@ -2121,6 +2113,16 @@ perform_cleanup() {
         fi
     elif [[ "$DRY_RUN" == "true" ]]; then
         publish_clean_preview_file || true
+    fi
+
+    if [[ ${#DEFERRED_CLEANUP_FAMILIES[@]} -gt 0 ]]; then
+        local deferred_families
+        deferred_families=$(format_deferred_cleanup_families)
+        debug_log "Deferred while active: $deferred_families"
+        # A family skipped during preview can become eligible before cleanup (#2039).
+        if [[ "$DRY_RUN" == "true" ]]; then
+            summary_details+=("Skipped in this preview · $deferred_families")
+        fi
     fi
 
     if [[ ${MOLE_CLEAN_SIZING_TIMEOUTS:-0} -gt 0 ]]; then
