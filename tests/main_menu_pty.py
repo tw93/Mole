@@ -129,7 +129,7 @@ def check_notice(script, expected_status=0, wait_marker=None, keys=b'', required
             # Only hang detection: a loaded machine can delay sourcing mole and
             # the one-second child cleanup well past ten seconds.
             deadline = time.monotonic() + 30
-            while b'CASE_EXIT=' not in output:
+            while not re.search(rb'CASE_EXIT=-?\d+\r?\n', output):
                 if time.monotonic() >= deadline:
                     diagnostics = notice_diagnostics(process, home, parent_signal, repeat_signal,
                                                      keys, wait_marker, sent, repeated)

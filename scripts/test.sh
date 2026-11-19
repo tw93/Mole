@@ -28,6 +28,10 @@ export MOLE_TEST_NO_AUTH=1
 # assertions match regardless of the host environment.
 unset NO_COLOR
 
+# Each test owns its HOME and sets XDG overrides explicitly when needed.
+# Account-level XDG paths otherwise escape the fixture and change cache probes.
+unset XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME
+
 TEST_SYSTEM_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mole-test-stubs.XXXXXX")"
 TEST_SYSTEM_STUB_DIR="$(cd -P "$TEST_SYSTEM_STUB_DIR" && pwd -P)"
 TEST_GO_HELPER_DIR=""
@@ -278,6 +282,9 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
         # to run concurrently). Parallelism is only across files.
         if [[ $_jobs -gt 1 ]]; then
             bats_opts+=("--jobs" "$_jobs" "--no-parallelize-within-files")
+            if ! command -v parallel > /dev/null 2>&1; then
+                bats_opts+=("--parallel-binary-name" "rush")
+            fi
         fi
         unset _ncpu _jobs
     fi
@@ -297,6 +304,8 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
     # Some test files include wall-clock timing assertions that are skewed by
     # CPU contention from parallel test workers. Safety/optimize fixtures also
     # use 1-2s subprocess budgets that must reach their mocked action first.
+    # App-inventory and orphan-service fixtures also use short real metadata
+    # probes whose positive controls must finish under the shared deadline.
     # Project-cache stalled-root probes have a five-second outer alarm.
     # The uninstall and main-menu PTY cases depend on one-second
     # escape-sequence reads and real-terminal signal timing, and the history
@@ -312,14 +321,14 @@ if command -v bats > /dev/null 2>&1 && [ -d "tests" ]; then
         if [[ ${#_all[@]} -eq 1 && -d "${_all[0]}" ]]; then
             while IFS= read -r _f; do
                 case "$_f" in
-                    *core_performance.bats | *regression.bats | *core_safe_functions.bats | *clean_system_caches.bats | *optimize.bats | *uninstall_menu.bats | *cli.bats | *uninstall_review.bats | *history.bats) _sequential_files+=("$_f") ;;
+                    *core_performance.bats | *regression.bats | *core_safe_functions.bats | *clean_apps.bats | *clean_system_caches.bats | *optimize.bats | *uninstall_menu.bats | *cli.bats | *uninstall_review.bats | *history.bats) _sequential_files+=("$_f") ;;
                     *) _rest+=("$_f") ;;
                 esac
             done < <(find "${_all[0]}" -type f -name '*.bats' | sort)
         else
             for _f in "${_all[@]}"; do
                 case "$_f" in
-                    *core_performance.bats | *regression.bats | *core_safe_functions.bats | *clean_system_caches.bats | *optimize.bats | *uninstall_menu.bats | *cli.bats | *uninstall_review.bats | *history.bats) _sequential_files+=("$_f") ;;
+                    *core_performance.bats | *regression.bats | *core_safe_functions.bats | *clean_apps.bats | *clean_system_caches.bats | *optimize.bats | *uninstall_menu.bats | *cli.bats | *uninstall_review.bats | *history.bats) _sequential_files+=("$_f") ;;
                     *) _rest+=("$_f") ;;
                 esac
             done

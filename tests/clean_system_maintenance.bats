@@ -571,6 +571,8 @@ EOF3
 }
 
 @test "clean_time_machine_failed_backups exits when tmutil has no destinations" {
+    # run_with_timeout executes a binary, so a child needs a PATH mock.
+    mole_test_fake_command tmutil 'printf "%s\n" "No destinations configured"'
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
@@ -579,13 +581,6 @@ source "$PROJECT_ROOT/lib/clean/system.sh"
 defaults() { echo "1"; }
 
 
-tmutil() {
-    if [[ "$1" == "destinationinfo" ]]; then
-        echo "No destinations configured"
-        return 0
-    fi
-    return 0
-}
 pgrep() { return 1; }
 find() { return 0; }
 
