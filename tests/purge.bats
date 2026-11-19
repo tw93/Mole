@@ -4089,7 +4089,9 @@ EOF_REPEAT_TERM
 
 
 @test "activity batch parent TERM drains real timeout probes and their children" {
-    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF_PROCESS'
+    local fixture
+    fixture=$(mktemp -d "$HOME/activity-term.XXXXXX")
+    run env HOME="$fixture" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF_PROCESS'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
 purge_node_modules_is_protected() { return 1; }
@@ -4102,40 +4104,44 @@ PURGE_SEARCH_PATHS=("$HOME/www")
 scan_purge_targets() { printf '%s\n' "$HOME/www/"{a-first,b-peer,c-later}/node_modules > "$2"; }
 purge_artifact_has_authored_content() { return 1; }
 get_optimal_parallel_jobs() { echo 2; }
-get_dir_size_kb() { echo SIZE_PHASE_REACHED >&2; echo 1; }
-safe_remove() { echo UNEXPECTED_REMOVE; }
+get_dir_size_kb() { : > "$HOME/activity-size-reached"; echo 1; }
+safe_remove() { : > "$HOME/activity-remove-reached"; }
 register_temp_file() { printf '%s\n' "$1" >> "$HOME/activity-results"; }
 mkdir -p "$HOME/activity-bin"
 cat > "$HOME/activity-bin/find" <<'EOF_FIND'
 #!/bin/bash
-[[ "$1" != *c-later* ]] || { echo LATER_PROBE_REACHED >&2; exit 2; }
+if [[ "$1" == */c-later/node_modules ]]; then
+    : > "$HOME/activity-later-probed"
+    exit 0
+fi
 sleep 10 & child=$!
-printf '%s %s\n' "$$" "$child" >> "$HOME/activity-processes"
 cleanup() { kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; }
 trap 'cleanup; exit 143' TERM
 trap 'cleanup; exit 130' INT
+printf '%s %s\n' "$$" "$child" >> "$HOME/activity-processes"
+# Signal from the bounded probe once both children are ready, without
+# charging the discovery and protection phases against a sender deadline.
+if [[ "$1" == */b-peer/node_modules ]]; then
+    until [[ -f "$HOME/activity-first-ready" ]]; do sleep 0.02; done
+    kill -TERM "$PURGE_ACTIVITY_TEST_PID"
+else
+    : > "$HOME/activity-first-ready"
+fi
 wait "$child"
 EOF_FIND
 chmod +x "$HOME/activity-bin/find"
 export PATH="$HOME/activity-bin:$PATH" MOLE_DRY_RUN=1
 export MO_PURGE_ACTIVITY_TIMEOUT_SEC=1 MO_PURGE_ACTIVITY_TOTAL_TIMEOUT_SEC=3
+export PURGE_ACTIVITY_TEST_PID=$$
 trap 'echo CALLER_TERM' TERM
 caller_trap=$(trap -p TERM)
-(
-    for ((n=0; n<100; n++)); do
-        if [[ -f "$HOME/activity-processes" && $(wc -l < "$HOME/activity-processes") -ge 2 ]]; then
-            kill -TERM "$$"
-            exit 0
-        fi
-        sleep 0.02
-    done
-    exit 1
-) & sender=$!
 result=0
 clean_project_artifacts </dev/null || result=$?
-wait "$sender"
+printf 'RESULT=%s OUTCOME=%s\n' "$result" "$PURGE_RUN_OUTCOME"
 [[ "$result" -eq 143 && "$PURGE_RUN_OUTCOME" == cancelled ]] || exit 1
 [[ "$(trap -p TERM)" == "$caller_trap" ]] || exit 1
+[[ -f "$HOME/activity-processes" && $(wc -l < "$HOME/activity-processes") -eq 2 ]] || exit 1
+[[ ! -e "$HOME/activity-later-probed" && ! -e "$HOME/activity-size-reached" && ! -e "$HOME/activity-remove-reached" ]] || exit 1
 while read -r probe_pid child_pid; do
     ! kill -0 "$probe_pid" 2>/dev/null || exit 1
     ! kill -0 "$child_pid" 2>/dev/null || exit 1
@@ -4145,7 +4151,7 @@ printf 'DRAINED_REAL_PROBES\n'
 EOF_PROCESS
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *DRAINED_REAL_PROBES* ]] || return 1
-    [[ "$output" != *SIZE_PHASE_REACHED* && "$output" != *LATER_PROBE_REACHED* && "$output" != *UNEXPECTED_REMOVE* && "$output" != *CALLER_TERM* ]] || return 1
+    [[ "$output" != *CALLER_TERM* ]] || return 1
 }
 
 
