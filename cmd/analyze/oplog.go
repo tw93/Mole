@@ -102,9 +102,15 @@ func logSizeText(bytes int64) string {
 		return fmt.Sprintf("%d.%02dGB", scaled/100, scaled%100)
 	case bytes >= 1_000_000:
 		scaled := (bytes*10 + 500_000) / 1_000_000
+		if scaled >= 10_000 {
+			return "1.00GB"
+		}
 		return fmt.Sprintf("%d.%01dMB", scaled/10, scaled%10)
 	case bytes >= 1_000:
-		return fmt.Sprintf("%dKB", (bytes+500)/1000)
+		if kb := (bytes + 500) / 1000; kb < 1000 {
+			return fmt.Sprintf("%dKB", kb)
+		}
+		return "1.0MB"
 	default:
 		return fmt.Sprintf("%dB", max(bytes, 0))
 	}

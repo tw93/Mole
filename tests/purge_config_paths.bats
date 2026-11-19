@@ -224,7 +224,7 @@ EOF
     run env HOME="$HOME" MOLE_TEST_MODE=1 MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc -c "
         source '$PROJECT_ROOT/bin/clean.sh'
         discover_project_cache_roots > /dev/null
-        load_quick_purge_hint_paths > /dev/null
+        probe_project_artifact_hints > /dev/null
         echo finished
     "
 

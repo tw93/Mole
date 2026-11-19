@@ -348,6 +348,7 @@ mole_purge_resolve_path_case() {
 
 mole_purge_read_paths_config() {
     local config_file="${1:-$HOME/.config/mole/purge_paths}"
+    local path_mode="${2:-resolved}"
     [[ -f "$config_file" ]] || return 0
 
     local line
@@ -356,7 +357,10 @@ mole_purge_read_paths_config() {
         line="${line%"${line##*[![:space:]]}"}"
         [[ -z "$line" || "$line" =~ ^# ]] && continue
         line="${line/#\~/$HOME}"
-        line=$(mole_purge_resolve_path_case "$line")
+        # The read-only hint checks the dataless flag before entering a root.
+        if [[ "$path_mode" != literal ]]; then
+            line=$(mole_purge_resolve_path_case "$line")
+        fi
         printf '%s\n' "$line"
     done < "$config_file"
 }

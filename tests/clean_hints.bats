@@ -48,6 +48,57 @@ EOT1
     [[ "$output" != *"/bin"* ]]
 }
 
+@test "project artifact hints skip dataless directories at every depth (#2034)" {
+    local root="$HOME/Documents"
+    local offline_root="$HOME/OnlineOnly"
+    mkdir -p "$offline_root/target" "$root/OnlineOnly/target" \
+        "$root/workspace/OnlineOnly/target" "$root/workspace/Local Project/node_modules" \
+        "$root/workspace/build" "$root/workspace/dist"
+    touch "$offline_root/package.json" "$root/workspace/package.json"
+    ln -s "$root" "$HOME/Documents alias"
+    printf '%s\n' "$offline_root" "$HOME/Documents alias" > "$HOME/.config/mole/purge_paths"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/hints.sh"
+FIND_BSD=find
+run_with_timeout() { shift; "$@"; }
+cd() {
+    if [[ "$1" == "$HOME/OnlineOnly" ]]; then
+        : > "$HOME/entered-placeholder"
+    fi
+    builtin cd "$@"
+}
+# Use BSD find's actual expression and traversal. Ordinary fixtures cannot
+# carry the File Provider flag, so give the flag predicate fixture matches.
+find() {
+    local -a args=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "-flags" && "$2" == "+dataless" ]]; then
+            args+=(\( -name OnlineOnly -o -path "$HOME/Documents/workspace/build" \))
+            shift 2
+        else
+            args+=("$1")
+            shift
+        fi
+    done
+    /usr/bin/find "${args[@]}"
+}
+probe_project_artifact_hints
+printf 'count=%s\n' "$PROJECT_ARTIFACT_HINT_COUNT"
+printf 'skipped=%s\n' "$PROJECT_ARTIFACT_HINT_SCAN_SKIPPED"
+printf 'example=%s\n' "${PROJECT_ARTIFACT_HINT_EXAMPLES[@]}"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"count=2"$'\n'* ]] || { echo "$output"; return 1; }
+    [ ! -e "$HOME/entered-placeholder" ]
+    [[ "$output" == *"skipped=false"* ]] || return 1
+    [[ "$output" == *"example=~/Documents/workspace/dist"* ]] || return 1
+    [[ "$output" == *"example=~/Documents/workspace/Local Project/node_modules"* ]]
+}
+
 @test "show_project_artifact_hint_notice renders sampled summary" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOT2'
 set -euo pipefail
