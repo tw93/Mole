@@ -218,7 +218,7 @@ function Get-TreeItemsNoFollow {
             $snapshot = Get-MoleChildSnapshot -ParentSnapshot $snapshots[$directory] -Path $item.FullName
             if (-not $snapshot) { $snapshot = Get-MolePathSnapshot -Path $item.FullName -AllowLeafLink }
             if (-not $snapshot) { throw "Unverified child: $($item.FullName)" }
-            $item | Add-Member -NotePropertyName MolePathSnapshot -NotePropertyValue $snapshot -Force
+            $item.PSObject.Properties.Add([psnoteproperty]::new('MolePathSnapshot', $snapshot))
             $item
             if ($item.PSIsContainer -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
                 $snapshots[$item.FullName] = $snapshot

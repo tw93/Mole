@@ -219,6 +219,13 @@ Describe 'Tree walk snapshots' {
         $entered = 1 + @($items | Where-Object { $_.PSIsContainer -and ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 }).Count
         $script:SnapshotCalls | Should -Be (1 + $entered)
     }
+    It 'Attaches each snapshot without running the Add-Member cmdlet per entry' {
+        Mock Add-Member { throw 'Add-Member called' }
+        $items = @(Get-TreeItemsNoFollow -Path $script:Root)
+        $items.Count | Should -BeGreaterThan 5
+        foreach ($item in $items) { $item.MolePathSnapshot.Path | Should -Be $item.FullName }
+        Should -Invoke Add-Member -Times 0 -Exactly
+    }
     It 'Lists a junction as a link and does not walk into it' {
         $items = @(Get-TreeItemsNoFollow -Path $script:Root)
         @($items | Where-Object { $_.FullName -like "$script:Root\link*" }).Count | Should -Be 1
