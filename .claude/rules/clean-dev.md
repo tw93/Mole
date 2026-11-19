@@ -4,6 +4,7 @@ paths:
   - "lib/manage/whitelist.sh"
   - "tests/clean_dev_caches.bats"
   - "tests/clean_dart_cache.bats"
+  - "tests/clean_postman_cache.bats"
   - "tests/dev_extended.bats"
   - "tests/clean_developer_state.bats"
   - "tests/clean_ai_cli_caches.bats"
@@ -17,8 +18,9 @@ paths:
 
 General clean target policy, including the owner-command rule, is in `.claude/rules/clean.md`.
 
-- `lib/clean/dev.sh` owns developer-tool cleanup, language/toolchain caches, AI agent caches, and Codex runtime handling. Run `MOLE_TEST_NO_AUTH=1 bats tests/clean_dev_caches.bats tests/clean_dart_cache.bats tests/dev_extended.bats tests/clean_developer_state.bats tests/manage_whitelist.bats`.
+- `lib/clean/dev.sh` owns developer-tool cleanup, language/toolchain caches, AI agent caches, and Codex runtime handling. Run `MOLE_TEST_NO_AUTH=1 bats tests/clean_dev_caches.bats tests/clean_dart_cache.bats tests/clean_postman_cache.bats tests/dev_extended.bats tests/clean_developer_state.bats tests/manage_whitelist.bats`.
 - `clean_dart_analysis_cache` empties only the default `~/.dartServer/.analysis-driver` byte-store cache while Dart runtimes and the analysis server are absent. Keep its directory, symlink entries, every `.dartServer` sibling, custom analyzer-state roots, Pub dependencies and Flutter SDKs. The shared developer-cache guard binds the container, cache root and entries after the process probe and rechecks them before deletion, like the PyInstaller and Clang caches. Unknown process or path state retains the cache. Locked by `tests/clean_dart_cache.bats`.
+- `clean_postman_partition_caches` empties only `Cache` and `Code Cache` beneath direct `Postman/Partitions/<id>` directories while Postman and its helpers are absent. Keep cache directories, links, custom profiles and all other state. Bind Partitions, partition, cache and entry identities before owner probes or sizing; recheck them and the owner at the safe sink. Unknown owner or path state retains the cache; combine all partitions in one result row. Locked by `tests/clean_postman_cache.bats`.
 - Its DeviceSupport cleanup covers every platform the uninstall sweep in `lib/core/app_protection.sh` knows, with the same keep-newest rule; the two lists drifted once (`db2e462e`, `d9329649`), and `clean covers every DeviceSupport platform the Xcode uninstall sweep knows` in `tests/dev_extended.bats` now reads both.
 - `clean_dev_jetbrains_toolbox` only strips whitelist patterns that start at its own apps root, so the broader JetBrains data row and the default `Application Support/JetBrains*` pattern still hide old Toolbox IDE versions; `JetBrains data row hides old Toolbox IDE versions from cleanup` in `tests/manage_whitelist.bats` pins the row case, so change that test together with the bypass if the bypass is widened.
 - The Gradle candidate listing puts the small groups before the build cache, which can hold thousands of entries: whitelisted entries are settled before the roughly 10 ms `should_protect_path` probe, and an exhausted filtering budget keeps only the build cache group.
