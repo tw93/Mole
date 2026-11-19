@@ -350,3 +350,15 @@ Source: Mole CLI (macOS), `3c4f01d8` (#2014). The Home measurement passes its in
 | Mole Mac | Pending | Source reading only, 2026-11-16 at `dcad0f80`: `DiskScanner.scan` sizes every top-level child with its own `makeTopLevelEntry` walk, and the `WalkedChild` comment in `DiskScanner.swift` states that a per-child re-walk gives each subtree its own dedup set, so a file hard-linked into two siblings counts in both; `testHarvestNavigationRechecksNestedChangesAndHardLinkSiblings` asserts exactly that for a drill, and `resolveParentEntryFromChildResult` lets a fully sized children sum replace the parent row. A harvested listing from the parent walk dedups correctly (`testRetryHarvestKeepsGlobalHardLinkAccounting`). Next check: a runtime test that scans a folder whose two children share a hard link and compares the listing total with `du -sk`, before deciding whether the per-row double count is a defect or the intended per-folder view. |
 
 The Mole for Windows consumer remains unverified in this task. Linux also pins `/usr/bin/gnudu` ahead of the uutils `du` (`66047153`, `TestFindDuBinaryPrefersGNUDuOverUutilsDu`).
+
+## 2026-11-19 Clean reports its state through OSC 7501
+
+Source: Mole CLI (macOS), `5bf0d49f` (#2041, a contributor PR, with #2040). `mo clean` writes `ESC ] 7501 ; state=<working|blocked|done|idle|error> : app=mole ST` to stderr only while stderr is a terminal (`lib/core/ui.sh:mole_report_program_status`): working at start, blocked while the sudo and Full Disk Access prompts wait, done on success, idle on Esc, Ctrl-C or SIGTERM, error on any other exit, once per run behind the existing `CLEANUP_DONE` guard. Terminals that do not know the sequence ignore it. CI on the merged head passed every job; locally the new PTY test passed and `tests/dev_extended.bats` failed only where `main` already fails on this Mac's Xcode state. This is a source change, not a verified package release.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source | `bin/clean.sh` (`main`, `cleanup`, `prompt_for_system_clean`), `lib/clean/caches.sh:check_tcc_permissions`, `lib/clean/dev.sh:_xcode_ensure_sudo_session`; `tests/clean_program_status_pty.py` through `tests/clean_core.bats`. |
+| Mole CLI (Windows) | Pending | At `bb4f2353` the `windows` branch writes no OSC 7501. A terminal feature, not a safety or correctness contract, so it does not transfer by itself. Next check: whether a Windows terminal reads OSC 7501 before porting it to `bin/clean.ps1`. |
+| Mole CLI (Linux) | Not applicable | Outside the four-product model; the `linux` branch follows only the two CLIs' safety and correctness fixes, and this is neither. |
+| Mole Mac | Not applicable | A GUI app with no terminal to report to. |
+| Mole for Windows | Not applicable | A GUI app with no terminal to report to. |
