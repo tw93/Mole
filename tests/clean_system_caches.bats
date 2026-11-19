@@ -39,22 +39,35 @@ setup() {
     [[ ! -f "$HOME/.cache/mole/permissions_granted" ]]
 }
 
-@test "check_tcc_permissions skips when permissions already granted" {
-    mkdir -p "$HOME/.cache/mole"
-    touch "$HOME/.cache/mole/permissions_granted"
+@test "check_tcc_permissions reports blocked only while awaiting first-run permissions" {
+    if ! /usr/bin/script -q /dev/null /usr/bin/true < /dev/null > /dev/null 2>&1; then
+        skip "script cannot allocate a TTY in this environment"
+    fi
 
-    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; [[ -t 1 ]] || true; check_tcc_permissions"
+    local trace="$BATS_TEST_TMPDIR/tcc-status"
+    # shellcheck disable=SC2016  # bash running under the PTY expands the fixture paths
+    TRACE="$trace" /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c '
+        source "$PROJECT_ROOT/lib/core/common.sh"
+        source "$PROJECT_ROOT/lib/clean/caches.sh"
+        mole_report_program_status() { echo "$*" >> "$TRACE"; }
+        ls() { return 1; }
+        read() { echo read >> "$TRACE"; }
+        start_inline_spinner() { echo requesting >> "$TRACE"; }
+        stop_inline_spinner() { echo requested >> "$TRACE"; }
+
+        check_tcc_permissions > /dev/null
+        echo interactive >> "$TRACE"
+        check_tcc_permissions
+        check_tcc_permissions  # The successful preflight left its flag.
+        rm -f "$HOME/.cache/mole/permissions_granted"
+        ls() { return 0; }
+        check_tcc_permissions  # All directories were already accessible.
+        echo finished >> "$TRACE"
+    ' < /dev/null > /dev/null
+
+    run cat "$trace"
     [ "$status" -eq 0 ]
-}
-
-@test "check_tcc_permissions validates protected directories" {
-
-    [[ -d "$HOME/Library/Caches" ]] || return 1
-    [[ -d "$HOME/Library/Logs" ]] || return 1
-    [[ -d "$HOME/.cache/mole" ]] || return 1
-
-    run /bin/bash -c "source '$PROJECT_ROOT/lib/core/common.sh'; source '$PROJECT_ROOT/lib/clean/caches.sh'; check_tcc_permissions < /dev/null"
-    [ "$status" -eq 0 ]
+    [[ "$output" == $'interactive\nblocked permission\nread\nrequesting\nrequested\nworking\nfinished' ]]
 }
 
 @test "clean_service_worker_cache returns early when path doesn't exist" {

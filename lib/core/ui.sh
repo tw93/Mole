@@ -28,6 +28,14 @@ clear_screen() { printf '\033[2J\033[H'; }
 hide_cursor() { [[ -t 1 ]] && printf '\033[?25l' >&2 || true; }
 show_cursor() { [[ -t 1 ]] && printf '\033[?25h' >&2 || true; }
 
+# OSC 7501 program status. Callers supply protocol constants only. A report
+# replaces the previous record, so include the program name on every write.
+mole_report_program_status() {
+    [[ -t 2 ]] || return 0
+    local kind="${2:-}"
+    printf '\033]7501;state=%s:app=mole%s\033\134' "$1" "${kind:+:kind=$kind}" >&2 || true
+}
+
 # Calculate display width (CJK characters count as 2)
 get_display_width() {
     local str="$1"

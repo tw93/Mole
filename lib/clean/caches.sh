@@ -55,6 +55,7 @@ check_tcc_permissions() {
         echo -e "${GRAY}You may see ${GREEN}${#tcc_dirs[@]} permission dialogs${NC}${GRAY}, allow each one so these caches can be cleaned.${NC}"
         echo ""
         echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to continue: "
+        mole_report_program_status blocked permission
         read -r
         MOLE_SPINNER_PREFIX="" start_inline_spinner "Requesting permissions..."
         # Touch each directory to trigger prompts without deep scanning.
@@ -62,6 +63,7 @@ check_tcc_permissions() {
             [[ -d "$dir" ]] && command find "$dir" -maxdepth 1 -type d > /dev/null 2>&1
         done
         stop_inline_spinner
+        mole_report_program_status working
         echo ""
     fi
     # Mark as granted to avoid repeat prompts.
