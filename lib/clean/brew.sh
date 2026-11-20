@@ -94,6 +94,23 @@ show_brew_cleanup_preview() {
     printf '    %s\n' "${rows[@]}"
 }
 
+# Homebrew formats its cleanup total with Formatter.disk_usage_readable: at
+# most one decimal and B, KB, MB or GB, in decimal units since Homebrew 5.0
+# (1KB = 1000 bytes). Older releases used 1024 with the same labels, which
+# reads a few percent low here. Print that size in KB for the run total, or
+# nothing when the text is not such a size.
+brew_cleanup_size_kb() {
+    [[ "${1:-}" =~ ^([0-9]+)(\.([0-9]))?(B|KB|MB|GB)$ ]] || return 0
+    local tenths=$((10#${BASH_REMATCH[1]} * 10 + 10#${BASH_REMATCH[3]:-0}))
+    local multiplier=1
+    case "${BASH_REMATCH[4]}" in
+        KB) multiplier=1000 ;;
+        MB) multiplier=1000000 ;;
+        GB) multiplier=1000000000 ;;
+    esac
+    echo "$(((tenths * multiplier + 10239) / 10240))"
+}
+
 # The window only counts a finished cleanup, which is the only one stamped.
 # Dry-run asks the same question so it never previews a run that would skip.
 brew_cleanup_ran_recently() {
@@ -353,7 +370,9 @@ clean_homebrew() {
     brew_tmp_file=$(create_temp_file)
     snapshot_homebrew_active_links || true
     if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "Homebrew cleanup..."; fi
-    HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 NONINTERACTIVE=1 \
+    # No color, as in the preview: HOMEBREW_COLOR colors even redirected
+    # output, and the summary line is read back from this file.
+    HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_COLOR=1 NONINTERACTIVE=1 \
         run_with_timeout "$cleanup_timeout" brew cleanup --prune=30 > "$brew_tmp_file" 2>&1 || brew_exit=$?
     if [[ -t 1 ]]; then stop_inline_spinner; fi
     restore_homebrew_active_links
@@ -374,12 +393,17 @@ clean_homebrew() {
     if [[ "$brew_success" == "true" && -f "$brew_tmp_file" ]]; then
         local brew_output
         brew_output=$(cat "$brew_tmp_file" 2> /dev/null || echo "")
-        local removed_count freed_space
+        local removed_count freed_space freed_kb
         removed_count=$(printf '%s\n' "$brew_output" | grep -c "Removing:" 2> /dev/null || true)
-        freed_space=$(printf '%s\n' "$brew_output" | grep -o "[0-9.]*[KMGT]B freed" 2> /dev/null | tail -1 || true)
+        # The real run's twin of the line show_brew_cleanup_preview reads.
+        freed_space=$(printf '%s\n' "$brew_output" |
+            sed -n 's/^==> This operation has freed approximately \(.*\) of disk space\.$/\1/p' | tail -1 || true)
+        freed_kb=$(brew_cleanup_size_kb "$freed_space")
+        [[ -n "$freed_kb" ]] || freed_space=""
         if [[ $removed_count -gt 0 ]] || [[ -n "$freed_space" ]]; then
             if [[ -n "$freed_space" ]]; then
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cleanup${NC} · ${GREEN}$freed_space${NC}"
+                mole_add_cleaned_row "$removed_count" "$freed_kb"
                 note_activity
             else
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Homebrew cleanup · $(mole_count_label "${removed_count}" item)"

@@ -3055,6 +3055,64 @@ EOF
     done
 }
 
+@test "clean_dev_mobile adds removed unavailable simulators to the run totals (#2045)" {
+    # The row printed the measured bytes while Removed: never counted them,
+    # so the run total read less than this one row (#2039).
+    local udid="ABCDEF01-2345-6789-ABCD-EF0123456789"
+    local case_home="$HOME/simctl-delete-totals"
+    mkdir -p "$case_home/Library/Developer/CoreSimulator/Devices/$udid"
+
+    run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false \
+        MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 \
+        SIMCTL_DELETED="$case_home/simctl-deleted" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+check_android_ndk() { :; }
+clean_xcode_documentation_cache() { :; }
+clean_xcode_system_coresimulator_caches() { :; }
+clean_xcode_xctest_devices() { :; }
+clean_xcode_device_support() { :; }
+safe_clean() { :; }
+get_path_size_kb() { echo "2048"; }
+note_activity() { :; }
+debug_log() { :; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+cleanup_result_color_kb() { printf '%s' "$GREEN"; }
+xcrun() { :; }
+_resolve_simctl_developer_dir() {
+    _MOLE_SIMCTL_DEVELOPER_DIR="$HOME/Xcode.app/Contents/Developer"
+    _MOLE_SIMCTL_RESOLUTION_STATUS="ready"
+}
+_run_simctl() {
+    shift
+    case "$*" in
+        "list devices unavailable")
+            [[ -e "$SIMCTL_DELETED" ]] ||
+                printf '    iPhone 12 (ABCDEF01-2345-6789-ABCD-EF0123456789) (Shutdown) (unavailable)\n'
+            return 0
+            ;;
+        "delete unavailable")
+            : > "$SIMCTL_DELETED"
+            return 0
+            ;;
+    esac
+    return 1
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_dev_mobile
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Xcode unavailable simulators · removed 1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=1:2048:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_dev_mobile names a macOS privacy refusal from simctl delete unavailable" {
     # On macOS 27 CoreSimulator cannot move a device's data folder and simctl
     # says "You don't have permission" with an Operation not permitted cause.

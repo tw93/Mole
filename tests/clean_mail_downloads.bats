@@ -88,6 +88,37 @@ EOF
     [[ "$output" == *"RC=0"* ]] || return 1
 }
 
+@test "mail attachment cleanup adds the removed bytes to the run totals (#2045)" {
+    mail_copy "$HOME/Library/Mail Downloads/A1" old.bin 202401010000
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+pgrep() { return 1; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+safe_remove() { return 0; }
+get_path_size_kb() {
+    if [[ "$1" == "$HOME/Library/Mail Downloads" ]]; then
+        echo "6000"
+        return 0
+    fi
+    echo "300"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+_clean_mail_downloads
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Cleaned 1 mail attachments"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=1:300:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "mail attachment sizing timeout (124) skips the file without aborting" {
     mail_copy "$HOME/Library/Mail Downloads/B2" stuck.bin 202401010000
 

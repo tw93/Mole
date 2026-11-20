@@ -313,6 +313,40 @@ EOF
     [[ "$output" != *"TestBrowser Service Worker"* ]]
 }
 
+@test "clean_service_worker_cache adds removed caches to the run totals (#2045)" {
+    local test_cache="$HOME/test_sw_cache_totals"
+    mkdir -p "$test_cache/origin_a/cache_one" "$test_cache/origin_b/cache_two"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" CACHE="$test_cache" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+DRY_RUN=false
+declare -a PROTECTED_SW_DOMAINS=("never.invalid")
+safe_remove() { return 0; }
+note_activity() { :; }
+run_with_timeout() {
+    shift
+    if [[ "$1" == "du" ]]; then
+        printf '512\t%s\n' "$3"
+        return 0
+    fi
+    "$@"
+}
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_service_worker_cache TestBrowser "$CACHE"
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    rm -rf "$test_cache"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"TestBrowser Service Worker"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=2:1024:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_service_worker_cache checks its guard after sizing before dry-run registration" {
     local test_cache="$HOME/test_sw_cache_guard"
     mkdir -p "$test_cache/abc123_https_example.com_0"

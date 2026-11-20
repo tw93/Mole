@@ -3078,6 +3078,66 @@ EOF
     [[ "$output" != *"UNEXPECTED_LAUNCHCTL"* ]]
 }
 
+@test "clean_orphaned_system_services adds the removed services to the run totals (#2045)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+bundle_has_installed_app() { return 1; }
+safe_sudo_remove() { return 0; }
+
+tmp_dir="$(mktemp -d)"
+tmp_helper="$tmp_dir/org.amnezia.awg.plist"
+cat > "$tmp_helper" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.amnezia.awg</string>
+    <key>Program</key>
+    <string>$tmp_dir/missing-binary</string>
+</dict>
+</plist>
+PLIST
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  [[ "${1:-}" == "-n" ]] && shift
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_helper" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  if [[ "$1" == "du" ]]; then
+    echo "4 $tmp_helper"
+    return 0
+  fi
+  if [[ "$1" == "launchctl" ]]; then echo "UNEXPECTED_LAUNCHCTL"; return 99; fi
+  command "$@"
+}
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_orphaned_system_services
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Orphaned services · cleaned 1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=1:4:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_orphaned_system_services keeps a live helper app LaunchDaemon loaded (#1447)" {
     # Chrome Remote Desktop installs its broker inside a standalone .app under
     # PrivilegedHelperTools rather than inside a parent app in /Applications.

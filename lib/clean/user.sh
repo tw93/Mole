@@ -588,6 +588,7 @@ _clean_mail_downloads() {
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Would clean $count mail attachments older than ${mail_age_days}d, about ${cleaned_mb}MB"
         else
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Cleaned $count mail attachments older than ${mail_age_days}d, about ${cleaned_mb}MB"
+            mole_add_cleaned_row "$count" "$cleaned_kb"
         fi
         note_activity
     fi
@@ -2601,6 +2602,7 @@ clean_tart_caches() {
 
     if [[ "$reclaimed_known" == "true" ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned, $(bytes_to_human "$((reclaimed_kb * 1024))") reclaimed"
+        mole_add_cleaned_row 0 "$reclaimed_kb"
     else
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned"
     fi

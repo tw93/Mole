@@ -544,6 +544,7 @@ clean_deep_system() {
             if [[ $installer_remove_rc -eq 0 ]]; then
                 log_success "$app_name, $size_human"
                 installer_cleaned=$((installer_cleaned + 1))
+                mole_add_cleaned_row 1 "$size_kb"
             fi
         fi
     done
