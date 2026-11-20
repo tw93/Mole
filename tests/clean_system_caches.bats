@@ -2073,6 +2073,55 @@ EOF
     [[ "$output" == *DATALESS_PRUNED* ]]
 }
 
+@test "CloudStorage probe prunes an online-only provider instead of failing the root (#2044)" {
+    [[ "$EUID" -ne 0 ]] || skip "root can read mode-000 directories"
+
+    run env HOME="$BATS_TEST_TMPDIR/dataless-probe-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+root="$HOME/Library/CloudStorage"
+offline="$root/AOffline-provider"
+# The local provider holds no folder, so the probe cannot quit early before
+# reaching the offline one, whatever order the providers are listed in.
+mkdir -p "$offline/hidden" "$root/GoogleDrive-local"
+trap 'chmod 700 "$offline"' EXIT
+chmod 000 "$offline"
+# Answer the flag predicate by name; the unreadable folder models a signed-out
+# provider whose listing fails if find enters it.
+cat > "$HOME/find" <<'SCRIPT'
+#!/bin/bash
+args=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "-flags" && "$2" == "+dataless" ]]; then
+        args+=(-name AOffline-provider)
+        shift 2
+    else
+        args+=("$1")
+        shift
+    fi
+done
+exec /usr/bin/find "${args[@]}"
+SCRIPT
+chmod +x "$HOME/find"
+FIND_BSD="$HOME/find"
+
+_MOLE_FIND_KNOWS_DATALESS=yes
+project_cache_root_is_walkable "$root" || { echo "PRUNED_PROBE_FAILED"; exit 1; }
+
+# Without the flag the probe enters the provider and fails, as before.
+_MOLE_FIND_KNOWS_DATALESS=no
+if project_cache_root_is_walkable "$root"; then
+    echo "UNPRUNED_PROBE_PASSED"
+    exit 1
+fi
+printf 'PROBE_PRUNED\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *PROBE_PRUNED* ]]
+}
+
 @test "scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)" {
     [[ "$EUID" -ne 0 ]] || skip "root can read mode-000 directories"
 

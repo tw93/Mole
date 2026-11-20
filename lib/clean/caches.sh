@@ -391,10 +391,21 @@ _process_project_cache_scan_file() {
 # decides cheaply whether the root is walkable at all, so the per-root scan
 # budget is not spent on a root that can only fail. Readable cloud roots keep
 # the normal scan; an unreadable one is still counted as a skipped root.
+# Reaching depth two means listing every provider folder at depth one, so an
+# online-only provider (a signed-out drive) is pruned there, as the scan
+# itself does, instead of failing the probe for the whole root.
 project_cache_root_is_walkable() {
     local root="${1%/}"
     [[ "$root" == "$HOME/Library/CloudStorage" ]] || return 0
     local probe_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
+    local dataless_rc=0
+    mole_find_knows_dataless || dataless_rc=$?
+    mole_rc_signal "$dataless_rc" && return "$dataless_rc"
+    if [[ $dataless_rc -eq 0 ]]; then
+        run_with_timeout "$probe_timeout" "$FIND_BSD" -P "$root" -maxdepth 2 \
+            -flags +dataless -prune -o -depth 2 -type d -print -quit < /dev/null > /dev/null 2>&1
+        return
+    fi
     run_with_timeout "$probe_timeout" "$FIND_BSD" -P "$root" -mindepth 2 -maxdepth 2 \
         -type d -print -quit < /dev/null > /dev/null 2>&1
 }
