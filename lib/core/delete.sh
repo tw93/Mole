@@ -230,13 +230,23 @@ mole_cache_child_ok() {
     # contents. Only children on the cache root's own device are removed.
     local devs
     devs=$(stat -c %d -- "$root" "$path" 2> /dev/null) || return 1
-    [[ "$devs" == *$'\n'* && "${devs%%$'\n'*}" == "${devs#*$'\n'}" ]]
+    [[ "$devs" == *$'\n'* && "${devs%%$'\n'*}" == "${devs#*$'\n'}" ]] || return 1
+    # A bind mount of a folder on the same filesystem keeps that device, at
+    # the child or deeper, and rm would empty the bound folder: any mount
+    # point at or below the child refuses it, and so does a table that
+    # cannot be read.
+    local mounted=0
+    mole_mount_within "$path" || mounted=$?
+    [[ $mounted -eq 1 ]]
 }
 
 # Remove one cache path directly. $2 is the allowlisted root it must sit under
 # (the root itself is never removed). Stays on one filesystem.
 mole_remove_cache() {
     local path="$1" root="$2" command="${3:-clean}" detail="${4:-}"
+    # The mount table is read fresh right before rm, never from a caller's
+    # sizing snapshot (mole_mount_within).
+    local _MOLE_MOUNT_SNAP_ROOT=""
     mole_cache_child_ok "$path" "$root" || return 1
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         return 0
@@ -270,6 +280,11 @@ mole_artifact_path_ok() {
     dev="${now%%:*}"
     parent_dev=$(stat -c %d -- "$parent" 2> /dev/null) || return 1
     [[ "$dev" == "$parent_dev" ]] || return 1
+    # Same device is not enough: a bind mount from the same filesystem, at
+    # the folder or inside it, would be emptied through (mole_mount_within).
+    local mounted=0
+    mole_mount_within "$path" || mounted=$?
+    [[ $mounted -eq 1 ]] || return 1
     # Below a home under /var (Fedora Atomic's /var/home) the protected list
     # is read on the home's logical spelling, as the scan did.
     local home_real check="$path"
@@ -286,6 +301,7 @@ mole_artifact_path_ok() {
 MOLE_REMOVING=""
 mole_remove_artifact() {
     local path="$1" root="$2" identity="$3" detail="${4:-}"
+    local _MOLE_MOUNT_SNAP_ROOT=""
     mole_artifact_path_ok "$path" "$root" "$identity" || {
         log_operation purge SKIPPED "$path" "refused"
         return 1

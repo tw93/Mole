@@ -76,7 +76,7 @@ In the menus: arrow keys or `j`/`k` to move, `Space` to select, `Enter` to confi
 - A cache is skipped while the app that owns it is running, and when Mole cannot tell whether it runs.
 - Uninstall leftovers are matched by the app's exact ID, never by part of a name. Caches are selected by default; settings and data are not, and browser profiles are never preselected.
 - Mole refuses to run as root, never removes system folders, mount points or other users' files, and never runs `pacman -Scc`, `apt-get clean`, `--noconfirm`, `-y` or `autoremove`.
-- Purge removes build output directly, after checking each folder again right before it goes: still the same folder, below the project folder through real folders only, yours, and not a mount point.
+- Purge removes build output directly, after checking each folder again right before it goes: still the same folder, below the project folder through real folders only, yours, and with nothing mounted at it or inside it.
 - Every change is written to `~/.local/state/mole/operations.log`, and `mo history` reads it back.
 
 ## Features in Detail

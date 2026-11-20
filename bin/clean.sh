@@ -216,6 +216,10 @@ clean_rule_collect() {
         return 0
     fi
 
+    # One mount snapshot for this sizing pass; mole_remove_cache reads the
+    # table again right before rm.
+    local _MOLE_MOUNT_SNAP_ROOT="" _MOLE_MOUNT_SNAP_PHYS="" _MOLE_MOUNT_SNAP_LIST=""
+    mole_mount_snapshot "$root" || true
     local kb=0 kept=0
     for child in "${children[@]}"; do
         if mole_whitelist_keeps_child "$child"; then
@@ -366,6 +370,10 @@ clean_trash() {
         end_section
         return 0
     fi
+    # One mount snapshot for this sizing pass; mole_remove_cache reads the
+    # table again right before rm.
+    local _MOLE_MOUNT_SNAP_ROOT="" _MOLE_MOUNT_SNAP_PHYS="" _MOLE_MOUNT_SNAP_LIST=""
+    mole_mount_snapshot "$files" || true
     local kb=0 removed=0 left=0 meta
     for e in "${entries[@]}"; do
         mole_cache_child_ok "$e" "$files" || continue
