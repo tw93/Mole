@@ -374,3 +374,16 @@ Source: Mole CLI (macOS). `63446600` (#2048) reads the size a real `brew cleanup
 | Mole CLI (Windows) | Not applicable; Intentional difference for the dry-run line | Homebrew and app bundles do not exist there. The rows that print their own size already add to the total (`lib/clean/dev.ps1`, `lib/clean/system.ps1`). `bin/purge.ps1` skips reparse points, which by inference covers OneDrive Files On-Demand folders; not measured. Caches skipped for a running owner stay silent in a dry run; adding the #2043 line there is a maintainer decision, recommended not now. |
 | Mole CLI (Linux) | Not applicable | Homebrew cleanup, app bundles, File Provider folders and the six counted rows are macOS sections; the `linux` branch has none of them. |
 | Mole for Windows | Not applicable | A GUI app; its comparison runs through Mole CLI (Windows) and Mole Mac. |
+
+## 2026-11-20 Analyze refuses session socket folders in the temp directory
+
+Source: Mole CLI (macOS) `90b3e1a8`, carrying Mole Mac I-289. `mo analyze` refuses moving `com.apple.launchd.*`, `tmux-<uid>`, `.X11-unix` and a hand-started ssh-agent's `ssh-` folder (10 or 12 alphanumerics) directly under `/private/tmp`, `/tmp` or a sane `$TMPDIR`, and anything inside them; the rest of the temp directory stays movable. Incident I-92.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`90b3e1a8`) | `cmd/analyze/delete.go:isSessionSocketFolderPath`; the session-socket cases in `cmd/analyze/delete_test.go`, red on the previous guard. |
+| Mole CLI (Linux) | Implemented in source (`81d4a2f7`) | Linux's names (`tmux-`, `ssh-`, `.X11-unix`, `.ICE-unix`) under `/tmp` or `$TMPDIR`, and `/tmp` itself refused; tests run on Debian 12 as a non-root user. |
+| Mole Mac | Implemented first (I-289) | Refuses the launchd, tmux and X11 folders in `/private/tmp`; the hand-started agent's `ssh-` folder is a CLI addition, recorded as a next check in the app's own record. |
+| Mole CLI (Windows) | Not applicable | No such socket folders on Windows. |
+| Mole for Windows | Not applicable | No such socket folders on Windows. |
+
