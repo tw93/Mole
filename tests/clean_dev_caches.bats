@@ -3588,6 +3588,52 @@ EOF
     rm -rf "$module_root" "$build_root"
 }
 
+@test "clean_dev_go logs each owner cleanup in operations.log, but not its dry run (#2056)" {
+    local module_root="$HOME/go-module-oplog"
+    local build_root="$HOME/go-build-oplog"
+    local script="$HOME/go-oplog.sh"
+    mkdir -p "$module_root" "$build_root"
+    cat > "$script" <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN="$GO_DRY_RUN"
+go() { :; }
+run_with_timeout() {
+    shift
+    if [[ "$1" == "go" && "$2" == "env" ]]; then
+        if [[ "$3" == "GOMODCACHE" ]]; then
+            printf '%s\n' "$GO_MODULE_ROOT"
+        else
+            printf '%s\n' "$GO_BUILD_ROOT"
+        fi
+    fi
+    return 0
+}
+is_path_whitelisted() { return 1; }
+should_protect_path() { return 1; }
+go_cache_process_state() { return 1; }
+note_activity() { :; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+clean_dev_go
+EOF
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" GO_DRY_RUN=false \
+        GO_MODULE_ROOT="$module_root" GO_BUILD_ROOT="$build_root" \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$module_root|owner command: Go module cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$build_root|owner command: Go build cache"* ]] || { echo "$output"; return 1; }
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" GO_DRY_RUN=true \
+        GO_MODULE_ROOT="$module_root" GO_BUILD_ROOT="$build_root" \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Go build cache · would clean"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+    rm -rf "$module_root" "$build_root"
+}
+
 @test "Go process gating does not block the concurrency-safe build cache" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
