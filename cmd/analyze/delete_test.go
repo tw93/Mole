@@ -213,6 +213,86 @@ func TestValidateTrashTargetAllowsRegularUserPaths(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDeleteRefusesSessionSocketFoldersInTmp(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, refused := range []string{
+		"/tmp/tmux-1000",
+		"/tmp/tmux-1000/default",
+		"/tmp/ssh-XXXXk3TqQb2a",
+		"/tmp/ssh-XXXXk3TqQb2a/agent.4242",
+		"/tmp/.X11-unix",
+		"/tmp/.X11-unix/X0",
+		"/tmp/.ICE-unix",
+		"/tmp",
+	} {
+		if !isProtectedAnalyzeDeletePath(refused) {
+			t.Errorf("session socket folder not refused: %s", refused)
+		}
+	}
+	for _, allowed := range []string{
+		"/tmp/build-output",
+		"/tmp/mytmux-1000",
+		"/tmp/notes/tmux-1000",
+		"/tmp/.X11-unix-old",
+		"/tmp/tmux-3.5a",
+		"/tmp/ssh-keys",
+		"/tmp/ssh-keys-backup",
+		"/tmp/ssh-tutorial",
+		"/tmp/ssh-AbCdEf12345",
+		"/var/tmp/tmux-1000",
+	} {
+		if isProtectedAnalyzeDeletePath(allowed) {
+			t.Errorf("ordinary tmp item refused: %s", allowed)
+		}
+	}
+}
+
+func TestAnalyzeDeleteRefusesAHandStartedAgentFolderInTMPDIR(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	userTemp := t.TempDir()
+	t.Setenv("TMPDIR", userTemp+"/")
+	if !isProtectedAnalyzeDeletePath(filepath.Join(userTemp, "ssh-AbCdEf1234", "agent.4242")) {
+		t.Error("a hand-started ssh-agent folder in TMPDIR is not refused")
+	}
+	if isProtectedAnalyzeDeletePath(filepath.Join(userTemp, "build-output")) {
+		t.Error("an ordinary item in TMPDIR is refused")
+	}
+}
+
+func TestAnalyzeDeleteIgnoresATMPDIRThatIsHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TMPDIR", home)
+	if isProtectedAnalyzeDeletePath(filepath.Join(home, "ssh-AbCdEf1234")) {
+		t.Error("TMPDIR set to HOME made a home folder named like an agent folder refused")
+	}
+}
+
+func TestAnalyzeDeleteKeepsWalkingPastATMPDIRInsideASocketFolder(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TMPDIR", "/tmp/tmux-1000")
+	if !isProtectedAnalyzeDeletePath("/tmp/tmux-1000/default") {
+		t.Error("a socket inside a tmux folder that is also TMPDIR is not refused")
+	}
+}
+
+func TestAnalyzeDeleteRefusesSessionSocketFoldersThroughALinkToTmp(t *testing.T) {
+	if _, err := os.Stat("/tmp"); err != nil {
+		t.Skip("/tmp is absent on this system")
+	}
+	t.Setenv("HOME", t.TempDir())
+	link := filepath.Join(t.TempDir(), "tmp-link")
+	if err := os.Symlink("/tmp", link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if !isProtectedAnalyzeDeletePath(filepath.Join(link, "tmux-1000")) {
+		t.Error("a session socket folder reached through a link to /tmp is not refused")
+	}
+	if isProtectedAnalyzeDeletePath(filepath.Join(link, "build-output")) {
+		t.Error("an ordinary item reached through a link to /tmp is refused")
+	}
+}
+
 func TestValidateTrashTargetRejectsSymlinkToProtectedRoot(t *testing.T) {
 	home := isolateTrash(t)
 	link := filepath.Join(home, "etc-link")
