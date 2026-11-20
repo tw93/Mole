@@ -356,6 +356,7 @@ clean_github_cli_cache() {
     if [[ $clear_status -eq 0 ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} GitHub CLI cache"
         note_activity
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$cache_path" "owner command: GitHub CLI cache"
         return 0
     fi
     if mole_rc_timeout_or_signal "$clear_status"; then

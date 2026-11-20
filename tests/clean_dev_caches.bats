@@ -165,6 +165,39 @@ EOF
     [ "$status" -eq 1 ] || return 1
 }
 
+@test "clean_github_cli_cache logs a successful owner cleanup in operations.log (#2056)" {
+    local trace="$HOME/gh-oplog.trace"
+    local script="$HOME/gh-oplog.sh"
+    mkdir -p "$HOME/.cache/gh"
+    make_gh_cache_stub
+    cat > "$script" <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+run_with_timeout() { shift; "$@"; }
+github_cli_process_state() { return 1; }
+is_path_whitelisted() { return 1; }
+should_protect_path() { return 1; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+clean_github_cli_cache
+EOF
+
+    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
+        GH_TRACE="$trace" /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$HOME/.cache/gh|owner command: GitHub CLI cache"* ]] || { echo "$output"; return 1; }
+
+    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
+        GH_TRACE="$trace" GH_CLEAR_RC=1 /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GitHub CLI cache · stopped (owner cleanup failed)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_github_cli_cache honors custom XDG cache whitelists" {
     local trace="$HOME/gh-xdg-whitelist.trace"
     local xdg_cache="$HOME/custom-cache"
