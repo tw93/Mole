@@ -410,6 +410,13 @@ clean_homebrew() {
                 note_activity
             fi
         fi
+        # Like the Docker prunes, every successful cleanup is logged, with
+        # Homebrew's size when it printed one.
+        if [[ -n "$freed_space" ]]; then
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "brew cleanup" "owner command: $freed_space"
+        else
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "brew cleanup" "owner command"
+        fi
     elif mole_rc_timeout "$brew_exit"; then
         echo -e "  ${GRAY}${ICON_WARNING}${NC} Homebrew cleanup timed out · run ${GRAY}brew cleanup${NC} manually"
         note_activity
