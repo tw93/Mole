@@ -395,13 +395,8 @@ project_cache_root_is_walkable() {
     local root="${1%/}"
     [[ "$root" == "$HOME/Library/CloudStorage" ]] || return 0
     local probe_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
-    local -a dataless_prune=()
-    local dataless_rc=0
-    mole_find_knows_dataless || dataless_rc=$?
-    mole_rc_signal "$dataless_rc" && return "$dataless_rc"
-    [[ $dataless_rc -ne 0 ]] || dataless_prune=(-flags +dataless -prune -o)
     run_with_timeout "$probe_timeout" "$FIND_BSD" -P "$root" -mindepth 2 -maxdepth 2 \
-        ${dataless_prune[@]+"${dataless_prune[@]}"} -type d -print -quit < /dev/null > /dev/null 2>&1
+        -type d -print -quit < /dev/null > /dev/null 2>&1
 }
 
 # Scan a project root for supported build caches while pruning heavy subtrees.

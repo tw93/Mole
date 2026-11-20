@@ -33,13 +33,20 @@ _MOLE_BUNDLE_RESOLVER_APP_ROOTS=(
 )
 
 # A few macOS apps (NetBird UI) ship Info.plist and their executable at the
-# bundle root with no Contents/ directory. Print that plist for exactly this
-# layout and fail for every other one, so a normal bundle keeps its own path.
+# bundle root with no Contents/ directory. Accept that layout only with the
+# evidence of a real app: the plist names a CFBundleExecutable that sits next
+# to it as a regular executable file, not a link. A flat directory holding only
+# a plist, or a PlayCover alias whose files link into its container, still
+# fails, so the caller keeps failing closed there.
 mole_flat_bundle_info_plist() {
     local app="$1"
-    [[ ! -e "$app/Contents" && ! -L "$app/Contents" &&
-        -f "$app/Info.plist" && ! -L "$app/Info.plist" ]] || return 1
-    printf '%s\n' "$app/Info.plist"
+    local info="$app/Info.plist"
+    [[ ! -e "$app/Contents" && ! -L "$app/Contents" && -f "$info" && ! -L "$info" ]] || return 1
+    local executable=""
+    executable=$(/usr/bin/plutil -extract CFBundleExecutable raw "$info" 2> /dev/null) || return 1
+    [[ -n "$executable" && "$executable" != */* && "$executable" != . && "$executable" != .. ]] || return 1
+    [[ -f "$app/$executable" && -x "$app/$executable" && ! -L "$app/$executable" ]] || return 1
+    printf '%s\n' "$info"
 }
 
 # Return 0 if some installed app either has the given CFBundleIdentifier, or

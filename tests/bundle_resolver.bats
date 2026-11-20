@@ -87,6 +87,9 @@ EOF
     make_app "$app" io.netbird.client
     mv "$app/Contents/Info.plist" "$app/Info.plist"
     rmdir "$app/Contents"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string netbird-ui" "$app/Info.plist"
+    printf '#!/bin/sh\n' > "$app/netbird-ui"
+    chmod +x "$app/netbird-ui"
 
     run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
 $(prelude)

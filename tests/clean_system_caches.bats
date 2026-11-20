@@ -1991,6 +1991,43 @@ EOF
 	((elapsed < 4))
 }
 
+@test "mole_find_knows_dataless memoizes the answer and passes a signal through (#2042)" {
+    run env HOME="$BATS_TEST_TMPDIR/dataless-probe" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+mkdir -p "$HOME"
+cat > "$HOME/find" <<'SCRIPT'
+#!/bin/bash
+printf 'call\n' >> "$HOME/calls"
+exit "$(cat "$HOME/answer")"
+SCRIPT
+chmod +x "$HOME/find"
+FIND_BSD="$HOME/find"
+calls() { wc -l < "$HOME/calls" | tr -d ' '; }
+
+echo 0 > "$HOME/answer"
+mole_find_knows_dataless || exit 1
+echo 1 > "$HOME/answer"
+mole_find_knows_dataless || exit 1
+[[ "$(calls)" == 1 ]] || { echo "NOT_MEMOIZED"; exit 1; }
+
+unset _MOLE_FIND_KNOWS_DATALESS
+if mole_find_knows_dataless; then exit 1; fi
+[[ "$_MOLE_FIND_KNOWS_DATALESS" == no ]] || exit 1
+
+unset _MOLE_FIND_KNOWS_DATALESS
+echo 130 > "$HOME/answer"
+rc=0
+mole_find_knows_dataless || rc=$?
+[[ $rc -eq 130 && -z "${_MOLE_FIND_KNOWS_DATALESS:-}" ]] || { echo "SIGNAL rc=$rc"; exit 1; }
+printf 'PROBE_OK\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *PROBE_OK* ]]
+}
+
 @test "scan_project_cache_root prunes online-only folders before entering them (#2042)" {
     run env HOME="$BATS_TEST_TMPDIR/dataless-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
@@ -2021,7 +2058,6 @@ chmod +x "$HOME/find"
 FIND_BSD="$HOME/find"
 
 _MOLE_FIND_KNOWS_DATALESS=yes
-project_cache_root_is_walkable "$root"
 scan_project_cache_root "$root" "$HOME/pruned"
 grep -Fxq "$drive/local-app"$'\t'"$drive/local-app/__pycache__" "$HOME/pruned" || exit 1
 ! grep -Fq OnlineOnly "$HOME/pruned" || exit 1
