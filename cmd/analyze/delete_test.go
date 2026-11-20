@@ -755,6 +755,89 @@ func TestMoveToTrashViaBinaryUsesAbsolutePathWithoutSeparator(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDeleteRefusesSessionSocketFoldersInTmp(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, refused := range []string{
+		"/private/tmp/com.apple.launchd.AbC123",
+		"/private/tmp/com.apple.launchd.AbC123/Listeners",
+		"/tmp/com.apple.launchd.AbC123",
+		"/private/tmp/tmux-501",
+		"/private/tmp/tmux-501/default",
+		"/private/tmp/.X11-unix",
+		"/private/tmp/.X11-unix/X0",
+		"/private/tmp/ssh-AbCdEf1234",
+		"/private/tmp/ssh-AbCdEf1234/agent.4242",
+		"/PRIVATE/TMP/COM.APPLE.LAUNCHD.AbC123",
+	} {
+		if !isProtectedAnalyzeDeletePath(refused) {
+			t.Errorf("session socket folder not refused: %s", refused)
+		}
+	}
+	for _, allowed := range []string{
+		"/private/tmp/build-output",
+		"/private/tmp/mytmux-501",
+		"/private/tmp/notes/com.apple.launchd.AbC123",
+		"/private/tmp/.X11-unix-old",
+		"/private/tmp/tmux-3.5a",
+		"/private/tmp/ssh-keys",
+		"/private/tmp/ssh-keys-backup",
+		"/private/tmp/ssh-tutorial",
+		"/private/tmp/ssh-AbCdEf12345",
+		"/private/tmp/com.apple.launchd.",
+		"/private/var/tmp/tmux-501",
+	} {
+		if isProtectedAnalyzeDeletePath(allowed) {
+			t.Errorf("ordinary tmp item refused: %s", allowed)
+		}
+	}
+}
+
+func TestAnalyzeDeleteRefusesAHandStartedAgentFolderInTMPDIR(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	userTemp := t.TempDir()
+	t.Setenv("TMPDIR", userTemp+"/")
+	if !isProtectedAnalyzeDeletePath(filepath.Join(userTemp, "ssh-AbCdEf1234", "agent.4242")) {
+		t.Error("a hand-started ssh-agent folder in TMPDIR is not refused")
+	}
+	if isProtectedAnalyzeDeletePath(filepath.Join(userTemp, "build-output")) {
+		t.Error("an ordinary item in TMPDIR is refused")
+	}
+}
+
+func TestAnalyzeDeleteIgnoresATMPDIRThatIsHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TMPDIR", home)
+	if isProtectedAnalyzeDeletePath(filepath.Join(home, "ssh-AbCdEf1234")) {
+		t.Error("TMPDIR set to HOME made a home folder named like an agent folder refused")
+	}
+}
+
+func TestAnalyzeDeleteKeepsWalkingPastATMPDIRInsideASocketFolder(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TMPDIR", "/private/tmp/tmux-501")
+	if !isProtectedAnalyzeDeletePath("/private/tmp/tmux-501/default") {
+		t.Error("a socket inside a tmux folder that is also TMPDIR is not refused")
+	}
+}
+
+func TestAnalyzeDeleteRefusesSessionSocketFoldersThroughALinkToTmp(t *testing.T) {
+	if _, err := os.Stat("/private/tmp"); err != nil {
+		t.Skip("/private/tmp is absent on this system")
+	}
+	t.Setenv("HOME", t.TempDir())
+	link := filepath.Join(t.TempDir(), "tmp-link")
+	if err := os.Symlink("/private/tmp", link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if !isProtectedAnalyzeDeletePath(filepath.Join(link, "com.apple.launchd.AbC123")) {
+		t.Error("a session socket folder reached through a link to /private/tmp is not refused")
+	}
+	if isProtectedAnalyzeDeletePath(filepath.Join(link, "build-output")) {
+		t.Error("an ordinary item reached through a link to /private/tmp is refused")
+	}
+}
+
 func TestAnalyzeDeleteRefusesICloudStructuralFoldersButNotTheirContents(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

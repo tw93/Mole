@@ -335,6 +335,9 @@ func isProtectedAnalyzeDeletePath(path string) bool {
 	if isCriticalAnalyzeDeletePath(cleanPath) {
 		return true
 	}
+	if isSessionSocketFolderPath(cleanPath) {
+		return true
+	}
 	if isLibraryHeadFolder(cleanPath, "/Library") {
 		return true
 	}
@@ -480,6 +483,118 @@ func isCriticalAnalyzeDeletePath(path string) bool {
 		}
 	}
 	return false
+}
+
+// isSessionSocketFolderPath reports a folder in the temp directory that holds
+// a login session's sockets, or anything inside one: launchd's listeners
+// (SSH_AUTH_SOCK points into a com.apple.launchd.* folder), tmux's server
+// socket, a hand-started ssh-agent's folder and X11's. Moved to the Trash,
+// ssh-agent and tmux stay unreachable until the next login, and the folder
+// holds nothing to reclaim. The rest of the temp directory stays the user's
+// pick. Mole Mac refuses the launchd, tmux and X11 folders the same way.
+// The parent is /private/tmp or the user's $TMPDIR (where ssh-agent puts its
+// folder when TMPDIR is set), matched by name and by identity, so /tmp, a
+// different letter case and a link to either are caught too.
+func isSessionSocketFolderPath(path string) bool {
+	tempRoots := []string{"/private/tmp", "/tmp"}
+	identityRoots := []string{"/private/tmp"}
+	if userTemp, ok := sessionUserTempDir(); ok {
+		tempRoots = append(tempRoots, userTemp)
+		identityRoots = append(identityRoots, userTemp)
+	}
+	var tempInfos []os.FileInfo
+	for _, root := range identityRoots {
+		if info, err := os.Stat(root); err == nil {
+			tempInfos = append(tempInfos, info)
+		}
+	}
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		parent := filepath.Dir(current)
+		if parent == current {
+			return false
+		}
+		if isSessionSocketFolderName(filepath.Base(current)) && isTempDir(parent, tempRoots, tempInfos) {
+			return true
+		}
+	}
+}
+
+// sessionUserTempDir is $TMPDIR when it can be a temp directory: absolute, not
+// / and not a home folder, so a TMPDIR pointed at $HOME does not turn the
+// user's own ssh-* or tmux-* folders into refused ones.
+func sessionUserTempDir() (string, bool) {
+	dir := filepath.Clean(os.TempDir())
+	if !filepath.IsAbs(dir) || dir == "/" {
+		return "", false
+	}
+	for _, home := range protectedAnalyzeHomeRoots() {
+		if dir == home || isSameExistingPath(dir, home) {
+			return "", false
+		}
+	}
+	return dir, true
+}
+
+func isTempDir(dir string, roots []string, infos []os.FileInfo) bool {
+	for _, root := range roots {
+		if strings.EqualFold(dir, root) {
+			return true
+		}
+	}
+	if len(infos) == 0 {
+		return false
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	for _, info := range infos {
+		if os.SameFile(dirInfo, info) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSessionSocketFolderName matches the names the owners actually create:
+// tmux-<uid>, ssh- plus 10 or 12 random letters and digits (OpenSSH's
+// mkdtemp template, older and current) and launchd's
+// com.apple.launchd.<random>, so a tmux-3.5a source tree stays movable.
+func isSessionSocketFolderName(name string) bool {
+	lower := strings.ToLower(name)
+	switch {
+	case lower == ".x11-unix":
+		return true
+	case strings.HasPrefix(lower, "com.apple.launchd.") && len(lower) > len("com.apple.launchd."):
+		return true
+	case strings.HasPrefix(lower, "tmux-"):
+		return isAllDigits(lower[len("tmux-"):])
+	case strings.HasPrefix(lower, "ssh-"):
+		rest := lower[len("ssh-"):]
+		return (len(rest) == 10 || len(rest) == 12) && isAllAlnum(rest)
+	}
+	return false
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isAllAlnum(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // analyzeHeadHomeFolders are the folders macOS creates in a home and relies
