@@ -1218,6 +1218,16 @@ percent_encode_path() {
     printf '%s' "$out"
 }
 
+# Print a path with HOME shown as ~, only at a path boundary: a string prefix
+# turned the sibling /Users/tester under HOME /Users/test into ~er.
+mole_tilde_path() {
+    case "$1" in
+        "$HOME") printf '%s' '~' ;;
+        "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 # Print a path as an OSC 8 file:// hyperlink so terminals keep it clickable
 # even when it contains spaces (auto-detection breaks on whitespace). Shows
 # the ~-abbreviated path; piped output and non-ANSI terminals get plain text.
@@ -1225,7 +1235,8 @@ percent_encode_path() {
 # link to carry the full path, plain text always shows the whole path.
 format_path_link() {
     local path="$1"
-    local display="${path/#$HOME/~}"
+    local display
+    display=$(mole_tilde_path "$path")
     if ! is_ansi_supported 2> /dev/null; then
         printf '%s' "$display"
         return 0

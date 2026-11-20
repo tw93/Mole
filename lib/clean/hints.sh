@@ -160,7 +160,7 @@ record_project_artifact_hint() {
     PROJECT_ARTIFACT_HINT_COUNT=$((PROJECT_ARTIFACT_HINT_COUNT + 1))
 
     if [[ ${#PROJECT_ARTIFACT_HINT_EXAMPLES[@]} -lt 2 ]]; then
-        PROJECT_ARTIFACT_HINT_EXAMPLES+=("${path/#$HOME/~}")
+        PROJECT_ARTIFACT_HINT_EXAMPLES+=("$(mole_tilde_path "$path")")
     fi
 
     local sample_max=3
@@ -291,7 +291,7 @@ probe_project_artifact_hints() {
         fi
         # In-place spinner text swap per root: a multi-second walk with a
         # static label reads as a hang, a moving path reads as progress.
-        start_section_spinner "Scanning projects · ${root/#$HOME/~}"
+        start_section_spinner "Scanning projects · $(mole_tilde_path "$root")"
         local root_projects_scanned=0
 
         if mole_purge_is_project_root "$root"; then

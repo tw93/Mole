@@ -65,3 +65,16 @@ setup() {
         [[ "$output" != *"Configuration updated"* ]] || return 1
     done
 }
+
+@test "purge paths abbreviates HOME only at a path boundary" {
+    local sibling="${HOME}er/projects"
+    mkdir -p "$sibling"
+    printf '%s\n' "$HOME/project" "$sibling" > "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    # shellcheck disable=SC2088  # literal tilde is the expected display form
+    [[ "$output" == *"~/project"* ]] || return 1
+    [[ "$output" == *"$sibling"* ]] || return 1
+    [[ "$output" != *"~er/projects"* ]]
+}
