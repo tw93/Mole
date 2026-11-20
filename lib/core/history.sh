@@ -689,6 +689,12 @@ history_size_label() {
 history_json_escape() {
     local value="${1:-}"
     local LC_ALL=C
+
+    if [[ "$value" != *[![:print:]]* && "$value" != *[\"\\]* ]]; then
+        printf '%s' "$value"
+        return
+    fi
+
     local char code idx width offset byte second_min second_max
 
     idx=0
