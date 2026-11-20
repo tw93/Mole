@@ -477,6 +477,44 @@ Describe "File Operations Module" {
             Test-Path -LiteralPath $dir | Should -BeFalse
         }
 
+        It "Removes read-only, hidden and system entries without a provider call each" {
+            $dir = Join-Path $script:TestDir ("entries-" + [guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+            $entries = foreach ($flag in @("Normal", "ReadOnly", "Hidden", "System")) {
+                $file = Join-Path $dir "$flag.txt"
+                Set-Content -LiteralPath $file -Value "x"
+                [System.IO.File]::SetAttributes($file, [System.IO.FileAttributes]$flag)
+                $file
+                $folder = New-Item -ItemType Directory -Path (Join-Path $dir "$flag-folder")
+                if ($flag -ne "Normal") { $folder.Attributes = $folder.Attributes -bor [System.IO.FileAttributes]$flag }
+                $folder.FullName
+            }
+            Mock Get-Item { throw "provider-call-canary" }
+            Mock Remove-Item { throw "provider-call-canary" }
+
+            foreach ($entry in $entries) { Remove-TreeEntry -Path $entry }
+            foreach ($entry in $entries) { Test-Path -LiteralPath $entry | Should -BeFalse }
+            Should -Invoke Get-Item -Times 0 -Exactly
+            Should -Invoke Remove-Item -Times 0 -Exactly
+        }
+
+        It "Fails on an entry that is already gone" {
+            { Remove-TreeEntry -Path (Join-Path $script:TestDir ("gone-" + [guid]::NewGuid().ToString("N"))) } | Should -Throw
+        }
+
+        It "Keeps the read-only flag of a file it could not delete" {
+            $file = Join-Path $script:TestDir ("held-" + [guid]::NewGuid().ToString("N") + ".txt")
+            Set-Content -LiteralPath $file -Value "x"
+            [System.IO.File]::SetAttributes($file, [System.IO.FileAttributes]::ReadOnly)
+            $held = [System.IO.File]::Open($file, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            try { { Remove-TreeEntry -Path $file } | Should -Throw }
+            finally { $held.Dispose() }
+
+            Test-Path -LiteralPath $file | Should -BeTrue
+            ([System.IO.File]::GetAttributes($file) -band [System.IO.FileAttributes]::ReadOnly) | Should -Be ([System.IO.FileAttributes]::ReadOnly)
+            [System.IO.File]::SetAttributes($file, [System.IO.FileAttributes]::Normal)
+        }
+
         It "Records how far a partial folder removal got" {
             $dir = Join-Path $script:TestDir ("partial-" + [guid]::NewGuid().ToString("N"))
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
