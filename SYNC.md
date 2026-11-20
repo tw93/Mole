@@ -362,3 +362,15 @@ Source: Mole CLI (macOS), `5bf0d49f` (#2041, a contributor PR, with #2040). `mo 
 | Mole CLI (Linux) | Not applicable | Outside the four-product model; the `linux` branch follows only the two CLIs' safety and correctness fixes, and this is neither. |
 | Mole Mac | Not applicable | A GUI app with no terminal to report to. |
 | Mole for Windows | Not applicable | A GUI app with no terminal to report to. |
+
+## 2026-11-20 Clean totals, dry-run skips, flat bundles and online-only folders
+
+Source: Mole CLI (macOS). `63446600` (#2048) reads the size a real `brew cleanup` prints as freed and counts it in the run total; `abaa094a` (#2043) adds one dry-run summary line naming the families skipped because Xcode or Simulator was running; `f1621e48` (#2046) counts the six rows that print their own size in the run total; `bfd1e7b8` (#2044, fixes #2042) reads a flat bundle's root `Info.plist` only when it names a regular, non-link executable beside it, and prunes online-only (dataless) folders in the `~/Library/CloudStorage` project-cache walk; `eff45ab5` prunes them in that root's walkability probe as well.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`63446600`, `abaa094a`, `f1621e48`, `bfd1e7b8`, `eff45ab5`) | `lib/clean/brew.sh`, `bin/clean.sh`, `lib/core/bundle_resolver.sh:mole_flat_bundle_info_plist`, `lib/clean/apps.sh:scan_installed_apps`, `lib/clean/caches.sh:project_cache_root_is_walkable` and `scan_project_cache_root`; the `#2039`, `#2042`, `#2044`, `#2045` and `#2047` cases in `tests/`, each red on the previous code. Incidents I-88 to I-91. |
+| Mole Mac | Not applicable | Source reading on 2026-11-20. Homebrew old versions are chosen from `brew cleanup --dry-run` and removed and measured by the app itself, so there is no printed freed size to read. The dry-run line and the run total are CLI output. The orphan app-data scan walks a bundle that has no `Contents/Info.plist` and reads the root plist, and the App Group inventory skips absent `Contents` paths, so a flat bundle neither fails the inventory nor loses its id. The project-artifact walk already prunes dataless folders with materialization turned off. |
+| Mole CLI (Windows) | Not applicable; Intentional difference for the dry-run line | Homebrew and app bundles do not exist there. The rows that print their own size already add to the total (`lib/clean/dev.ps1`, `lib/clean/system.ps1`). `bin/purge.ps1` skips reparse points, which by inference covers OneDrive Files On-Demand folders; not measured. Caches skipped for a running owner stay silent in a dry run; adding the #2043 line there is a maintainer decision, recommended not now. |
+| Mole CLI (Linux) | Not applicable | Homebrew cleanup, app bundles, File Provider folders and the six counted rows are macOS sections; the `linux` branch has none of them. |
+| Mole for Windows | Not applicable | A GUI app; its comparison runs through Mole CLI (Windows) and Mole Mac. |
