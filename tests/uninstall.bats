@@ -248,7 +248,7 @@ kept_orphan_run_once() {
 
 @test "a running program whose name is longer than comm holds is seen as running" {
     local long="mole-long-process-name-probe"
-    cp "$(command -v sleep)" "$TEST_ROOT/bin/$long"
+    copy_sleep "$TEST_ROOT/bin/$long"
     "$TEST_ROOT/bin/$long" 30 &
     OWNER_PID=$!
     mole_run core 'rc=0; mole_process_running '"$long"' || rc=$?; echo "rc=$rc"'
@@ -261,7 +261,7 @@ kept_orphan_run_once() {
 }
 
 @test "a long name shares its first 15 bytes with another program: not taken for it" {
-    cp "$(command -v sleep)" "$TEST_ROOT/bin/mole-long-processXYZ"
+    copy_sleep "$TEST_ROOT/bin/mole-long-processXYZ"
     "$TEST_ROOT/bin/mole-long-processXYZ" 30 &
     OWNER_PID=$!
     mole_run core 'rc=0; mole_process_running mole-long-process-name-probe || rc=$?; echo "rc=$rc"'
@@ -270,7 +270,7 @@ kept_orphan_run_once() {
 
 @test "a package whose wrapper starts a differently named program blocks uninstall while it runs" {
     mkdir -p "$TEST_ROOT/opt/tool"
-    cp "$(command -v sleep)" "$TEST_ROOT/opt/tool/RealTool"
+    copy_sleep "$TEST_ROOT/opt/tool/RealTool"
     fake_command pacman '[[ "$1" == -Qlq && "$3" == tool ]] && { echo "$TEST_ROOT/opt/"; echo "$TEST_ROOT/opt/tool/"; echo "$TEST_ROOT/opt/tool/RealTool"; exit 0; }; exit 1'
     fake_command pgrep 'exit 1'
     export TEST_ROOT

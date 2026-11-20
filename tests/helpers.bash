@@ -14,6 +14,8 @@ setup() {
 }
 
 teardown() {
+    # hide_host_command's folders live in TEST_ROOT, removed below.
+    [[ -n "${MOLE_TEST_ORIG_PATH:-}" ]] && export PATH="$MOLE_TEST_ORIG_PATH"
     [[ -n "${OWNER_PID:-}" ]] && kill "$OWNER_PID" 2> /dev/null || true
     chmod -R u+w "$TEST_ROOT" 2> /dev/null || true
     rm -rf -- "$TEST_ROOT"
@@ -49,4 +51,41 @@ fake_proc() {
     printf '%s\n' "$comm" > "$root/$pid/comm"
     [[ "$exe" != - ]] && ln -s "$exe" "$root/$pid/exe"
     if [[ $# -gt 0 ]]; then printf '%s\0' "$@" > "$root/$pid/cmdline"; else : > "$root/$pid/cmdline"; fi
+}
+
+# Copies a sleep that still runs under another name to $1, for tests that need
+# a process with a given name. uutils coreutils (Ubuntu 25.10 and later) is one
+# multi-call binary that picks the tool from argv[0], so a copy named after an
+# app refuses to start ("unknown program"); Ubuntu ships GNU's as gnusleep.
+copy_sleep() {
+    local dest="$1" cand
+    for cand in gnusleep sleep; do
+        cand="$(command -v "$cand")" || continue
+        cp -- "$cand" "$dest" && "$dest" 0 2> /dev/null && return 0
+    done
+    rm -f -- "$dest"
+    skip "no sleep binary runs under another name (uutils without gnusleep)"
+}
+
+# Hides the host's own copy of a command, for tests that need it absent: each
+# PATH folder holding it is replaced by a folder of links to everything else.
+# teardown puts the original PATH back before it removes those folders.
+hide_host_command() {
+    local name="$1" dir shadow new="" n=0
+    local -a dirs=()
+    export MOLE_TEST_ORIG_PATH="${MOLE_TEST_ORIG_PATH:-$PATH}"
+    IFS=: read -ra dirs <<< "$PATH"
+    for dir in "${dirs[@]}"; do
+        if [[ -n "$dir" && "$dir" != "$TEST_ROOT/bin" && -e "$dir/$name" ]]; then
+            n=$((n + 1))
+            shadow="$TEST_ROOT/path-without-$name.$n"
+            mkdir -p "$shadow"
+            ln -s "$dir"/* "$shadow/" 2> /dev/null || true
+            rm -f -- "$shadow/$name"
+            dir="$shadow"
+        fi
+        new+="${new:+:}$dir"
+    done
+    export PATH="$new"
+    ! command -v "$name" > /dev/null 2>&1
 }
