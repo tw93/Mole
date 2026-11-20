@@ -2602,6 +2602,7 @@ clean_tart_caches() {
 
     if [[ "$reclaimed_known" == "true" ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned, $(bytes_to_human "$((reclaimed_kb * 1024))") reclaimed"
+        mole_add_cleaned_row 0 "$reclaimed_kb"
     else
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned"
     fi
