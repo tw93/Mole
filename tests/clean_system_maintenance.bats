@@ -1075,6 +1075,46 @@ EOF
     [[ "$output" == *"TOTALS=1:86426:1"* ]] || { echo "$output"; return 1; }
 }
 
+@test "clean_homebrew reads Homebrew's summary when HOMEBREW_COLOR is set (#2047)" {
+    # HOMEBREW_COLOR colors output even when it is redirected to a file,
+    # unless HOMEBREW_NO_COLOR is set too, as the preview already does.
+    run env HOMEBREW_COLOR=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+mkdir -p "$HOME/.cache/mole"
+rm -f "$HOME/.cache/mole/brew_last_cleanup"
+
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+note_activity() { :; }
+run_with_timeout() {
+    shift
+    "$@"
+}
+brew() {
+    local arrow="==>"
+    if [[ -n "${HOMEBREW_COLOR:-}" && -z "${HOMEBREW_NO_COLOR:-}" ]]; then
+        arrow=$'\033[34m==>\033[0m'
+    fi
+    case "$1" in
+        cleanup)
+            echo "Removing: /opt/homebrew/Cellar/node/24.1.0... (2,011 files, 88.5MB)"
+            echo "$arrow This operation has freed approximately 88.5MB of disk space."
+            return 0
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+clean_homebrew
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Homebrew cleanup"*"88.5MB"* ]] || { echo "$output"; return 1; }
+}
+
 @test "brew_cleanup_size_kb converts Homebrew's decimal sizes and rejects other text (#2047)" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

@@ -370,7 +370,9 @@ clean_homebrew() {
     brew_tmp_file=$(create_temp_file)
     snapshot_homebrew_active_links || true
     if [[ -t 1 ]]; then MOLE_SPINNER_PREFIX="  " start_inline_spinner "Homebrew cleanup..."; fi
-    HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 NONINTERACTIVE=1 \
+    # No color, as in the preview: HOMEBREW_COLOR colors even redirected
+    # output, and the summary line is read back from this file.
+    HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_COLOR=1 NONINTERACTIVE=1 \
         run_with_timeout "$cleanup_timeout" brew cleanup --prune=30 > "$brew_tmp_file" 2>&1 || brew_exit=$?
     if [[ -t 1 ]]; then stop_inline_spinner; fi
     restore_homebrew_active_links
