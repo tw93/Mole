@@ -2607,6 +2607,9 @@ clean_tart_caches() {
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Tart caches · pruned"
     fi
     note_activity
+    # The prune already ran, so log it before a signal during the recount
+    # stops the run.
+    log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$cache_root" "owner command: Tart caches"
     if [[ $post_rc -ne 0 ]]; then
         mole_item_size_continues "$post_rc" || return $?
     fi
