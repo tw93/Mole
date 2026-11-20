@@ -4544,6 +4544,14 @@ ln -s "$HOME/netbird-ui" "$app/netbird-ui"
 expect_scan_failure linked-executable
 rm "$app/netbird-ui"
 expect_scan_failure missing-executable
+# A path in CFBundleExecutable could hide a linked folder from the link check.
+mkdir -p "$HOME/elsewhere"
+cp "$HOME/netbird-ui" "$HOME/elsewhere/netbird-ui"
+ln -s "$HOME/elsewhere" "$app/sub"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable sub/netbird-ui" "$app/Info.plist"
+expect_scan_failure executable-path
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable netbird-ui" "$app/Info.plist"
+rm "$app/sub"
 mv "$HOME/netbird-ui" "$app/netbird-ui"
 
 # A Contents/ directory means a normal bundle whose plist is missing.

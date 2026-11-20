@@ -41,6 +41,8 @@ _MOLE_BUNDLE_RESOLVER_APP_ROOTS=(
 mole_flat_bundle_info_plist() {
     local app="$1"
     local info="$app/Info.plist"
+    # Launcher aliases in this folder are decided by the strict alias check only.
+    [[ "${app%/*}" != "$HOME/Applications/PlayCover" ]] || return 1
     [[ ! -e "$app/Contents" && ! -L "$app/Contents" && -f "$info" && ! -L "$info" ]] || return 1
     local executable=""
     executable=$(/usr/bin/plutil -extract CFBundleExecutable raw "$info" 2> /dev/null) || return 1
