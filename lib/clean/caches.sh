@@ -415,10 +415,17 @@ scan_project_cache_root() {
     # projects folder they can be half of the directories walked, enough to push
     # the scan past its timeout on a busy disk and skip the whole root. Leave
     # .tmp staging trees alone too: unreadable File Provider internals must not
-    # make an otherwise readable CloudStorage root fail its scan.
+    # make an otherwise readable CloudStorage root fail its scan. Online-only
+    # (dataless) folders are pruned too: entering one makes its File Provider
+    # fetch it, which pushed a streaming Google Drive past the budget (#2042).
+    local -a dataless_test=(-false)
+    local dataless_rc=0
+    mole_find_knows_dataless || dataless_rc=$?
+    mole_rc_signal "$dataless_rc" && return "$dataless_rc"
+    [[ $dataless_rc -ne 0 ]] || dataless_test=(-flags +dataless)
     local -a find_args=(
         "$FIND_BSD" -P "$root" -maxdepth 9 -mount
-        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".tmp" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".build-*" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" ")"
+        "(" -name "Library" -o -name ".Trash" -o -name "node_modules" -o -name ".tmp" -o -name ".git" -o -name ".svn" -o -name ".hg" -o -name ".venv" -o -name "venv" -o -name ".pnpm-store" -o -name ".fvm" -o -name "DerivedData" -o -name "Pods" -o -name "miniconda3" -o -name "anaconda3" -o -name "miniforge3" -o -name "mambaforge" -o -name "site-packages" -o -name "target" -o -name ".build" -o -name ".build-*" -o -name ".gradle" -o -name "Index.noindex" -o -name "_cacache" -o "${dataless_test[@]}" ")"
         -prune -o
         -type d
         "(" -name ".next" -o -name "__pycache__" -o -name ".dart_tool" ")"

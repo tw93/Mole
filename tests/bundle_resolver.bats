@@ -82,6 +82,23 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "bundle_has_installed_app reads a flat bundle with its plist at the bundle root (#2044)" {
+    local app="$FAKE_APPS/NetBird UI.app"
+    make_app "$app" io.netbird.client
+    mv "$app/Contents/Info.plist" "$app/Info.plist"
+    rmdir "$app/Contents"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string netbird-ui" "$app/Info.plist"
+    printf '#!/bin/sh\n' > "$app/netbird-ui"
+    chmod +x "$app/netbird-ui"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "io.netbird.client"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "bundle_has_installed_app finds a mixed-case app bundle suffix" {
     make_app "$FAKE_APPS/KeePassXC.APP" "org.keepassxc.KeePassXC"
 

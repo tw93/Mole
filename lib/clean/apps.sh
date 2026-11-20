@@ -636,6 +636,15 @@ scan_installed_apps() {
                         plist_path="$playcover_bundle/Info.plist"
                     fi
                 fi
+                # A flat bundle keeps its plist at the bundle root. Reading only
+                # Contents/ failed the scan closed and skipped the whole App
+                # leftovers section on Macs with NetBird UI installed.
+                if [[ ! -f "$plist_path" ]]; then
+                    local flat_plist=""
+                    if flat_plist=$(mole_flat_bundle_info_plist "$app_path"); then
+                        plist_path="$flat_plist"
+                    fi
+                fi
                 local bundle_id=""
                 if [[ ! -f "$plist_path" || ! -r "$plist_path" ]] ||
                     ! bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist_path" 2> /dev/null) ||

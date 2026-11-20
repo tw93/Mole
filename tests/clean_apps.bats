@@ -4504,6 +4504,68 @@ EOF
 	}
 }
 
+@test "installed-app scan reads a flat bundle with its executable and fails closed on other flat layouts (#2044)" {
+    run env HOME="$HOME/flat-bundle-scan" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+app="$HOME/Applications/NetBird UI.app"
+mkdir -p "$app"
+cat > "$app/Info.plist" <<'PLIST'
+<?xml version="1.0"?>
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>io.netbird.client</string>
+    <key>CFBundleExecutable</key><string>netbird-ui</string>
+</dict></plist>
+PLIST
+printf '#!/bin/sh\n' > "$app/netbird-ui"
+chmod +x "$app/netbird-ui"
+# Limit app enumeration to the fixture even when the host has NetBird installed.
+find() {
+    case "$1" in
+        "$HOME/Applications"|*/LaunchAgents) /usr/bin/find "$@" ;;
+    esac
+}
+expect_scan_failure() {
+    rm -f "$HOME/.cache/mole/installed_apps_cache"
+    if scan_installed_apps "$HOME/$1.txt"; then
+        echo "NOT_FAILED_$1"
+        exit 1
+    fi
+    [[ "$MOLE_APP_SCAN_FAILURE_DETAIL" == "~/Applications/NetBird UI.app" ]] || exit 1
+}
+scan_installed_apps "$HOME/installed.txt"
+grep -Fxq io.netbird.client "$HOME/installed.txt" || exit 1
+
+# The executable has to be a real file next to the plist, not a link into
+# somewhere else, which is how a PlayCover alias is built.
+mv "$app/netbird-ui" "$HOME/netbird-ui"
+ln -s "$HOME/netbird-ui" "$app/netbird-ui"
+expect_scan_failure linked-executable
+rm "$app/netbird-ui"
+expect_scan_failure missing-executable
+# A path in CFBundleExecutable could hide a linked folder from the link check.
+mkdir -p "$HOME/elsewhere"
+cp "$HOME/netbird-ui" "$HOME/elsewhere/netbird-ui"
+ln -s "$HOME/elsewhere" "$app/sub"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable sub/netbird-ui" "$app/Info.plist"
+expect_scan_failure executable-path
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable netbird-ui" "$app/Info.plist"
+rm "$app/sub"
+mv "$HOME/netbird-ui" "$app/netbird-ui"
+
+# A Contents/ directory means a normal bundle whose plist is missing.
+mkdir "$app/Contents"
+expect_scan_failure with-contents
+rmdir "$app/Contents"
+
+# A root plist that does not parse may hide a real id.
+printf 'not a plist' > "$app/Info.plist"
+expect_scan_failure unreadable
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "installed-app scan skips an iOS app with a dangling WrappedBundle symlink" {
 	# AudioCopy.app has no Contents/, a WrappedBundle symlink into a Wrapper/
 	# that does not exist, so no readable plist anywhere. It owns no
