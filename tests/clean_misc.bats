@@ -136,6 +136,36 @@ EOF
     [[ "$output" != *"--entries vms"* ]] || return 1
 }
 
+@test "clean_tart_caches adds the reclaimed bytes to the run totals (#2045)" {
+    rm -rf "$HOME/.tart" "$HOME/tart-payload"
+    mkdir -p "$HOME/.tart/cache/OCIs"
+    : > "$HOME/tart-payload"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { [[ -e "$HOME/tart-payload" ]] && echo 4096 || echo 1024; }
+run_with_timeout() { shift; "$@"; }
+tart() { rm -f "$HOME/tart-payload"; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_tart_caches
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Tart caches · pruned"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"TOTALS=0:3072:1"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_tart_caches stops when the native prune is interrupted" {
     # Ctrl-C while `tart prune` holds the terminal reaches only the child. A
     # signal stops cleanup before the size recount; a plain failure or a

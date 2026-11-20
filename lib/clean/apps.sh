@@ -2397,6 +2397,7 @@ clean_orphaned_system_services() {
             local orphaned_kb_display
             orphaned_kb_display=$(bytes_to_human "$((removed_kb * 1024))")
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Orphaned services · cleaned ${removed_count}, ${orphaned_kb_display}"
+            mole_add_cleaned_row "$removed_count" "$removed_kb"
             note_activity
         fi
         # Surface protected/failed counts in BOTH dry-run and real-clean so the

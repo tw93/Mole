@@ -112,6 +112,7 @@ clean_service_worker_cache() {
     fi
 
     local cleaned_size=0
+    local cleaned_count=0
     local protected_count=0
     local guard_stopped=false
     while IFS= read -r cache_dir; do
@@ -197,6 +198,7 @@ clean_service_worker_cache() {
                 [[ $remove_rc -eq 0 ]] || continue
             fi
             cleaned_size=$((cleaned_size + size))
+            cleaned_count=$((cleaned_count + 1))
         fi
     done < "$candidates_file"
     if [[ $cleaned_size -gt 0 ]]; then
@@ -218,6 +220,7 @@ clean_service_worker_cache() {
             else
                 echo -e "  ${line_color}${ICON_SUCCESS}${NC} $browser_name Service Worker${NC} · $(colorize_human_size "${cleaned_human}")"
             fi
+            mole_add_cleaned_row "$cleaned_count" "$cleaned_size"
         else
             echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $browser_name Service Worker, would clean $(colorize_human_size "$cleaned_human"), ${protected_count} protected"
         fi
