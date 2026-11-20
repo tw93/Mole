@@ -212,6 +212,16 @@ Released (V1.43.0-windows; Mole CLI (Windows), `windows`): the installed-app inv
 - Mole Mac: Implemented there first (2026-11-05).
 - Mole for Windows: Implemented there in the same pass (2026-11-05), through one shared window helper and a source gate.
 
+## 2026-11-20 Tree-walk snapshots without Add-Member
+
+Source: Mole CLI (Windows) `bb4f2353` (#2033). `Get-TreeItemsNoFollow` attaches each entry's `MolePathSnapshot` through `PSObject.Properties` instead of piping it through `Add-Member`, which took about a third of the walk's time per entry on Windows PowerShell 5.1. Entries, snapshots and the property name are unchanged.
+
+- Mole CLI (Windows): Implemented in source (`bb4f2353`).
+- Mole CLI (macOS): Not applicable; its walks are shell `find` and Go, with no PowerShell objects.
+- Mole CLI (Linux): Not applicable, for the same reason.
+- Mole for Windows: Not applicable; its scans do not run this PowerShell walk.
+- Mole Mac: Not applicable; no PowerShell.
+
 ## CLI adaptation queue
 
 | ID | Topic | Status | Source, destination and next check |
