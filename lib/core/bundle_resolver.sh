@@ -32,20 +32,14 @@ _MOLE_BUNDLE_RESOLVER_APP_ROOTS=(
     "$HOME/Library/Input Methods"
 )
 
-# NetBird ships the plist and executable at the top of its macOS app bundle.
-mole_netbird_flat_info_plist() {
+# A few macOS apps (NetBird UI) ship Info.plist and their executable at the
+# bundle root with no Contents/ directory. Print that plist for exactly this
+# layout and fail for every other one, so a normal bundle keeps its own path.
+mole_flat_bundle_info_plist() {
     local app="$1"
-    case "${app##*/}" in
-        [Nn]et[Bb]ird\ UI.[aA][pP][pP]) ;;
-        *) return 1 ;;
-    esac
-    local info="$app/Info.plist"
-    local executable="$app/netbird-ui"
     [[ ! -e "$app/Contents" && ! -L "$app/Contents" &&
-        -f "$info" && ! -L "$info" && -f "$executable" && -x "$executable" && ! -L "$executable" ]] || return 1
-    [[ "$(/usr/bin/plutil -extract CFBundleIdentifier raw "$info" 2> /dev/null)" == "io.netbird.client" &&
-    "$(/usr/bin/plutil -extract CFBundleExecutable raw "$info" 2> /dev/null)" == "netbird-ui" ]] || return 1
-    printf '%s\n' "$info"
+        -f "$app/Info.plist" && ! -L "$app/Info.plist" ]] || return 1
+    printf '%s\n' "$app/Info.plist"
 }
 
 # Return 0 if some installed app either has the given CFBundleIdentifier, or
@@ -166,7 +160,7 @@ bundle_has_installed_app() {
             fi
             info="$app/Contents/Info.plist"
             if [[ ! -f "$info" ]]; then
-                info=$(mole_netbird_flat_info_plist "$app") || continue
+                info=$(mole_flat_bundle_info_plist "$app") || continue
             fi
             local plist_timeout=""
             plist_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" \

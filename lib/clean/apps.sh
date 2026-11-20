@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ORPHAN_AGE_THRESHOLD=${MOLE_ORPHAN_AGE_DAYS:-30}
 readonly CLAUDE_VM_ORPHAN_AGE_THRESHOLD=7
 readonly ORPHAN_AGE_WALK_BUDGET_SEC=60
-readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v4:complete"
+readonly INSTALLED_APPS_CACHE_COMPLETE_MARKER="# mole-installed-apps-cache:v3:complete"
 # Args: $1=target_dir, $2=label, optional $3=scan stderr file, $4...=find exclusions
 clean_ds_store_tree() {
     local target="$1"
@@ -636,10 +636,13 @@ scan_installed_apps() {
                         plist_path="$playcover_bundle/Info.plist"
                     fi
                 fi
+                # A flat bundle keeps its plist at the bundle root. Reading only
+                # Contents/ failed the scan closed and skipped the whole App
+                # leftovers section on Macs with NetBird UI installed.
                 if [[ ! -f "$plist_path" ]]; then
-                    local netbird_plist=""
-                    if netbird_plist=$(mole_netbird_flat_info_plist "$app_path"); then
-                        plist_path="$netbird_plist"
+                    local flat_plist=""
+                    if flat_plist=$(mole_flat_bundle_info_plist "$app_path"); then
+                        plist_path="$flat_plist"
                     fi
                 fi
                 local bundle_id=""

@@ -11,13 +11,6 @@ teardown_file() {
 	mole_test_teardown_home
 }
 
-teardown() {
-    if [[ -n "${PURGE_TEST_HOLDER_PID:-}" ]]; then
-        kill "$PURGE_TEST_HOLDER_PID" 2> /dev/null || true
-        wait "$PURGE_TEST_HOLDER_PID" 2> /dev/null || true
-    fi
-}
-
 setup() {
 	# Safety: refuse to operate on a real home directory.
 	if [[ "$HOME" != "${BATS_TEST_DIRNAME}/tmp-"* ]]; then
@@ -6243,13 +6236,9 @@ SCRIPT
     (
         cd /
         exec 9< "$project/dist/bundle.js"
-        # Both real scans must see the holder even on a loaded host.
-        # teardown owns its lifetime if the test exits before normal cleanup.
-        trap 'exit 0' TERM
-        while :; do sleep 1; done
+        exec sleep 30
     ) &
     local holder=$!
-    PURGE_TEST_HOLDER_PID="$holder"
     sleep 0.3
     # Discovery passes it once, so the recheck itself runs on a selected item.
     local mode dry real
@@ -6258,9 +6247,6 @@ SCRIPT
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/project.sh"
-# Content classification has separate coverage; this case must reach the real
-# open-file probe in both modes even when a loaded host delays metadata walks.
-purge_artifact_has_authored_content() { return 1; }
 filter_protected_artifacts() { cat; }
 eval "real_$(declare -f is_protected_purge_artifact)"
 protection_calls=0
@@ -6280,7 +6266,6 @@ SCRIPT
     done
     kill "$holder" 2> /dev/null || true
     wait "$holder" 2> /dev/null || true
-    unset PURGE_TEST_HOLDER_PID
     [ -f "$project/dist/bundle.js" ] || { echo "$real"; return 1; }
     [[ "$dry" != *"[DRY RUN] ~/www/busy/dist"* ]] || { echo "$dry"; return 1; }
     [[ "$dry" == *"in use"* ]] || { echo "$dry"; return 1; }

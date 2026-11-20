@@ -82,14 +82,11 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "bundle_has_installed_app finds NetBird with a top-level plist (Spotlight miss)" {
+@test "bundle_has_installed_app reads a flat bundle with its plist at the bundle root (#2044)" {
     local app="$FAKE_APPS/NetBird UI.app"
     make_app "$app" io.netbird.client
     mv "$app/Contents/Info.plist" "$app/Info.plist"
     rmdir "$app/Contents"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string netbird-ui" "$app/Info.plist"
-    touch "$app/netbird-ui"
-    chmod +x "$app/netbird-ui"
 
     run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
 $(prelude)

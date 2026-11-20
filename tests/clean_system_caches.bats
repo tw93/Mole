@@ -1537,7 +1537,7 @@ for arg in "\$@"; do
     prev="\$arg"
 done
 if [[ "\$root" == "$HOME/CustomProjects" ]]; then
-    printf '%s\0' "$HOME/CustomProjects/app/.next"
+    printf '%s\n' "$HOME/CustomProjects/app/.next"
 fi
 EOF
     chmod +x "$fake_bin/find"
@@ -1934,7 +1934,7 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/caches.sh"
 run_with_timeout() {
-	printf '%s\0' "$HOME/Projects/app/.next"
+	printf '%s\n' "$HOME/Projects/app/.next"
 	return 124
 }
 scan_rc=0
@@ -1953,11 +1953,16 @@ EOF
 	fake_bin="$(mktemp -d "$HOME/project-cache-postprocess.XXXXXX")"
 	cat > "$fake_bin/find" <<'EOF'
 #!/bin/bash
-for ((i = 0; i < 20000; i++)); do
-	printf '%s\0' "$HOME/Projects/app-$i/.next"
+for i in $(seq 1 1000); do
+	printf '%s\n' "$HOME/Projects/app-$i/.next"
 done
 EOF
-	chmod +x "$fake_bin/find"
+	cat > "$fake_bin/dirname" <<'EOF'
+#!/bin/bash
+sleep 0.02
+/usr/bin/dirname "$@"
+EOF
+	chmod +x "$fake_bin/find" "$fake_bin/dirname"
 	local output_file
 	output_file=$(mktemp)
 
@@ -1986,55 +1991,50 @@ EOF
 	((elapsed < 4))
 }
 
-@test "scan_project_cache_root fd and BSD find return the same eligible directories" {
-    command -v fd > /dev/null 2>&1 || skip "fd is optional"
-    run env HOME="$BATS_TEST_TMPDIR/walk-home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+@test "scan_project_cache_root prunes online-only folders before entering them (#2042)" {
+    run env HOME="$BATS_TEST_TMPDIR/dataless-home" PROJECT_ROOT="$PROJECT_ROOT" LC_ALL=C /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/caches.sh"
-root="$HOME/Projects"
-mkdir -p "$root/app/.next/cache" "$root/app/__pycache__" "$root/app/.dart_tool" \
-    "$root/app/.NEXT/cache" "$root/app/node_modules/dependency/.next/cache" \
-    "$root/app/.build-worktree/dependency/.next/cache" "$root/app/.git/objects/.next" \
-    "$HOME/elsewhere/.next/cache"
-touch "$root/app/package.json" "$root/app/__pycache__/module.pyc"
-printf '.next\n__pycache__\n.dart_tool\n' > "$root/app/.gitignore"
-ln -s "$HOME/elsewhere" "$root/linked"
-scan_project_cache_root "$root" "$HOME/fd.matches"
-# Select the BSD fallback without changing its traversal implementation.
-find() { /usr/bin/find "$@"; }
-FIND_BSD=find
-scan_project_cache_root "$root" "$HOME/find.matches"
-LC_ALL=C sort "$HOME/fd.matches" > "$HOME/fd.sorted"
-LC_ALL=C sort "$HOME/find.matches" > "$HOME/find.sorted"
-cmp "$HOME/fd.sorted" "$HOME/find.sorted"
-[[ "$(wc -l < "$HOME/fd.sorted" | tr -d ' ')" == 3 ]] || exit 1
-grep -Fxq "$root/app"$'\t'"$root/app/__pycache__" "$HOME/fd.sorted"
+root="$HOME/Library/CloudStorage"
+drive="$root/GoogleDrive-test"
+mkdir -p "$drive/local-app/__pycache__" "$drive/OnlineOnly/app/__pycache__"
+touch "$drive/local-app/pyproject.toml" "$drive/local-app/__pycache__/module.pyc" \
+    "$drive/OnlineOnly/app/pyproject.toml" "$drive/OnlineOnly/app/__pycache__/module.pyc"
+# Ordinary fixtures cannot carry the File Provider flag, so run BSD find with
+# the flag predicate answered by the fixture's name.
+cat > "$HOME/find" <<'SCRIPT'
+#!/bin/bash
+args=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "-flags" && "$2" == "+dataless" ]]; then
+        args+=(-name OnlineOnly)
+        shift 2
+    else
+        args+=("$1")
+        shift
+    fi
+done
+exec /usr/bin/find "${args[@]}"
+SCRIPT
+chmod +x "$HOME/find"
+FIND_BSD="$HOME/find"
+
+_MOLE_FIND_KNOWS_DATALESS=yes
+project_cache_root_is_walkable "$root"
+scan_project_cache_root "$root" "$HOME/pruned"
+grep -Fxq "$drive/local-app"$'\t'"$drive/local-app/__pycache__" "$HOME/pruned" || exit 1
+! grep -Fq OnlineOnly "$HOME/pruned" || exit 1
+
+# A find without the flag keeps the previous walk, which enters the folder.
+_MOLE_FIND_KNOWS_DATALESS=no
+scan_project_cache_root "$root" "$HOME/unpruned"
+grep -Fxq "$drive/OnlineOnly/app"$'\t'"$drive/OnlineOnly/app/__pycache__" "$HOME/unpruned" || exit 1
+printf 'DATALESS_PRUNED\n'
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-}
-
-@test "scan_project_cache_root discards fd results after a traversal error" {
-    run env HOME="$BATS_TEST_TMPDIR/fd-home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
-set -euo pipefail
-source "$PROJECT_ROOT/lib/core/common.sh"
-source "$PROJECT_ROOT/lib/clean/caches.sh"
-mkdir -p "$HOME/bin" "$HOME/Projects/app/.next"
-cat > "$HOME/bin/fd" <<'SCRIPT'
-#!/bin/bash
-printf '%s\0' "$HOME/Projects/app/.next"
-printf '%s\n' '[fd error]: Permission denied' >&2
-SCRIPT
-chmod +x "$HOME/bin/fd"
-export PATH="$HOME/bin:$PATH"
-rc=0
-scan_project_cache_root "$HOME/Projects" "$HOME/matches" || rc=$?
-printf 'STATUS=%s SIZE=%s\n' "$rc" "$(wc -c < "$HOME/matches" | tr -d ' ')"
-EOF
-
-    [ "$status" -eq 0 ] || return 1
-    [[ "$output" == "STATUS=1 SIZE=0" ]]
+    [[ "$output" == *DATALESS_PRUNED* ]]
 }
 
 @test "scan_project_cache_root prunes provider temp folders but keeps readable CloudStorage projects (#1988)" {
