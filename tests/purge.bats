@@ -338,6 +338,33 @@ fd=os.open(os.environ["HELD_LIBRARY"],os.O_RDONLY); libc.mmap(None,4096,1,2,fd,0
     done
 }
 
+@test "status fields come from one read: Uid and PPid, a missing line, an unreadable file" {
+    local proc="$TEST_ROOT/proc"
+    mkdir -p "$proc/7" "$proc/8"
+    printf 'Name:\tbash\nUmask:\t0022\nState:\tS (sleeping)\nPPid:\t4242\nUid:\t1000\t1001\t1002\t1003\n' > "$proc/7/status"
+    printf 'Name:\tsecret\nUid:\t1000\t1000\n' > "$proc/8/status"
+    chmod 000 "$proc/8/status"
+    purge_run 'set +e
+        u=""; mole_proc_status_field "'"$proc"'/7" Uid u; echo "uid=$? [$u]"
+        p=""; mole_proc_status_field "'"$proc"'/7" PPid p; echo "ppid=$? [$p]"
+        g=""; mole_proc_status_field "'"$proc"'/7" Groups g; echo "missing=$?"
+        r=""; mole_proc_status_field "'"$proc"'/8" Uid r; echo "unreadable=$?"'
+    chmod 644 "$proc/8/status"
+    [[ "$output" == *"uid=0 [1000]"* ]]
+    [[ "$output" == *"ppid=0 [4242]"* ]]
+    [[ "$output" == *"missing=1"* ]]
+    [[ "$output" == *"unreadable=1"* ]]
+}
+
+@test "no code reads a /proc status file line by line, only mole_proc_status_field" {
+    # A while-read loop seeks back after every line, and /proc rebuilds status
+    # on every read, so a running process's Uid: line can be skipped.
+    run bash -c "grep -rn '/status\"' '$REPO/lib' '$REPO/bin' | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*#'"
+    [ "$status" -eq 0 ]
+    [ "${#lines[@]}" -eq 1 ]
+    [[ "${lines[0]}" == *"/lib/core/base.sh:"*"mapfile -t _lines"* ]]
+}
+
 @test "a process whose owner cannot be read, or a cut pid list, fails the snapshot" {
     local proc="$TEST_ROOT/proc"
     mkdir -p "$proc/self" "$proc/4100"

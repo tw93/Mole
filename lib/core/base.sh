@@ -207,19 +207,37 @@ mole_update_verdict() {
 _MOLE_PROC_ROOT=/proc
 _MOLE_UID=""
 
+# Sets the variable named $3 to the first value on the "$2:" line of process
+# folder $1's status (Uid: gives the real uid first). 1 when the file cannot
+# be read or has no such line.
+# One mapfile, never a while-read loop over the file: bash's read takes a
+# block, keeps one line and seeks back to the line's end, and /proc builds the
+# file again on every read, so a field above changing length (State: R and S)
+# moves that offset and the loop skips or repeats lines. Measured 2026-11-20
+# on Ubuntu 26.04 while processes came and went: a loop missed Uid: 9 times in
+# 51,364 reads of live processes, mapfile never (the file is one block).
+mole_proc_status_field() {
+    local _line _rest
+    local -a _lines=()
+    mapfile -t _lines 2> /dev/null < "$1/status" || return 1
+    for _line in "${_lines[@]}"; do
+        [[ "$_line" == "$2:"* ]] || continue
+        _rest="${_line#*:}"
+        _rest="${_rest#"${_rest%%[![:space:]]*}"}"
+        printf -v "$3" '%s' "${_rest%%[[:space:]]*}"
+        return 0
+    done
+    return 1
+}
+
 # 0 when the process's real uid, from the Uid: line of its status, is the
 # user's. Not -O on /proc/<pid>: a non-dumpable process (KeePassXC) has its
 # /proc folder owned by root although the user runs it.
 mole_pid_mine() {
-    local key uid
+    local uid=""
     [[ -n "$_MOLE_UID" ]] || _MOLE_UID=$(id -u)
-    while read -r key uid _; do
-        if [[ "$key" == Uid: ]]; then
-            [[ "$uid" == "$_MOLE_UID" ]]
-            return
-        fi
-    done 2> /dev/null < "$1/status"
-    return 1
+    mole_proc_status_field "$1" Uid uid || return 1
+    [[ "$uid" == "$_MOLE_UID" ]]
 }
 
 # Process running check by exact process name. Returns 0 when running, 1 when

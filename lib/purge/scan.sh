@@ -338,10 +338,8 @@ mole_purge_refusal() {
 # mo and mole are Mole's own router, named by its script for comm.
 readonly MOLE_PURGE_SHELLS=" bash zsh fish sh dash ksh mksh nu xonsh tcsh csh elvish mo mole "
 mole_purge_ppid() {
-    local key value
-    { while read -r key value _; do
-        [[ "$key" == PPid: ]] && printf '%s' "$value" && return 0
-    done < "$1/status"; } 2> /dev/null || true
+    local value=""
+    mole_proc_status_field "$1" PPid value && printf '%s' "$value"
     return 0
 }
 # 0 when process folder $1 is the user's, 1 when it is someone else's or the
@@ -349,14 +347,12 @@ mole_purge_ppid() {
 # mole_pid_mine answers 1 for both of the last two, which suits its callers;
 # purge needs to know it missed a process.
 mole_purge_pid_mine() {
-    local key uid found=""
+    local found=""
     [[ -n "$_MOLE_UID" ]] || _MOLE_UID=$(id -u)
-    { while read -r key uid _; do
-        if [[ "$key" == Uid: ]]; then
-            found="$uid"
-            break
-        fi
-    done < "$1/status"; } 2> /dev/null || true
+    # A while-read loop here once missed the Uid: line of a running process
+    # (mole_proc_status_field), so the whole snapshot failed and every project
+    # read busy for that run.
+    mole_proc_status_field "$1" Uid found || found=""
     if [[ -n "$found" ]]; then
         [[ "$found" == "$_MOLE_UID" ]]
         return
