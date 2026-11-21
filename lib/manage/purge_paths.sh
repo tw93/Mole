@@ -27,7 +27,7 @@ ensure_config_template() {
 # ~/Work/ClientA
 # ~/Work/ClientB
 "; then
-            echo -e "${YELLOW}${ICON_WARNING}${NC} Could not initialize ${PURGE_PATHS_CONFIG/#$HOME/~}" >&2
+            echo -e "${YELLOW}${ICON_WARNING}${NC} Could not initialize $(mole_tilde_path "$PURGE_PATHS_CONFIG")" >&2
         fi
     fi
 }
@@ -36,7 +36,8 @@ ensure_config_template() {
 manage_purge_paths() {
     ensure_config_template
 
-    local display_config="${PURGE_PATHS_CONFIG/#$HOME/~}"
+    local display_config
+    display_config=$(mole_tilde_path "$PURGE_PATHS_CONFIG")
 
     # Clear screen
     if [[ -t 1 ]]; then
@@ -54,7 +55,8 @@ manage_purge_paths() {
 
     if [[ ${#PURGE_SEARCH_PATHS[@]} -gt 0 ]]; then
         for path in "${PURGE_SEARCH_PATHS[@]}"; do
-            local display_path="${path/#$HOME/~}"
+            local display_path
+            display_path=$(mole_tilde_path "$path")
             if [[ -d "$path" ]]; then
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $display_path"
             else
@@ -84,7 +86,7 @@ manage_purge_paths() {
     echo ""
     echo -e "${YELLOW}Default Paths:${NC}"
     for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
-        echo -e "  ${GRAY}-${NC} ${path/#$HOME/~}"
+        echo -e "  ${GRAY}-${NC} $(mole_tilde_path "$path")"
     done
 
     echo ""

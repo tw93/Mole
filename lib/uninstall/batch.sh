@@ -256,10 +256,8 @@ append_line() {
 
 format_uninstall_preview_path() {
     local path="$1"
-    # Replacement must come from a variable: bash 5.3+ tilde-expands a literal
-    # unquoted ~ in the patsub replacement, turning this into a no-op.
-    local tilde='~'
-    local display_path="${path/#$HOME/$tilde}"
+    local display_path
+    display_path=$(mole_tilde_path "$path")
     local size_kb="0"
     local size_rc=0
     if [[ $# -gt 1 ]]; then
@@ -2491,8 +2489,8 @@ _batch_preview_and_confirm() {
             if [[ -n "$kept_data" ]]; then
                 echo -e "\n${GRAY}Personal data kept:${NC}"
                 while IFS= read -r personal_path; do
-                    local kept_display="$personal_path" tilde='~'
-                    kept_display="${kept_display/#$HOME/$tilde}"
+                    local kept_display
+                    kept_display=$(mole_tilde_path "$personal_path")
                     printf '  %b%s%b\n' "${GRAY}${ICON_REVIEW} " "$(mole_terminal_safe_text "$kept_display")" "$NC"
                 done <<< "$kept_data"
             fi
@@ -2609,9 +2607,6 @@ _batch_preview_and_confirm() {
 #         total_size_freed, brew_apps_removed,
 #         files_cleaned, total_items (the latter two via dynamic scope)
 _batch_execute_removals() {
-    # See format_uninstall_preview_path: literal ~ in a patsub replacement is
-    # tilde-expanded by bash 5.3+, so route it through a variable.
-    local tilde_display='~'
     local current_index=0
     for detail in "${app_details[@]}"; do
         current_index=$((current_index + 1))
@@ -3137,10 +3132,10 @@ _batch_execute_removals() {
                             fi
                             ;;
                     esac
-                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $kept_label: ${_lpath/#$HOME/$tilde_display}"
+                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $kept_label: $(mole_tilde_path "$_lpath")"
                 done
                 if [[ $family_kept_count -eq 1 ]]; then
-                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $family_kept_label: ${family_kept_first/#$HOME/$tilde_display}"
+                    echo -e "  ${YELLOW}${ICON_WARNING}${NC} $family_kept_label: $(mole_tilde_path "$family_kept_first")"
                 elif [[ $family_kept_count -gt 1 ]]; then
                     echo -e "  ${YELLOW}${ICON_WARNING}${NC} $family_kept_label: $family_kept_count paths"
                 fi

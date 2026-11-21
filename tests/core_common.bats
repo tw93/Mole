@@ -1705,3 +1705,25 @@ PROBE
         [ "$status" -ne 0 ]
     done
 }
+
+@test "mole_tilde_path abbreviates HOME only at a path boundary" {
+    run /bin/bash --noprofile --norc -c '
+        source "$1/lib/core/base.sh"
+        HOME=/Users/test
+        printf "%s|" "$(mole_tilde_path /Users/test)" "$(mole_tilde_path "/Users/test/a b")" \
+            "$(mole_tilde_path /Users/tester/x)" "$(mole_tilde_path /opt/Users/test)" "$(mole_tilde_path "")"
+    ' _ "$PROJECT_ROOT"
+    [ "$status" -eq 0 ]
+    [ "$output" = '~|~/a b|/Users/tester/x|/opt/Users/test||' ]
+}
+
+@test "HOME is shown as ~ through mole_tilde_path, never a string-prefix patsub" {
+    # ${path/#$HOME/~} cuts a sibling such as /Users/tester to ~er, and bash 5.3+
+    # tilde-expands the literal ~ so the replacement does nothing at all.
+    run grep -rnE '^[^#]*/#\$\{?HOME\}?/' "$PROJECT_ROOT/mole" "$PROJECT_ROOT/bin" "$PROJECT_ROOT/lib"
+    [ "$status" -eq 1 ]
+    run grep -rcE '^[^#]*mole_tilde_path "' "$PROJECT_ROOT/bin" "$PROJECT_ROOT/lib"
+    local total=0 count
+    while IFS=: read -r _ count; do total=$((total + count)); done <<< "$output"
+    [ "$total" -ge 20 ]
+}

@@ -697,7 +697,7 @@ opt_sqlite_vacuum() {
             else
                 skipped_display="unknown size"
             fi
-            echo -e "  ${GRAY}${ICON_SUBLIST}${NC} ${skipped_path/#$HOME/~} · ${skipped_display}"
+            echo -e "  ${GRAY}${ICON_SUBLIST}${NC} $(mole_tilde_path "$skipped_path") · ${skipped_display}"
         done
     fi
 
@@ -1286,7 +1286,7 @@ opt_launch_agents_cleanup() {
             # Label and Program come from a third-party plist, so escape
             # sequences in them must not reach the terminal.
             printf '  %b %s\n' "${YELLOW}${ICON_WARNING}${NC}" \
-                "Launch Agent $(mole_terminal_safe_text "$label"): program missing at $(mole_terminal_safe_text "${binary/#$HOME/~}")"
+                "Launch Agent $(mole_terminal_safe_text "$label"): program missing at $(mole_terminal_safe_text "$(mole_tilde_path "$binary")")"
             broken_count=$((broken_count + 1))
         fi
     done

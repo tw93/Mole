@@ -1565,7 +1565,7 @@ refuse_cleanup_without_write_access() {
     done
     [[ -n "$refused_target" ]] || return 0
 
-    printf 'mo clean cannot remove files from this shell: writing to %s was refused (%s).\n' "${refused_target/#$HOME/~}" "$refused_reason" >&2
+    printf 'mo clean cannot remove files from this shell: writing to %s was refused (%s).\n' "$(mole_tilde_path "$refused_target")" "$refused_reason" >&2
     printf 'Nothing was removed.' >&2
     [[ "$refused_reason" == "Read-only file system" ]] || printf ' If this shell runs in a sandbox, run mo clean in your own terminal.' >&2
     printf '\n' >&2

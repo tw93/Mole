@@ -789,7 +789,7 @@ scan_installed_apps() {
         if [[ -s "$scan_tmp_dir/scan_failures.list" ]]; then
             local raw_failure_detail=""
             raw_failure_detail=$(head -1 "$scan_tmp_dir/scan_failures.list")
-            MOLE_APP_SCAN_FAILURE_DETAIL=$(mole_terminal_safe_text "${raw_failure_detail/#$HOME/~}")
+            MOLE_APP_SCAN_FAILURE_DETAIL=$(mole_terminal_safe_text "$(mole_tilde_path "$raw_failure_detail")")
             local failed_bundle_path=""
             while IFS= read -r failed_bundle_path; do
                 [[ -n "$failed_bundle_path" ]] || continue
