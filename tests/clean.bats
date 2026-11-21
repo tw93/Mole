@@ -9,7 +9,7 @@ make_cache() {
 
 @test "a rule is skipped while its owner runs, and cleaned once it stops" {
     make_cache "$HOME/.cache/moletool"
-    cp "$(command -v sleep)" "$TEST_ROOT/moleowner"
+    copy_sleep "$TEST_ROOT/moleowner"
     "$TEST_ROOT/moleowner" 30 &
     OWNER_PID=$!
     mole_run clean 'clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moleowner"'
@@ -122,7 +122,7 @@ make_cache() {
 
 # Run a stand-in process under a given name until the test ends.
 start_owner() {
-    cp "$(command -v sleep)" "$TEST_ROOT/$1"
+    copy_sleep "$TEST_ROOT/$1"
     "$TEST_ROOT/$1" 30 &
     OWNER_PID=$!
 }
@@ -162,6 +162,8 @@ start_owner() {
 
 @test "uv: uv cache prune runs when uv exists, the folder is never rm'd, and without uv nothing happens" {
     make_cache "$HOME/.cache/uv"
+    # The host's own uv would prune this fake cache.
+    hide_host_command uv
     mole_run clean 'mole_clean_rules | grep "|uv cache|"'
     [ "$output" = "Developer tools|uv cache|$HOME/.cache/uv|uv,uvx|tool:uv" ]
     mole_run clean 'clean_rule "uv cache" "$HOME/.cache/uv" "uv,uvx" "tool:uv"'
@@ -340,15 +342,18 @@ clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
 }
 
 @test "flatpak unused runtimes are removed only when flatpak and a user installation exist" {
-    mole_run clean 'DRY_RUN=true; clean_system'
+    # Neither the host's flatpak nor its system installation is part of this.
+    hide_host_command flatpak
+    local nosys='SYSTEM_FLATPAK_DIR="'"$TEST_ROOT"'/no-system-flatpak"; '
+    mole_run clean "$nosys"'DRY_RUN=true; clean_system'
     [[ "$output" != *"Flatpak"* ]]
 
     fake_command flatpak 'echo "$*" >> "'"$TEST_ROOT"'/flatpak.log"'
-    mole_run clean 'clean_system'
+    mole_run clean "$nosys"'clean_system'
     [ ! -e "$TEST_ROOT/flatpak.log" ]
 
     mkdir -p "$HOME/.local/share/flatpak/repo"
-    mole_run clean 'clean_system'
+    mole_run clean "$nosys"'clean_system'
     grep -qx -- "uninstall --user --unused --noninteractive" "$TEST_ROOT/flatpak.log"
     [ -z "$(grep -- "--system" "$TEST_ROOT/flatpak.log")" ]
 }

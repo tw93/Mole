@@ -26,7 +26,7 @@ loose_db() {
     desktop "$apps/gonebin.desktop" "Name=GoneBin" "Exec=mole-no-such-program --flag"
     desktop "$apps/off.desktop" "Name=Off" "Hidden=true" "Exec=mole-no-such-program"
     desktop "$apps/try.desktop" "Name=Try" "TryExec=mole-no-such-program" "Exec=sh"
-    mole_run optimize 'opt_broken_launchers "$HOME/.local/share/applications" | sort'
+    mole_run optimize 'opt_broken_launchers "$HOME/.local/share/applications" | LC_ALL=C sort'
     [ "$status" -eq 0 ]
     [ "$output" = "$apps/gone.desktop"$'\n'"$apps/gonebin.desktop"$'\n'"$apps/try.desktop" ]
 }
