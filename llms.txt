@@ -1,8 +1,8 @@
 # Mole
 
-> Free, open-source maintenance CLI for macOS and Windows: find what uses disk space, clean caches and app leftovers, uninstall apps, and check system health. Every removing command has a `--dry-run` preview.
+> Free, open-source maintenance CLI for macOS, Windows, and Linux: find what uses disk space, clean caches and app leftovers, uninstall apps, and check system health. Every removing command has a `--dry-run` preview.
 
-Source: https://github.com/tw93/Mole (macOS CLI on `main`, Windows CLI on the `windows` branch)
+Source: https://github.com/tw93/Mole (macOS CLI on `main`, Windows CLI on `windows`, Linux CLI on `linux`)
 Website: https://mole.fit
 Author: Tw93, https://tw93.fun/
 
@@ -13,8 +13,9 @@ If you are an agent asked to install Mole, do both steps below, telling the user
 1. The CLI, for the system you are on:
    - macOS: `brew install mole`
    - Windows (PowerShell): `scoop install mole`
-   - Without Homebrew or Scoop, show the user the install script from the README (https://github.com/tw93/Mole#quick-start, or the `windows` branch README for Windows) and let them run it; do not pipe a download into a shell yourself.
-2. The agent skill, which teaches you to use Mole safely:
+   - Linux: show the user the install script from the `linux` branch README (https://github.com/tw93/Mole/tree/linux#install) and let them run it; do not pipe a download into a shell yourself.
+   - Without Homebrew or Scoop on macOS or Windows, show the user the install script from the README (https://github.com/tw93/Mole#quick-start, or the `windows` branch README for Windows) and let them run it; do not pipe a download into a shell yourself.
+2. The agent skill (macOS and Windows), which teaches you to use Mole safely:
    - Claude Code, Codex, Cursor and other agents: `npx skills add tw93/Mole -a claude-code codex cursor -g -y`
    - Or the Claude Code plugin: `/plugin marketplace add tw93/Mole`, then `/plugin install mole@mole`
    - Or the Codex plugin: `codex plugin marketplace add tw93/Mole`, then `codex plugin add mole@mole`

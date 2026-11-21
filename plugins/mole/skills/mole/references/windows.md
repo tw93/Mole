@@ -1,6 +1,6 @@
 # Mole CLI (Windows)
 
-Written against Mole CLI (Windows) 1.43.0. `mo analyze --json` and
+Written against Mole CLI (Windows) 1.46.0. `mo analyze --json` and
 `mo uninstall --list` arrived in 1.37.0; on 1.36.0 or older either flag is
 rejected as an unknown option, so fall back to `mo status --json`,
 `mo history --json` and `mo clean --dry-run`.
@@ -33,11 +33,11 @@ is updated and removed through that package manager; `mo update` and
 | `mo clean --game-media`, `mo clean --gpu-shaders` | Opt-in extras: game replays, screenshots and recordings older than 90 days; GPU shader caches that games rebuild on next launch | Agent after consent, only when the user asked for them |
 | `mo optimize --dry-run` | Preview of maintenance tasks | Agent |
 | `mo optimize` | **Starts immediately, no confirmation.** It ends with a y/N question about System File Checker, which takes minutes | Agent after consent; SFC is the user's call in their own console |
-| `mo purge --dry-run` | Prints the project count and total, then opens a selection list that reads keys from a console; without one it errors out or waits | User. `mo purge --help` lists the folders it scans, and the agent may run that |
+| `mo purge --dry-run` | 1.44.0 and newer. Preview of project artifacts; without a console it previews every project and exits 0 (on 1.43.0 and older it opens a selection list that needs a console) | Agent |
 | `mo purge` | Selection list and a y/N confirmation | User |
 | `mo installer --dry-run` | 1.45.0 and newer. Preview of `.msi` installers in Downloads that are at least 14 days old; without a console it previews them all, with one it opens a selection list | Agent |
 | `mo installer` | 1.45.0 and newer. Selection list and a y/N confirmation; chosen files go to the Recycle Bin | User |
-| `mo uninstall --dry-run` | Selection list, needs a console | User |
+| `mo uninstall --dry-run` | 1.44.0 and newer. Without a console prints the installed-app inventory and exits 0; with one opens the selection list and names each app's uninstaller (on 1.43.0 and older it needs a console) | Agent |
 | `mo uninstall` | Selection list, then each app's own uninstaller | User |
 | `mo clean --whitelist` | Opens the whitelist in Notepad and waits | User, or edit the file (below) |
 | `mo purge --paths` | Interactive editor | User |
@@ -131,4 +131,4 @@ without it. Confirm with a fresh `mo clean --dry-run`.
 ## Gotchas
 
 - `--debug` prints detailed logs; use it when a command did nothing.
-- `mo update` and `mo remove` change Mole itself. Run them only when asked.
+- `mo update` and `mo remove` change Mole itself (`mo remove --dry-run` previews removal in 1.44.0 and newer). Run them only when asked.

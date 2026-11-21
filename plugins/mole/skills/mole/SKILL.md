@@ -32,6 +32,8 @@ Run `mo --version`. The second line names the system (`macOS: …` or
 - macOS: [references/macos.md](references/macos.md)
 - Windows: [references/windows.md](references/windows.md)
 
+Mole CLI (Linux) on the `linux` branch is not covered by this skill yet; on Linux, point the user to https://github.com/tw93/Mole/tree/linux#readme instead of using macOS commands.
+
 The two editions differ in flags, JSON fields and what goes to the Trash or
 Recycle Bin, so never carry a command across. If the installed version is older
 than the one the reference names, or a flag is rejected, run
