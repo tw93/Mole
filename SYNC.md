@@ -388,3 +388,15 @@ Source: Mole CLI (macOS) `90b3e1a8`, carrying Mole Mac I-289. `mo analyze` refus
 | Mole CLI (Windows) | Not applicable | No such socket folders on Windows. |
 | Mole for Windows | Not applicable | No such socket folders on Windows. |
 
+
+## 2026-11-21 Owner-command log rows and HOME shown as ~
+
+Source: Mole CLI (macOS). `760a523b` (#2058, closes #2056) appends a `REMOVED ... (owner command)` row after each successful real `gh`, `go clean`, `xcrun simctl delete unavailable`, `tart prune` and `brew cleanup`, as `clean_tool_cache` and Docker prune already did, and nothing in a dry run. `7ea26eac` (#2059) shows HOME as `~` only at a path boundary through `mole_tilde_path`, in every command, with a source gate against the string-prefix form.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`760a523b`, `7ea26eac`) | `lib/clean/dev.sh`, `lib/clean/user.sh:clean_tart_caches`, `lib/clean/brew.sh`; `lib/core/base.sh:mole_tilde_path` and its callers. |
+| Mole CLI (Linux) | Implemented | Source reading on 2026-11-21: every owner command already logs (`bin/clean.sh`: uv cache prune, flatpak uninstall --unused, paccache, journalctl vacuum, apt-get autoclean), and `lib/core/base.sh:mole_display_path` already compares at the `$HOME/` boundary. |
+| Mole CLI (Windows) | Implemented | `lib/clean/dev.ps1:Invoke-MoleOwnerCacheCleanup` writes an `OWNER` row after each successful owner command; the other `Invoke-MoleOwnerProcess` calls only read a path or a version. `bin/purge.ps1` shows `~` only for the profile folder itself or a path below `$env:USERPROFILE\`. |
+| Mole Mac | Not applicable | Homebrew old versions come from `brew cleanup --dry-run` and the app removes them itself through its own operations log; it runs none of these owner commands to delete. HOME display is the app's own UI. |
+| Mole for Windows | Not applicable | A GUI app; its comparison runs through Mole CLI (Windows) and Mole Mac. |
