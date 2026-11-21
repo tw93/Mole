@@ -1975,6 +1975,64 @@ EOF
     [[ "$output" == *"Time Machine cleanup · skipped (backup in progress)"* ]]
 }
 
+@test "safe_clean names the item it is cleaning and its position on a TTY" {
+    if ! /usr/bin/script -q /dev/null /usr/bin/true < /dev/null > /dev/null 2>&1; then
+        skip "script cannot allocate a TTY in this environment"
+    fi
+
+    local base="$HOME/safe_clean_progress"
+    mkdir -p "$base/alpha" "$base/beta" "$base/gamma" "$base/huge" "$base/slow" "$base/solo"
+    printf 'x' > "$base/alpha/data"
+    printf 'x' > "$base/beta/data"
+    printf 'x' > "$base/gamma/data"
+    /bin/dd if=/dev/zero of="$base/huge/data" bs=1024 count=2048 2> /dev/null
+    printf 'x' > "$base/slow/data"
+    printf 'x' > "$base/solo/data"
+    local esc_dir="$base/esc"$'\033'"[31m"
+    mkdir -p "$esc_dir"
+    printf 'x' > "$esc_dir/data"
+    local messages="$HOME/safe_clean_progress.log"
+    : > "$messages"
+
+    # shellcheck disable=SC2016  # inner bash expands these from its environment
+    env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" BASE="$base" MESSAGES="$messages" ESC_DIR="$esc_dir" \
+        MOLE_TEST_MODE=1 TERM=xterm-256color \
+        /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c '
+            source "$PROJECT_ROOT/lib/core/common.sh"
+            source "$PROJECT_ROOT/bin/clean.sh"
+            DRY_RUN=false
+            start_section_spinner() { printf "%s\n" "$1" >> "$MESSAGES"; }
+            stop_section_spinner() { :; }
+            stop_inline_spinner() { :; }
+            is_path_whitelisted() { return 1; }
+            eval "_orig_$(declare -f get_cleanup_path_size_kb)"
+            get_cleanup_path_size_kb() {
+                if [[ "$1" == */slow ]]; then
+                    return 124
+                fi
+                _orig_get_cleanup_path_size_kb "$@"
+            }
+            safe_remove() { /bin/rm -rf "$1"; return 0; } # SAFE: test fixture
+            safe_clean "$BASE/alpha" "$BASE/beta" "$BASE/gamma" "$BASE/huge" "$BASE/slow" "Test cache"
+            safe_clean "$BASE/solo/" "Solo cache"
+            safe_clean "$ESC_DIR" "Esc cache"
+        ' < /dev/null > /dev/null 2>&1
+
+    # No redundant bare "Cleaning..." frame before the named first item.
+    ! grep -qxF "Cleaning..." "$messages" || { cat "$messages"; return 1; }
+    # The 2MB item and the timed-out-sizing item are each named with position
+    # even though the previous update came less than a second earlier.
+    grep -qxF "Cleaning Test cache, 4/5 · huge..." "$messages" || { cat "$messages"; return 1; }
+    grep -qxF "Cleaning Test cache, 5/5 · slow..." "$messages" || { cat "$messages"; return 1; }
+    # Small batches (<=3) also name the active item and strip trailing slashes.
+    grep -qxF "Cleaning Solo cache, 1/1 · solo..." "$messages" || { cat "$messages"; return 1; }
+    # A control byte in a name on disk never reaches the terminal raw.
+    grep -qxF "Cleaning Esc cache, 1/1 · esc?[31m..." "$messages" || { cat -v "$messages"; return 1; }
+    ! grep -q $'\033' "$messages" || { cat -v "$messages"; return 1; }
+    [[ ! -e "$base/huge" && ! -e "$base/slow" && ! -e "$base/solo" ]] || return 1
+    rm -rf "$base" "$messages"
+}
+
 @test "start_section recycles an idle section header in place on a TTY" {
     if ! /usr/bin/script -q /dev/null /usr/bin/true < /dev/null > /dev/null 2>&1; then
         skip "script cannot allocate a TTY in this environment"
