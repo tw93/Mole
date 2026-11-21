@@ -83,6 +83,11 @@ Describe 'Protected system cleanup does not disturb services' {
         Mock Remove-SafeItems {}
         Mock Remove-SafeItem { $true }
         Mock Start-Process {}
+        # The Delivery Optimization row deletes through the service's CIM
+        # provider, not a Mole helper. Answer for the provider, or this real
+        # (non-dry) run asks Windows to delete the machine's own cache.
+        Mock Get-CimInstance { @() } -ParameterFilter { $ClassName -like 'MSFT_DeliveryOptimization*' }
+        Mock Invoke-CimMethod {}
     }
     It 'Never stops, starts or restarts FontCache or Windows Update during system cleanup' {
         Invoke-SystemCleanup
