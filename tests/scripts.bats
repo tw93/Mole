@@ -87,6 +87,18 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "test.sh refuses a checkout under /private/tmp and says where to run it" {
+    local root
+    root=$(mktemp -d /private/tmp/mole-test-gate.XXXXXX)
+    mkdir -p "$root/scripts"
+    cp "$PROJECT_ROOT/scripts/test.sh" "$root/scripts/test.sh"
+    run /bin/bash "$root/scripts/test.sh"
+    rm -rf "$root" # SAFE: exact mktemp-created gate fixture under /private/tmp
+    [ "$status" -eq 2 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"under /private/tmp"* ]] || return 1
+    [[ "$output" == *".claude/worktrees/<name>"* ]]
+}
+
 @test "test.sh includes test lint step" {
     run /bin/bash -c "grep -q 'Test script lint' '$PROJECT_ROOT/scripts/test.sh'"
     [ "$status" -eq 0 ]

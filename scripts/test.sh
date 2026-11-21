@@ -10,6 +10,17 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# About 30 cases fail on unchanged main from a checkout under /private/tmp
+# (an agent scratchpad), because the test homes sit inside it, and the run
+# reads like a regression in whatever is being verified.
+case "$(pwd -P)/" in
+    /private/tmp/*)
+        echo "scripts/test.sh: this checkout is under /private/tmp, where about 30 cases fail on unchanged main." >&2
+        echo "Run it from a checkout under your home folder, such as: git worktree add --detach .claude/worktrees/<name>" >&2
+        exit 2
+        ;;
+esac
+
 # Sweep orphaned per-test HOME dirs left behind by killed bats runs.
 # Normal teardown removes them; this only catches the ones that escaped.
 # 60-minute threshold avoids racing with a long-running test in progress.
