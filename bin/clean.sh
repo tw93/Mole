@@ -854,9 +854,13 @@ classify_cleanup_risk() {
 }
 
 # Spinner label for one safe_clean item, written to _MOLE_SAFE_CLEAN_LABEL
-# rather than printed, so the per-item loop forks nothing to build it. The
-# name comes from disk and the spinner strips only CR and LF, so a name
-# holding other control bytes goes through mole_terminal_safe_text first.
+# rather than printed, so a short name forks nothing. The name comes from disk
+# and the spinner strips only CR and LF, so a name holding other control bytes
+# goes through mole_terminal_safe_text first. No trailing "...": the spinner
+# already shows work in progress, and an ellipsis after a name reads as a cut
+# name. A name too long for the line loses its middle, never the section and
+# position, which the spinner's own end cut would keep instead of the name's
+# distinguishing tail. _MOLE_SAFE_CLEAN_COLS is read once per safe_clean call.
 _safe_clean_spinner_label() {
     local description="$1"
     local index="$2"
@@ -864,14 +868,23 @@ _safe_clean_spinner_label() {
     local path="$4"
     local item_name="${path%/}"
     item_name="${item_name##*/}"
+    printf -v _MOLE_SAFE_CLEAN_LABEL 'Cleaning %s %d/%d' "$description" "$index" "$total"
+    [[ -n "$item_name" ]] || return 0
     if [[ "$item_name" == *[[:cntrl:]]* ]]; then
         item_name=$(mole_terminal_safe_text "$item_name")
     fi
-    if [[ -n "$item_name" ]]; then
-        printf -v _MOLE_SAFE_CLEAN_LABEL 'Cleaning %s, %d/%d · %s...' "$description" "$index" "$total" "$item_name"
-    else
-        printf -v _MOLE_SAFE_CLEAN_LABEL 'Cleaning %s, %d/%d...' "$description" "$index" "$total"
+    # format_spinner_message keeps cols - 8; one more column of slack, since
+    # get_display_width counts the one-column "…" as two.
+    local cols="${_MOLE_SAFE_CLEAN_COLS:-80}"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    local room=$((cols - 9 - ${#_MOLE_SAFE_CLEAN_LABEL} - 3))
+    if ((room < 8)); then
+        return 0
     fi
+    if [[ "$item_name" == *[![:ascii:]]* || ${#item_name} -gt $room ]]; then
+        item_name=$(truncate_middle_by_display_width "$item_name" "$room")
+    fi
+    _MOLE_SAFE_CLEAN_LABEL+=" · $item_name"
 }
 
 # Internal implementation shared by the normal and process-guarded cleanup
@@ -1225,6 +1238,7 @@ _safe_clean_impl() {
         local show_cleaning_spinner=false
         if [[ "$DRY_RUN" != "true" && ${#existing_paths[@]} -gt 0 && -t 1 ]]; then
             show_cleaning_spinner=true
+            _MOLE_SAFE_CLEAN_COLS="${COLUMNS:-$(tput cols 2> /dev/null || echo 80)}"
         elif [[ -n "$delete_guard" && -t 1 ]]; then
             # The preview still asks the owner guard about every item, about
             # 70ms each, which left VS Code logs silent for 0.7s.
@@ -1355,6 +1369,7 @@ _safe_clean_impl() {
         local show_cleaning_spinner=false
         if [[ "$DRY_RUN" != "true" && ${#existing_paths[@]} -gt 0 && -t 1 ]]; then
             show_cleaning_spinner=true
+            _MOLE_SAFE_CLEAN_COLS="${COLUMNS:-$(tput cols 2> /dev/null || echo 80)}"
         fi
         local idx=0
         if [[ ${#existing_paths[@]} -gt 0 ]]; then

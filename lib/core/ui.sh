@@ -172,6 +172,45 @@ truncate_by_display_width() {
     printf '%s...\n' "$truncated"
 }
 
+# Shorten to max_width columns by cutting the middle and joining the ends with
+# "…" (one column). A third of the room goes to the head and the rest to the
+# tail, because bundle ids and process names differ at the end
+# (com.microsoft.VSCode vs com.microsoft.VSCode.ShipIt), which an end cut hides.
+# Uses the same ASCII-1 / other-2 column guess as truncate_by_display_width.
+truncate_middle_by_display_width() {
+    local str="$1"
+    local max_width="$2"
+    if (($(get_display_width "$str") <= max_width)); then
+        printf '%s\n' "$str"
+        return
+    fi
+    local LC_ALL=en_US.UTF-8
+    local keep=$((max_width - 1))
+    ((keep > 1)) || keep=1
+    local head_room=$((keep / 3)) tail_room
+    tail_room=$((keep - head_room))
+    local head="" tail="" char cw width=0 i=0 n=${#str}
+    while ((i < n)); do
+        char="${str:i:1}"
+        if [[ "$char" == [[:ascii:]] ]]; then cw=1; else cw=2; fi
+        ((width + cw <= head_room)) || break
+        head+="$char"
+        width=$((width + cw))
+        i=$((i + 1))
+    done
+    width=0
+    local j=$((n - 1))
+    while ((j >= i)); do
+        char="${str:j:1}"
+        if [[ "$char" == [[:ascii:]] ]]; then cw=1; else cw=2; fi
+        ((width + cw <= tail_room)) || break
+        tail="$char$tail"
+        width=$((width + cw))
+        j=$((j - 1))
+    done
+    printf '%s…%s\n' "$head" "$tail"
+}
+
 # Read single keyboard input
 read_key() {
     local key rest read_status

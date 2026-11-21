@@ -1351,6 +1351,17 @@ EOF
     [ "$output" = $'-n\n-e' ]
 }
 
+@test "truncate_middle_by_display_width keeps the head and the distinguishing tail" {
+    run /bin/bash --noprofile --norc -c '
+        source "$1/lib/core/common.sh"
+        printf "%s|" "$(truncate_middle_by_display_width short 10)" \
+            "$(truncate_middle_by_display_width com.microsoft.VSCode.ShipIt 16)" \
+            "$(LC_ALL=C truncate_middle_by_display_width 微信开发者工具缓存目录 9)"
+    ' _ "$PROJECT_ROOT"
+    [ "$status" -eq 0 ]
+    [ "$output" = "short|com.m…ode.ShipIt|微…存目录|" ]
+}
+
 @test "truncate_by_display_width counts ASCII as one column (#1918)" {
     run /bin/bash -c "export MOLE_BASE_LOADED=1; source '$PROJECT_ROOT/lib/core/ui.sh'; truncate_by_display_width 'abcdefghijklmnop' 10; truncate_by_display_width '中文abcdefghij' 10"
     [ "$status" -eq 0 ]

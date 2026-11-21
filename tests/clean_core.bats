@@ -1991,11 +1991,14 @@ EOF
     local esc_dir="$base/esc"$'\033'"[31m"
     mkdir -p "$esc_dir"
     printf 'x' > "$esc_dir/data"
+    local long_dir="$base/com.example.averyveryverylongvendor.ShipIt"
+    mkdir -p "$long_dir"
+    printf 'x' > "$long_dir/data"
     local messages="$HOME/safe_clean_progress.log"
     : > "$messages"
 
     # shellcheck disable=SC2016  # inner bash expands these from its environment
-    env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" BASE="$base" MESSAGES="$messages" ESC_DIR="$esc_dir" \
+    env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" BASE="$base" MESSAGES="$messages" ESC_DIR="$esc_dir" LONG_DIR="$long_dir" COLUMNS=60 \
         MOLE_TEST_MODE=1 TERM=xterm-256color \
         /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c '
             source "$PROJECT_ROOT/lib/core/common.sh"
@@ -2016,19 +2019,24 @@ EOF
             safe_clean "$BASE/alpha" "$BASE/beta" "$BASE/gamma" "$BASE/huge" "$BASE/slow" "Test cache"
             safe_clean "$BASE/solo/" "Solo cache"
             safe_clean "$ESC_DIR" "Esc cache"
+            safe_clean "$LONG_DIR" "Long cache"
         ' < /dev/null > /dev/null 2>&1
 
     # No redundant bare "Cleaning..." frame before the named first item.
     ! grep -qxF "Cleaning..." "$messages" || { cat "$messages"; return 1; }
     # The 2MB item and the timed-out-sizing item are each named with position
     # even though the previous update came less than a second earlier.
-    grep -qxF "Cleaning Test cache, 4/5 · huge..." "$messages" || { cat "$messages"; return 1; }
-    grep -qxF "Cleaning Test cache, 5/5 · slow..." "$messages" || { cat "$messages"; return 1; }
+    grep -qxF "Cleaning Test cache 4/5 · huge" "$messages" || { cat "$messages"; return 1; }
+    grep -qxF "Cleaning Test cache 5/5 · slow" "$messages" || { cat "$messages"; return 1; }
     # Small batches (<=3) also name the active item and strip trailing slashes.
-    grep -qxF "Cleaning Solo cache, 1/1 · solo..." "$messages" || { cat "$messages"; return 1; }
+    grep -qxF "Cleaning Solo cache 1/1 · solo" "$messages" || { cat "$messages"; return 1; }
     # A control byte in a name on disk never reaches the terminal raw.
-    grep -qxF "Cleaning Esc cache, 1/1 · esc?[31m..." "$messages" || { cat -v "$messages"; return 1; }
+    grep -qxF "Cleaning Esc cache 1/1 · esc?[31m" "$messages" || { cat -v "$messages"; return 1; }
     ! grep -q $'\033' "$messages" || { cat -v "$messages"; return 1; }
+    # No label ends in "...", which after a name reads as a cut name.
+    ! grep -q '\.\.\.$' "$messages" || { cat "$messages"; return 1; }
+    # A name too long for 60 columns keeps its head and distinguishing tail.
+    grep -qxF "Cleaning Long cache 1/1 · com.exam…ongvendor.ShipIt" "$messages" || { cat "$messages"; return 1; }
     [[ ! -e "$base/huge" && ! -e "$base/slow" && ! -e "$base/solo" ]] || return 1
     rm -rf "$base" "$messages"
 }
