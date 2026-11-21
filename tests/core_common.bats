@@ -1712,9 +1712,15 @@ PROBE
         HOME=/Users/test
         printf "%s|" "$(mole_tilde_path /Users/test)" "$(mole_tilde_path "/Users/test/a b")" \
             "$(mole_tilde_path /Users/tester/x)" "$(mole_tilde_path /opt/Users/test)" "$(mole_tilde_path "")"
+        HOME=/Users/test/
+        printf "%s|" "$(mole_tilde_path /Users/test)" "$(mole_tilde_path /Users/test/x)"
+        HOME=""
+        printf "%s|" "$(mole_tilde_path /Applications/Foo.app)" "$(mole_tilde_path "")"
+        HOME=/
+        printf "%s|" "$(mole_tilde_path /Applications/Foo.app)"
     ' _ "$PROJECT_ROOT"
     [ "$status" -eq 0 ]
-    [ "$output" = '~|~/a b|/Users/tester/x|/opt/Users/test||' ]
+    [ "$output" = '~|~/a b|/Users/tester/x|/opt/Users/test||~|~/x|/Applications/Foo.app||/Applications/Foo.app|' ]
 }
 
 @test "HOME is shown as ~ through mole_tilde_path, never a string-prefix patsub" {

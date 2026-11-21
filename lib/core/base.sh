@@ -1223,9 +1223,14 @@ percent_encode_path() {
 # instead of ${path/#$HOME/~}: bash 5.3+ also tilde-expands that literal ~,
 # so the replacement silently becomes a no-op there.
 mole_tilde_path() {
+    local home="${HOME%/}"
+    if [[ -z "$home" ]]; then
+        printf '%s' "$1"
+        return 0
+    fi
     case "$1" in
-        "$HOME") printf '%s' '~' ;;
-        "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;;
+        "$home") printf '%s' '~' ;;
+        "$home"/*) printf '~%s' "${1#"$home"}" ;;
         *) printf '%s' "$1" ;;
     esac
 }
