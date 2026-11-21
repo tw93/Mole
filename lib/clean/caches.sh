@@ -534,13 +534,46 @@ _project_cache_path_is_ascii() {
     [[ "$1" != *[![:print:]]* ]]
 }
 
+# Both the Git index and the cleanup pass need the visible children of .next/cache.
+# A shell glob would open the cache even if the initial walk had pruned it.
+_project_cache_list_next_children() {
+    local next_dir="$1"
+    local children_file="$2"
+    local deadline="${3:-}"
+    local cache_dir="$next_dir/cache"
+    : > "$children_file" || return 1
+    [[ ! -L "$next_dir" && ! -L "$cache_dir" && -d "$cache_dir" ]] || return 0
+
+    local probe_rc=0
+    local -a dataless_test=(-false)
+    mole_find_knows_dataless || probe_rc=$?
+    mole_rc_signal "$probe_rc" && return "$probe_rc"
+    if mole_rc_timeout "$probe_rc"; then
+        debug_log "Keeping Next.js cache, dataless flag probe timed out: $cache_dir"
+        return 0
+    fi
+    [[ $probe_rc -ne 0 ]] || dataless_test=(-flags +dataless)
+
+    local list_timeout list_rc=0
+    list_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_QUICK_DETECT_SEC" "$deadline") || return 0
+    # Test depth on the output branch so the cache root can be pruned too.
+    run_with_timeout "$list_timeout" "$FIND_BSD" -P -s "$cache_dir" -maxdepth 1 \
+        "${dataless_test[@]}" -prune -o -depth 1 ! -name '.*' -print0 \
+        < /dev/null > "$children_file" 2> /dev/null || list_rc=$?
+    mole_rc_signal "$list_rc" && return "$list_rc"
+    if [[ $list_rc -ne 0 ]]; then
+        debug_log "Keeping Next.js cache, child listing incomplete (status $list_rc): $cache_dir"
+        : > "$children_file" || return 1
+    fi
+}
+
 # Build the index for every candidate a matches file will reach. All Git
 # listings share the deadline given; a repository that cannot be listed in
 # time, or whose listing fails, marks its candidates unknown. Signals propagate.
 project_cache_build_git_index() {
     local matches_file="$1"
     local index_file="$2"
-    local deadline="$3"
+    local git_deadline="$3"
     local work_dir=""
     : > "$index_file" || return 1
     work_dir=$(create_temp_dir) || return 1
@@ -548,6 +581,8 @@ project_cache_build_git_index() {
     local -a logical_roots=() physical_roots=()
     local record_root="" cache_dir="" candidate="" physical="" repo="" i
     local candidates_file="$work_dir/candidates"
+    local next_children_file="$work_dir/next-children"
+    local next_list_budget="$MOLE_TIMEOUT_HINT_SCAN_SEC"
     : > "$candidates_file"
     while IFS=$'\t' read -r record_root cache_dir; do
         [[ -n "$record_root" && -n "$cache_dir" ]] || continue
@@ -568,17 +603,20 @@ project_cache_build_git_index() {
         local -a candidates=()
         case "${cache_dir##*/}" in
             ".next")
-                # A linked cache folder puts its children in another tree that
-                # this repository cannot answer for; keep all of them.
-                if [[ -L "$cache_dir/cache" ]]; then
-                    for candidate in "$cache_dir/cache"/*; do
-                        printf 'U%s\n' "$candidate" >> "$index_file"
-                    done
-                    continue
+                local list_started=$SECONDS list_rc=0
+                _project_cache_list_next_children "$cache_dir" "$next_children_file" \
+                    "$((list_started + next_list_budget))" || list_rc=$?
+                if [[ $list_rc -ne 0 ]]; then
+                    rm -rf "$work_dir" # SAFE: exact mktemp-created project cache index scratch directory
+                    return "$list_rc"
                 fi
-                for candidate in "$cache_dir/cache"/*; do
-                    [[ -e "$candidate" || -L "$candidate" ]] && candidates+=("$candidate")
-                done
+                # A slow Next.js cache must not use the time reserved for Git.
+                local list_elapsed=$((SECONDS - list_started))
+                next_list_budget=$((next_list_budget - list_elapsed))
+                git_deadline=$((git_deadline + list_elapsed))
+                while IFS= read -r -d '' candidate; do
+                    candidates+=("$candidate")
+                done < "$next_children_file"
                 ;;
             "__pycache__") candidates=("$cache_dir") ;;
             ".dart_tool")
@@ -611,7 +649,7 @@ project_cache_build_git_index() {
                     local probe_rc=2
                     if [[ -d "$candidate" && ! -L "$candidate" ]]; then
                         probe_rc=0
-                        mole_path_has_git_tracked_files "$candidate" "$deadline" || probe_rc=$?
+                        mole_path_has_git_tracked_files "$candidate" "$git_deadline" || probe_rc=$?
                         if [[ $probe_rc -gt 128 ]]; then
                             rm -rf "$work_dir" # SAFE: exact mktemp-created project cache index scratch directory
                             return "$probe_rc"
@@ -636,7 +674,7 @@ project_cache_build_git_index() {
     _project_cache_index_flush_group() {
         [[ -n "$current_repo" && -s "$group_file" ]] || return 0
         listing_rc=0
-        mole_git_ls_files "$current_repo" "$deadline" "$current_repo" -z -- . \
+        mole_git_ls_files "$current_repo" "$git_deadline" "$current_repo" -z -- . \
             > "$listing_file" || listing_rc=$?
         # git exits 128 for its own fatal errors (a dangling worktree link,
         # an unsafe repository); only 129 and above come from a signal.
@@ -871,13 +909,15 @@ process_project_cache_matches() {
     # lookup scans this string, so it holds only what can change a decision.
     _project_cache_git_index=$'\n'"$(grep -E '^[TC]' "$index_file" || true)"$'\n'
     local process_rc=0
-    _process_project_cache_matches_indexed "$matches_file" || process_rc=$?
+    # The index is in memory now. Reuse its scratch file for each fresh listing.
+    _process_project_cache_matches_indexed "$matches_file" "$index_file" || process_rc=$?
     rm -f "$index_file" # SAFE: exact scratch file created by create_temp_file above
     return "$process_rc"
 }
 
 _process_project_cache_matches_indexed() {
     local matches_file="$1"
+    local next_children_file="$2"
 
     local current_python_root=""
     local -a current_python_dirs=()
@@ -890,8 +930,14 @@ _process_project_cache_matches_indexed() {
                 flush_python_group_if_needed "$current_python_root" current_python_dirs || return $?
                 current_python_root=""
                 current_python_dirs=()
-                if [[ -d "$cache_dir/cache" ]]; then
-                    clean_project_cache_target "$cache_dir/cache"/* "Next.js build cache" || return $?
+                _project_cache_list_next_children "$cache_dir" "$next_children_file" || return $?
+                local -a next_children=()
+                local next_child
+                while IFS= read -r -d '' next_child; do
+                    next_children+=("$next_child")
+                done < "$next_children_file"
+                if [[ ${#next_children[@]} -gt 0 ]]; then
+                    clean_project_cache_target "${next_children[@]}" "Next.js build cache" || return $?
                 fi
                 ;;
             "__pycache__")
