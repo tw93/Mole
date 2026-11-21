@@ -412,3 +412,15 @@ Source: Mole CLI (macOS) `c4a99749` (#2036, Incident I-85). `cmd/analyze/oplog.g
 | Mole CLI (Windows) | Not applicable | `cmd/analyze/oplog.go` receives pre-formatted size strings from `internal/units` (already fixed by `#1914`). |
 | Mole Mac | Not applicable | Uses Foundation's `ByteCountFormatter`. |
 | Mole for Windows | Not applicable | No Go analyze oplog formatter. |
+
+## 2026-11-21 Optimize memory finding and diagnosis families
+
+Source: Mole CLI (macOS) `3ee2fcbe`. The memory finding now follows the kernel pressure level (`kern.memorystatus_vm_pressure_level` warning or critical, free memory under 15% only when the level is unreadable) instead of swap use, and prints one line under the System line with same-name processes summed; Performance diagnosis no longer reports WindowServer or CoreSimulator disk-image daemons. `9dcee33c` keeps the section and position whole in the clean spinner label.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`3ee2fcbe`, `9dcee33c`) | `lib/optimize/diagnostics.sh:opt_diag_memory_pressure`, `bin/optimize.sh`; the memory cases in `tests/optimize_perf_diagnosis.bats`, red on the previous diagnostics. |
+| Mole CLI (Linux) | Intentional difference | Source reading on 2026-11-21: `bin/optimize.sh:show_diagnosis` already judges memory from `/proc/pressure/memory` (PSI), never swap, and has no WindowServer or CoreSimulator families; its spinner labels are its own. |
+| Mole CLI (Windows) | Not applicable | No optimize performance diagnosis; memory pressure lives in `cmd/status`. |
+| Mole Mac | Not applicable | No optimize performance diagnosis in the CLI form; the app's status view owns memory. |
+| Mole for Windows | Not applicable | Same as Mole CLI (Windows). |
