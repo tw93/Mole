@@ -105,7 +105,7 @@ mo analyze /private/tmp      # 一時ディレクトリの確認（自動削除�
 特定バージョンをインストールする場合は、[Releasesページ](https://github.com/tw93/mole/releases) のタグを指定してください（先頭の `V` はあってもなくても構いません）。開発ブランチを利用する場合は `main` を指定します：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.73.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
@@ -247,7 +247,7 @@ D choose personal data
 
 ======================================================================
 Uninstall complete
-Removed 1 app, freed 4.20GB: Photoshop 2024
+Removed 1 app · 4.20GB: Photoshop 2024
 ======================================================================
 ```
 
@@ -514,4 +514,4 @@ PAPAYA 電腦教室 による [Moleチュートリアル動画](https://www.yout
 
 ## ライセンス
 
-MoleはGPL-3.0ライセンスのもとでオープンソース公開されています。詳細は [LICENSE](LICENSE) をご覧ください。変更したバージョンを共有する場合は、同じライセンスのままにする必要があります。Moleをフォークして別の製品にする場合は、別の名前を使い、Moleを元のプロジェクトとして明記してください。[Mole for Mac](https://mole.fit) は独立したプロプライエタリなアプリです。Moleはこれからも長く続けていきます。
+MoleはGPL-3.0ライセンスのもとでオープンソース公開されています。詳細は [LICENSE](LICENSE) をご覧ください。変更したバージョンを共有する場合は、同じライセンスのままにする必要があります。Moleをフォークして別の製品にする場合は、別の名前を使い、Moleを元のプロジェクトとして明記してください。詳細は [TRADEMARK.md](TRADEMARK.md) をご覧ください。[Mole for Mac](https://mole.fit) は独立したプロプライエタリなアプリです。Moleはこれからも長く続けていきます。

@@ -105,7 +105,7 @@ mo analyze /private/tmp      # 僅檢視暫存目錄（不自動清理）
 想裝特定版本就傳入 [Releases 頁面](https://github.com/tw93/mole/releases) 裡的任意 Tag，帶不帶開頭的 `V` 都行，想跟開發分支就傳 `main`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.73.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
@@ -247,7 +247,7 @@ D choose personal data
 
 ======================================================================
 Uninstall complete
-Removed 1 app, freed 4.20GB: Photoshop 2024
+Removed 1 app · 4.20GB: Photoshop 2024
 ======================================================================
 ```
 
@@ -514,4 +514,4 @@ Raycast 裝好後要手動設定一次：
 
 ## 開源授權條款
 
-Mole 基於 GPL-3.0 條款開源（詳見 [LICENSE](LICENSE)），任何修改與發布的版本需要保持相同的開源授權條款，如果你將 Mole 分叉為其他獨立產品，請使用不同名稱並註明出處。[Mole for Mac](https://mole.fit) 是獨立的閉源 App，Mole 會長期維護下去。
+Mole 基於 GPL-3.0 條款開源（詳見 [LICENSE](LICENSE)），任何修改與發布的版本需要保持相同的開源授權條款，如果你將 Mole 分叉為其他獨立產品，請使用不同名稱並註明出處，詳見 [TRADEMARK.md](TRADEMARK.md)。[Mole for Mac](https://mole.fit) 是獨立的閉源 App，Mole 會長期維護下去。

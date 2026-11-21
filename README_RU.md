@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Просмотреть временные кат�
 Чтобы установить конкретный выпуск, передайте любой тег со [страницы релизов](https://github.com/tw93/mole/releases), с ведущей `V` или без неё. Чтобы следить за веткой разработки, передайте `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.73.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
@@ -247,7 +247,7 @@ D choose personal data
 
 ======================================================================
 Uninstall complete
-Removed 1 app, freed 4.20GB: Photoshop 2024
+Removed 1 app · 4.20GB: Photoshop 2024
 ======================================================================
 ```
 
@@ -514,4 +514,4 @@ curl -fsSL https://raw.githubusercontent.com/tw93/Mole/main/scripts/setup-quick-
 
 ## Лицензия
 
-Mole представляет собой программное обеспечение с открытым исходным кодом под лицензией GPL-3.0; подробности в [LICENSE](LICENSE). Любая изменённая версия, которую вы распространяете, должна оставаться под той же лицензией. Если вы делаете форк Mole, пожалуйста, дайте ему другое название и укажите Mole как первоисточник. [Mole for Mac](https://mole.fit) является отдельным проприетарным приложением, а Mole здесь надолго.
+Mole представляет собой программное обеспечение с открытым исходным кодом под лицензией GPL-3.0; подробности в [LICENSE](LICENSE). Любая изменённая версия, которую вы распространяете, должна оставаться под той же лицензией. Если вы делаете форк Mole, пожалуйста, дайте ему другое название и укажите Mole как первоисточник; см. [TRADEMARK.md](TRADEMARK.md). [Mole for Mac](https://mole.fit) является отдельным проприетарным приложением, а Mole здесь надолго.

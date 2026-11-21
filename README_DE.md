@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Temporäre Benutzerverzeichnisse prüfen
 Um eine bestimmte Version zu installieren, übergib ein beliebiges Tag von der [Releases-Seite](https://github.com/tw93/mole/releases), mit oder ohne führendes `V`. Um den Entwicklungszweig zu nutzen, übergib `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.73.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
@@ -247,7 +247,7 @@ D choose personal data
 
 ======================================================================
 Uninstall complete
-Removed 1 app, freed 4.20GB: Photoshop 2024
+Removed 1 app · 4.20GB: Photoshop 2024
 ======================================================================
 ```
 
@@ -514,4 +514,4 @@ Diese wunderbaren Unterstützer haben das bereits getan 🐱
 
 ## Lizenz
 
-Mole ist Open Source unter der GPL-3.0; siehe [LICENSE](LICENSE). Modifizierte und weitergegebene Versionen müssen unter derselben Lizenz verbleiben. Bei einem Fork verwende bitte einen eigenständigen Namen und nenne Mole als Upstream-Quelle. [Mole for Mac](https://mole.fit) ist eine separate proprietäre App. Mole bleibt langfristig bestehen.
+Mole ist Open Source unter der GPL-3.0; siehe [LICENSE](LICENSE). Modifizierte und weitergegebene Versionen müssen unter derselben Lizenz verbleiben. Bei einem Fork verwende bitte einen eigenständigen Namen und nenne Mole als Upstream-Quelle; siehe [TRADEMARK.md](TRADEMARK.md). [Mole for Mac](https://mole.fit) ist eine separate proprietäre App. Mole bleibt langfristig bestehen.

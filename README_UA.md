@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Переглянути тимчасові тек�
 Щоб встановити конкретний реліз, передайте будь-який тег зі [сторінки релізів](https://github.com/tw93/mole/releases), з початковою `V` або без неї. Щоб стежити за гілкою розробки, передайте `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.73.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
@@ -247,7 +247,7 @@ D choose personal data
 
 ======================================================================
 Uninstall complete
-Removed 1 app, freed 4.20GB: Photoshop 2024
+Removed 1 app · 4.20GB: Photoshop 2024
 ======================================================================
 ```
 
@@ -514,4 +514,4 @@ Raycast потребує одного ручного налаштування:
 
 ## Ліцензія
 
-Mole є відкритим програмним забезпеченням під ліцензією GPL-3.0; подробиці в [LICENSE](LICENSE). Будь-яка змінена версія, яку ви поширюєте, має залишатися під тією самою ліцензією. Якщо ви робите форк Mole, будь ласка, дайте йому іншу назву й зазначте Mole як першоджерело. [Mole for Mac](https://mole.fit) є окремим пропрієтарним застосунком, а Mole тут надовго.
+Mole є відкритим програмним забезпеченням під ліцензією GPL-3.0; подробиці в [LICENSE](LICENSE). Будь-яка змінена версія, яку ви поширюєте, має залишатися під тією самою ліцензією. Якщо ви робите форк Mole, будь ласка, дайте йому іншу назву й зазначте Mole як першоджерело; див. [TRADEMARK.md](TRADEMARK.md). [Mole for Mac](https://mole.fit) є окремим пропрієтарним застосунком, а Mole тут надовго.

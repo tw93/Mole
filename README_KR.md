@@ -105,7 +105,7 @@ mo analyze /private/tmp      # 임시 디렉터리 검토(자동 삭제 없음)
 특정 버전을 설치하려면 [릴리스 페이지](https://github.com/tw93/mole/releases)의 태그를 지정하세요(앞자리 `V` 유무 무관). 최신 개발 브랜치를 설치하려면 `main`을 전달합니다:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.51.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.73.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
@@ -247,7 +247,7 @@ D choose personal data
 
 ======================================================================
 Uninstall complete
-Removed 1 app, freed 4.20GB: Photoshop 2024
+Removed 1 app · 4.20GB: Photoshop 2024
 ======================================================================
 ```
 
@@ -514,4 +514,4 @@ Mole 제작에 힘을 보태주신 모든 기여자분들께 감사드립니다.
 
 ## 라이선스
 
-Mole은 GPL-3.0 라이선스 하에 오픈소스로 공개되어 있습니다. 자세한 내용은 [LICENSE](LICENSE)를 참조하세요. 코드를 수정하여 배포하는 경우 동일한 라이선스를 유지해야 합니다. 프로젝트를 포크하는 경우 고유한 이름을 사용하고 Mole을 원출처로 명시해 주세요. [Mole for Mac](https://mole.fit)은 별도의 비공개 소스 앱입니다. Mole은 앞으로도 계속 유지보수됩니다.
+Mole은 GPL-3.0 라이선스 하에 오픈소스로 공개되어 있습니다. 자세한 내용은 [LICENSE](LICENSE)를 참조하세요. 코드를 수정하여 배포하는 경우 동일한 라이선스를 유지해야 합니다. 프로젝트를 포크하는 경우 고유한 이름을 사용하고 Mole을 원출처로 명시해 주세요. 자세한 내용은 [TRADEMARK.md](TRADEMARK.md)를 참조하세요. [Mole for Mac](https://mole.fit)은 별도의 비공개 소스 앱입니다. Mole은 앞으로도 계속 유지보수됩니다.
