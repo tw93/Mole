@@ -200,6 +200,38 @@ EOF
     [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
 }
 
+@test "clean_tart_caches keeps the prune log when TERM interrupts post-prune sizing" {
+    local case_home="$BATS_TEST_TMPDIR/tart-oplog"
+    mkdir -p "$case_home/.tart/cache/OCIs"
+    # shellcheck disable=SC2016  # Body is written to the fake script verbatim.
+    mole_test_fake_command tart 'printf "%s\n" "$*" > "$HOME/tart-pruned"'
+
+    run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_CURRENT_COMMAND=clean \
+        MOLE_DRY_RUN=0 MO_NO_OPLOG=0 /bin/bash --noprofile --norc << 'EOF'
+source "$PROJECT_ROOT/bin/clean.sh"
+CLEAN_STATUS_ON_SUCCESS=done
+mole_report_program_status() { printf 'clean status: %s\n' "$1"; }
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() {
+    if [[ -f "$HOME/tart-pruned" ]]; then
+        # Inside the sizing subshell, $$ still names the shell with the TERM trap.
+        kill -TERM "$$" || return $?
+    fi
+    echo 1024
+}
+clean_tart_caches
+EOF
+
+    [ "$status" -eq 143 ] || { printf 'Expected exit 143, got %s\n%s\n' "$status" "$output"; return 1; }
+    [[ "$output" == *"clean status: idle"* ]] || { echo "$output"; return 1; }
+    [ "$(< "$case_home/tart-pruned")" = "prune --entries caches --older-than 30" ] || return 1
+
+    local oplog="$case_home/Library/Logs/mole/operations.log"
+    [ "$(wc -l < "$oplog")" -eq 1 ] || { echo "Expected one operation log row"; cat "$oplog"; return 1; }
+    [[ "$(< "$oplog")" == *"] [clean] REMOVED $case_home/.tart/cache (owner command: Tart caches)" ]]
+}
+
 @test "clean_tart_caches stops when the native prune is interrupted" {
     # Ctrl-C while `tart prune` holds the terminal reaches only the child. A
     # signal stops cleanup before the size recount; a plain failure or a
