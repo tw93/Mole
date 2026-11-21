@@ -347,8 +347,8 @@ mole_purge_resolve_path_case() {
 }
 
 # Whether BSD find knows the dataless file flag (macOS 10.15 and later). The
-# answer is memoized per process; a signal during the probe is returned so the
-# caller can stop, and any other failure means "no", which keeps the old walk.
+# answer is memoized per process. Report a timeout separately so a caller can
+# keep a target when support is unknown, and propagate signals.
 mole_find_knows_dataless() {
     if [[ -z "${_MOLE_FIND_KNOWS_DATALESS:-}" ]]; then
         local probe_rc=0
@@ -357,10 +357,13 @@ mole_find_knows_dataless() {
         mole_rc_signal "$probe_rc" && return "$probe_rc"
         if [[ $probe_rc -eq 0 ]]; then
             _MOLE_FIND_KNOWS_DATALESS=yes
+        elif mole_rc_timeout "$probe_rc"; then
+            _MOLE_FIND_KNOWS_DATALESS=timeout
         else
             _MOLE_FIND_KNOWS_DATALESS=no
         fi
     fi
+    [[ "$_MOLE_FIND_KNOWS_DATALESS" != timeout ]] || return 124
     [[ "$_MOLE_FIND_KNOWS_DATALESS" == yes ]]
 }
 
