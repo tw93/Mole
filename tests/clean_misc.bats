@@ -166,6 +166,40 @@ EOF
     [[ "$output" == *"TOTALS=0:3072:1"* ]] || { echo "$output"; return 1; }
 }
 
+@test "clean_tart_caches logs a successful prune in operations.log (#2056)" {
+    rm -rf "$HOME/.tart"
+    mkdir -p "$HOME/.tart/cache/OCIs"
+    local script="$HOME/tart-oplog.sh"
+    cat > "$script" << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+pgrep() { return 1; }
+is_path_whitelisted() { return 1; }
+get_path_size_kb() { echo 1024; }
+run_with_timeout() { shift; "$@"; }
+tart() { return "$TART_PRUNE_RC"; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+clean_tart_caches
+EOF
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false TART_PRUNE_RC=0 \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Tart caches · pruned"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$HOME/.tart/cache|owner command: Tart caches"* ]] || { echo "$output"; return 1; }
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false TART_PRUNE_RC=7 \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Tart caches · prune failed"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_tart_caches stops when the native prune is interrupted" {
     # Ctrl-C while `tart prune` holds the terminal reaches only the child. A
     # signal stops cleanup before the size recount; a plain failure or a

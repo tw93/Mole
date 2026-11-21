@@ -356,6 +356,7 @@ clean_github_cli_cache() {
     if [[ $clear_status -eq 0 ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} GitHub CLI cache"
         note_activity
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$cache_path" "owner command: GitHub CLI cache"
         return 0
     fi
     if mole_rc_timeout_or_signal "$clear_status"; then
@@ -1183,6 +1184,10 @@ clean_go_cache_root() {
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $display_name"
         fi
         note_activity
+        # A dry run ran `go clean -n`, which changes nothing.
+        if [[ "$DRY_RUN" != "true" ]]; then
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$cache_root" "owner command: $display_name"
+        fi
         if mole_rc_signal "$after_rc"; then
             _mole_record_clean_cancellation "$after_rc" "$display_name"
             return "$after_rc"
@@ -3166,6 +3171,8 @@ clean_dev_mobile() {
                             local recount_exit_code=0
                             unavailable_devices_output=$(_run_simctl "$MOLE_TIMEOUT_PKG_LIST_SEC" list devices unavailable 2> /dev/null) || recount_exit_code=$?
                             stop_section_spinner
+                            # The delete succeeded, so it is logged whatever the recount finds.
+                            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "simctl delete unavailable" "owner command"
                             if [[ $recount_exit_code -ne 0 ]]; then
                                 echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode unavailable simulators · cleanup completed, unable to verify remaining devices"
                                 debug_log "simctl recount returned $recount_exit_code"

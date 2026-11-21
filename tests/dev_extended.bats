@@ -3113,6 +3113,70 @@ EOF
     [[ "$output" == *"TOTALS=1:2048:1"* ]] || { echo "$output"; return 1; }
 }
 
+@test "clean_dev_mobile logs simctl delete unavailable in operations.log (#2056)" {
+    local udid="ABCDEF01-2345-6789-ABCD-EF0123456789"
+    local case_home="$HOME/simctl-delete-oplog"
+    local script="$case_home/run.sh"
+    mkdir -p "$case_home/Library/Developer/CoreSimulator/Devices/$udid"
+    cat > "$script" << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+check_android_ndk() { :; }
+clean_xcode_documentation_cache() { :; }
+clean_xcode_system_coresimulator_caches() { :; }
+clean_xcode_xctest_devices() { :; }
+clean_xcode_device_support() { :; }
+safe_clean() { :; }
+get_path_size_kb() { echo "2048"; }
+note_activity() { :; }
+debug_log() { :; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+cleanup_result_color_kb() { printf '%s' "$GREEN"; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+xcrun() { :; }
+_resolve_simctl_developer_dir() {
+    _MOLE_SIMCTL_DEVELOPER_DIR="$HOME/Xcode.app/Contents/Developer"
+    _MOLE_SIMCTL_RESOLUTION_STATUS="ready"
+}
+_run_simctl() {
+    shift
+    case "$*" in
+        "list devices unavailable")
+            [[ -e "$SIMCTL_DELETED" ]] ||
+                printf '    iPhone 12 (ABCDEF01-2345-6789-ABCD-EF0123456789) (Shutdown) (unavailable)\n'
+            return 0
+            ;;
+        "delete unavailable")
+            [[ "$SIMCTL_DELETE_RC" -eq 0 ]] || return "$SIMCTL_DELETE_RC"
+            : > "$SIMCTL_DELETED"
+            return 0
+            ;;
+    esac
+    return 1
+}
+clean_dev_mobile
+EOF
+
+    run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false \
+        MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 \
+        SIMCTL_DELETED="$case_home/simctl-deleted" SIMCTL_DELETE_RC=0 \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Xcode unavailable simulators · removed 1"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|simctl delete unavailable|owner command"* ]] || { echo "$output"; return 1; }
+
+    rm -f "$case_home/simctl-deleted"
+    run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN=false \
+        MOLE_CURRENT_COMMAND=clean MOLE_CLEAN_CANCEL_STATUS=0 \
+        SIMCTL_DELETED="$case_home/simctl-deleted" SIMCTL_DELETE_RC=1 \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Xcode unavailable simulators cleanup failed"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"|simctl delete unavailable|"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_dev_mobile names a macOS privacy refusal from simctl delete unavailable" {
     # On macOS 27 CoreSimulator cannot move a device's data folder and simctl
     # says "You don't have permission" with an Operation not permitted cause.

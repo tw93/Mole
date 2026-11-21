@@ -1115,6 +1115,58 @@ EOF
     [[ "$output" == *"Homebrew cleanup"*"88.5MB"* ]] || { echo "$output"; return 1; }
 }
 
+@test "clean_homebrew logs a successful cleanup in operations.log (#2056)" {
+    local script="$HOME/brew-oplog.sh"
+    cat > "$script" << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/brew.sh"
+
+mkdir -p "$HOME/.cache/mole"
+rm -f "$HOME/.cache/mole/brew_last_cleanup"
+
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+note_activity() { :; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+run_with_timeout() {
+    shift
+    "$@"
+}
+brew() {
+    case "$1" in
+        cleanup)
+            case "$BREW_CLEANUP_RESULT" in
+                sized)
+                    echo "Removing: /opt/homebrew/Cellar/node/24.1.0... (2,011 files, 88.5MB)"
+                    echo "==> This operation has freed approximately 88.5MB of disk space."
+                    ;;
+                failed) return 1 ;;
+            esac
+            return 0
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+clean_homebrew
+EOF
+
+    run env BREW_CLEANUP_RESULT=sized /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|brew cleanup|owner command: 88.5MB"* ]] || { echo "$output"; return 1; }
+
+    # A cleanup that printed no size still ran, as with the Docker prunes.
+    run env BREW_CLEANUP_RESULT=quiet /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|brew cleanup|owner command"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"owner command:"* ]] || { echo "$output"; return 1; }
+
+    run env BREW_CLEANUP_RESULT=failed /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+}
+
 @test "brew_cleanup_size_kb converts Homebrew's decimal sizes and rejects other text (#2047)" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

@@ -165,6 +165,39 @@ EOF
     [ "$status" -eq 1 ] || return 1
 }
 
+@test "clean_github_cli_cache logs a successful owner cleanup in operations.log (#2056)" {
+    local trace="$HOME/gh-oplog.trace"
+    local script="$HOME/gh-oplog.sh"
+    mkdir -p "$HOME/.cache/gh"
+    make_gh_cache_stub
+    cat > "$script" <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+run_with_timeout() { shift; "$@"; }
+github_cli_process_state() { return 1; }
+is_path_whitelisted() { return 1; }
+should_protect_path() { return 1; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+clean_github_cli_cache
+EOF
+
+    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
+        GH_TRACE="$trace" /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$HOME/.cache/gh|owner command: GitHub CLI cache"* ]] || { echo "$output"; return 1; }
+
+    run env HOME="$HOME" PATH="$HOME/bin:/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" \
+        GH_TRACE="$trace" GH_CLEAR_RC=1 /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GitHub CLI cache · stopped (owner cleanup failed)"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_github_cli_cache honors custom XDG cache whitelists" {
     local trace="$HOME/gh-xdg-whitelist.trace"
     local xdg_cache="$HOME/custom-cache"
@@ -3552,6 +3585,52 @@ EOF
     grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
     [[ "$(cat "$trace")" != *"-modcache"* ]] || return 1
     rm -f "$trace"
+    rm -rf "$module_root" "$build_root"
+}
+
+@test "clean_dev_go logs each owner cleanup in operations.log, but not its dry run (#2056)" {
+    local module_root="$HOME/go-module-oplog"
+    local build_root="$HOME/go-build-oplog"
+    local script="$HOME/go-oplog.sh"
+    mkdir -p "$module_root" "$build_root"
+    cat > "$script" <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN="$GO_DRY_RUN"
+go() { :; }
+run_with_timeout() {
+    shift
+    if [[ "$1" == "go" && "$2" == "env" ]]; then
+        if [[ "$3" == "GOMODCACHE" ]]; then
+            printf '%s\n' "$GO_MODULE_ROOT"
+        else
+            printf '%s\n' "$GO_BUILD_ROOT"
+        fi
+    fi
+    return 0
+}
+is_path_whitelisted() { return 1; }
+should_protect_path() { return 1; }
+go_cache_process_state() { return 1; }
+note_activity() { :; }
+log_operation() { echo "OPLOG:$2|$3|$4"; }
+clean_dev_go
+EOF
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" GO_DRY_RUN=false \
+        GO_MODULE_ROOT="$module_root" GO_BUILD_ROOT="$build_root" \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$module_root|owner command: Go module cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OPLOG:REMOVED|$build_root|owner command: Go build cache"* ]] || { echo "$output"; return 1; }
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" GO_DRY_RUN=true \
+        GO_MODULE_ROOT="$module_root" GO_BUILD_ROOT="$build_root" \
+        /bin/bash --noprofile --norc "$script"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Go build cache · would clean"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"OPLOG:"* ]] || { echo "$output"; return 1; }
     rm -rf "$module_root" "$build_root"
 }
 
