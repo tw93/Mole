@@ -3299,6 +3299,7 @@ note_activity() { :; }
 debug_log() { :; }
 should_protect_path() { return 1; }
 bundle_has_installed_app() { return 1; }
+mole_spotlight_answers_bundle_queries() { return 0; }
 _privileged_helper_is_developer_id_signed() {
     printf 'SIGNATURE_CHECK:%s\n' "$1"
     [[ "$SIGNED" == "1" ]]
@@ -3348,6 +3349,95 @@ EOF
     done
 }
 
+@test "clean_orphaned_system_services offers no live helper when Spotlight cannot answer" {
+    # The resolver walks only the known app roots, so a helper's app installed
+    # elsewhere (a Downloads copy, an external disk) is found only through
+    # Spotlight. A Spotlight that cannot find Finder (indexing off) proves
+    # nothing by missing, so a signed live helper stays, through the launchd
+    # plist and straight from the helper root; Mole Mac's root helper refuses
+    # the same way. The same fixture with Spotlight answering removes both, so
+    # the refusal cannot pass by never reaching the question.
+    local spotlight
+    for spotlight in no yes; do
+    run env SPOTLIGHT="$spotlight" HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
+        DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { printf 'DEBUG:%s\n' "$*"; }
+should_protect_path() { return 1; }
+bundle_has_installed_app() { return 1; }
+mole_spotlight_answers_bundle_queries() {
+    printf 'SPOTLIGHT_ASKED\n'
+    [[ "$SPOTLIGHT" == yes ]]
+}
+_privileged_helper_is_developer_id_signed() { return 0; }
+_privileged_helper_root_exists() { return 0; }
+
+tmp_dir=$(mktemp -d)
+tmp_plist="$tmp_dir/com.vendor.live.plist"
+helper_binary="/Library/PrivilegedHelperTools/com.vendor.live.helper"
+/usr/libexec/PlistBuddy -c "Add :Program string $helper_binary" "$tmp_plist" > /dev/null 2>&1
+bare_helper="$tmp_dir/com.vendor.bare.helper"
+touch "$bare_helper"
+
+_mole_materialize_bounded_sudo_find() {
+    if [[ "$3" == "/Library/LaunchDaemons" ]]; then
+        printf '%s\0' "$tmp_plist" > "$1"
+    elif [[ "$3" == "/Library/PrivilegedHelperTools" ]]; then
+        printf '%s\0' "$bare_helper" > "$1"
+    else
+        : > "$1"
+    fi
+}
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        test)
+            [[ "${2:-}" == "-e" && "${3:-}" == "$helper_binary" ]] || return 1
+            return 0
+            ;;
+        find)
+            case "${2:-}" in
+                /Library/PrivilegedHelperTools) printf '%s\0' "$bare_helper" ;;
+                *) : ;;
+            esac
+            return 0
+            ;;
+        /usr/libexec/PlistBuddy | /usr/bin/stat) command "$@" ;;
+        du) printf '4\n' ;;
+        launchctl) return 0 ;;
+        *) return 0 ;;
+    esac
+}
+safe_sudo_remove() {
+    printf 'REMOVE:%s\n' "$1"
+    return 0
+}
+
+clean_orphaned_system_services
+EOF
+    [ "$status" -eq 0 ] || { echo "$spotlight: $output"; return 1; }
+    [[ $(grep -c SPOTLIGHT_ASKED <<< "$output") -eq 1 ]] || { echo "$spotlight: Spotlight asked other than once: $output"; return 1; }
+    # The scan and the removal recheck each ask; "Found" is the scan's count,
+    # so a scan that offers a live helper fails even though the recheck
+    # would still keep it.
+    if [[ "$spotlight" == no ]]; then
+        [[ "$output" != *"DEBUG:Found "* ]] || { echo "the scan offered a live helper Spotlight could not rule out: $output"; return 1; }
+        [[ "$output" != *"REMOVE:"* ]] || { echo "offered a live helper Spotlight could not rule out: $output"; return 1; }
+    else
+        [[ "$output" == *"DEBUG:Found 2 orphaned system services"* ]] || { echo "the scan did not offer both rows: $output"; return 1; }
+        [[ "$output" == *"REMOVE:"*"com.vendor.live.plist"* ]] || { echo "the launchd row never reached the question: $output"; return 1; }
+        [[ "$output" == *"REMOVE:"*"com.vendor.bare.helper"* ]] || { echo "the bare helper never reached the question: $output"; return 1; }
+    fi
+    done
+}
+
 @test "clean_orphaned_system_services lists a bare helper only when it is Developer ID signed" {
     # Straight from PrivilegedHelperTools: an unsigned binary and a helper-root
     # .plist beside one stay; a signed vendor helper whose app is gone is
@@ -3365,6 +3455,7 @@ note_activity() { :; }
 debug_log() { :; }
 should_protect_path() { return 1; }
 bundle_has_installed_app() { return 1; }
+mole_spotlight_answers_bundle_queries() { return 0; }
 _privileged_helper_is_developer_id_signed() { [[ "$1" == *com.vendor.gone.helper ]]; }
 _privileged_helper_root_exists() { return 0; }
 
@@ -3488,6 +3579,7 @@ note_activity() { :; }
 debug_log() { :; }
 should_protect_path() { return 1; }
 bundle_has_installed_app() { return 1; }
+mole_spotlight_answers_bundle_queries() { return 0; }
 
 tmp_dir=$(mktemp -d)
 tmp_plist="$tmp_dir/com.example.helper.plist"

@@ -51,6 +51,31 @@ mole_flat_bundle_info_plist() {
     printf '%s\n' "$info"
 }
 
+# Return 0 when Spotlight answers a bundle-id query at all, proven by finding
+# Finder; 1 when it does not (indexing off, a broken store, a timeout). A
+# Spotlight miss alone cannot rule out an app installed outside the scanned
+# roots, so callers that delete a live service ask this before trusting one.
+# Statuses of 128 and above are signals and are passed on.
+mole_spotlight_answers_bundle_queries() {
+    local deadline_seconds="${1:-}"
+    command -v mdfind > /dev/null 2>&1 || return 1
+    local probe_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
+    if [[ -n "$deadline_seconds" ]] && declare -f _mole_timeout_with_deadline > /dev/null 2>&1; then
+        probe_timeout=$(_mole_timeout_with_deadline "$probe_timeout" "$deadline_seconds") || return 1
+    fi
+    local answer="" probe_rc=0
+    if declare -f run_with_timeout > /dev/null 2>&1; then
+        answer=$(run_with_timeout "$probe_timeout" mdfind -onlyin /System/Library/CoreServices \
+            "kMDItemCFBundleIdentifier == 'com.apple.finder'" 2> /dev/null) || probe_rc=$?
+    else
+        answer=$(mdfind -onlyin /System/Library/CoreServices \
+            "kMDItemCFBundleIdentifier == 'com.apple.finder'" 2> /dev/null) || probe_rc=$?
+    fi
+    [[ $probe_rc -ge 128 ]] && return "$probe_rc"
+    [[ $probe_rc -eq 0 ]] || return 1
+    /usr/bin/grep -qxF /System/Library/CoreServices/Finder.app <<< "$answer"
+}
+
 # Return 0 if some installed app either has the given CFBundleIdentifier, or
 # registers a privileged helper with that ID via SMJobBless
 # (Contents/Library/LaunchServices/<id>). Return 1 otherwise.
@@ -65,39 +90,6 @@ bundle_has_installed_app() {
     # Reject malformed IDs to avoid feeding junk into mdfind/find.
     mole_is_reverse_dns_bundle_id "$bundle_id" || return 1
 
-    # Fast path: Spotlight. Gated with a timeout because mdfind has been known
-    # to wedge on misconfigured indexes.
-    if command -v mdfind > /dev/null 2>&1; then
-        # Ordinary lookup failures fall through to the filesystem scan below;
-        # signals are propagated so a destructive caller cannot ignore Ctrl-C.
-        local hit=""
-        if declare -f run_with_timeout > /dev/null 2>&1; then
-            local mdfind_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
-            if [[ -n "$deadline_seconds" ]] && declare -f _mole_timeout_with_deadline > /dev/null 2>&1; then
-                mdfind_timeout=$(_mole_timeout_with_deadline "$mdfind_timeout" "$deadline_seconds") || return 0
-            fi
-            local mdfind_rc=0
-            hit=$(run_with_timeout "$mdfind_timeout" mdfind \
-                "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null) || mdfind_rc=$?
-            [[ $mdfind_rc -ge 128 ]] && return "$mdfind_rc"
-            hit="${hit%%$'\n'*}"
-        else
-            local mdfind_rc=0
-            hit=$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2> /dev/null) || mdfind_rc=$?
-            [[ $mdfind_rc -ge 128 ]] && return "$mdfind_rc"
-            hit="${hit%%$'\n'*}"
-        fi
-        [[ -n "$hit" ]] && return 0
-    fi
-
-    # Slow path: walk known app roots. Reads each Info.plist CFBundleIdentifier
-    # and checks for an SMJobBless helper registered under this bundle ID. This
-    # covers the two classes of false positive we saw:
-    #   - App-owned launch agents whose bundle ID Spotlight failed to index
-    #     (e.g. org.keepassxc.KeePassXC from Homebrew) -- issue #732
-    #   - Privileged helpers embedded in a parent .app under
-    #     Contents/Library/LaunchServices/<helper-bundle-id> (e.g. the Adobe
-    #     ARMDC helpers shipped inside Adobe Acrobat DC.app) -- issue #733
     # Bundle IDs are case-insensitive on macOS and helper suffixes ship in both
     # cases (com.foo.app.helper, com.stclairsoft.AppTamer.Helper), so derive the
     # parent ID and compare identifiers on lowercased copies. See #1210.
@@ -112,6 +104,46 @@ bundle_has_installed_app() {
             break
         fi
     done
+
+    # Spotlight asks for the parent too: an app installed outside every root
+    # below (a Downloads copy, an external disk) answers only to its own id.
+    local spotlight_query="kMDItemCFBundleIdentifier == '$bundle_id'c"
+    [[ -z "$parent_id_lower" ]] ||
+        spotlight_query="$spotlight_query || kMDItemCFBundleIdentifier == '$parent_id_lower'c"
+
+    # Fast path: Spotlight. Gated with a timeout because mdfind has been known
+    # to wedge on misconfigured indexes.
+    if command -v mdfind > /dev/null 2>&1; then
+        # Ordinary lookup failures fall through to the filesystem scan below;
+        # signals are propagated so a destructive caller cannot ignore Ctrl-C.
+        local hit=""
+        if declare -f run_with_timeout > /dev/null 2>&1; then
+            local mdfind_timeout="$MOLE_TIMEOUT_QUICK_DETECT_SEC"
+            if [[ -n "$deadline_seconds" ]] && declare -f _mole_timeout_with_deadline > /dev/null 2>&1; then
+                mdfind_timeout=$(_mole_timeout_with_deadline "$mdfind_timeout" "$deadline_seconds") || return 0
+            fi
+            local mdfind_rc=0
+            hit=$(run_with_timeout "$mdfind_timeout" mdfind \
+                "$spotlight_query" 2> /dev/null) || mdfind_rc=$?
+            [[ $mdfind_rc -ge 128 ]] && return "$mdfind_rc"
+            hit="${hit%%$'\n'*}"
+        else
+            local mdfind_rc=0
+            hit=$(mdfind "$spotlight_query" 2> /dev/null) || mdfind_rc=$?
+            [[ $mdfind_rc -ge 128 ]] && return "$mdfind_rc"
+            hit="${hit%%$'\n'*}"
+        fi
+        [[ -n "$hit" ]] && return 0
+    fi
+
+    # Slow path: walk known app roots. Reads each Info.plist CFBundleIdentifier
+    # and checks for an SMJobBless helper registered under this bundle ID. This
+    # covers the two classes of false positive we saw:
+    #   - App-owned launch agents whose bundle ID Spotlight failed to index
+    #     (e.g. org.keepassxc.KeePassXC from Homebrew) -- issue #732
+    #   - Privileged helpers embedded in a parent .app under
+    #     Contents/Library/LaunchServices/<helper-bundle-id> (e.g. the Adobe
+    #     ARMDC helpers shipped inside Adobe Acrobat DC.app) -- issue #733
 
     local -a mapped_app_bundles=()
     case "$bundle_id" in

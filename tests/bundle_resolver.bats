@@ -422,3 +422,54 @@ EOF
 
     [ "$status" -eq 0 ]
 }
+
+@test "bundle_has_installed_app asks Spotlight for a helper's parent id too" {
+    # A helper's app installed outside every scanned root answers Spotlight
+    # only to its own id, so com.example.thing.helper must also ask for
+    # com.example.thing.
+    mole_test_fake_command mdfind 'case "$1" in
+    *"== '"'"'com.example.thing'"'"'c"*) echo "/Users/someone/Downloads/Thing.app" ;;
+esac'
+    run env HOME="$FAKE_HOME" FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" PATH="$PATH" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/timeout.sh"
+source "$PROJECT_ROOT/lib/core/bundle_resolver.sh"
+_MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS")
+rc=0
+bundle_has_installed_app "com.example.thing.helper" || rc=$?
+echo "RC:$rc"
+rc=0
+bundle_has_installed_app "com.example.other.helper" || rc=$?
+echo "OTHER:$rc"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC:0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"OTHER:1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "mole_spotlight_answers_bundle_queries needs Finder in Spotlight's answer" {
+    local answer
+    for answer in finder empty fail; do
+        case "$answer" in
+            finder) mole_test_fake_command mdfind '[ "$1" = -onlyin ] && [ "$2" = /System/Library/CoreServices ] && echo /System/Library/CoreServices/Finder.app' ;;
+            empty) mole_test_fake_command mdfind 'exit 0' ;;
+            fail) mole_test_fake_command mdfind 'echo /System/Library/CoreServices/Finder.app; exit 1' ;;
+        esac
+        run env PROJECT_ROOT="$PROJECT_ROOT" PATH="$PATH" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/base.sh"
+source "$PROJECT_ROOT/lib/core/timeout.sh"
+source "$PROJECT_ROOT/lib/core/bundle_resolver.sh"
+rc=0
+mole_spotlight_answers_bundle_queries || rc=$?
+echo "RC:$rc"
+EOF
+        [ "$status" -eq 0 ] || { echo "$answer: $output"; return 1; }
+        if [[ "$answer" == finder ]]; then
+            [[ "$output" == *"RC:0"* ]] || { echo "$answer: $output"; return 1; }
+        else
+            [[ "$output" == *"RC:1"* ]] || { echo "$answer: $output"; return 1; }
+        fi
+    done
+}
