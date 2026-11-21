@@ -3597,12 +3597,11 @@ SCRIPT
 }
 
 @test "sort: cloud marker stays aligned across menu and full-path arrays" {
-	mkdir -p "$HOME/www/local-project/node_modules"
-	mkdir -p "$HOME/Library/CloudStorage/TestProvider/cloud-project/node_modules"
-	echo '{}' > "$HOME/www/local-project/package.json"
-	echo '{}' > "$HOME/Library/CloudStorage/TestProvider/cloud-project/package.json"
-	dd if=/dev/zero of="$HOME/www/local-project/node_modules/data" bs=1024 count=200 2>/dev/null
-	dd if=/dev/zero of="$HOME/Library/CloudStorage/TestProvider/cloud-project/node_modules/data" bs=1024 count=5 2>/dev/null
+	local local_artifact="$HOME/www/local-project/node_modules"
+	local cloud_artifact="$HOME/Library/CloudStorage/TestProvider/cloud-project/node_modules"
+	mkdir -p "$local_artifact" "$cloud_artifact"
+	echo '{}' > "${local_artifact%/*}/package.json"
+	echo '{}' > "${cloud_artifact%/*}/package.json"
 
 	local capture_file script_file
 	capture_file=$(mktemp "$HOME/sort_cloud_capture.XXXXXX")
@@ -3611,11 +3610,31 @@ SCRIPT
 	cat > "$script_file" << SCRIPT
 set -euo pipefail
 source "$PROJECT_ROOT/lib/clean/project.sh"
-purge_node_modules_is_protected() { return 1; }
 mkdir -p "$HOME/.cache/mole"
 export XDG_CACHE_HOME="$HOME/.cache"
 export TERM="dumb"
 PURGE_SEARCH_PATHS=("$HOME/www" "$HOME/Library/CloudStorage")
+
+# Give the menu two verified candidates so host probes cannot drop a row.
+# CloudStorage sorts before www at discovery, so the larger local row must move first.
+scan_purge_targets() {
+	local artifact
+	case "\$1" in
+		"$HOME/www") artifact="$local_artifact" ;;
+		"$HOME/Library/CloudStorage") artifact="$cloud_artifact" ;;
+		*) return 1 ;;
+	esac
+	printf '%s\n' "\$artifact" > "\$2"
+	printf '%s\n' "\$artifact" > "\$3"
+}
+get_dir_size_kb() {
+	case "\$1" in
+		"$local_artifact") echo 200 ;;
+		"$cloud_artifact") echo 5 ;;
+		*) return 1 ;;
+	esac
+}
+is_recently_modified() { _PURGE_ACTIVITY_STATE=old; return 1; }
 
 select_purge_categories() {
 	local i=0
