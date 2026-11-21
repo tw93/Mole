@@ -12,10 +12,10 @@ Use **Mole Mac**, **Mole for Windows**, **Mole CLI (macOS)**, **Mole CLI (Window
 
 ## Scope
 
-Six commands: `clean`, `uninstall`, `optimize`, `analyze`, `status`, `purge`.
+Seven commands: `clean`, `uninstall`, `optimize`, `analyze`, `status`, `purge`, `history`, plus `update` and `remove` for Mole itself (`completion` stays out).
 
 - First target: Omarchy (Arch + Hyprland, Wayland). Other Arch-based systems come along. Debian and Ubuntu are covered since 0.4.0 (apt and Snap in clean, optimize and uninstall); Fedora's dnf comes later, and there the package-manager items simply do not appear while user-level features work.
-- First public version (0.1.0): `clean`, `uninstall`, `optimize`, `analyze`, `status`, plus `update` and `remove` for Mole itself, usable on Omarchy. `purge` was moved out of it; `optimize` was pulled into it because the release is not complete without it (both maintainer 2026-11-01). 0.3.0 aligns with Mole CLI (Windows): `purge`, `history`, `clean --gpu-shaders` and the `--debug` session log (maintainer 2026-11-02); `completion` stays out.
+- `clean` includes `--gpu-shaders` and `--debug` session logs; every mutating command writes `~/.local/state/mole/operations.log` for `mo history`.
 - Not built: GUI, paid tier, background agents, schedulers, notifications, package upgrades, `autoremove`, emptying whole package caches, kernel removal, CPU governor / EPP / turbo / `platform_profile` / sysctl / `drop_caches` tuning. When TLP, power-profiles-daemon, tuned or auto-cpufreq is active, Mole only reports it.
 
 ## Safety contract

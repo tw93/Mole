@@ -8,7 +8,7 @@
   <a href="https://github.com/tw93/Mole/releases?q=linux"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-linux&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/linux"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/linux?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -16,7 +16,7 @@
   <img src="./docs/img/mole-linux.png" alt="Mole CLI for Linux menu" width="1000" />
 </p>
 
-Mole CLI for Linux is an early version, and the latest release is [V0.7.0-linux](https://github.com/tw93/Mole/releases/tag/V0.7.0-linux). Issues and feedback are welcome. It is built first for [Omarchy](https://omarchy.org) and other Arch-based systems, and covers Debian and Ubuntu with apt and Snap. On other distributions the user-level parts work and the package-manager items do not appear.
+Mole CLI for Linux is an early release; see the [Linux releases](https://github.com/tw93/Mole/releases?q=linux) for the latest version. Issues and pull requests are welcome. It is built first for [Omarchy](https://omarchy.org) and other Arch-based systems, and covers Debian and Ubuntu with apt and Snap. On other distributions the user-level parts work and the package-manager items do not appear.
 
 This branch has its own code, written for Linux paths and tools. The look, the keys and the safety rules match the macOS CLI on the [main branch](https://github.com/tw93/Mole#readme).
 
@@ -59,6 +59,7 @@ mo optimize                # refresh caches and check the system
 mo optimize --dry-run      # preview
 mo analyze                 # disk map
 mo analyze /mnt/data
+mo analyze --json /mnt/data  # one machine-readable disk report
 mo status                  # live system status
 mo status --json           # one machine-readable snapshot
 mo purge                   # pick project build output to remove
@@ -131,7 +132,7 @@ mo analyze /mnt/data
 
 <img src="./docs/img/analyze-linux.png" alt="mo analyze overview" width="1000" />
 
-An interactive disk explorer with the same layout as the macOS version. Network, FUSE and container mounts are shown but not scanned.
+An interactive disk explorer with the same layout as the macOS version. Network, FUSE and container mounts are shown but not scanned. `mo analyze --json [path]` prints a one-shot report for scripts.
 
 ### Status
 
@@ -164,7 +165,7 @@ Thanks to everyone who helped build Mole. Go follow them. ❤️
 
 ## Support
 
-- If Mole helped you, give it a star, [share it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/linux&text=Mole%20-%20Deep%20clean%20your%20Linux%20desktop.), or open an issue or PR
+- If Mole helped you, give it a star, [share it](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/linux&text=Mole%20-%20Deep%20clean%20your%20Linux%20desktop.), or open an issue or PR
 - Contributions are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first
 - I have two cats, TangYuan and Coke, and if Mole makes your life a little easier, feel free to treat them to <a href="https://cats.tw93.fun?name=Mole" target="_blank">canned food 🥩</a>
 
