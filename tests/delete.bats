@@ -109,6 +109,19 @@ mount_row() {
     [ -d "$HOME/.cache/tool/plain" ]
 }
 
+@test "mount paths escape a backslash byte by byte, even in a multibyte locale" {
+    # In GBK, 0x5C can be the second byte of a character; the kernel still
+    # writes it as \134, so a locale-aware replace would miss the mount.
+    mkdir -p "$TEST_ROOT/loc"
+    localedef -i zh_CN -f GBK "$TEST_ROOT/loc/zh_CN.GBK" > /dev/null 2>&1 || skip "cannot build a GBK locale here"
+    export LOCPATH="$TEST_ROOT/loc"
+    mole_run core 'LC_ALL=zh_CN.GBK; s=$'"'"'\xb5\x5c'"'"'; echo "chars=${#s}"
+        v=""; _mole_escape_mount v $'"'"'/x/\xb5\x5cy'"'"'; printf "%s\n" "$v"'
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "chars=1" ] || skip "GBK locale did not load"
+    [ "${lines[1]}" = $'/x/\xb5\\134y' ]
+}
+
 @test "removal reads the mount table again, whatever snapshot the sizing pass held" {
     local tool="$HOME/.cache/tool" phys
     mkdir -p "$tool/bound/sub" "$tool/plain"

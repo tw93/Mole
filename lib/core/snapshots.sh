@@ -122,7 +122,7 @@ mole_mount_snapshot() {
 # Sets the variable named $1 to $2 escaped the way the kernel writes
 # mountinfo, backslash first. No subshell: clean calls it per cache child.
 _mole_escape_mount() {
-    local s="$2"
+    local LC_ALL=C s="$2"
     s=${s//\\/\\134}
     s=${s// /\\040}
     s=${s//$'\t'/\\011}
