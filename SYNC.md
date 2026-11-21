@@ -422,5 +422,5 @@ Source: Mole CLI (macOS) `3ee2fcbe`. The memory finding now follows the kernel p
 | Mole CLI (macOS) | Implemented in source (`3ee2fcbe`, `9dcee33c`) | `lib/optimize/diagnostics.sh:opt_diag_memory_pressure`, `bin/optimize.sh`; the memory cases in `tests/optimize_perf_diagnosis.bats`, red on the previous diagnostics. |
 | Mole CLI (Linux) | Intentional difference | Source reading on 2026-11-21: `bin/optimize.sh:show_diagnosis` already judges memory from `/proc/pressure/memory` (PSI), never swap, and has no WindowServer or CoreSimulator families; its spinner labels are its own. |
 | Mole CLI (Windows) | Not applicable | No optimize performance diagnosis; memory pressure lives in `cmd/status`. |
-| Mole Mac | Not applicable | No optimize performance diagnosis in the CLI form; the app's status view owns memory. |
+| Mole Mac | Pending (families) | Memory already follows the kernel level: `OptimizeInspector.shouldPurgeMemory` reads `memory_pressure -Q` for warn or critical, not swap. `OptimizeInspector.busyProcessFamilies` still lists WindowServer and CoreSimulator disk images; next check is whether the app should drop them too, a visible change that needs the maintainer's yes. |
 | Mole for Windows | Not applicable | Same as Mole CLI (Windows). |
