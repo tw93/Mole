@@ -66,9 +66,7 @@ opt_diag_family_totals() {
         lower = tolower(cmd)
         if (lower ~ /cloudshell/ || lower ~ /alientsafe/ || lower ~ /aliedr/) return "cloudshell"
         if (lower ~ /(^|\/)syspolicyd([[:space:]]|$)/) return "syspolicyd"
-        if (lower ~ /(^|\/)windowserver([[:space:]]|$)/) return "windowserver"
         if (lower ~ /(^|\/)mds([[:space:]]|$)/ || lower ~ /mdworker/ || lower ~ /mds_stores/ || lower ~ /mdbulkimport/) return "spotlight"
-        if (lower ~ /diskimagesiod/ || lower ~ /simdiskimaged/) return "coresim_disk_images"
         return ""
     }
     {
@@ -81,9 +79,7 @@ opt_diag_family_totals() {
     END {
         printf "cloudshell\t%.1f\n", sums["cloudshell"] + 0
         printf "syspolicyd\t%.1f\n", sums["syspolicyd"] + 0
-        printf "windowserver\t%.1f\n", sums["windowserver"] + 0
         printf "spotlight\t%.1f\n", sums["spotlight"] + 0
-        printf "coresim_disk_images\t%.1f\n", sums["coresim_disk_images"] + 0
     }
     ' <<< "$raw"
 }
@@ -98,9 +94,7 @@ opt_diag_family_label() {
     case "$1" in
         cloudshell) printf '%s\n' "CloudShell / AliEntSafe" ;;
         syspolicyd) printf '%s\n' "syspolicyd" ;;
-        windowserver) printf '%s\n' "WindowServer" ;;
         spotlight) printf '%s\n' "Spotlight indexing" ;;
-        coresim_disk_images) printf '%s\n' "CoreSimulator disk images" ;;
         *) printf '%s\n' "$1" ;;
     esac
 }
@@ -113,14 +107,8 @@ opt_diag_family_note() {
         syspolicyd)
             printf '%s\n' "Gatekeeper and code-signature assessment activity is elevated."
             ;;
-        windowserver)
-            printf '%s\n' "Desktop composition is busy. When another family is higher, treat this as a likely symptom rather than the root cause."
-            ;;
         spotlight)
             printf '%s\n' "Metadata indexing or import work is consuming CPU."
-            ;;
-        coresim_disk_images)
-            printf '%s\n' "Simulator runtime disk-image services are active."
             ;;
         *)
             printf '%s\n' ""
@@ -354,7 +342,11 @@ run_optimize_diagnostics() {
     echo ""
     echo -e "${BLUE}Performance diagnosis${NC}"
 
-    local families="cloudshell syspolicyd windowserver spotlight coresim_disk_images"
+    # Only families that name a cause: Gatekeeper assessment (with its
+    # mounted-image offer below), Spotlight indexing and an enterprise agent.
+    # WindowServer was dropped, being busy because something else is, and so
+    # were CoreSimulator disk-image daemons, which left nothing to act on.
+    local families="cloudshell syspolicyd spotlight"
     local sustained_count=0
     local primary_family=""
     local primary_avg="0.0"
@@ -376,23 +368,24 @@ run_optimize_diagnostics() {
         fi
     done
 
-    # Memory and stuck-process checks run alongside the family CPU scan. They
-    # cover the two shapes the family list cannot see, and each stays silent
-    # when healthy, so a clean machine still prints one reassuring line below.
+    # Idle-VM and stuck-process checks run alongside the family CPU scan.
+    # Each stays silent when healthy, so a clean machine still prints one
+    # reassuring line below. Memory prints earlier, under the System line.
     local extra_findings=0
-    local mem_out runaway_out vm_out
-    mem_out=$(opt_diag_memory_pressure) || true
+    local runaway_out vm_out
     vm_out=$(opt_diag_idle_vm) || true
     runaway_out=$(opt_diag_runaway_process) || true
-    [[ -n "$mem_out" || -n "$vm_out" || -n "$runaway_out" ]] && extra_findings=1
+    [[ -n "$vm_out" || -n "$runaway_out" ]] && extra_findings=1
 
     if [[ -z "$primary_family" && "$extra_findings" -eq 0 ]]; then
         echo -e "  ${GREEN}${ICON_SUCCESS}${NC} No sustained high-CPU bottleneck detected"
-    elif [[ -z "$primary_family" ]]; then
-        : # extra findings print below; no CPU-family bottleneck to headline
-    else
+    fi
+    [[ -n "$vm_out" ]] && printf '%s\n' "$vm_out"
+    [[ -n "$runaway_out" ]] && printf '%s\n' "$runaway_out"
+
+    if [[ -n "$primary_family" ]]; then
         label=$(opt_diag_family_label "$primary_family")
-        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Likely bottleneck: ${label} (~${primary_avg}% CPU sustained)"
+        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Likely bottleneck: ${label} · ~${primary_avg}% CPU"
         echo -e "  ${GRAY}${ICON_REVIEW}${NC} $(opt_diag_family_note "$primary_family")"
 
         if [[ $sustained_count -gt 1 ]]; then
@@ -403,10 +396,6 @@ run_optimize_diagnostics() {
             done <<< "$sustained_details"
         fi
     fi
-
-    [[ -n "$runaway_out" ]] && printf '%s\n' "$runaway_out"
-    [[ -n "$mem_out" ]] && printf '%s\n' "$mem_out"
-    [[ -n "$vm_out" ]] && printf '%s\n' "$vm_out"
 
     # Mounted-image checks are scoped to sustained syspolicyd pressure: a
     # mounted DMG on an otherwise healthy system is not a diagnosis finding,
@@ -438,12 +427,11 @@ run_optimize_diagnostics() {
 #
 # The family-based CPU checks above only look at five known process families,
 # so they miss the two failure shapes that actually make a Mac feel slow:
-#   1. memory exhaustion (swap thrash), where load is high but nothing is busy
+#   1. memory exhaustion, where load is high but nothing is busy
 #   2. a single process stuck in a run loop that is not in the family list
 # Both are read-only diagnosis. Nothing here kills or changes anything.
 # ============================================================================
 
-readonly MOLE_OPTIMIZE_SWAP_PCT_DEFAULT=50
 readonly MOLE_OPTIMIZE_FREE_PCT_DEFAULT=15
 readonly MOLE_OPTIMIZE_IDLE_VM_GB_DEFAULT=2
 readonly MOLE_OPTIMIZE_RUNAWAY_PCT_DEFAULT=25
@@ -453,12 +441,14 @@ readonly MOLE_OPTIMIZE_RUNAWAY_MIN_HOURS_DEFAULT=12
 # existing MOLE_OPTIMIZE_PS_SAMPLE_* convention above. Without these, the
 # memory and runaway checks read live system state and any assertion about a
 # "quiet" run depends on whatever the test host happens to be doing.
-opt_diag_get_swapusage() {
-    if [[ -n "${MOLE_OPTIMIZE_SWAPUSAGE:-}" ]]; then
-        printf '%s\n' "$MOLE_OPTIMIZE_SWAPUSAGE"
+# kern.memorystatus_vm_pressure_level is the kernel's own verdict, the one
+# Activity Monitor colours: 1 normal, 2 warning, 4 critical.
+opt_diag_get_pressure_level() {
+    if [[ -n "${MOLE_OPTIMIZE_PRESSURE_LEVEL:-}" ]]; then
+        printf '%s\n' "$MOLE_OPTIMIZE_PRESSURE_LEVEL"
         return 0
     fi
-    "$SYSCTL_CMD" -n vm.swapusage 2> /dev/null || true
+    "$SYSCTL_CMD" -n kern.memorystatus_vm_pressure_level 2> /dev/null || true
 }
 
 opt_diag_get_mem_free_pct() {
@@ -515,77 +505,64 @@ function opt_secs(t,   n, a, p, d, first, h, m, s) {
 }
 '
 
-# Swap pressure, and the processes actually responsible for it. Silent when
-# memory is healthy.
+# Memory pressure and the apps holding the most, in one line printed under the
+# System line. Silent when memory is fine.
+#
+# The kernel's pressure level decides, not swap: macOS keeps swap allocated
+# long after the pressure that caused it, so a swap ratio fired on a Mac
+# showing 64% memory free and a normal level (2026-11-21). A free figure
+# under 15% still counts when the level cannot be read.
 opt_diag_memory_pressure() {
-    local swap_line swap_total swap_used swap_pct free_pct warn_swap warn_free
-    warn_swap=$MOLE_OPTIMIZE_SWAP_PCT_DEFAULT
-    warn_free=$MOLE_OPTIMIZE_FREE_PCT_DEFAULT
-
-    swap_line=$(opt_diag_get_swapusage)
-    [[ -n "$swap_line" ]] || return 0
-    swap_total=$(printf '%s\n' "$swap_line" | awk '{gsub(/M/,"",$3); print int($3)}')
-    swap_used=$(printf '%s\n' "$swap_line" | awk '{gsub(/M/,"",$6); print int($6)}')
-    [[ "$swap_total" =~ ^[0-9]+$ && "$swap_used" =~ ^[0-9]+$ ]] || return 0
-
-    swap_pct=0
-    [[ "$swap_total" -gt 0 ]] && swap_pct=$((swap_used * 100 / swap_total))
+    local level free_pct
+    level=$(opt_diag_get_pressure_level)
     free_pct=$(opt_diag_get_mem_free_pct)
     [[ "$free_pct" =~ ^[0-9]+$ ]] || free_pct=100
-
-    if [[ "$swap_pct" -lt "$warn_swap" && "$free_pct" -ge "$warn_free" ]]; then
+    if [[ "$level" != "2" && "$level" != "4" && "$free_pct" -ge "$MOLE_OPTIMIZE_FREE_PCT_DEFAULT" ]]; then
         return 0
     fi
 
-    # bytes_to_human, not integer GB: sysctl reports megabytes, so "used / 1024"
-    # printed "swap 0GB of 1GB used (88%)" on a machine with a small swap file.
-    echo -e "  ${YELLOW}${ICON_WARNING}${NC} Memory pressure: swap $(bytes_to_human_kb "$((swap_used * 1024))") of $(bytes_to_human_kb "$((swap_total * 1024))") used (${swap_pct}%), ${free_pct}% free"
-
-    # Name the actual holders. Simulator runtimes ship duplicate daemons whose
-    # rows would otherwise crowd out the real offenders.
-    local shown=0 holder_kb holder_name
-    while IFS=$'\t' read -r holder_kb holder_name; do
+    # One entry per program name: helpers share one, and three "claude" rows
+    # read as three apps, so they are summed and counted ("claude ×3"). comm
+    # can contain spaces ("Claude Helper (Renderer)"), so the name is every
+    # field after the size. 256MB floor: when pressure is spread across
+    # mid-size processes there is no 1GB offender, and a 1GB cutoff then
+    # named nobody (observed at 97% swap).
+    local line="${YELLOW}${ICON_WARNING}${NC} Memory is tight"
+    local plain="  Memory is tight"
+    local cols="${COLUMNS:-$(tput cols 2> /dev/null || echo 80)}"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    local holder_kb holder_count holder_name item shown=0
+    while IFS=$'\t' read -r holder_kb holder_count holder_name; do
         [[ -n "$holder_name" ]] || continue
-        echo -e "    ${GRAY}${holder_name}$(bytes_to_human_kb "$holder_kb")${NC}"
+        # A middle cut keeps the tail that tells reverse-DNS services apart.
+        item=$(truncate_middle_by_display_width "$holder_name" 24)
+        [[ "$holder_count" -gt 1 ]] && item+=" ×${holder_count}"
+        item+=" $(bytes_to_human_kb "$holder_kb")"
+        # get_display_width counts the one-column "…" and "×" as two, which
+        # only errs toward dropping an entry.
+        if ((shown > 0 && $(get_display_width "$plain · $item") > cols - 1)); then
+            break
+        fi
+        line+=" ${GRAY}·${NC} $item"
+        plain+=" · $item"
         shown=$((shown + 1))
-        # The ps header is stripped inside opt_diag_get_rss_sample, BEFORE the
-        # sort here. Filtering it afterwards with NR>1 would discard the
-        # LARGEST process instead, since the non-numeric header sorts last.
-        #
-        # 256MB floor rather than 1GB: when pressure is spread across several
-        # mid-size processes there is no single 1GB offender, and a 1GB cutoff
-        # then prints nothing actionable at exactly the moment the user most
-        # needs a name. Observed live at 97% swap with no 1GB process.
     done < <(opt_diag_get_rss_sample |
-        sort -rn |
-        awk '$1 > 262144 {
-                kb = $1
-                # comm can contain spaces ("Claude Helper (Renderer)"), so take
-                # every remaining field. Reading $2 alone printed fragments like
-                # "(2.1.223)" - a version string, not a process name.
+        awk '{
+                kb = $1 + 0
                 name = ""
                 for (i = 2; i <= NF; i++) name = name (i > 2 ? " " : "") $i
                 sub(/^.*\//, "", name)
-                # Truncate from the LEFT. These are often reverse-DNS names
-                # where the tail identifies the process
-                # ("com.apple.Virtualization.VirtualMachine"); keeping the head
-                # would hide which service it actually is.
-                prefix = ""
-                if (length(name) > 26) {
-                    name = substr(name, length(name) - 24)
-                    prefix = "\xe2\x80\xa6"
-                }
-                # Pad here, on the ASCII name, and add the ellipsis after.
-                # printf "%-28s" counts bytes, so padding a string that already
-                # carried the three-byte ellipsis pulled the size column two
-                # places left on exactly the rows that were truncated.
-                pad = 28 - length(name) - (prefix == "" ? 0 : 1)
-                if (pad < 1) pad = 1
-                printf "%s\t%s%s%*s\n", kb, prefix, name, pad, ""
+                if (name == "") next
+                total[name] += kb
+                count[name]++
+             }
+             END {
+                for (n in total) if (total[n] > 262144) printf "%d\t%d\t%s\n", total[n], count[n], n
              }' |
-        head -4)
-    [[ "$shown" -gt 0 ]] || echo -e "    ${GRAY}pressure is spread across many small processes${NC}"
-    return 0
+        sort -t $'\t' -k1,1nr |
+        head -3)
+    [[ "$shown" -gt 0 ]] || line+=", spread across many small processes"
+    echo -e "$line"
 }
 
 # A virtual machine holding gigabytes while doing no work. Docker Desktop is

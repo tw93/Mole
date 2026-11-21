@@ -11,42 +11,48 @@ setup_file() {
 
 # ---------- memory pressure ----------
 
-@test "memory pressure stays silent when swap is healthy" {
-    run /bin/bash -c "
-        source '$PROJECT_ROOT/lib/core/common.sh'
-        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
-        sysctl() { echo 'total = 8192.00M  used = 100.00M  free = 8092.00M'; }
-        SYSCTL_CMD=sysctl
-        memory_pressure() { echo 'System-wide memory free percentage: 80%'; }
-        out=\$(opt_diag_memory_pressure)
-        [ -z \"\$out\" ] && echo SILENT || echo \"LEAKED: \$out\"
-    "
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"SILENT"* ]] || { echo "$output"; return 1; }
+# Runs opt_diag_memory_pressure with a pressure level, a free percentage and a
+# ps listing, colours stripped.
+_mem_line() {
+    run /bin/bash -c '
+        source "$1/lib/core/common.sh"
+        source "$1/lib/optimize/diagnostics.sh"
+        MOLE_OPTIMIZE_PRESSURE_LEVEL="$2" MOLE_OPTIMIZE_MEM_FREE_SAMPLE="$3" MOLE_OPTIMIZE_RSS_SAMPLE="$4" \
+            COLUMNS="${5:-120}" opt_diag_memory_pressure | sed "s/\x1b\[[0-9;]*m//g"
+    ' _ "$PROJECT_ROOT" "$@"
 }
 
-@test "memory pressure fires on exhausted swap and names the holders" {
-    run /bin/bash -c "
-        source '$PROJECT_ROOT/lib/core/common.sh'
-        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
-        sysctl() { echo 'total = 16384.00M  used = 15500.00M  free = 884.00M'; }
-        SYSCTL_CMD=sysctl
-        memory_pressure() { echo 'System-wide memory free percentage: 8%'; }
-        ps() { printf '%s\n' '   RSS COMM' '8600000 com.apple.Virtualization.VirtualMachine' '2000000 /usr/local/bin/codex' '500 tiny'; }
-        opt_diag_memory_pressure
-    "
+@test "memory pressure stays silent at a normal level whatever swap holds" {
+    # macOS keeps swap allocated long after the pressure that caused it; a
+    # swap ratio fired on a Mac with 64% memory free and a normal level.
+    _mem_line 1 64 $'4000000 claude'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Memory pressure"* ]] || return 1
-    [[ "$output" == *"94%"* ]] || { echo "$output"; return 1; }
-    # The largest process must appear — a header-vs-sort bug once dropped it.
-    [[ "$output" == *"VirtualMachine"* ]] || { echo "$output"; return 1; }
-    # Decimal GB from bytes_to_human, the formatter the rest of Mole uses.
-    [[ "$output" == *"8.81GB"* ]] || { echo "$output"; return 1; }
-    # Basename only, and sub-1GB noise excluded.
-    [[ "$output" != *"/usr/local/bin/codex"* ]] || return 1
-    [[ "$output" != *"tiny"* ]] || return 1
-    # The ps header must never render as a process.
-    [[ "$output" != *"COMM"* ]] || { echo "$output"; return 1; }
+    [ -z "$output" ] || { echo "LEAKED: $output"; return 1; }
+}
+
+@test "memory pressure names the holders in one line at the warning level" {
+    _mem_line 2 40 $'8600000 com.apple.Virtualization.VirtualMachine\n2000000 /usr/local/bin/codex\n500 tiny'
+    [ "$status" -eq 0 ]
+    # Largest first, basename only, middle cut, decimal GB, sub-256MB noise out.
+    [ "$output" = "◎ Memory is tight · com.app…n.VirtualMachine 8.81GB · codex 2.05GB" ] || { echo "$output"; return 1; }
+}
+
+@test "memory pressure counts a low free figure when the level is unreadable" {
+    _mem_line unknown 8 $'100 tiny'
+    [ "$status" -eq 0 ]
+    [ "$output" = "◎ Memory is tight, spread across many small processes" ] || { echo "$output"; return 1; }
+}
+
+@test "memory holders sharing a name read as one counted entry" {
+    _mem_line 4 30 $'700000 claude\n900000 QQLive\n600000 /usr/local/bin/claude\n500000 claude'
+    [ "$status" -eq 0 ]
+    [ "$output" = "◎ Memory is tight · claude ×3 1.84GB · QQLive 921.6MB" ] || { echo "$output"; return 1; }
+}
+
+@test "memory holders that do not fit the terminal are left off" {
+    _mem_line 2 30 $'2000000 claude\n900000 QQLive' 50
+    [ "$status" -eq 0 ]
+    [ "$output" = "◎ Memory is tight · claude 2.05GB" ] || { echo "$output"; return 1; }
 }
 
 # ---------- idle VM ----------
@@ -224,47 +230,6 @@ fi
 EOF
 
     [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
-}
-
-@test "the size column stays aligned when a long name is truncated" {
-    run /bin/bash -c "
-        source '$PROJECT_ROOT/lib/core/common.sh'
-        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
-        sysctl() { echo 'total = 16384.00M  used = 15500.00M  free = 884.00M'; }
-        SYSCTL_CMD=sysctl
-        memory_pressure() { echo 'System-wide memory free percentage: 8%'; }
-        ps() { printf '%s\n' '   RSS COMM' '8600000 com.apple.Virtualization.VirtualMachine' '2000000 codex'; }
-        opt_diag_memory_pressure | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^    [^ ]' |
-            while IFS= read -r row; do
-                LC_ALL=C printf '%s' \"\${row%%GB*}\" | LC_ALL=C wc -c
-            done
-    "
-    [ "$status" -eq 0 ]
-    # Everything before the size is ASCII except the ellipsis on the truncated
-    # row, which is three bytes wide and one column wide. Padding that string
-    # with printf "%-28s" counted the bytes and pulled its size field two
-    # columns left of every other row.
-    local truncated_bytes="${lines[0]// /}"
-    local plain_bytes="${lines[1]// /}"
-    [ "$truncated_bytes" -eq $((plain_bytes + 2)) ] || {
-        echo "truncated=$truncated_bytes plain=$plain_bytes"
-        return 1
-    }
-}
-
-@test "a small swap file reports real sizes, not 0GB" {
-    run /bin/bash -c "
-        source '$PROJECT_ROOT/lib/core/common.sh'
-        source '$PROJECT_ROOT/lib/optimize/diagnostics.sh'
-        sysctl() { echo 'total = 1024.00M  used = 900.00M  free = 124.00M'; }
-        SYSCTL_CMD=sysctl
-        memory_pressure() { echo 'System-wide memory free percentage: 8%'; }
-        ps() { printf '%s\n' '   RSS COMM' '100 tiny'; }
-        opt_diag_memory_pressure
-    "
-    [ "$status" -eq 0 ]
-    [[ "$output" != *"0GB of"* ]] || { echo "$output"; return 1; }
-    [[ "$output" == *"943.7MB of 1.07GB"* ]] || { echo "$output"; return 1; }
 }
 
 @test "the runaway scan does not fork per process row" {

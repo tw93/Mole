@@ -1669,9 +1669,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'120 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture\n35 /usr/libexec/syspolicyd\n20 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'140 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-processor\n30 /usr/libexec/syspolicyd\n18 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		/bin/bash --noprofile --norc <<'EOF'
@@ -1687,13 +1684,32 @@ EOF
 	[[ "$output" == *"Mole will not terminate enterprise security processes"* ]]
 }
 
+@test "run_optimize_diagnostics never headlines WindowServer" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+		MOLE_OPTIMIZE_PS_SAMPLE_1=$'40 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer\n35 /usr/libexec/syspolicyd' \
+		MOLE_OPTIMIZE_PS_SAMPLE_2=$'38 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer\n30 /usr/libexec/syspolicyd' \
+		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
+		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
+		MOLE_OPTIMIZE_SPCTL_STATUS='assessments enabled' \
+		MOLE_OPTIMIZE_HDIUTIL_INFO='' \
+		/bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/optimize/diagnostics.sh"
+is_path_whitelisted() { return 1; }
+run_optimize_diagnostics
+EOF
+
+	[ "$status" -eq 0 ]
+	# WindowServer is busy because something else is; it is never reported.
+	[[ "$output" != *"WindowServer"* ]] || { echo "$output"; return 1; }
+	[[ "$output" == *"Likely bottleneck: syspolicyd · ~32.5% CPU"* ]]
+}
+
 @test "run_optimize_diagnostics treats CoreSimulator images as informational for syspolicyd" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'55 /usr/libexec/syspolicyd\n12 /usr/libexec/diskimagesiod' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'60 /usr/libexec/syspolicyd\n10 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Resources/bin/simdiskimaged' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		MOLE_OPTIMIZE_SPCTL_STATUS="assessments enabled" \
@@ -1717,9 +1733,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'180 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'5 /Applications/AliEntSafe.app/Contents/Services/CloudShell.app/Contents/MacOS/CloudShell --type=event-capture' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		/bin/bash --noprofile --norc <<'EOF'
@@ -1738,9 +1751,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'55 /usr/libexec/syspolicyd' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'60 /usr/libexec/syspolicyd' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		MOLE_OPTIMIZE_SPCTL_STATUS="assessments enabled" \
@@ -1765,9 +1775,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'1 /usr/sbin/distnoted' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'1 /usr/sbin/distnoted' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		MOLE_OPTIMIZE_HDIUTIL_INFO=$'================================================\nimage-path      : /Users/test/Downloads/TestInstaller.dmg\n/dev/disk14s1\t/Volumes/Test Installer\n' \
@@ -1790,9 +1797,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'55 /usr/libexec/syspolicyd' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'60 /usr/libexec/syspolicyd' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		MOLE_OPTIMIZE_SPCTL_STATUS="assessments enabled" \
@@ -1824,9 +1828,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'55 /usr/libexec/syspolicyd' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'60 /usr/libexec/syspolicyd' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		MOLE_OPTIMIZE_SPCTL_STATUS="assessments enabled" \
@@ -1849,9 +1850,6 @@ EOF
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
 		MOLE_OPTIMIZE_PS_SAMPLE_1=$'4 /usr/sbin/distnoted\n3 /usr/libexec/coreaudiod' \
 		MOLE_OPTIMIZE_PS_SAMPLE_2=$'5 /usr/sbin/distnoted\n2 /usr/libexec/coreaudiod' \
-		MOLE_OPTIMIZE_SWAPUSAGE='total = 8192.00M  used = 100.00M  free = 8092.00M' \
-		MOLE_OPTIMIZE_MEM_FREE_SAMPLE=70 \
-		MOLE_OPTIMIZE_RSS_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_VM_SAMPLE=$'1000 Finder' \
 		MOLE_OPTIMIZE_PROCTIME_SAMPLE=$'1 00:01 05:00 quietd' \
 		/bin/bash --noprofile --norc <<'EOF'

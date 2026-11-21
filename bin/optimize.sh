@@ -295,6 +295,8 @@ main() {
     fi
 
     show_system_health "$health_json"
+    # Right under the RAM figure it qualifies, ahead of the CPU diagnosis.
+    opt_diag_memory_pressure
 
     run_optimize_diagnostics
 
