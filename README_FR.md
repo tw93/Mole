@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ Ajoutez `-CreateShortcut` pour créer une entrée dans le menu Démarrer. Pour d
 
 Mole peut supprimer des fichiers ; il valide donc les chemins et protège les emplacements du système et du profil. `uninstall`, `purge`, `installer` et `remove` demandent une confirmation avant de supprimer quoi que ce soit. Quand Mole ne peut pas prouver qu'un élément peut être modifié sans risque, il l'ignore.
 
-- `clean`, `uninstall` et `purge` suppriment des fichiers : prévisualisez toujours leurs actions avec `--dry-run`, complété au besoin de `--debug`
+- `clean`, `uninstall`, `purge`, `installer` et `remove` suppriment des fichiers : prévisualisez toujours leurs actions avec `--dry-run`, complété au besoin de `--debug`
 - `clean` et `purge` suppriment définitivement ; les restes vérifiés d'`uninstall` et les installateurs choisis dans `mo installer` vont dans la Corbeille, le désinstalleur de l'application conserve son propre comportement, et les fichiers supprimés dans `mo analyze` vont aussi dans la Corbeille, sauf les éléments trop volumineux pour elle, que Windows propose de supprimer définitivement
 - Exécutez Mole avec votre compte utilisateur habituel ; les étapes au niveau système sont ignorées sauf si PowerShell est lancé en tant qu'administrateur
 - Protégez des chemins avec `mo clean --whitelist`
@@ -209,7 +209,7 @@ Merci à tous ceux qui contribuent au développement de Mole. Allez les suivre �
 ## Soutenir le projet
 
 - L'achat de [Mole for Windows](https://mole.fit/fr/windows) est le moyen le plus direct d'encourager le développement continu de Mole
-- Si Mole vous rend service, laissez-lui une étoile, [partagez-le](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) ou proposez une issue / PR
+- Si Mole vous rend service, laissez-lui une étoile, [partagez-le](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) ou proposez une issue / PR
 - Les contributions sont les bienvenues ; lisez d'abord [CONTRIBUTING.md](CONTRIBUTING.md)
 - J'ai deux chattes, TangYuan et Coke, et si Mole vous simplifie la vie, n'hésitez pas à leur offrir <a href="https://cats.tw93.fun?name=Mole" target="_blank">une boîte de pâtée 🥩</a>
 

@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 Mole은 파일을 삭제할 수 있으므로 경로를 검증하고, 시스템 및 프로필 위치를 보호합니다. `uninstall`, `purge`, `installer`, `remove` 명령은 삭제 전에 확인을 요청합니다. 안전하게 변경할 수 있다고 확인할 수 없는 항목은 건너뜁니다.
 
-- `clean`, `uninstall`, `purge` 명령은 파일을 삭제할 수 있으므로 먼저 `--dry-run`으로 확인하고 필요 시 `--debug`를 함께 사용하세요
+- `clean`, `uninstall`, `purge`, `installer`, `remove` 명령은 파일을 삭제할 수 있으므로 먼저 `--dry-run`으로 확인하고 필요 시 `--debug`를 함께 사용하세요
 - `clean`과 `purge`는 영구 삭제하며, 검증된 `uninstall` 잔여 파일과 `mo installer`에서 고른 설치 파일은 휴지통으로 이동하고 앱 자체의 제거 프로그램은 기존 동작을 유지합니다. `mo analyze`에서 삭제한 파일도 휴지통으로 이동됩니다. 휴지통에 들어가지 않는 큰 항목은 Windows가 영구 삭제할지 먼저 묻습니다
 - Mole은 일반 사용자 권한으로 실행하세요. PowerShell을 관리자 권한으로 실행하지 않으면 시스템 수준 단계는 건너뜁니다
 - `mo clean --whitelist`로 보호할 경로를 지정하세요
@@ -209,7 +209,7 @@ Mole 제작에 힘을 보태주신 모든 기여자분들께 감사드립니다.
 ## 후원 및 응원
 
 - [Mole for Windows](https://mole.fit/ko/windows)을 구매하시는 것이 Mole 개발을 지속하는 가장 직접적인 힘이 됩니다
-- Mole이 도움이 되셨다면 GitHub Star를 눌러주시고, [주변에 공유](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.)해 주시거나 Issue/PR로 함께해 주세요
+- Mole이 도움이 되셨다면 GitHub Star를 눌러주시고, [주변에 공유](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.)해 주시거나 Issue/PR로 함께해 주세요
 - 기여는 언제나 환영합니다. 먼저 [CONTRIBUTING.md](CONTRIBUTING.md)를 읽어 주세요
 - 제게는 '탕위안'과 '콜라'라는 고양이 두 마리가 있는데, Mole이 조금이라도 도움이 되셨다면 두 아이에게 <a href="https://cats.tw93.fun?name=Mole" target="_blank">맛있는 캔 🥩</a> 하나 선물해 주세요
 

@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ Add `-CreateShortcut` for a Start Menu entry. To uninstall, run `mo remove`.
 
 Mole can delete files, so it validates paths and protects system and profile locations. `uninstall`, `purge`, `installer`, and `remove` ask for confirmation before removing anything. When Mole cannot prove an item is safe to change, it skips it.
 
-- `clean`, `uninstall`, and `purge` can delete files, so review them with `--dry-run` first and add `--debug` when needed
+- `clean`, `uninstall`, `purge`, `installer`, and `remove` can delete files, so review them with `--dry-run` first and add `--debug` when needed
 - `clean` and `purge` delete permanently; verified `uninstall` leftovers and the installers you pick in `mo installer` go to the Recycle Bin, the app's own uninstaller keeps its own behavior, and files deleted in `mo analyze` go to the Recycle Bin, except items too large for it, which Windows offers to delete permanently
 - Run Mole as your normal user; system-level steps are skipped unless PowerShell runs as administrator
 - Protect paths with `mo clean --whitelist`
@@ -209,7 +209,7 @@ Thanks to everyone who helped build Mole. Go follow them. ❤️
 ## Support
 
 - Getting [Mole for Windows](https://mole.fit/windows) is the most direct way to support Mole's development
-- If Mole helped you, give it a star, [share it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.), or open an issue or PR
+- If Mole helped you, give it a star, [share it](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.), or open an issue or PR
 - Contributions are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first
 - I have two cats, TangYuan and Coke, and if Mole makes your life a little easier, feel free to treat them to <a href="https://cats.tw93.fun?name=Mole" target="_blank">canned food 🥩</a>
 

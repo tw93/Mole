@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ Füge `-CreateShortcut` für einen Eintrag im Startmenü hinzu. Zum Deinstallier
 
 Mole kann Dateien löschen. Deshalb prüft es Pfade und schützt System- und Profilordner. `uninstall`, `purge`, `installer` und `remove` fragen vor jedem Entfernen nach einer Bestätigung. Kann Mole nicht belegen, dass eine Änderung sicher ist, überspringt es sie.
 
-- `clean`, `uninstall` und `purge` löschen Dateien, überprüfe sie also zuerst mit `--dry-run` und bei Bedarf mit `--debug`
+- `clean`, `uninstall`, `purge`, `installer` und `remove` löschen Dateien, überprüfe sie also zuerst mit `--dry-run` und bei Bedarf mit `--debug`
 - `clean` und `purge` löschen endgültig; verifizierte `uninstall`-Reste und die in `mo installer` gewählten Installer landen im Papierkorb, der Uninstaller der App behält sein eigenes Verhalten, und in `mo analyze` gelöschte Dateien landen ebenfalls im Papierkorb, außer Elementen, die zu groß dafür sind und die Windows endgültig zu löschen anbietet
 - Führe Mole als normaler Benutzer aus; Systemschritte werden übersprungen, sofern PowerShell nicht als Administrator läuft
 - Schütze Pfade mit `mo clean --whitelist`
@@ -209,7 +209,7 @@ Vielen Dank an alle Mitwirkenden, die Mole voranbringen. Folge ihnen gern ❤️
 ## Unterstützung
 
 - Der Kauf von [Mole for Windows](https://mole.fit/de/windows) ist die direkteste Art, die Entwicklung von Mole zu unterstützen
-- Wenn dir Mole hilft, gib dem Projekt einen Stern, [teile es auf X](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) oder erstelle ein Issue/PR
+- Wenn dir Mole hilft, gib dem Projekt einen Stern, [teile es auf X](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) oder erstelle ein Issue/PR
 - Beiträge sind willkommen; lies zuerst [CONTRIBUTING.md](CONTRIBUTING.md)
 - Ich habe zwei Katzen, TangYuan und Coke, und wenn Mole dir das Leben ein wenig leichter macht, spendiere ihnen gerne eine Dose <a href="https://cats.tw93.fun?name=Mole" target="_blank">Katzenfutter 🥩</a>
 

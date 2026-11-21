@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 Mole 会删除文件，所以会先校验路径、保护系统和用户配置目录，`uninstall`、`purge`、`installer` 与 `remove` 删除前都会请你确认，无法确认安全的项目一律跳过。
 
-- `clean`、`uninstall` 与 `purge` 会删除文件，可先用 `--dry-run` 预览，需要时加上 `--debug`
+- `clean`、`uninstall`、`purge`、`installer` 与 `remove` 会删除文件，可先用 `--dry-run` 预览，需要时加上 `--debug`
 - `clean` 与 `purge` 是永久删除，已核实的 `uninstall` 残留和在 `mo installer` 里选中的安装包会放进回收站，应用自身的卸载器保留其原有行为，`mo analyze` 中删除的文件也会放进回收站，放不进回收站的大项目 Windows 会先询问是否永久删除
 - 用普通用户身份运行 Mole 即可，系统级步骤只有以管理员身份运行 PowerShell 时才会执行，否则跳过
 - 可通过 `mo clean --whitelist` 保护指定路径
@@ -209,7 +209,7 @@ mo installer --dry-run
 ## 支持项目
 
 - 购买 [Mole for Windows](https://mole.fit/zh/windows) 是支持 Mole 持续开发最直接的方式
-- 如果 Mole 帮到了你，欢迎点个 Star、[分享给朋友](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.)，或在 GitHub 提交 Issue 和 PR
+- 如果 Mole 帮到了你，欢迎点个 Star、[分享给朋友](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.)，或在 GitHub 提交 Issue 和 PR
 - 欢迎参与贡献，先看一下 [CONTRIBUTING.md](CONTRIBUTING.md)
 - 我养了两只猫，汤圆和可乐，如果 Mole 用着顺手，欢迎投喂她们一顿 <a href="https://cats.tw93.fun?name=Mole" target="_blank">罐头 🥩</a>
 

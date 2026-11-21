@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 Moleはファイルを削除できるため、パスを検証し、システム領域とユーザープロファイルの場所を保護します。`uninstall`、`purge`、`installer`、`remove` は、削除の前に必ず確認を求めます。安全に変更できると確認できない項目は、スキップします。
 
-- `clean`、`uninstall`、`purge` はファイル削除を伴うため、事前に `--dry-run` で確認し、必要に応じて `--debug` を併用してください
+- `clean`、`uninstall`、`purge`、`installer`、`remove` はファイル削除を伴うため、事前に `--dry-run` で確認し、必要に応じて `--debug` を併用してください
 - `clean` と `purge` は完全に削除します。確認済みの `uninstall` の残存ファイルと `mo installer` で選んだインストーラはごみ箱へ移動し、アプリ自身のアンインストーラーは元の動作を保ちます。`mo analyze` で削除したファイルもごみ箱へ移動されます。ごみ箱に入らない大きな項目は、完全に削除するかを Windows が先に確認します
 - Moleは通常のユーザーとして実行してください。システム領域の処理は、PowerShellを管理者として実行しない限りスキップされます
 - `mo clean --whitelist` で保護するパスを設定できます
@@ -209,7 +209,7 @@ Moleの開発に貢献いただいたすべての方に感謝申し上げます�
 ## サポート
 
 - [Mole for Windows](https://mole.fit/ja/windows) の購入が、Moleの継続開発を支援する最も直接的な方法です
-- Moleが役に立った場合は、GitHubのStarや [Xでのシェア](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.)、Issue・PRでのフィードバックをお願いします
+- Moleが役に立った場合は、GitHubのStarや [Xでのシェア](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.)、Issue・PRでのフィードバックをお願いします
 - コントリビューションを歓迎します。まず [CONTRIBUTING.md](CONTRIBUTING.md) をお読みください
 - 我が家には「湯圓（タンユエン）」と「コーラ」という2匹の猫がいて、Moleが役に立ったら彼女たちに <a href="https://cats.tw93.fun?name=Mole" target="_blank">缶詰 🥩</a> をごちそうしてもらえるとうれしいです
 

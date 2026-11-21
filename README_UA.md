@@ -9,7 +9,7 @@
   <a href="https://github.com/tw93/Mole/releases"><img src="https://img.shields.io/github/v/release/tw93/mole?filter=*-windows&include_prereleases&label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL_v3-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/tw93/mole/commits/windows"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole/windows?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
+  <a href="https://x.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=x" alt="Twitter"></a>
   <a href="https://t.me/+9f9gf4ZrFSQ2OWVl"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
 </div>
 
@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File "$installDir\install.ps1" -InstallDir $
 
 Mole вміє видаляти файли, тому перевіряє шляхи та захищає системні розташування й теку профілю. `uninstall`, `purge`, `installer` і `remove` просять підтвердження, перш ніж щось видалити. Якщо Mole не може довести, що елемент безпечно змінювати, він його пропускає.
 
-- `clean`, `uninstall` і `purge` можуть видаляти файли, тож спершу перегляньте, що саме зміниться, з `--dry-run`, а за потреби додайте `--debug`
+- `clean`, `uninstall`, `purge`, `installer` і `remove` можуть видаляти файли, тож спершу перегляньте, що саме зміниться, з `--dry-run`, а за потреби додайте `--debug`
 - `clean` і `purge` видаляють остаточно; перевірені залишки `uninstall` та інсталятори, вибрані в `mo installer`, потрапляють до Кошика, власний деінсталятор застосунку зберігає свою поведінку, а файли, видалені в `mo analyze`, також потрапляють до Кошика, крім завеликих для нього об'єктів, які Windows пропонує видалити остаточно
 - Запускайте Mole від імені звичайного користувача; кроки системного рівня пропускаються, якщо PowerShell запущено не від імені адміністратора
 - Захищайте шляхи через `mo clean --whitelist`
@@ -209,7 +209,7 @@ mo installer --dry-run
 ## Підтримка
 
 - Придбати [Mole for Windows](https://mole.fit/windows): це найпряміший спосіб підтримати розробку Mole
-- Якщо Mole вам допоміг, поставте зірку, [розкажіть про нього](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) або відкрийте issue чи PR
+- Якщо Mole вам допоміг, поставте зірку, [розкажіть про нього](https://x.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) або відкрийте issue чи PR
 - Контриб'ютори вітаються; спершу прочитайте [CONTRIBUTING.md](CONTRIBUTING.md)
 - У мене двоє котів, TangYuan і Coke; якщо Mole хоч трохи полегшив вам життя, можете пригостити їх <a href="https://cats.tw93.fun?name=Mole" target="_blank">консервами 🥩</a>
 
