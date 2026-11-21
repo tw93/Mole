@@ -186,3 +186,19 @@ EOF
     [ "${lines[1]}" = "[abc]" ]
     [ "${lines[2]}" = "[]" ]
 }
+
+@test "mole_display_path abbreviates HOME only at a path boundary and ignores empty HOME" {
+    mole_run core '
+        HOME=/home/test
+        printf "%s|" "$(mole_display_path /home/test)" "$(mole_display_path /home/test/a)" \
+            "$(mole_display_path /home/tester/a)" "$(mole_display_path /opt/home/test)"
+        HOME=/home/test/
+        printf "%s|" "$(mole_display_path /home/test)" "$(mole_display_path /home/test/a)"
+        HOME=""
+        printf "%s|" "$(mole_display_path /etc/hosts)" "$(mole_display_path "")"
+        HOME=/
+        printf "%s|" "$(mole_display_path /etc/hosts)"
+    '
+    [ "$status" -eq 0 ]
+    [ "$output" = '~|~/a|/home/tester/a|/opt/home/test|~|~/a|/etc/hosts||/etc/hosts|' ]
+}

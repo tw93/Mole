@@ -152,12 +152,14 @@ get_free_space_kb() {
 
 # Display a home path with ~.
 mole_display_path() {
-    local path="$1"
-    if [[ "$path" == "$HOME" ]]; then
+    local path="$1" home="${HOME%/}"
+    if [[ -z "$home" ]]; then
+        printf '%s' "$path"
+    elif [[ "$path" == "$home" ]]; then
         printf '~'
-    elif [[ "$path" == "$HOME/"* ]]; then
+    elif [[ "$path" == "$home/"* ]]; then
         # shellcheck disable=SC2088  # Display HOME as a literal tilde.
-        printf '~/%s' "${path#"$HOME/"}"
+        printf '~/%s' "${path#"$home/"}"
     else
         printf '%s' "$path"
     fi
