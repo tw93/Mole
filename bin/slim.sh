@@ -751,7 +751,7 @@ confirm_slim_selection() {
             running=true
         fi
         printf '%b%s%b\n' "${BLUE}${ICON_CONFIRM}${NC} " "$(mole_terminal_safe_text "${SLIM_APP_NAMES[idx]}")" \
-            " ${GRAY}, $(bytes_to_human "${SLIM_APP_BYTES[idx]}")${NC}${tag}"
+            " ${GRAY}· $(bytes_to_human "${SLIM_APP_BYTES[idx]}")${NC}${tag}"
         total=$((total + SLIM_APP_BYTES[idx]))
     done
     echo ""
@@ -914,9 +914,9 @@ main() {
         [[ -t 1 ]] && stop_inline_spinner
         if [[ -t 1 && -n "$prefix" ]]; then
             if [[ $total_slimmed -gt $before ]]; then
-                printf '%b%s%b\n' "${GREEN}${ICON_SUCCESS}${NC} ${prefix}" "$name" " ${GRAY}, $(bytes_to_human "${SLIM_APP_BYTES[idx]}")${NC}"
+                printf '%b%s%b\n' "${GREEN}${ICON_SUCCESS}${NC} ${prefix}" "$name" " ${GRAY}· $(bytes_to_human "${SLIM_APP_BYTES[idx]}")${NC}"
             elif [[ ${#SLIM_FAILED_REASONS[@]} -gt $failed_before ]]; then
-                printf '%b%s%b%s%b\n' "${YELLOW}${ICON_WARNING}${NC} ${prefix}" "$name" " ${GRAY}, " \
+                printf '%b%s%b%s%b\n' "${YELLOW}${ICON_WARNING}${NC} ${prefix}" "$name" "${GRAY}, " \
                     "$(mole_terminal_safe_text "${SLIM_FAILED_REASONS[failed_before]}")" "$NC"
             fi
         fi

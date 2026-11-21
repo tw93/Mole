@@ -204,7 +204,7 @@ request_sudo_access() {
     # the password; Cancel there falls back to sudo's own terminal prompt.
     # Killing it after a few seconds and starting another sudo opened the
     # same dialog twice and threw away a password typed into the first.
-    echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg} ${GRAY}, Touch ID or password${NC}"
+    echo -e "${PURPLE}${ICON_ARROW}${NC} ${prompt_msg}${GRAY}, Touch ID or password${NC}"
 
     # Text typed into the terminal while the dialog is up stays off the screen.
     # shellcheck disable=SC2024,SC2094
