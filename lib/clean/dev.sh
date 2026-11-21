@@ -3168,11 +3168,11 @@ clean_dev_mobile() {
                         delete_output=$(_run_simctl "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" delete unavailable 2>&1) || delete_exit_code=$?
 
                         if [[ $delete_exit_code -eq 0 ]]; then
+                            # Record the successful deletion before the recount can be interrupted.
+                            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "simctl delete unavailable" "owner command"
                             local recount_exit_code=0
                             unavailable_devices_output=$(_run_simctl "$MOLE_TIMEOUT_PKG_LIST_SEC" list devices unavailable 2> /dev/null) || recount_exit_code=$?
                             stop_section_spinner
-                            # The delete succeeded, so it is logged whatever the recount finds.
-                            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "simctl delete unavailable" "owner command"
                             if [[ $recount_exit_code -ne 0 ]]; then
                                 echo -e "  ${YELLOW}${ICON_WARNING}${NC} Xcode unavailable simulators · cleanup completed, unable to verify remaining devices"
                                 debug_log "simctl recount returned $recount_exit_code"
