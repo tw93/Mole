@@ -1416,6 +1416,38 @@ EOF
     [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
 }
 
+@test "Next.js listings share one budget, so a spent budget skips the next cache" {
+    run env HOME="$BATS_TEST_TMPDIR/next-shared-budget" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+fixture_repo="$HOME/repo"
+first_next="$fixture_repo/a/.next"
+second_next="$fixture_repo/b/.next"
+mkdir -p "$first_next/cache" "$second_next/cache"
+touch "$first_next/cache/bundle" "$second_next/cache/bundle"
+git init -q "$fixture_repo"
+printf '%s\t%s\n' "$fixture_repo" "$first_next" "$fixture_repo" "$second_next" > "$HOME/matches"
+_MOLE_FIND_KNOWS_DATALESS=yes
+run_with_timeout() {
+    shift
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == "$first_next/cache" ]]; then
+            SECONDS=$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC + 2))
+            return 124
+        fi
+        [[ "$arg" != "$second_next/cache" ]] || printf '%s\n' "$arg" >> "$HOME/second-listed"
+    done
+    "$@"
+}
+project_cache_build_git_index "$HOME/matches" "$HOME/index" "$((SECONDS + MOLE_TIMEOUT_HINT_SCAN_SEC))"
+[[ ! -e "$HOME/second-listed" ]] || exit 11
+! grep -Fq "$second_next" "$HOME/index" || exit 12
+EOF
+    [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+}
+
 @test "clean_project_caches skips a refused .next/cache child and still cleans its siblings" {
     local mode
     for mode in real dry; do
