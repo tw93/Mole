@@ -268,8 +268,11 @@ running_apps=() sudo_apps=() brew_cask_apps=() blocked_apps=() manual_removal_ap
 total_estimated_size=0
 _batch_scan_app_details
 MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< '' > "$HOME/default.out"
-grep -Fq 'Personal data kept:' "$HOME/default.out" || exit 1
-if grep -Fq 'Personal data to remove:' "$HOME/default.out"; then exit 1; fi
+sed $'s/\033\\[[0-9;]*m//g' "$HOME/default.out" > "$HOME/default.txt"
+grep -Fq 'Personal data kept, press D to choose:' "$HOME/default.txt" || exit 1
+if grep -Fq 'Personal data to remove' "$HOME/default.txt"; then exit 1; fi
+# The key hint lives on the heading; the old stray line is gone.
+if grep -Fq 'D choose personal data' "$HOME/default.txt"; then exit 1; fi
 if grep -Fq 'including personal data' "$HOME/default.out"; then exit 1; fi
 [[ $(grep -Fxc "$app" "$HOME/measured") -eq 1 ]] || exit 1
 if grep -Fxq "$data" "$HOME/measured"; then exit 1; fi
@@ -310,15 +313,17 @@ paginated_multi_select() { MOLE_SELECTION_RESULT=0; }
 MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< $'d\n'
 SH
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    local confirmed="${output##*Files to be removed:}"
-    local apps_part="${confirmed%%Personal data to remove:*}"
-    local data_part="${confirmed#*Personal data to remove:}"
+    local plain
+    plain=$(printf '%s' "$output" | sed $'s/\033\\[[0-9;]*m//g')
+    local confirmed="${plain##*Files to be removed:}"
+    local apps_part="${confirmed%%Personal data to remove, press D to choose:*}"
+    local data_part="${confirmed#*Personal data to remove, press D to choose:}"
     # The cache stays beside the app; the chosen data moves under its heading.
-    [[ "$confirmed" == *"Personal data to remove:"* ]] || { echo "$output"; return 1; }
+    [[ "$confirmed" == *"Personal data to remove, press D to choose:"* ]] || { echo "$output"; return 1; }
     [[ "$apps_part" == *"Caches/com.example.app"* ]] || { echo "$output"; return 1; }
     [[ "$apps_part" != *"Application Support/Example"* ]] || { echo "$output"; return 1; }
     [[ "$data_part" == *"Application Support/Example"* ]] || { echo "$output"; return 1; }
-    [[ "$confirmed" != *"Personal data kept:"* ]] || { echo "$output"; return 1; }
+    [[ "$confirmed" != *"Personal data kept"* ]] || { echo "$output"; return 1; }
     [[ "$confirmed" == *"Remove 1 app, "*", including personal data"* ]] || { echo "$output"; return 1; }
 }
 
@@ -536,10 +541,10 @@ mkdir -p "$container/Data" "$group/Data" "$support"
 files=$(printf '%s\n%s\n%s' "$container" "$group" "$support")
 
 MOLE_HAS_FDA=0
-[[ "$(format_uninstall_preview_path "$container")" != *", "* ]] || exit 1
-[[ "$(format_uninstall_preview_path "$group")" != *", "* ]] || exit 2
+[[ "$(format_uninstall_preview_path "$container")" != *"· "* ]] || exit 1
+[[ "$(format_uninstall_preview_path "$group")" != *"· "* ]] || exit 2
 [[ "$(calculate_total_size "$files")" == 8 ]] || exit 3
-[[ "$(format_uninstall_preview_path "$support")" == *", "* ]] || exit 4
+[[ "$(format_uninstall_preview_path "$support")" == *"· "* ]] || exit 4
 if grep -F -e "Containers" "$log"; then exit 5; fi
 
 : > "$log"; MOLE_HAS_FDA=unknown

@@ -75,7 +75,8 @@ def check(cols, choice):
                                    env=env, preexec_fn=own_terminal)
         try:
             preview = read_until(master, b'cancel: ')
-            assert b'Personal data kept:' in preview, preview
+            assert b'Personal data kept' in preview, preview
+            assert b'D choose personal data' not in preview, preview
             wait_for_key_read(slave)
             os.write(master, b'd')
             menu = read_until(master, b'Q Cancel')
@@ -89,7 +90,12 @@ def check(cols, choice):
             os.write(master, b'q' if choice == 'cancel' else b'\r')
             reviewed = read_until(master, b'cancel: ')
             removes = choice in ('select', 'all')
-            assert (b'Personal data kept:' in reviewed) != removes, reviewed
+            assert (b'Personal data kept' in reviewed) != removes, reviewed
+            # Leaving the picker restores the old preview; the redrawn plan
+            # starts on a cleared screen so the stale one is not left above it.
+            redrawn = reviewed.rsplit(b'\x1b[?1049l', 1)[-1]
+            cleared = redrawn.find(b'\x1b[2J')
+            assert -1 < cleared < redrawn.find(b'Files to be removed'), reviewed
             wait_for_key_read(slave)
             os.write(master, b'\r')
             expected = b'TEST_REMOVE_DATA' if removes else b'TEST_KEEP_DATA'

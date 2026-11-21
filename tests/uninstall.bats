@@ -600,7 +600,9 @@ EOF
     )"
 
     [[ "$result" == *"~/preview-size-file"* ]] || return 1
-    [[ "$result" == *"${expected_size_kb}KB"* ]]
+    # The size joins the path with a middot, never a spaced comma.
+    [[ "$result" == *"· ${expected_size_kb}KB"* ]] || return 1
+    [[ "$result" != *" , "* ]]
 }
 
 @test "format_uninstall_preview_path propagates timed out and interrupted size probes" {
@@ -943,7 +945,9 @@ EOF
         printf 'exit status: %s\n%s\n' "$status" "$output"
         return 1
     }
-    [[ "$output" == *"Personal data to remove:"* ]] || { printf '%s\n' "$output"; return 1; }
+    local plain
+    plain=$(printf '%s' "$output" | sed $'s/\033\\[[0-9;]*m//g')
+    [[ "$plain" == *"Personal data to remove, press D to choose:"* ]] || { printf '%s\n' "$output"; return 1; }
     [[ "$output" == *", including personal data"* ]] || { printf '%s\n' "$output"; return 1; }
     # The App Group container is never preselected; it stays in the kept list.
     [[ "$output" == *"Personal data kept:"*"Group Containers/group.com.example.demo"* ]] || {
@@ -959,11 +963,13 @@ EOF
         return 1
     }
     # The first preview offered the data; the confirmed one no longer does.
-    local confirmed="${output##*Files to be removed:}"
-    [[ "$output" == *"Personal data to remove:"* ]] || { printf '%s\n' "$output"; return 1; }
-    [[ "$confirmed" != *"Personal data to remove:"* ]] || { printf '%s\n' "$output"; return 1; }
+    local plain
+    plain=$(printf '%s' "$output" | sed $'s/\033\\[[0-9;]*m//g')
+    local confirmed="${plain##*Files to be removed:}"
+    [[ "$plain" == *"Personal data to remove, press D to choose:"* ]] || { printf '%s\n' "$output"; return 1; }
+    [[ "$confirmed" != *"Personal data to remove"* ]] || { printf '%s\n' "$output"; return 1; }
     [[ "$confirmed" != *"including personal data"* ]] || { printf '%s\n' "$output"; return 1; }
-    [[ "$confirmed" == *"Personal data kept:"*"Application Support/Demo"* ]] || {
+    [[ "$confirmed" == *"Personal data kept, press D to choose:"*"Application Support/Demo"* ]] || {
         printf '%s\n' "$output"
         return 1
     }
