@@ -427,6 +427,7 @@ EOF
     # A helper's app installed outside every scanned root answers Spotlight
     # only to its own id, so com.example.thing.helper must also ask for
     # com.example.thing.
+    # shellcheck disable=SC2016  # The mdfind stub expands its own arguments.
     mole_test_fake_command mdfind 'case "$1" in
     *"== '"'"'com.example.thing'"'"'c"*) echo "/Users/someone/Downloads/Thing.app" ;;
 esac'
@@ -452,7 +453,10 @@ EOF
     local answer
     for answer in finder empty fail; do
         case "$answer" in
-            finder) mole_test_fake_command mdfind '[ "$1" = -onlyin ] && [ "$2" = /System/Library/CoreServices ] && echo /System/Library/CoreServices/Finder.app' ;;
+            finder)
+                # shellcheck disable=SC2016  # The mdfind stub expands its own arguments.
+                mole_test_fake_command mdfind '[ "$1" = -onlyin ] && [ "$2" = /System/Library/CoreServices ] && echo /System/Library/CoreServices/Finder.app'
+                ;;
             empty) mole_test_fake_command mdfind 'exit 0' ;;
             fail) mole_test_fake_command mdfind 'echo /System/Library/CoreServices/Finder.app; exit 1' ;;
         esac
