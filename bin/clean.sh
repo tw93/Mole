@@ -877,12 +877,25 @@ _safe_clean_spinner_label() {
     # get_display_width counts the one-column "…" as two.
     local cols="${_MOLE_SAFE_CLEAN_COLS:-80}"
     [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
-    local room=$((cols - 9 - ${#_MOLE_SAFE_CLEAN_LABEL} - 3))
+    local available=$((cols - 8))
+    local room=$((available - ${#_MOLE_SAFE_CLEAN_LABEL} - 4))
     if ((room < 8)); then
         return 0
     fi
     if [[ "$item_name" == *[![:ascii:]]* || ${#item_name} -gt $room ]]; then
-        item_name=$(truncate_middle_by_display_width "$item_name" "$room")
+        local shortened visible_width
+        shortened=$(truncate_middle_by_display_width "$item_name" "$room")
+        # The spinner can count a shortened Unicode name wider than the
+        # middle truncator does. A literal ellipsis can make the first cut
+        # match the input, so check labels with an ellipsis in either case.
+        while [[ "$item_name" == *[![:ascii:]]* && "$shortened" == *"…"* ]]; do
+            visible_width=$(get_display_width "$_MOLE_SAFE_CLEAN_LABEL · $shortened")
+            ((visible_width > available)) || break
+            room=$((room - (visible_width - available)))
+            ((room >= 8)) || return 0
+            shortened=$(truncate_middle_by_display_width "$item_name" "$room")
+        done
+        item_name="$shortened"
     fi
     _MOLE_SAFE_CLEAN_LABEL+=" · $item_name"
 }
