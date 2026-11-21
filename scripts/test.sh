@@ -10,13 +10,12 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-# About 30 cases fail on unchanged main from a checkout under /private/tmp
-# (an agent scratchpad), because the test homes sit inside it, and the run
-# reads like a regression in whatever is being verified.
+# A checkout under /private/tmp places test homes inside macOS's system temp
+# root, triggering path/ancestor safety guards on unchanged main.
 case "$(pwd -P)/" in
     /private/tmp/*)
-        echo "scripts/test.sh: this checkout is under /private/tmp, where about 30 cases fail on unchanged main." >&2
-        echo "Run it from a checkout under your home folder, such as: git worktree add --detach .claude/worktrees/<name>" >&2
+        echo "scripts/test.sh: cannot run tests from a checkout under /private/tmp (macOS temp-root safety guards reject test homes there)." >&2
+        echo "Run the suite from a checkout under your home directory (e.g. ~/... or a worktree inside your main clone)." >&2
         exit 2
         ;;
 esac

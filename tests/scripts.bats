@@ -96,7 +96,7 @@ EOF
     rm -rf "$root" # SAFE: exact mktemp-created gate fixture under /private/tmp
     [ "$status" -eq 2 ] || { echo "$output"; return 1; }
     [[ "$output" == *"under /private/tmp"* ]] || return 1
-    [[ "$output" == *".claude/worktrees/<name>"* ]]
+    [[ "$output" == *"under your home directory"* ]]
 }
 
 @test "test.sh includes test lint step" {
