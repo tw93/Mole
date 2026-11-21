@@ -67,6 +67,9 @@ setup() {
 }
 
 @test "purge paths abbreviates HOME only at a path boundary" {
+    # Purge resolves configured paths physically; a real HOME is physical too,
+    # while the bats temp dir may sit under the /var or /tmp links.
+    HOME=$(cd "$HOME" && pwd -P)
     local sibling="${HOME}er/projects"
     mkdir -p "$sibling"
     printf '%s\n' "$HOME/project" "$sibling" > "$HOME/.config/mole/purge_paths"

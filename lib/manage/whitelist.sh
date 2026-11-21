@@ -362,13 +362,15 @@ manage_whitelist_categories() {
     if [[ "$mode" == "optimize" ]]; then
         items_source=$(get_optimize_whitelist_items)
         active_config_file="$WHITELIST_CONFIG_OPTIMIZE"
-        local display_config="${active_config_file/#$HOME/~}"
+        local display_config
+        display_config=$(mole_tilde_path "$active_config_file")
         menu_title="Whitelist Manager, Select optimize tasks to ignore
 ${GRAY}Edit: ${display_config}${NC}"
     else
         items_source=$(get_all_cache_items)
         active_config_file="$WHITELIST_CONFIG_CLEAN"
-        local display_config="${active_config_file/#$HOME/~}"
+        local display_config
+        display_config=$(mole_tilde_path "$active_config_file")
         # Naming the file was not enough: users read the category list as the
         # whole feature and did not know the file also takes arbitrary paths,
         # so a cache Mole cleans but does not list looked unprotectable
@@ -484,7 +486,7 @@ ${GRAY}Edit: ${display_config}, any path added there is protected too${NC}"
             if [[ $idx -ge 0 && $idx -lt ${#cache_patterns[@]} ]]; then
                 local pattern="${cache_patterns[$idx]}"
                 # Convert back to portable format with ~
-                pattern="${pattern/#$HOME/~}"
+                pattern=$(mole_tilde_path "$pattern")
                 selected_patterns+=("$pattern")
             fi
         done
@@ -516,7 +518,8 @@ ${GRAY}Edit: ${display_config}, any path added there is protected too${NC}"
     else
         summary_lines+=("Protected ${total_protected} caches")
     fi
-    local display_config="${active_config_file/#$HOME/~}"
+    local display_config
+    display_config=$(mole_tilde_path "$active_config_file")
     summary_lines+=("Config: ${GRAY}${display_config}${NC}")
 
     print_summary_block "${summary_lines[@]}"

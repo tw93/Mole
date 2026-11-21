@@ -529,10 +529,10 @@ show_user_launch_agent_hint_notice() {
         elif [[ -n "$program" ]] && hint_is_app_scoped_launch_target "$program"; then
             if [[ ! -e "$program" ]]; then
                 reason="Missing app/helper target"
-                target="${program/#$HOME/~}"
+                target=$(mole_tilde_path "$program")
             elif [[ ! -f "$program" || ! -x "$program" ]]; then
                 reason="Program target is not executable"
-                target="${program/#$HOME/~}"
+                target=$(mole_tilde_path "$program")
             fi
         else
             associated=$(hint_extract_launch_agent_associated_bundle "$plist")
@@ -543,7 +543,7 @@ show_user_launch_agent_hint_notice() {
         fi
 
         if [[ -n "$reason" ]]; then
-            sources+=("${plist/#$HOME/~}")
+            sources+=("$(mole_tilde_path "$plist")")
             reasons+=("$reason")
             targets+=("$target")
             if [[ ${#sources[@]} -ge $max_hits ]]; then

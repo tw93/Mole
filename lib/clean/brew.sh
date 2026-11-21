@@ -75,7 +75,7 @@ show_brew_cleanup_preview() {
         if [[ "$path" =~ /Cellar/([^/]+)/([^/]+)$ ]]; then
             label="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
         else
-            label="${path/#$HOME/~}"
+            label=$(mole_tilde_path "$path")
         fi
         label=$(mole_terminal_safe_text "$label")
         [[ -n "$size" ]] && label+=" · $(mole_terminal_safe_text "$size")"

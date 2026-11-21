@@ -1219,7 +1219,9 @@ percent_encode_path() {
 }
 
 # Print a path with HOME shown as ~, only at a path boundary: a string prefix
-# turned the sibling /Users/tester under HOME /Users/test into ~er.
+# turned the sibling /Users/tester under HOME /Users/test into ~er. Use this
+# instead of ${path/#$HOME/~}: bash 5.3+ also tilde-expands that literal ~,
+# so the replacement silently becomes a no-op there.
 mole_tilde_path() {
     case "$1" in
         "$HOME") printf '%s' '~' ;;
