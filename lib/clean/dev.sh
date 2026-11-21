@@ -100,6 +100,10 @@ clean_tool_cache() {
         fi
         [[ $size_rc -eq 0 ]] || size_before_kb=""
         "$@" > /dev/null 2>&1 || command_rc=$?
+        # Record a successful owner cleanup before result sizing can be interrupted.
+        if [[ $command_rc -eq 0 && "${1:-}" != ":" ]]; then
+            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "${cache_path:-$description}" "owner command: $description"
+        fi
         local freed_kb=0 after_rc=0
         if [[ $command_rc -eq 0 && -n "$size_before_kb" ]]; then
             local size_after_kb=0
@@ -122,13 +126,7 @@ clean_tool_cache() {
                 echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $description"
             fi
             note_activity
-            # The owner command changed the Mac, so it gets an operations.log
-            # row like every other sink. A ":" placeholder changed nothing.
-            if [[ "${1:-}" != ":" ]]; then
-                log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "${cache_path:-$description}" "owner command: $description"
-            fi
-            # Ctrl-C while measuring the result reaches only the measuring
-            # child; the command already ran, so record it, then stop.
+            # Preserve an interruption reported by the sizing child.
             if mole_rc_signal "$after_rc"; then
                 _mole_record_clean_cancellation "$after_rc" "$description"
                 return "$after_rc"
@@ -1159,6 +1157,10 @@ clean_go_cache_root() {
         "$lexical_parent" "$lexical_parent_id" "$lexical_target_id" \
         "$physical_parent" "$physical_parent_id" "$physical_target_id" \
         "$cache_kind" "$clean_flag" "$DRY_RUN" || command_status=$?
+    # Record the completed cleanup before measuring the remaining cache.
+    if [[ "$DRY_RUN" != "true" && $command_status -eq 0 ]]; then
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$cache_root" "owner command: $display_name"
+    fi
     local after_rc=0
     if [[ "$DRY_RUN" != "true" && $command_status -eq 0 && -n "$size_before_kb" ]]; then
         local size_after_kb=0
@@ -1184,10 +1186,6 @@ clean_go_cache_root() {
             echo -e "  ${GREEN}${ICON_SUCCESS}${NC} $display_name"
         fi
         note_activity
-        # A dry run ran `go clean -n`, which changes nothing.
-        if [[ "$DRY_RUN" != "true" ]]; then
-            log_operation "${MOLE_CURRENT_COMMAND:-clean}" "REMOVED" "$cache_root" "owner command: $display_name"
-        fi
         if mole_rc_signal "$after_rc"; then
             _mole_record_clean_cancellation "$after_rc" "$display_name"
             return "$after_rc"
