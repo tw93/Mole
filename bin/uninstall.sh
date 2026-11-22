@@ -2195,7 +2195,6 @@ main() {
             IFS='|' read -r _ app_path app_name _ size last_used _ <<< "$selected_app"
             local safe_name
             safe_name=$(mole_terminal_safe_text "$app_name")
-            mole_strip_invisible_marks safe_name "$safe_name"
             local size_display
             size_display=$(uninstall_normalize_size_display "$size" "$app_path")
             local last_display

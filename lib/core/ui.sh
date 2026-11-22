@@ -36,65 +36,229 @@ mole_report_program_status() {
     printf '\033]7501;state=%s:app=mole%s\033\134' "$1" "${kind:+:kind=$kind}" >&2 || true
 }
 
-# Calculate display width (CJK characters count as 2)
+# Terminal columns a string takes, the width charmbracelet/x/ansi StringWidth
+# gives in the Go TUIs, so shell and Go menus line up: the zero and wide
+# ranges below are generated from StringWidth one code point at a time, then
+# a ZWJ sequence, skin tone, flag pair or VS16 emoji counts as one 2-column
+# cluster. Scripts whose clusters join several letters (Devanagari conjuncts)
+# can still differ. Bash 3.2's printf "'c" yields only the first byte, so
+# UTF-8 is decoded by hand in the C locale; no forks. Locked by
+# "get_display_width matches the Go width table" in core_common.bats.
 get_display_width() {
     local str="$1"
+    local had_lc=${LC_ALL+x} old_lc="${LC_ALL:-}"
 
-    # Optimized pure bash implementation without forks
-    local width
-
-    # Save current locale
-    local old_lc="${LC_ALL:-}"
-
-    # Get Char Count (UTF-8)
-    # We must export ensuring it applies to the expansion (though just assignment often works in newer bash, export is safer for all subshells/cmds)
     export LC_ALL=en_US.UTF-8
     local char_count=${#str}
-
-    # Get Byte Count (C)
     export LC_ALL=C
     local byte_count=${#str}
 
-    # Restore Locale immediately
-    if [[ -n "$old_lc" ]]; then
+    local width=$char_count
+    if ((byte_count != char_count)); then
+        width=0
+        local i=0 b c n k cp w prev_w=0 after_zwj=0 flag_open=0
+        while ((i < byte_count)); do
+            printf -v b '%d' "'${str:i:1}"
+            if ((b < 0)); then b=$((b + 256)); fi
+            i=$((i + 1))
+            if ((b < 128)); then
+                width=$((width + 1))
+                prev_w=1 after_zwj=0 flag_open=0
+                continue
+            fi
+            if ((b >= 240)); then
+                n=3 cp=$((b & 7))
+            elif ((b >= 224)); then
+                n=2 cp=$((b & 15))
+            elif ((b >= 192)); then
+                n=1 cp=$((b & 31))
+            else
+                n=0 cp=-1
+            fi
+            for ((k = 0; k < n; k++)); do
+                printf -v c '%d' "'${str:i:1}"
+                if ((c < 0)); then c=$((c + 256)); fi
+                if ((c < 128 || c >= 192)); then
+                    cp=-1
+                    break
+                fi
+                cp=$(((cp << 6) | (c & 63)))
+                i=$((i + 1))
+            done
+
+            if ((cp == 0x200D)); then
+                after_zwj=1
+                continue
+            fi
+            if ((cp == 0xFE0F)); then
+                # VS16 asks for emoji presentation: a narrow base becomes wide.
+                if ((prev_w == 1)); then
+                    width=$((width + 1))
+                    prev_w=2
+                fi
+                continue
+            fi
+            if ((cp < 0)); then
+                w=1
+            elif ((cp < 0x300)); then
+                w=1
+                if ((cp == 0xAD)); then w=0; fi
+            elif (((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0xAC00 && cp <= 0xD7A3))); then
+                w=2
+            elif ((cp >= 0x1F3FB && cp <= 0x1F3FF)); then
+                # A skin tone joins whatever comes before it; alone it is wide.
+                w=2
+                if ((prev_w > 0)); then w=0; fi
+            elif ((cp >= 0x1F1E6 && cp <= 0x1F1FF)); then
+                # Regional indicators pair into one flag.
+                if ((flag_open)); then
+                    w=0 flag_open=0
+                else
+                    w=2 flag_open=1
+                fi
+            elif ((cp < 0x2000)) && (((cp >= 0x300 && cp <= 0x36F) || (cp >= 0x483 && cp <= 0x489) || (\
+            cp >= 0x591 && cp <= 0x5BD) || cp == 0x5BF || (cp >= 0x5C1 && cp <= 0x5C2) || (\
+            cp >= 0x5C4 && cp <= 0x5C5) || cp == 0x5C7 || (cp >= 0x600 && cp <= 0x605) || (\
+            cp >= 0x610 && cp <= 0x61A) || cp == 0x61C || (cp >= 0x64B && cp <= 0x65F) || cp == 0x670 || (\
+            cp >= 0x6D6 && cp <= 0x6DD) || (cp >= 0x6DF && cp <= 0x6E4) || (\
+            cp >= 0x6E7 && cp <= 0x6E8) || (cp >= 0x6EA && cp <= 0x6ED) || cp == 0x70F || cp == 0x711 || (\
+            cp >= 0x730 && cp <= 0x74A) || (cp >= 0x7A6 && cp <= 0x7B0) || (\
+            cp >= 0x7EB && cp <= 0x7F3) || cp == 0x7FD || (cp >= 0x816 && cp <= 0x819) || (\
+            cp >= 0x81B && cp <= 0x823) || (cp >= 0x825 && cp <= 0x827) || (\
+            cp >= 0x829 && cp <= 0x82D) || (cp >= 0x859 && cp <= 0x85B) || (\
+            cp >= 0x890 && cp <= 0x891) || (cp >= 0x898 && cp <= 0x89F) || (\
+            cp >= 0x8CA && cp <= 0x902) || cp == 0x93A || cp == 0x93C || (cp >= 0x941 && cp <= 0x948) || \
+            cp == 0x94D || (cp >= 0x951 && cp <= 0x957) || (cp >= 0x962 && cp <= 0x963) || cp == 0x981 || \
+            cp == 0x9BC || (cp >= 0x9C1 && cp <= 0x9C4) || cp == 0x9CD || (cp >= 0x9E2 && cp <= 0x9E3) || \
+            cp == 0x9FE || (cp >= 0xA01 && cp <= 0xA02) || cp == 0xA3C || (cp >= 0xA41 && cp <= 0xA42) || (\
+            cp >= 0xA47 && cp <= 0xA48) || (cp >= 0xA4B && cp <= 0xA4D) || cp == 0xA51 || (\
+            cp >= 0xA70 && cp <= 0xA71) || cp == 0xA75 || (cp >= 0xA81 && cp <= 0xA82) || cp == 0xABC || (\
+            cp >= 0xAC1 && cp <= 0xAC5) || (cp >= 0xAC7 && cp <= 0xAC8) || cp == 0xACD || (\
+            cp >= 0xAE2 && cp <= 0xAE3) || (cp >= 0xAFA && cp <= 0xAFF) || cp == 0xB01 || cp == 0xB3C || \
+            cp == 0xB3F || (cp >= 0xB41 && cp <= 0xB44) || cp == 0xB4D || (cp >= 0xB55 && cp <= 0xB56) || (\
+            cp >= 0xB62 && cp <= 0xB63) || cp == 0xB82 || cp == 0xBC0 || cp == 0xBCD || cp == 0xC00 || \
+            cp == 0xC04 || cp == 0xC3C || (cp >= 0xC3E && cp <= 0xC40) || (cp >= 0xC46 && cp <= 0xC48) || (\
+            cp >= 0xC4A && cp <= 0xC4D) || (cp >= 0xC55 && cp <= 0xC56) || (\
+            cp >= 0xC62 && cp <= 0xC63) || cp == 0xC81 || cp == 0xCBC || cp == 0xCBF || cp == 0xCC6 || (\
+            cp >= 0xCCC && cp <= 0xCCD) || (cp >= 0xCE2 && cp <= 0xCE3) || (\
+            cp >= 0xD00 && cp <= 0xD01) || (cp >= 0xD3B && cp <= 0xD3C) || (\
+            cp >= 0xD41 && cp <= 0xD44) || cp == 0xD4D || (cp >= 0xD62 && cp <= 0xD63) || cp == 0xD81 || \
+            cp == 0xDCA || (cp >= 0xDD2 && cp <= 0xDD4) || cp == 0xDD6 || cp == 0xE31 || (\
+            cp >= 0xE34 && cp <= 0xE3A) || (cp >= 0xE47 && cp <= 0xE4E) || cp == 0xEB1 || (\
+            cp >= 0xEB4 && cp <= 0xEBC) || (cp >= 0xEC8 && cp <= 0xECE) || (\
+            cp >= 0xF18 && cp <= 0xF19) || cp == 0xF35 || cp == 0xF37 || cp == 0xF39 || (\
+            cp >= 0xF71 && cp <= 0xF7E) || (cp >= 0xF80 && cp <= 0xF84) || (\
+            cp >= 0xF86 && cp <= 0xF87) || (cp >= 0xF8D && cp <= 0xF97) || (\
+            cp >= 0xF99 && cp <= 0xFBC) || cp == 0xFC6 || (cp >= 0x102D && cp <= 0x1030) || (\
+            cp >= 0x1032 && cp <= 0x1037) || (cp >= 0x1039 && cp <= 0x103A) || (\
+            cp >= 0x103D && cp <= 0x103E) || (cp >= 0x1058 && cp <= 0x1059) || (\
+            cp >= 0x105E && cp <= 0x1060) || (cp >= 0x1071 && cp <= 0x1074) || cp == 0x1082 || (\
+            cp >= 0x1085 && cp <= 0x1086) || cp == 0x108D || cp == 0x109D || (\
+            cp >= 0x1160 && cp <= 0x11FF) || (cp >= 0x135D && cp <= 0x135F) || (\
+            cp >= 0x1712 && cp <= 0x1714) || (cp >= 0x1732 && cp <= 0x1733) || (\
+            cp >= 0x1752 && cp <= 0x1753) || (cp >= 0x1772 && cp <= 0x1773) || (\
+            cp >= 0x17B4 && cp <= 0x17B5) || (cp >= 0x17B7 && cp <= 0x17BD) || cp == 0x17C6 || (\
+            cp >= 0x17C9 && cp <= 0x17D3) || cp == 0x17DD || (cp >= 0x180B && cp <= 0x180F) || (\
+            cp >= 0x1885 && cp <= 0x1886) || cp == 0x18A9 || (cp >= 0x1920 && cp <= 0x1922) || (\
+            cp >= 0x1927 && cp <= 0x1928) || cp == 0x1932 || (cp >= 0x1939 && cp <= 0x193B) || (\
+            cp >= 0x1A17 && cp <= 0x1A18) || cp == 0x1A1B || cp == 0x1A56 || (\
+            cp >= 0x1A58 && cp <= 0x1A5E) || cp == 0x1A60 || cp == 0x1A62 || (\
+            cp >= 0x1A65 && cp <= 0x1A6C) || (cp >= 0x1A73 && cp <= 0x1A7C) || cp == 0x1A7F || (\
+            cp >= 0x1AB0 && cp <= 0x1ACE) || (cp >= 0x1B00 && cp <= 0x1B03) || cp == 0x1B34 || (\
+            cp >= 0x1B36 && cp <= 0x1B3A) || cp == 0x1B3C || cp == 0x1B42 || (\
+            cp >= 0x1B6B && cp <= 0x1B73) || (cp >= 0x1B80 && cp <= 0x1B81) || (\
+            cp >= 0x1BA2 && cp <= 0x1BA5) || (cp >= 0x1BA8 && cp <= 0x1BA9) || (\
+            cp >= 0x1BAB && cp <= 0x1BAD) || cp == 0x1BE6 || (cp >= 0x1BE8 && cp <= 0x1BE9) || \
+            cp == 0x1BED || (cp >= 0x1BEF && cp <= 0x1BF1) || (cp >= 0x1C2C && cp <= 0x1C33) || (\
+            cp >= 0x1C36 && cp <= 0x1C37) || (cp >= 0x1CD0 && cp <= 0x1CD2) || (\
+            cp >= 0x1CD4 && cp <= 0x1CE0) || (cp >= 0x1CE2 && cp <= 0x1CE8) || cp == 0x1CED || \
+            cp == 0x1CF4 || (cp >= 0x1CF8 && cp <= 0x1CF9) || (cp >= 0x1DC0 && cp <= 0x1DFF))); then
+                w=0
+            elif ((cp >= 0x2000)) && (((cp >= 0x200B && cp <= 0x200C) || (cp >= 0x200E && cp <= 0x200F) || (\
+            cp >= 0x2028 && cp <= 0x202E) || (cp >= 0x2060 && cp <= 0x2064) || (\
+            cp >= 0x2066 && cp <= 0x206F) || (cp >= 0x20D0 && cp <= 0x20F0) || (\
+            cp >= 0x2CEF && cp <= 0x2CF1) || cp == 0x2D7F || (cp >= 0x2DE0 && cp <= 0x2DFF) || (\
+            cp >= 0x302A && cp <= 0x302D) || (cp >= 0x3099 && cp <= 0x309A) || (\
+            cp >= 0xA66F && cp <= 0xA672) || (cp >= 0xA674 && cp <= 0xA67D) || (\
+            cp >= 0xA69E && cp <= 0xA69F) || (cp >= 0xA6F0 && cp <= 0xA6F1) || cp == 0xA802 || \
+            cp == 0xA806 || cp == 0xA80B || (cp >= 0xA825 && cp <= 0xA826) || cp == 0xA82C || (\
+            cp >= 0xA8C4 && cp <= 0xA8C5) || (cp >= 0xA8E0 && cp <= 0xA8F1) || cp == 0xA8FF || (\
+            cp >= 0xA926 && cp <= 0xA92D) || (cp >= 0xA947 && cp <= 0xA951) || (\
+            cp >= 0xA980 && cp <= 0xA982) || cp == 0xA9B3 || (cp >= 0xA9B6 && cp <= 0xA9B9) || (\
+            cp >= 0xA9BC && cp <= 0xA9BD) || cp == 0xA9E5 || (cp >= 0xAA29 && cp <= 0xAA2E) || (\
+            cp >= 0xAA31 && cp <= 0xAA32) || (cp >= 0xAA35 && cp <= 0xAA36) || cp == 0xAA43 || \
+            cp == 0xAA4C || cp == 0xAA7C || cp == 0xAAB0 || (cp >= 0xAAB2 && cp <= 0xAAB4) || (\
+            cp >= 0xAAB7 && cp <= 0xAAB8) || (cp >= 0xAABE && cp <= 0xAABF) || cp == 0xAAC1 || (\
+            cp >= 0xAAEC && cp <= 0xAAED) || cp == 0xAAF6 || cp == 0xABE5 || cp == 0xABE8 || \
+            cp == 0xABED || cp == 0xFB1E || (cp >= 0xFE00 && cp <= 0xFE0E) || (\
+            cp >= 0xFE20 && cp <= 0xFE2F) || cp == 0xFEFF || (cp >= 0xFF9E && cp <= 0xFF9F) || (\
+            cp >= 0xFFF9 && cp <= 0xFFFB) || cp == 0xE0001 || (cp >= 0xE0020 && cp <= 0xE007F) || (\
+            cp >= 0xE0100 && cp <= 0xE01EF))); then
+                w=0
+            elif (((cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x231A && cp <= 0x231B) || (\
+                cp >= 0x2329 && cp <= 0x232A) || (cp >= 0x23E9 && cp <= 0x23EC) || cp == 0x23F0 || \
+                cp == 0x23F3 || (cp >= 0x25FD && cp <= 0x25FE) || (cp >= 0x2614 && cp <= 0x2615) || (\
+                cp >= 0x2630 && cp <= 0x2637) || (cp >= 0x2648 && cp <= 0x2653) || cp == 0x267F || (\
+                cp >= 0x268A && cp <= 0x268F) || cp == 0x2693 || cp == 0x26A1 || (\
+                cp >= 0x26AA && cp <= 0x26AB) || (cp >= 0x26BD && cp <= 0x26BE) || (\
+                cp >= 0x26C4 && cp <= 0x26C5) || cp == 0x26CE || cp == 0x26D4 || cp == 0x26EA || (\
+                cp >= 0x26F2 && cp <= 0x26F3) || cp == 0x26F5 || cp == 0x26FA || cp == 0x26FD || \
+                cp == 0x2705 || (cp >= 0x270A && cp <= 0x270B) || cp == 0x2728 || cp == 0x274C || \
+                cp == 0x274E || (cp >= 0x2753 && cp <= 0x2755) || cp == 0x2757 || (\
+                cp >= 0x2795 && cp <= 0x2797) || cp == 0x27B0 || cp == 0x27BF || (\
+                cp >= 0x2B1B && cp <= 0x2B1C) || cp == 0x2B50 || cp == 0x2B55 || (\
+                cp >= 0x2E80 && cp <= 0x2E99) || (cp >= 0x2E9B && cp <= 0x2EF3) || (\
+                cp >= 0x2F00 && cp <= 0x2FD5) || (cp >= 0x2FF0 && cp <= 0x3029) || (\
+                cp >= 0x302E && cp <= 0x303E) || (cp >= 0x3041 && cp <= 0x3096) || (\
+                cp >= 0x309B && cp <= 0x30FF) || (cp >= 0x3105 && cp <= 0x312F) || (\
+                cp >= 0x3131 && cp <= 0x318E) || (cp >= 0x3190 && cp <= 0x31E5) || (\
+                cp >= 0x31EF && cp <= 0x321E) || (cp >= 0x3220 && cp <= 0x3247) || (\
+                cp >= 0x3250 && cp <= 0x4DBF) || (cp >= 0x4E00 && cp <= 0xA4CF) || (\
+                cp >= 0xA960 && cp <= 0xA97C) || (cp >= 0xAC00 && cp <= 0xD7A3) || (\
+                cp >= 0xFE10 && cp <= 0xFE19) || (cp >= 0xFE30 && cp <= 0xFE52) || (\
+                cp >= 0xFE54 && cp <= 0xFE66) || (cp >= 0xFE68 && cp <= 0xFE6B) || (\
+                cp >= 0xFF01 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6) || (\
+                cp >= 0x16FE0 && cp <= 0x16FE4) || (cp >= 0x17000 && cp <= 0x18AFF) || (\
+                cp >= 0x1B000 && cp <= 0x1B2FF) || cp == 0x1F004 || cp == 0x1F0CF || cp == 0x1F18E || (\
+                cp >= 0x1F191 && cp <= 0x1F19A) || (cp >= 0x1F200 && cp <= 0x1F202) || (\
+                cp >= 0x1F210 && cp <= 0x1F23B) || (cp >= 0x1F240 && cp <= 0x1F248) || (\
+                cp >= 0x1F250 && cp <= 0x1F251) || (cp >= 0x1F260 && cp <= 0x1F265) || (\
+                cp >= 0x1F300 && cp <= 0x1F320) || (cp >= 0x1F32D && cp <= 0x1F335) || (\
+                cp >= 0x1F337 && cp <= 0x1F37C) || (cp >= 0x1F37E && cp <= 0x1F393) || (\
+                cp >= 0x1F3A0 && cp <= 0x1F3CA) || (cp >= 0x1F3CF && cp <= 0x1F3D3) || (\
+                cp >= 0x1F3E0 && cp <= 0x1F3F0) || cp == 0x1F3F4 || (cp >= 0x1F3F8 && cp <= 0x1F3FA) || (\
+                cp >= 0x1F400 && cp <= 0x1F43E) || cp == 0x1F440 || (cp >= 0x1F442 && cp <= 0x1F4FC) || (\
+                cp >= 0x1F4FF && cp <= 0x1F53D) || (cp >= 0x1F54B && cp <= 0x1F54E) || (\
+                cp >= 0x1F550 && cp <= 0x1F567) || cp == 0x1F57A || (cp >= 0x1F595 && cp <= 0x1F596) || \
+                cp == 0x1F5A4 || (cp >= 0x1F5FB && cp <= 0x1F64F) || (cp >= 0x1F680 && cp <= 0x1F6C5) || \
+                cp == 0x1F6CC || (cp >= 0x1F6D0 && cp <= 0x1F6D2) || (cp >= 0x1F6D5 && cp <= 0x1F6D7) || (\
+                cp >= 0x1F6DC && cp <= 0x1F6DF) || (cp >= 0x1F6EB && cp <= 0x1F6EC) || (\
+                cp >= 0x1F6F4 && cp <= 0x1F6FC) || (cp >= 0x1F7E0 && cp <= 0x1F7EB) || cp == 0x1F7F0 || (\
+                cp >= 0x1F90C && cp <= 0x1F93A) || (cp >= 0x1F93C && cp <= 0x1F945) || (\
+                cp >= 0x1F947 && cp <= 0x1F9FF) || (cp >= 0x1FA70 && cp <= 0x1FA7C) || (\
+                cp >= 0x1FA80 && cp <= 0x1FA89) || (cp >= 0x1FA8F && cp <= 0x1FAC6) || (\
+                cp >= 0x1FACE && cp <= 0x1FADC) || (cp >= 0x1FADF && cp <= 0x1FAE9) || (\
+                cp >= 0x1FAF0 && cp <= 0x1FAF8) || (cp >= 0x20000 && cp <= 0x3FFFD))); then
+                w=2
+            else
+                w=1
+            fi
+            if ((cp < 0x1F1E6 || cp > 0x1F1FF)); then flag_open=0; fi
+            # An emoji after a ZWJ joins the cluster before it.
+            if ((after_zwj && prev_w == 2 && w > 0 && (cp >= 0x1F000 || (cp >= 0x2190 && cp <= 0x2BFF)))); then
+                w=0
+            fi
+            after_zwj=0
+            width=$((width + w))
+            if ((w > 0)); then prev_w=$w; fi
+        done
+    fi
+
+    if [[ -n "$had_lc" ]]; then
         export LC_ALL="$old_lc"
     else
         unset LC_ALL
     fi
-
-    if [[ $byte_count -eq $char_count ]]; then
-        echo "$char_count"
-        return
-    fi
-
-    # CJK Heuristic:
-    # Most CJK chars are 3 bytes in UTF-8 and width 2.
-    # ASCII chars are 1 byte and width 1.
-    # Width ~= CharCount + (ByteCount - CharCount) / 2
-    # "中" (1 char, 3 bytes) -> 1 + (2)/2 = 2.
-    # "A" (1 char, 1 byte) -> 1 + 0 = 1.
-    # This is an approximation but very fast and sufficient for App names.
-    # Integer arithmetic in bash automatically handles floor.
-    local extra_bytes=$((byte_count - char_count))
-    local padding=$((extra_bytes / 2))
-    width=$((char_count + padding))
-
-    # Adjust for zero-width joiners and emoji variation selectors (common in filenames/emojis)
-    # These characters add bytes but no visible width; subtract their count if present.
-    local zwj=$'\u200d'  # zero-width joiner
-    local vs16=$'\ufe0f' # emoji variation selector
-    local zero_width=0
-
-    local without_zwj=${str//$zwj/}
-    zero_width=$((zero_width + (char_count - ${#without_zwj})))
-
-    local without_vs=${str//$vs16/}
-    zero_width=$((zero_width + (char_count - ${#without_vs})))
-
-    if ((zero_width > 0 && width > zero_width)); then
-        width=$((width - zero_width))
-    fi
-
     echo "$width"
 }
 

@@ -13,7 +13,6 @@ format_app_display() {
     # This row is a rendering site only: apps_data keeps the stored name, and
     # matching, sizes and removal plans are untouched.
     display_name=$(mole_terminal_safe_text "$display_name")
-    mole_strip_invisible_marks display_name "$display_name"
 
     # Use common function from ui.sh to format last used time
     local compact_last_used

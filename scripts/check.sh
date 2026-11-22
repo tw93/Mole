@@ -204,6 +204,24 @@ find lib -name "*.sh" | while read -r script; do
 done
 echo -e "${GREEN}${ICON_SUCCESS} Syntax check passed${NC}\n"
 
+# /bin/bash 3.2 leaves $'\u200d' as the six characters \u200d, so a code point
+# written that way never matches anything (get_display_width carried a dead
+# ZWJ adjustment this way). Write the UTF-8 bytes instead: $'\xe2\x80\x8d'.
+unicode_escape_files=(mole install.sh bin/*.sh lib/*/*.sh scripts/*.sh)
+while IFS= read -r test_file; do unicode_escape_files+=("$test_file"); done < <(find tests -type f \( -name '*.bats' -o -name '*.bash' -o -name '*.sh' \))
+unicode_escape_status=0
+unicode_escape_hits=$(grep -nE "\\\$'(\\\\[^uU]|[^'\\\\])*\\\\[uU][0-9A-Fa-f]" "${unicode_escape_files[@]}") || unicode_escape_status=$?
+if ((unicode_escape_status > 1)); then
+    echo -e "${RED}${ICON_ERROR} The \$'\\u' escape scan could not read its files${NC}\n"
+    exit 1
+fi
+unicode_escape_hits=$(printf '%s\n' "$unicode_escape_hits" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)
+if [[ -n "$unicode_escape_hits" ]]; then
+    printf '%s\n' "$unicode_escape_hits"
+    echo -e "${RED}${ICON_ERROR} \$'\\u' escapes stay literal in /bin/bash 3.2; use \\x byte escapes${NC}\n"
+    exit 1
+fi
+
 # Same body, different name. Grep cannot see this class once the variables have
 # been renamed, and review reads the copies as separate helpers, so it needs a
 # gate rather than a habit. Run with --list to inspect every group.

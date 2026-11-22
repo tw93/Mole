@@ -538,8 +538,6 @@ opt_diag_memory_pressure() {
         item=$(truncate_middle_by_display_width "$holder_name" 24)
         [[ "$holder_count" -gt 1 ]] && item+=" ×${holder_count}"
         item+=" $(bytes_to_human_kb "$holder_kb")"
-        # get_display_width counts the one-column "…" and "×" as two, which
-        # only errs toward dropping an entry.
         if ((shown > 0 && $(get_display_width "$plain · $item") > cols - 1)); then
             break
         fi

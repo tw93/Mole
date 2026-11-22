@@ -873,8 +873,7 @@ _safe_clean_spinner_label() {
     if [[ "$item_name" == *[[:cntrl:]]* ]]; then
         item_name=$(mole_terminal_safe_text "$item_name")
     fi
-    # format_spinner_message keeps cols - 8; one more column of slack, since
-    # get_display_width counts the one-column "…" as two.
+    # format_spinner_message keeps cols - 8.
     local cols="${_MOLE_SAFE_CLEAN_COLS:-80}"
     [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
     local available=$((cols - 8))
@@ -885,9 +884,10 @@ _safe_clean_spinner_label() {
     if [[ "$item_name" == *[![:ascii:]]* || ${#item_name} -gt $room ]]; then
         local shortened visible_width
         shortened=$(truncate_middle_by_display_width "$item_name" "$room")
-        # The spinner can count a shortened Unicode name wider than the
-        # middle truncator does. A literal ellipsis can make the first cut
-        # match the input, so check labels with an ellipsis in either case.
+        # The middle truncator counts every non-ASCII character as two, so
+        # its cut is never wider than get_display_width measures; the loop
+        # stays as a guard. A literal ellipsis can make the first cut match
+        # the input, so check labels with an ellipsis in either case.
         while [[ "$item_name" == *[![:ascii:]]* && "$shortened" == *"…"* ]]; do
             visible_width=$(get_display_width "$_MOLE_SAFE_CLEAN_LABEL · $shortened")
             ((visible_width > available)) || break

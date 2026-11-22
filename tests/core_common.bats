@@ -1368,6 +1368,90 @@ EOF
     [ "$output" = $'abcdefg...\n中文abc...' ]
 }
 
+# Expected widths come from charmbracelet/x/ansi StringWidth, the width the Go
+# TUIs use, so shell and Go menus line up. Each name is written as printf byte
+# escapes because /bin/bash 3.2 does not decode $'\u...'.
+@test "get_display_width matches the Go width table" {
+    cat > "$BATS_TEST_TMPDIR/widths" << 'EOF'
+6|Safari
+8|WhatsApp
+8|\xe2\x80\x8eWhatsApp
+6|\xe2\x80\x8f\xd9\x88\xd8\xa7\xd8\xaa\xd8\xb3\xd8\xa7\xd8\xa8
+4|Caf\xc3\xa9
+10|Cafe\xcc\x81 Cre\xcc\x80me
+4|\xe5\xbe\xae\xe4\xbf\xa1
+10|\xe7\xbd\x91\xe6\x98\x93\xe4\xba\x91\xe9\x9f\xb3\xe4\xb9\x90
+9|\xea\xb0\x80\xec\xa1\xb1 Talk
+6|\xe3\x82\xa2\xe3\x83\x97\xe3\x83\xaa
+3|\xef\xbd\xb1\xef\xbe\x8c\xef\xbe\x9f\xef\xbe\x98
+5|Wait\xe2\x80\xa6
+5|A \xe2\x86\x92 B
+12|\xc3\x85ngstr\xc3\xb6m Pro
+7|\xe2\x9d\xa4\xef\xb8\x8f Love
+6|\xe2\x9d\xa4 Love
+8|\xf0\x9f\x98\x80 Smile
+9|\xf0\x9f\x91\xa8\xe2\x80\x8d\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x91\xa7 Family
+2|\xf0\x9f\x91\x8d\xf0\x9f\x8f\xbd
+7|\xf0\x9f\x87\xa8\xf0\x9f\x87\xb3 Flag
+8|\xe2\x98\x81\xef\xb8\x8f Cloud
+7|\xe2\x9a\xa1 Bolt
+6|\xe2\x98\x85 Star
+6|\xc2\xbd Half
+6|\xef\xbc\xa1\xef\xbc\xa2\xef\xbc\xa3
+7|\xe3\x80\x80Space
+2|Z\xe2\x80\x8bW
+3|\xef\xbb\xbfBOM
+12|na\xc3\xafve r\xc3\xa9sum\xc3\xa9
+5|\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7
+4|\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d
+4|\xe0\xb8\xaa\xe0\xb8\xa7\xe0\xb8\xb1\xe0\xb8\xaa\xe0\xb8\x94\xe0\xb8\xb5
+16|\xe4\xb8\xad\xe6\x96\x87 Mixed ASCII
+8|\xf0\xa0\x80\x80 Ext B
+4|\xe4\xb8\xad\xe2\x80\x8d\xe6\x96\x87
+2|\xc3\xa9\xe2\x80\x8d\xc3\xa9
+1|\xe2\x80\x8d\xc3\xa9
+2|\xf0\x9f\x8f\xbd
+9|\xf0\x9f\x96\xa5 Desktop
+2|x\xc2\xadx
+1|\xf0\x9f\x8f\xb3
+8|\xf0\x9f\x8f\xb3\xef\xb8\x8f\xe2\x80\x8d\xf0\x9f\x8c\x88 Pride
+2|\xf0\x9f\x91\xa9\xe2\x80\x8d\xe2\x9d\xa4\xef\xb8\x8f\xe2\x80\x8d\xf0\x9f\x91\xa8
+4|\xf0\x9f\x87\xa8\xf0\x9f\x87\xb3\xf0\x9f\x87\xba\xf0\x9f\x87\xb8
+2|\xf0\x9f\x87\xa8
+1|\xd7\xa9\xd7\x81
+1|\xd9\x84\xd9\xb0
+1|a\xf0\x9f\x8f\xbd
+4|\xe3\x82\xa2\xe2\x80\x8d\xe3\x82\xa2
+EOF
+    run /bin/bash --noprofile --norc -c '
+        set -euo pipefail
+        export MOLE_BASE_LOADED=1
+        source "$1/lib/core/ui.sh"
+        while IFS="|" read -r want escaped; do
+            printf -v name "%b" "$escaped"
+            for loc in C en_US.UTF-8; do
+                got=$(LC_ALL=$loc get_display_width "$name")
+                [[ "$got" == "$want" ]] || echo "MISMATCH $loc want=$want got=$got $escaped"
+            done
+        done < "$2"
+        echo done
+    ' _ "$PROJECT_ROOT" "$BATS_TEST_TMPDIR/widths"
+    [ "$status" -eq 0 ]
+    [ "$output" = "done" ]
+}
+
+@test "mole_terminal_safe_text drops invisible marks and keeps ZWJ" {
+    run /bin/bash --noprofile --norc -c '
+        source "$1/lib/core/log.sh"
+        printf "%s|" "$(mole_terminal_safe_text $'"'"'\xe2\x80\x8eWhatsApp'"'"')" \
+            "$(mole_terminal_safe_text $'"'"'\xe2\x80\x8f\xe2\x80\x8f'"'"')"
+        mixed=$(mole_terminal_safe_text $'"'"'a\xe2\x80\x8db\ttab'"'"')
+        [[ "$mixed" == $'"'"'a\xe2\x80\x8db tab'"'"' ]] && echo zwj-kept
+    ' _ "$PROJECT_ROOT"
+    [ "$status" -eq 0 ]
+    [ "$output" = "WhatsApp|"$'\xe2\x80\x8f\xe2\x80\x8f'"|zwj-kept" ]
+}
+
 @test "read_key respects MOLE_READ_KEY_FORCE_CHAR" {
     run /bin/bash -c "export MOLE_BASE_LOADED=1; export MOLE_READ_KEY_FORCE_CHAR=1; source '$PROJECT_ROOT/lib/core/ui.sh'; echo -n 'j' | read_key"
     [ "$output" = "CHAR:j" ]

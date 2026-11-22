@@ -6,9 +6,7 @@ set -euo pipefail
 # sites only sanitize the text they print; stored names and every matching or
 # removal decision keep the original bytes.
 _uninstall_display_text() {
-    local text
-    mole_strip_invisible_marks text "${1:-}"
-    mole_terminal_safe_text "$text"
+    mole_terminal_safe_text "${1:-}"
 }
 
 # Ensure common.sh is loaded.

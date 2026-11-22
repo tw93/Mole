@@ -215,8 +215,8 @@ debug_log() {
 
 # Invisible format marks some app bundles put in their names: WhatsApp's
 # display name and every localized one start with U+200E (U+200F in Arabic).
-# A terminal draws the mark as a blank cell and the width estimate counts it as
-# two, so the name shifts right and its row falls out of line. Zero-width space,
+# Terminal.app draws the mark as a blank cell while get_display_width counts
+# it as zero, so the name shifts right and its row falls out of line. Zero-width space,
 # the bidi marks (Arabic letter mark included), embeddings, overrides and
 # isolates, word joiner and BOM go; ZWJ and ZWNJ stay, since emoji sequences and
 # Persian names need them. Byte escapes, because /bin/bash 3.2 leaves $'\u...'
@@ -228,7 +228,8 @@ readonly _MOLE_INVISIBLE_MARKS=(
     $'\xef\xbb\xbf'
 )
 
-# Sets the variable named by $1 to $2 without those marks, for rendering only;
+# Sets the variable named by $1 to $2 without those marks, for rendering only
+# (mole_terminal_safe_text applies it to everything it returns);
 # stored names, matching and caches keep the bytes the bundle gave. A name that
 # is nothing but marks keeps them, so a row never renders empty. No subshell.
 mole_strip_invisible_marks() {
@@ -245,6 +246,7 @@ mole_terminal_safe_text() {
     value=$(printf '%s' "$value" |
         LC_ALL=C tr '\r\n\t' '   ' |
         LC_ALL=C tr '\001-\010\013\014\016-\037\177' '?') || value=""
+    mole_strip_invisible_marks value "$value"
     printf '%s' "$value"
 }
 
