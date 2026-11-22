@@ -243,8 +243,13 @@ perform_purge() {
     cleanup_monitor
 
     case "$purge_outcome" in
-        no_candidates | cancelled) return 0 ;;
-        scan_failed) return 1 ;;
+        no_candidates | cancelled | scan_failed)
+            # start_purge already wrote the start marker; without the end
+            # marker mo history lists this finished run as never ended.
+            log_operation_session_end "purge" 0 0
+            [[ "$purge_outcome" != "scan_failed" ]] || return 1
+            return 0
+            ;;
         completed | incomplete) ;;
         *)
             log_error "Unknown purge outcome: $purge_outcome"

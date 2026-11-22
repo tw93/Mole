@@ -726,6 +726,36 @@ assert sessions[0]["actions"]["skipped"] == 1, sessions
 '
 }
 
+@test "purge ends its run when nothing is purged" {
+    local outcome
+    for outcome in no_candidates cancelled scan_failed; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_SKIP_MAIN=1 \
+            OUTCOME="$outcome" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/purge.sh"
+clean_project_artifacts() { PURGE_RUN_OUTCOME="$OUTCOME"; }
+start_purge
+rc=0
+perform_purge < /dev/null || rc=$?
+printf 'RC=%s\n' "$rc"
+EOF
+        [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+        if [[ "$outcome" == scan_failed ]]; then
+            [[ "$output" == *"RC=1"* ]] || { echo "$output"; return 1; }
+        else
+            [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+        fi
+    done
+    run env HOME="$HOME" "$PROJECT_ROOT/mole" history --json
+    [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+    printf '%s\n' "$output" | python3 -c '
+import json, sys
+sessions = json.load(sys.stdin)["sessions"]
+assert [s["command"] for s in sessions] == ["purge"] * 3, sessions
+assert all(s["run_id"] and s["ended_at"] for s in sessions), sessions
+'
+}
+
 @test "mo history orders sessions started in the same second by their markers" {
     cat > "$HOME/Library/Logs/mole/operations.log" <<'EOF'
 # ========== clean session started at 2026-05-24 10:00:00 ==========
