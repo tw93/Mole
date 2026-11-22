@@ -1994,17 +1994,27 @@ EOF
     local long_dir="$base/com.example.averyveryverylongvendor.ShipIt"
     mkdir -p "$long_dir"
     printf 'x' > "$long_dir/data"
+    local unicode_dir="$base/Meeting recording 2026-11-21 - release highlights 🎬🚀-preview.mov"
+    local ellipsis_dir="$base/Meeting …🎬🚀-preview.mkv"
+    mkdir -p "$unicode_dir" "$ellipsis_dir"
+    printf 'x\n' > "$unicode_dir/data"
+    printf 'x\n' > "$ellipsis_dir/data"
     local messages="$HOME/safe_clean_progress.log"
     : > "$messages"
 
     # shellcheck disable=SC2016  # inner bash expands these from its environment
-    env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" BASE="$base" MESSAGES="$messages" ESC_DIR="$esc_dir" LONG_DIR="$long_dir" COLUMNS=60 \
+    env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" BASE="$base" MESSAGES="$messages" ESC_DIR="$esc_dir" \
+        LONG_DIR="$long_dir" UNICODE_DIR="$unicode_dir" ELLIPSIS_DIR="$ellipsis_dir" COLUMNS=60 \
         MOLE_TEST_MODE=1 TERM=xterm-256color \
         /usr/bin/script -q /dev/null /bin/bash --noprofile --norc -c '
             source "$PROJECT_ROOT/lib/core/common.sh"
             source "$PROJECT_ROOT/bin/clean.sh"
+            [[ "$(tput cols)" == 60 ]] || exit 1
             DRY_RUN=false
-            start_section_spinner() { printf "%s\n" "$1" >> "$MESSAGES"; }
+            start_section_spinner() {
+                format_spinner_message "$1" >> "$MESSAGES"
+                printf "\n" >> "$MESSAGES"
+            }
             stop_section_spinner() { :; }
             stop_inline_spinner() { :; }
             is_path_whitelisted() { return 1; }
@@ -2020,6 +2030,8 @@ EOF
             safe_clean "$BASE/solo/" "Solo cache"
             safe_clean "$ESC_DIR" "Esc cache"
             safe_clean "$LONG_DIR" "Long cache"
+            safe_clean "$UNICODE_DIR" "Long cache"
+            safe_clean "$ELLIPSIS_DIR" "Long cache"
         ' < /dev/null > /dev/null 2>&1
 
     # No redundant bare "Cleaning..." frame before the named first item.
@@ -2037,6 +2049,9 @@ EOF
     ! grep -q '\.\.\.$' "$messages" || { cat "$messages"; return 1; }
     # A name too long for 60 columns keeps its head and distinguishing tail.
     grep -qxF "Cleaning Long cache 1/1 · com.exam…ongvendor.ShipIt" "$messages" || { cat "$messages"; return 1; }
+    # The real formatter preserves both suffixes, including for a literal ellipsis in the filename.
+    grep -qE "^Cleaning Long cache 1/1 · .*….*-preview[.]mov$" "$messages" || { cat "$messages"; return 1; }
+    grep -qE "^Cleaning Long cache 1/1 · .*….*-preview[.]mkv$" "$messages" || { cat "$messages"; return 1; }
     [[ ! -e "$base/huge" && ! -e "$base/slow" && ! -e "$base/solo" ]] || return 1
     rm -rf "$base" "$messages"
 }
