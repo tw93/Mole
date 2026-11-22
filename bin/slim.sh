@@ -422,7 +422,7 @@ collect_slim_candidates() {
         done
     done < <(slim_app_roots)
 
-    local -a unsorted=()
+    local -a unsorted=() pids=()
     for app in "${apps[@]+"${apps[@]}"}"; do
         local reason
         reason=$(slim_skip_reason "$app" false)
@@ -445,21 +445,19 @@ collect_slim_candidates() {
         local identity
         identity=$(mole_deletion_identity "$app") || continue
         unsorted+=("$bytes"$'\t'"$app"$'\t'"$identity"$'\t'"$team"$'\t'"$plan_file")
+        run_with_timeout "$SLIM_SCAN_GATEKEEPER_TIMEOUT_SEC" spctl --assess --type execute "$app" > /dev/null 2>&1 < /dev/null &
+        pids+=("$!")
     done
 
     [[ ${#unsorted[@]} -gt 0 ]] || return 1
 
     # An original Gatekeeper already rejects (an unnotarized build) can never
     # yield a copy that passes, so it is left out rather than offered and
-    # failed after a full copy. All candidates are assessed at once, about a
-    # second in total; only an explicit rejection (3) removes one.
-    local -a pids=() accepted=()
-    local entry i gk
-    for entry in "${unsorted[@]}"; do
-        app="${entry#*$'\t'}"
-        run_with_timeout "$SLIM_SCAN_GATEKEEPER_TIMEOUT_SEC" spctl --assess --type execute "${app%%$'\t'*}" > /dev/null 2>&1 < /dev/null &
-        pids+=("$!")
-    done
+    # failed after a full copy. Each candidate is assessed in the background
+    # as soon as its plan is ready, so the checks overlap the rest of the
+    # scan; only an explicit rejection (3) removes one.
+    local -a accepted=()
+    local i gk
     for ((i = 0; i < ${#unsorted[@]}; i++)); do
         gk=0
         wait "${pids[i]}" || gk=$?

@@ -257,14 +257,14 @@ slim_env() {
 }
 
 @test "slim leaves out apps Gatekeeper already rejects but keeps unknown answers" {
-	mkdir -p "$APPS_ROOT/Notarized.app" "$APPS_ROOT/Unnotarized.app" "$APPS_ROOT/Offline.app"
+	mkdir -p "$APPS_ROOT/Notarized.app" "$APPS_ROOT/Unnotarized.app" "$APPS_ROOT/Offline.app" "$APPS_ROOT/Plain.app"
 	mole_test_fake_command spctl 'case "$*" in *Unnotarized.app) exit 3 ;; *Offline.app) exit 1 ;; esac; exit 0'
 
 	run slim_env /bin/bash -c '
 		source "$1"
 		slim_skip_reason() { :; }
 		slim_signing_team() { echo ABCDE12345; }
-		slim_plan_app() { echo 1; }
+		slim_plan_app() { [[ "$1" == *Plain.app ]] && echo 0 || echo 1; }
 		mole_deletion_identity() { echo id; }
 		collect_slim_candidates || exit 8
 		printf "%s\n" "${SLIM_APP_PATHS[@]}" | sort
