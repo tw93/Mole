@@ -1324,6 +1324,61 @@ EOF
     [[ "$output" != *"Local Storage"* ]]
 }
 
+@test "clean_notion_partition_disk_caches targets Cache and Code Cache in every partition" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+partitions="$HOME/Library/Application Support/Notion/Partitions"
+mkdir -p "$partitions/notion/Cache/Cache_Data"
+mkdir -p "$partitions/notion/Code Cache/js"
+# Siblings that must survive.
+mkdir -p "$partitions/notion/Cookies"
+mkdir -p "$partitions/notion/Local Storage"
+mkdir -p "$partitions/notion/IndexedDB"
+touch "$partitions/notion/Cache/Cache_Data/f_0001"
+touch "$partitions/notion/Code Cache/js/bytecode"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+notion_running() { return 1; }
+safe_clean() {
+    local arg
+    for arg in "$@"; do
+        printf 'CLEAN:%s\n' "$arg"
+    done
+}
+clean_notion_partition_disk_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    local base="$HOME/Library/Application Support/Notion/Partitions"
+    [[ "$output" == *"CLEAN:$base/notion/Cache/Cache_Data"* ]] || return 1
+    [[ "$output" == *"CLEAN:$base/notion/Code Cache/js"* ]] || return 1
+    [[ "$output" == *"CLEAN:Notion web cache"* ]] || return 1
+    [[ "$output" != *"Cookies"* ]] || return 1
+    [[ "$output" != *"Local Storage"* ]] || return 1
+    [[ "$output" != *"IndexedDB"* ]]
+}
+
+@test "clean_notion_partition_disk_caches defers while Notion is running" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+partitions="$HOME/Library/Application Support/Notion/Partitions"
+mkdir -p "$partitions/notion/Cache/Cache_Data"
+touch "$partitions/notion/Cache/Cache_Data/f_0001"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+notion_running() { return 0; }
+mole_defer_cleanup_family() { echo "DEFER:$1"; }
+safe_clean() { echo "CLEAN:$*"; }
+clean_notion_partition_disk_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"DEFER:Notion"* ]] || return 1
+    [[ "$output" != *"CLEAN:"* ]]
+}
+
 @test "clean_notion_service_worker_caches defers every partition while Notion is running" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
