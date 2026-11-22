@@ -175,7 +175,7 @@ Describe "mo --help and --version" {
         $output = (& powershell -NoProfile -ExecutionPolicy Bypass -Command "& '$($script:Mole)' '--version'" 2>&1 | Out-String)
         $output | Should -Match "Mole version \d+\.\d+\.\d+"
         $output | Should -Match "Architecture: "
-        $output | Should -Match "Install: (Source|Portable|winget|Scoop)"
+        $output | Should -Match "Install: (Source|Portable|winget|Scoop|Chocolatey)"
     }
 }
 
@@ -196,6 +196,7 @@ Describe "mo remove" {
 
     It "Sends a <Manager> install to its package manager instead of removing files" -ForEach @(
         @{ Manager = "Scoop"; Dir = "scoop\apps\mole\1.36.0"; Expected = "scoop uninstall mole" },
+        @{ Manager = "Chocolatey"; Dir = "chocolatey\lib\mole\tools"; Expected = "choco uninstall mole" },
         @{ Manager = "winget"; Dir = "Microsoft\WinGet\Packages\tw93.MoleCLI_Microsoft.Winget.Source_8wekyb3d8bbwe"; Expected = "winget uninstall tw93.MoleCLI" }
     ) {
         $managed = Join-Path $TestDrive $Dir

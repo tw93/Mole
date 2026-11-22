@@ -20,6 +20,11 @@ function Get-MoleAvailableVersion {
         $data = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/mole.json' -TimeoutSec 10 -Headers $headers
         $versions = @($data.version)
     }
+    elseif ($Method -eq 'Chocolatey') {
+        # The community feed answers only in Atom XML; IsApproved skips a version still in moderation.
+        $feed = Invoke-WebRequest -UseBasicParsing -Uri "https://community.chocolatey.org/api/v2/Packages()?`$filter=Id%20eq%20'mole'%20and%20IsLatestVersion%20and%20IsApproved&`$select=Version" -TimeoutSec 10 -Headers @{ 'User-Agent' = 'Mole-CLI-Windows' }
+        $versions = @([regex]::Matches([string]$feed.Content, '<d:Version>([^<]*)</d:Version>') | ForEach-Object { $_.Groups[1].Value })
+    }
     elseif ($Method -eq 'winget') {
         $data = Invoke-RestMethod -Uri 'https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/t/tw93/MoleCLI' -TimeoutSec 10 -Headers $headers
         $versions = @($data | Where-Object { $_.type -eq 'dir' } | ForEach-Object { $_.name })
@@ -122,6 +127,7 @@ function Get-MoleUpdateNotice {
     switch ($Context.Method) {
         'winget' { $action = 'run winget upgrade tw93.MoleCLI' }
         'Scoop' { $action = 'run scoop update mole' }
+        'Chocolatey' { $action = 'run choco upgrade mole' }
         'Source' { $action = 'run mo update' }
         default { $action = "download https://github.com/tw93/Mole/releases/tag/V$($state.Latest)-windows" }
     }

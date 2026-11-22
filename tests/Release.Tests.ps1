@@ -114,7 +114,8 @@ Describe "mo update for package-manager installs" {
 
     It "Names the upgrade command for <Manager>" -ForEach @(
         @{ Manager = "winget"; Dir = "C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\tw93.MoleCLI_Microsoft.Winget.Source_8wekyb3d8bbwe"; Expected = "winget upgrade tw93.MoleCLI" },
-        @{ Manager = "Scoop"; Dir = "C:\Users\me\scoop\apps\mole\1.31.0"; Expected = "scoop update mole" }
+        @{ Manager = "Scoop"; Dir = "C:\Users\me\scoop\apps\mole\1.31.0"; Expected = "scoop update mole" },
+        @{ Manager = "Chocolatey"; Dir = "C:\ProgramData\chocolatey\lib\mole\tools"; Expected = "choco upgrade mole" }
     ) {
         Get-PackageManagerUpgradeCommand -InstallDir $Dir | Should -Be $Expected
     }

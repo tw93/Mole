@@ -41,7 +41,7 @@ if ($ShowHelp) {
     return
 }
 
-# winget and Scoop track their own files; removing them here leaves the
+# winget, Scoop and Chocolatey track their own files; removing them here leaves the
 # package registered, so hand the user that manager's command instead.
 function Get-PackageManagerRemoveCommand {
     param([string]$InstallDir)
@@ -52,6 +52,9 @@ function Get-PackageManagerRemoveCommand {
     }
     if ($path -like "*\scoop\apps\mole\*") {
         return "scoop uninstall mole"
+    }
+    if ($path -like "*\chocolatey\lib\mole\*") {
+        return "choco uninstall mole"
     }
     return $null
 }

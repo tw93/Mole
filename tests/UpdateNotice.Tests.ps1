@@ -38,6 +38,12 @@ Describe 'Automatic update notices' {
         Should -Invoke Invoke-RestMethod -Exactly 1 -ParameterFilter { $Uri -like '*ScoopInstaller/Main/*/bucket/mole.json' }
     }
 
+    It 'Reads the approved Chocolatey version from the community feed' {
+        Mock Invoke-WebRequest { @{ Content = '<feed><entry><m:properties><d:Version>1.46.0</d:Version></m:properties></entry></feed>' } }
+        Get-MoleAvailableVersion -Method Chocolatey | Should -Be '1.46.0'
+        Should -Invoke Invoke-WebRequest -Exactly 1 -ParameterFilter { "$Uri" -like "https://community.chocolatey.org/api/v2/Packages()*'mole'*IsLatestVersion*IsApproved*" -and $TimeoutSec -eq 10 }
+    }
+
     It 'Reads winget published version directories and ignores preview entries' {
         Mock Invoke-RestMethod { @(@{ type = 'dir'; name = '1.9.0' }, @{ type = 'dir'; name = '1.10.0' }, @{ type = 'dir'; name = '1.11.0-beta' }, @{ type = 'file'; name = '9.0.0' }) }
         Get-MoleAvailableVersion -Method winget | Should -Be '1.10.0'
@@ -47,6 +53,7 @@ Describe 'Automatic update notices' {
         @{ Method = 'Source'; Action = 'run mo update' },
         @{ Method = 'winget'; Action = 'run winget upgrade tw93.MoleCLI' },
         @{ Method = 'Scoop'; Action = 'run scoop update mole' },
+        @{ Method = 'Chocolatey'; Action = 'run choco upgrade mole' },
         @{ Method = 'Portable'; Action = 'download https://github.com/tw93/Mole/releases/tag/V1.10.0-windows' }
     ) {
         $script:Context.Method = $Method
