@@ -13,6 +13,7 @@ format_app_display() {
     # This row is a rendering site only: apps_data keeps the stored name, and
     # matching, sizes and removal plans are untouched.
     display_name=$(mole_terminal_safe_text "$display_name")
+    mole_strip_invisible_marks display_name "$display_name"
 
     # Use common function from ui.sh to format last used time
     local compact_last_used
@@ -120,6 +121,7 @@ select_apps_for_uninstall() {
     local max_name_width=0
     for app_data in "${apps_data[@]}"; do
         IFS='|' read -r _ _ display_name _ _ _ _ <<< "$app_data"
+        mole_strip_invisible_marks display_name "$display_name"
         local name_width=$(get_display_width "$display_name")
         [[ $name_width -gt $max_name_width ]] && max_name_width=$name_width
     done

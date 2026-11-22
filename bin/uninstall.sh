@@ -2056,6 +2056,9 @@ uninstall_list_apps() {
         # gets the same treatment: a byte slice would split a CJK character.
         local name_trunc name_display_w name_byte_count name_printf_w
         local un_trunc un_display_w un_byte_count un_printf_w
+        # NAME drops invisible marks; UNINSTALL NAME keeps the bundle's bytes so
+        # a copied value still matches exactly in `mo uninstall <name>`.
+        mole_strip_invisible_marks app_name "$app_name"
         name_trunc=$(truncate_by_display_width "$app_name" 34)
         name_display_w=$(get_display_width "$name_trunc")
         un_trunc=$(truncate_by_display_width "$uninstall_name" 28)
@@ -2192,6 +2195,7 @@ main() {
             IFS='|' read -r _ app_path app_name _ size last_used _ <<< "$selected_app"
             local safe_name
             safe_name=$(mole_terminal_safe_text "$app_name")
+            mole_strip_invisible_marks safe_name "$safe_name"
             local size_display
             size_display=$(uninstall_normalize_size_display "$size" "$app_path")
             local last_display
@@ -2363,6 +2367,7 @@ main() {
 
         for selected_app in "${selected_apps[@]}"; do
             IFS='|' read -r epoch app_path app_name bundle_id size last_used size_kb <<< "$selected_app"
+            app_name=$(_uninstall_display_text "$app_name")
 
             local display_name
             display_name=$(truncate_by_display_width "$app_name" "$name_trunc_limit")

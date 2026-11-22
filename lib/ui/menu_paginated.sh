@@ -387,6 +387,8 @@ paginated_multi_select() {
                         # Full names, not the truncated, padded display row.
                         k="${filter_targets_lower[id]}"
                         k="${k//$'\t'/ }"
+                        # A leading U+200E (WhatsApp) would sort after Z.
+                        mole_strip_invisible_marks k "$k"
                         ;;
                 esac
                 printf "%s\t%s\n" "$k" "$id" >> "$tmpfile"

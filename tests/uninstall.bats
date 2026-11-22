@@ -4027,6 +4027,146 @@ EOF
     [ "$output" = "妙言" ] || { echo "$output"; return 1; }
 }
 
+# WhatsApp ships its display name and every localized one as U+200E followed
+# by "WhatsApp" (U+200F before the Arabic one). A terminal draws the mark as a
+# blank cell, so the list showed " WhatsApp" with its row out of line. The name
+# stays byte-identical where it is stored and matched; only rendering drops it.
+@test "uninstall_resolve_display_name keeps the bundle's bytes, marks included" {
+    local lrm=$'\xe2\x80\x8e' app_path="$HOME/Applications/WhatsApp.app"
+    _write_display_name_fixture "$app_path" "en" "${lrm}WhatsApp" "en=${lrm}WhatsApp"
+
+    _run_display_name_case "en-CN" "$app_path" "WhatsApp.app"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = "${lrm}WhatsApp" ] || { printf '%s' "$output" | xxd; return 1; }
+}
+
+@test "uninstall rows render without the invisible marks WhatsApp puts before its name" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/app_selector.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+lrm=$'\xe2\x80\x8e' rlm=$'\xe2\x80\x8f' zwj=$'\xe2\x80\x8d' zwnj=$'\xe2\x80\x8c'
+drain_pending_input() { :; }
+tput() { echo 100; }
+rows() {
+    apps_data=("1700000000|/Applications/WhatsApp.app|$1|net.whatsapp.WhatsApp|240.9MB|2d ago|246681"
+        "1700000001|/Applications/SingleFile.app|SingleFile|com.example.sf|6.0MB|2d ago|6144")
+    selected_apps=()
+    paginated_multi_select() { shift; printf '%s\n' "$@"; MOLE_SELECTION_RESULT=""; return 1; }
+    select_apps_for_uninstall || true
+}
+# The marked name is the longest and past the 38-column minimum at this width,
+# so the column width is measured from it too.
+long="WhatsApp Desktop Messenger For Business Teams"
+marked=$(rows "${lrm}${long}")
+plain=$(rows "$long")
+[[ "$marked" == "$plain" ]] || { printf 'marked:\n%s\nplain:\n%s\n' "$marked" "$plain"; exit 1; }
+[[ "$(_uninstall_display_text "${rlm}واتساب")" == "واتساب" ]] || { echo "batch text kept the mark"; exit 1; }
+mole_strip_invisible_marks kept "${lrm}${rlm}"
+[[ "$kept" == "${lrm}${rlm}" ]] || { echo "a marks-only name rendered empty"; exit 1; }
+mole_strip_invisible_marks kept "a${zwj}b${zwnj}c"
+[[ "$kept" == "a${zwj}b${zwnj}c" ]] || { echo "ZWJ or ZWNJ dropped"; exit 1; }
+printf 'rows-clean\n'
+INNER
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *rows-clean* ]] || { echo "$output"; return 1; }
+}
+
+@test "the by-name list and the Selected table render without invisible marks" {
+    run env NO_COLOR=1 HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+log_operation_session_start() { :; }
+show_uninstall_help() { :; }
+hide_cursor() { :; }
+show_cursor() { :; }
+clear_screen() { :; }
+start_uninstall_interactive_screen() { :; }
+stop_uninstall_interactive_screen() { :; }
+uninstall_abort() { printf 'ABORT:%s\n' "$*"; }
+uninstall_app_inventory_fingerprint() { printf 'inventory\n'; }
+drain_pending_input() { :; }
+tput() { echo 100; }
+row="1700000000|/Applications/WhatsApp.app|"$'\xe2\x80\x8e'"WhatsApp|net.whatsapp.WhatsApp|240.9MB|2d ago|246681"
+scan_applications() { : > "$HOME/apps.list"; printf '%s\n' "$HOME/apps.list"; }
+load_applications() { apps_data=("$row"); return 0; }
+match_apps_by_name() { selected_apps=("$row"); }
+select_apps_for_uninstall() { selected_apps=("$row"); return 0; }
+batch_uninstall_applications() { printf 'BATCH_CALLED\n'; exit 0; }
+printf '== by-name\n'
+( main WhatsApp < /dev/null )
+printf '== interactive\n'
+( main < /dev/null )
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"1. WhatsApp"*"== interactive"*"WhatsApp"*"BATCH_CALLED"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *$'\xe2\x80\x8e'* ]] || { printf '%s' "$output" | xxd | grep -B1 -A1 'e280 8e\|e2 808e' | head; return 1; }
+}
+
+@test "name sort ignores the invisible mark before WhatsApp" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TERM="xterm-256color" /bin/bash --noprofile --norc << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/menu_paginated.sh"
+read_key() { echo "ENTER"; }
+lrm=$'\xe2\x80\x8e'
+MOLE_SELECTION_RESULT=""
+set +e
+MOLE_MENU_FILTER_NAMES="zoom"$'\n'"${lrm}aardvark" MOLE_MENU_SORT_MODE=name MOLE_MENU_SORT_REVERSE=false \
+    paginated_multi_select "T" "Zoom" "${lrm}Aardvark" > "$HOME/menu.out" 2> "$HOME/menu.err" < /dev/null
+rc=$?
+set -e
+# ENTER picks the first row: the marked Aardvark, index 1, once the mark no
+# longer sorts it after Zoom.
+printf 'rc=%s picked=%s\n' "$rc" "${MOLE_SELECTION_RESULT:-}"
+INNER
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"rc=0 picked=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "uninstall --list text NAME drops the invisible marks while UNINSTALL NAME and JSON keep them" {
+    cat > "$HOME/list-case.sh" << 'INNER'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+trap - EXIT INT TERM
+is_homebrew_available() { return 1; }
+scan_applications() { : > "$HOME/apps.list"; printf '%s\n' "$HOME/apps.list"; }
+load_applications() {
+    apps_data=("1700000000|/Applications/WhatsApp.app|"$'\xe2\x80\x8e'"WhatsApp|net.whatsapp.WhatsApp|240.9MB|2d ago|246681")
+}
+uninstall_list_apps
+INNER
+    # Text mode needs a terminal on stdout; a pty gives it one.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" python3 -I -c '
+import os, subprocess, sys
+master, slave = os.openpty()
+proc = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=slave, stderr=slave)
+os.close(slave)
+out = b""
+while True:
+    try:
+        chunk = os.read(master, 65536)
+    except OSError:
+        break
+    if not chunk:
+        break
+    out += chunk
+sys.stdout.buffer.write(out)
+sys.exit(proc.wait())
+' /bin/bash --noprofile --norc "$HOME/list-case.sh"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # NAME starts the row clean; UNINSTALL NAME keeps the bytes so a copied
+    # value still matches exactly in `mo uninstall <name>`.
+    local row
+    row=$(printf '%s\n' "$output" | grep 'net.whatsapp.WhatsApp') || { echo "$output"; return 1; }
+    [[ "$row" == "WhatsApp "*" net.whatsapp.WhatsApp "*$'\xe2\x80\x8e'"WhatsApp "* ]] || { printf '%s' "$row" | xxd; return 1; }
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc "$HOME/list-case.sh"
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *$'"name": "\xe2\x80\x8eWhatsApp"'* ]] || { echo "$output"; return 1; }
+}
+
 @test "uninstall_resolve_display_name keeps the unlocalized name without a language list (#1520)" {
     local app_path="$HOME/Applications/NoPrefs.app"
     _write_display_name_fixture "$app_path" "en" "NoPrefs Base" "zh-Hans=中文名"
@@ -5017,6 +5157,8 @@ set -euo pipefail
 
 trace_file="$HOME/selector-drain-trace.log"
 
+# The selector's width prescan renders names through log.sh's helper.
+source "$PROJECT_ROOT/lib/core/log.sh"
 source "$PROJECT_ROOT/lib/ui/app_selector.sh"
 
 apps_data=("1700000000|$HOME/Applications/TraceApp.app|TraceApp|com.example.TraceApp|1MB|Today|1024")
@@ -7632,7 +7774,20 @@ EOF
     # shellcheck disable=SC2016
     grep -Fq 'running_list+="$(_uninstall_display_text "${running_at_uninstall_apps[idx]}")"' "$PROJECT_ROOT/lib/uninstall/batch.sh" || return 1
     # shellcheck disable=SC2016
-    grep -Fq 'bg_list+="$(_uninstall_display_text "${background_items_warning_apps[idx]}")"' "$PROJECT_ROOT/lib/uninstall/batch.sh"
+    grep -Fq 'bg_list+="$(_uninstall_display_text "${background_items_warning_apps[idx]}")"' "$PROJECT_ROOT/lib/uninstall/batch.sh" || return 1
+    # shellcheck disable=SC2016
+    grep -Fq 'name=$(_uninstall_display_text "${item%%:*}")' "$PROJECT_ROOT/lib/uninstall/batch.sh" || return 1
+    # shellcheck disable=SC2016
+    grep -Fq 'ext_list+="$(_uninstall_display_text "${system_extension_warning_apps[idx]}")"' "$PROJECT_ROOT/lib/uninstall/batch.sh" || return 1
+    # Every spinner and echo -e line that names the app renders it through the
+    # helper (invisible marks, control bytes); comments are skipped, and zero
+    # matching sites means the gate no longer reads the code it guards.
+    local sites raw
+    sites=$(grep -nE '^[[:space:]]*(start_inline_spinner|echo -e) .*app_name' "$PROJECT_ROOT/lib/uninstall/batch.sh" | grep -E '\$\{?app_name([^_a-zA-Z]|$)' || true)
+    [[ $(printf '%s\n' "$sites" | grep -c .) -ge 6 ]] || { printf 'expected at least 6 render sites, got:\n%s\n' "$sites"; return 1; }
+    # shellcheck disable=SC2016
+    raw=$(printf '%s\n' "$sites" | sed 's/_uninstall_display_text "\$app_name"//g' | grep -E '\$\{?app_name([^_a-zA-Z]|$)' || true)
+    [[ -z "$raw" ]] || { printf 'raw app name reaches the terminal:\n%s\n' "$raw"; return 1; }
 }
 
 @test "batch uninstall without a terminal exits nonzero and removes nothing" {

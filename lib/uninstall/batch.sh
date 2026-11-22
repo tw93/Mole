@@ -6,7 +6,9 @@ set -euo pipefail
 # sites only sanitize the text they print; stored names and every matching or
 # removal decision keep the original bytes.
 _uninstall_display_text() {
-    mole_terminal_safe_text "${1:-}"
+    local text
+    mole_strip_invisible_marks text "${1:-}"
+    mole_terminal_safe_text "$text"
 }
 
 # Ensure common.sh is loaded.
@@ -2821,7 +2823,7 @@ _batch_execute_removals() {
             if [[ ${#app_details[@]} -gt 1 ]]; then
                 _phase_prefix="[$current_index/${#app_details[@]}] "
             fi
-            start_inline_spinner "${_phase_prefix}Removing ${app_name} (${_phase_size})..."
+            start_inline_spinner "${_phase_prefix}Removing $(_uninstall_display_text "$app_name") (${_phase_size})..."
         fi
 
         local used_brew_successfully=false
@@ -2984,7 +2986,7 @@ _batch_execute_removals() {
                 if [[ ${#app_details[@]} -gt 1 ]]; then
                     _phase_prefix="[$current_index/${#app_details[@]}] "
                 fi
-                start_inline_spinner "${_phase_prefix}Cleaning files for ${app_name}..."
+                start_inline_spinner "${_phase_prefix}Cleaning files for $(_uninstall_display_text "$app_name")..."
             fi
             local related_remove_rc=0
             remove_file_list "$related_files" "false" \
@@ -3043,7 +3045,7 @@ _batch_execute_removals() {
 
             _batch_exec_stage="system file removal"
             if [[ -t 1 ]]; then
-                start_inline_spinner "${_phase_prefix}Cleaning system files for ${app_name}..."
+                start_inline_spinner "${_phase_prefix}Cleaning system files for $(_uninstall_display_text "$app_name")..."
             fi
             if [[ "$used_brew_successfully" == "true" ]]; then
                 local system_remove_rc=0
@@ -3098,7 +3100,7 @@ _batch_execute_removals() {
             # "Removed 1 app" line, so a standalone success line above the
             # box would just duplicate it.
             if [[ -t 1 && ${#app_details[@]} -gt 1 ]]; then
-                echo -e "${GREEN}${ICON_SUCCESS}${NC} [$current_index/${#app_details[@]}] ${app_name}"
+                echo -e "${GREEN}${ICON_SUCCESS}${NC} [$current_index/${#app_details[@]}] $(_uninstall_display_text "$app_name")"
             fi
 
             # Include retained ownership refusals from every removal pass once.
@@ -3206,9 +3208,9 @@ _batch_execute_removals() {
             [[ -t 1 ]] && stop_inline_spinner
             if [[ -t 1 ]]; then
                 if [[ ${#app_details[@]} -gt 1 ]]; then
-                    echo -e "${ICON_ERROR} [$current_index/${#app_details[@]}] ${app_name}${GRAY}, $reason${NC}"
+                    echo -e "${ICON_ERROR} [$current_index/${#app_details[@]}] $(_uninstall_display_text "$app_name")${GRAY}, $reason${NC}"
                 else
-                    echo -e "${ICON_ERROR} ${app_name} failed: $reason"
+                    echo -e "${ICON_ERROR} $(_uninstall_display_text "$app_name") failed: $reason"
                 fi
                 if [[ -n "${suggestion:-}" ]]; then
                     echo -e "${GRAY}   ${ICON_REVIEW} ${suggestion}${NC}"
@@ -3300,7 +3302,8 @@ _batch_render_summary() {
 
         local failed_names=()
         for item in "${failed_items[@]}"; do
-            local name=${item%%:*}
+            local name
+            name=$(_uninstall_display_text "${item%%:*}")
             failed_names+=("$name")
         done
         local failed_list="${failed_names[*]}"
@@ -3358,7 +3361,7 @@ _batch_render_summary() {
         local idx
         for ((idx = 0; idx < ${#system_extension_warning_apps[@]}; idx++)); do
             [[ $idx -gt 0 ]] && ext_list+=", "
-            ext_list+="${system_extension_warning_apps[idx]}"
+            ext_list+="$(_uninstall_display_text "${system_extension_warning_apps[idx]}")"
         done
 
         summary_details+=("${ICON_REVIEW} System extensions may remain after removal: ${YELLOW}${ext_list}${NC}")

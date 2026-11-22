@@ -213,6 +213,33 @@ debug_log() {
     fi
 }
 
+# Invisible format marks some app bundles put in their names: WhatsApp's
+# display name and every localized one start with U+200E (U+200F in Arabic).
+# A terminal draws the mark as a blank cell and the width estimate counts it as
+# two, so the name shifts right and its row falls out of line. Zero-width space,
+# the bidi marks (Arabic letter mark included), embeddings, overrides and
+# isolates, word joiner and BOM go; ZWJ and ZWNJ stay, since emoji sequences and
+# Persian names need them. Byte escapes, because /bin/bash 3.2 leaves $'\u...'
+# as literal text.
+readonly _MOLE_INVISIBLE_MARKS=(
+    $'\xe2\x80\x8b' $'\xe2\x80\x8e' $'\xe2\x80\x8f' $'\xd8\x9c'
+    $'\xe2\x80\xaa' $'\xe2\x80\xab' $'\xe2\x80\xac' $'\xe2\x80\xad' $'\xe2\x80\xae'
+    $'\xe2\x81\xa0' $'\xe2\x81\xa6' $'\xe2\x81\xa7' $'\xe2\x81\xa8' $'\xe2\x81\xa9'
+    $'\xef\xbb\xbf'
+)
+
+# Sets the variable named by $1 to $2 without those marks, for rendering only;
+# stored names, matching and caches keep the bytes the bundle gave. A name that
+# is nothing but marks keeps them, so a row never renders empty. No subshell.
+mole_strip_invisible_marks() {
+    local _strip_value="$2" _strip_mark
+    for _strip_mark in "${_MOLE_INVISIBLE_MARKS[@]}"; do
+        _strip_value="${_strip_value//"$_strip_mark"/}"
+    done
+    [[ -n "$_strip_value" ]] || _strip_value="$2"
+    printf -v "$1" '%s' "$_strip_value"
+}
+
 mole_terminal_safe_text() {
     local value="${1:-}"
     value=$(printf '%s' "$value" |
