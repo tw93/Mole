@@ -241,12 +241,6 @@ record_dry_run_cleanup_target() {
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" ]] && mole_rc_timeout_or_signal "$pending_clean_cancel"; then
         return "$pending_clean_cancel"
     fi
-    # The real sink refuses an item another user owns that this user cannot
-    # unlink, so the preview does not list it either (safe_remove).
-    if declare -f _mole_user_sink_refuses_on_ownership > /dev/null 2>&1 &&
-        _mole_user_sink_refuses_on_ownership "$path"; then
-        return 1
-    fi
     if [[ "${_MOLE_DRY_RUN_TARGET_PREVALIDATED:-false}" != "true" ]]; then
         if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$path" 2> /dev/null; then
             return 1
@@ -1349,8 +1343,13 @@ _safe_clean_impl() {
                             fi
                         fi
                         action_rc=0
-                        record_dry_run_cleanup_target \
-                            "$path" "$size" 1 true || action_rc=$?
+                        # Same ownership refusal as safe_remove, the run's sink.
+                        if _mole_user_sink_refuses_on_ownership "$path"; then
+                            action_rc=1
+                        else
+                            record_dry_run_cleanup_target \
+                                "$path" "$size" 1 true || action_rc=$?
+                        fi
                         if mole_rc_timeout_or_signal "$action_rc"; then
                             cleanup_interrupt_rc=$action_rc
                             break
@@ -1477,8 +1476,16 @@ _safe_clean_impl() {
                         fi
                     fi
                     action_rc=0
-                    record_dry_run_cleanup_target \
-                        "$path" "$size_kb" 1 true || action_rc=$?
+                    # This preview's run removes through safe_remove, which
+                    # refuses an item another user owns that this user cannot
+                    # unlink, so the preview leaves it out too. Sudo sinks
+                    # record through the same function and keep their rows.
+                    if _mole_user_sink_refuses_on_ownership "$path"; then
+                        action_rc=1
+                    else
+                        record_dry_run_cleanup_target \
+                            "$path" "$size_kb" 1 true || action_rc=$?
+                    fi
                     if mole_rc_timeout_or_signal "$action_rc"; then
                         cleanup_interrupt_rc=$action_rc
                         break

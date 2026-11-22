@@ -1520,9 +1520,11 @@ _mole_note_clean_cancel_source() {
 # This sink is a plain rm as the invoking user. An item another user owns
 # (root's leftovers from `sudo gem`, `sudo npm`, `sudo bundle`) fails there
 # unless this user can still unlink it: its folder is writable and not sticky,
-# and a folder item is itself writable. The preview asks the same question
-# (record_dry_run_cleanup_target), so a row the run would refuse on every
-# clean is never listed (Mole Mac CacheScanner.userSinkRefusesOnOwnership).
+# and a folder item is itself writable. safe_remove asks before its dry-run
+# return and _safe_clean_impl before recording its preview, so a row the run
+# would refuse on every clean is never listed (Mole Mac
+# CacheScanner.userSinkRefusesOnOwnership). Never ask it for a sudo sink,
+# which removes root-owned items itself.
 # A link is unlinked in its folder whoever owns it, so it is never refused here.
 _mole_path_owned_by_current_user() {
     [[ -O "$1" ]]

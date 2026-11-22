@@ -377,12 +377,19 @@ ln -sfn "$(hostname)-99999999" "$support/Stale/Browser/SingletonLock"
 for root in "Vivaldi" "Google/Chrome" "Vendor/Product/User Data" "Stale/Browser"; do
     clean_service_worker_cache Test "$support/$root/Default/Service Worker/CacheStorage"
 done
+# A browser that starts after the walk began: the guard runs after sizing,
+# just before the removal, and the lock check after it must hold the store.
+mkdir -p "$support/Late/Browser/Default/Service Worker/CacheStorage/origin/cache"
+rm -f "$support/Late/Browser/SingletonLock"
+start_late_browser() { ln -sfn "$(hostname)-$$" "$support/Late/Browser/SingletonLock"; }
+clean_service_worker_cache Test "$support/Late/Browser/Default/Service Worker/CacheStorage" start_late_browser
 EOF
         [ "$status" -eq 0 ] || { echo "$output"; return 1; }
         local support="$sw_home/Library/Application Support"
         [[ "$output" != *"=$support/Vivaldi/"* ]] || { echo "$output"; return 1; }
         [[ "$output" != *"=$support/Google/Chrome/"* ]] || { echo "$output"; return 1; }
         [[ "$output" != *"=$support/Vendor/Product/User Data/"* ]] || { echo "$output"; return 1; }
+        [[ "$output" != *"=$support/Late/Browser/"* ]] || { echo "$output"; return 1; }
         [[ "$output" == *"=$support/Stale/Browser/Default/Service Worker/CacheStorage/origin/cache"* ]] || { echo "$output"; return 1; }
     done
     rm -rf "$sw_home"

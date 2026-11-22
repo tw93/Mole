@@ -251,6 +251,36 @@ EOF
     rm -rf "$HOME/.bundle"
 }
 
+@test "record_dry_run_cleanup_target still records a root-owned item for a sudo sink" {
+    # safe_sudo_remove and safe_sudo_find_delete preview through this recorder
+    # and remove root-owned items themselves; the user-level ownership refusal
+    # must not hide their rows (/Library/Caches is sticky, /private/var/log is
+    # not writable by the user).
+    local logs="$HOME/root-owned-logs"
+    mkdir -p "$logs"
+    printf 'x' > "$logs/install.log"
+    chmod 555 "$logs"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 LOGS="$logs" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+export MOLE_DRY_RUN=1
+_mole_path_owned_by_current_user() { [[ "$1" != "$LOGS/"* && -O "$1" ]]; }
+register_dry_run_cleanup_target() { :; }
+append_dry_run_cleanup_target() { echo "RECORDED=$1"; }
+_mole_user_sink_refuses_on_ownership "$LOGS/install.log" && echo "USER_SINK_REFUSES"
+record_dry_run_cleanup_target "$LOGS/install.log" 1 1 true
+EOF
+    chmod 755 "$logs"
+    rm -rf "$logs"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"USER_SINK_REFUSES"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"RECORDED=$logs/install.log"* ]] || { echo "$output"; return 1; }
+}
+
 @test "safe_clean keeps the row when a size could not be read" {
     local base="$HOME/safe_clean_unsized"
     mkdir -p "$base/one" "$base/two"
