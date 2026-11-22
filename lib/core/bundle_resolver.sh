@@ -76,6 +76,26 @@ mole_spotlight_answers_bundle_queries() {
     /usr/bin/grep -qxF /System/Library/CoreServices/Finder.app <<< "$answer"
 }
 
+# Return 0 only when an app root is proven gone, as lstat's ENOENT or ENOTDIR
+# would say: the nearest visible ancestor is a folder this user can search, or
+# is not a folder at all (links before the root are followed, as lstat does).
+# A root behind a folder this user cannot search is unknown: its apps may be
+# there.
+_mole_bundle_app_root_proven_absent() {
+    local root="$1"
+    [[ "$root" == /* && ! -e "$root" && ! -L "$root" ]] || return 1
+    local ancestor="$root"
+    while [[ "$ancestor" != / ]]; do
+        ancestor="${ancestor%/*}"
+        [[ -n "$ancestor" ]] || ancestor=/
+        if [[ -e "$ancestor" ]]; then
+            [[ ! -d "$ancestor" || -x "$ancestor" ]]
+            return
+        fi
+    done
+    return 1
+}
+
 # Return 0 if some installed app either has the given CFBundleIdentifier, or
 # registers a privileged helper with that ID via SMJobBless
 # (Contents/Library/LaunchServices/<id>). Return 1 otherwise.
@@ -160,7 +180,12 @@ bundle_has_installed_app() {
 
     local app_root app info app_bundle
     for app_root in "${_MOLE_BUNDLE_RESOLVER_APP_ROOTS[@]}"; do
-        [[ -d "$app_root" ]] || continue
+        if [[ ! -d "$app_root" ]]; then
+            # Behind a folder this user cannot search, [[ -d ]] also reads
+            # false, and the parent app may sit there: installed or unknown.
+            _mole_bundle_app_root_proven_absent "$app_root" && continue
+            return 0
+        fi
         if [[ $SECONDS -ge $deadline_seconds ]]; then
             return 0
         fi

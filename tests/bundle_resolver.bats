@@ -407,6 +407,36 @@ EOF
     [[ "$output" == *"RC=130"* ]]
 }
 
+@test "bundle_has_installed_app keeps a helper whose app root sits behind a folder it cannot search" {
+    [[ ${EUID:-$(id -u)} -ne 0 ]] || skip "root searches every folder"
+    make_app "$FAKE_APPS/SomeoneElse.app" "com.example.someone"
+    mkdir -p "$FAKE_HOME/locked/Apps"
+    : > "$FAKE_HOME/plainfile"
+
+    run env FAKE_APPS="$FAKE_APPS" FAKE_HOME="$FAKE_HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+mdfind() { return 0; }
+export -f mdfind
+# Proven gone (ENOENT, ENOTDIR): the scan is complete and finds no app.
+_MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS" "$FAKE_HOME/no-such-root" "$FAKE_HOME/plainfile/Apps")
+rc=0
+bundle_has_installed_app "com.example.orphanprobe.helper" "$((SECONDS + 5))" || rc=$?
+echo "COMPLETE=$rc"
+chmod 000 "$FAKE_HOME/locked"
+_MOLE_BUNDLE_RESOLVER_APP_ROOTS=("$FAKE_APPS" "$FAKE_HOME/locked/Apps")
+rc=0
+bundle_has_installed_app "com.example.orphanprobe.helper" "$((SECONDS + 5))" || rc=$?
+chmod 755 "$FAKE_HOME/locked"
+echo "UNSEARCHABLE=$rc"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"COMPLETE=1"* ]] || return 1
+    # The parent app may be in the root nobody could look into.
+    [[ "$output" == *"UNSEARCHABLE=0"* ]] || return 1
+}
+
 @test "bundle_has_installed_app covers nested Homebrew Caskroom apps" {
     local cask_root="$HOME/Caskroom"
     make_app "$cask_root/example/1.2.3/Example.app" "com.example.caskroom"
