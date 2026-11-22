@@ -335,7 +335,7 @@ func isProtectedAnalyzeDeletePath(path string) bool {
 	if isCriticalAnalyzeDeletePath(cleanPath) {
 		return true
 	}
-	if isSessionSocketFolderPath(cleanPath) {
+	if isSessionSocketFolderPath(cleanPath) || isTempSocketPath(cleanPath) {
 		return true
 	}
 	if isLibraryHeadFolder(cleanPath, "/Library") {
@@ -496,6 +496,21 @@ func isCriticalAnalyzeDeletePath(path string) bool {
 // folder when TMPDIR is set), matched by name and by identity, so /tmp, a
 // different letter case and a link to either are caught too.
 func isSessionSocketFolderPath(path string) bool {
+	tempRoots, tempInfos := sessionTempRoots()
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		parent := filepath.Dir(current)
+		if parent == current {
+			return false
+		}
+		if isSessionSocketFolderName(filepath.Base(current)) && isTempDir(parent, tempRoots, tempInfos) {
+			return true
+		}
+	}
+}
+
+// sessionTempRoots names /private/tmp, /tmp and a sane $TMPDIR, plus the
+// identities a parent reached by another spelling is compared against.
+func sessionTempRoots() ([]string, []os.FileInfo) {
 	tempRoots := []string{"/private/tmp", "/tmp"}
 	identityRoots := []string{"/private/tmp"}
 	if userTemp, ok := sessionUserTempDir(); ok {
@@ -508,15 +523,62 @@ func isSessionSocketFolderPath(path string) bool {
 			tempInfos = append(tempInfos, info)
 		}
 	}
-	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+	return tempRoots, tempInfos
+}
+
+// tempSocketEntryLimit bounds the listing of one temp folder.
+const tempSocketEntryLimit = 4096
+
+// isTempSocketPath reports any socket in the temp directory, and any direct
+// child folder of it whose own entries include a socket: ssh-agent's
+// ssh-XXXX/agent.<pid>, zellij's, PostgreSQL's .s.PGSQL.5432, MySQL's. Moving
+// one breaks the session or the database connection and frees nothing. The
+// type is read with lstat, so a link to a socket is not one, and the listing
+// opens the folder without following a link, stops at the first socket or
+// after tempSocketEntryLimit entries, and an unreadable folder answers false,
+// leaving the name rule of isSessionSocketFolderPath. Mole Mac I-308.
+func isTempSocketPath(path string) bool {
+	tempRoots, tempInfos := sessionTempRoots()
+	cleanPath := filepath.Clean(path)
+	for current := cleanPath; ; current = filepath.Dir(current) {
 		parent := filepath.Dir(current)
 		if parent == current {
 			return false
 		}
-		if isSessionSocketFolderName(filepath.Base(current)) && isTempDir(parent, tempRoots, tempInfos) {
+		if !isTempDir(parent, tempRoots, tempInfos) {
+			continue
+		}
+		if info, err := os.Lstat(cleanPath); err == nil && info.Mode()&os.ModeSocket != 0 {
 			return true
 		}
+		return current == cleanPath && directoryHoldsSocket(cleanPath)
 	}
+}
+
+func directoryHoldsSocket(path string) bool {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false
+	}
+	dir := os.NewFile(uintptr(fd), path)
+	defer func() { _ = dir.Close() }()
+	seen := 0
+	for seen < tempSocketEntryLimit {
+		entries, err := dir.ReadDir(256)
+		for _, entry := range entries {
+			if entry.Type()&os.ModeSocket != 0 {
+				return true
+			}
+			seen++
+			if seen >= tempSocketEntryLimit {
+				return false
+			}
+		}
+		if err != nil || len(entries) == 0 {
+			return false
+		}
+	}
+	return false
 }
 
 // sessionUserTempDir is $TMPDIR when it can be a temp directory: absolute, not

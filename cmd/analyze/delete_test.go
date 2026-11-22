@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestTrashPathWithProgress(t *testing.T) {
@@ -788,6 +790,84 @@ func TestAnalyzeDeleteRefusesSessionSocketFoldersInTmp(t *testing.T) {
 	} {
 		if isProtectedAnalyzeDeletePath(allowed) {
 			t.Errorf("ordinary tmp item refused: %s", allowed)
+		}
+	}
+}
+
+// bindUnixSocket binds a real socket at dir/name. The bind goes through a
+// relative name, because a temp path is longer than sun_path allows.
+func bindUnixSocket(t *testing.T, dir, name string) {
+	t.Helper()
+	t.Chdir(dir)
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("socket: %v", err)
+	}
+	defer func() { _ = unix.Close(fd) }()
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: name}); err != nil {
+		t.Fatalf("bind %s: %v", filepath.Join(dir, name), err)
+	}
+}
+
+func TestAnalyzeDeleteRefusesAnySocketInTmpAndAFolderHoldingOne(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tmpRoot := t.TempDir()
+	t.Setenv("TMPDIR", tmpRoot)
+
+	agentFolder := filepath.Join(tmpRoot, "ssh-AbC123")
+	plain := filepath.Join(tmpRoot, "build-output")
+	locked := filepath.Join(tmpRoot, "locked")
+	zellij := filepath.Join(tmpRoot, "zellij-501", "0.40")
+	for _, dir := range []string{agentFolder, plain, locked, zellij} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bindUnixSocket(t, agentFolder, "agent.42")
+	bindUnixSocket(t, tmpRoot, ".s.PGSQL.5432")
+	bindUnixSocket(t, zellij, "session")
+	if err := os.WriteFile(filepath.Join(plain, "a.o"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkToAgent := filepath.Join(tmpRoot, "agent-link")
+	if err := os.Symlink(agentFolder, linkToAgent); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(home, "work")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bindUnixSocket(t, outside, "app.sock")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	for _, refused := range []string{
+		agentFolder,
+		filepath.Join(agentFolder, "agent.42"),
+		filepath.Join(tmpRoot, ".s.PGSQL.5432"),
+		filepath.Join(zellij, "session"),
+	} {
+		if !isProtectedAnalyzeDeletePath(refused) {
+			t.Errorf("socket or folder holding one in tmp not refused: %s", refused)
+		}
+	}
+	for _, allowed := range []string{
+		plain,
+		filepath.Join(plain, "a.o"),
+		// Only a direct child's own entries are read.
+		filepath.Join(tmpRoot, "zellij-501"),
+		// A link to a socket folder is not one, and is never followed.
+		linkToAgent,
+		// Unreadable: the listing gives no answer, the name rule still does.
+		locked,
+		// Outside tmp the type is never asked.
+		filepath.Join(outside, "app.sock"),
+	} {
+		if isProtectedAnalyzeDeletePath(allowed) {
+			t.Errorf("ordinary item refused: %s", allowed)
 		}
 	}
 }
