@@ -439,7 +439,7 @@ Source: a 2026-11-22 storage review on the maintainer's Mac. `mo clean --dry-run
 
 ## 2026-11-22 Mole Mac rows: orphan app roots, ownership refusals, AWS cache, Chromium locks, temp sockets
 
-Source: the Mole Mac rows of 2026-11-20 and 2026-11-21 that name Mole CLI (macOS), read at `main` `a9c4fa83` and merged to `main` on 2026-11-22. Each change only narrows deletion.
+Source: the Mole Mac rows of 2026-11-20 and 2026-11-21 that name Mole CLI (macOS), read at `main` `a9c4fa83` and merged to `main` on 2026-11-22. Each change only narrows deletion. The maintainer kept the three visible changes on 2026-11-22: the AWS CLI cache row is gone, Service Worker stores are not listed while their browser runs, and a dry run omits items the user cannot unlink.
 
 | Row | Mole CLI (macOS) | Consumer and evidence |
 | --- | --- | --- |
