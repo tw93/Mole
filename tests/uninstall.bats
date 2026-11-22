@@ -5006,9 +5006,12 @@ INNER
     [ "$status" -eq 0 ]
 }
 
-@test "interactive uninstall still exits 1 when an app failed before the user quits with q" {
-    for failed in 1 0; do
-        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FAILED="$failed" TERM=xterm-256color \
+@test "interactive uninstall reports the batch outcome before the countdown and preserves failure on quit" {
+    local outcome failed
+    for outcome in error "done" idle; do
+        failed=0
+        [[ "$outcome" != error ]] || failed=1
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" FAILED="$failed" OUTCOME="$outcome" TERM=xterm-256color \
             /bin/bash --noprofile --norc << 'INNER'
 set -euo pipefail
 source "$PROJECT_ROOT/bin/uninstall.sh"
@@ -5034,12 +5037,27 @@ select_apps_for_uninstall() {
     _MOLE_MENU_USER_QUIT=1
     return 1
 }
-batch_uninstall_applications() { MOLE_UNINSTALL_FAILED_APPS=$((MOLE_UNINSTALL_FAILED_APPS + FAILED)); }
+batch_uninstall_applications() {
+    MOLE_UNINSTALL_FAILED_APPS=$((MOLE_UNINSTALL_FAILED_APPS + FAILED))
+    if [[ "$OUTCOME" != idle ]]; then
+        UNINSTALL_STATUS_ON_SUCCESS=done
+    fi
+}
+mole_report_program_status() { printf 'STATUS:%s:%s\n' "$1" "${2:-}"; }
 # Enter returns to the list after the batch; the second selection quits.
-printf '\n' | main
+# Not a pipeline: main must run in this shell so the EXIT trap reports the final status.
+main < <(printf '\n')
 INNER
         [ "$status" -eq "$failed" ] || {
             echo "failed=$failed status=$status $output"
+            return 1
+        }
+        [[ "$output" == *"STATUS:$outcome:"*"Press Enter to return to the app list"*"STATUS:working:"* ]] || return 1
+        # Back at the list, quitting is a cancel: a stale "done" must not be reported again.
+        local expected_final=idle last_status="${output##*STATUS:}"
+        [[ "$outcome" != error ]] || expected_final=error
+        [[ "$last_status" == "$expected_final:"* ]] || {
+            echo "final status after quit was: $last_status"
             return 1
         }
     done

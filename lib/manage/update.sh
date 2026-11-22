@@ -1238,6 +1238,7 @@ show_help() {
 
 # Update flow (Homebrew or installer).
 update_mole() (
+    local MOLE_PROGRAM_STATUS_TITLE="mole update"
     local force_update="${1:-false}"
     local nightly_update="${2:-false}"
     local sudo_keepalive_pid=""
@@ -1256,6 +1257,7 @@ update_mole() (
     trap '_update_cleanup; echo ""; exit 130' INT TERM
     trap '_update_cleanup' EXIT
 
+    mole_report_program_status working
     if is_nix_install; then
         local review_icon="${ICON_REVIEW:-⊙}"
         log_error "Mole was installed via Nix. Self-update is disabled."

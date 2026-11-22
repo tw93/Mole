@@ -53,6 +53,7 @@ run_slim_selector() {
 		stty() { :; }
 		tput() { if [[ "$1" == cols ]]; then echo 40; else echo 16; fi; }
 		drain_pending_input() { :; }
+		mole_report_program_status() { printf "STATUS:%s:%s\n" "$1" "${2:-}"; }
 		read_key() {
 			local index key
 			index=$(cat "$KEY_STATE" 2>/dev/null || echo 0)
@@ -67,6 +68,8 @@ run_slim_selector() {
 		[[ -z "${MOLE_MENU_FILTER_NAMES:-}" ]] || exit 1
 	' bash "$PROJECT_ROOT/bin/slim.sh"
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"Select apps to slim"*"Enter Save"*"STATUS:blocked:question"*"RESULT="* ]] || { echo "$output"; return 1; }
+	[[ "${output#*STATUS:blocked:question}" != *"STATUS:blocked:question"* ]]
 }
 
 assert_slim_whitelist_change() {
@@ -319,6 +322,27 @@ slim_env() {
 	[[ "$output" == *"Usage: mo slim"* ]] || return 1
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --help
 	[[ "$output" == *"mo slim"* ]]
+}
+
+@test "slim reports working under its own title only once a run starts" {
+	local script='
+		source "$1"
+		mole_report_program_status() { printf "STATUS:%s:%s\n" "$1" "${MOLE_PROGRAM_STATUS_TITLE:-}"; }
+		collect_slim_candidates() { return 1; }
+		main "${@:2}"
+	'
+	run slim_env HOME="$BATS_TEST_TMPDIR/home" MOLE_SLIM_TEST_HOST_ARM64=1 /bin/bash -c "$script" bash "$PROJECT_ROOT/bin/slim.sh" --dry-run
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	[[ "$output" == *"STATUS:working:mole slim"* ]] || { echo "$output"; return 1; }
+
+	# Help, an unknown option and an Intel host never reach the working report.
+	run slim_env HOME="$BATS_TEST_TMPDIR/home" MOLE_SLIM_TEST_HOST_ARM64=1 /bin/bash -c "$script" bash "$PROJECT_ROOT/bin/slim.sh" --help
+	[[ "$output" != *"STATUS:"* ]] || { echo "$output"; return 1; }
+	run slim_env HOME="$BATS_TEST_TMPDIR/home" MOLE_SLIM_TEST_HOST_ARM64=1 /bin/bash -c "$script" bash "$PROJECT_ROOT/bin/slim.sh" --unknown-option
+	[[ "$output" != *"STATUS:"* ]] || { echo "$output"; return 1; }
+	run slim_env HOME="$BATS_TEST_TMPDIR/home" MOLE_SLIM_TEST_HOST_ARM64=0 /bin/bash -c "$script" bash "$PROJECT_ROOT/bin/slim.sh" --dry-run
+	[ "$status" -eq 1 ] || { echo "$output"; return 1; }
+	[[ "$output" != *"STATUS:"* ]]
 }
 
 @test "slim refuses on an Intel host and says why" {
@@ -768,6 +792,22 @@ exec /usr/bin/codesign \"\$@\""
 	[ "$status" -eq 0 ]
 	[[ "$output" != *EOF_CONFIRMED* ]] || return 1
 	[[ "$output" == *ENTER_CONFIRMED* ]]
+}
+
+@test "slim confirmation reports blocked permission under its title before it reads a key" {
+	run slim_env /bin/bash -c '
+		source "$1"
+		MOLE_PROGRAM_STATUS_TITLE="mole slim"
+		mole_report_program_status() { printf "STATUS:%s:%s:%s\n" "$1" "${2:-}" "$MOLE_PROGRAM_STATUS_TITLE"; }
+		SLIM_APP_PATHS=("$2/Fixture.app")
+		SLIM_APP_NAMES=(Fixture)
+		SLIM_APP_BYTES=(1024)
+		confirm_slim_selection 0 < <(printf "\n") && echo "ENTER_RC=0"
+		confirm_slim_selection 0 </dev/null || echo "EOF_RC=$?"
+	' bash "$PROJECT_ROOT/bin/slim.sh" "$BATS_TEST_TMPDIR"
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+	# Each prompt is preceded by its report, which names the command.
+	[[ "$output" == *"STATUS:blocked:permission:mole slim"*"ENTER_RC=0"*"STATUS:blocked:permission:mole slim"*"EOF_RC=1"* ]]
 }
 
 @test "slim summary lists slimmed apps and groups kept apps by reason" {

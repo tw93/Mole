@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/tw93/mole/internal/programstatus"
 )
 
 // scanState describes measurement coverage within Mole's scan filters, not an
@@ -215,6 +217,7 @@ type deleteProgressMsg struct {
 }
 
 type model struct {
+	programStatus       *programstatus.Reporter
 	scanState           scanState
 	scanTransient       bool // scanState != scanComplete because of a transient failure
 	path                string

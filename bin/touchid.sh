@@ -105,11 +105,17 @@ enable_touchid() {
     # First check if system supports Touch ID
     if ! supports_touchid; then
         log_warning "This Mac may not support Touch ID"
-        read -rp "Continue anyway? [y/N] " confirm
-        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Cancelled${NC}"
+        mole_report_program_status blocked permission
+        if ! read -rp "Continue anyway? [y/N] " confirm; then
+            TOUCHID_ERROR_STATUS=idle
             return 1
         fi
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Cancelled${NC}"
+            TOUCHID_ERROR_STATUS=idle
+            return 1
+        fi
+        mole_report_program_status working
         echo ""
     fi
 
@@ -301,6 +307,7 @@ disable_touchid() {
 show_menu() {
     echo ""
     show_status
+    mole_report_program_status blocked permission
     if is_touchid_configured; then
         echo -ne "${PURPLE}${ICON_CONFIRM}${NC} Press ${GREEN}Enter${NC} to disable, ${GRAY}Q${NC} to quit: "
         if ! IFS= read -r -s -n1 key; then
@@ -312,14 +319,17 @@ show_menu() {
 
         case "$key" in
             $'\e' | q | Q) # ESC or Q
+                TOUCHID_SUCCESS_STATUS=idle
                 return 0
                 ;;
             "" | $'\n' | $'\r')   # Enter
                 printf "\r\033[K" # Clear the prompt line
+                mole_report_program_status working
                 disable_touchid
                 ;;
             *)
                 echo ""
+                TOUCHID_SUCCESS_STATUS=error
                 log_error "Invalid key"
                 ;;
         esac
@@ -333,14 +343,17 @@ show_menu() {
 
         case "$key" in
             $'\e' | q | Q) # ESC or Q
+                TOUCHID_SUCCESS_STATUS=idle
                 return 0
                 ;;
             "" | $'\n' | $'\r')   # Enter
                 printf "\r\033[K" # Clear the prompt line
+                mole_report_program_status working
                 enable_touchid
                 ;;
             *)
                 echo ""
+                TOUCHID_SUCCESS_STATUS=error
                 log_error "Invalid key"
                 ;;
         esac
@@ -375,6 +388,17 @@ main() {
                 ;;
         esac
     done
+
+    MOLE_PROGRAM_STATUS_TITLE="mole touchid"
+    TOUCHID_SUCCESS_STATUS=done
+    TOUCHID_ERROR_STATUS=error
+    if [[ "$command" == status ]] || touchid_dry_run_enabled; then
+        TOUCHID_SUCCESS_STATUS=clear
+    fi
+    trap 'rc=$?; cleanup_temp_files; mole_finish_program_status "$rc" "$TOUCHID_SUCCESS_STATUS" "$TOUCHID_ERROR_STATUS"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    mole_report_program_status working
 
     if touchid_dry_run_enabled; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No sudo authentication files will be modified"

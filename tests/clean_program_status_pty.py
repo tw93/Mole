@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise clean's main, prompt and exit traps without authorizing any cleanup."""
+import base64
 import errno
 import fcntl
 import os
@@ -18,7 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = r'''
 source "$PROJECT_ROOT/bin/clean.sh"
 adopt_sudo_session() { [[ "$CACHED" == yes ]]; }
-ensure_sudo_session() { return 1; }
+# The real helper reports blocked/auth itself when asked to and a prompt is needed.
+ensure_sudo_session() {
+    [[ "${2:-}" == true ]] && mole_report_program_status blocked auth
+    return 1
+}
 ensure_sudo_session_with_password() { [[ "$1" == secret ]]; }
 perform_cleanup() {
     printf 'scanning (dry=%s, system=%s)\n' "$DRY_RUN" "$SYSTEM_CLEAN"
@@ -34,7 +39,7 @@ def own_terminal():
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
 
-def run_terminal(command, env, keys):
+def run_terminal(command, env, keys, redirect_stdout):
     master, slave = pty.openpty()
     try:
         if keys:
@@ -42,7 +47,8 @@ def run_terminal(command, env, keys):
             os.write(master, keys)
         with tempfile.TemporaryFile() as stdout:
             process = subprocess.Popen(command, env=env, stdin=slave, stderr=slave,
-                                       stdout=stdout, preexec_fn=own_terminal)
+                                       stdout=stdout if redirect_stdout else slave,
+                                       preexec_fn=own_terminal)
             os.close(slave)
             slave = None
             try:
@@ -60,8 +66,10 @@ def run_terminal(command, env, keys):
                     stderr.extend(chunk)
                 process.wait(timeout=max(0, deadline - time.monotonic()))
                 stdout.seek(0)
+                output = stdout.read() if redirect_stdout else re.sub(
+                    rb'\x1b\]7501;[^\x1b\x07]*\x1b\\', b'', stderr)
                 return subprocess.CompletedProcess(command, process.returncode,
-                                                   stdout.read(), bytes(stderr))
+                                                   output, bytes(stderr))
             finally:
                 if process.poll() is None:
                     process.kill()
@@ -73,7 +81,7 @@ def run_terminal(command, env, keys):
 
 
 def check(name, states, *, keys=b'', args=(), outcome=0, code=0,
-          terminal_stderr=True, output=b''):
+          terminal_stderr=True, redirect_stdout=False, output=b''):
     with tempfile.TemporaryDirectory(prefix='mole-clean-status-') as home:
         env = dict(os.environ, PROJECT_ROOT=str(ROOT), HOME=home, TMPDIR=home,
                    TERM='xterm-256color', MOLE_TEST_MODE='1', MOLE_TEST_NO_AUTH='1',
@@ -81,7 +89,7 @@ def check(name, states, *, keys=b'', args=(), outcome=0, code=0,
                    OUTCOME=str(outcome))
         command = ['/bin/bash', '--noprofile', '--norc', '-c', SCRIPT, 'clean', *args]
         if terminal_stderr:
-            result = run_terminal(command, env, keys)
+            result = run_terminal(command, env, keys, redirect_stdout)
         else:
             # Input remains interactive. The descriptor receiving the reports
             # must itself be a terminal, even when a caller merges both outputs.
@@ -104,6 +112,10 @@ def check(name, states, *, keys=b'', args=(), outcome=0, code=0,
         fields = dict(pair.split('=', 1) for pair in report.decode('ascii').split(':'))
         assert fields.get('app') == 'mole', (name, fields)
         state = fields['state']
+        if state == 'blocked':
+            assert 'title' not in fields, (name, fields)
+        else:
+            assert base64.b64decode(fields['title'], validate=True) == b'mole clean', (name, fields)
         if 'kind' in fields:
             state += '/' + fields['kind']
         actual.append(state)
@@ -125,4 +137,5 @@ check('interrupted step', 'working idle', outcome=130, code=130)
 check('failed step', 'working error', outcome=1, code=1)
 check('timed-out step', 'working error', outcome=124, code=124)
 check('help', '', args=['--help'], output=b'--dry-run')
+check('redirected stdout with terminal stderr', '', redirect_stdout=True, output=b'scanning')
 check('piped', '', terminal_stderr=False, output=b'scanning')

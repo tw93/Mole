@@ -75,6 +75,8 @@ def check(cols, choice):
                                    env=env, preexec_fn=own_terminal)
         try:
             preview = read_until(master, b'cancel: ')
+            confirm_status = b'\x1b]7501;state=blocked:app=mole:kind=permission\x1b\\'
+            assert confirm_status in preview, preview
             assert b'Personal data kept' in preview, preview
             assert b'D choose personal data' not in preview, preview
             wait_for_key_read(slave)
@@ -89,6 +91,7 @@ def check(cols, choice):
             time.sleep(.12)
             os.write(master, b'q' if choice == 'cancel' else b'\r')
             reviewed = read_until(master, b'cancel: ')
+            assert confirm_status in reviewed, reviewed
             removes = choice in ('select', 'all')
             assert (b'Personal data kept' in reviewed) != removes, reviewed
             # Leaving the picker restores the old preview; the redrawn plan

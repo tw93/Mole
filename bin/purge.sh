@@ -20,13 +20,24 @@ export LANG=C
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/core/common.sh"
 
+# Set once a run starts, so help, --paths and a rejected option report nothing.
+PURGE_STATUS_ON_SUCCESS=""
+
 # Restores cursor and clears temp files even when set -e aborts (#915).
 cleanup() {
+    local exit_code="${1:-$?}"
     show_cursor 2> /dev/null || true
     cleanup_temp_files
+    if [[ -n "$PURGE_STATUS_ON_SUCCESS" ]]; then
+        case "$exit_code" in
+            0) mole_report_program_status "$PURGE_STATUS_ON_SUCCESS" ;;
+            130 | 143) mole_report_program_status idle ;;
+            *) mole_report_program_status error ;;
+        esac
+    fi
 }
 trap cleanup EXIT
-trap 'trap - EXIT; cleanup; exit 130' INT TERM
+trap 'trap - EXIT; cleanup 130; exit 130' INT TERM
 source "$SCRIPT_DIR/../lib/core/log.sh"
 source "$SCRIPT_DIR/../lib/clean/project.sh"
 
@@ -252,6 +263,9 @@ perform_purge() {
             ;;
     esac
 
+    # An incomplete run exits 1 and reports error; only a completed one is done.
+    [[ "$purge_outcome" != "completed" ]] || PURGE_STATUS_ON_SUCCESS="done"
+
     # Final summary (matching clean.sh format)
     echo ""
 
@@ -361,6 +375,12 @@ main() {
                 ;;
         esac
     done
+
+    # Opened only after flags are parsed, like the other commands: help, --paths
+    # and a rejected option change nothing worth reporting.
+    PURGE_STATUS_ON_SUCCESS=idle
+    MOLE_PROGRAM_STATUS_TITLE="mole purge"
+    mole_report_program_status working
 
     start_purge
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then

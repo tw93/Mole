@@ -11,6 +11,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/tw93/mole/internal/programstatus"
 )
 
 func (m *model) scheduleOverviewScans() tea.Cmd {
@@ -354,7 +356,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, metadataCmd)
 		}
 	}
+	state, kind := next.programState()
+	next.programStatus.Report(state, kind)
 	return next, cmd
+}
+
+// programState maps what the model is doing to the OSC 7501 state Rex shows.
+func (m model) programState() (programstatus.State, programstatus.Kind) {
+	switch {
+	case m.deleteConfirm:
+		return programstatus.StateBlocked, programstatus.KindPermission
+	case m.scanning || m.deleting || (m.inOverviewMode() && m.overviewScanning):
+		return programstatus.StateWorking, ""
+	default:
+		return programstatus.StateIdle, ""
+	}
 }
 
 func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {

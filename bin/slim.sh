@@ -733,6 +733,7 @@ select_slim_apps() {
 
     MOLE_SELECTION_RESULT=""
     local rc=0
+    local MOLE_MENU_READY_STATUS_KIND=question
     paginated_multi_select "Select apps to slim" "${rows[@]}" || rc=$?
     unset MOLE_MENU_META_SIZEKB MOLE_MENU_FILTER_NAMES
     [[ $rc -eq 0 && -n "$MOLE_SELECTION_RESULT" ]]
@@ -757,6 +758,7 @@ confirm_slim_selection() {
     [[ "$running" == false ]] || echo -e "${GRAY}Running apps are skipped, quit them before you confirm.${NC}"
     local app_text="apps"
     [[ ${#indices[@]} -gt 1 ]] || app_text="app"
+    mole_report_program_status blocked permission
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Slim ${#indices[@]} ${app_text}, $(bytes_to_human "$total")  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
 
     local confirm
@@ -861,6 +863,11 @@ main() {
     slim_preflight || rc=$?
     [[ $rc -eq 0 ]] || return 1
 
+    # Name the command for the terminal once the run is past help, option and
+    # host refusals; the record replaces the router's untitled working report.
+    MOLE_PROGRAM_STATUS_TITLE="mole slim"
+    mole_report_program_status working
+
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No apps will be changed"
         printf '\n'
@@ -889,13 +896,18 @@ main() {
     if ! select_slim_apps; then
         show_cursor
         printf '\n'
+        mole_report_program_status idle
         return 0
     fi
     show_cursor
 
     local -a indices=()
     IFS=',' read -ra indices <<< "$MOLE_SELECTION_RESULT"
-    confirm_slim_selection "${indices[@]}" || return 0
+    if ! confirm_slim_selection "${indices[@]}"; then
+        mole_report_program_status idle
+        return 0
+    fi
+    mole_report_program_status working
 
     log_operation_session_start "$MOLE_CURRENT_COMMAND"
     local idx slim_rc=0 current=0 before failed_before name prefix=""

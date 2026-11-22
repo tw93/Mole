@@ -197,6 +197,11 @@ cleanup_all() {
         log_operation "optimize" "TASK_FAILED" "$failure_action" "exit status $exit_status"
     fi
     log_operation_session_end "optimize" "$applied" "0"
+    case "$exit_status" in
+        0) mole_report_program_status "done" ;;
+        130 | 143) mole_report_program_status idle ;;
+        *) mole_report_program_status error ;;
+    esac
 }
 
 handle_interrupt() {
@@ -238,6 +243,8 @@ main() {
 
     trap 'cleanup_all "$?"' EXIT
     trap handle_interrupt INT TERM
+    MOLE_PROGRAM_STATUS_TITLE="mole optimize"
+    mole_report_program_status working
 
     if [[ -t 1 ]]; then
         clear_screen
@@ -308,10 +315,13 @@ main() {
     export MOLE_OPTIMIZE_SUDO_AVAILABLE="false"
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
-    elif ensure_sudo_session "System optimization requires admin access"; then
-        MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
     else
-        opt_msg "Skipping sudo-required optimizations: admin access not granted"
+        if ensure_sudo_session "System optimization requires admin access" true; then
+            MOLE_OPTIMIZE_SUDO_AVAILABLE="true"
+        else
+            opt_msg "Skipping sudo-required optimizations: admin access not granted"
+        fi
+        mole_report_program_status working
     fi
 
     export FIRST_ACTION=true

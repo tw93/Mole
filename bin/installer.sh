@@ -570,9 +570,14 @@ select_installers() {
         printf "\033[2J\033[H" >&2
     fi
 
+    local first_draw=true
     # Main loop
     while true; do
         draw_menu
+        if [[ "$first_draw" == true ]]; then
+            mole_report_program_status blocked question
+            first_draw=false
+        fi
 
         if ! IFS= read -r -s -n1 key; then
             restore_terminal
@@ -840,6 +845,7 @@ delete_selected_installers() {
 
     # Confirm deletion
     echo ""
+    mole_report_program_status blocked permission
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Delete ${#INSTALLER_DELETE_PATHS[@]} installers, ${confirm_human}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
 
     if ! IFS= read -r -s -n1 confirm; then
@@ -860,6 +866,7 @@ delete_selected_installers() {
     esac
 
     # Delete each selected installer with spinner
+    mole_report_program_status working
     if [[ -t 1 ]]; then
         start_inline_spinner "Removing installers..."
     fi
@@ -927,6 +934,7 @@ perform_installers() {
     fi
 
     # Delete selected
+    mole_report_program_status working
     local delete_status=0
     delete_selected_installers || delete_status=$?
     if [[ $delete_status -ne 0 ]]; then
@@ -1012,6 +1020,9 @@ main() {
         esac
     done
 
+    local MOLE_PROGRAM_STATUS_TITLE="mole installer"
+    mole_report_program_status working
+
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, No installer files will be removed"
         printf '\n'
@@ -1037,6 +1048,7 @@ main() {
             return 1
             ;;
         1)
+            mole_report_program_status idle
             printf '\n'
             ;;
         2)

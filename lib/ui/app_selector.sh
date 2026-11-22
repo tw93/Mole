@@ -210,6 +210,7 @@ select_apps_for_uninstall() {
     # Use paginated menu - result will be stored in MOLE_SELECTION_RESULT
     # Note: paginated_multi_select enters alternate screen and handles clearing
     MOLE_SELECTION_RESULT=""
+    local MOLE_MENU_READY_STATUS_KIND=question
     paginated_multi_select "Select Apps to Remove" "${menu_options[@]}"
     local exit_code=$?
 

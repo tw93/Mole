@@ -149,6 +149,57 @@ EOF
     [[ "$result" == "false" ]] || [[ -z "$result" ]]
 }
 
+@test "sudo status only blocks when interactive authentication is needed" {
+    unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+    local tty_file="$BATS_TEST_TMPDIR/tty"
+    touch "$tty_file"
+    tty() { printf '%s\n' "$tty_file"; }
+    sudo() {
+        case "$1" in
+            -n) [[ "$cached" == true ]] ;;
+            -k) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+    is_clamshell_mode() { return 0; }
+    _request_password() { printf 'PROMPT\n'; }
+    safe_clear_lines() { :; }
+    mole_report_program_status() { printf 'STATUS %s %s\n' "$1" "$2"; }
+
+    local cached=true
+    run request_sudo_access "Admin access required" true
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    cached=false
+    run request_sudo_access "Admin access required" true
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"STATUS blocked auth"*"PROMPT"* ]] || return 1
+
+    export MOLE_TEST_NO_AUTH=1
+    run request_sudo_access "Admin access required" true
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+}
+
+@test "ensure_sudo_session passes the auth report request down to the prompt" {
+    unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH
+    has_sudo_session() { return 1; }
+    request_sudo_access() { printf 'REQUEST:%s:%s\n' "$1" "${2:-}"; return 0; }
+    _start_sudo_keepalive() { printf 'keepalive-pid\n'; }
+    MOLE_SUDO_ESTABLISHED=false
+    MOLE_SUDO_KEEPALIVE_PID=""
+
+    run ensure_sudo_session "Needs admin" true
+    [ "$status" -eq 0 ]
+    [[ "$output" == "REQUEST:Needs admin:true" ]] || return 1
+
+    MOLE_SUDO_ESTABLISHED=false
+    run ensure_sudo_session "Needs admin"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "REQUEST:Needs admin:false" ]]
+}
+
 @test "request_sudo_access clears three lines in clamshell mode with Touch ID configured" {
     run /bin/bash -c '
         unset MOLE_TEST_MODE MOLE_TEST_NO_AUTH

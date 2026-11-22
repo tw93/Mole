@@ -119,6 +119,7 @@ _request_password() {
 
 request_sudo_access() {
     local prompt_msg="${1:-Admin access required}"
+    local report_auth="${2:-false}"
 
     # Tests must never trigger real password or Touch ID prompts.
     if [[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]; then
@@ -139,6 +140,10 @@ request_sudo_access() {
         if [[ -z "$tty_path" || ! -r "$tty_path" || ! -w "$tty_path" ]]; then
             is_gui_mode=true
         fi
+    fi
+
+    if [[ "$report_auth" == true ]]; then
+        mole_report_program_status blocked auth
     fi
 
     # GUI mode: use osascript for password dialog
@@ -354,7 +359,7 @@ request_sudo() {
     fi
 
     # Use the robust implementation from common.sh
-    if request_sudo_access "$prompt_msg"; then
+    if request_sudo_access "$prompt_msg" "${2:-false}"; then
         return 0
     else
         return 1
@@ -382,7 +387,7 @@ ensure_sudo_session() {
     fi
 
     # Request sudo access
-    if ! request_sudo "$prompt"; then
+    if ! request_sudo "$prompt" "${2:-false}"; then
         MOLE_SUDO_ESTABLISHED="false"
         return 1
     fi

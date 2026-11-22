@@ -1742,8 +1742,7 @@ check_android_ndk() {
 _xcode_ensure_sudo_session() {
     has_sudo_session && return 0
     local auth_rc=0
-    mole_report_program_status blocked auth
-    ensure_sudo_session "$1" || auth_rc=$?
+    ensure_sudo_session "$1" true || auth_rc=$?
     mole_report_program_status working
     return "$auth_rc"
 }

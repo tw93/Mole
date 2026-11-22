@@ -2542,6 +2542,7 @@ _batch_preview_and_confirm() {
             return 3
         fi
 
+        mole_report_program_status blocked permission
         echo -ne "${PURPLE}${ICON_ARROW}${NC} ${removal_note}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
 
         drain_pending_input # Clean up any pending input before confirmation
@@ -2589,6 +2590,7 @@ _batch_preview_and_confirm() {
 
     done
 
+    mole_report_program_status working
     # Enable uninstall mode - allows deletion of data-protected apps (VPNs, dev tools, etc.)
     # that user explicitly chose to uninstall. System-critical components remain protected.
     export MOLE_UNINSTALL_MODE=1
@@ -2605,11 +2607,12 @@ _batch_preview_and_confirm() {
             admin_prompt="Admin required for Homebrew casks: ${brew_cask_apps[*]}"
         fi
 
-        if ! ensure_sudo_session "$admin_prompt"; then
+        if ! ensure_sudo_session "$admin_prompt" true; then
             echo ""
             log_error "Admin access denied"
             return 1
         fi
+        mole_report_program_status working
     fi
 }
 
@@ -3652,5 +3655,6 @@ batch_uninstall_applications() {
     # Callers turn this into the exit status, so a script that runs
     # `mo uninstall` sees a failed app (Mole CLI (Windows) exits 1 the same way).
     MOLE_UNINSTALL_FAILED_APPS=$((${MOLE_UNINSTALL_FAILED_APPS:-0} + failed_count))
+    UNINSTALL_STATUS_ON_SUCCESS="done"
     unset failed_items
 }

@@ -148,6 +148,12 @@ _remove_config_dir() {
 # Remove flow (Homebrew + manual + config/cache).
 remove_mole() {
     local dry_run_mode="${1:-false}"
+    MOLE_PROGRAM_STATUS_TITLE="mole remove"
+    remove_success_status=done
+    trap 'rc=$?; cleanup_temp_files; mole_finish_program_status "$rc" "$remove_success_status"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    mole_report_program_status working
     # The router loads update.sh before remove.sh; isolated helper tests may not.
     if declare -f is_nix_install > /dev/null 2>&1 && is_nix_install; then
         local review_icon="${ICON_REVIEW:-⊙}"
@@ -266,6 +272,7 @@ remove_mole() {
     local alias_count=${#alias_installs[@]}
     if [[ "$is_homebrew" == "false" && ${manual_count:-0} -eq 0 && ${alias_count:-0} -eq 0 ]]; then
         printf '%s\n\n' "${YELLOW}No Mole installation detected${NC}"
+        remove_success_status=clear
         exit 0
     fi
 
@@ -308,6 +315,7 @@ remove_mole() {
         [[ -d "$HOME/Library/Logs/mole" ]] && echo "  ${ICON_LIST} $HOME/Library/Logs/mole (kept, operation history)"
 
         printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Dry run complete, no changes made"
+        remove_success_status=clear
         exit 0
     fi
 
@@ -346,6 +354,7 @@ remove_mole() {
         exit 1
     fi
 
+    mole_report_program_status blocked permission
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
 
     drain_pending_input # Clean up any pending input before confirmation
@@ -366,17 +375,16 @@ remove_mole() {
     fi
     drain_pending_input # Clean up any escape sequence remnants
     case "$key" in
-        $'\e')
-            exit 0
-            ;;
         "" | $'\n' | $'\r')
             printf "\r\033[K" # Clear the prompt line
             ;;
         *)
+            remove_success_status=idle
             exit 0
             ;;
     esac
 
+    mole_report_program_status working
     local has_error=false
     if [[ "$is_homebrew" == "true" ]]; then
         if [[ -z "$brew_cmd" ]]; then

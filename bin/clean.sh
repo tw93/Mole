@@ -571,8 +571,7 @@ prompt_for_system_clean() {
             break
         elif [[ "$choice" == "ENTER" ]]; then
             printf "\r\033[K" # Clear the prompt line
-            mole_report_program_status blocked auth
-            if ensure_sudo_session "System cleanup requires admin access"; then
+            if ensure_sudo_session "System cleanup requires admin access" true; then
                 SYSTEM_CLEAN=true
                 echo -e "${GREEN}${ICON_SUCCESS}${NC} Admin access granted"
                 echo ""
@@ -2353,6 +2352,7 @@ main() {
     done
 
     CLEAN_STATUS_ON_SUCCESS="done"
+    MOLE_PROGRAM_STATUS_TITLE="mole clean"
     mole_report_program_status working
     refuse_cleanup_without_write_access || exit 1
     start_cleanup

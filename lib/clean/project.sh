@@ -2287,8 +2287,14 @@ select_purge_categories() {
         clear_screen
     fi
     # Main loop
+    local ready_reported=false
     while true; do
         draw_menu
+        # Report the wait once the menu is on screen and can take keys.
+        if [[ "$menu_ready" == true && "$ready_reported" != true ]]; then
+            mole_report_program_status blocked question
+            ready_reported=true
+        fi
         local key
         key=$(read_key)
         if [[ "$menu_ready" != true && "$key" != QUIT ]]; then
@@ -2412,6 +2418,7 @@ confirm_purge_cleanup() {
         echo -e "${GRAY}Use 'mo purge --paths' to exclude cloud storage roots.${NC}"
     fi
 
+    mole_report_program_status blocked permission
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Remove ${item_count} ${item_text}, ${size_display}${unknown_hint}  ${GREEN}Enter${NC} confirm, ${GRAY}ESC${NC} cancel: "
     drain_pending_input
     local key=""
@@ -3604,6 +3611,7 @@ clean_project_artifacts() {
     PURGE_CATEGORY_SIZE_UNKNOWN_FLAGS_ARRAY=()
 
     # Clean selected items
+    mole_report_program_status working
     echo ""
     local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
     local cleaned_count=0

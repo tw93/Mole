@@ -303,13 +303,11 @@ interactive_main_menu() {
                 ;;
             "TOUCHID")
                 show_cursor
-                mole_report_program_status working
                 exec "$SCRIPT_DIR/bin/touchid.sh"
                 ;;
             "UPDATE")
                 [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]] || continue
                 show_cursor
-                mole_report_program_status working
                 clear
                 update_mole
                 exit 0

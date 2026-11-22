@@ -1751,6 +1751,7 @@ uninstall_abort() {
 }
 
 # Cleanup: restore cursor and kill keepalive.
+UNINSTALL_STATUS_ON_SUCCESS=""
 cleanup() {
     local exit_code="${1:-$?}"
     trap - EXIT INT TERM
@@ -1764,6 +1765,13 @@ cleanup() {
     log_operation_session_end "uninstall" "${files_cleaned:-0}" "${total_size_cleaned:-0}"
     cleanup_temp_files
     show_cursor
+    if [[ -n "$UNINSTALL_STATUS_ON_SUCCESS" ]]; then
+        case "$exit_code" in
+            0) mole_report_program_status "$UNINSTALL_STATUS_ON_SUCCESS" ;;
+            130 | 143) mole_report_program_status idle ;;
+            *) mole_report_program_status error ;;
+        esac
+    fi
     exit "$exit_code"
 }
 
@@ -2153,6 +2161,9 @@ main() {
     # Opened only after flags are parsed: --dry-run must reach the marker, and
     # --help, --list and a rejected flag change nothing worth a session.
     log_operation_session_start "uninstall"
+    UNINSTALL_STATUS_ON_SUCCESS=idle
+    MOLE_PROGRAM_STATUS_TITLE="mole uninstall"
+    mole_report_program_status working
 
     hide_cursor
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
@@ -2218,6 +2229,9 @@ main() {
     unset MOLE_INLINE_LOADING MOLE_MANAGED_ALT_SCREEN MOLE_ALT_SCREEN_ACTIVE
     while true; do
         unset MOLE_INLINE_LOADING
+        if [[ $first_scan == false ]]; then
+            mole_report_program_status working
+        fi
 
         # Keep scanning and selection on one alternate screen. Entering the
         # selector only after the scan leaves the primary-screen cursor below
@@ -2316,6 +2330,7 @@ main() {
             return 1
         fi
 
+        mole_report_program_status working
         stop_uninstall_interactive_screen
         show_cursor
         clear_screen
@@ -2409,6 +2424,7 @@ main() {
             ((index++))
         done
 
+        UNINSTALL_STATUS_ON_SUCCESS=idle
         batch_uninstall_applications
 
         # A nested command may have returned the controlling terminal to the
@@ -2424,6 +2440,11 @@ main() {
         local _countdown=5
         local _key=""
         local _pressed=false
+        if [[ ${MOLE_UNINSTALL_FAILED_APPS:-0} -eq 0 ]]; then
+            mole_report_program_status "$UNINSTALL_STATUS_ON_SUCCESS"
+        else
+            mole_report_program_status error
+        fi
         while [[ $_countdown -gt 0 ]]; do
             printf "\r${GRAY}Press Enter to return to the app list, press q to exit (%d)${NC} " "$_countdown"
             if IFS= read -r -s -n1 -t 1 _key 2> /dev/null; then
@@ -2436,7 +2457,8 @@ main() {
         drain_pending_input
 
         if [[ "$_pressed" == "true" && -z "$_key" ]]; then
-            :
+            # Back at the list: a later quit is a cancel, not another success.
+            UNINSTALL_STATUS_ON_SUCCESS=idle
         else
             show_cursor
             [[ ${MOLE_UNINSTALL_FAILED_APPS:-0} -eq 0 ]] || return 1

@@ -250,6 +250,7 @@ setup() {
 		INSTALLER_PATHS=("$HOME/Downloads/Fixture.dmg")
 		INSTALLER_SIZES=(7)
 		DISPLAY_NAMES=(Fixture.dmg)
+		mole_report_program_status() { printf "STATUS:%s:%s\n" "$1" "${2:-}"; }
 		execute_installer_delete_plan() { echo SINK_REACHED; }
 		if show_installer_menu; then
 			delete_selected_installers
@@ -258,6 +259,8 @@ setup() {
 		fi
 	' bash "$PROJECT_ROOT/bin/installer.sh" < <(printf a)
 	[ "$status" -eq 0 ]
+	[[ "$output" == *"Enter Confirm"*"STATUS:blocked:question"*"MENU_CANCELLED"* ]] || return 1
+	[[ "${output#*STATUS:blocked:question}" != *"STATUS:blocked:question"* ]] || return 1
 	[[ "$output" == *MENU_CANCELLED* ]] || return 1
 	[[ "$output" != *SINK_REACHED* ]]
 }

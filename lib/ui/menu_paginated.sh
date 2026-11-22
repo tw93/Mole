@@ -681,12 +681,17 @@ paginated_multi_select() {
     }
 
     local need_full_redraw=true
+    local ready_status_kind="${MOLE_MENU_READY_STATUS_KIND:-}"
 
     # Main interaction loop
     while true; do
         if [[ "$need_full_redraw" == "true" ]]; then
             draw_menu
             need_full_redraw=false
+            if [[ -n "$ready_status_kind" ]]; then
+                mole_report_program_status blocked "$ready_status_kind"
+                ready_status_kind=""
+            fi
         fi
 
         local key

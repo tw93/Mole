@@ -16,6 +16,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/tw93/mole/internal/programstatus"
 )
 
 var (
@@ -106,7 +108,10 @@ func resolveScanTarget(envPath string, args []string) (string, bool, error) {
 }
 
 func runTUIMode(path string, isOverview bool) {
+	reporter := programstatus.NewReporter("mole analyze")
+	reporter.Report(programstatus.StateWorking, "")
 	m := newModel(path, isOverview)
+	m.programStatus = reporter
 	defer m.cancelBackgroundCacheWrites(nil)
 	// Warm overview cache only when the user opens a specific directory.
 	// Overview mode already schedules the same measurements for the foreground UI;
@@ -117,8 +122,9 @@ func runTUIMode(path string, isOverview bool) {
 		m.startOverviewPrefetch(prefetchCtx)
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithFilter(reporter.Filter))
 	final, err := p.Run()
+	reporter.Finish(err)
 	if finalModel, ok := final.(model); ok {
 		m = finalModel
 	}

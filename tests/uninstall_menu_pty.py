@@ -16,10 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ANSI = re.compile(rb'\x1b\[[0-?]*[ -/]*[@-~]')
+PROGRAM_STATUS = re.compile(rb'\x1b\]7501;[^\x1b\x07]*\x1b\\')
 
 
 def plain(frame):
-    return ANSI.sub(b'', frame).decode('utf-8').replace('\r', '')
+    return ANSI.sub(b'', PROGRAM_STATUS.sub(b'', frame)).decode('utf-8').replace('\r', '')
 
 
 def assert_fits(frame, rows, columns):
@@ -70,12 +71,15 @@ def check_menu(columns):
             return data
 
         try:
-            frame = receive(b'Enter Save')
+            blocked = b'\x1b]7501;state=blocked:app=mole:kind=question\x1b\\'
+            frame = receive(blocked)
+            assert frame.index(b'Enter Save') < frame.index(blocked), frame
             app_rows = [line for line in plain(frame).splitlines() if ' | Unknown' in line]
             assert len(app_rows) == 5 and 'alph' in app_rows[0] and 'Zebra' in app_rows[-1], app_rows
             assert_fits(frame, 16, columns)
             os.write(master, b'o')
             frame = receive(b'Enter Save')
+            assert blocked not in frame, frame
             # Verify the actual order even when the order hint is hidden.
             app_rows = [line for line in plain(frame).splitlines() if ' | Unknown' in line]
             assert len(app_rows) == 5 and 'Zebra' in app_rows[0] and 'alph' in app_rows[-1], app_rows

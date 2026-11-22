@@ -13,6 +13,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/tw93/mole/internal/programstatus"
 )
 
 const (
@@ -298,8 +300,12 @@ func hasCoreMetrics(data MetricsSnapshot) bool {
 
 // runTUIMode runs the interactive terminal UI.
 func runTUIMode() {
-	p := tea.NewProgram(newModel(), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	reporter := programstatus.NewReporter("mole status")
+	reporter.Report(programstatus.StateWorking, "")
+	p := tea.NewProgram(newModel(), tea.WithAltScreen(), tea.WithFilter(reporter.Filter))
+	_, err := p.Run()
+	reporter.Finish(err)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "system status error: %v\n", err)
 		os.Exit(1)
 	}

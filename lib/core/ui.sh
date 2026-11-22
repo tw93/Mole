@@ -31,9 +31,28 @@ show_cursor() { [[ -t 1 ]] && printf '\033[?25h' >&2 || true; }
 # OSC 7501 program status. Callers supply protocol constants only. A report
 # replaces the previous record, so include the program name on every write.
 mole_report_program_status() {
-    [[ -t 2 ]] || return 0
-    local kind="${2:-}"
-    printf '\033]7501;state=%s:app=mole%s\033\134' "$1" "${kind:+:kind=$kind}" >&2 || true
+    [[ -t 0 && -t 1 && -t 2 ]] || return 0
+    case "$1" in
+        working | blocked | done | idle | error | clear) ;;
+        *) return 0 ;;
+    esac
+    local kind="${2:-}" title=""
+    case "$kind" in
+        "" | permission | auth | question) ;;
+        *) return 0 ;;
+    esac
+    if [[ "$1" != blocked && -n "${MOLE_PROGRAM_STATUS_TITLE:-}" ]]; then
+        title=$(printf '%s' "$MOLE_PROGRAM_STATUS_TITLE" | /usr/bin/base64 -b 0) || title=""
+    fi
+    printf '\033]7501;state=%s:app=mole%s%s\033\134' "$1" "${kind:+:kind=$kind}" "${title:+:title=$title}" >&2 || true
+}
+
+mole_finish_program_status() {
+    case "$1" in
+        0) mole_report_program_status "${2:-done}" ;;
+        130 | 143) mole_report_program_status idle ;;
+        *) mole_report_program_status "${3:-error}" ;;
+    esac
 }
 
 # Terminal columns a string takes, the width charmbracelet/x/ansi StringWidth

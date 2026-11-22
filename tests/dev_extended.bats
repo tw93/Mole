@@ -846,7 +846,7 @@ is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 has_sudo_session() { return 1; }
 mole_report_program_status() { echo "STATUS:$*"; }
-ensure_sudo_session() { echo AUTH; touch "$HOME/xcode-started"; return 0; }
+ensure_sudo_session() { [[ "${2:-}" == true ]] && mole_report_program_status blocked auth; echo AUTH; touch "$HOME/xcode-started"; return 0; }
 _sim_runtime_size_kb() { echo 1; }
 _xcode_xctest_devices_process_running() {
     [[ -e "$HOME/xcode-started" ]] && return 0
@@ -1085,7 +1085,7 @@ pgrep() { return 1; }
 _coresimulator_booted_device_state() { return 1; }
 has_sudo_session() { [[ "$cached" == yes ]]; }
 mole_report_program_status() { echo "STATUS:$*"; }
-ensure_sudo_session() { echo AUTH; return 1; }
+ensure_sudo_session() { [[ "${2:-}" == true ]] && mole_report_program_status blocked auth; echo AUTH; return 1; }
 is_path_whitelisted() { return 1; }
 should_protect_path() { return 1; }
 get_path_size_kb() { echo 3; }
@@ -3530,4 +3530,36 @@ for m in missing:
 sys.exit(1 if bad or missing else 0)
 PY
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "xcode sudo helper reports blocked auth only through a real prompt" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+mole_report_program_status() { printf 'STATUS:%s:%s\n' "$1" "${2:-}"; }
+ensure_sudo_session() { printf 'ENSURE:%s:%s\n' "$1" "${2:-}"; return "$ENSURE_RC"; }
+
+has_sudo_session() { return 0; }
+ENSURE_RC=0
+_xcode_ensure_sudo_session "cached"
+echo "CACHED_DONE"
+
+has_sudo_session() { return 1; }
+_xcode_ensure_sudo_session "needs prompt"
+ENSURE_RC=1
+_xcode_ensure_sudo_session "refused" || echo "REFUSED_RC=$?"
+EOF
+
+    [ "$status" -eq 0 ] || {
+        echo "$output"
+        return 1
+    }
+    # A warm credential asks nothing and reports nothing.
+    [[ "$output" == "CACHED_DONE"* ]] || return 1
+    # Otherwise the helper hands the report to ensure_sudo_session, which only
+    # reports when a prompt is really needed, then goes back to working.
+    [[ "$output" == *$'ENSURE:needs prompt:true\nSTATUS:working:\n'* ]] || return 1
+    [[ "$output" == *$'ENSURE:refused:true\nSTATUS:working:\nREFUSED_RC=1'* ]] || return 1
+    [[ "$output" != *"STATUS:blocked"* ]]
 }

@@ -110,6 +110,14 @@ fi
 
 # Auto-install mode when run without arguments
 if [[ $# -eq 0 ]]; then
+    MOLE_PROGRAM_STATUS_TITLE="mole completion"
+    completion_success_status=done
+    completion_error_status=error
+    [[ "${MOLE_DRY_RUN:-0}" != 1 ]] || completion_success_status=clear
+    trap 'mole_finish_program_status "$?" "$completion_success_status" "$completion_error_status"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    mole_report_program_status working
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         echo -e "${YELLOW}${ICON_DRY_RUN} DRY RUN MODE${NC}, shell config files will not be modified"
         echo ""
@@ -166,10 +174,12 @@ if [[ $# -eq 0 ]]; then
             echo "  $mole_file"
             echo "  $mo_file"
             echo ""
+            mole_report_program_status blocked permission
             echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}fish${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
             if ! IFS= read -r -s -n1 key; then
                 echo ""
                 echo -e "${YELLOW}Cancelled${NC}"
+                completion_error_status=idle
                 exit 1
             fi
             drain_pending_input
@@ -178,6 +188,7 @@ if [[ $# -eq 0 ]]; then
             case "$key" in
                 $'\e' | [Qq] | [Nn])
                     echo -e "${YELLOW}Cancelled${NC}"
+                    completion_success_status=idle
                     exit 0
                     ;;
                 "" | $'\n' | $'\r' | [Yy]) ;;
@@ -186,6 +197,7 @@ if [[ $# -eq 0 ]]; then
                     exit 1
                     ;;
             esac
+            mole_report_program_status working
         fi
 
         mkdir -p "$fish_dir"
@@ -281,10 +293,12 @@ if [[ $# -eq 0 ]]; then
         exit 0
     fi
 
+    mole_report_program_status blocked permission
     echo -ne "${PURPLE}${ICON_ARROW}${NC} Enable completion for ${GREEN}${current_shell}${NC}? ${GRAY}Enter confirm / Q cancel${NC}: "
     if ! IFS= read -r -s -n1 key; then
         echo ""
         echo -e "${YELLOW}Cancelled${NC}"
+        completion_error_status=idle
         exit 1
     fi
     drain_pending_input
@@ -293,6 +307,7 @@ if [[ $# -eq 0 ]]; then
     case "$key" in
         $'\e' | [Qq] | [Nn])
             echo -e "${YELLOW}Cancelled${NC}"
+            completion_success_status=idle
             exit 0
             ;;
         "" | $'\n' | $'\r' | [Yy]) ;;
@@ -301,6 +316,7 @@ if [[ $# -eq 0 ]]; then
             exit 1
             ;;
     esac
+    mole_report_program_status working
 
     # Create config file if it doesn't exist
     if [[ ! -f "$config_file" ]]; then
