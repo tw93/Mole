@@ -2088,6 +2088,25 @@ EOF
     [[ "$output" != *"iDownloadProxy"* ]]
 }
 
+@test "clean_media_players includes NetEase Music Mac container caches" {
+    mkdir -p "$HOME/Library/Containers/com.netease.163music/Data/Caches"
+    mkdir -p "$HOME/Library/Containers/com.netease.163music/Data/Library/Caches"
+    mkdir -p "$HOME/Library/Containers/com.netease.163music/Data/Documents"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$1 $2"; }
+clean_media_players
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"NetEase Music cache"* ]] || return 1
+    [[ "$output" == *"NetEase Music container cache"* ]] || return 1
+    [[ "$output" != *"Documents"* ]]
+}
+
 @test "clean_video_players includes Tencent Video container caches" {
     mkdir -p "$HOME/Library/Containers/com.tencent.tenvideo/Data/Library/Application Support"
 

@@ -1989,6 +1989,12 @@ clean_media_players() {
     safe_clean ~/Library/Caches/com.apple.TV/* "Apple TV cache"
     safe_clean ~/Library/Caches/tv.plex.player.desktop "Plex cache"
     safe_clean ~/Library/Caches/com.netease.163music "NetEase Music cache"
+    # NetEase Music Mac sandboxed container caches (protect offline downloads in Documents).
+    local _netease_container="$HOME/Library/Containers/com.netease.163music/Data"
+    if [[ -d "$_netease_container" ]]; then
+        safe_clean "$_netease_container/Caches"/* "NetEase Music container cache"
+        safe_clean "$_netease_container/Library/Caches"/* "NetEase Music container cache"
+    fi
     safe_clean ~/Library/Caches/com.tencent.QQMusic/* "QQ Music cache"
     safe_clean ~/Library/Caches/com.tencent.QQMusicMac/* "QQ Music Mac cache"
     # QQ Music Mac sandboxed container caches (protect offline downloads in iDownloadProxy).
