@@ -228,21 +228,35 @@ function Get-TreeItemsNoFollow {
     }
 }
 
-# Deletes one entry; a linked directory loses only its link.
+# Deletes one entry; a link, file or directory, loses only its link. The entry
+# is read and deleted through .NET, as the provider would: Get-Item and
+# Remove-Item cost several times the deletion itself for every entry of a
+# large tree. A missing entry throws, as Get-Item -ErrorAction Stop did.
 function Remove-TreeEntry {
     param([string]$Path)
 
-    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
-    if ($item.PSIsContainer) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $attributes = [System.IO.File]::GetAttributes($fullPath)
+    $readOnly = [System.IO.FileAttributes]::ReadOnly
+    if ($attributes -band [System.IO.FileAttributes]::Directory) {
         # Never recursive: a folder that gained entries after the walk fails
         # here, where Remove-Item without -Recurse would offer to delete them.
-        if ($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) {
-            $item.Attributes = $item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
+        if ($attributes -band $readOnly) {
+            [System.IO.File]::SetAttributes($fullPath, $attributes -band (-bnot $readOnly))
         }
-        [System.IO.Directory]::Delete($item.FullName, $false)
+        [System.IO.Directory]::Delete($fullPath, $false)
     }
     else {
-        Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
+        # Remove-Item -Force's steps for a file: clear the read-only flag,
+        # delete, and put the flag back on a file that stays.
+        if ($attributes -band $readOnly) {
+            [System.IO.File]::SetAttributes($fullPath, $attributes -band (-bnot $readOnly))
+        }
+        try { [System.IO.File]::Delete($fullPath) }
+        catch {
+            if ($attributes -band $readOnly) { try { [System.IO.File]::SetAttributes($fullPath, $attributes) } catch { } }
+            throw
+        }
     }
 }
 
