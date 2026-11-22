@@ -1181,6 +1181,51 @@ EOF
     done
 }
 
+@test "clean_communication_apps cleans Discord PTB and Canary caches only while that build is not running" {
+    local channel app mode root kept
+    for channel in ptb canary; do
+        app="Discord PTB"
+        [[ "$channel" == ptb ]] || app="Discord Canary"
+        for mode in idle running; do
+            root="$BATS_TEST_TMPDIR/discord-$channel-$mode/Library/Application Support/discord$channel"
+            run env HOME="$BATS_TEST_TMPDIR/discord-$channel-$mode" PROJECT_ROOT="$PROJECT_ROOT" \
+                CHANNEL="$channel" APP="$app" MODE="$mode" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+root="$HOME/Library/Application Support/discord$CHANNEL"
+mkdir -p "$root/Cache/Cache_Data" "$root/Local Storage/leveldb" "$root/app-0.0.273" "$root/sentry"
+touch "$root/Cache/Cache_Data/data_0" "$root/Local Storage/leveldb/CURRENT" \
+    "$root/app-0.0.273/installer.db" "$root/settings.json"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+# Squirrel runs each build from its versioned app folder inside userData.
+procs=/sbin/launchd
+[[ "$MODE" == idle ]] || procs+=$'\n'"$root/app-0.0.273/$APP.app/Contents/MacOS/$APP"
+pgrep() {
+    local line
+    while IFS= read -r line; do
+        case "$1" in
+            -x) [[ "${line##*/}" =~ ^($2)$ ]] && return 0 ;;
+            -f) [[ "$line" =~ $2 ]] && return 0 ;;
+        esac
+    done <<<"$procs"
+    return 1
+}
+safe_clean() { printf 'CLEAN:%s\n' "$@"; }
+clean_communication_apps
+EOF
+            [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+            if [[ "$mode" == idle ]]; then
+                [[ "$output" == *"CLEAN:$root/Cache/Cache_Data"* ]] || { echo "$output"; return 1; }
+            else
+                [[ "$output" != *"CLEAN:$root/"* ]] || { echo "$output"; return 1; }
+            fi
+            for kept in "Local Storage" app-0.0.273 sentry settings.json; do
+                [[ "$output" != *"CLEAN:$root/$kept"* ]] || { echo "$channel $mode kept $kept: $output"; return 1; }
+            done
+        done
+    done
+}
+
 @test "named Application Support caches keep running and unknown owners and recheck after sizing" {
     for mode in running unknown starts-during-size idle; do
         run env HOME="$BATS_TEST_TMPDIR/named-$mode" PROJECT_ROOT="$PROJECT_ROOT" MODE="$mode" \

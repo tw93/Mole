@@ -1105,6 +1105,9 @@ clean_wechat_container_caches() {
 # Communication apps.
 clean_communication_apps() {
     mole_safe_clean_app_cache "Discord" ~/Library/Application\ Support/discord/Cache/* "Discord cache"
+    # PTB and Canary keep their own userData folder and run as their own app.
+    mole_safe_clean_app_cache "Discord PTB" ~/Library/Application\ Support/discordptb/Cache/* "Discord PTB cache"
+    mole_safe_clean_app_cache "Discord Canary" ~/Library/Application\ Support/discordcanary/Cache/* "Discord Canary cache"
     mole_safe_clean_app_cache "Legcord" ~/Library/Application\ Support/legcord/Cache/* "Legcord cache"
     # Vesktop moves Electron's session data to sessionData; its vencordFiles sibling stays.
     mole_safe_clean_app_cache "Vesktop" ~/Library/Application\ Support/vesktop/sessionData/Cache/* "Vesktop cache"
