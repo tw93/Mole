@@ -1130,8 +1130,7 @@ app_cache_assert_removed() {
         "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/shadercache"
     mole_run clean 'GPU_SHADERS=true; mole_clean_rules | cut -d"|" -f2 | LC_ALL=C sort -u'
     [ "$status" -eq 0 ]
-    expected="AWS CLI cache
-Android build cache
+    expected="Android build cache
 Android cache
 Azure CLI logs
 Bazel repository cache

@@ -355,7 +355,6 @@ Developer tools|Gradle notifications|$HOME/.gradle/notifications|$gradle
 Developer tools|Terraform plugin cache|$c/terraform|terraform
 Developer tools|kubectl cache|$HOME/.kube/cache|kubectl,k9s
 Developer tools|Docker Buildx cache|$HOME/.docker/buildx/cache|docker,docker-buildx,buildx,buildkitd
-Developer tools|AWS CLI cache|$HOME/.aws/cli/cache|aws
 Developer tools|Google Cloud logs|$MOLE_CONFIG_HOME/gcloud/logs|gcloud,cmd:gcloud[.]py
 Developer tools|Azure CLI logs|$HOME/.azure/logs|az,cmd:azure[.]cli
 Developer tools|GitLab Runner cache|$c/gitlab-runner|gitlab-runner
