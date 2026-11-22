@@ -605,7 +605,8 @@ scanChildren:
 	// Convert heaps to sorted slices (descending).
 	var entries []dirEntry
 	if collectAllEntries {
-		entries = append(entries, collectedEntries...)
+		// The collector has exited, so its listing can be sorted in place.
+		entries = collectedEntries
 		sortDirEntriesBySize(entries)
 	} else {
 		entries = make([]dirEntry, entriesHeap.Len())

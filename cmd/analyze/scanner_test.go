@@ -31,6 +31,27 @@ func writeFileWithSize(t testing.TB, path string, size int) {
 	}
 }
 
+func BenchmarkScanFullDirectoryListing(b *testing.B) {
+	root := b.TempDir()
+	const fileCount = 10000
+	for i := range fileCount {
+		writeFileWithSize(b, filepath.Join(root, fmt.Sprintf("entry-%05d.txt", i)), 1)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		var files, dirs, bytes int64
+		// Measure the filesystem listing without a Spotlight subprocess.
+		result, err := scanPathConcurrentWithOptions(b.Context(), root, &files, &dirs, &bytes, nil, false, 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(result.Entries) != fileCount {
+			b.Fatalf("got %d entries, want %d", len(result.Entries), fileCount)
+		}
+	}
+}
+
 func TestGetDirectoryLogicalSizeWithExclude(t *testing.T) {
 	base := t.TempDir()
 	homeFile := filepath.Join(base, "fileA")
