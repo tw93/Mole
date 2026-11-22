@@ -41,43 +41,58 @@ def own_terminal():
 
 def run_terminal(command, env, keys, redirect_stdout):
     master, slave = pty.openpty()
+    stdout_master = stdout_slave = None
     try:
         if keys:
             tty.setcbreak(slave)
             os.write(master, keys)
         with tempfile.TemporaryFile() as stdout:
+            if not redirect_stdout:
+                stdout_master, stdout_slave = pty.openpty()
             process = subprocess.Popen(command, env=env, stdin=slave, stderr=slave,
-                                       stdout=stdout if redirect_stdout else slave,
+                                       stdout=stdout if redirect_stdout else stdout_slave,
                                        preexec_fn=own_terminal)
-            os.close(slave)
-            slave = None
             try:
-                stderr = bytearray()
+                os.close(slave)
+                slave = None
+                streams = {master: bytearray()}
+                if stdout_slave is not None:
+                    os.close(stdout_slave)
+                    stdout_slave = None
+                    streams[stdout_master] = bytearray()
+                pending = set(streams)
                 deadline = time.monotonic() + 10
-                while select.select([master], [], [], max(0, deadline - time.monotonic()))[0]:
-                    try:
-                        chunk = os.read(master, 65536)
-                    except OSError as error:
-                        if error.errno != errno.EIO:
-                            raise
-                        break
-                    if not chunk:
-                        break
-                    stderr.extend(chunk)
+                while pending:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(command, 10)
+                    ready, _, _ = select.select(pending, [], [], remaining)
+                    if not ready:
+                        raise subprocess.TimeoutExpired(command, 10)
+                    for fd in ready:
+                        try:
+                            chunk = os.read(fd, 65536)
+                        except OSError as error:
+                            if error.errno != errno.EIO:
+                                raise
+                            chunk = b''
+                        if chunk:
+                            streams[fd].extend(chunk)
+                        else:
+                            pending.remove(fd)
                 process.wait(timeout=max(0, deadline - time.monotonic()))
                 stdout.seek(0)
-                output = stdout.read() if redirect_stdout else re.sub(
-                    rb'\x1b\]7501;[^\x1b\x07]*\x1b\\', b'', stderr)
+                output = stdout.read() if redirect_stdout else bytes(streams[stdout_master])
                 return subprocess.CompletedProcess(command, process.returncode,
-                                                   output, bytes(stderr))
+                                                   output, bytes(streams[master]))
             finally:
                 if process.poll() is None:
                     process.kill()
                     process.wait()
     finally:
-        os.close(master)
-        if slave is not None:
-            os.close(slave)
+        for fd in (master, slave, stdout_master, stdout_slave):
+            if fd is not None:
+                os.close(fd)
 
 
 def check(name, states, *, keys=b'', args=(), outcome=0, code=0,
