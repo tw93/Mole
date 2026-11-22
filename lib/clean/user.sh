@@ -2707,24 +2707,6 @@ app_support_dir_has_regenerable_cache_markers() {
     return 1
 }
 
-# Chromium and Electron apps hold <userData>/SingletonLock, a link to
-# "<host>-<pid>", while they run and remove it when they quit, so a live pid
-# means the Code Cache and GPUCache beside it are in use (Docker Desktop,
-# VS Code, T3 Code). Returns 0 while the app runs or the lock cannot be read,
-# 1 when there is no lock or its pid is gone.
-app_support_dir_in_use() {
-    local lock="$1/SingletonLock"
-    [[ -L "$lock" ]] || return 1
-    local target="" pid=""
-    target=$(readlink "$lock" 2> /dev/null) || return 0
-    pid="${target##*-}"
-    [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 0
-    kill -0 "$pid" 2> /dev/null && return 0
-    # kill -0 also fails for a live process another user owns.
-    ps -p "$pid" > /dev/null 2>&1 && return 0
-    return 1
-}
-
 # Application Support logs/caches.
 clean_application_support_logs() {
     if [[ ! -d "$HOME/Library/Application Support" ]] || ! ls "$HOME/Library/Application Support" > /dev/null 2>&1; then

@@ -347,6 +347,47 @@ EOF
     [[ "$output" == *"TOTALS=2:1024:1"* ]] || { echo "$output"; return 1; }
 }
 
+@test "clean_service_worker_cache holds a Chromium store while a SingletonLock one to three folders up is live" {
+    local sw_home="$HOME/sw-singleton"
+    rm -rf "$sw_home"
+    local mode
+    for mode in false true; do
+        run env HOME="$sw_home" PROJECT_ROOT="$PROJECT_ROOT" DRY_RUN="$mode" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/caches.sh"
+declare -a PROTECTED_SW_DOMAINS=("never.invalid")
+safe_remove() { printf 'REMOVE=%s\n' "$1"; }
+record_dry_run_cleanup_target() { printf 'RECORD=%s\n' "$1"; }
+note_activity() { :; }
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+support="$HOME/Library/Application Support"
+for root in "Vivaldi" "Google/Chrome" "Vendor/Product/User Data" "Stale/Browser"; do
+    mkdir -p "$support/$root/Default/Service Worker/CacheStorage/origin/cache"
+done
+# One, two and three folders below Application Support, each naming this
+# shell; the last names a pid that cannot exist, a lock a crash left behind.
+ln -sfn "$(hostname)-$$" "$support/Vivaldi/SingletonLock"
+ln -sfn "$(hostname)-$$" "$support/Google/Chrome/SingletonLock"
+ln -sfn "$(hostname)-$$" "$support/Vendor/Product/User Data/SingletonLock"
+ln -sfn "$(hostname)-99999999" "$support/Stale/Browser/SingletonLock"
+for root in "Vivaldi" "Google/Chrome" "Vendor/Product/User Data" "Stale/Browser"; do
+    clean_service_worker_cache Test "$support/$root/Default/Service Worker/CacheStorage"
+done
+EOF
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        local support="$sw_home/Library/Application Support"
+        [[ "$output" != *"=$support/Vivaldi/"* ]] || { echo "$output"; return 1; }
+        [[ "$output" != *"=$support/Google/Chrome/"* ]] || { echo "$output"; return 1; }
+        [[ "$output" != *"=$support/Vendor/Product/User Data/"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"=$support/Stale/Browser/Default/Service Worker/CacheStorage/origin/cache"* ]] || { echo "$output"; return 1; }
+    done
+    rm -rf "$sw_home"
+}
+
 @test "clean_service_worker_cache checks its guard after sizing before dry-run registration" {
     local test_cache="$HOME/test_sw_cache_guard"
     mkdir -p "$test_cache/abc123_https_example.com_0"

@@ -900,6 +900,48 @@ _mole_container_cache_has_open_handle() {
     return 1
 }
 
+# Chromium and Electron apps hold <userData>/SingletonLock, a link to
+# "<host>-<pid>", while they run and remove it when they quit, so a live pid
+# means the Code Cache and GPUCache beside it are in use (Docker Desktop,
+# VS Code, T3 Code). Returns 0 while the app runs or the lock cannot be read,
+# 1 when there is no lock or its pid is gone. Lives here, not in a clean
+# module, because both the Application Support sweep and the Service Worker
+# cleaner ask it.
+app_support_dir_in_use() {
+    local lock="$1/SingletonLock"
+    [[ -L "$lock" ]] || return 1
+    local target="" pid=""
+    target=$(readlink "$lock" 2> /dev/null) || return 0
+    pid="${target##*-}"
+    [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 0
+    kill -0 "$pid" 2> /dev/null && return 0
+    # kill -0 also fails for a live process another user owns.
+    ps -p "$pid" > /dev/null 2>&1 && return 0
+    return 1
+}
+
+# A Chromium user-data root sits one to three folders below Application
+# Support (Vivaldi, Google/Chrome, Arc/User Data). Returns 0 while a
+# SingletonLock in any of those folders along the path names a live pid or
+# cannot be read, so a browser's own stores are left alone while it runs
+# (Mole Mac ProcessGuard.singletonLockOwner). Paths elsewhere return 1.
+app_support_path_held_by_singleton() {
+    local support="$HOME/Library/Application Support"
+    local rest="${1%/}"
+    case "$rest" in
+        "$support"/?*) rest="${rest#"$support"/}" ;;
+        *) return 1 ;;
+    esac
+    local folder="$support" depth
+    for depth in 1 2 3; do
+        folder="$folder/${rest%%/*}"
+        app_support_dir_in_use "$folder" && return 0
+        [[ "$rest" == */* ]] || break
+        rest="${rest#*/}"
+    done
+    return 1
+}
+
 # Return 0 when deletion must be refused (live owner or open cache handle).
 _mole_should_refuse_live_user_cache_path() {
     local path="$1"

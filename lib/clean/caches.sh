@@ -79,6 +79,13 @@ clean_service_worker_cache() {
     local delete_guard="${3:-}"
     local deadline_seconds="${4:-}"
     [[ ! -d "$cache_path" ]] && return 0
+    # A running Chromium browser holds this store; its SingletonLock sits one
+    # to three folders up (Google/Chrome, Arc/User Data). Asked again before
+    # each removal below, in a dry run too.
+    if app_support_path_held_by_singleton "$cache_path"; then
+        debug_log "Keeping $browser_name Service Worker cache, its owner is running: $cache_path"
+        return 0
+    fi
 
     # A lexical CacheStorage path below Application Support is not enough
     # authority for recursive deletion. Refuse a root reached through any
@@ -175,6 +182,10 @@ clean_service_worker_cache() {
 
             if [[ -n "$delete_guard" ]] && ! "$delete_guard"; then
                 guard_stopped=true
+                break
+            fi
+            if app_support_path_held_by_singleton "$cache_path"; then
+                debug_log "Keeping $browser_name Service Worker cache, its owner started: $cache_path"
                 break
             fi
             if ! _mole_path_matches_identity \
