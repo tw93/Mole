@@ -272,6 +272,11 @@ register_dry_run_cleanup_target() { :; }
 append_dry_run_cleanup_target() { echo "RECORDED=$1"; }
 _mole_user_sink_refuses_on_ownership "$LOGS/install.log" && echo "USER_SINK_REFUSES"
 record_dry_run_cleanup_target "$LOGS/install.log" 1 1 true
+# The sink itself, past its mutable-ancestor downgrade the way it runs under
+# a root-owned parent such as /private/var/log.
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+append_dry_run_cleanup_target() { echo "SUDO_SINK_RECORDED=$1"; }
+safe_sudo_remove "$LOGS/install.log" 1
 EOF
     chmod 755 "$logs"
     rm -rf "$logs"
@@ -279,6 +284,45 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"USER_SINK_REFUSES"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"RECORDED=$logs/install.log"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"SUDO_SINK_RECORDED=$logs/install.log"* ]] || { echo "$output"; return 1; }
+}
+
+@test "safe_clean leaves out of the preview many files another user owns in one folder" {
+    # More than 20 mostly-file paths take the batched sizing branch of
+    # _safe_clean_impl, whose preview asks the ownership refusal on its own.
+    local cache="$HOME/.bundle/cache"
+    mkdir -p "$cache"
+    local i
+    for ((i = 1; i <= 24; i++)); do
+        printf 'x' > "$cache/gem-$i.gem"
+    done
+    chmod 555 "$cache"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+DRY_RUN=true
+export MOLE_DRY_RUN=1
+MOLE_CURRENT_COMMAND=clean
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+_mole_path_owned_by_current_user() { [[ "$1" != "$HOME/.bundle/cache/"* && -O "$1" ]]; }
+safe_clean "$HOME"/.bundle/cache/* "Ruby Bundler cache"
+echo "FILES=$files_cleaned"
+EOF
+    chmod 755 "$cache"
+    rm -rf "$HOME/.bundle"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"Ruby Bundler cache"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"FILES=0"* ]] || { echo "$output"; return 1; }
 }
 
 @test "safe_clean keeps the row when a size could not be read" {
