@@ -343,6 +343,43 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_user_essentials leaves the mbx build cache root to its own eviction" {
+    # The root holds cargo shims and live target folders; Mole Mac protects
+    # it and lets mbx evict to its own budget.
+    local test_home="$HOME/mbx-cache-home"
+    mkdir -p \
+        "$test_home/Library/Caches/mbx/shims/native" "$test_home/Library/Caches/mbx/targets" \
+        "$test_home/Library/Caches/ordinary-app/junk"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+safe_clean_guarded() {
+    shift
+    safe_clean "$@"
+}
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/mbx"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/ordinary-app"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials keeps Google identity and Clearcut state (#1607)" {
     # The generic cache sweep reaches these dotless names. Drive the real
     # safe_clean_guarded path so should_protect_path at bin/clean.sh:1002

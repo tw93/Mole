@@ -424,3 +424,15 @@ Source: Mole CLI (macOS) `3ee2fcbe`. The memory finding now follows the kernel p
 | Mole CLI (Windows) | Not applicable | No optimize performance diagnosis; memory pressure lives in `cmd/status`. |
 | Mole Mac | Not applicable | Memory already follows the kernel level: `OptimizeInspector.shouldPurgeMemory` reads `memory_pressure -Q` for warn or critical, not swap. `OptimizeInspector.busyProcessFamilies` lists WindowServer and CoreSimulator disk images, but nothing reads it: `git log -S` shows it was added in 3c4e20b7f (1.0.0) with no consumer then or since, so the Optimize page never showed any family (checked 2026-11-21 against a09fdacd3). Dropping the two families changes nothing a user sees; the unread computation (a `ps` call on every snapshot) was then removed in mole-mac 03661bbbd with the maintainer's yes. |
 | Mole for Windows | Not applicable | Same as Mole CLI (Windows). |
+
+## 2026-11-22 Caches/mbx left to its own eviction
+
+Source: a 2026-11-22 storage review on the maintainer's Mac. `mo clean --dry-run` listed `~/Library/Caches/mbx` as one 5.13GB "User app cache" row, while Mole Mac has protected that root since its 2026-10-27 storage sweep: it holds cargo shims, scheduler leases and the live `target` folders checkouts link into, and mbx evicts to its own size budget.
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented in source (`main`, 2026-11-22) | `lib/clean/user.sh:clean_user_essentials` skips `Caches/mbx` next to `Caches/Google`. Locked by `clean_user_essentials leaves the mbx build cache root to its own eviction` in `tests/clean_user_core.bats`, red on the old code. |
+| Mole CLI (Linux) | Not applicable | No `~/Library/Caches` sweep. |
+| Mole CLI (Windows) | Not applicable | macOS path. |
+| Mole Mac | Already implemented | `CacheModels.swift` lists `Library/Caches/mbx` among the protected prefixes. |
+| Mole for Windows | Not applicable | macOS path. |

@@ -292,8 +292,13 @@ clean_user_essentials() {
             # cleans only after Chrome quits; Android Studio has its own row.
             # Swept whole, it went while Chrome ran and failed every run
             # (seven times in one 2026-10-28 bundle), like Mole Mac's
-            # coveredCachePrefixes.
-            [[ "${user_cache_target##*/}" == "Google" ]] && continue
+            # coveredCachePrefixes. mbx holds a Rust build cache's cargo
+            # shims, scheduler leases and the live target folders checkouts
+            # link into, and evicts to its own size budget; swept whole it
+            # broke builds, so it stays out like Mole Mac's protected root.
+            case "${user_cache_target##*/}" in
+                Google | mbx) continue ;;
+            esac
             case "$deno_cache_root" in
                 "$user_cache_target" | "$user_cache_target"/*) continue ;;
             esac
