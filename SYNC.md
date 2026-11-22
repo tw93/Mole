@@ -454,3 +454,11 @@ Source: the Mole Mac rows of 2026-11-20 and 2026-11-21 that name Mole CLI (macOS
 Other products for these rows: Mole CLI (Linux) is Pending for two of them: its `lib/clean/rules.sh` still sweeps `$HOME/.aws/cli/cache`, and its `cmd/analyze/delete.go` refuses temp socket folders by name only; next check, port both on the `linux` branch. Mole CLI (Windows) and Mole for Windows keep the cells their own records give. Mole Mac is the source of every row.
 
 `windows` `67b27e3d` (#2070, `Remove-TreeEntry` through .NET instead of a PowerShell provider call per entry): Not applicable to Mole CLI (macOS). The macOS sinks remove a validated tree with one `rm -rf`, one `find -delete` or one Trash move per target and run no per-entry command, so there is no per-entry provider cost to remove.
+
+## 2026-11-22 Invisible marks in app names
+
+Source: a user's screenshot of `mo uninstall` showing " WhatsApp" out of line. WhatsApp 2.26.46.21's `CFBundleDisplayName` and every localized name start with U+200E (U+200F in Arabic).
+
+| Change | Status | Consumer and evidence |
+| --- | --- | --- |
+| Uninstall drops invisible format marks where app names are drawn and keeps the stored bytes for matching (I-104) | Implemented (Mole CLI (macOS), `688192da`); Pending (Mole CLI (Windows): `bin/uninstall.ps1` takes the registry `DisplayName`, `.Trim()` keeps U+200E, and the same name feeds `Test-ProtectedApp`, so a strip there needs its own review. Next check: a registry `DisplayName` that carries the mark); Not applicable (Mole CLI (Linux): no app bundle inventory; Mole Mac and Mole for Windows: SwiftUI and WinUI draw the mark with no width and lay rows out by view, not by character count) | `mole_strip_invisible_marks` in `lib/core/log.sh`, called at the render sites listed in `.claude/rules/uninstall.md`; `MOLE_TEST_NO_AUTH=1 ./scripts/test.sh` 2612 tests, 0 failures. Not released. |
