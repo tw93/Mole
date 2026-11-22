@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // isolateTrash points HOME and XDG_DATA_HOME at a temp directory so a test's
@@ -409,5 +411,81 @@ func TestValidatePathWithChineseAndSpecialChars(t *testing.T) {
 				t.Errorf("validatePath rejected valid path %q: %v", tc.path, err)
 			}
 		})
+	}
+}
+
+func bindUnixSocket(t *testing.T, dir, name string) {
+	t.Helper()
+	t.Chdir(dir)
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatalf("socket: %v", err)
+	}
+	defer func() { _ = unix.Close(fd) }()
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: name}); err != nil {
+		t.Fatalf("bind %s: %v", filepath.Join(dir, name), err)
+	}
+}
+
+func TestAnalyzeDeleteRefusesAnySocketInTmpAndAFolderHoldingOne(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+	tmpRoot := t.TempDir()
+	t.Setenv("TMPDIR", tmpRoot)
+	// t.TempDir lives under /tmp on Linux, so the outside folder is made
+	// beside the package, before any t.Chdir below.
+	outside, err := os.MkdirTemp(".", "outside-tmp-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outside, err = filepath.Abs(outside); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(outside) })
+
+	agentFolder := filepath.Join(tmpRoot, "agent-run")
+	plain := filepath.Join(tmpRoot, "build-output")
+	zellij := filepath.Join(tmpRoot, "zellij-1000", "0.40")
+	for _, dir := range []string{agentFolder, plain, zellij} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bindUnixSocket(t, agentFolder, "agent.42")
+	bindUnixSocket(t, tmpRoot, ".s.PGSQL.5432")
+	bindUnixSocket(t, zellij, "session")
+	if err := os.WriteFile(filepath.Join(plain, "a.o"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkToAgent := filepath.Join(tmpRoot, "agent-link")
+	if err := os.Symlink(agentFolder, linkToAgent); err != nil {
+		t.Fatal(err)
+	}
+	bindUnixSocket(t, outside, "app.sock")
+
+	for _, refused := range []string{
+		agentFolder,
+		filepath.Join(agentFolder, "agent.42"),
+		filepath.Join(tmpRoot, ".s.PGSQL.5432"),
+		filepath.Join(zellij, "session"),
+	} {
+		if !isProtectedAnalyzeDeletePath(refused) {
+			t.Errorf("socket or folder holding one in tmp not refused: %s", refused)
+		}
+	}
+	for _, allowed := range []string{
+		plain,
+		filepath.Join(plain, "a.o"),
+		// Only a direct child's own entries are read.
+		filepath.Join(tmpRoot, "zellij-1000"),
+		// A link to a socket folder is not one, and is never followed.
+		linkToAgent,
+		// Outside tmp the type is never asked.
+		filepath.Join(outside, "app.sock"),
+	} {
+		if isProtectedAnalyzeDeletePath(allowed) {
+			t.Errorf("ordinary item refused: %s", allowed)
+		}
 	}
 }
