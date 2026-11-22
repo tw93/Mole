@@ -1037,6 +1037,10 @@ run_mole_command() {
             --json | -json | --json=* | -json=* | --ndjson | --watch | -watch | --watch=* | -watch=* | --help | -h | --version | -V | --list | --list=*) exec "$@" ;;
         esac
     done
+    # OSC 7501 (#2072): name Mole to the terminal for the whole interactive run.
+    # A terminal drops a working record when the process exits, so no clear;
+    # clean then reports its own finer states.
+    mole_report_program_status working
     # Without perl, or with a target bash cannot launch (missing, not
     # executable, or a #! line naming a missing interpreter), run the plain
     # exec: bash then prints its own error and returns its own status, exactly

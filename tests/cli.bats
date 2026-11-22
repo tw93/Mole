@@ -1059,6 +1059,12 @@ PY
 	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "main menu and interactive commands report Mole through OSC 7501 (#2072)" {
+	command -v python3 >/dev/null 2>&1 || skip "python3 not available"
+	run python3 "$PROJECT_ROOT/tests/program_status_pty.py"
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "e2e harness keeps failed prerequisites from authorizing later mutations" {
 	command -v python3 >/dev/null 2>&1 || skip "python3 not available"
 	run env MOLE_TEST_NO_AUTH=1 PYTHONDONTWRITEBYTECODE=1 python3 "$PROJECT_ROOT/tests/e2e_harness_test.py"

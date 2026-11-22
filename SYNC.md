@@ -364,6 +364,8 @@ Source: Mole CLI (macOS), `5bf0d49f` (#2041, a contributor PR, with #2040). `mo 
 | Mole Mac | Not applicable | A GUI app with no terminal to report to. |
 | Mole for Windows | Not applicable | A GUI app with no terminal to report to. |
 
+2026-11-22 follow-up (#2072, maintainer chose menu idle and command working): the main menu reports `idle` once when it starts waiting and `clear` when it is left by Q, Ctrl-C, help or version; its update and Touch ID entries report `working`; and `run_mole_command` reports `working` once stdin, stdout and stderr are terminals and no JSON, watch, help, version or list flag sent it to a plain `exec`, so every interactive command names Mole for its whole run. A terminal drops a `working` record when the process exits, so commands send no clear; `mo clean` keeps its finer states. Locked by `main menu and interactive commands report Mole through OSC 7501 (#2072)` in `tests/cli.bats` (`tests/program_status_pty.py`), red on the previous router. The rows above still hold for the other products.
+
 ## 2026-11-20 Clean totals, dry-run skips, flat bundles and online-only folders
 
 Source: Mole CLI (macOS). `63446600` (#2048) reads the size a real `brew cleanup` prints as freed and counts it in the run total; `abaa094a` (#2043) adds one dry-run summary line naming the families skipped because Xcode or Simulator was running; `f1621e48` (#2046) counts the six rows that print their own size in the run total; `bfd1e7b8` (#2044, fixes #2042) reads a flat bundle's root `Info.plist` only when it names a regular, non-link executable beside it, and prunes online-only (dataless) folders in the `~/Library/CloudStorage` project-cache walk; `eff45ab5` prunes them in that root's walkability probe as well.

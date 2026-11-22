@@ -226,6 +226,7 @@ interactive_main_menu() {
             stty "$original_stty" 2> /dev/null || true
         fi
         show_cursor
+        mole_report_program_status clear
         exit 0
     }
 
@@ -237,6 +238,9 @@ interactive_main_menu() {
 
     trap cleanup_and_exit INT
     hide_cursor
+    # OSC 7501 (#2072): idle while the menu waits, cleared when it is left. A
+    # launched command reports working and ends this process, which drops it.
+    mole_report_program_status idle
 
     while true; do
         update_message="$(read_update_message_cache "$msg_cache")"
@@ -285,23 +289,27 @@ interactive_main_menu() {
                 ;;
             "MORE")
                 show_cursor
+                mole_report_program_status clear
                 clear
                 show_help
                 exit 0
                 ;;
             "VERSION")
                 show_cursor
+                mole_report_program_status clear
                 clear
                 show_version
                 exit 0
                 ;;
             "TOUCHID")
                 show_cursor
+                mole_report_program_status working
                 exec "$SCRIPT_DIR/bin/touchid.sh"
                 ;;
             "UPDATE")
                 [[ "${MAIN_MENU_SHOW_UPDATE:-false}" == "true" ]] || continue
                 show_cursor
+                mole_report_program_status working
                 clear
                 update_mole
                 exit 0
