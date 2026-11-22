@@ -1475,6 +1475,29 @@ _mole_note_clean_cancel_source() {
 }
 
 # Safe wrapper around rm -rf with validation
+# This sink is a plain rm as the invoking user. An item another user owns
+# (root's leftovers from `sudo gem`, `sudo npm`, `sudo bundle`) fails there
+# unless this user can still unlink it: its folder is writable and not sticky,
+# and a folder item is itself writable. The preview asks the same question
+# (record_dry_run_cleanup_target), so a row the run would refuse on every
+# clean is never listed (Mole Mac CacheScanner.userSinkRefusesOnOwnership).
+# A link is unlinked in its folder whoever owns it, so it is never refused here.
+_mole_path_owned_by_current_user() {
+    [[ -O "$1" ]]
+}
+
+_mole_user_sink_refuses_on_ownership() {
+    local path="$1"
+    [[ ${EUID:-0} -ne 0 ]] || return 1
+    [[ -e "$path" && ! -L "$path" ]] || return 1
+    _mole_path_owned_by_current_user "$path" && return 1
+    local parent="${path%/*}"
+    [[ -n "$parent" ]] || parent=/
+    [[ -d "$parent" && -w "$parent" && ! -k "$parent" ]] || return 0
+    [[ ! -d "$path" || -w "$path" ]] || return 0
+    return 1
+}
+
 safe_remove() {
     local path="$1"
     local silent="${2:-false}"
@@ -1543,6 +1566,13 @@ safe_remove() {
     # Check if path exists
     if [[ ! -e "$path" ]]; then
         return 0
+    fi
+
+    # Before the dry-run return, so a preview never lists what the run refuses.
+    if _mole_user_sink_refuses_on_ownership "$path"; then
+        debug_log "Skipped removal of an item another user owns: $path"
+        log_operation "${MOLE_CURRENT_COMMAND:-clean}" "SKIPPED" "$path" "owned by another user"
+        return 1
     fi
 
     # Keep preview eligibility identical to real cleanup. This first check

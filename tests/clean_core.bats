@@ -208,6 +208,49 @@ EOF
     rm -rf "$base"
 }
 
+@test "safe_clean neither lists nor removes an item another user owns that this user cannot unlink" {
+    local cache="$HOME/.bundle/cache"
+    mkdir -p "$cache/sub"
+    head -c 40000 /dev/zero > "$cache/rake-13.gem"
+    printf 'x' > "$cache/sub/file"
+    chmod 555 "$cache"
+    rm -f "$HOME/Library/Logs/mole/operations.log"
+
+    local mode
+    for mode in dry real; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 MODE="$mode" \
+            /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+if [[ "$MODE" == dry ]]; then DRY_RUN=true; export MOLE_DRY_RUN=1; else DRY_RUN=false; export MOLE_DRY_RUN=0; fi
+MOLE_CURRENT_COMMAND=clean
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+start_inline_spinner() { :; }
+stop_inline_spinner() { :; }
+# A fixture cannot be chowned to root without sudo; the cache's entries
+# answer as another user's, the way `sudo bundle` leaves them.
+_mole_path_owned_by_current_user() { [[ "$1" != "$HOME/.bundle/cache/"* && -O "$1" ]]; }
+safe_clean "$HOME"/.bundle/cache/* "Ruby Bundler cache"
+echo "MODE=$MODE FILES=$files_cleaned"
+EOF
+        [ "$status" -eq 0 ] || { chmod 755 "$cache"; echo "$output"; return 1; }
+        [[ "$output" != *"Ruby Bundler cache"* ]] || { chmod 755 "$cache"; echo "$output"; return 1; }
+        [[ "$output" == *"MODE=$mode FILES=0"* ]] || { chmod 755 "$cache"; echo "$output"; return 1; }
+    done
+    chmod 755 "$cache"
+
+    local log="$HOME/Library/Logs/mole/operations.log"
+    [ "$(grep -c 'SKIPPED .*\.bundle/cache/.*(owned by another user)' "$log")" -eq 2 ] || { cat "$log"; return 1; }
+    ! grep -q 'FAILED' "$log" || { cat "$log"; return 1; }
+    [[ -f "$cache/rake-13.gem" && -f "$cache/sub/file" ]] || return 1
+    rm -rf "$HOME/.bundle"
+}
+
 @test "safe_clean keeps the row when a size could not be read" {
     local base="$HOME/safe_clean_unsized"
     mkdir -p "$base/one" "$base/two"

@@ -241,6 +241,12 @@ record_dry_run_cleanup_target() {
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" ]] && mole_rc_timeout_or_signal "$pending_clean_cancel"; then
         return "$pending_clean_cancel"
     fi
+    # The real sink refuses an item another user owns that this user cannot
+    # unlink, so the preview does not list it either (safe_remove).
+    if declare -f _mole_user_sink_refuses_on_ownership > /dev/null 2>&1 &&
+        _mole_user_sink_refuses_on_ownership "$path"; then
+        return 1
+    fi
     if [[ "${_MOLE_DRY_RUN_TARGET_PREVALIDATED:-false}" != "true" ]]; then
         if declare -f should_protect_path > /dev/null 2>&1 && should_protect_path "$path" 2> /dev/null; then
             return 1
