@@ -55,10 +55,8 @@ save_whitelist_patterns() {
 
     ensure_user_file "$config_file"
 
-    echo -e "$header_text" > "$config_file"
-
+    local -a unique_patterns=()
     if [[ ${#patterns[@]} -gt 0 ]]; then
-        local -a unique_patterns=()
         for pattern in "${patterns[@]}"; do
             # Optimize also accepts path patterns for diagnostic exclusions, so
             # migrate only task IDs that this release explicitly retired.
@@ -77,13 +75,29 @@ save_whitelist_patterns() {
             [[ "$duplicate" == "true" ]] && continue
             unique_patterns+=("$pattern")
         done
+    fi
 
-        if [[ ${#unique_patterns[@]} -gt 0 ]]; then
-            printf '\n' >> "$config_file"
-            for pattern in "${unique_patterns[@]}"; do
-                echo "$pattern" >> "$config_file"
-            done
-        fi
+    # An existing list replaces the defaults, so truncating it in place and
+    # then failing a write (full disk, I/O error) left a partial list that the
+    # next run trusted as complete. Write the whole list beside the final file
+    # of any dotfile link chain and rename it into place.
+    local target tmp_file original_mode
+    target=$(mole_resolve_link_chain "$config_file") || return 1
+    original_mode=$("$STAT_BSD" -f '%Lp' "$target" 2> /dev/null || true)
+    tmp_file=$(mktemp "${target}.XXXXXX") || return 1
+    # mktemp creates 0600; keep the mode the list already had.
+    if [[ -n "$original_mode" ]]; then
+        chmod "$original_mode" "$tmp_file" 2> /dev/null || true
+    fi
+    # set -e does not apply inside this condition, so chain every write.
+    if ! {
+        echo -e "$header_text" &&
+            if [[ ${#unique_patterns[@]} -gt 0 ]]; then
+                printf '\n' && printf '%s\n' "${unique_patterns[@]}"
+            fi
+    } > "$tmp_file" || ! mv -f "$tmp_file" "$target"; then
+        rm -f "$tmp_file" # SAFE: exact mktemp-created whitelist scratch file
+        return 1
     fi
 }
 

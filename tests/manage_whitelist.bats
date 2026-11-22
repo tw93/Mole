@@ -78,6 +78,51 @@ setup() {
     [ "$occurrences" -eq 1 ]
 }
 
+@test "save_whitelist_patterns keeps the previous list when a write fails" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SH'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+list="$HOME/.config/mole/whitelist"
+save_whitelist_patterns "$HOME/.cache/kept-a" "$HOME/.cache/kept-b" "$HOME/.cache/kept-c"
+cp "$list" "$HOME/whitelist.before"
+# A write error part-way through the save, as on a full disk: any write that
+# carries this pattern fails.
+fail_pattern="$HOME/.cache/new-unwritable"
+echo() {
+    local arg
+    for arg in "$@"; do [[ "$arg" != "$fail_pattern" ]] || return 1; done
+    builtin echo "$@"
+}
+printf() {
+    local arg
+    for arg in "$@"; do [[ "$arg" != "$fail_pattern" ]] || return 1; done
+    builtin printf "$@"
+}
+rc=0
+save_whitelist_patterns "$HOME/.cache/new-ok" "$fail_pattern" || rc=$?
+unset -f echo printf
+[[ "$rc" -ne 0 ]] || exit 1
+cmp "$HOME/whitelist.before" "$list" || exit 1
+SH
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "save_whitelist_patterns writes through a dotfile link and keeps the mode" {
+    mkdir -p "$HOME/.config/mole" "$HOME/dotfiles"
+    printf '%s\n' '# old list' > "$HOME/dotfiles/mole-whitelist"
+    chmod 640 "$HOME/dotfiles/mole-whitelist"
+    ln -s ../../dotfiles/mole-whitelist "$WHITELIST_PATH"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SH'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/manage/whitelist.sh"
+save_whitelist_patterns "$HOME/.cache/linked"
+SH
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ -L "$WHITELIST_PATH" ]] || return 1
+    grep -qxF "$HOME/.cache/linked" "$HOME/dotfiles/mole-whitelist" || return 1
+    [ "$(/usr/bin/stat -f '%Lp' "$HOME/dotfiles/mole-whitelist")" = "640" ]
+}
+
 @test "load_whitelist falls back to defaults when config missing" {
     rm -f "$WHITELIST_PATH"
     HOME="$HOME" /bin/bash --noprofile --norc -c "source '$PROJECT_ROOT/lib/manage/whitelist.sh'; rm -f \"\$HOME/.config/mole/whitelist\"; load_whitelist; printf '%s\n' \"\${CURRENT_WHITELIST_PATTERNS[@]}\"" > "$HOME/current_whitelist.txt"
