@@ -16,7 +16,7 @@
   <img src="./docs/img/big-mole.png" alt="Mole クリーンアップ結果" width="1000" />
 </p>
 
-> 💡 このリポジトリは無料のオープンソースCLI（`mo`）です。ネイティブアプリがよければ、[Mole for Mac](https://mole.fit/) を別途ダウンロードできます。削除前の項目別確認、800以上のアプリで検証済みの残留ファイル削除、メンテナンス、ディスクの階層分析、リアルタイムのステータス表示、対応Macでのファン制御を備えています。Windowsのネイティブアプリは [Mole for Windows](https://mole.fit/ja/windows) です。`brew install mole` でインストールされるのはCLIのみです。
+> 💡 このリポジトリは無料のオープンソースCLI（`mo`）です。ネイティブアプリがよければ、[Mole for Mac](https://mole.fit/) を別途ダウンロードできます。削除前の項目別確認、900以上のアプリで検証済みの残留ファイル削除、メンテナンス、ディスクの階層分析、リアルタイムのステータス表示、対応Macでのファン制御を備えています。Windowsのネイティブアプリは [Mole for Windows](https://mole.fit/ja/windows) です。`brew install mole` でインストールされるのはCLIのみです。
 
 ## 機能
 

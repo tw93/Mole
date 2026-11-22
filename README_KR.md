@@ -16,7 +16,7 @@
   <img src="./docs/img/big-mole.png" alt="Mole 정리 결과" width="1000" />
 </p>
 
-> 💡 이 저장소는 무료 오픈소스 CLI(`mo`)입니다. 네이티브 앱을 원한다면 [Mole for Mac](https://mole.fit/)을 별도로 내려받을 수 있습니다. 삭제 전 항목별 확인, 800개 이상 앱에서 테스트한 잔여 파일 정리, 유지보수, 디스크 단계별 분석, 실시간 상태 확인, 지원되는 Mac에서의 팬 제어를 제공합니다. Windows용 네이티브 앱은 [Mole for Windows](https://mole.fit/ko/windows)입니다. `brew install mole`은 CLI만 설치합니다.
+> 💡 이 저장소는 무료 오픈소스 CLI(`mo`)입니다. 네이티브 앱을 원한다면 [Mole for Mac](https://mole.fit/)을 별도로 내려받을 수 있습니다. 삭제 전 항목별 확인, 900개 이상 앱에서 테스트한 잔여 파일 정리, 유지보수, 디스크 단계별 분석, 실시간 상태 확인, 지원되는 Mac에서의 팬 제어를 제공합니다. Windows용 네이티브 앱은 [Mole for Windows](https://mole.fit/ko/windows)입니다. `brew install mole`은 CLI만 설치합니다.
 
 ## 주요 기능
 

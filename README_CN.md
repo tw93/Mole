@@ -16,7 +16,7 @@
   <img src="./docs/img/big-mole.png" alt="Mole 清理效果" width="1000" />
 </p>
 
-> 💡 这个仓库是免费开源的命令行工具（`mo`），喜欢图形界面的话可以单独下载 [Mole for Mac](https://mole.fit/)，支持删除前逐项确认、实测 800 多款软件的卸载残留、系统维护、逐层分析磁盘空间、实时状态监控，以及在支持的 Mac 上控制风扇，Windows 上对应的原生 App 是 [Mole for Windows](https://mole.fit/zh/windows)，`brew install mole` 只会安装命令行工具。
+> 💡 这个仓库是免费开源的命令行工具（`mo`），喜欢图形界面的话可以单独下载 [Mole for Mac](https://mole.fit/)，支持删除前逐项确认、实测 900 多款软件的卸载残留、系统维护、逐层分析磁盘空间、实时状态监控，以及在支持的 Mac 上控制风扇，Windows 上对应的原生 App 是 [Mole for Windows](https://mole.fit/zh/windows)，`brew install mole` 只会安装命令行工具。
 
 ## 功能
 
