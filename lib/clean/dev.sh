@@ -1706,12 +1706,12 @@ clean_dev_nix() {
     command -v nix-store > /dev/null 2>&1 || return 0
     clean_tool_cache "Nix store garbage" "/nix/store" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" nix-store --gc || return $?
 }
-# Cloud CLI caches.
+# Cloud CLI caches. ~/.aws/cli/cache stays: it holds the temporary credentials
+# of assumed roles and SSO sessions, and removing it signs the user out.
 clean_dev_cloud() {
     clean_github_cli_cache || return $?
     safe_clean ~/.kube/cache/* "Kubernetes cache"
     safe_clean ~/.local/share/containers/storage/tmp/* "Container storage temp"
-    safe_clean ~/.aws/cli/cache/* "AWS CLI cache"
     safe_clean ~/.config/gcloud/logs/* "Google Cloud logs"
     safe_clean ~/.azure/logs/* "Azure CLI logs"
 }

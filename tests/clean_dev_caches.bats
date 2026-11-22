@@ -421,8 +421,23 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [ "$(grep -cFx 'config clear-cache' "$trace")" -eq 1 ] || return 1
     [[ "$output" == *"GitHub CLI cache · stopped (owner cleanup failed)"* ]] || return 1
-    [[ "$output" == *"SAFE:AWS CLI cache"* ]] || return 1
     [[ "$output" == *"SAFE:Google Cloud logs"* ]] || return 1
+}
+
+@test "clean_dev_cloud keeps the AWS CLI credential cache" {
+    run env HOME="$HOME" PATH="/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+clean_github_cli_cache() { :; }
+safe_clean() { printf 'SAFE:%s|%s\n' "$1" "${*: -1}"; }
+clean_dev_cloud
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"SAFE:"*"|Google Cloud logs"* ]] || return 1
+    [[ "$output" != *"/.aws/"* && "$output" != *"AWS CLI"* ]] || return 1
 }
 
 @test "clean_dev_cloud stops on GitHub CLI probe or clear cancellation" {
