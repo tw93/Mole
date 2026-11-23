@@ -846,6 +846,10 @@ is_brave_browser_running() {
     mole_pgrep_any -x "Brave Browser"
 }
 
+is_chromium_running() {
+    mole_pgrep_any -x "Chromium"
+}
+
 _firefox_process_state() {
     mole_pgrep_any -x "Firefox"
 }
@@ -2238,7 +2242,15 @@ clean_browsers() {
     done
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/crx_cache/* "GoogleUpdater CRX cache"
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/*.old "GoogleUpdater old files"
-    safe_clean ~/Library/Caches/Chromium/* "Chromium cache"
+    # Chromium's Caches root holds its live HTTP disk cache like Chrome's.
+    if mole_cleanup_targets_exist "$HOME/Library/Caches/Chromium"/*; then
+        if mole_clean_process_guard is_chromium_running "Chromium started"; then
+            _user_safe_clean_process_guarded is_chromium_running "Chromium" "Chromium cache" \
+                ~/Library/Caches/Chromium/* "Chromium cache" || true
+        else
+            mole_report_guard_stop "Chromium cache" mole_defer_cleanup_family "Chromium"
+        fi
+    fi
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
     # Arc Browser.
     if [[ -d ~/Library/Application\ Support/Arc ]]; then

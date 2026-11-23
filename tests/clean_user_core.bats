@@ -2641,6 +2641,40 @@ EOF
     [[ "$closed" == *"SAFE_CLEAN:Brave cache"* ]]
 }
 
+@test "clean_browsers holds the Chromium Caches root while Chromium runs (#2094)" {
+    mkdir -p "$HOME/Library/Caches/Chromium/Default/Cache"
+    touch "$HOME/Library/Caches/Chromium/Default/Cache/data_0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "SAFE_CLEAN:${!#}"; }
+defer_cleanup_family() { echo "DEFER:$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+RUNNING=true
+pgrep() {
+    [[ "$RUNNING" == "true" ]] || return 1
+    [[ "$2" == "Chromium" ]]
+}
+clean_browsers
+echo "--- closed"
+RUNNING=false
+clean_browsers
+EOF
+    rm -rf "$HOME/Library/Caches/Chromium"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local running closed
+    running="${output%%--- closed*}"
+    closed="${output#*--- closed}"
+    [[ "$running" != *"SAFE_CLEAN:Chromium cache"* ]] || { echo "$output"; return 1; }
+    [[ "$running" == *"DEFER:Chromium"* ]] || { echo "$output"; return 1; }
+    # Control: a closed Chromium still reaches the row.
+    [[ "$closed" == *"SAFE_CLEAN:Chromium cache"* ]]
+}
+
 @test "clean_browsers defers a running browser's Caches root before sizing it" {
     mkdir -p "$HOME/Library/Caches/Google/Chrome/Default/Cache" \
         "$HOME/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache" \
