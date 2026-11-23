@@ -233,6 +233,18 @@ _user_cache_root_held_by_singleton() {
     return 1
 }
 
+# Delete-time callback for the User app cache sweep: the Deno root check, whose
+# refusal stops the batch, then the browser lock of this root, whose refusal
+# skips only it, so a browser started during the sweep keeps its cache.
+_user_cache_delete_guard() {
+    local candidate="${1:-}"
+    _MOLE_SAFE_CLEAN_SKIP_PATH=""
+    _user_cache_deno_delete_guard "$candidate" || return $?
+    _user_cache_root_held_by_singleton "$candidate" || return 0
+    _MOLE_SAFE_CLEAN_SKIP_PATH="$candidate"
+    return 1
+}
+
 # Log globs must never enumerate through redirected roots. Bind the directories
 # before enumeration and again after sizing and at the last deletion boundary.
 _user_log_delete_guard() {
@@ -354,7 +366,7 @@ clean_user_essentials() {
         # sink guard re-asks after every other check, immediately before rm,
         # because safe_remove does real work between the two.
         local _MOLE_SAFE_REMOVE_FINAL_GUARD=_user_cache_deno_delete_guard
-        safe_clean_guarded _user_cache_deno_delete_guard \
+        safe_clean_guarded _user_cache_delete_guard \
             "${user_cache_targets[@]}" "User app cache" || user_cache_rc=$?
         if [[ $user_cache_rc -eq 75 ]]; then
             echo -e "  ${GRAY}${ICON_WARNING}${NC} User app cache · stopped (Deno root changed during cleanup)"

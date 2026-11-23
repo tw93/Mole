@@ -434,6 +434,33 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "the User app cache guard skips only a cache root whose browser started during the sweep (#2094)" {
+    local test_home="$HOME/chromium-guard-home"
+    mkdir -p \
+        "$test_home/Library/Caches/Chromium/Default/Cache" \
+        "$test_home/Library/Caches/ordinary-app/junk" \
+        "$test_home/Library/Application Support/Chromium"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+ln -s "$(hostname)-$$" "$HOME/Library/Application Support/Chromium/SingletonLock"
+for target in "$HOME/Library/Caches/Chromium" "$HOME/Library/Caches/ordinary-app"; do
+    rc=0
+    _MOLE_SAFE_CLEAN_SKIP_PATH="unset"
+    _user_cache_delete_guard "$target" || rc=$?
+    printf 'GUARD=%s|%s|%s\n' "${target##*/}" "$rc" "$_MOLE_SAFE_CLEAN_SKIP_PATH"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GUARD=Chromium|1|$test_home/Library/Caches/Chromium"* ]] || return 1
+    # The last line, so the empty skip path ends the output.
+    [[ "$output" == *"GUARD=ordinary-app|0|" ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials keeps Google identity and Clearcut state (#1607)" {
     # The generic cache sweep reaches these dotless names. Drive the real
     # safe_clean_guarded path so should_protect_path at bin/clean.sh:1002
