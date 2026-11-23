@@ -3230,6 +3230,71 @@ assert sessions[0]["actions"]["removed"] == 2, sessions
 '
 }
 
+@test "safe_sudo_find_delete reports the size of the batch files the worker removed (#2092)" {
+    local target_dir="$TEST_DIR/sudo-batch-size-target"
+    mkdir -p "$target_dir"
+    /usr/bin/head -c 8192 /dev/urandom > "$target_dir/kept.log"
+    /usr/bin/head -c 20480 /dev/urandom > "$target_dir/gone.log"
+    touch "$target_dir/whitelisted.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" \
+        MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+WHITELIST_PATTERNS=("$TARGET_DIR/whitelisted.log")
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        test)
+            shift
+            command test "$@"
+            ;;
+        find)
+            printf '%s\0' "$TARGET_DIR/kept.log" "$TARGET_DIR/gone.log" "$TARGET_DIR/whitelisted.log"
+            ;;
+        xargs)
+            # The worker keeps kept.log, as it does when an identity changed,
+            # and confirms gone.log, so a size taken by position is wrong.
+            local record rest path
+            while IFS= read -r -d '' record; do
+                rest=${record#*:}
+                rest=${rest#*:}
+                path=${rest#*:}
+                [[ "$path" != */kept.log ]] || continue
+                /bin/rm -f -- "$path" || return 1
+                printf '%s\0' "$path"
+            done
+            ;;
+        *) "$@" ;;
+    esac
+}
+kept_kb=$(du -sk "$TARGET_DIR/kept.log" | awk '{print $1}')
+expected_kb=$(du -sk "$TARGET_DIR/gone.log" | awk '{print $1}')
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "*.log" "0" "f" "1" || rc=$?
+printf 'RC=%s\nCOUNT=%s\nKB=%s\nEXPECTED_KB=%s\nKEPT_KB=%s\n' "$rc" \
+    "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}" "${MOLE_SAFE_SUDO_FIND_DELETE_KB:-unset}" \
+    "$expected_kb" "$kept_kb"
+[[ -e "$TARGET_DIR/kept.log" ]] && echo "KEPT_SURVIVED" || echo "KEPT_REMOVED"
+[[ -e "$TARGET_DIR/gone.log" ]] && echo "GONE_SURVIVED" || echo "GONE_REMOVED"
+SCRIPT
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # One of two batched files is confirmed, so the batch reports status 1.
+    [[ "$output" == *"RC=1"* ]] || return 1
+    [[ "$output" == *"COUNT=1"* ]] || return 1
+    [[ "$output" == *"KEPT_SURVIVED"* ]] || return 1
+    [[ "$output" == *"GONE_REMOVED"* ]] || return 1
+    local kb expected_kb kept_kb
+    kb=$(printf '%s\n' "$output" | sed -n 's/^KB=//p')
+    expected_kb=$(printf '%s\n' "$output" | sed -n 's/^EXPECTED_KB=//p')
+    kept_kb=$(printf '%s\n' "$output" | sed -n 's/^KEPT_KB=//p')
+    [[ "$expected_kb" =~ ^[0-9]+$ && "$expected_kb" != "$kept_kb" ]] || return 1
+    [ "$kb" = "$expected_kb" ]
+}
+
 @test "safe_sudo_find_delete reports a failed batch without logging REMOVED" {
     local target_dir="$TEST_DIR/sudo-batch-lapsed"
     local script="$TEST_DIR/sudo-batch-lapsed-test.sh"
@@ -3496,6 +3561,55 @@ SCRIPT
     [[ "$output" != *"PRIVILEGED_DELETE"* ]] || return 1
     [[ "$output" != *"SUDO:-n xargs"* ]] || return 1
     [[ "$output" != *"SUDO:-n rm"* ]] || return 1
+}
+
+@test "safe_sudo_find_delete reports the size it removes below a user-writable parent (#2092)" {
+    local target_dir="$TEST_DIR/sudo-mutable-size"
+    local script="$TEST_DIR/sudo-mutable-size-test.sh"
+    mkdir -p "$target_dir"
+    /usr/bin/head -c 12288 /dev/urandom > "$target_dir/old.log"
+
+    cat > "$script" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+sudo() {
+    [[ "${1:-}" == "-n" ]] || return 99
+    shift
+    case "${1:-}" in
+        test)
+            shift
+            command test "$@"
+            ;;
+        find) printf '%s\0' "$TARGET_DIR/old.log" ;;
+        xargs | rm)
+            echo "PRIVILEGED_DELETE"
+            return 99
+            ;;
+        *) "$@" ;;
+    esac
+}
+expected_kb=$(du -sk "$TARGET_DIR/old.log" | awk '{print $1}')
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "*.log" "0" "f" || rc=$?
+printf 'RC=%s\nCOUNT=%s\nKB=%s\nEXPECTED_KB=%s\n' "$rc" \
+    "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}" "${MOLE_SAFE_SUDO_FIND_DELETE_KB:-unset}" "$expected_kb"
+[[ -e "$TARGET_DIR/old.log" ]] && echo "TARGET_SURVIVED" || echo "TARGET_REMOVED"
+SCRIPT
+    chmod +x "$script"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" \
+        MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc "$script"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0"* ]] || return 1
+    [[ "$output" == *"COUNT=1"* ]] || return 1
+    [[ "$output" == *"TARGET_REMOVED"* ]] || return 1
+    [[ "$output" != *"PRIVILEGED_DELETE"* ]] || return 1
+    local kb expected_kb
+    kb=$(printf '%s\n' "$output" | sed -n 's/^KB=//p')
+    expected_kb=$(printf '%s\n' "$output" | sed -n 's/^EXPECTED_KB=//p')
+    [[ "$expected_kb" =~ ^[0-9]+$ && $expected_kb -gt 0 ]] || return 1
+    [ "$kb" = "$expected_kb" ]
 }
 
 @test "safe_sudo_find_delete treats a user-owned 0555 parent as mutable" {
