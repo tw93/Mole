@@ -439,11 +439,18 @@ should_protect_path() {
     case "$path" in
         "$HOME/Library/Caches/Codex/Default/Cache/"* | \
             "$HOME/Library/Caches/Codex/Default/Code Cache/"* | \
-            "$HOME/Library/Caches/Codex/Default/Partitions/codex-browser-app/Cache/"* | \
-            "$HOME/Library/Caches/Codex/Default/Partitions/codex-browser-app/Code Cache/"* | \
             "$HOME/Library/Caches/Codex/codex-browser-app/Cache/"* | \
             "$HOME/Library/Caches/Codex/codex-browser-app/Code Cache/"*)
             _known_rebuildable_cache_path=true
+            ;;
+        "$HOME/Library/Caches/Codex/Default/Partitions/"*/*)
+            # One webview partition per MCP app sandbox plus codex-browser-app.
+            # Strip exactly one partition segment, so a Cache folder nested
+            # deeper, such as under Local Storage, keeps its protection.
+            local _codex_partition_leaf="${path#"$HOME/Library/Caches/Codex/Default/Partitions/"*/}"
+            case "$_codex_partition_leaf" in
+                "Cache/"* | "Code Cache/"*) _known_rebuildable_cache_path=true ;;
+            esac
             ;;
     esac
 

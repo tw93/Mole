@@ -158,6 +158,96 @@ EOF
     assert_output_not_contains "STILL_PRESENT:"
 }
 
+@test "clean_codex_desktop_caches cleans dynamic MCP sandbox partitions and preserves durable state" {
+    run env HOME="$HOME/codex-cache-mcp" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_root="$HOME/Library/Caches/Codex"
+mcp_shared="$cache_root/Default/Partitions/codex-mcp-app-sandbox%3Ashared"
+mcp_conn="$cache_root/Default/Partitions/codex-mcp-app-sandbox%3Aconnection-abc123"
+
+mkdir -p \
+    "$mcp_shared/Cache" \
+    "$mcp_shared/Code Cache" \
+    "$mcp_shared/Cookies" \
+    "$mcp_shared/Local Storage" \
+    "$mcp_shared/IndexedDB" \
+    "$mcp_conn/Cache" \
+    "$mcp_conn/Code Cache" \
+    "$mcp_conn/Local Storage"
+
+touch \
+    "$mcp_shared/Cache/data.bin" \
+    "$mcp_shared/Code Cache/code.bin" \
+    "$mcp_shared/Cookies/cookie.bin" \
+    "$mcp_shared/Local Storage/state.bin" \
+    "$mcp_shared/IndexedDB/db.bin" \
+    "$mcp_conn/Cache/conn-data.bin" \
+    "$mcp_conn/Code Cache/conn-code.bin" \
+    "$mcp_conn/Local Storage/state.bin"
+
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { return 1; }
+DRY_RUN=false
+MOLE_DRY_RUN=0
+clean_codex_desktop_caches
+
+for removed in \
+    "$mcp_shared/Cache/data.bin" \
+    "$mcp_shared/Code Cache/code.bin" \
+    "$mcp_conn/Cache/conn-data.bin" \
+    "$mcp_conn/Code Cache/conn-code.bin"; do
+    [[ ! -e "$removed" ]] || { echo "STILL_PRESENT:$removed"; exit 1; }
+done
+
+[[ -f "$mcp_shared/Cookies/cookie.bin" ]] || exit 1
+[[ -f "$mcp_shared/Local Storage/state.bin" ]] || exit 1
+[[ -f "$mcp_shared/IndexedDB/db.bin" ]] || exit 1
+[[ -f "$mcp_conn/Local Storage/state.bin" ]] || exit 1
+echo "MCP_PARTITIONS_CLEANED"
+EOF
+
+    assert_run_success
+    assert_output_contains "MCP_PARTITIONS_CLEANED"
+    assert_output_not_contains "STILL_PRESENT:"
+}
+
+@test "Codex dynamic MCP partition cache targets are not blocked by data protection policy" {
+    run env HOME="$HOME/codex-mcp-protection" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_root="$HOME/Library/Caches/Codex"
+mcp_shared="$cache_root/Default/Partitions/codex-mcp-app-sandbox%3Ashared"
+mkdir -p "$mcp_shared/Cache" "$mcp_shared/Code Cache"
+touch "$mcp_shared/Cache/data.bin" "$mcp_shared/Code Cache/code.bin"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+for target in "$mcp_shared/Cache/data.bin" "$mcp_shared/Code Cache/code.bin"; do
+    if should_protect_path "$target"; then
+        echo "BLOCKED_PROTECTION:$target"
+        exit 1
+    fi
+    validate_path_for_deletion "$target"
+done
+# A cache entry whose name matches a protected app name stays cleanable in any
+# single partition, while a Cache folder nested deeper keeps its protection.
+for target in \
+    "$cache_root/Default/Partitions/codex-browser-app/Cache/Codex" \
+    "$mcp_shared/Cache/Codex"; do
+    if should_protect_path "$target"; then
+        echo "BLOCKED_PROTECTION:$target"
+        exit 1
+    fi
+done
+if ! should_protect_path "$mcp_shared/Local Storage/Cache/Codex"; then
+    echo "NESTED_CACHE_UNPROTECTED"
+    exit 1
+fi
+echo "MCP_TARGETS_VALIDATED"
+EOF
+
+    assert_run_success
+    assert_output_contains "MCP_TARGETS_VALIDATED"
+}
+
 @test "clean_codex_desktop_caches preserves pipe characters in physical target paths" {
     local case_home="$HOME/codex-cache|pipe-home"
     local target="$case_home/Library/Caches/Codex/Default/Cache/owned.bin"
