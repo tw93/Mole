@@ -439,8 +439,8 @@ should_protect_path() {
     case "$path" in
         "$HOME/Library/Caches/Codex/Default/Cache/"* | \
             "$HOME/Library/Caches/Codex/Default/Code Cache/"* | \
-            "$HOME/Library/Caches/Codex/Default/Partitions/codex-browser-app/Cache/"* | \
-            "$HOME/Library/Caches/Codex/Default/Partitions/codex-browser-app/Code Cache/"* | \
+            "$HOME/Library/Caches/Codex/Default/Partitions/*/Cache/"* | \
+            "$HOME/Library/Caches/Codex/Default/Partitions/*/Code Cache/"* | \
             "$HOME/Library/Caches/Codex/codex-browser-app/Cache/"* | \
             "$HOME/Library/Caches/Codex/codex-browser-app/Code Cache/"*)
             _known_rebuildable_cache_path=true

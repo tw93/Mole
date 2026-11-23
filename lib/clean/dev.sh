@@ -4675,15 +4675,25 @@ clean_codex_desktop_caches() {
         return 0
     fi
 
-    # Measured on ChatGPT 26.727.40816: these six Chromium leaves reclaimed
-    # 313,860 KiB. Local Storage, IndexedDB, cookies, sessions, preferences, and
-    # every Application Support sibling are deliberate non-targets because they
-    # can hold durable state rather than rebuildable cache data.
+    # Measured on ChatGPT 26.727.40816: these Chromium leaves reclaimed
+    # hundreds of megabytes. Dynamic webview partitions (codex-browser-app,
+    # MCP sandboxes) live under Default/Partitions/. Local Storage, IndexedDB,
+    # cookies, sessions, preferences, and every Application Support sibling
+    # are deliberate non-targets because they can hold durable state rather
+    # than rebuildable cache data.
     local -a profiles=(
         "$cache_root/Default"
-        "$cache_root/Default/Partitions/codex-browser-app"
         "$cache_root/codex-browser-app"
     )
+    if [[ -d "$cache_root/Default/Partitions" ]]; then
+        local partition_dir
+        for partition_dir in "$cache_root/Default/Partitions"/*; do
+            [[ -d "$partition_dir" && ! -L "$partition_dir" ]] || continue
+            profiles+=("$partition_dir")
+        done
+    else
+        profiles+=("$cache_root/Default/Partitions/codex-browser-app")
+    fi
     local -a leaves=("Cache" "Code Cache")
     local -a cleanable_physical_leaves=()
     local -a cleanable_leaf_labels=()
