@@ -4696,28 +4696,23 @@ clean_codex_desktop_caches() {
     else
         profiles+=("$cache_root/Default/Partitions/codex-browser-app")
     fi
-    # Every profile and partition shares one row per cache kind, so a Mac
-    # with many MCP sandboxes still reads as two rows, not one per partition.
+    # Every profile and partition shares one row, so a Mac with many MCP
+    # sandboxes still reads as one Codex Desktop line, not one per partition.
     local -a cache_targets=()
-    local -a code_cache_targets=()
     local profile leaf physical_leaf
     for profile in "${profiles[@]}"; do
         for leaf in "Cache" "Code Cache"; do
             physical_leaf=""
             if physical_leaf=$(codex_staging_physical_path "$profile/$leaf" "$cache_root" any); then
                 if mole_cleanup_targets_exist "$physical_leaf"/*; then
-                    if [[ "$leaf" == "Cache" ]]; then
-                        cache_targets+=("$physical_leaf"/*)
-                    else
-                        code_cache_targets+=("$physical_leaf"/*)
-                    fi
+                    cache_targets+=("$physical_leaf"/*)
                 fi
             else
                 debug_log "Codex Desktop cache leaf skipped: $profile/$leaf"
             fi
         done
     done
-    [[ ${#cache_targets[@]} -gt 0 || ${#code_cache_targets[@]} -gt 0 ]] || return 0
+    [[ ${#cache_targets[@]} -gt 0 ]] || return 0
 
     local process_state=0
     codex_desktop_process_state || process_state=$?
@@ -4731,18 +4726,10 @@ clean_codex_desktop_caches() {
         return 0
     fi
 
-    if [[ ${#cache_targets[@]} -gt 0 ]]; then
-        _codex_desktop_safe_clean_guarded \
-            "Codex Desktop caches" \
-            "${cache_targets[@]}" \
-            "Codex Desktop Cache" || return 0
-    fi
-    if [[ ${#code_cache_targets[@]} -gt 0 ]]; then
-        _codex_desktop_safe_clean_guarded \
-            "Codex Desktop caches" \
-            "${code_cache_targets[@]}" \
-            "Codex Desktop Code Cache" || return 0
-    fi
+    _codex_desktop_safe_clean_guarded \
+        "Codex Desktop caches" \
+        "${cache_targets[@]}" \
+        "Codex Desktop cache" || return 0
 }
 
 codex_sparkle_updater_running() {
@@ -6304,11 +6291,13 @@ clean_dev_misc() {
     safe_clean ~/Library/Caches/KSCrash/* "KSCrash reports"
     safe_clean ~/Library/Caches/com.crashlytics.data/* "Crashlytics data"
     if [[ -d ~/Library/Application\ Support/Antigravity ]]; then
-        mole_safe_clean_app_cache "Antigravity" ~/Library/Application\ Support/Antigravity/Cache/* "Antigravity cache"
-        mole_safe_clean_app_cache "Antigravity" ~/Library/Application\ Support/Antigravity/Code\ Cache/* "Antigravity code cache"
-        mole_safe_clean_app_cache "Antigravity" ~/Library/Application\ Support/Antigravity/GPUCache/* "Antigravity GPU cache"
-        mole_safe_clean_app_cache "Antigravity" ~/Library/Application\ Support/Antigravity/DawnGraphiteCache/* "Antigravity Dawn cache"
-        mole_safe_clean_app_cache "Antigravity" ~/Library/Application\ Support/Antigravity/DawnWebGPUCache/* "Antigravity WebGPU cache"
+        mole_safe_clean_app_cache "Antigravity" \
+            ~/Library/Application\ Support/Antigravity/Cache/* \
+            ~/Library/Application\ Support/Antigravity/Code\ Cache/* \
+            ~/Library/Application\ Support/Antigravity/GPUCache/* \
+            ~/Library/Application\ Support/Antigravity/DawnGraphiteCache/* \
+            ~/Library/Application\ Support/Antigravity/DawnWebGPUCache/* \
+            "Antigravity cache"
     fi
     # Antigravity browser profile caches (~/.gemini)
     clean_antigravity_caches
@@ -6316,31 +6305,37 @@ clean_dev_misc() {
     clean_agent_browser_old_chrome
     # Filo (Electron)
     if [[ -d ~/Library/Application\ Support/Filo ]]; then
-        mole_safe_clean_app_cache "Filo" ~/Library/Application\ Support/Filo/production/Cache/* "Filo cache"
-        mole_safe_clean_app_cache "Filo" ~/Library/Application\ Support/Filo/production/Code\ Cache/* "Filo code cache"
-        mole_safe_clean_app_cache "Filo" ~/Library/Application\ Support/Filo/production/GPUCache/* "Filo GPU cache"
-        mole_safe_clean_app_cache "Filo" ~/Library/Application\ Support/Filo/production/DawnGraphiteCache/* "Filo Dawn cache"
-        mole_safe_clean_app_cache "Filo" ~/Library/Application\ Support/Filo/production/DawnWebGPUCache/* "Filo WebGPU cache"
+        mole_safe_clean_app_cache "Filo" \
+            ~/Library/Application\ Support/Filo/production/Cache/* \
+            ~/Library/Application\ Support/Filo/production/Code\ Cache/* \
+            ~/Library/Application\ Support/Filo/production/GPUCache/* \
+            ~/Library/Application\ Support/Filo/production/DawnGraphiteCache/* \
+            ~/Library/Application\ Support/Filo/production/DawnWebGPUCache/* \
+            "Filo cache"
     fi
     # Claude (Electron)
     if [[ -d ~/Library/Application\ Support/Claude ]]; then
-        mole_safe_clean_app_cache "Claude" ~/Library/Application\ Support/Claude/Cache/* "Claude cache"
-        mole_safe_clean_app_cache "Claude" ~/Library/Application\ Support/Claude/Code\ Cache/* "Claude code cache"
-        mole_safe_clean_app_cache "Claude" ~/Library/Application\ Support/Claude/GPUCache/* "Claude GPU cache"
-        mole_safe_clean_app_cache "Claude" ~/Library/Application\ Support/Claude/DawnGraphiteCache/* "Claude Dawn cache"
-        mole_safe_clean_app_cache "Claude" ~/Library/Application\ Support/Claude/DawnWebGPUCache/* "Claude WebGPU cache"
-        mole_safe_clean_app_cache "Claude" ~/Library/Application\ Support/Claude/sentry/* "Claude sentry cache"
+        mole_safe_clean_app_cache "Claude" \
+            ~/Library/Application\ Support/Claude/Cache/* \
+            ~/Library/Application\ Support/Claude/Code\ Cache/* \
+            ~/Library/Application\ Support/Claude/GPUCache/* \
+            ~/Library/Application\ Support/Claude/DawnGraphiteCache/* \
+            ~/Library/Application\ Support/Claude/DawnWebGPUCache/* \
+            ~/Library/Application\ Support/Claude/sentry/* \
+            "Claude cache"
     fi
     # Qoder (VS Code fork, Electron)
     if [[ -d ~/Library/Application\ Support/Qoder ]]; then
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/Cache/* "Qoder cache"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/CachedData/* "Qoder cached data"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/CachedExtensionVSIXs/* "Qoder extension cache"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/Code\ Cache/* "Qoder code cache"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/GPUCache/* "Qoder GPU cache"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/DawnGraphiteCache/* "Qoder Dawn cache"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/DawnWebGPUCache/* "Qoder WebGPU cache"
-        mole_safe_clean_app_cache "Qoder" ~/Library/Application\ Support/Qoder/logs/* "Qoder logs"
+        mole_safe_clean_app_cache "Qoder" \
+            ~/Library/Application\ Support/Qoder/Cache/* \
+            ~/Library/Application\ Support/Qoder/CachedData/* \
+            ~/Library/Application\ Support/Qoder/CachedExtensionVSIXs/* \
+            ~/Library/Application\ Support/Qoder/Code\ Cache/* \
+            ~/Library/Application\ Support/Qoder/GPUCache/* \
+            ~/Library/Application\ Support/Qoder/DawnGraphiteCache/* \
+            ~/Library/Application\ Support/Qoder/DawnWebGPUCache/* \
+            ~/Library/Application\ Support/Qoder/logs/* \
+            "Qoder cache"
     fi
     # Prisma ORM engine binaries cache
     safe_clean ~/.cache/prisma/* "Prisma cache"

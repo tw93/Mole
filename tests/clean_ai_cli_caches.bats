@@ -158,7 +158,7 @@ EOF
     assert_output_not_contains "STILL_PRESENT:"
 }
 
-@test "clean_codex_desktop_caches previews one row per cache kind across every partition" {
+@test "clean_codex_desktop_caches previews one row across every profile and partition" {
     run env HOME="$HOME/codex-cache-rows" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 cache_root="$HOME/Library/Caches/Codex"
@@ -178,15 +178,15 @@ pgrep() { return 1; }
 DRY_RUN=true
 MOLE_DRY_RUN=1
 rows=$(clean_codex_desktop_caches 2>&1)
-printf 'ROWS_CACHE=%s;\n' "$(printf '%s\n' "$rows" | grep -c 'Codex Desktop Cache' || true)"
-printf 'ROWS_CODE_CACHE=%s;\n' "$(printf '%s\n' "$rows" | grep -c 'Codex Desktop Code Cache' || true)"
+printf 'ROWS=%s;\n' "$(printf '%s\n' "$rows" | grep -c 'Codex Desktop' || true)"
+printf 'ITEMS=%s;\n' "$(printf '%s\n' "$rows" | grep -c '10 items' || true)"
 remaining=$(find "$cache_root" -name entry.bin | wc -l | tr -d ' ')
 printf 'REMAINING=%s\n' "$remaining"
 EOF
 
     assert_run_success
-    assert_output_contains "ROWS_CACHE=1;"
-    assert_output_contains "ROWS_CODE_CACHE=1;"
+    assert_output_contains "ROWS=1;"
+    assert_output_contains "ITEMS=1;"
     assert_output_contains "REMAINING=10"
 }
 

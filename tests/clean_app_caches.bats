@@ -939,14 +939,16 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
-safe_clean() { echo "$2"; }
+safe_clean() { echo "${!#}"; }
 pgrep() { return 1; }
 clean_design_tools
 EOF
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"Sketch cache"* ]] || return 1
-    [[ "$output" == *"Figma cache"* ]]
+    [[ "$output" == *"Figma cache"* ]] || return 1
+    # Desktop, agent and profile caches are one Figma row.
+    [[ "$(grep -c '^Figma' <<< "$output")" == 1 ]]
 }
 
 @test "clean_figma_desktop_caches targets all profile cache leaves and preserves state" {
@@ -992,7 +994,7 @@ EOF
     [[ "$output" == *"CLEAN:$pbase/GPUCache/data_0"* ]] || return 1
     [[ "$output" == *"CLEAN:$pbase/DawnGraphiteCache/data_0"* ]] || return 1
     [[ "$output" == *"CLEAN:$pbase/DawnWebGPUCache/data_0"* ]] || return 1
-    [[ "$output" == *"CLEAN:Figma desktop cache"* ]] || return 1
+    [[ "$output" == *"CLEAN:Figma cache"* ]] || return 1
     [[ "$output" != *"Cookies"* ]] || return 1
     [[ "$output" != *"Local Storage"* ]] || return 1
     [[ "$output" != *"IndexedDB"* ]] || return 1
@@ -1251,13 +1253,14 @@ mkdir -p ~/Library/Application\ Support/Microsoft/Teams
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 pgrep() { return 1; }
-safe_clean() { echo "$2"; }
+safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_communication_apps
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Microsoft Teams legacy cache"* ]] || return 1
-    [[ "$output" == *"Microsoft Teams legacy logs"* ]]
+    [[ "$output" == *"/Microsoft/Teams/Cache/"*"|Microsoft Teams legacy cache"* ]] || return 1
+    [[ "$output" == *"/Microsoft/Teams/logs/"*"|Microsoft Teams legacy cache"* ]] || return 1
+    [[ "$(grep -c '^CALL:Microsoft Teams legacy' <<< "$output")" == 1 ]]
 }
 
 @test "clean_communication_apps cleans Vesktop session caches only while Vesktop is not running" {
@@ -1818,7 +1821,7 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
-safe_clean() { echo "CLEAN:$1|$2"; }
+safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
 
@@ -1829,6 +1832,8 @@ EOF
     [[ "$output" != *"$HOME/Library/Application Support/Zed/db"* ]] || return 1
     [[ "$output" != *"node-v24.11.0-darwin-arm64/bin"* ]] || return 1
     [[ "$output" == *"Zed logs"* ]] || return 1
+    [[ "$(grep -c '^CALL:Zed npm cache' <<< "$output")" == 1 ]] || return 1
+    [[ "$(grep -c '^CALL:VS Code cache' <<< "$output")" == 1 ]]
 }
 
 @test "clean_code_editors includes VS Code WebStorage CacheStorage only" {
@@ -1841,12 +1846,12 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 pgrep() { return 1; }
-safe_clean() { echo "CLEAN:$1|$2"; }
+safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"CLEAN:$HOME/Library/Application Support/Code/WebStorage/29/CacheStorage/uuid-1|VS Code webview cache"* ]] || return 1
+    [[ "$output" == *"CLEAN:$HOME/Library/Application Support/Code/WebStorage/29/CacheStorage/uuid-1|VS Code cache"* ]] || return 1
     [[ "$output" != *"Local Storage"* ]] || return 1
     [[ "$output" != *"QuotaManager"* ]]
 }
@@ -2211,14 +2216,15 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
-safe_clean() { echo "$2"; }
+safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"CodeBuddy CN cache"* ]] || return 1
-    [[ "$output" == *"CodeBuddy CN logs"* ]] || return 1
-    [[ "$output" == *"CodeBuddy CN GPU cache"* ]]
+    [[ "$output" == *"/CodeBuddy CN/Cache/"*"|CodeBuddy CN cache"* ]] || return 1
+    [[ "$output" == *"/CodeBuddy CN/logs/"*"|CodeBuddy CN cache"* ]] || return 1
+    [[ "$output" == *"/CodeBuddy CN/GPUCache/"*"|CodeBuddy CN cache"* ]] || return 1
+    [[ "$(grep -c '^CALL:CodeBuddy CN' <<< "$output")" == 1 ]]
 }
 
 @test "clean_code_editors skips CodeBuddy when directories are absent" {
@@ -2236,6 +2242,43 @@ EOF
     [[ "$output" != *"CodeBuddy"* ]]
 }
 
+@test "Electron app caches clean in one call per app" {
+    local case_home="$HOME/one-call-per-app"
+    local app_support="$case_home/Library/Application Support"
+    mkdir -p "$app_support/vesktop/sessionData/Cache" "$app_support/mihomo-party/Cache" \
+        "$app_support/Antigravity/Cache" "$app_support/Filo/production/Cache" \
+        "$app_support/Claude/Cache" "$app_support/Qoder/Cache"
+
+    run env HOME="$case_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+pgrep() { return 1; }
+safe_clean() { echo "CALL:${!#}"; }
+safe_find_delete() { :; }
+note_activity() { :; }
+clean_service_worker_cache() { :; }
+clean_codex_runtimes() { :; }
+clean_codex_desktop_staging() { :; }
+clean_codex_desktop_caches() { :; }
+clean_codex_cli() { :; }
+clean_antigravity_caches() { :; }
+clean_communication_apps
+clean_system_utils
+clean_dev_misc
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local label
+    local app
+    # Count every row the app prints, so a split back into per-folder rows fails.
+    for app in Vesktop mihomo-party Antigravity Filo Claude Qoder; do
+        [[ "$(grep -c "^CALL:$app " <<< "$output")" == 1 ]] || { echo "ROWS:$app"; return 1; }
+        [[ "$output" == *"CALL:$app cache"* ]] || { echo "LABEL:$app"; return 1; }
+    done
+}
+
 @test "clean_code_editors includes Cursor caches when directory exists" {
     mkdir -p "$HOME/Library/Application Support/Cursor"
 
@@ -2243,20 +2286,22 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
-safe_clean() { echo "$2"; }
+safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Cursor cache"* ]] || return 1
-    [[ "$output" == *"Cursor cached data"* ]] || return 1
-    [[ "$output" == *"Cursor extension cache"* ]] || return 1
-    [[ "$output" == *"Cursor code cache"* ]] || return 1
-    [[ "$output" == *"Cursor GPU cache"* ]] || return 1
-    [[ "$output" == *"Cursor Dawn cache"* ]] || return 1
-    [[ "$output" == *"Cursor WebGPU cache"* ]] || return 1
-    [[ "$output" == *"Cursor logs"* ]] || return 1
-    [[ "$output" == *"Cursor webview cache"* ]]
+    [[ "$output" == *"/Cursor/Cache/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/CachedData/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/CachedExtensionVSIXs/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/Code Cache/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/GPUCache/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/DawnGraphiteCache/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/DawnWebGPUCache/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/logs/"*"|Cursor cache"* ]] || return 1
+    [[ "$output" == *"/Cursor/WebStorage/"*"|Cursor cache"* ]] || return 1
+    # One call, so the editor reads as one row however many leaves it has.
+    [[ "$(grep -c '^CALL:Cursor' <<< "$output")" == 1 ]]
 }
 
 @test "clean_code_editors skips Cursor when directory is absent" {
@@ -3680,7 +3725,7 @@ set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 pgrep() { return 1; }
-safe_clean() { printf 'CLEAN:%s\n' "$1"; }
+safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
     [ "$status" -eq 0 ] || return 1
