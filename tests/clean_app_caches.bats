@@ -949,6 +949,132 @@ EOF
     [[ "$output" == *"Figma cache"* ]]
 }
 
+@test "clean_figma_desktop_caches targets all profile cache leaves and preserves state" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+rm -rf "$HOME/Library/Application Support/Figma"
+profile_dir="$HOME/Library/Application Support/Figma/DesktopProfile/v43"
+mkdir -p "$profile_dir/Cache"
+mkdir -p "$profile_dir/Code Cache/js"
+mkdir -p "$profile_dir/GPUCache"
+mkdir -p "$profile_dir/DawnGraphiteCache"
+mkdir -p "$profile_dir/DawnWebGPUCache"
+# Siblings that must survive.
+mkdir -p "$profile_dir/Cookies"
+mkdir -p "$profile_dir/Local Storage"
+mkdir -p "$profile_dir/IndexedDB"
+touch "$profile_dir/Preferences"
+touch "$profile_dir/settings.json"
+touch "$HOME/Library/Application Support/Figma/desktop_state.json"
+
+touch "$profile_dir/Cache/data_0"
+touch "$profile_dir/Code Cache/js/code_0"
+touch "$profile_dir/GPUCache/data_0"
+touch "$profile_dir/DawnGraphiteCache/data_0"
+touch "$profile_dir/DawnWebGPUCache/data_0"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_clean() {
+    local arg
+    for arg in "$@"; do
+        printf 'CLEAN:%s\n' "$arg"
+    done
+}
+clean_figma_desktop_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    local pbase="$HOME/Library/Application Support/Figma/DesktopProfile/v43"
+    [[ "$output" == *"CLEAN:$pbase/Cache/data_0"* ]] || return 1
+    [[ "$output" == *"CLEAN:$pbase/Code Cache/js"* ]] || return 1
+    [[ "$output" == *"CLEAN:$pbase/GPUCache/data_0"* ]] || return 1
+    [[ "$output" == *"CLEAN:$pbase/DawnGraphiteCache/data_0"* ]] || return 1
+    [[ "$output" == *"CLEAN:$pbase/DawnWebGPUCache/data_0"* ]] || return 1
+    [[ "$output" == *"CLEAN:Figma desktop cache"* ]] || return 1
+    [[ "$output" != *"Cookies"* ]] || return 1
+    [[ "$output" != *"Local Storage"* ]] || return 1
+    [[ "$output" != *"IndexedDB"* ]] || return 1
+    [[ "$output" != *"Preferences"* ]] || return 1
+    [[ "$output" != *"settings.json"* ]] || return 1
+    [[ "$output" != *"desktop_state.json"* ]]
+}
+
+@test "clean_figma_desktop_caches defers while Figma is running" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+rm -rf "$HOME/Library/Application Support/Figma"
+profile_dir="$HOME/Library/Application Support/Figma/DesktopProfile/v43"
+mkdir -p "$profile_dir/Cache"
+touch "$profile_dir/Cache/data_0"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 0; }
+mole_defer_cleanup_family() { echo "DEFER:$1"; }
+safe_clean() { echo "CLEAN:$*"; }
+clean_figma_desktop_caches
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"DEFER:Figma"* ]] || return 1
+    [[ "$output" != *"CLEAN:"* ]]
+}
+
+@test "clean_figma_desktop_caches refuses symlinked profile root and symlinked leaves" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+rm -rf "$HOME/Library/Application Support/Figma"
+external_root="$HOME/external_figma"
+rm -rf "$external_root"
+mkdir -p "$external_root/v43/Cache"
+touch "$external_root/v43/Cache/data_0"
+
+mkdir -p "$HOME/Library/Application Support/Figma"
+ln -s "$external_root" "$HOME/Library/Application Support/Figma/DesktopProfile"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+debug_log() { printf 'DEBUG:%s\n' "$*"; }
+safe_clean() { printf 'CLEAN:%s\n' "$*"; }
+clean_figma_desktop_caches
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"DEBUG:Refusing symlinked Figma profile root"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"v43"* ]]
+}
+
+@test "Figma DesktopProfile cache targets are not blocked by data protection policy" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+profile_dir="$HOME/Library/Application Support/Figma/DesktopProfile/v43"
+mkdir -p "$profile_dir/Cache" "$profile_dir/Code Cache" "$profile_dir/GPUCache" \
+    "$profile_dir/DawnGraphiteCache" "$profile_dir/DawnWebGPUCache"
+touch "$profile_dir/Cache/data_0" "$profile_dir/Code Cache/code_0" "$profile_dir/GPUCache/data_0" \
+    "$profile_dir/DawnGraphiteCache/data_0" "$profile_dir/DawnWebGPUCache/data_0"
+
+source "$PROJECT_ROOT/lib/core/common.sh"
+for target in "$profile_dir/Cache/data_0" \
+              "$profile_dir/Code Cache/code_0" \
+              "$profile_dir/GPUCache/data_0" \
+              "$profile_dir/DawnGraphiteCache/data_0" \
+              "$profile_dir/DawnWebGPUCache/data_0"; do
+    if should_protect_path "$target"; then
+        echo "BLOCKED_PROTECTION:$target"
+        exit 1
+    fi
+    validate_path_for_deletion "$target"
+done
+echo "ALL_TARGETS_VALIDATED"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ALL_TARGETS_VALIDATED"* ]]
+}
+
 # Adobe's video apps read and write Common/Media Cache Files while open, and
 # their bundle names carry a year. Each holder in the list must keep the row;
 # an unrelated Adobe app must not, and the sibling Media Cache database is
