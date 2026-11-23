@@ -4929,7 +4929,12 @@ echo x > "$folder/$newest"
 _wallpaper_stale_render_files
 echo "CAPPED n=${#_MOLE_WALLPAPER_RENDERS[@]}"
 oldest="$(printf '%064x' 60)-5120-2880-0-1.bmp"
-printf '%s\n' "${_MOLE_WALLPAPER_RENDERS[@]}" | grep -q "/$oldest\$" && echo "OLDEST_OFFERED"
+for render in "${_MOLE_WALLPAPER_RENDERS[@]}"; do
+    if [[ "$render" == "$folder/$oldest" ]]; then
+        echo "OLDEST_OFFERED"
+        break
+    fi
+done
 
 # Each render costs one handle probe; the section budget stays untouched.
 _MOLE_CONTAINER_CACHE_PROBE_DEADLINE=""
