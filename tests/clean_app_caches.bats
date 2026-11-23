@@ -2110,6 +2110,70 @@ EOF
     [[ "$output" != *"CodeBuddy"* ]]
 }
 
+@test "clean_code_editors includes Cursor caches when directory exists" {
+    mkdir -p "$HOME/Library/Application Support/Cursor"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_code_editors
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Cursor cache"* ]] || return 1
+    [[ "$output" == *"Cursor cached data"* ]] || return 1
+    [[ "$output" == *"Cursor extension cache"* ]] || return 1
+    [[ "$output" == *"Cursor code cache"* ]] || return 1
+    [[ "$output" == *"Cursor GPU cache"* ]] || return 1
+    [[ "$output" == *"Cursor Dawn cache"* ]] || return 1
+    [[ "$output" == *"Cursor WebGPU cache"* ]] || return 1
+    [[ "$output" == *"Cursor logs"* ]] || return 1
+    [[ "$output" == *"Cursor webview cache"* ]]
+}
+
+@test "clean_code_editors skips Cursor when directory is absent" {
+    rm -rf "$HOME/Library/Application Support/Cursor"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "$2"; }
+clean_code_editors
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Cursor"* ]]
+}
+
+@test "Cursor editor cache targets are not blocked by data protection policy" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/core/app_protection.sh"
+source "$PROJECT_ROOT/lib/core/file_ops.sh"
+
+cursor_root="$HOME/Library/Application Support/Cursor"
+mkdir -p "$cursor_root/Cache" "$cursor_root/CachedData" "$cursor_root/GPUCache" "$cursor_root/logs"
+touch "$cursor_root/Cache/data" "$cursor_root/CachedData/cache_entry" "$cursor_root/GPUCache/shader" "$cursor_root/logs/renderer.log"
+
+for target in "$cursor_root/Cache/data" "$cursor_root/CachedData/cache_entry" "$cursor_root/GPUCache/shader" "$cursor_root/logs/renderer.log"; do
+    if should_protect_path "$target"; then
+        echo "PROTECTED:$target"
+        exit 1
+    fi
+    if ! validate_path_for_deletion "$target"; then
+        echo "VALIDATE_FAILED:$target"
+        exit 1
+    fi
+done
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
 @test "clean_media_players includes QQ Music Mac container caches" {
     mkdir -p "$HOME/Library/Containers/com.tencent.QQMusicMac/Data/Library/Application Support/QQMusicMac"
 
