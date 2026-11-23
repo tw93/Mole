@@ -623,7 +623,6 @@ clean_code_editors() {
     mole_safe_clean_app_cache "Visual Studio Code" ~/Library/Application\ Support/Code/logs/* "VS Code logs"
     mole_safe_clean_app_cache "Visual Studio Code" ~/Library/Application\ Support/Code/Cache/* "VS Code cache"
     mole_safe_clean_app_cache "Visual Studio Code" ~/Library/Application\ Support/Code/CachedExtensionVSIXs/* "VS Code extension cache"
-    mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/CachedExtensionVSIXs/* "Cursor extension cache"
     mole_safe_clean_app_cache "Visual Studio Code" ~/Library/Application\ Support/Code/CachedData/* "VS Code data cache"
     mole_safe_clean_app_cache "Visual Studio Code" ~/Library/Application\ Support/Code/WebStorage/*/CacheStorage/* "VS Code webview cache"
     safe_clean ~/Library/Caches/com.sublimetext.*/* "Sublime Text cache"
@@ -655,6 +654,18 @@ clean_code_editors() {
         mole_safe_clean_app_cache "CodeBuddy CN" ~/Library/Application\ Support/CodeBuddy\ CN/DawnGraphiteCache/* "CodeBuddy CN Dawn cache"
         mole_safe_clean_app_cache "CodeBuddy CN" ~/Library/Application\ Support/CodeBuddy\ CN/DawnWebGPUCache/* "CodeBuddy CN WebGPU cache"
         mole_safe_clean_app_cache "CodeBuddy CN" ~/Library/Application\ Support/CodeBuddy\ CN/logs/* "CodeBuddy CN logs"
+    fi
+    # Cursor (VS Code fork, Electron)
+    if [[ -d ~/Library/Application\ Support/Cursor ]]; then
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/Cache/* "Cursor cache"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/CachedData/* "Cursor cached data"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/CachedExtensionVSIXs/* "Cursor extension cache"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/Code\ Cache/* "Cursor code cache"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/GPUCache/* "Cursor GPU cache"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/DawnGraphiteCache/* "Cursor Dawn cache"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/DawnWebGPUCache/* "Cursor WebGPU cache"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/logs/* "Cursor logs"
+        mole_safe_clean_app_cache "Cursor" ~/Library/Application\ Support/Cursor/WebStorage/*/CacheStorage/* "Cursor webview cache"
     fi
 }
 # Lark / Feishu desktop embeds a Chromium webview (the "aha" explorer profile)
