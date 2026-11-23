@@ -403,6 +403,58 @@ EOF
     [[ "$output" == *"SUCCESS:Stale wallpaper downloads"* ]] || return 1
 }
 
+@test "clean_deep_system adds the rows its privileged sweeps print to the run totals (#2092)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+IDLE_DIR="/private/var/folders/zz/abcdef/T/com.apple.idleassetsd"
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    if [[ "$1" == "find" && "$2" == "/private/var/folders" ]]; then
+        printf '%s\0' "$IDLE_DIR"
+    fi
+    return 0
+}
+safe_sudo_find_delete() {
+    MOLE_SAFE_SUDO_FIND_DELETE_COUNT=0
+    MOLE_SAFE_SUDO_FIND_DELETE_KB=0
+    case "$1" in
+        /private/var/log) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=3 MOLE_SAFE_SUDO_FIND_DELETE_KB=300 ;;
+        "$IDLE_DIR") MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2097152 ;;
+        /private/var/db/diagnostics) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2048 ;;
+        /private/var/db/DiagnosticPipeline) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=100 ;;
+        */MemoryLimitViolations) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=64 ;;
+    esac
+    return 0
+}
+safe_sudo_remove() { return 1; }
+show_large_active_powerlog_notice() { :; }
+log_success() { echo "SUCCESS:$1"; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+get_file_mtime() { echo 0; }
+get_path_size_kb() { echo 0; }
+find() { return 0; }
+mock_run_with_timeout_skipping_var_folders
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_deep_system
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"SUCCESS:System logs"* ]] || return 1
+    [[ "$output" == *"SUCCESS:Stale wallpaper downloads"* ]] || return 1
+    [[ "$output" == *"SUCCESS:System diagnostic logs"* ]] || return 1
+    [[ "$output" == *"SUCCESS:Memory exception reports"* ]] || return 1
+    # Four rows: 3 + 2 + (2 + 1) + 1 files and 300 + 2097152 + (2048 + 100) + 64 KB.
+    [[ "$output" == *"TOTALS=9:2099664:4"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_deep_system does not report idleassetsd success when no stale download exists (#1253)" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
