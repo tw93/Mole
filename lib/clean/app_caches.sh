@@ -847,6 +847,46 @@ clean_notion_service_worker_caches() {
         [[ $guarded_rc -eq 0 ]] || return "$guarded_rc"
     done
 }
+
+clean_notion_partition_disk_caches() {
+    local partitions_root="$HOME/Library/Application Support/Notion/Partitions"
+    [[ -d "$partitions_root" ]] || return 0
+    local physical_root
+    physical_root=$(cd -P "$partitions_root" 2> /dev/null && pwd -P) || return 0
+    if [[ "$physical_root" != "$partitions_root" ]]; then
+        debug_log "Refusing symlinked Notion partitions root: $partitions_root -> $physical_root"
+        return 0
+    fi
+
+    local -a cache_targets=()
+    local _partition _leaf candidate physical_leaf
+    for _partition in "$partitions_root"/*; do
+        [[ -d "$_partition" && ! -L "$_partition" ]] || continue
+        for _leaf in "Cache" "Code Cache"; do
+            candidate="${_partition%/}/$_leaf"
+            [[ -d "$candidate" && ! -L "$candidate" ]] || continue
+            physical_leaf=$(cd -P "$candidate" 2> /dev/null && pwd -P) || continue
+            if [[ "$physical_leaf" != "$candidate" ]]; then
+                debug_log "Refusing symlinked Notion partition cache leaf: $candidate -> $physical_leaf"
+                continue
+            fi
+            if mole_cleanup_targets_exist "$physical_leaf"/*; then
+                cache_targets+=("$physical_leaf"/*)
+            fi
+        done
+    done
+    [[ ${#cache_targets[@]} -gt 0 ]] || return 0
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! _notion_service_worker_delete_guard_allows; then
+        mole_report_guard_stop "Notion" \
+            mole_defer_cleanup_family "Notion"
+        return 0
+    fi
+
+    _app_cache_safe_clean_guarded _notion_service_worker_delete_guard_allows "Notion" \
+        "${cache_targets[@]}" "Notion web cache"
+}
 # WeChat and WeCom ship sandboxed, so their regenerable caches live under
 # ~/Library/Containers/<bundle id>/Data/ and the ~/Library/Caches/<bundle id>
 # entries above reach nothing on a current install. Same shape as JianyingPro
@@ -1128,6 +1168,7 @@ clean_communication_apps() {
         "$HOME/Library/Containers/com.bytedance.macos.feishu/Data/Library/Caches" "Feishu cache"
     clean_feishu_service_worker_caches
     clean_notion_service_worker_caches
+    clean_notion_partition_disk_caches
     if [[ -d ~/Library/Application\ Support/Microsoft/Teams ]]; then
         mole_safe_clean_app_cache "Microsoft Teams" ~/Library/Application\ Support/Microsoft/Teams/Cache/* "Microsoft Teams legacy cache"
         mole_safe_clean_app_cache "Microsoft Teams" ~/Library/Application\ Support/Microsoft/Teams/Application\ Cache/* "Microsoft Teams legacy application cache"
