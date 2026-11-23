@@ -6299,7 +6299,6 @@ clean_agent_browser_old_chrome() {
 clean_dev_misc() {
     safe_clean ~/Library/Caches/com.unity3d.*/* "Unity cache"
     safe_clean ~/Library/Caches/com.mongodb.compass/* "MongoDB Compass cache"
-    safe_clean ~/Library/Caches/com.figma.Desktop/* "Figma cache"
     safe_clean ~/Library/Caches/com.github.GitHubDesktop/* "GitHub Desktop cache"
     safe_clean ~/Library/Caches/SentryCrash/* "Sentry crash reports"
     safe_clean ~/Library/Caches/KSCrash/* "KSCrash reports"

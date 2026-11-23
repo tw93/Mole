@@ -841,6 +841,33 @@ EOF
     assert_output_contains "ANTIGRAVITY_CALLED"
 }
 
+@test "clean_dev_misc leaves the Figma cache to the guarded design tools row" {
+    mkdir -p "$HOME/Library/Caches/com.figma.Desktop"
+    touch "$HOME/Library/Caches/com.figma.Desktop/cache.bin"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { printf 'CLEAN:%s\n' "$@"; }
+safe_find_delete() { :; }
+clean_service_worker_cache() { :; }
+clean_codex_runtimes() { :; }
+clean_codex_desktop_staging() { :; }
+clean_codex_desktop_caches() { :; }
+note_activity() { :; }
+clean_codex_cli() { :; }
+clean_antigravity_caches() { :; }
+clean_dev_misc
+echo "DEV_MISC_DONE"
+EOF
+
+    assert_run_success
+    assert_output_contains "DEV_MISC_DONE"
+    # Developer tools run before GUI apps, so an unguarded copy here would
+    # clear the cache while Figma runs, ahead of the process check.
+    assert_output_not_contains "com.figma.Desktop"
+}
+
 @test "clean_dev_ai_agents reaps stale Claude Desktop bundled versions when active version is known" {
     local claude_support="$HOME/Library/Application Support/Claude"
     mkdir -p "$claude_support/claude-code/2.1.140" "$claude_support/claude-code/2.1.142" "$claude_support/claude-code/2.1.150"
