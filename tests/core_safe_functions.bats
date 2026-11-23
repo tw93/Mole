@@ -2101,6 +2101,72 @@ SCRIPT
     [ -f "$target_dir/file2.log" ] || return 1
 }
 
+@test "safe_sudo_find_delete tracks removed count and size in dry-run and real batch runs (#2092)" {
+    local target_dir="$TEST_DIR/sudo-find-accounting"
+    mkdir -p "$target_dir"
+    printf 'hello world\n' > "$target_dir/a.log"
+    printf 'another log line\n' > "$target_dir/b.log"
+
+    local mode
+    for mode in dry real; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" MODE="$mode" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+
+helper_source=$(declare -f safe_sudo_find_delete)
+# shellcheck disable=SC2016 # Match the literal production guard.
+test_guard='[[ "${MOLE_TEST_MODE:-0}" == "1" || "${MOLE_TEST_NO_AUTH:-0}" == "1" ]]'
+helper_source=${helper_source/"$test_guard"/false}
+eval "$helper_source"
+
+_mole_privileged_path_has_mutable_ancestor() { return 1; }
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        test)
+            shift
+            command test "$@"
+            ;;
+        find)
+            printf '%s\0%s\0' "$TARGET_DIR/a.log" "$TARGET_DIR/b.log"
+            ;;
+        du)
+            printf '4\t%s\n' "${@: -1}"
+            ;;
+        xargs)
+            shift
+            command xargs "$@"
+            ;;
+        *)
+            "$@"
+            ;;
+    esac
+}
+
+if [[ "$MODE" == dry ]]; then
+    export MOLE_DRY_RUN=1
+    DRY_RUN=true
+fi
+
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "*.log" 0 f 1 || rc=$?
+printf 'RC=%s\n' "$rc"
+printf 'COUNT=%s\n' "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}"
+printf 'SIZE_KB=%s\n' "${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-unset}"
+SCRIPT
+
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"COUNT=2"* ]] || { echo "$output"; return 1; }
+        if [[ "$mode" == dry ]]; then
+            [[ "$output" == *"SIZE_KB=8"* ]] || { echo "$output"; return 1; }
+        else
+            [[ "$output" =~ SIZE_KB=[1-9][0-9]* ]] || { echo "$output"; return 1; }
+        fi
+    done
+}
+
 @test "safe_sudo_remove refuses symlink paths" {
     local target_dir="$TEST_DIR/real"
     local link_dir="$TEST_DIR/link"

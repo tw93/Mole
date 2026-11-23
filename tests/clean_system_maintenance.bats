@@ -3172,3 +3172,41 @@ EOF2
     [[ "$output" == "rc=1 bound=" ]] || { echo "$output"; return 1; }
     [[ -f "$HOME/swap-target/access.log" ]]
 }
+
+@test "clean_deep_system adds removed files and bytes to run totals (#2092)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+
+safe_sudo_find_delete() {
+    MOLE_SAFE_SUDO_FIND_DELETE_COUNT=5
+    MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB=2048
+    return 0
+}
+show_large_active_powerlog_notice() { :; }
+safe_sudo_remove() { return 0; }
+log_success() { :; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+get_file_mtime() { echo 0; }
+get_path_size_kb() { echo 0; }
+find() { return 0; }
+mock_run_with_timeout_skipping_var_folders
+
+clean_deep_system
+
+printf 'FILES=%s\n' "$files_cleaned"
+printf 'SIZE_KB=%s\n' "$total_size_cleaned"
+printf 'ROWS=%s\n' "$total_items"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ FILES=[1-9][0-9]* ]] || { echo "$output"; return 1; }
+    [[ "$output" =~ SIZE_KB=[1-9][0-9]* ]] || { echo "$output"; return 1; }
+    [[ "$output" =~ ROWS=[1-9][0-9]* ]] || { echo "$output"; return 1; }
+}

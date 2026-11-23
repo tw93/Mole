@@ -271,6 +271,8 @@ clean_deep_system() {
     # stop once the two-minute section budget is exhausted.
     local system_cleanup_deadline=$((SECONDS + 120))
     local cache_cleaned=0
+    local cache_cleaned_count=0
+    local cache_cleaned_size_kb=0
     local cache_status=0
     start_section_spinner "Cleaning system caches..."
     local -a cache_extra_patterns=("*.tmp")
@@ -286,6 +288,8 @@ clean_deep_system() {
     fi
     if [[ $cache_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
         cache_cleaned=1
+        cache_cleaned_count=$((cache_cleaned_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+        cache_cleaned_size_kb=$((cache_cleaned_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
     elif [[ $cache_rc -ne 0 ]]; then
         cache_status=$cache_rc
     fi
@@ -301,6 +305,8 @@ clean_deep_system() {
             return "$cache_rc"
         elif [[ $cache_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
             cache_cleaned=1
+            cache_cleaned_count=$((cache_cleaned_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+            cache_cleaned_size_kb=$((cache_cleaned_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
         elif [[ $cache_rc -ne 0 && $cache_status -eq 0 ]]; then
             cache_status=$cache_rc
         fi
@@ -311,6 +317,7 @@ clean_deep_system() {
     fi
     if [[ $cache_cleaned -eq 1 ]]; then
         log_success "System caches"
+        mole_add_cleaned_row "$cache_cleaned_count" "$cache_cleaned_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -328,12 +335,14 @@ clean_deep_system() {
         return "$crash_rc"
     fi
     local crash_cleaned=${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0}
+    local crash_cleaned_size_kb=${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}
     stop_section_spinner
     if [[ $crash_rc -ne 0 ]]; then
         report_system_cleanup_incomplete "System crash reports" "$crash_rc"
     fi
     if [[ $crash_rc -eq 0 && $crash_cleaned -gt 0 ]]; then
         log_success "System crash reports"
+        mole_add_cleaned_row "$crash_cleaned" "$crash_cleaned_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -341,6 +350,8 @@ clean_deep_system() {
     fi
     start_section_spinner "Cleaning system logs..."
     local system_logs_cleaned=0
+    local system_logs_count=0
+    local system_logs_size_kb=0
     local system_logs_status=0
     local system_log_rc=0
     safe_sudo_find_delete "/private/var/log" "*.log" "$MOLE_LOG_AGE_DAYS" \
@@ -351,6 +362,8 @@ clean_deep_system() {
     fi
     if [[ $system_log_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
         system_logs_cleaned=1
+        system_logs_count=${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0}
+        system_logs_size_kb=${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}
     elif [[ $system_log_rc -ne 0 ]]; then
         system_logs_status=$system_log_rc
     fi
@@ -360,6 +373,7 @@ clean_deep_system() {
     fi
     if [[ $system_logs_cleaned -eq 1 ]]; then
         log_success "System logs"
+        mole_add_cleaned_row "$system_logs_count" "$system_logs_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -371,6 +385,8 @@ clean_deep_system() {
         "/Library/Logs/CreativeCloud"
     )
     local third_party_logs_cleaned=0
+    local third_party_logs_count=0
+    local third_party_logs_size_kb=0
     local third_party_logs_status=0
     local third_party_log_dir=""
     for third_party_log_dir in "${third_party_log_dirs[@]}"; do
@@ -387,6 +403,8 @@ clean_deep_system() {
         fi
         if [[ $third_party_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
             third_party_logs_cleaned=1
+            third_party_logs_count=$((third_party_logs_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+            third_party_logs_size_kb=$((third_party_logs_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
         elif [[ $third_party_rc -ne 0 && $third_party_logs_status -eq 0 ]]; then
             third_party_logs_status=$third_party_rc
         fi
@@ -406,6 +424,8 @@ clean_deep_system() {
         fi
         if [[ $adobegc_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
             third_party_logs_cleaned=1
+            third_party_logs_count=$((third_party_logs_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+            third_party_logs_size_kb=$((third_party_logs_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
         elif [[ $adobegc_rc -ne 0 && $third_party_logs_status -eq 0 ]]; then
             third_party_logs_status=$adobegc_rc
         fi
@@ -416,6 +436,7 @@ clean_deep_system() {
     fi
     if [[ $third_party_logs_cleaned -eq 1 ]]; then
         log_success "Third-party system logs"
+        mole_add_cleaned_row "$third_party_logs_count" "$third_party_logs_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -729,6 +750,8 @@ clean_deep_system() {
     # re-applies the shared protection and whitelist gates per file.
     start_section_spinner "Scanning stale wallpaper downloads..."
     local idle_tmp_cleaned=0
+    local idle_tmp_count=0
+    local idle_tmp_size_kb=0
     local idle_tmp_status=0
     local idle_tmp_dir=""
     local idle_scan_file=""
@@ -755,6 +778,8 @@ clean_deep_system() {
                 fi
                 if [[ $idle_tmp_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
                     idle_tmp_cleaned=$((idle_tmp_cleaned + 1))
+                    idle_tmp_count=$((idle_tmp_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+                    idle_tmp_size_kb=$((idle_tmp_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
                 elif [[ $idle_tmp_rc -ne 0 && $idle_tmp_status -eq 0 ]]; then
                     idle_tmp_status=$idle_tmp_rc
                 fi
@@ -773,6 +798,7 @@ clean_deep_system() {
     fi
     if [[ $idle_tmp_cleaned -gt 0 ]]; then
         log_success "Stale wallpaper downloads"
+        mole_add_cleaned_row "$idle_tmp_count" "$idle_tmp_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -782,6 +808,8 @@ clean_deep_system() {
     local diag_base="/private/var/db/diagnostics"
     start_section_spinner "Cleaning system diagnostic logs..."
     local diag_cleaned=0
+    local diag_count=0
+    local diag_size_kb=0
     local diag_status=0
     local diag_rc=0
     safe_sudo_find_delete "$diag_base" "*" "$MOLE_LOG_AGE_DAYS" "f" "5" \
@@ -792,6 +820,8 @@ clean_deep_system() {
     fi
     if [[ $diag_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
         diag_cleaned=1
+        diag_count=$((diag_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+        diag_size_kb=$((diag_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
     elif [[ $diag_rc -ne 0 ]]; then
         diag_status=$diag_rc
     fi
@@ -809,6 +839,8 @@ clean_deep_system() {
         fi
         if [[ $diag_rc -eq 0 && ${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0} -gt 0 ]]; then
             diag_cleaned=1
+            diag_count=$((diag_count + MOLE_SAFE_SUDO_FIND_DELETE_COUNT))
+            diag_size_kb=$((diag_size_kb + ${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}))
         elif [[ $diag_rc -ne 0 && $diag_status -eq 0 ]]; then
             diag_status=$diag_rc
         fi
@@ -819,6 +851,7 @@ clean_deep_system() {
     fi
     if [[ $diag_cleaned -eq 1 ]]; then
         log_success "System diagnostic logs"
+        mole_add_cleaned_row "$diag_count" "$diag_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -834,12 +867,14 @@ clean_deep_system() {
         return "$power_rc"
     fi
     local power_cleaned=${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0}
+    local power_size_kb=${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}
     stop_section_spinner
     if [[ $power_rc -ne 0 ]]; then
         report_system_cleanup_incomplete "Power logs" "$power_rc"
     fi
     if [[ $power_rc -eq 0 && $power_cleaned -gt 0 ]]; then
         log_success "Power logs"
+        mole_add_cleaned_row "$power_cleaned" "$power_size_kb"
     fi
     if system_cleanup_budget_reached "$system_cleanup_deadline"; then
         report_system_cleanup_budget_reached
@@ -894,15 +929,19 @@ clean_deep_system() {
         return "$mem_rc"
     fi
     local mem_removed_count=${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-0}
+    local mem_removed_size_kb=${MOLE_SAFE_SUDO_FIND_DELETE_SIZE_KB:-0}
     if [[ $mem_rc -eq 0 && $mem_removed_count -gt 0 ]]; then
         if [[ "${DRY_RUN:-}" != "true" ]]; then
             mem_cleaned=1
             # Only attach the pre-scan size when it covered exactly the same
             # completed candidate set as the deletion helper.
-            if [[ $stats_rc -eq 0 && $file_count -eq $mem_removed_count ]] &&
-                oplog_enabled && [[ "$total_size_kb" -gt 0 ]]; then
+            local mem_op_size_kb="$mem_removed_size_kb"
+            if [[ $mem_op_size_kb -eq 0 && $stats_rc -eq 0 && $file_count -eq $mem_removed_count ]]; then
+                mem_op_size_kb="$total_size_kb"
+            fi
+            if oplog_enabled && [[ "$mem_op_size_kb" -gt 0 ]]; then
                 local size_human
-                size_human=$(bytes_to_human "$((total_size_kb * 1024))")
+                size_human=$(bytes_to_human "$((mem_op_size_kb * 1024))")
                 log_operation "clean" "REMOVED" "$mem_reports_dir" "$mem_removed_count files, $size_human"
             fi
         elif [[ $stats_rc -eq 0 && $file_count -eq $mem_removed_count ]]; then
@@ -918,6 +957,11 @@ clean_deep_system() {
     stop_section_spinner
     if [[ $mem_cleaned -eq 1 ]]; then
         log_success "Memory exception reports"
+        local final_mem_size="$mem_removed_size_kb"
+        if [[ $final_mem_size -eq 0 && $stats_rc -eq 0 && $file_count -eq $mem_removed_count ]]; then
+            final_mem_size="$total_size_kb"
+        fi
+        mole_add_cleaned_row "$mem_removed_count" "$final_mem_size"
     fi
     return 0
 }
