@@ -227,6 +227,20 @@ for target in "$mcp_shared/Cache/data.bin" "$mcp_shared/Code Cache/code.bin"; do
     fi
     validate_path_for_deletion "$target"
 done
+# A cache entry whose name matches a protected app name stays cleanable in any
+# single partition, while a Cache folder nested deeper keeps its protection.
+for target in \
+    "$cache_root/Default/Partitions/codex-browser-app/Cache/Codex" \
+    "$mcp_shared/Cache/Codex"; do
+    if should_protect_path "$target"; then
+        echo "BLOCKED_PROTECTION:$target"
+        exit 1
+    fi
+done
+if ! should_protect_path "$mcp_shared/Local Storage/Cache/Codex"; then
+    echo "NESTED_CACHE_UNPROTECTED"
+    exit 1
+fi
 echo "MCP_TARGETS_VALIDATED"
 EOF
 
