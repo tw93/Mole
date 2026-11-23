@@ -1984,6 +1984,41 @@ SCRIPT
     [ -f "$target_dir/file2.log" ] || return 1
 }
 
+@test "a labeled safe_find_delete shows one row and counts it in the preview and a real run" {
+    local target_dir="$TEST_DIR/find-labeled"
+    mkdir -p "$target_dir"
+    printf 'old log\n' > "$target_dir/a.log"
+    printf 'old log\n' > "$target_dir/b.log"
+    printf 'new log\n' > "$target_dir/new.log"
+    touch -t 202601010000 "$target_dir/a.log" "$target_dir/b.log"
+
+    local mode
+    for mode in dry real; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" MODE="$mode" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+if [[ "$MODE" == dry ]]; then
+    export MOLE_DRY_RUN=1
+    DRY_RUN=true
+fi
+safe_remove() { printf 'REMOVE:%s\n' "${1##*/}"; }
+rc=0
+safe_find_delete "$TARGET_DIR" "*.log" 7 f "Old test logs" || rc=$?
+printf 'RC=%s FILES=%s ROWS=%s\n' "$rc" "$files_cleaned" "$total_items"
+SCRIPT
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        [[ "$output" == *"Old test logs"* ]] || { echo "$output"; return 1; }
+        [[ "$output" == *"RC=0 FILES=2 ROWS=1"* ]] || { echo "$output"; return 1; }
+        [[ "$output" != *"REMOVE:new.log"* ]] || return 1
+        if [[ "$mode" == dry ]]; then
+            [[ "$output" != *"REMOVE:"* ]] || return 1
+        else
+            [[ "$output" == *"REMOVE:a.log"* && "$output" == *"REMOVE:b.log"* ]] || { echo "$output"; return 1; }
+        fi
+    done
+}
+
 @test "the V1.36.3 aged sweep of ~/.claude/projects keeps every transcript folder" {
     local projects="$HOME/.claude/projects"
     local control="$TEST_DIR/aged-control"

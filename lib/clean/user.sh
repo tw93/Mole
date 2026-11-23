@@ -1088,7 +1088,7 @@ clean_support_app_data() {
     local crash_reporter_dir="$HOME/Library/Application Support/CrashReporter"
     if [[ -d "$crash_reporter_dir" && ! -L "$crash_reporter_dir" ]]; then
         local crash_reporter_rc=0
-        safe_find_delete "$crash_reporter_dir" "*" "$support_age_days" "f" || crash_reporter_rc=$?
+        safe_find_delete "$crash_reporter_dir" "*" "$support_age_days" "f" "Crash reporter data" || crash_reporter_rc=$?
         if mole_rc_signal "$crash_reporter_rc"; then
             return "$crash_reporter_rc"
         fi

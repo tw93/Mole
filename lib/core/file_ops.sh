@@ -3539,12 +3539,16 @@ _mole_delete_log() {
 # Safe Find and Delete Operations
 # ============================================================================
 
-# Safe file discovery and deletion with depth and age limits
+# Safe file discovery and deletion with depth and age limits. With a label,
+# the completed matches go through safe_clean, so the preview and a real run
+# both show one row and count it in the total. Without one no row is shown,
+# the preview still counts the matches and a real run does not.
 safe_find_delete() {
     local base_dir="$1"
     local pattern="$2"
     local age_days="${3:-7}"
     local type_filter="${4:-f}"
+    local label="${5:-}"
 
     local pending_clean_cancel="${MOLE_CLEAN_CANCEL_STATUS:-0}"
     if [[ "${MOLE_CURRENT_COMMAND:-}" == "clean" ]] && mole_rc_timeout_or_signal "$pending_clean_cancel"; then
@@ -3598,6 +3602,17 @@ safe_find_delete() {
 
     # Iterate only a completed result set so a timeout cannot authorize
     # deletion of the partial prefix.
+    if [[ -n "$label" ]] && declare -f safe_clean > /dev/null 2>&1; then
+        local -a labeled_matches=()
+        while IFS= read -r -d '' match; do
+            labeled_matches+=("$match")
+        done < "$scan_file"
+        rm -f -- "$scan_file" 2> /dev/null || true # SAFE: exact tracked temp file created above
+        [[ ${#labeled_matches[@]} -gt 0 ]] || return 0
+        local labeled_rc=0
+        safe_clean "${labeled_matches[@]}" "$label" || labeled_rc=$?
+        return "$labeled_rc"
+    fi
     # Per-caller whitelist gates were missed in past releases (see #710, #724,
     # #738, #744, #757); enforcing here makes the protection structural so
     # new clean_* functions get whitelist enforcement for free.

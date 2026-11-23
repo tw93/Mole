@@ -6351,7 +6351,7 @@ clean_dev_misc() {
     # Cursor Agent session logs (versions cleaned separately in clean_dev_ai_agents)
     if [[ -d "$HOME/.local/share/cursor-agent" ]]; then
         local cursor_logs_rc=0
-        safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$MOLE_LOG_AGE_DAYS" "f" || cursor_logs_rc=$?
+        safe_find_delete "$HOME/.local/share/cursor-agent" "*.log" "$MOLE_LOG_AGE_DAYS" "f" "Cursor Agent logs" || cursor_logs_rc=$?
         if mole_rc_signal "$cursor_logs_rc"; then
             return "$cursor_logs_rc"
         fi
@@ -6359,7 +6359,7 @@ clean_dev_misc() {
     local cursor_worker_dir="$HOME/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker"
     if [[ -d "$cursor_worker_dir" && ! -L "$cursor_worker_dir" ]]; then
         local cursor_worker_logs_rc=0
-        safe_find_delete "$cursor_worker_dir" "cursor-agent-worker-*.log" "$MOLE_LOG_AGE_DAYS" "f" || cursor_worker_logs_rc=$?
+        safe_find_delete "$cursor_worker_dir" "cursor-agent-worker-*.log" "$MOLE_LOG_AGE_DAYS" "f" "Cursor Agent worker logs" || cursor_worker_logs_rc=$?
         if mole_rc_signal "$cursor_worker_logs_rc"; then
             return "$cursor_worker_logs_rc"
         fi
