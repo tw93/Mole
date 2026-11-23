@@ -380,6 +380,60 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_user_essentials leaves the cache root of a running Chromium browser (#2094)" {
+    # Chromium keeps a profile's live HTTP cache at the same path under Caches
+    # as the profile under Application Support, whose SingletonLock names the
+    # browser's pid while it runs.
+    local test_home="$HOME/chromium-cache-home"
+    local support="$test_home/Library/Application Support"
+    mkdir -p \
+        "$test_home/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache" \
+        "$test_home/Library/Caches/Microsoft Edge/Default/Cache" \
+        "$test_home/Library/Caches/Arc/User Data/Default/Cache" \
+        "$test_home/Library/Caches/Vivaldi/Default/Cache" \
+        "$test_home/Library/Caches/ordinary-app/junk" \
+        "$support/BraveSoftware/Brave-Browser" "$support/Microsoft Edge" \
+        "$support/Arc/User Data" "$support/Vivaldi"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+support="$HOME/Library/Application Support"
+# Brave's lock sits one folder below its vendor folder and Edge's at the top;
+# Arc's cannot be read; Vivaldi's was left by a crash and names no process.
+ln -s "$(hostname)-$$" "$support/BraveSoftware/Brave-Browser/SingletonLock"
+ln -s "$(hostname)-$$" "$support/Microsoft Edge/SingletonLock"
+ln -s "garbage" "$support/Arc/User Data/SingletonLock"
+ln -s "$(hostname)-99999999" "$support/Vivaldi/SingletonLock"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+safe_clean_guarded() {
+    shift
+    safe_clean "$@"
+}
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/BraveSoftware"* ]] || return 1
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/Microsoft Edge"* ]] || return 1
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/Arc"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/Vivaldi"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/ordinary-app"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials keeps Google identity and Clearcut state (#1607)" {
     # The generic cache sweep reaches these dotless names. Drive the real
     # safe_clean_guarded path so should_protect_path at bin/clean.sh:1002

@@ -205,6 +205,34 @@ _user_cache_deno_delete_guard() {
     return 0
 }
 
+# Chromium keeps a profile's live HTTP cache at the same path under
+# ~/Library/Caches as the profile under Application Support (Brave's
+# BraveSoftware/Brave-Browser, Microsoft Edge, Vivaldi, Arc/User Data,
+# Dia/User Data, Chromium), and holds a SingletonLock in its user-data folder
+# while it runs. The live-owner gate in file_ops.sh asks only about reverse-DNS
+# cache names, so for a plain one this walks the cache root and the two levels
+# below it and asks the lock at the same place under Application Support (the
+# one to three levels app_support_path_held_by_singleton reads), listing no
+# Application Support folder. Returns 0 while a lock names a live pid or cannot
+# be read.
+_user_cache_root_held_by_singleton() {
+    local cache_root="${1%/}"
+    local caches="$HOME/Library/Caches"
+    case "$cache_root" in
+        "$caches"/?*) ;;
+        *) return 1 ;;
+    esac
+    local first="${cache_root#"$caches"/}"
+    [[ "${first%%/*}" != *.* ]] || return 1
+    local support="$HOME/Library/Application Support" folder
+    for folder in "$cache_root" "$cache_root"/*/ "$cache_root"/*/*/; do
+        [[ -d "$folder" ]] || continue
+        folder="${folder%/}"
+        app_support_dir_in_use "$support/${folder#"$caches"/}" && return 0
+    done
+    return 1
+}
+
 # Log globs must never enumerate through redirected roots. Bind the directories
 # before enumeration and again after sizing and at the last deletion boundary.
 _user_log_delete_guard() {
@@ -299,6 +327,13 @@ clean_user_essentials() {
             case "${user_cache_target##*/}" in
                 Google | mbx) continue ;;
             esac
+            # Another Chromium browser keeps its live cache in a plain folder
+            # here the way Chrome does under Google; leave it while that
+            # browser runs and sweep it as before once it quits.
+            if _user_cache_root_held_by_singleton "$user_cache_target"; then
+                debug_log "User app cache: kept ${user_cache_target##*/}, its app is running"
+                continue
+            fi
             case "$deno_cache_root" in
                 "$user_cache_target" | "$user_cache_target"/*) continue ;;
             esac
