@@ -236,3 +236,41 @@ SCRIPT
     [[ "$output" != *"stopped"* ]] || { echo "$output"; return 1; }
     [[ "$output" != *"SAFE_CLEAN"* ]] || { echo "$output"; return 1; }
 }
+
+@test "stale puppeteer profiles are cleaned, in-use and fresh profiles survive" {
+    make_process_stubs
+    : > "$HOME/kill.trace"
+
+    mkdir -p "$HOME/tmproot/puppeteer_dev_chrome_profile-stale" \
+        "$HOME/tmproot/puppeteer_dev_chrome_profile-live" \
+        "$HOME/tmproot/puppeteer_dev_chrome_profile-fresh" \
+        "$HOME/tmproot/puppeteer_dev_firefox_profile-stale"
+    touch -t 202601010000 "$HOME/tmproot/puppeteer_dev_chrome_profile-stale"
+    touch -t 202601010000 "$HOME/tmproot/puppeteer_dev_chrome_profile-live"
+    touch -t 202601010000 "$HOME/tmproot/puppeteer_dev_firefox_profile-stale"
+
+    run_cleanup false
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"SAFE_CLEAN"*"puppeteer_dev_chrome_profile-stale"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"SAFE_CLEAN"*"puppeteer_dev_firefox_profile-stale"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SAFE_CLEAN"*"puppeteer_dev_chrome_profile-live"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SAFE_CLEAN"*"puppeteer_dev_chrome_profile-fresh"* ]] || { echo "$output"; return 1; }
+}
+
+@test "kills only puppeteer automation processes whose owner is gone" {
+    make_process_stubs
+    : > "$HOME/kill.trace"
+    cat > "$HOME/bin/ps" <<'SCRIPT'
+#!/bin/bash
+printf '%s\n' \
+    '  910     1 01-20:00:00 Tue Sep  1 02:03:04 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/puppeteer_dev_chrome_profile-old' \
+    '  911   888 06-20:00:00 Wed Sep  2 03:04:05 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/puppeteer_dev_chrome_profile-live'
+SCRIPT
+    chmod +x "$HOME/bin/ps"
+
+    run_cleanup false
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"stopped 1 processes"* ]] || { echo "$output"; return 1; }
+    grep -q 'KILL -TERM 910' "$HOME/kill.trace" || return 1
+    ! grep -q ' 911' "$HOME/kill.trace" || return 1
+}

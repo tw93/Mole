@@ -4262,7 +4262,7 @@ _automation_browser_process_records() {
             command = $9
             for (i = 10; i <= NF; i++) command = command " " $i
         }
-        command ~ /playwright_chromiumdev_profile/ {
+        command ~ /(playwright_chromiumdev_profile|puppeteer_dev_chrome_profile|puppeteer_dev_firefox_profile)/ {
             print $1 "|" $4 " " $5 " " $6 " " $7 " " $8
         }'
 }
@@ -4308,7 +4308,9 @@ clean_dev_automation_browsers() {
     if [[ -n "$tmpdir" ]]; then
         local d now age_hours
         now=$(date +%s)
-        for d in "$tmpdir"playwright_chromiumdev_profile-*; do
+        for d in "$tmpdir"playwright_chromiumdev_profile-* \
+            "$tmpdir"puppeteer_dev_chrome_profile-* \
+            "$tmpdir"puppeteer_dev_firefox_profile-*; do
             [[ -d "$d" ]] || continue
             age_hours=$(((now - $("$STAT_BSD" -f %m "$d" 2> /dev/null || echo "$now")) / 3600))
             [[ "$age_hours" -ge 2 ]] || continue
