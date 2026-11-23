@@ -1921,6 +1921,34 @@ EOF
     [[ "$output" != *"/2026.04.20-newest|"* ]]
 }
 
+@test "clean_dev_ai_agents prunes old versions in Cursor Desktop embedded agent" {
+    local embedded_root="$HOME/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/share/cursor-agent/versions"
+    local bin_dir="$HOME/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/bin"
+    mkdir -p "$embedded_root" "$bin_dir"
+
+    mkdir -p "$embedded_root/2026.08.01-old" "$embedded_root/2026.09.01-prev" "$embedded_root/2026.10.01-active"
+    touch -t 202608010000 "$embedded_root/2026.08.01-old"
+    touch -t 202609010000 "$embedded_root/2026.09.01-prev"
+    touch -t 202610010000 "$embedded_root/2026.10.01-active"
+    : > "$embedded_root/2026.10.01-active/cursor-agent"
+    ln -s "$embedded_root/2026.10.01-active/cursor-agent" "$bin_dir/cursor-agent"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+_mole_container_cache_has_open_handle() { return 1; }
+note_activity() { :; }
+safe_clean() { echo "$1|$2"; }
+clean_dev_ai_agents
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"/2026.08.01-old|Cursor Agent old version"* ]] || return 1
+    [[ "$output" != *"/2026.09.01-prev|"* ]] || return 1
+    [[ "$output" != *"/2026.10.01-active|"* ]]
+}
+
 @test "clean_dev_ai_agents skips cleanup entirely when the active symlink is broken" {
     local claude_root="$HOME/.local/share/claude/versions"
     local bin_dir="$HOME/.local/bin"
@@ -2080,6 +2108,25 @@ EOF
     [[ "$output" != *"$HOME/Library/Application Support/Claude/pending-uploads"* ]] || return 1
     [[ "$output" == *"$HOME/.cache/opencode"* ]] || return 1
     [[ "$output" != *"$HOME/.claude/shell-snapshots"* ]]
+}
+
+@test "clean_dev_misc cleans stale Cursor agent worker logs older than retention" {
+    local worker_dir="$HOME/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker"
+    mkdir -p "$worker_dir"
+    touch -t 202601010000 "$worker_dir/cursor-agent-worker-old.log"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_LOG_AGE_DAYS=7 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+safe_clean() { :; }
+safe_find_delete() { echo "FIND:$1|$2|$3"; }
+clean_service_worker_cache() { :; }
+clean_dev_misc
+EOF
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"FIND:$worker_dir|cursor-agent-worker-*.log|7"* ]]
 }
 
 @test "developer cleanup stops after a Cursor log scan signal but not a timeout" {
