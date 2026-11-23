@@ -1225,6 +1225,47 @@ _adobe_app_running() {
         -f '^/Applications/Adobe [^/]+(/Adobe [^/]+)?[.]app/Contents/MacOS/'
 }
 
+# Figma Desktop (Electron) stores its Chromium web, shader, and V8 bytecode
+# caches under ~/Library/Application Support/Figma/DesktopProfile/v*/.
+# Modern macOS versions no longer store substantial caches in
+# ~/Library/Caches/com.figma.Desktop, leaving hundreds of megabytes of
+# regenerable cache uncollected. Preserve durable state (Cookies, Local Storage,
+# Preferences, settings.json) and guard deletion while Figma is running.
+clean_figma_desktop_caches() {
+    mole_safe_clean_app_cache "Figma" ~/Library/Caches/com.figma.Desktop/* "Figma cache"
+    mole_safe_clean_app_cache "Figma" ~/Library/Caches/com.figma.agent/* "Figma Agent cache"
+
+    local desktop_profile_root="$HOME/Library/Application Support/Figma/DesktopProfile"
+    [[ -d "$desktop_profile_root" ]] || return 0
+    local physical_root
+    physical_root=$(cd -P "$desktop_profile_root" 2> /dev/null && pwd -P) || return 0
+    if [[ "$physical_root" != "$desktop_profile_root" ]]; then
+        debug_log "Refusing symlinked Figma profile root: $desktop_profile_root -> $physical_root"
+        return 0
+    fi
+
+    local -a cache_targets=()
+    local profile candidate physical_leaf leaf
+    for profile in "$desktop_profile_root"/*; do
+        [[ -d "$profile" && ! -L "$profile" ]] || continue
+        for leaf in "Cache" "Code Cache" "GPUCache" "DawnGraphiteCache" "DawnWebGPUCache"; do
+            candidate="${profile%/}/$leaf"
+            [[ -d "$candidate" && ! -L "$candidate" ]] || continue
+            physical_leaf=$(cd -P "$candidate" 2> /dev/null && pwd -P) || continue
+            if [[ "$physical_leaf" != "$candidate" ]]; then
+                debug_log "Refusing symlinked Figma cache leaf: $candidate -> $physical_leaf"
+                continue
+            fi
+            if mole_cleanup_targets_exist "$physical_leaf"/*; then
+                cache_targets+=("$physical_leaf"/*)
+            fi
+        done
+    done
+    [[ ${#cache_targets[@]} -gt 0 ]] || return 0
+
+    mole_safe_clean_app_cache "Figma" "${cache_targets[@]}" "Figma desktop cache"
+}
+
 # Design and creative tools.
 clean_design_tools() {
     safe_clean ~/Library/Caches/com.bohemiancoding.sketch3/* "Sketch cache"
@@ -1236,7 +1277,7 @@ clean_design_tools() {
     _dev_safe_clean_process_guarded _adobe_app_running "Adobe" "Adobe app caches" \
         ~/Library/Caches/com.adobe.*/* "Adobe app caches" || adobe_rc=$?
     [[ $adobe_rc -le 1 ]] || return "$adobe_rc"
-    safe_clean ~/Library/Caches/com.figma.Desktop/* "Figma cache"
+    clean_figma_desktop_caches
     local adobe_media_rc=0
     _dev_safe_clean_process_guarded _adobe_media_cache_running "Adobe" "Adobe media cache files" \
         ~/Library/Application\ Support/Adobe/Common/Media\ Cache\ Files/* "Adobe media cache files" || adobe_media_rc=$?
