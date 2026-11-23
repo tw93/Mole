@@ -158,6 +158,38 @@ EOF
     assert_output_not_contains "STILL_PRESENT:"
 }
 
+@test "clean_codex_desktop_caches previews one row per cache kind across every partition" {
+    run env HOME="$HOME/codex-cache-rows" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+cache_root="$HOME/Library/Caches/Codex"
+for profile in \
+    "Default" \
+    "codex-browser-app" \
+    "Default/Partitions/codex-browser-app" \
+    "Default/Partitions/codex-mcp-app-sandbox%3Ashared" \
+    "Default/Partitions/codex-mcp-app-sandbox%3Aconnection-1"; do
+    mkdir -p "$cache_root/$profile/Cache" "$cache_root/$profile/Code Cache"
+    echo data > "$cache_root/$profile/Cache/entry.bin"
+    echo data > "$cache_root/$profile/Code Cache/entry.bin"
+done
+
+source "$PROJECT_ROOT/bin/clean.sh"
+pgrep() { return 1; }
+DRY_RUN=true
+MOLE_DRY_RUN=1
+rows=$(clean_codex_desktop_caches 2>&1)
+printf 'ROWS_CACHE=%s;\n' "$(printf '%s\n' "$rows" | grep -c 'Codex Desktop Cache' || true)"
+printf 'ROWS_CODE_CACHE=%s;\n' "$(printf '%s\n' "$rows" | grep -c 'Codex Desktop Code Cache' || true)"
+remaining=$(find "$cache_root" -name entry.bin | wc -l | tr -d ' ')
+printf 'REMAINING=%s\n' "$remaining"
+EOF
+
+    assert_run_success
+    assert_output_contains "ROWS_CACHE=1;"
+    assert_output_contains "ROWS_CODE_CACHE=1;"
+    assert_output_contains "REMAINING=10"
+}
+
 @test "clean_codex_desktop_caches cleans dynamic MCP sandbox partitions and preserves durable state" {
     run env HOME="$HOME/codex-cache-mcp" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

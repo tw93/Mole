@@ -4696,24 +4696,28 @@ clean_codex_desktop_caches() {
     else
         profiles+=("$cache_root/Default/Partitions/codex-browser-app")
     fi
-    local -a leaves=("Cache" "Code Cache")
-    local -a cleanable_physical_leaves=()
-    local -a cleanable_leaf_labels=()
+    # Every profile and partition shares one row per cache kind, so a Mac
+    # with many MCP sandboxes still reads as two rows, not one per partition.
+    local -a cache_targets=()
+    local -a code_cache_targets=()
     local profile leaf physical_leaf
     for profile in "${profiles[@]}"; do
-        for leaf in "${leaves[@]}"; do
+        for leaf in "Cache" "Code Cache"; do
             physical_leaf=""
             if physical_leaf=$(codex_staging_physical_path "$profile/$leaf" "$cache_root" any); then
                 if mole_cleanup_targets_exist "$physical_leaf"/*; then
-                    cleanable_physical_leaves+=("$physical_leaf")
-                    cleanable_leaf_labels+=("$leaf")
+                    if [[ "$leaf" == "Cache" ]]; then
+                        cache_targets+=("$physical_leaf"/*)
+                    else
+                        code_cache_targets+=("$physical_leaf"/*)
+                    fi
                 fi
             else
                 debug_log "Codex Desktop cache leaf skipped: $profile/$leaf"
             fi
         done
     done
-    [[ ${#cleanable_physical_leaves[@]} -gt 0 ]] || return 0
+    [[ ${#cache_targets[@]} -gt 0 || ${#code_cache_targets[@]} -gt 0 ]] || return 0
 
     local process_state=0
     codex_desktop_process_state || process_state=$?
@@ -4727,15 +4731,18 @@ clean_codex_desktop_caches() {
         return 0
     fi
 
-    local cleanable_index
-    for ((cleanable_index = 0; cleanable_index < ${#cleanable_physical_leaves[@]}; cleanable_index++)); do
-        physical_leaf="${cleanable_physical_leaves[$cleanable_index]}"
-        leaf="${cleanable_leaf_labels[$cleanable_index]}"
+    if [[ ${#cache_targets[@]} -gt 0 ]]; then
         _codex_desktop_safe_clean_guarded \
             "Codex Desktop caches" \
-            "$physical_leaf"/* \
-            "Codex Desktop $leaf" || return 0
-    done
+            "${cache_targets[@]}" \
+            "Codex Desktop Cache" || return 0
+    fi
+    if [[ ${#code_cache_targets[@]} -gt 0 ]]; then
+        _codex_desktop_safe_clean_guarded \
+            "Codex Desktop caches" \
+            "${code_cache_targets[@]}" \
+            "Codex Desktop Code Cache" || return 0
+    fi
 }
 
 codex_sparkle_updater_running() {
