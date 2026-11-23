@@ -1194,6 +1194,7 @@ clean_ai_apps() {
     safe_clean ~/Library/Caches/com.anthropic.claudefordesktop/* "Claude desktop cache"
     safe_clean ~/Library/Logs/Claude/* "Claude logs"
     safe_clean ~/Library/Caches/com.lmstudio.lmstudio/* "LM Studio cache"
+    safe_clean ~/Library/Caches/com.google.GeminiMacOS/* "Gemini desktop cache"
     # LM Studio <=0.3.5 used ~/.cache/lm-studio as its complete home directory,
     # including models, presets, chats, and runtime state. LM Studio moved new
     # installs to ~/.lmstudio in 0.3.6, but existing data is not migrated, so

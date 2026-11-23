@@ -889,7 +889,25 @@ EOF
     [[ "$output" == *"Claude desktop cache"* ]] || return 1
     [[ "$output" != *"Google Clearcut logs"* ]] || return 1
     [[ "$output" == *"LM Studio cache"* ]] || return 1
+    [[ "$output" == *"Gemini desktop cache"* ]] || return 1
     [[ "$output" != *"Codex"* ]]
+}
+
+@test "clean_ai_apps targets Gemini desktop cache" {
+    mkdir -p "$HOME/Library/Caches/com.google.GeminiMacOS"
+    echo "cache" > "$HOME/Library/Caches/com.google.GeminiMacOS/Cache.db"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { printf 'CLEAN:%s\n' "${@:1:$#-1}"; }
+note_activity() { :; }
+clean_ai_apps
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"CLEAN:$HOME/Library/Caches/com.google.GeminiMacOS/Cache.db"* ]] || return 1
 }
 
 @test "clean_ai_apps targets app cache but never the legacy LM Studio home" {
