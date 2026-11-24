@@ -213,8 +213,10 @@ _user_cache_deno_delete_guard() {
 # cache names, so for a plain one this walks the cache root and the two levels
 # below it and asks the lock at the same place under Application Support (the
 # one to three levels app_support_path_held_by_singleton reads), listing no
-# Application Support folder. Returns 0 while a lock names a live pid or cannot
-# be read.
+# Application Support folder. It descends only where the Application Support
+# mirror exists and never through a link, so a large cache such as Yarn's or a
+# folder linked to another volume costs one stat. Returns 0 while a lock names
+# a live pid or cannot be read.
 _user_cache_root_held_by_singleton() {
     local cache_root="${1%/}"
     local caches="$HOME/Library/Caches"
@@ -224,11 +226,23 @@ _user_cache_root_held_by_singleton() {
     esac
     local first="${cache_root#"$caches"/}"
     [[ "${first%%/*}" != *.* ]] || return 1
-    local support="$HOME/Library/Application Support" folder
-    for folder in "$cache_root" "$cache_root"/*/ "$cache_root"/*/*/; do
-        [[ -d "$folder" ]] || continue
-        folder="${folder%/}"
-        app_support_dir_in_use "$support/${folder#"$caches"/}" && return 0
+    local support="$HOME/Library/Application Support"
+    local -a lock_level=("$cache_root") lock_next=()
+    local depth folder mirror child
+    for depth in 0 1 2; do
+        lock_next=()
+        for folder in "${lock_level[@]}"; do
+            [[ -d "$folder" && ! -L "$folder" ]] || continue
+            mirror="$support/${folder#"$caches"/}"
+            [[ -d "$mirror" ]] || continue
+            app_support_dir_in_use "$mirror" && return 0
+            [[ $depth -lt 2 ]] || continue
+            for child in "$folder"/*/; do
+                lock_next+=("${child%/}")
+            done
+        done
+        [[ ${#lock_next[@]} -gt 0 ]] || return 1
+        lock_level=("${lock_next[@]}")
     done
     return 1
 }

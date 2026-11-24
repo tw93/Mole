@@ -461,6 +461,57 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "the User app cache guard keeps a Deno refusal a batch stop (#2094)" {
+    # The lock check skips one root through the skip path; a Deno refusal must
+    # still leave it empty, so safe_clean_guarded stops the batch with 75.
+    local test_home="$HOME/chromium-deno-guard-home"
+    mkdir -p "$test_home/Library/Caches/ordinary-app"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+_user_cache_deno_delete_guard() { return 1; }
+_user_cache_root_held_by_singleton() { echo "LOCK_ASKED"; return 0; }
+rc=0
+_MOLE_SAFE_CLEAN_SKIP_PATH="unset"
+_user_cache_delete_guard "$HOME/Library/Caches/ordinary-app" || rc=$?
+printf 'GUARD=%s|%s|\n' "$rc" "$_MOLE_SAFE_CLEAN_SKIP_PATH"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GUARD=1||"* ]] || return 1
+    [[ "$output" != *"LOCK_ASKED"* ]] || return 1
+    rm -rf "$test_home"
+}
+
+@test "the Chromium lock walk follows no link and skips folders with no Application Support mirror (#2094)" {
+    local test_home="$HOME/chromium-walk-home"
+    local caches="$test_home/Library/Caches" support="$test_home/Library/Application Support"
+    mkdir -p "$caches/LinkedApp" "$caches/Yarn/v6/npm-pkg" "$test_home/elsewhere/Profile" \
+        "$support/LinkedApp/Profile" "$support/Yarn"
+    ln -s "$test_home/elsewhere/Profile" "$caches/LinkedApp/Profile"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+app_support_dir_in_use() { echo "ASKED:${1#"$HOME/Library/Application Support/"}"; return 1; }
+for root in LinkedApp Yarn; do
+    rc=0
+    _user_cache_root_held_by_singleton "$HOME/Library/Caches/$root" || rc=$?
+    echo "ROOT=$root|$rc"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ROOT=LinkedApp|1"* && "$output" == *"ROOT=Yarn|1"* ]] || return 1
+    [[ "$output" == *"ASKED:LinkedApp"* && "$output" == *"ASKED:Yarn"* ]] || return 1
+    # A symlinked profile and a folder with no mirror are never asked.
+    [[ "$output" != *"ASKED:LinkedApp/Profile"* && "$output" != *"ASKED:Yarn/v6"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials keeps Google identity and Clearcut state (#1607)" {
     # The generic cache sweep reaches these dotless names. Drive the real
     # safe_clean_guarded path so should_protect_path at bin/clean.sh:1002
