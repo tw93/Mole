@@ -1707,10 +1707,13 @@ clean_dev_nix() {
     clean_tool_cache "Nix store garbage" "/nix/store" run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" nix-store --gc || return $?
 }
 # Cloud CLI caches. ~/.aws/cli/cache stays: it holds the temporary credentials
-# of assumed roles and SSO sessions, and removing it signs the user out.
+# of assumed roles and SSO sessions, and removing it signs the user out. For
+# the same reason only kubectl's own discovery and HTTP caches go from
+# ~/.kube/cache: credential plugins keep their tokens beside them (kubelogin's
+# oidc-login, Azure kubelogin, aws-iam-authenticator).
 clean_dev_cloud() {
     clean_github_cli_cache || return $?
-    safe_clean ~/.kube/cache/* "Kubernetes cache"
+    safe_clean ~/.kube/cache/discovery ~/.kube/cache/http "Kubernetes cache"
     safe_clean ~/.local/share/containers/storage/tmp/* "Container storage temp"
     safe_clean ~/.config/gcloud/logs/* "Google Cloud logs"
     safe_clean ~/.azure/logs/* "Azure CLI logs"

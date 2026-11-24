@@ -440,6 +440,38 @@ EOF
     [[ "$output" != *"/.aws/"* && "$output" != *"AWS CLI"* ]] || return 1
 }
 
+@test "clean_dev_cloud keeps kubectl credential plugin caches (#2096)" {
+    # kubelogin, Azure kubelogin and aws-iam-authenticator keep tokens and
+    # cached credentials beside kubectl's own discovery and HTTP caches.
+    local test_home="$HOME/kube-cache-home"
+    local kube_cache="$test_home/.kube/cache"
+    mkdir -p "$kube_cache/discovery" "$kube_cache/http" "$kube_cache/oidc-login" \
+        "$kube_cache/kubelogin" "$kube_cache/aws-iam-authenticator"
+
+    run env HOME="$test_home" PATH="/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+clean_github_cli_cache() { :; }
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+clean_dev_cloud
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"CLEAN=Kubernetes cache|$kube_cache/discovery"* ]] || return 1
+    [[ "$output" == *"CLEAN=Kubernetes cache|$kube_cache/http"* ]] || return 1
+    [[ "$output" != *"oidc-login"* && "$output" != *"kubelogin"* ]] || return 1
+    [[ "$output" != *"aws-iam-authenticator"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_dev_cloud stops on GitHub CLI probe or clear cancellation" {
     local failure_phase failure_rc
     for failure_phase in help clear; do
