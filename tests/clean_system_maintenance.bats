@@ -403,6 +403,66 @@ EOF
     [[ "$output" == *"SUCCESS:Stale wallpaper downloads"* ]] || return 1
 }
 
+@test "clean_deep_system adds the rows its privileged sweeps print to the run totals (#2092)" {
+    run /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/system.sh"
+
+IDLE_DIR="/private/var/folders/zz/abcdef/T/com.apple.idleassetsd"
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    if [[ "$1" == "find" && "$2" == "/private/var/folders" ]]; then
+        printf '%s\0' "$IDLE_DIR"
+    fi
+    return 0
+}
+safe_sudo_find_delete() {
+    MOLE_SAFE_SUDO_FIND_DELETE_COUNT=0
+    MOLE_SAFE_SUDO_FIND_DELETE_KB=0
+    case "$1|$2" in
+        "/Library/Caches|*.cache") MOLE_SAFE_SUDO_FIND_DELETE_COUNT=4 MOLE_SAFE_SUDO_FIND_DELETE_KB=40 ;;
+        "/Library/Logs/DiagnosticReports|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=5 MOLE_SAFE_SUDO_FIND_DELETE_KB=50 ;;
+        "/Library/Logs/Adobe|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=10 ;;
+        "/Library/Logs/CreativeCloud|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=20 ;;
+        "/Library/Logs|adobegc.log") MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=1 ;;
+        "/private/var/db/powerlog|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=6 MOLE_SAFE_SUDO_FIND_DELETE_KB=600 ;;
+        "/private/var/log|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=3 MOLE_SAFE_SUDO_FIND_DELETE_KB=300 ;;
+        "$IDLE_DIR|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2097152 ;;
+        "/private/var/db/diagnostics|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2048 ;;
+        "/private/var/db/DiagnosticPipeline|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=100 ;;
+        */MemoryLimitViolations"|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=64 ;;
+    esac
+    return 0
+}
+safe_sudo_remove() { return 1; }
+show_large_active_powerlog_notice() { :; }
+log_success() { echo "SUCCESS:$1"; }
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+get_file_mtime() { echo 0; }
+get_path_size_kb() { echo 0; }
+find() { return 0; }
+mock_run_with_timeout_skipping_var_folders
+
+files_cleaned=0
+total_size_cleaned=0
+total_items=0
+clean_deep_system
+printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local row
+    for row in "System caches" "System crash reports" "System logs" "Third-party system logs" \
+        "Stale wallpaper downloads" "System diagnostic logs" "Power logs" "Memory exception reports"; do
+        [[ "$output" == *"SUCCESS:$row"* ]] || { echo "MISSING:$row"; return 1; }
+    done
+    # Eight rows: 4 + 5 + 3 + (1 + 2 + 1) + 2 + (2 + 1) + 6 + 1 = 28 files and
+    # 40 + 50 + 300 + (10 + 20 + 1) + 2097152 + (2048 + 100) + 600 + 64 = 2100385 KB.
+    [[ "$output" == *"TOTALS=28:2100385:8"* ]] || { echo "$output"; return 1; }
+}
+
 @test "clean_deep_system does not report idleassetsd success when no stale download exists (#1253)" {
     run /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
