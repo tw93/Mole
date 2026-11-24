@@ -13,6 +13,11 @@ updates:
       github-actions:
         patterns:
           - "*"
+    ignore:
+      # v32 installs no Nix on Intel macOS ("no binary distribution of Nix
+      # for your platform"), which the macos-15-intel Package job needs.
+      - dependency-name: "cachix/install-nix-action"
+        versions: [">= 32"]
 
   - package-ecosystem: "gomod"
     directory: "/"
