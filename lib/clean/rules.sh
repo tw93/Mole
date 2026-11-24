@@ -353,7 +353,8 @@ Developer tools|Hex cache|$HOME/.hex/cache|mix,elixir,erl,beam.smp
 Developer tools|opam download cache|$HOME/.opam/download-cache|opam
 Developer tools|Gradle notifications|$HOME/.gradle/notifications|$gradle
 Developer tools|Terraform plugin cache|$c/terraform|terraform
-Developer tools|kubectl cache|$HOME/.kube/cache|kubectl,k9s
+Developer tools|kubectl cache|$HOME/.kube/cache/discovery|kubectl,k9s
+Developer tools|kubectl cache|$HOME/.kube/cache/http|kubectl,k9s
 Developer tools|Docker Buildx cache|$HOME/.docker/buildx/cache|docker,docker-buildx,buildx,buildkitd
 Developer tools|Google Cloud logs|$MOLE_CONFIG_HOME/gcloud/logs|gcloud,cmd:gcloud[.]py
 Developer tools|Azure CLI logs|$HOME/.azure/logs|az,cmd:azure[.]cli

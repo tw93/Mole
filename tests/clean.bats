@@ -73,6 +73,21 @@ make_cache() {
     [[ "$output" == *"mesa_shader_cache=kept"* && "$output" == *"fontconfig=ok"* ]]
 }
 
+@test "kubectl cleans discovery and HTTP caches but keeps credential plugin entries" {
+    local cache="$HOME/.kube/cache"
+    make_cache "$cache/discovery"
+    make_cache "$cache/http"
+    make_cache "$cache/kubelogin"
+    touch "$cache/plugin-token"
+
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    [ -f "$cache/kubelogin/entry/blob" ]
+    [ -f "$cache/plugin-token" ]
+    [ ! -e "$cache/discovery/entry" ]
+    [ ! -e "$cache/http/entry" ]
+}
+
 @test "only a Flatpak app's cache folder becomes a rule, never its data" {
     mkdir -p "$HOME/.var/app/org.test.App/cache" "$HOME/.var/app/org.test.App/data" "$HOME/.var/app/org.nocache.App/config"
     mole_run clean 'mole_flatpak_cache_rules'
