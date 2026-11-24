@@ -32,7 +32,7 @@ buildGo126Module {
     ];
   };
 
-  vendorHash = "sha256-OQ7QTSuulopAS+2Jet2roZVGPMXgJUav73du+MJlt6o=";
+  vendorHash = "sha256-mc9pPXqIyGk+Zi480mdgLVJMCwXIw+DcV4CkxbwC0xI=";
 
   subPackages = [
     "cmd/analyze"
