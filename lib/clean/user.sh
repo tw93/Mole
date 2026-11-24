@@ -205,6 +205,60 @@ _user_cache_deno_delete_guard() {
     return 0
 }
 
+# Chromium keeps a profile's live HTTP cache at the same path under
+# ~/Library/Caches as the profile under Application Support (Brave's
+# BraveSoftware/Brave-Browser, Microsoft Edge, Vivaldi, Arc/User Data,
+# Dia/User Data, Chromium), and holds a SingletonLock in its user-data folder
+# while it runs. The live-owner gate in file_ops.sh asks only about reverse-DNS
+# cache names, so for a plain one this walks the cache root and the two levels
+# below it and asks the lock at the same place under Application Support (the
+# one to three levels app_support_path_held_by_singleton reads), listing no
+# Application Support folder. It descends only where the Application Support
+# mirror exists and never through a link, so a large cache such as Yarn's or a
+# folder linked to another volume costs one stat. Returns 0 while a lock names
+# a live pid or cannot be read.
+_user_cache_root_held_by_singleton() {
+    local cache_root="${1%/}"
+    local caches="$HOME/Library/Caches"
+    case "$cache_root" in
+        "$caches"/?*) ;;
+        *) return 1 ;;
+    esac
+    local first="${cache_root#"$caches"/}"
+    [[ "${first%%/*}" != *.* ]] || return 1
+    local support="$HOME/Library/Application Support"
+    local -a lock_level=("$cache_root") lock_next=()
+    local depth folder mirror child
+    for depth in 0 1 2; do
+        lock_next=()
+        for folder in "${lock_level[@]}"; do
+            [[ -d "$folder" && ! -L "$folder" ]] || continue
+            mirror="$support/${folder#"$caches"/}"
+            [[ -d "$mirror" ]] || continue
+            app_support_dir_in_use "$mirror" && return 0
+            [[ $depth -lt 2 ]] || continue
+            for child in "$folder"/*/; do
+                lock_next+=("${child%/}")
+            done
+        done
+        [[ ${#lock_next[@]} -gt 0 ]] || return 1
+        lock_level=("${lock_next[@]}")
+    done
+    return 1
+}
+
+# Delete-time callback for the User app cache sweep: the Deno root check, whose
+# refusal stops the batch, then the browser lock of this root, whose refusal
+# skips only it, so a browser started during the sweep keeps its cache.
+_user_cache_delete_guard() {
+    local candidate="${1:-}"
+    _MOLE_SAFE_CLEAN_SKIP_PATH=""
+    _user_cache_deno_delete_guard "$candidate" || return $?
+    _user_cache_root_held_by_singleton "$candidate" || return 0
+    _MOLE_SAFE_CLEAN_SKIP_PATH="$candidate"
+    return 1
+}
+
 # Log globs must never enumerate through redirected roots. Bind the directories
 # before enumeration and again after sizing and at the last deletion boundary.
 _user_log_delete_guard() {
@@ -299,6 +353,13 @@ clean_user_essentials() {
             case "${user_cache_target##*/}" in
                 Google | mbx) continue ;;
             esac
+            # Another Chromium browser keeps its live cache in a plain folder
+            # here the way Chrome does under Google; leave it while that
+            # browser runs and sweep it as before once it quits.
+            if _user_cache_root_held_by_singleton "$user_cache_target"; then
+                debug_log "User app cache: kept ${user_cache_target##*/}, its app is running"
+                continue
+            fi
             case "$deno_cache_root" in
                 "$user_cache_target" | "$user_cache_target"/*) continue ;;
             esac
@@ -319,7 +380,7 @@ clean_user_essentials() {
         # sink guard re-asks after every other check, immediately before rm,
         # because safe_remove does real work between the two.
         local _MOLE_SAFE_REMOVE_FINAL_GUARD=_user_cache_deno_delete_guard
-        safe_clean_guarded _user_cache_deno_delete_guard \
+        safe_clean_guarded _user_cache_delete_guard \
             "${user_cache_targets[@]}" "User app cache" || user_cache_rc=$?
         if [[ $user_cache_rc -eq 75 ]]; then
             echo -e "  ${GRAY}${ICON_WARNING}${NC} User app cache · stopped (Deno root changed during cleanup)"
@@ -797,6 +858,10 @@ is_microsoft_edge_running() {
 
 is_brave_browser_running() {
     mole_pgrep_any -x "Brave Browser"
+}
+
+is_chromium_running() {
+    mole_pgrep_any -x "Chromium"
 }
 
 _firefox_process_state() {
@@ -2191,7 +2256,15 @@ clean_browsers() {
     done
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/crx_cache/* "GoogleUpdater CRX cache"
     safe_clean ~/Library/Application\ Support/Google/GoogleUpdater/*.old "GoogleUpdater old files"
-    safe_clean ~/Library/Caches/Chromium/* "Chromium cache"
+    # Chromium's Caches root holds its live HTTP disk cache like Chrome's.
+    if mole_cleanup_targets_exist "$HOME/Library/Caches/Chromium"/*; then
+        if mole_clean_process_guard is_chromium_running "Chromium started"; then
+            _user_safe_clean_process_guarded is_chromium_running "Chromium" "Chromium cache" \
+                ~/Library/Caches/Chromium/* "Chromium cache" || true
+        else
+            mole_report_guard_stop "Chromium cache" mole_defer_cleanup_family "Chromium"
+        fi
+    fi
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
     # Arc Browser.
     if [[ -d ~/Library/Application\ Support/Arc ]]; then

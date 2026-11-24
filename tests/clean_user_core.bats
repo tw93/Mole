@@ -380,6 +380,138 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_user_essentials leaves the cache root of a running Chromium browser (#2094)" {
+    # Chromium keeps a profile's live HTTP cache at the same path under Caches
+    # as the profile under Application Support, whose SingletonLock names the
+    # browser's pid while it runs.
+    local test_home="$HOME/chromium-cache-home"
+    local support="$test_home/Library/Application Support"
+    mkdir -p \
+        "$test_home/Library/Caches/BraveSoftware/Brave-Browser/Default/Cache" \
+        "$test_home/Library/Caches/Microsoft Edge/Default/Cache" \
+        "$test_home/Library/Caches/Arc/User Data/Default/Cache" \
+        "$test_home/Library/Caches/Vivaldi/Default/Cache" \
+        "$test_home/Library/Caches/ordinary-app/junk" \
+        "$support/BraveSoftware/Brave-Browser" "$support/Microsoft Edge" \
+        "$support/Arc/User Data" "$support/Vivaldi"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+support="$HOME/Library/Application Support"
+# Brave's lock sits one folder below its vendor folder and Edge's at the top;
+# Arc's cannot be read; Vivaldi's was left by a crash and names no process.
+ln -s "$(hostname)-$$" "$support/BraveSoftware/Brave-Browser/SingletonLock"
+ln -s "$(hostname)-$$" "$support/Microsoft Edge/SingletonLock"
+ln -s "garbage" "$support/Arc/User Data/SingletonLock"
+ln -s "$(hostname)-99999999" "$support/Vivaldi/SingletonLock"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+safe_clean_guarded() {
+    shift
+    safe_clean "$@"
+}
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/BraveSoftware"* ]] || return 1
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/Microsoft Edge"* ]] || return 1
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/Arc"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/Vivaldi"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/ordinary-app"* ]] || return 1
+    rm -rf "$test_home"
+}
+
+@test "the User app cache guard skips only a cache root whose browser started during the sweep (#2094)" {
+    local test_home="$HOME/chromium-guard-home"
+    mkdir -p \
+        "$test_home/Library/Caches/Chromium/Default/Cache" \
+        "$test_home/Library/Caches/ordinary-app/junk" \
+        "$test_home/Library/Application Support/Chromium"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+ln -s "$(hostname)-$$" "$HOME/Library/Application Support/Chromium/SingletonLock"
+for target in "$HOME/Library/Caches/Chromium" "$HOME/Library/Caches/ordinary-app"; do
+    rc=0
+    _MOLE_SAFE_CLEAN_SKIP_PATH="unset"
+    _user_cache_delete_guard "$target" || rc=$?
+    printf 'GUARD=%s|%s|%s\n' "${target##*/}" "$rc" "$_MOLE_SAFE_CLEAN_SKIP_PATH"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GUARD=Chromium|1|$test_home/Library/Caches/Chromium"* ]] || return 1
+    # The last line, so the empty skip path ends the output.
+    [[ "$output" == *"GUARD=ordinary-app|0|" ]] || return 1
+    rm -rf "$test_home"
+}
+
+@test "the User app cache guard keeps a Deno refusal a batch stop (#2094)" {
+    # The lock check skips one root through the skip path; a Deno refusal must
+    # still leave it empty, so safe_clean_guarded stops the batch with 75.
+    local test_home="$HOME/chromium-deno-guard-home"
+    mkdir -p "$test_home/Library/Caches/ordinary-app"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+_user_cache_deno_delete_guard() { return 1; }
+_user_cache_root_held_by_singleton() { echo "LOCK_ASKED"; return 0; }
+rc=0
+_MOLE_SAFE_CLEAN_SKIP_PATH="unset"
+_user_cache_delete_guard "$HOME/Library/Caches/ordinary-app" || rc=$?
+printf 'GUARD=%s|%s|\n' "$rc" "$_MOLE_SAFE_CLEAN_SKIP_PATH"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"GUARD=1||"* ]] || return 1
+    [[ "$output" != *"LOCK_ASKED"* ]] || return 1
+    rm -rf "$test_home"
+}
+
+@test "the Chromium lock walk follows no link and skips folders with no Application Support mirror (#2094)" {
+    local test_home="$HOME/chromium-walk-home"
+    local caches="$test_home/Library/Caches" support="$test_home/Library/Application Support"
+    mkdir -p "$caches/LinkedApp" "$caches/Yarn/v6/npm-pkg" "$test_home/elsewhere/Profile" \
+        "$support/LinkedApp/Profile" "$support/Yarn"
+    ln -s "$test_home/elsewhere/Profile" "$caches/LinkedApp/Profile"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+app_support_dir_in_use() { echo "ASKED:${1#"$HOME/Library/Application Support/"}"; return 1; }
+for root in LinkedApp Yarn; do
+    rc=0
+    _user_cache_root_held_by_singleton "$HOME/Library/Caches/$root" || rc=$?
+    echo "ROOT=$root|$rc"
+done
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"ROOT=LinkedApp|1"* && "$output" == *"ROOT=Yarn|1"* ]] || return 1
+    [[ "$output" == *"ASKED:LinkedApp"* && "$output" == *"ASKED:Yarn"* ]] || return 1
+    # A symlinked profile and a folder with no mirror are never asked.
+    [[ "$output" != *"ASKED:LinkedApp/Profile"* && "$output" != *"ASKED:Yarn/v6"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials keeps Google identity and Clearcut state (#1607)" {
     # The generic cache sweep reaches these dotless names. Drive the real
     # safe_clean_guarded path so should_protect_path at bin/clean.sh:1002
@@ -2558,6 +2690,40 @@ EOF
     # Control: closed browsers still reach both rows.
     [[ "$closed" == *"SAFE_CLEAN:Chrome cache"* ]] || { echo "$output"; return 1; }
     [[ "$closed" == *"SAFE_CLEAN:Brave cache"* ]]
+}
+
+@test "clean_browsers holds the Chromium Caches root while Chromium runs (#2094)" {
+    mkdir -p "$HOME/Library/Caches/Chromium/Default/Cache"
+    touch "$HOME/Library/Caches/Chromium/Default/Cache/data_0"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+safe_clean() { echo "SAFE_CLEAN:${!#}"; }
+defer_cleanup_family() { echo "DEFER:$1"; }
+clean_service_worker_cache() { :; }
+note_activity() { :; }
+RUNNING=true
+pgrep() {
+    [[ "$RUNNING" == "true" ]] || return 1
+    [[ "$2" == "Chromium" ]]
+}
+clean_browsers
+echo "--- closed"
+RUNNING=false
+clean_browsers
+EOF
+    rm -rf "$HOME/Library/Caches/Chromium"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local running closed
+    running="${output%%--- closed*}"
+    closed="${output#*--- closed}"
+    [[ "$running" != *"SAFE_CLEAN:Chromium cache"* ]] || { echo "$output"; return 1; }
+    [[ "$running" == *"DEFER:Chromium"* ]] || { echo "$output"; return 1; }
+    # Control: a closed Chromium still reaches the row.
+    [[ "$closed" == *"SAFE_CLEAN:Chromium cache"* ]]
 }
 
 @test "clean_browsers defers a running browser's Caches root before sizing it" {
