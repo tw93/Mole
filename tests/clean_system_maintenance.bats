@@ -420,12 +420,18 @@ sudo() {
 safe_sudo_find_delete() {
     MOLE_SAFE_SUDO_FIND_DELETE_COUNT=0
     MOLE_SAFE_SUDO_FIND_DELETE_KB=0
-    case "$1" in
-        /private/var/log) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=3 MOLE_SAFE_SUDO_FIND_DELETE_KB=300 ;;
-        "$IDLE_DIR") MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2097152 ;;
-        /private/var/db/diagnostics) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2048 ;;
-        /private/var/db/DiagnosticPipeline) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=100 ;;
-        */MemoryLimitViolations) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=64 ;;
+    case "$1|$2" in
+        "/Library/Caches|*.cache") MOLE_SAFE_SUDO_FIND_DELETE_COUNT=4 MOLE_SAFE_SUDO_FIND_DELETE_KB=40 ;;
+        "/Library/Logs/DiagnosticReports|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=5 MOLE_SAFE_SUDO_FIND_DELETE_KB=50 ;;
+        "/Library/Logs/Adobe|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=10 ;;
+        "/Library/Logs/CreativeCloud|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=20 ;;
+        "/Library/Logs|adobegc.log") MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=1 ;;
+        "/private/var/db/powerlog|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=6 MOLE_SAFE_SUDO_FIND_DELETE_KB=600 ;;
+        "/private/var/log|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=3 MOLE_SAFE_SUDO_FIND_DELETE_KB=300 ;;
+        "$IDLE_DIR|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2097152 ;;
+        "/private/var/db/diagnostics|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=2 MOLE_SAFE_SUDO_FIND_DELETE_KB=2048 ;;
+        "/private/var/db/DiagnosticPipeline|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=100 ;;
+        */MemoryLimitViolations"|"*) MOLE_SAFE_SUDO_FIND_DELETE_COUNT=1 MOLE_SAFE_SUDO_FIND_DELETE_KB=64 ;;
     esac
     return 0
 }
@@ -447,12 +453,14 @@ printf 'TOTALS=%s:%s:%s\n' "$files_cleaned" "$total_size_cleaned" "$total_items"
 EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-    [[ "$output" == *"SUCCESS:System logs"* ]] || return 1
-    [[ "$output" == *"SUCCESS:Stale wallpaper downloads"* ]] || return 1
-    [[ "$output" == *"SUCCESS:System diagnostic logs"* ]] || return 1
-    [[ "$output" == *"SUCCESS:Memory exception reports"* ]] || return 1
-    # Four rows: 3 + 2 + (2 + 1) + 1 files and 300 + 2097152 + (2048 + 100) + 64 KB.
-    [[ "$output" == *"TOTALS=9:2099664:4"* ]] || { echo "$output"; return 1; }
+    local row
+    for row in "System caches" "System crash reports" "System logs" "Third-party system logs" \
+        "Stale wallpaper downloads" "System diagnostic logs" "Power logs" "Memory exception reports"; do
+        [[ "$output" == *"SUCCESS:$row"* ]] || { echo "MISSING:$row"; return 1; }
+    done
+    # Eight rows: 4 + 5 + 3 + (1 + 2 + 1) + 2 + (2 + 1) + 6 + 1 = 28 files and
+    # 40 + 50 + 300 + (10 + 20 + 1) + 2097152 + (2048 + 100) + 600 + 64 = 2100385 KB.
+    [[ "$output" == *"TOTALS=28:2100385:8"* ]] || { echo "$output"; return 1; }
 }
 
 @test "clean_deep_system does not report idleassetsd success when no stale download exists (#1253)" {

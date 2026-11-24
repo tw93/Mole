@@ -3612,6 +3612,85 @@ SCRIPT
     [ "$kb" = "$expected_kb" ]
 }
 
+@test "safe_sudo_find_delete stops on a signal while sizing below a user-writable parent (#2092)" {
+    local target_dir="$TEST_DIR/sudo-mutable-size-signal"
+    local script="$TEST_DIR/sudo-mutable-size-signal-test.sh"
+    local fake_stat="$TEST_DIR/fake-stat-signal"
+    mkdir -p "$target_dir"
+    printf 'log\n' > "$target_dir/old.log"
+    cat > "$fake_stat" <<'STAT'
+#!/bin/bash
+[[ "${1:-}" == "-f%b" ]] && exit 130
+exec /usr/bin/stat "$@"
+STAT
+    chmod +x "$fake_stat"
+
+    cat > "$script" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+STAT_BSD="$FAKE_STAT"
+sudo() {
+    [[ "${1:-}" == "-n" ]] || return 99
+    shift
+    case "${1:-}" in
+        test) shift; command test "$@" ;;
+        find) printf '%s\0' "$TARGET_DIR/old.log" ;;
+        xargs | rm) echo "PRIVILEGED_DELETE"; return 99 ;;
+        *) "$@" ;;
+    esac
+}
+safe_remove() { echo "SAFE_REMOVE_CALLED"; return 0; }
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "*.log" "0" "f" || rc=$?
+printf 'RC=%s\nCOUNT=%s\nKB=%s\n' "$rc" \
+    "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}" "${MOLE_SAFE_SUDO_FIND_DELETE_KB:-unset}"
+SCRIPT
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" FAKE_STAT="$fake_stat" \
+        MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc "$script"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=130"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"COUNT=0"* && "$output" == *"KB=0"* ]] || return 1
+    [[ "$output" != *"SAFE_REMOVE_CALLED"* && "$output" != *"PRIVILEGED_DELETE"* ]] || return 1
+    [[ -e "$target_dir/old.log" ]]
+}
+
+@test "safe_sudo_find_delete adds no size for a file it could not remove below a user-writable parent (#2092)" {
+    local target_dir="$TEST_DIR/sudo-mutable-size-refused"
+    local script="$TEST_DIR/sudo-mutable-size-refused-test.sh"
+    mkdir -p "$target_dir"
+    /usr/bin/head -c 12288 /dev/urandom > "$target_dir/old.log"
+
+    cat > "$script" <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+sudo() {
+    [[ "${1:-}" == "-n" ]] || return 99
+    shift
+    case "${1:-}" in
+        test) shift; command test "$@" ;;
+        find) printf '%s\0' "$TARGET_DIR/old.log" ;;
+        xargs | rm) echo "PRIVILEGED_DELETE"; return 99 ;;
+        *) "$@" ;;
+    esac
+}
+safe_remove() { return 1; }
+rc=0
+safe_sudo_find_delete "$TARGET_DIR" "*.log" "0" "f" || rc=$?
+printf 'RC=%s\nCOUNT=%s\nKB=%s\n' "$rc" \
+    "${MOLE_SAFE_SUDO_FIND_DELETE_COUNT:-unset}" "${MOLE_SAFE_SUDO_FIND_DELETE_KB:-unset}"
+SCRIPT
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" TARGET_DIR="$target_dir" \
+        MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 /bin/bash --noprofile --norc "$script"
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"COUNT=0"* && "$output" == *"KB=0"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"PRIVILEGED_DELETE"* ]] || return 1
+    [[ -e "$target_dir/old.log" ]]
+}
+
 @test "safe_sudo_find_delete treats a user-owned 0555 parent as mutable" {
     local target_dir="$TEST_DIR/sudo-owner-mutable-parent"
     local script="$TEST_DIR/sudo-owner-mutable-parent-test.sh"
