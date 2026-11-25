@@ -196,7 +196,7 @@ clean_service_worker_cache() {
             fi
             if [[ "$DRY_RUN" == "true" ]]; then
                 if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                    record_dry_run_cleanup_target "$cache_dir" "$size" 1 true || continue
+                    mole_record_user_sink_dry_run_target "$cache_dir" "$size" 1 true || continue
                 fi
             else
                 local remove_rc=0
@@ -1044,7 +1044,7 @@ clean_python_bytecode_cache_group() {
         [[ $guard_rc -eq 0 ]] || continue
         if [[ "$DRY_RUN" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$cache_dir" "$size_kb" 1 true || continue
+                mole_record_user_sink_dry_run_target "$cache_dir" "$size_kb" 1 true || continue
             elif declare -f register_dry_run_cleanup_target > /dev/null 2>&1; then
                 register_dry_run_cleanup_target "$cache_dir" || continue
             fi

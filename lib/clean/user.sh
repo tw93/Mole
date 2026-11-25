@@ -110,7 +110,7 @@ clean_trash() {
                 [[ $validate_rc -eq 0 ]] || continue
                 if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
                     local _MOLE_DRY_RUN_TARGET_PREVALIDATED=true
-                    record_dry_run_cleanup_target "$trash_item" "$trash_item_kb" 1 "$trash_size_known" || continue
+                    mole_record_user_sink_dry_run_target "$trash_item" "$trash_item_kb" 1 "$trash_size_known" || continue
                 fi
                 preview_count=$((preview_count + 1))
             done < <(command find "$HOME/.Trash" -mindepth 1 -maxdepth 1 -print0 2> /dev/null || true)
@@ -628,7 +628,7 @@ _clean_mail_downloads() {
                     local remove_rc=1
                     if [[ "$dry_run_mode" == "true" ]]; then
                         if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                            record_dry_run_cleanup_target "$file_path" "$file_size_kb" 1 true || continue
+                            mole_record_user_sink_dry_run_target "$file_path" "$file_size_kb" 1 true || continue
                         fi
                         MOLE_DRY_RUN=1 safe_remove "$file_path" true "$file_size_kb" && remove_rc=0
                     elif _MOLE_SAFE_REMOVE_FINAL_GUARD=_mail_attachment_delete_guard safe_remove \
@@ -1081,7 +1081,7 @@ clean_edge_updater_old_versions() {
         fi
         if [[ "$DRY_RUN" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$dir" "$size_kb" 1 "$size_known" || continue
+                mole_record_user_sink_dry_run_target "$dir" "$size_kb" 1 "$size_known" || continue
             fi
             total_size=$((total_size + size_kb))
             cleaned_count=$((cleaned_count + 1))
@@ -1509,7 +1509,7 @@ clean_handoff_pasteboard_cache() {
         mole_rc_timeout "$size_rc" && size_known=false
         if [[ "$DRY_RUN" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$item" "$item_kb" 1 "$size_known" || continue
+                mole_record_user_sink_dry_run_target "$item" "$item_kb" 1 "$size_known" || continue
             fi
             cleaned_count=$((cleaned_count + 1))
             total_kb=$((total_kb + item_kb))
@@ -1804,7 +1804,7 @@ clean_group_container_caches() {
                         # SQLite guards have all run after sizing. Avoid only
                         # repeating that complete eligibility pass.
                         local _MOLE_DRY_RUN_TARGET_PREVALIDATED=true
-                        record_dry_run_cleanup_target \
+                        mole_record_user_sink_dry_run_target \
                             "$item" "$item_size" 1 "$candidate_size_known" || action_rc=$?
                     fi
                 else
@@ -2112,7 +2112,7 @@ clean_external_volume_target() {
                 continue
             fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$target_path" "$size_kb" 1 true || continue
+                mole_record_user_sink_dry_run_target "$target_path" "$size_kb" 1 true || continue
             fi
             found_any=true
             cleaned_count=$((cleaned_count + 1))
@@ -2166,7 +2166,7 @@ clean_external_volume_target() {
                 continue
             fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$metadata_file" "$size_kb" 1 "$metadata_size_known" || continue
+                mole_record_user_sink_dry_run_target "$metadata_file" "$size_kb" 1 "$metadata_size_known" || continue
             fi
             found_any=true
             cleaned_count=$((cleaned_count + 1))
@@ -2883,7 +2883,7 @@ clean_application_support_logs() {
                     start_section_spinner "Scanning Application Support... $app_count/$total_apps [$app_label, bulk clean]"
                     if [[ "$DRY_RUN" == "true" ]]; then
                         if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                            record_dry_run_cleanup_target "$candidate" 0 1 false || continue
+                            mole_record_user_sink_dry_run_target "$candidate" 0 1 false || continue
                         fi
                     else
                         # Remove entire candidate directory in one go
@@ -2920,7 +2920,7 @@ clean_application_support_logs() {
                         fi
                     fi
                     if [[ "$DRY_RUN" == "true" ]] && declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                        record_dry_run_cleanup_target "$item" "$item_size_kb" 1 "$item_size_known" || continue
+                        mole_record_user_sink_dry_run_target "$item" "$item_size_kb" 1 "$item_size_known" || continue
                     fi
                     if [[ "$item_size_known" == "true" ]]; then
                         candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
@@ -2978,7 +2978,7 @@ clean_application_support_logs() {
                     start_section_spinner "Scanning Application Support... group [$container_label, bulk clean]"
                     if [[ "$DRY_RUN" == "true" ]]; then
                         if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                            record_dry_run_cleanup_target "$candidate" 0 1 false || continue
+                            mole_record_user_sink_dry_run_target "$candidate" 0 1 false || continue
                         fi
                     else
                         safe_remove "$candidate" true > /dev/null 2>&1 || true
@@ -3011,7 +3011,7 @@ clean_application_support_logs() {
                         fi
                     fi
                     if [[ "$DRY_RUN" == "true" ]] && declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                        record_dry_run_cleanup_target "$item" "$item_size_kb" 1 "$item_size_known" || continue
+                        mole_record_user_sink_dry_run_target "$item" "$item_size_kb" 1 "$item_size_known" || continue
                     fi
                     if [[ "$item_size_known" == "true" ]]; then
                         candidate_size_bytes=$((candidate_size_bytes + item_size_bytes))
@@ -3156,7 +3156,7 @@ clean_cached_device_firmware() {
             [[ $guard_rc -eq 0 ]] || return 0
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
                 local record_rc=0
-                record_dry_run_cleanup_target "$ipsw" "$size_kb" 1 "$size_known" || record_rc=$?
+                mole_record_user_sink_dry_run_target "$ipsw" "$size_kb" 1 "$size_known" || record_rc=$?
                 if mole_rc_timeout_or_signal "$record_rc"; then
                     _mole_record_clean_cancellation "$record_rc"
                     return "$record_rc"

@@ -2554,7 +2554,7 @@ clean_xcode_device_support() {
                         break
                     fi
                     if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                        record_dry_run_cleanup_target "$stale_entry" "$entry_size_kb" 1 "$size_known" || continue
+                        mole_record_user_sink_dry_run_target "$stale_entry" "$entry_size_kb" 1 "$size_known" || continue
                     fi
                     preview_stale_dirs+=("$stale_entry")
                     stale_size_kb=$((stale_size_kb + entry_size_kb))
@@ -5496,7 +5496,7 @@ clean_codex_crashpad_pending() {
         remove_rc=1
         if [[ "$dry_run_mode" == "true" ]]; then
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$file_path" "$file_size_kb" 1 true || continue
+                mole_record_user_sink_dry_run_target "$file_path" "$file_size_kb" 1 true || continue
             fi
             MOLE_DRY_RUN=1 safe_remove "$file_path" true "$file_size_kb" && remove_rc=0
         elif safe_remove "$file_path" true "$file_size_kb"; then

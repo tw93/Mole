@@ -287,6 +287,43 @@ EOF
     [[ "$output" == *"SUDO_SINK_RECORDED=$logs/install.log"* ]] || { echo "$output"; return 1; }
 }
 
+@test "cleaners that record their own preview leave out an item another user owns" {
+    # safe_find_delete stands in for the twenty cleaners that preview through
+    # mole_record_user_sink_dry_run_target and remove through safe_remove: the
+    # preview lists nothing the run would skip on ownership.
+    local logs="$HOME/Library/Logs/OtherUser"
+    mkdir -p "$logs"
+    printf 'x' > "$logs/old.log"
+    chmod 555 "$logs"
+    rm -f "$HOME/Library/Logs/mole/operations.log"
+
+    local mode
+    for mode in dry real; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=1 MODE="$mode" LOGS="$logs" \
+            /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/bin/clean.sh"
+if [[ "$MODE" == dry ]]; then DRY_RUN=true; export MOLE_DRY_RUN=1; else DRY_RUN=false; export MOLE_DRY_RUN=0; fi
+MOLE_CURRENT_COMMAND=clean
+_mole_path_owned_by_current_user() { [[ "$1" != "$LOGS/"* && -O "$1" ]]; }
+register_dry_run_cleanup_target() { :; }
+append_dry_run_cleanup_target() { echo "RECORDED=$1"; }
+safe_find_delete "$LOGS" "*.log" 0 f || true
+mole_record_user_sink_dry_run_target "$LOGS/old.log" 1 1 true || echo "WRAPPER_REFUSED"
+echo "MODE=$MODE DONE"
+EOF
+        [ "$status" -eq 0 ] || { chmod 755 "$logs"; echo "$output"; return 1; }
+        [[ "$output" != *"RECORDED="* ]] || { chmod 755 "$logs"; echo "$output"; return 1; }
+        [[ "$output" == *"WRAPPER_REFUSED"* && "$output" == *"MODE=$mode DONE"* ]] || { chmod 755 "$logs"; echo "$output"; return 1; }
+    done
+    chmod 755 "$logs"
+
+    [[ -f "$logs/old.log" ]] || return 1
+    ! grep -q 'FAILED' "$HOME/Library/Logs/mole/operations.log" 2> /dev/null || { cat "$HOME/Library/Logs/mole/operations.log"; return 1; }
+    rm -rf "$logs"
+}
+
 @test "safe_clean leaves out of the preview many files another user owns in one folder" {
     # More than 20 mostly-file paths take the batched sizing branch of
     # _safe_clean_impl, whose preview asks the ownership refusal on its own.

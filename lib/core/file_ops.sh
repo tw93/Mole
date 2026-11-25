@@ -1542,6 +1542,18 @@ _mole_user_sink_refuses_on_ownership() {
     return 1
 }
 
+# The preview half of a user-level cleaner that records its own rows and then
+# removes through safe_remove: an item safe_remove would refuse on ownership is
+# not listed, so the preview matches the run. Sudo sinks keep calling
+# record_dry_run_cleanup_target directly, which still lists root-owned rows.
+mole_record_user_sink_dry_run_target() {
+    if _mole_user_sink_refuses_on_ownership "$1"; then
+        debug_log "Preview left out an item another user owns: $1"
+        return 1
+    fi
+    record_dry_run_cleanup_target "$@"
+}
+
 safe_remove() {
     local path="$1"
     local silent="${2:-false}"
@@ -3635,7 +3647,7 @@ safe_find_delete() {
             [[ $match_size_rc -eq 0 ]] || match_size_kb=0
             [[ "$match_size_kb" =~ ^[0-9]+$ ]] || match_size_kb=0
             local preview_rc=0
-            record_dry_run_cleanup_target "$match" "$match_size_kb" 1 true || preview_rc=$?
+            mole_record_user_sink_dry_run_target "$match" "$match_size_kb" 1 true || preview_rc=$?
             if [[ $preview_rc -ge 128 ]]; then
                 delete_rc=$preview_rc
                 break

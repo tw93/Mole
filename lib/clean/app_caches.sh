@@ -298,7 +298,7 @@ clean_xcode_derived_data() {
                 break
             fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$dir" "$dir_size_kb" 1 "$size_known" || continue
+                mole_record_user_sink_dry_run_target "$dir" "$dir_size_kb" 1 "$size_known" || continue
             fi
             size_kb=$((size_kb + dir_size_kb))
             dry_run_count=$((dry_run_count + 1))
@@ -1922,7 +1922,7 @@ clean_autodesk_fusion_old_bundles() {
                 break
             fi
             if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
-                record_dry_run_cleanup_target "$dir" "$size_kb" 1 true || continue
+                mole_record_user_sink_dry_run_target "$dir" "$size_kb" 1 true || continue
             fi
             total_size=$((total_size + size_kb))
             cleaned_count=$((cleaned_count + 1))

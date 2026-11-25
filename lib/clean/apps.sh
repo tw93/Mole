@@ -67,7 +67,7 @@ clean_ds_store_tree() {
             fi
             local preview_size_kb=$(((size + 1023) / 1024))
             local preview_rc=0
-            record_dry_run_cleanup_target "$ds_file" "$preview_size_kb" 1 true || preview_rc=$?
+            mole_record_user_sink_dry_run_target "$ds_file" "$preview_size_kb" 1 true || preview_rc=$?
             if mole_rc_timeout_or_signal "$preview_rc"; then
                 delete_rc=$preview_rc
                 break
