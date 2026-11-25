@@ -4343,6 +4343,60 @@ EOF
     [ -f "$test_home/.t3/worktrees/project/topic/file" ]
 }
 
+@test "agent_worktree_containers adds the repositories Claude Code and Codex record" {
+    local h="$HOME/wt-records-home"
+    # Recorded repositories outside every project root, each with its own containers.
+    mkdir -p "$h/work/app/.git" "$h/work/app/sub" "$h/work/app/.claude/worktrees/a" "$h/work/app/.codex/worktrees/b"
+    mkdir -p "$h/clients/tool/.git" "$h/clients/tool/.codex/worktrees/c"
+    mkdir -p "$h/threads/svc/.git" "$h/threads/svc/.claude/worktrees/d"
+    # Never looked at: a consent folder, Library, a dot folder, a link, a worktree's own .git file, a linked .claude.
+    mkdir -p "$h/Documents/secret/.git" "$h/Documents/secret/.claude/worktrees/x"
+    mkdir -p "$h/Library/proj/.git" "$h/Library/proj/.claude/worktrees/x"
+    mkdir -p "$h/.hidden/proj/.git" "$h/.hidden/proj/.claude/worktrees/x"
+    mkdir -p "$h/real/linked/.git" "$h/real/linked/.claude/worktrees/x"
+    ln -s "$h/real/linked" "$h/viaLink"
+    mkdir -p "$h/sub/wt/.claude/worktrees/x"
+    printf 'gitdir: /elsewhere\n' > "$h/sub/wt/.git"
+    mkdir -p "$h/shadow/repo/.git" "$h/elsewhere-claude/worktrees/x"
+    ln -s "$h/elsewhere-claude" "$h/shadow/repo/.claude"
+
+    cat > "$h/.claude.json" << JSON
+{"numStartups": null, "projects": {
+  "$h/work/app/sub": {"allowedTools": []},
+  "$h/work/app/.claude/worktrees/a/src": {},
+  "$h/WORK/app": {},
+  "$h/Documents/secret": {},
+  "$h/Library/proj": {},
+  "$h/.hidden/proj": {},
+  "$h/viaLink": {},
+  "$h/sub/wt": {},
+  "$h/shadow/repo": {},
+  "$h/../escape": {},
+  "/tmp/outside": {}
+}}
+JSON
+    mkdir -p "$h/.codex"
+    printf '[projects."%s"]\ntrust_level = "trusted"\n\n[projects.%s]\n' "$h/clients/tool" "unquoted" > "$h/.codex/config.toml"
+    /usr/bin/sqlite3 "$h/.codex/state_2.sqlite" "CREATE TABLE threads(cwd TEXT); INSERT INTO threads VALUES('$h/nowhere');"
+    /usr/bin/sqlite3 "$h/.codex/state_10.sqlite" "CREATE TABLE threads(cwd TEXT); INSERT INTO threads VALUES('$h/threads/svc'),('$h/threads/svc');"
+
+    run env HOME="$h" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+agent_worktree_containers | tr '\0' '\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local physical
+    physical=$(cd "$h" && /bin/pwd -P)
+    local listed
+    listed=$(printf '%s\n' "$output" | sed -e "s#^$physical/##" -e "s#^$h/##" | sort)
+    local expected
+    expected=$(printf '%s\n' clients/tool/.codex/worktrees threads/svc/.claude/worktrees work/app/.claude/worktrees work/app/.codex/worktrees | sort)
+    [[ "$listed" == "$expected" ]] || { echo "listed:"; echo "$listed"; return 1; }
+}
+
 @test "report_agent_worktree_candidates skips a row on a size timeout without cancelling clean" {
     local test_home="$HOME/wt-timeout-home"
     mkdir -p "$test_home/code/proj/.claude/worktrees/wt-one"

@@ -3248,8 +3248,162 @@ jetbrains_stale_version_dirs() {
         '
 }
 
+# A basic ("...", with only \" and \\ escapes) or literal ('...') TOML key, as
+# Codex writes `[projects."<path>"]`; anything else prints nothing.
+_mole_toml_quoted_key() {
+    local key="$1" quote inner result="" ch escaping=false i
+    [[ ${#key} -ge 2 ]] || return 1
+    quote="${key:0:1}"
+    [[ ("$quote" == '"' || "$quote" == "'") && "${key: -1}" == "$quote" ]] || return 1
+    inner="${key:1:${#key}-2}"
+    if [[ "$quote" == "'" ]]; then
+        [[ "$inner" != *"'"* ]] || return 1
+        printf '%s\n' "$inner"
+        return 0
+    fi
+    for ((i = 0; i < ${#inner}; i++)); do
+        ch="${inner:i:1}"
+        if [[ "$escaping" == "true" ]]; then
+            [[ "$ch" == '"' || "$ch" == "\\" ]] || return 1
+            result+="$ch"
+            escaping=false
+        elif [[ "$ch" == "\\" ]]; then
+            escaping=true
+        elif [[ "$ch" == '"' ]]; then
+            return 1
+        else
+            result+="$ch"
+        fi
+    done
+    [[ "$escaping" == "false" ]] || return 1
+    printf '%s\n' "$result"
+}
+
+# The project folders Claude Code (`projects` in ~/.claude.json) and Codex (the
+# `[projects."<path>"]` tables of ~/.codex/config.toml and every thread's cwd
+# in its newest state_N.sqlite) record for themselves, one per line. Read only
+# to find repositories whose own worktree containers sit outside the project
+# roots (Mole Mac 3354e06a7, maintainer 2026-11-25). plutil and sqlite3 ship
+# with macOS, so no developer-tools prompt; an unreadable source adds nothing.
+mole_agent_recorded_project_folders() {
+    local state="$HOME/.claude.json" config="$HOME/.codex/config.toml" size line key
+    if [[ -f "$state" && ! -L "$state" ]]; then
+        size=$(/usr/bin/stat -f %z "$state" 2> /dev/null || echo 0)
+        if [[ "$size" =~ ^[0-9]+$ && "$size" -le 32000000 ]]; then
+            run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" /usr/bin/plutil -extract projects raw -o - "$state" 2> /dev/null || true
+        fi
+    fi
+    if [[ -f "$config" && ! -L "$config" ]]; then
+        size=$(/usr/bin/stat -f %z "$config" 2> /dev/null || echo 0)
+        if [[ "$size" =~ ^[0-9]+$ && "$size" -le 1000000 ]]; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                line="${line#"${line%%[![:space:]]*}"}"
+                line="${line%"${line##*[![:space:]]}"}"
+                [[ "$line" == "[projects."*"]" && "$line" != *"]]" ]] || continue
+                key="${line#\[projects.}"
+                _mole_toml_quoted_key "${key%\]}" || true
+            done < "$config"
+        fi
+    fi
+    local db="" candidate number best=-1
+    for candidate in "$HOME"/.codex/state_*.sqlite; do
+        [[ -f "$candidate" && ! -L "$candidate" ]] || continue
+        number="${candidate##*/state_}"
+        number="${number%.sqlite}"
+        [[ "$number" =~ ^[0-9]+$ ]] || continue
+        if ((10#$number > best)); then
+            best=$((10#$number))
+            db="$candidate"
+        fi
+    done
+    if [[ -n "$db" && -x /usr/bin/sqlite3 ]]; then
+        run_with_timeout "$MOLE_TIMEOUT_MEDIUM_PROBE_SEC" /usr/bin/sqlite3 -readonly "$db" "SELECT DISTINCT cwd FROM threads" 2> /dev/null || true
+    fi
+}
+
+# The main checkouts holding the recorded folders, one per line, each spelled as
+# on disk. Only folders under home count, never ~/Library, a first-level dot
+# folder, Desktop, Documents or Downloads (looking there raises a privacy prompt
+# without Full Disk Access, and the first two may sync to iCloud), anything below
+# a mount point inside home (a lost network share blocks the first lstat), or a
+# path with a link in it, so a link into Documents is never followed. A folder
+# inside an agent worktree counts as its repository's; one whose nearest .git is
+# a file (a worktree or submodule) has no main checkout here.
+mole_agent_recorded_repositories() {
+    local base="$HOME/" line raw path cur repository considered=0 steps physical_home
+    local -a mounts=() seen=()
+    # pwd -P below spells a checkout through any link in HOME itself.
+    physical_home=$(cd "$HOME" 2> /dev/null && /bin/pwd -P) || physical_home="${base%/}"
+    while IFS= read -r line; do
+        line="${line#* on }"
+        line="${line% (*}"
+        [[ "$line" == "$base"* ]] && mounts+=("$line")
+    done < <(/sbin/mount 2> /dev/null)
+
+    _mole_agent_record_allowed() {
+        local candidate="$1" first mount prefix rest part
+        [[ "$candidate" == "$base"* ]] || return 1
+        rest="${candidate#"$base"}"
+        first="${rest%%/*}"
+        [[ -n "$first" && "$first" != .* ]] || return 1
+        case "$(printf '%s' "$first" | LC_ALL=C tr '[:upper:]' '[:lower:]')" in
+            library | desktop | documents | downloads) return 1 ;;
+        esac
+        for mount in "${mounts[@]+"${mounts[@]}"}"; do
+            [[ "$candidate" == "$mount" || "$candidate" == "$mount/"* ]] && return 1
+        done
+        prefix="${base%/}"
+        while [[ -n "$rest" ]]; do
+            part="${rest%%/*}"
+            [[ "$rest" == */* ]] && rest="${rest#*/}" || rest=""
+            prefix="$prefix/$part"
+            [[ ! -L "$prefix" ]] || return 1
+        done
+        return 0
+    }
+
+    while IFS= read -r raw; do
+        [[ $considered -lt 4000 ]] || break
+        [[ "$raw" == "$base"* && "/$raw/" != *"/./"* && "/$raw/" != *"/../"* ]] || continue
+        path=$(printf '%s' "$raw" | tr -s '/')
+        path="${path%/}"
+        path="${path%%/.claude/worktrees/*}"
+        path="${path%%/.codex/worktrees/*}"
+        _mole_agent_record_allowed "$path" || continue
+        considered=$((considered + 1))
+        cur="$path"
+        repository=""
+        for ((steps = 0; steps < 16; steps++)); do
+            [[ "$cur" == "$base"* ]] || break
+            if [[ -L "$cur/.git" ]]; then
+                break
+            elif [[ -d "$cur/.git" ]]; then
+                repository="$cur"
+                break
+            elif [[ -e "$cur/.git" ]]; then
+                break
+            fi
+            cur="${cur%/*}"
+        done
+        [[ -n "$repository" ]] || continue
+        repository=$(cd "$repository" 2> /dev/null && /bin/pwd -P) || continue
+        [[ "$repository" == "$physical_home/"* ]] && repository="$base${repository#"$physical_home/"}"
+        _mole_agent_record_allowed "$repository" || continue
+        local known=false entry
+        for entry in "${seen[@]+"${seen[@]}"}"; do
+            [[ "$entry" == "$repository" ]] && known=true && break
+        done
+        [[ "$known" == "false" ]] || continue
+        seen+=("$repository")
+        printf '%s\n' "$repository"
+    done < <(mole_agent_recorded_project_folders)
+    unset -f _mole_agent_record_allowed
+}
+
 # List every agent worktree container once, NUL-separated: the fixed Codex and
-# T3 Code containers first, then each `.claude/worktrees` under the project roots.
+# T3 Code containers first, then each `.claude/worktrees` under the project roots,
+# then the `.claude/worktrees` and `.codex/worktrees` of every repository Claude
+# Code and Codex record as a project. Containers are told apart by identity.
 agent_worktree_containers() {
     local -a roots=(
         "$HOME/code" "$HOME/Code" "$HOME/dev" "$HOME/Projects"
@@ -3257,11 +3411,21 @@ agent_worktree_containers() {
         "$HOME/Development" "$HOME/Developer" "$HOME/www" "$HOME/src"
     )
     local container
+    local -a printed_ids=()
+    _mole_print_container_once() {
+        local id seen_id
+        id=$(/usr/bin/stat -f '%d:%i' "$1" 2> /dev/null) || return 0
+        for seen_id in "${printed_ids[@]+"${printed_ids[@]}"}"; do
+            [[ "$seen_id" == "$id" ]] && return 0
+        done
+        printed_ids+=("$id")
+        printf '%s\0' "$1"
+    }
     # The Codex and T3 Code apps keep every worktree under one fixed container
     # outside any project root, so the find below never reaches them.
     for container in "$HOME/.codex/worktrees" "$HOME/.t3/worktrees"; do
         if [[ -d "$container" && ! -L "$container" ]]; then
-            printf '%s\0' "$container"
+            _mole_print_container_once "$container"
         fi
     done
 
@@ -3293,9 +3457,22 @@ agent_worktree_containers() {
             done
             [[ "$already_scanned" == "false" ]] || continue
             listed_containers+=("$container")
-            printf '%s\0' "$container"
+            _mole_print_container_once "$container"
         done < <(run_with_timeout "$MOLE_TIMEOUT_PKG_CLEANUP_SEC" command find "$physical_root" -maxdepth 6 -type d -path "*/.claude/worktrees" -prune -print0 2> /dev/null)
     done
+
+    # Repositories outside every root: a user's two clean worktrees held 2.5 GB
+    # in one (Mole Mac diagnose 20261122-195231). Only real folders count, so a
+    # .claude linked into Documents or iCloud Drive is not listed through it.
+    local repository name
+    while IFS= read -r repository; do
+        for name in .claude .codex; do
+            container="$repository/$name/worktrees"
+            [[ -d "$repository/$name" && ! -L "$repository/$name" && -d "$container" && ! -L "$container" ]] || continue
+            _mole_print_container_once "$container"
+        done
+    done < <(mole_agent_recorded_repositories)
+    unset -f _mole_print_container_once
 }
 
 # AI coding agents create full checkouts that accumulate silently: Claude Code
