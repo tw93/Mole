@@ -235,6 +235,51 @@ func TestParseAppleSmartBatteryThermalDerivesBatteryWattsFromVoltageAndAmperage(
 	}
 }
 
+// Mac Studio (Mac17,15, macOS 27.2.1) has no battery and its telemetry reports
+// SystemPowerIn = 0 while the DC input voltage and current are live.
+func TestParseAppleSmartBatteryThermalDerivesSystemPowerFromInputWhenSystemPowerInIsZero(t *testing.T) {
+	out := `
+      "BatteryInstalled" = No
+      "AdapterDetails" = {"FamilyCode"=0}
+      "PowerTelemetryData" = {"SystemPowerInAccumulatorCount"=0,"SystemLoad"=0,"SystemCurrentIn"=1468,"SystemVoltageIn"=12050,"SystemPowerIn"=0,"BatteryPower"=0}
+      "Voltage" = 0
+      "Amperage" = 0
+`
+
+	thermal := parseAppleSmartBatteryThermal(out)
+
+	if math.Abs(thermal.SystemPower-17.6894) > 0.001 {
+		t.Fatalf("expected system power 17.689W from 12050mV x 1468mA, got %v", thermal.SystemPower)
+	}
+	if thermal.BatteryPower != 0 {
+		t.Fatalf("expected no battery power without a battery, got %v", thermal.BatteryPower)
+	}
+}
+
+func TestParseAppleSmartBatteryThermalPrefersReportedSystemPowerIn(t *testing.T) {
+	out := `
+      "PowerTelemetryData" = {"SystemCurrentIn"=1000,"SystemVoltageIn"=20000,"SystemPowerIn"=19967}
+`
+
+	thermal := parseAppleSmartBatteryThermal(out)
+
+	if math.Abs(thermal.SystemPower-19.967) > 0.001 {
+		t.Fatalf("expected reported system power 19.967W, got %v", thermal.SystemPower)
+	}
+}
+
+func TestParseAppleSmartBatteryThermalLeavesSystemPowerUnsetWithoutInputCurrent(t *testing.T) {
+	out := `
+      "PowerTelemetryData" = {"SystemCurrentIn"=0,"SystemVoltageIn"=12050,"SystemPowerIn"=0}
+`
+
+	thermal := parseAppleSmartBatteryThermal(out)
+
+	if thermal.SystemPower != 0 {
+		t.Fatalf("expected system power to stay unset, got %v", thermal.SystemPower)
+	}
+}
+
 func TestParseAppleSmartBatteryThermalIgnoresRawAdapterWatts(t *testing.T) {
 	out := `
   | |   "AppleRawAdapterDetails" = {"Watts" = 140}

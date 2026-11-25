@@ -395,8 +395,10 @@ func collectThermal() ThermalStatus {
 func parseAppleSmartBatteryThermal(out string) ThermalStatus {
 	var thermal ThermalStatus
 	var (
-		voltageMV  float64
-		amperageMA float64
+		voltageMV      float64
+		amperageMA     float64
+		inputVoltageMV float64
+		inputCurrentMA float64
 	)
 
 	for line := range strings.Lines(out) {
@@ -432,6 +434,13 @@ func parseAppleSmartBatteryThermal(out string) ThermalStatus {
 			}
 		}
 
+		if voltage, found := parseIORegFloatValue(line, "SystemVoltageIn"); found && voltage > 0 {
+			inputVoltageMV = voltage
+		}
+		if current, found := parseIORegFloatValue(line, "SystemCurrentIn"); found && current > 0 {
+			inputCurrentMA = current
+		}
+
 		// Battery power (mW -> W, positive = discharging, negative = charging).
 		if powerMW, found := parseIORegSignedNumber(line, "BatteryPower"); found {
 			setBatteryPowerMW(&thermal, powerMW)
@@ -449,6 +458,12 @@ func parseAppleSmartBatteryThermal(out string) ThermalStatus {
 		if amperage, found := parseIORegSignedNumber(line, "Amperage"); found && amperage != 0 && amperageMA == 0 {
 			amperageMA = amperage
 		}
+	}
+
+	// Macs without a battery (Mac Studio on macOS 27) can report SystemPowerIn
+	// as 0 while the DC input voltage and current stay live.
+	if thermal.SystemPower == 0 && inputVoltageMV > 0 && inputCurrentMA > 0 {
+		setSystemPowerMW(&thermal, inputVoltageMV*inputCurrentMA/1000.0)
 	}
 
 	if thermal.BatteryPower == 0 && voltageMV > 0 && amperageMA != 0 {
