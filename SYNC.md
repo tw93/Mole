@@ -475,7 +475,7 @@ Source: Mole CLI (macOS) `8f559d39` (#2102). On a Mac Studio (Mac17,15, M5 Ultra
 | Product | Status | Consumer and evidence |
 | --- | --- | --- |
 | Mole CLI (macOS) | Implemented in source (`8f559d39`) | `cmd/status/metrics_battery.go:parseAppleSmartBatteryThermal` uses voltage times current only when `SystemPowerIn` is missing or 0; a non-zero `SystemPowerIn` still wins. Locked by `TestParseAppleSmartBatteryThermalDerivesSystemPowerFromInputWhenSystemPowerInIsZero`, `TestParseAppleSmartBatteryThermalPrefersReportedSystemPowerIn` and `TestParseAppleSmartBatteryThermalLeavesSystemPowerUnsetWithoutInputCurrent`. Not released. |
-| Mole Mac | Pending | `MoleApp/Sources/Services/System/SMCBridge.swift` reads system power from `PSTR` only (`systemPowerKeys`), so the menu bar shows `PWR --` on that Mac (reporter, #2102). Next check: fall back to `VD0R` times `ID0R` (or the telemetry pair) when `PSTR` reads 0, tested against a recorded zero-`PSTR` sample. |
+| Mole Mac | Implemented in source (`0c59bca07`, 2026-11-25) | `SystemMetricsCollector+BatteryPower.swift:collectPower` reads `PowerTelemetryData` once when `PSTR` gives nothing: `SystemPowerIn` above 0, otherwise voltage times current, kept out of the `SMCBridge` the fan helper shares. Locked by `testTelemetryWattsUseDCInputWhenSystemPowerInIsZero` and two siblings; I-342 in its incidents. Not in a published build. |
 | Mole CLI (Linux) | Not applicable | No AppleSmartBattery or SMC; power comes from `/sys`. |
 | Mole CLI (Windows) | Not applicable | macOS telemetry. |
 | Mole for Windows | Not applicable | macOS telemetry. |
