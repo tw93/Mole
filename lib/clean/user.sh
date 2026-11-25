@@ -3330,7 +3330,7 @@ mole_agent_recorded_project_folders() {
 # inside an agent worktree counts as its repository's; one whose nearest .git is
 # a file (a worktree or submodule) has no main checkout here.
 mole_agent_recorded_repositories() {
-    local base="$HOME/" line raw path cur repository considered=0 steps physical_home
+    local base="$HOME/" line raw path below cur repository considered=0 steps physical_home
     local -a mounts=() seen=()
     # pwd -P below spells a checkout through any link in HOME itself.
     physical_home=$(cd "$HOME" 2> /dev/null && /bin/pwd -P) || physical_home="${base%/}"
@@ -3367,8 +3367,12 @@ mole_agent_recorded_repositories() {
         [[ "$raw" == "$base"* && "/$raw/" != *"/./"* && "/$raw/" != *"/../"* ]] || continue
         path=$(printf '%s' "$raw" | tr -s '/')
         path="${path%/}"
-        path="${path%%/.claude/worktrees/*}"
-        path="${path%%/.codex/worktrees/*}"
+        # Cut at a worktree container below HOME only: HOME's own path may
+        # hold one, as a checkout's test HOME does.
+        below="${path#"$base"}"
+        below="${below%%/.claude/worktrees/*}"
+        below="${below%%/.codex/worktrees/*}"
+        path="$base$below"
         _mole_agent_record_allowed "$path" || continue
         considered=$((considered + 1))
         cur="$path"

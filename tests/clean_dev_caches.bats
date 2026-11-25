@@ -4397,6 +4397,25 @@ EOF
     [[ "$listed" == "$expected" ]] || { echo "listed:"; echo "$listed"; return 1; }
 }
 
+@test "agent_worktree_containers cuts a recorded worktree path only below HOME" {
+    # HOME itself sits inside a worktree container, as a checkout's test HOME does.
+    local h="$HOME/outer/.claude/worktrees/w/home"
+    mkdir -p "$h/work/app/.git" "$h/work/app/.claude/worktrees/a/src"
+    printf '{"projects": {"%s/work/app/.claude/worktrees/a/src": {}}}' "$h" > "$h/.claude.json"
+
+    run env HOME="$h" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+agent_worktree_containers | tr '\0' '\n'
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local physical
+    physical=$(cd "$h" && /bin/pwd -P)
+    [[ "$output" == "$physical/work/app/.claude/worktrees" || "$output" == "$h/work/app/.claude/worktrees" ]] || { echo "listed: $output"; return 1; }
+}
+
 @test "report_agent_worktree_candidates skips a row on a size timeout without cancelling clean" {
     local test_home="$HOME/wt-timeout-home"
     mkdir -p "$test_home/code/proj/.claude/worktrees/wt-one"
