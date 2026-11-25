@@ -283,6 +283,40 @@ func TestSummarizeZombiesCountsAndRanksKnownParents(t *testing.T) {
 	}
 }
 
+func TestSummarizeZombiesHealthySample(t *testing.T) {
+	processes := []ProcessInfo{{PID: 1, State: "S", Name: "parent"}}
+	count, parents, complete := summarizeZombies(processes, zombieParentLimit, true)
+	if count != 0 || parents == nil || len(parents) != 0 || !complete {
+		t.Fatalf("healthy sample = %d, %#v, %t; want zero, an empty parent list, and complete attribution",
+			count, parents, complete)
+	}
+}
+
+func BenchmarkSummarizeZombies(b *testing.B) {
+	for _, tc := range []struct {
+		name   string
+		zombie bool
+	}{
+		{name: "healthy"},
+		{name: "one_attributed_zombie", zombie: true},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			processes := make([]ProcessInfo, 1000)
+			for i := range processes {
+				processes[i] = ProcessInfo{PID: i + 1, State: "S", Name: "worker"}
+			}
+			if tc.zombie {
+				processes[len(processes)-1].State = "Z"
+				processes[len(processes)-1].PPID = 1
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				summarizeZombies(processes, zombieParentLimit, true)
+			}
+		})
+	}
+}
+
 func TestTopProcessesSortsByCPU(t *testing.T) {
 	procs := []ProcessInfo{
 		{PID: 3, Name: "low", CPU: 20, Memory: 3},

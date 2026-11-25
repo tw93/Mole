@@ -141,11 +141,7 @@ func isZombieState(state string) bool {
 }
 
 func summarizeZombies(processes []ProcessInfo, limit int, parentsAvailable bool) (int, []ZombieParent, bool) {
-	byPID := make(map[int]ProcessInfo, len(processes))
-	for _, proc := range processes {
-		byPID[proc.PID] = proc
-	}
-
+	var namesByPID map[int]string
 	count := 0
 	complete := parentsAvailable
 	byParent := make(map[int]int)
@@ -161,8 +157,14 @@ func summarizeZombies(processes []ProcessInfo, limit int, parentsAvailable bool)
 			complete = false
 			continue
 		}
-		parent, ok := byPID[proc.PPID]
-		if !ok || parent.Name == "" {
+		if namesByPID == nil {
+			// Only build the index when a zombie needs a parent lookup.
+			namesByPID = make(map[int]string, len(processes))
+			for _, candidate := range processes {
+				namesByPID[candidate.PID] = candidate.Name
+			}
+		}
+		if namesByPID[proc.PPID] == "" {
 			complete = false
 			continue
 		}
@@ -173,7 +175,7 @@ func summarizeZombies(processes []ProcessInfo, limit int, parentsAvailable bool)
 	for ppid, zombieCount := range byParent {
 		parents = append(parents, ZombieParent{
 			PID:   ppid,
-			Name:  byPID[ppid].Name,
+			Name:  namesByPID[ppid],
 			Count: zombieCount,
 		})
 	}
