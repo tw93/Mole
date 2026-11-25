@@ -91,8 +91,14 @@ mole_collect_cli_args() {
     done
 }
 
-mole_dispatch_history_early() {
+mole_dispatch_early() {
     [[ "${MOLE_TEST_MODE:-0}" == "1" && "${MOLE_SKIP_MAIN:-0}" == "1" ]] && return 0
+
+    if [[ $# -eq 2 && "$1" == "completion" && "${MO_DEBUG:-0}" != "1" ]]; then
+        case "$2" in
+            bash | zsh | fish) exec "$SCRIPT_DIR/bin/completion.sh" "$2" ;;
+        esac
+    fi
 
     mole_collect_cli_args "$@"
     [[ "${MOLE_CLI_ARGS[0]:-}" == "history" ]] || return 0
@@ -104,7 +110,7 @@ mole_dispatch_history_early() {
     exec "$SCRIPT_DIR/bin/history.sh"
 }
 
-mole_dispatch_history_early "$@"
+mole_dispatch_early "$@"
 
 source "$SCRIPT_DIR/lib/core/common.sh"
 source "$SCRIPT_DIR/lib/core/commands.sh"

@@ -192,14 +192,17 @@ setup() {
 }
 
 @test "completion subcommand supports bash/zsh/fish" {
-	run "$PROJECT_ROOT/bin/completion.sh" bash
+	run "$PROJECT_ROOT/mole" completion bash
 	[ "$status" -eq 0 ]
+	[[ "$output" == *"_mole_completions"* ]] || return 1
 
-	run "$PROJECT_ROOT/bin/completion.sh" zsh
+	run "$PROJECT_ROOT/mole" completion zsh
 	[ "$status" -eq 0 ]
+	[[ "$output" == *"#compdef mole mo"* ]] || return 1
 
-	run "$PROJECT_ROOT/bin/completion.sh" fish
+	run "$PROJECT_ROOT/mole" completion fish
 	[ "$status" -eq 0 ]
+	[[ "$output" == *"__fish_mole_no_subcommand"* ]]
 }
 
 @test "completion fish includes explicit unattended purge consent" {
