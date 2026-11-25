@@ -225,6 +225,13 @@ func (m model) View() string {
 	}
 	if m.height > 0 && lipgloss.Height(output) > m.height {
 		output = renderTerminalTooSmall(termWidth, m.height)
+	} else if hints := renderKeyHints(termWidth); hints != "" {
+		// Hints only use spare rows, so they never cost core rows or trigger
+		// the resize message.
+		withHints := lipgloss.JoinVertical(lipgloss.Left, output, "", hints)
+		if m.height <= 0 || lipgloss.Height(withHints) <= m.height {
+			output = withHints
+		}
 	}
 	return padViewToHeight(output, m.height)
 }
