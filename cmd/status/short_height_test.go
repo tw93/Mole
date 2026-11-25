@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -39,13 +40,64 @@ func TestStatusViewFitsShortViewport(t *testing.T) {
 				}
 				grown, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 100})
 				restored := grown.(model)
-				if strings.Count(stripANSI(restored.View()), "Core") != 20 || lipgloss.Height(restored.View()) != 100 || !strings.Contains(stripANSI(restored.View()), "Network") || strings.Contains(restored.View(), "Terminal too small") {
+				if countCoreRows(restored.View()) != 20 || lipgloss.Height(restored.View()) != 100 || !strings.Contains(stripANSI(restored.View()), "Network") || strings.Contains(restored.View(), "Terminal too small") {
 					t.Fatal("tall resize did not recover")
 				}
 				if got > height {
 					t.Fatalf("frame overflows: %d lines for %d-row terminal", got, height)
 				}
 			})
+		}
+	}
+}
+
+// countCoreRows counts CPU card rows (Core1, Core2, ...); the "C Cores" hint
+// also contains "Core".
+var coreRowPattern = regexp.MustCompile(`Core[0-9]+`)
+
+func countCoreRows(view string) int {
+	return len(coreRowPattern.FindAllString(stripANSI(view), -1))
+}
+
+// At the tightest height that shows every core the hints stay hidden; they
+// appear once the blank line and the hint line both fit.
+func TestStatusKeyHintsUseOnlySpareRows(t *testing.T) {
+	cpu := CPUStatus{Usage: 25, LogicalCPU: 20}
+	for i := range 20 {
+		cpu.PerCore = append(cpu.PerCore, float64(i))
+	}
+	m := model{width: 120, schedule: collectionSchedule{hasSnapshot: true}, metrics: MetricsSnapshot{CPU: cpu}, cpuCores: 0, fullCollected: true}
+
+	for m.height = 1; countCoreRows(m.View()) < 20; m.height++ {
+		if m.height > 200 {
+			t.Fatal("dashboard never showed all 20 cores")
+		}
+	}
+	tightest := m.height
+	for extra := range 3 {
+		m.height = tightest + extra
+		view := m.View()
+		if got := countCoreRows(view); got != 20 {
+			t.Fatalf("height %d: got %d of 20 core rows", m.height, got)
+		}
+		if got, want := strings.Contains(stripANSI(view), "Esc/Q Quit"), extra == 2; got != want {
+			t.Fatalf("height %d: key hints visible=%v, want %v", m.height, got, want)
+		}
+	}
+}
+
+func TestStatusKeyHintsKeepQuitOnNarrowTerminals(t *testing.T) {
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{28, "K Cat | C Cores | Esc/Q Quit"},
+		{27, "C Cores | Esc/Q Quit"},
+		{19, "Esc/Q Quit"},
+		{9, ""},
+	} {
+		if got := stripANSI(renderKeyHints(tc.width)); got != tc.want {
+			t.Errorf("width %d: got %q, want %q", tc.width, got, tc.want)
 		}
 	}
 }
