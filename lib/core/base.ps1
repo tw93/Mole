@@ -231,6 +231,16 @@ $script:CleanProtectedPathSegments = @(
     "IndexedDB"
     "Sessions"
     "Local Extension Settings"
+    # Extension state beside the profile caches: MV3 background scripts, their
+    # registrations and settings. Mole Mac's Clean once offered ScriptCache and
+    # broke extensions; no Windows rule lists these, the guard keeps it so.
+    "Sync Extension Settings"
+    "Managed Extension Settings"
+    "Extension State"
+    "Extension Rules"
+    "Extension Scripts"
+    "Service Worker\ScriptCache"
+    "Service Worker\Database"
     "Sync Data"
     "Service Worker\CacheStorage"
     "Adobe\Common\Team Projects Cache"
