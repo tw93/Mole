@@ -455,6 +455,32 @@ Describe "Owner cache accounting" {
         $stats.FilesCleaned | Should -Be 1
         Test-Path (Join-Path $script:Root 'kept.bin') | Should -BeTrue
     }
+    It "Counts an owner cache reduction larger than 2 GiB" {
+        # Supply measured lengths without allocating a multi-gigabyte cache.
+        $script:MeasuredBytes = 3GB + 4KB
+        Mock Test-SafePath { $true }
+        Mock Get-MolePathSnapshot { @{ Path = $script:Root } }
+        Mock Test-MolePathSnapshot { $true }
+        Mock Get-SafeDirectoryTreeItems {
+            $file = [pscustomobject]@{
+                FullName = Join-Path $script:Root 'cache.bin'
+                Attributes = [IO.FileAttributes]::Normal
+                PSIsContainer = $false
+                MolePathSnapshot = @{ Path = $script:Root }
+                Length = $script:MeasuredBytes
+            }
+            @{ Success = $true; Items = @($file) }
+        }
+        Mock Invoke-MoleOwnerProcess {
+            $script:MeasuredBytes = 4KB
+            [pscustomobject]@{ Output = '' }
+        }
+        Invoke-MoleOwnerCacheCleanup -Name fixture -Query @('path') -Arguments @('prune') -Description 'Fixture cache'
+        $stats = Get-CleanupStats
+        $stats.TotalSizeKB | Should -Be (3GB / 1KB)
+        $stats.FilesCleaned | Should -Be 0
+        $stats.TotalItems | Should -Be 1
+    }
     It "Does not report bytes for an unchanged cache" {
         Invoke-MoleOwnerCacheCleanup -Name fixture -Query @('path') -Arguments @('prune') -Description 'Fixture cache'
         (Get-CleanupStats).TotalSizeKB | Should -Be 0

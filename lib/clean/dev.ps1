@@ -157,7 +157,7 @@ function Invoke-MoleOwnerCacheCleanup {
                 $afterFiles = @($after.Items | Where-Object { -not $_.PSIsContainer })
                 $afterBytes = 0L
                 foreach ($file in $afterFiles) { $afterBytes += $file.Length }
-                $removedBytes = [Math]::Max(0, [long]$beforeBytes - [long]$afterBytes)
+                $removedBytes = [Math]::Max(0L, [long]$beforeBytes - [long]$afterBytes)
                 $script:TotalSizeCleaned += [Math]::Floor($removedBytes / 1024)
                 $script:FilesCleaned += [Math]::Max(0, $beforeFiles.Count - $afterFiles.Count)
                 if ($removedBytes -gt 0) { $script:TotalItems++ }
