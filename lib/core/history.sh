@@ -628,15 +628,14 @@ history_load_operations() {
 
 history_load_deletions() {
     local log_file="$1"
-    local line timestamp mode size_kb status path
+    local timestamp mode size_kb status path
 
     history_reset_deletions
 
     [[ -f "$log_file" ]] || return 0
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ -z "$line" ]] && continue
-        IFS=$'\t' read -r timestamp mode size_kb status path <<< "$line"
+    # Split each row directly, keeping the last row even without a newline.
+    while IFS=$'\t' read -r timestamp mode size_kb status path || [[ -n "$timestamp" ]]; do
         [[ -n "${timestamp:-}" && -n "${mode:-}" && -n "${status:-}" ]] || continue
         HISTORY_DELETE_TIMESTAMPS+=("$timestamp")
         HISTORY_DELETE_MODES+=("$mode")
