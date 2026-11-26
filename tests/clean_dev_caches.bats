@@ -472,6 +472,35 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_dev_cicd keeps the SonarScanner SSL stores (#2117)" {
+    # SonarScanner reads the truststore and keystore the user created from
+    # ~/.sonar/ssl; only its downloads in ~/.sonar/cache are rebuildable.
+    local test_home="$HOME/sonar-home"
+    local sonar_home="$test_home/.sonar"
+    mkdir -p "$sonar_home/cache/engine" "$sonar_home/ssl"
+    touch "$sonar_home/ssl/truststore.p12" "$sonar_home/ssl/keystore.p12"
+
+    run env HOME="$test_home" PATH="/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+clean_dev_cicd
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"CLEAN=SonarQube cache|$sonar_home/cache/engine"* ]] || return 1
+    [[ "$output" != *"$sonar_home/ssl"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_dev_cloud stops on GitHub CLI probe or clear cancellation" {
     local failure_phase failure_rc
     for failure_phase in help clear; do
