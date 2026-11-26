@@ -218,6 +218,8 @@ type ThermalStatus struct {
 	SystemPower  float64 `json:"system_power"`  // System power consumption in Watts
 	AdapterPower float64 `json:"adapter_power"` // AC adapter max power in Watts
 	BatteryPower float64 `json:"battery_power"` // Battery charge/discharge power in Watts (positive = discharging)
+
+	probeDesktopPower bool // Battery absent and no direct system wattage in IORegistry.
 }
 
 type SensorReading struct {
@@ -265,6 +267,7 @@ type Collector struct {
 	hasEnrichment     bool
 	processEnrichment processEnrichment
 	hasProcessData    bool
+	readDesktopPower  func() float64
 }
 
 type collectedMetrics struct {
@@ -323,6 +326,8 @@ func NewCollector(options ProcessWatchOptions) *Collector {
 		cachedNetIPs:   make(map[string]string),
 		processWatch:   options.SnapshotConfig(),
 		processWatcher: NewProcessWatcher(options),
+
+		readDesktopPower: readSMCDesktopPower,
 	}
 	c.primeNetworkCounters(time.Now())
 	return c
@@ -661,6 +666,13 @@ func (c *Collector) applyEnrichment(snapshot *MetricsSnapshot, preserveLiveProce
 	}
 	if c.hasEnrichment {
 		c.enrichment.apply(snapshot)
+		// Full, fast and process snapshots all pass here. Keep the registry
+		// reading in the cache so a failed SMC sample falls back to telemetry.
+		if snapshot.Thermal.probeDesktopPower && c.readDesktopPower != nil {
+			if watts := c.readDesktopPower(); watts > 0 {
+				snapshot.Thermal.SystemPower = watts
+			}
+		}
 		snapshot.HealthScore, snapshot.HealthScoreMsg = calculateHealthScore(
 			snapshot.CPU,
 			snapshot.Memory,

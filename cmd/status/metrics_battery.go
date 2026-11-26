@@ -365,13 +365,14 @@ func collectThermal() ThermalStatus {
 		}
 	}
 
-	// Power metrics from ioreg (fast, real-time).
+	// Power telemetry can persist for a minute on a desktop Mac.
 	ctxPower, cancelPower := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancelPower()
 	if out, err := runCmd(ctxPower, "ioreg", "-rn", "AppleSmartBattery"); err == nil {
 		powerThermal := parseAppleSmartBatteryThermal(out)
 		thermal.BatteryTemp = powerThermal.BatteryTemp
 		thermal.SystemPower = powerThermal.SystemPower
+		thermal.probeDesktopPower = powerThermal.probeDesktopPower
 		thermal.AdapterPower = powerThermal.AdapterPower
 		thermal.BatteryPower = powerThermal.BatteryPower
 	}
@@ -399,10 +400,15 @@ func parseAppleSmartBatteryThermal(out string) ThermalStatus {
 		amperageMA     float64
 		inputVoltageMV float64
 		inputCurrentMA float64
+		batteryAbsent  bool
 	)
 
 	for line := range strings.Lines(out) {
 		line = strings.TrimSpace(line)
+
+		if installed, found := ioRegValueForKey(line, "BatteryInstalled"); found {
+			batteryAbsent = installed == "No"
+		}
 
 		// AppleSmartBattery reports battery temperature in centi-degrees Celsius.
 		if tempRaw, found := parseIORegFloatValue(line, "Temperature"); found && tempRaw > 0 {
@@ -460,8 +466,9 @@ func parseAppleSmartBatteryThermal(out string) ThermalStatus {
 		}
 	}
 
-	// Macs without a battery (Mac Studio on macOS 27) can report SystemPowerIn
-	// as 0 while the DC input voltage and current stay live.
+	// On batteryless desktops, prefer a fresh SMC reading on each snapshot
+	// when there is no direct wattage. Keep the registry V/I as a fallback.
+	thermal.probeDesktopPower = batteryAbsent && thermal.SystemPower == 0
 	if thermal.SystemPower == 0 && inputVoltageMV > 0 && inputCurrentMA > 0 {
 		setSystemPowerMW(&thermal, inputVoltageMV*inputCurrentMA/1000.0)
 	}

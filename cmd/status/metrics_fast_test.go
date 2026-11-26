@@ -14,6 +14,44 @@ import (
 	gopsutilnet "github.com/shirou/gopsutil/v4/net"
 )
 
+func TestDesktopPowerRefreshKeepsRegistryFallback(t *testing.T) {
+	thermal := parseAppleSmartBatteryThermal(`"BatteryInstalled" = No
+"PowerTelemetryData" = {"SystemPowerIn"=0,"SystemVoltageIn"=12000,"SystemCurrentIn"=2000}`)
+	c := &Collector{hasEnrichment: true, enrichment: snapshotEnrichment{thermal: thermal}}
+	for _, tc := range []struct{ live, want float64 }{
+		{44.819445, 44.819445}, {58.125, 58.125}, {0, 24}, {35.75, 35.75},
+	} {
+		c.readDesktopPower = func() float64 { return tc.live }
+		var snapshot MetricsSnapshot
+		c.applyEnrichment(&snapshot, false)
+		if got := snapshot.Thermal.SystemPower; got != tc.want {
+			t.Errorf("sample %v W: got %v W, want %v W", tc.live, got, tc.want)
+		}
+	}
+}
+
+func TestPowerRefreshPreservesReportedAndBatteryReadings(t *testing.T) {
+	for _, tc := range []struct {
+		battery, telemetry string
+		want               float64
+	}{
+		{`"BatteryInstalled" = No`, `"SystemPowerIn"=19967`, 19.967},
+		{`"BatteryInstalled" = Yes`, `"SystemVoltageIn"=12000,"SystemCurrentIn"=2000`, 24},
+		{"", `"SystemVoltageIn"=12000,"SystemCurrentIn"=2000`, 24},
+	} {
+		thermal := parseAppleSmartBatteryThermal(tc.battery + "\n" + `"PowerTelemetryData" = {` + tc.telemetry + "}")
+		c := &Collector{
+			hasEnrichment: true, enrichment: snapshotEnrichment{thermal: thermal},
+			readDesktopPower: func() float64 { return 90 },
+		}
+		var snapshot MetricsSnapshot
+		c.applyEnrichment(&snapshot, false)
+		if got := snapshot.Thermal.SystemPower; got != tc.want {
+			t.Errorf("battery %q, telemetry %q: got %v W, want %v W", tc.battery, tc.telemetry, got, tc.want)
+		}
+	}
+}
+
 func TestCollectFastAvoidsExternalCommands(t *testing.T) {
 	origRunCmd := runCmd
 	origCommandExists := commandExists
