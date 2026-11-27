@@ -1821,6 +1821,8 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+# A host that runs the editor must not change what this case sees.
+pgrep() { return 1; }
 safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
@@ -2200,6 +2202,8 @@ JSON
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+# A host that runs the editor must not change what this case sees.
+pgrep() { return 1; }
 safe_clean() { echo "$2"; }
 clean_code_editors
 EOF
@@ -2216,6 +2220,8 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+# A host that runs the editor must not change what this case sees.
+pgrep() { return 1; }
 safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
@@ -2286,6 +2292,8 @@ EOF
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+# A host that runs the editor must not change what this case sees.
+pgrep() { return 1; }
 safe_clean() { local label="${!#}" target; echo "CALL:$label"; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
 clean_code_editors
 EOF
