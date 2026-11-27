@@ -191,13 +191,33 @@ group_flush() {
 # KB of several paths in one du walk: no process per child (a Bun cache holds
 # thousands of package folders, #2120), and a hardlink shared by two children
 # counts once, as removing both frees it once. A child gone mid-walk only makes
-# du exit nonzero; its total line still holds the others.
+# du exit nonzero; its total line still holds the others, so the total row
+# decides, not the exit status. Fails when du prints no total (an
+# implementation without -c or --files0-from), so the caller can fall back.
 mole_paths_kb() {
-    local output kb
+    local output total_line kb
+    # mole_c fixes the locale, so the marker of -c's final row is "total".
     output=$(printf '%s\0' "$@" | mole_c du -skxc --files0-from=- 2> /dev/null) || true
-    kb="${output##*$'\n'}"
-    kb="${kb%%[[:space:]]*}"
-    [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
+    total_line="${output##*$'\n'}"
+    [[ "$total_line" == *$'\t'total ]] || return 1
+    kb="${total_line%$'\t'total}"
+    [[ "$kb" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$kb"
+}
+
+# Keep the old per-path measurement when the batch walk fails.
+# Separate du runs can count one shared hardlink twice.
+mole_rule_paths_kb() {
+    local kb=0 child
+    if kb=$(mole_paths_kb "$@"); then
+        printf '%s\n' "$kb"
+        return 0
+    fi
+    debug_log "Batch size measurement failed; falling back to per-path measurement"
+    kb=0
+    for child in "$@"; do
+        kb=$((kb + $(mole_path_kb "$child")))
+    done
     printf '%s\n' "$kb"
 }
 
@@ -250,7 +270,7 @@ clean_rule_collect() {
         ((kept > 0)) && group_note "$(whitelist_note "$label")"
         return 0
     fi
-    kb=$(mole_paths_kb "${eligible[@]}")
+    kb=$(mole_rule_paths_kb "${eligible[@]}")
     ((kb >= 8)) || return 0
 
     # An owner that runs, or a probe that cannot tell, skips the rule.
@@ -270,14 +290,18 @@ clean_rule_collect() {
         return 0
     fi
     local removed=0 failed=0 left=0
+    local -a failed_paths=()
     for child in "${eligible[@]}"; do
         if mole_remove_cache "$child" "$root" clean "$label"; then
             removed=$((removed + 1))
         else
             failed=$((failed + 1))
-            left=$((left + $(mole_path_kb "$child")))
+            failed_paths+=("$child")
         fi
     done
+    if ((failed > 0)); then
+        left=$(mole_rule_paths_kb "${failed_paths[@]}")
+    fi
     G_KB=$((G_KB + (kb > left ? kb - left : 0)))
     G_COUNT=$((G_COUNT + removed))
     ((failed > 0)) && debug_log "$label: $failed item(s) not removed"
