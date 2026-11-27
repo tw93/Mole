@@ -81,3 +81,25 @@ setup() {
     [[ "$output" == *"$sibling"* ]] || return 1
     [[ "$output" != *"~er/projects"* ]]
 }
+
+@test "purge paths highlights existing unconfigured default paths when using custom config" {
+    mkdir -p "$HOME/.codex/worktrees" "$HOME/Projects"
+    printf '%s\n' "$HOME/project" "$HOME/Projects" > "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code NO_COLOR=1 MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"Unconfigured Default Paths Found:"* ]] || return 1
+    # shellcheck disable=SC2088  # literal tilde is the expected display form
+    [[ "$output" == *"  + ~/.codex/worktrees"* ]] || return 1
+    # shellcheck disable=SC2088  # literal tilde is the expected display form
+    [[ "$output" != *"  + ~/Projects"* ]]
+}
+
+@test "purge paths omits unconfigured default paths notice when all existing defaults are configured" {
+    mkdir -p "$HOME/.codex/worktrees"
+    printf '%s\n' "$HOME/project" "$HOME/.codex/worktrees" > "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"Unconfigured Default Paths Found:"* ]]
+}

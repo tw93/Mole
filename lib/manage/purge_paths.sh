@@ -79,6 +79,28 @@ manage_purge_paths() {
     echo ""
     if [[ $custom_count -gt 0 ]]; then
         echo -e "${GRAY}Using custom config with $custom_count paths${NC}"
+        local -a missing_defaults=()
+        local default_path resolved_default configured_path already_configured
+        for default_path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
+            [[ -d "$default_path" ]] || continue
+            resolved_default=$(mole_purge_resolve_path_case "$default_path")
+            already_configured=false
+            for configured_path in "${PURGE_SEARCH_PATHS[@]+"${PURGE_SEARCH_PATHS[@]}"}"; do
+                if [[ "$resolved_default" == "$configured_path" ]]; then
+                    already_configured=true
+                    break
+                fi
+            done
+            [[ "$already_configured" == "true" ]] && continue
+            missing_defaults+=("$default_path")
+        done
+        if [[ ${#missing_defaults[@]} -gt 0 ]]; then
+            echo ""
+            echo -e "${YELLOW}Unconfigured Default Paths Found:${NC}"
+            for path in "${missing_defaults[@]}"; do
+                echo -e "  ${CYAN}+${NC} $(mole_tilde_path "$path")"
+            done
+        fi
     else
         echo -e "${GRAY}Using ${#DEFAULT_PURGE_SEARCH_PATHS[@]} default paths${NC}"
     fi
