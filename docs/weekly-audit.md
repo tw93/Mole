@@ -2,6 +2,42 @@
 
 One entry per run of `.claude/skills/weekly-audit`, newest first, covering Mole CLI (macOS) on `main`, Mole CLI (Windows) on `windows` and, since 2026-11-10, Mole CLI (Linux) on `linux`. The next run reads the newest entry for its commit window (`Next window from`), for the items it must not report again (`Decided, do not re-report`), and rechecks `Open` first. Facts here are a run record; lasting invariants live in `AGENTS.md` on each branch.
 
+## 2026-11-27 Three-CLI pre-release review
+
+- Frozen sources: main `3da229e1` (85 commits since `V1.74.0`), windows `7bc90036` (24 since `V1.46.0-windows`), linux `febde8ac` (14 since `V0.7.1-linux`). Scope: every change since each branch's last stable tag and its direct callers, at the maintainer's request before a release of all three, in five read-only passes: macOS deletion safety, macOS Shell and Go correctness, the Windows window, the Linux window with tw93/Mole#2124, and stale guidance on all three. A sixth agent reviewed the fix diffs without the first passes' conclusions.
+- Landed: main `c6d3bb4d`, `f46e9b13`, `cc226daa`; windows `c2201015`, `bfda3122`; linux `e6ffeb0a`. The per-change table is in SYNC.md under 2026-11-27.
+- Next window from: main `cc226daa`, windows `bfda3122`, linux `e6ffeb0a`.
+
+| Item | Disposition | Evidence |
+| --- | --- | --- |
+| macOS: `mo update` through Homebrew ran a PATH `perl`, so a plenv or asdf shim with no version failed the upgrade before brew started (regression of `6fafdfc8`, unreleased) | Fixed | Reproduced with a stub `perl`; the new `core_timeout` case fails when the system perl is not preferred. |
+| All three: `go clean` honored the user's GOFLAGS, so a saved `-modcache` or `-fuzzcache` emptied a cache the row never checked or listed | Fixed | I-120, Windows I-33. The first fix emptied GOFLAGS; the second reviewer reproduced that an empty value falls through to the `go env -w` one, so the value is pinned. The macOS and Linux cases run the real `go`. |
+| macOS: Notion partition caches (`40951e5b`, unreleased) did not recheck the owner at the sink | Fixed | The partition case asserts the bound guard. |
+| Windows: `mo uninstall --dry-run` listed a Steam game's folder the real run leaves to Steam | Fixed | `Previews no leftover folder for a game that is handed to Steam`. |
+| Windows: the TypeScript cache row, first live in `834c9336`, waited only for `Code` and `node`; a Chocolatey copy under a custom `ChocolateyInstall` read as Portable | Fixed | ThinkPad: the whole suite under 5.1 (1034 passed) and 7.6.6 (1036 passed), then the five changed files 305 of 305 under both. |
+| Stale lines: Windows CLI-SYNC-17 and 22 "source only", the Windows uninstall rule without the Steam hand-off, two Linux sentences overstating the temp socket guard | Fixed | Tag ancestry and `validateTrashTarget`. |
+| Fixes in the window that a published release met, without an incident row: mbx cache root, Figma cache while running, desktop power refresh (#2114) | Fixed | I-117 to I-119. |
+
+Refuted, not findings: embedded Cursor Agent versions are held by `_mole_container_cache_has_open_handle` while a worker has one open; Windows CLI-SYNC-10 carries no stale release line.
+
+### Decided, do not re-report
+
+- The 2026-11-10 list still holds.
+- Zellij's `/tmp/zellij-<uid>` folder stays movable in `mo analyze`: only a direct child's own entries are read, on `main` and `linux` alike.
+- A Chocolatey package version with a fourth segment keeps the update notice silent; no such version exists.
+- `b5fd0ed4`, `f3804188`, `295dc1d0`, `153d9b47` and the contributor cache-coverage PRs (#2076, #2077, #2084, #2087, #2088, #2090) get no incident row: no user or release met a defect.
+
+### Open
+
+- tw93/Mole#2124 (linux, size accounting after #2123) is unmerged: it adds a fallback when the batch `du` prints no total and stops a shared hard link being subtracted twice. Its description claims the exit-1 total was unused, which head already uses, and it drops the #2120 comment. Size accounting only; left to its own review.
+- Rule volume on main is 203,938 bytes for AGENTS.md plus `.claude/rules`, 35% over the 150,543 recorded on 2026-10-30 and past the 20% trigger; a compression needs the maintainer's approval.
+- The breaker in `scripts/risk_tier.py` is on: 24 incident rows in seven days (I-93 to I-116, 18 of them `review`), so the maintainer reads each listed fix before the next release.
+- macOS `go env` and `go clean` run in the caller's folder without `GOTOOLCHAIN=local`, which Linux sets; a `toolchain` line in a `go.mod` there could start a toolchain download. By reading, not reproduced.
+- The perl backend does not probe `/usr/bin/perl` against a user's `PERL5LIB` or `PERL5OPT`; by reading, not reproduced.
+- The Windows and Linux Open items of 2026-11-10 were rechecked and still hold, except Windows `ModuleAnalysisCache`, which `834c9336` addresses and one desktop-session run of the whole suite should close, and the Windows delivery receipts for V1.41.0 to V1.43.0-windows, now in the development record.
+
+Rule volume after this run: main AGENTS.md 36,446 bytes, with `.claude/rules` 203,938; Windows AGENTS.md 28,422 bytes, its `.claude/rules` 21,584; Linux AGENTS.md 22,920 bytes, with rules 35,092.
+
 ## 2026-11-10 Three-CLI whole review
 
 - Frozen sources: main `1baecd15`, windows `075215a8`, linux `cf42a724` (first audit of Mole CLI (Linux)). Scope: all three trees whole, at the maintainer's request, in six read-only passes: macOS deletion safety, Windows and Linux deletion safety, command and flag matrix, performance (measured on macOS, by reading elsewhere), over-design and design, stale guidance and codification.

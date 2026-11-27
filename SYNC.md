@@ -510,3 +510,15 @@ Source: a read-only comparison of the four products on 2026-11-27, each finding 
 | `mo analyze` Esc clears a multi-selection first | Implemented in Mole CLI (macOS) (`295dc1d0`, tw93/Mole#2122), Mole CLI (Windows) (`ceb42ea3`) and Mole CLI (Linux) (`febde8ac`) source, not released | The Go TUIs are forked, so the same `updateKey` change and three `Esc Clear` footers went to each branch with the two `TestEscClearsSelection*` cases, each red on the previous `update.go`. Mole Mac and Mole for Windows have their own analyze UI: Not applicable. |
 | A Ctrl-C during a Homebrew `mo update` stops it at once | Implemented in Mole CLI (macOS) source (`6fafdfc8`, tw93/Mole#2121), not released | `run_with_interruptible_timeout`; Homebrew is the macOS install channel only, so the Windows and Linux CLIs are Not applicable. |
 | Linux rules size their children in one `du` walk | Implemented in Mole CLI (Linux) source (`f42da2a0`, tw93/Mole#2123), not released | Linux-only sizing loop in `bin/clean.sh`; Mole CLI (macOS) sizes through its own `safe_clean` path: Not applicable. |
+
+## 2026-11-27 Pre-release review of the three CLIs
+
+Source: the review of every commit since `V1.74.0`, `V1.46.0-windows` and `V0.7.1-linux` (recorded in `docs/weekly-audit.md`). Each row was checked against the destination's own consumer.
+
+| Row | Status | Consumer and evidence |
+| --- | --- | --- |
+| `go clean` runs with `GOFLAGS=-modcacherw`, so an exported or `go env -w` saved `-modcache`, `-cache` or `-fuzzcache` cannot widen it | Implemented in Mole CLI (macOS) (`f46e9b13`), Mole CLI (Linux) (`e6ffeb0a`) and Mole CLI (Windows) (`c2201015`, CLI-SYNC-29) source, not released | Each branch has a case that fails with the flag empty: `clean_dev_go pins GOFLAGS so a saved flag cannot widen go clean` and Linux's `go: a GOFLAGS saved with go env -w cannot widen go clean -modcache` run the real `go`; Windows pins the value in `Clear-GoCaches`. Mole Mac and Mole for Windows: Pending, check whether their Go rows run `go clean` with the user's environment. |
+| The perl timeout backend runs `/usr/bin/perl` before a PATH `perl` | Implemented in Mole CLI (macOS) source (`c6d3bb4d`), not released | `the perl backend runs the system perl, not a broken PATH shim` in `tests/core_timeout.bats`. Mole CLI (Linux) uses GNU `timeout` and Mole CLI (Windows) has no perl: Not applicable. |
+| Notion partition caches recheck the owner at the sink | Implemented in Mole CLI (macOS) source (`cc226daa`), not released | `clean_notion_partition_disk_caches targets Cache and Code Cache in every partition`. macOS-only row: Not applicable elsewhere. |
+| Mole CLI (Windows): the uninstall preview lists no folder for a Steam hand-off, the TypeScript cache waits for every editor that hosts tsserver, a Chocolatey copy is recognized under a custom `ChocolateyInstall` | Implemented in Mole CLI (Windows) source (`c2201015`), not released | Recorded in the windows branch's SYNC.md and `.claude/rules`. Mole for Windows `CleanCatalog.cs` holds the TypeScript row for `Code` and `node` only: Pending there. Mole CLI (macOS) has no such row: Not applicable. |
+
