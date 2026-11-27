@@ -4490,7 +4490,9 @@ clean_dev_cicd() {
     safe_clean ~/.cache/gitlab-runner/* "GitLab Runner cache"
     safe_clean ~/.github/cache/* "GitHub Actions cache"
     safe_clean ~/.circleci/cache/* "CircleCI cache"
-    safe_clean ~/.sonar/* "SonarQube cache"
+    # ~/.sonar is the SonarScanner user home: its downloads live in cache/,
+    # while ssl/ holds the truststore and keystore the user created.
+    safe_clean ~/.sonar/cache/* "SonarQube cache"
 }
 # Database tool caches.
 clean_dev_database() {
