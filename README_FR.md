@@ -223,7 +223,7 @@ Free space: 223.5GB (+4.5GB)
 
 `mo uninstall` supprime une application installée ainsi que les fichiers associés que Mole peut rattacher à cette application. Si une autre copie installée de la même application utilise encore des fichiers partagés, Mole les conserve. Si l'application a déjà été supprimée manuellement, lancez `mo clean` pour trouver les résidus orphelins.
 
-Les données personnelles, notamment les réglages et les extensions, sont conservées par défaut. Appuyez sur `D` dans l’aperçu pour sélectionner les chemins de données à supprimer. Avec `mo uninstall --with-data`, ces données sont présélectionnées, sauf les profils de navigateur et les conteneurs App Group ; l’aperçu les liste à part et `D` permet toujours de conserver n’importe quel chemin. Après la désinstallation, les références aux chemins supprimés dans les configurations shell, Hook ou MCP sont indiquées uniquement par fichier et numéro de ligne, sans modifier ces configurations.
+Les données enregistrées sous l’identifiant de l’app, comme son conteneur, ses réglages et son stockage web, sont supprimées avec elle ; les autres données personnelles trouvées par nom sont conservées par défaut, et `mo uninstall --keep-data` conserve tout. Appuyez sur `D` dans l’aperçu pour sélectionner les chemins de données à supprimer. Avec `mo uninstall --with-data`, ces données sont présélectionnées, sauf les profils de navigateur et les conteneurs App Group ; l’aperçu les liste à part et `D` permet toujours de conserver n’importe quel chemin. Après la désinstallation, les références aux chemins supprimés dans les configurations shell, Hook ou MCP sont indiquées uniquement par fichier et numéro de ligne, sans modifier ces configurations.
 
 ```text
 $ mo uninstall
@@ -239,9 +239,11 @@ Files to be removed:
 ✓ Photoshop 2024, 4.20GB
   ✓ /Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app
 
+Personal data to remove:
+  ✓ ~/Library/Preferences/com.adobe.Photoshop.plist
+
 Personal data kept:
   ~/Library/Application Support/Adobe/Adobe Photoshop 2024
-  ~/Library/Preferences/com.adobe.Photoshop.plist
 
 D choose personal data
 

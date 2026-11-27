@@ -223,7 +223,7 @@ Free space: 223.5GB (+4.5GB)
 
 `mo uninstall` removes an installed app together with related files that Mole can tie back to that app. It keeps shared data when another installed copy still uses it. If the app is already gone, use `mo clean` to look for leftovers.
 
-Personal data, including settings and plugins, is kept by default. Press `D` in the removal preview to select individual data paths. `mo uninstall --with-data` starts with that data selected, except browser profiles and App Group containers; the preview lists it separately and `D` still lets you keep any path. After removal, references in shell, Hook, or MCP configuration are listed by file and line only; Mole does not edit those configurations.
+Data stored under the app's own identifier, such as its container, settings and web storage, is removed with the app; other personal data found by name is kept by default, and `mo uninstall --keep-data` keeps all of it. Press `D` in the removal preview to select individual data paths. `mo uninstall --with-data` starts with that data selected, except browser profiles and App Group containers; the preview lists it separately and `D` still lets you keep any path. After removal, references in shell, Hook, or MCP configuration are listed by file and line only; Mole does not edit those configurations.
 
 ```text
 $ mo uninstall
@@ -239,9 +239,11 @@ Files to be removed:
 ✓ Photoshop 2024, 4.20GB
   ✓ /Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app
 
+Personal data to remove:
+  ✓ ~/Library/Preferences/com.adobe.Photoshop.plist
+
 Personal data kept:
   ~/Library/Application Support/Adobe/Adobe Photoshop 2024
-  ~/Library/Preferences/com.adobe.Photoshop.plist
 
 D choose personal data
 

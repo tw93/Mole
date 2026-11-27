@@ -223,7 +223,7 @@ Free space: 223.5GB (+4.5GB)
 
 `mo uninstall` はインストール済みアプリと、Moleがそのアプリのものだと特定できる関連ファイルを削除します。同じアプリの別のインストールがまだ使っている共有ファイルは保持されます。アプリがすでに削除済みの場合は、`mo clean` で残留ファイルを探せます。
 
-設定やプラグインなどの個人データは標準で保持されます。削除プレビューで `D` を押すと、削除するデータのパスを個別に選べます。`mo uninstall --with-data` を使うと、ブラウザのプロファイルと App Group コンテナを除くこれらのデータが最初から選択され、プレビューでは別枠で表示されます。`D` で任意のパスを残すこともできます。削除後、shell・Hook・MCP 設定に削除済みパスへの参照が見つかった場合は、ファイル名と行番号だけを表示し、設定は変更しません。
+アプリ自身の識別子で保存されたデータ（コンテナ、設定、Web ストレージなど）はアプリと一緒に削除され、名前で見つかったその他の個人データは標準で保持されます。`mo uninstall --keep-data` を使うとすべて保持されます。削除プレビューで `D` を押すと、削除するデータのパスを個別に選べます。`mo uninstall --with-data` を使うと、ブラウザのプロファイルと App Group コンテナを除くこれらのデータが最初から選択され、プレビューでは別枠で表示されます。`D` で任意のパスを残すこともできます。削除後、shell・Hook・MCP 設定に削除済みパスへの参照が見つかった場合は、ファイル名と行番号だけを表示し、設定は変更しません。
 
 ```text
 $ mo uninstall
@@ -239,9 +239,11 @@ Files to be removed:
 ✓ Photoshop 2024, 4.20GB
   ✓ /Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app
 
+Personal data to remove:
+  ✓ ~/Library/Preferences/com.adobe.Photoshop.plist
+
 Personal data kept:
   ~/Library/Application Support/Adobe/Adobe Photoshop 2024
-  ~/Library/Preferences/com.adobe.Photoshop.plist
 
 D choose personal data
 

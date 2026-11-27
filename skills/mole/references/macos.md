@@ -40,8 +40,10 @@ invocation and asks for administrator access itself when a step needs it.
 | `mo clean --external <volume>` | Removes `.DS_Store`, AppleDouble `._*` files and `.TemporaryItems` from a mounted external volume, never its Trash; preview with `--dry-run` | Agent after consent |
 
 `mo uninstall` takes the `uninstall_name` from `--list`, several at once
-(`mo uninstall slack zoom`). `--with-data` starts with personal data selected;
-by default it is kept. `--permanent` skips the Trash; never suggest it unless
+(`mo uninstall slack zoom`). By default data stored under the app's own
+identifier (its container, settings, web storage) starts selected and other
+personal data is kept; `--with-data` starts with all of it selected and
+`--keep-data` with none. `--permanent` skips the Trash; never suggest it unless
 the user asks to bypass the Trash.
 
 System-level cleanup and some optimize tasks need administrator access. The
@@ -60,9 +62,10 @@ the user wants only some projects, hand them `mo purge`, whose selection list
 lets them pick.
 
 For `mo uninstall`, "remove it completely" is a question about personal data:
-by default settings and app data are kept, and `--with-data` starts with them
-selected. Show the user the "Personal data kept" list from the dry run and let
-them choose. The plan marks apps that are running; ask the user to quit them
+by default the app's own identifier data goes with it and data found by name
+is kept, `--with-data` starts with everything selected and `--keep-data` with
+nothing. Show the user the "Personal data to remove" and "Personal data kept"
+lists from the dry run and let them choose. The plan marks apps that are running; ask the user to quit them
 first.
 
 ## What a removal can be undone

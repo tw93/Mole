@@ -5990,13 +5990,18 @@ INNER
     rm -f "$apps_cache"
 }
 
-@test "uninstall main sets MOLE_UNINSTALL_WITH_DATA only with --with-data" {
+@test "uninstall main takes the data selection from its flags, never the environment" {
     run_uninstall_main_with_data_probe --with-data
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"with_data=1 delete_mode=trash"* ]] || return 1
 
-    # An inherited environment value never preselects data on its own.
+    # An inherited environment value never changes the selection: the default
+    # is the app's own identifier data, and --keep-data starts with none.
     run_uninstall_main_with_data_probe
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"with_data=own delete_mode=trash"* ]] || return 1
+
+    run_uninstall_main_with_data_probe --keep-data
     [ "$status" -eq 0 ] || return 1
     [[ "$output" == *"with_data=0 delete_mode=trash"* ]] || return 1
 

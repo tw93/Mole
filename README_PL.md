@@ -223,7 +223,7 @@ Free space: 223.5GB (+4.5GB)
 
 `mo uninstall` usuwa zainstalowaną aplikację razem z powiązanymi plikami, które Mole potrafi jednoznacznie przypisać do tej aplikacji. Zachowuje dane współdzielone, jeśli korzysta z nich inna zainstalowana kopia. Jeśli aplikacji już nie ma, użyj `mo clean`, aby poszukać pozostałości.
 
-Dane osobiste, w tym ustawienia i wtyczki, są domyślnie zachowywane. Naciśnij `D` w podglądzie usuwania, aby wybrać poszczególne ścieżki danych. `mo uninstall --with-data` zaczyna z zaznaczonymi danymi, z wyjątkiem profili przeglądarek i kontenerów App Group; podgląd wymienia je osobno, a `D` nadal pozwala zachować dowolną ścieżkę. Po usunięciu odwołania w konfiguracji powłoki, Hooków lub MCP są wymieniane tylko z nazwą pliku i numerem wiersza; Mole nie edytuje tych konfiguracji.
+Dane zapisane pod identyfikatorem aplikacji, takie jak kontener, ustawienia i pamięć witryn, są usuwane razem z nią; pozostałe dane osobiste znalezione po nazwie są domyślnie zachowywane, a `mo uninstall --keep-data` zachowuje wszystko. Naciśnij `D` w podglądzie usuwania, aby wybrać poszczególne ścieżki danych. `mo uninstall --with-data` zaczyna z zaznaczonymi danymi, z wyjątkiem profili przeglądarek i kontenerów App Group; podgląd wymienia je osobno, a `D` nadal pozwala zachować dowolną ścieżkę. Po usunięciu odwołania w konfiguracji powłoki, Hooków lub MCP są wymieniane tylko z nazwą pliku i numerem wiersza; Mole nie edytuje tych konfiguracji.
 
 ```text
 $ mo uninstall
@@ -239,9 +239,11 @@ Files to be removed:
 ✓ Photoshop 2024, 4.20GB
   ✓ /Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app
 
+Personal data to remove:
+  ✓ ~/Library/Preferences/com.adobe.Photoshop.plist
+
 Personal data kept:
   ~/Library/Application Support/Adobe/Adobe Photoshop 2024
-  ~/Library/Preferences/com.adobe.Photoshop.plist
 
 D choose personal data
 

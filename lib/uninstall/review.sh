@@ -38,6 +38,16 @@ _uninstall_data_preselect_holdback() {
             return 0
             ;;
     esac
+    # Browser profile roots keyed by the browser's own bundle id (Mole Mac's
+    # `BrowserDataPolicy`): passwords, history and extensions live there, and
+    # the own-identifier default would otherwise start with them selected.
+    local browser root
+    for browser in net.imput.helium company.thebrowser.browser com.duckduckgo.macos.browser \
+        com.sigmaos.sigmaos.macos com.apple.safaritechnologypreview; do
+        for root in "$home/library/application support/$browser" "$home/library/containers/$browser"; do
+            [[ "$path" == "$root" || "$path" == "$root/"* ]] && return 0
+        done
+    done
     local support="$home/library/application support"
     case "$path" in
         "$support/google/chrome"* | "$support/bravesoftware"* | \
@@ -68,11 +78,56 @@ _uninstall_data_preselect_holdback() {
     return 1
 }
 
+# Data keyed by the app's own identifier, which a default uninstall starts
+# with selected: `<id>` exactly (or `<id>.plist`, `.binarycookies`,
+# `.savedState`) directly under the per-app roots of ~/Library and the user's
+# Darwin cache and temp folders, where <id> is the app's bundle id or the id of
+# an extension or XPC service embedded in it that starts with `<bundle id>.`
+# (Mole Mac's rule): a service several apps of a vendor embed, such as
+# Office's shared ones, is not this app's alone. An uninstall that left these
+# behind had every other cleaner report the app's leftovers (2026-11-27, a
+# Gemini uninstall kept nine such paths). Name-matched folders
+# (`Application Support/Code`, a dot folder in the home) stay unselected: the
+# name can be shared, and they are where tools keep user-made content. A dot
+# after the id is never taken as ownership, since it does not tell another
+# product from a subordinate domain.
+_uninstall_own_identifier_data() {
+    local path="$1" id="$2" embedded="${3:-}" parent leaf key candidate lowered
+    [[ "$id" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9_-]+)+$ ]] || return 1
+    parent="${path%/*}" leaf="${path##*/}" key="$leaf"
+    case "$parent" in
+        "$HOME/Library/Preferences") [[ "$leaf" == *.plist ]] || return 1; key="${leaf%.plist}" ;;
+        "$HOME/Library/Saved Application State") [[ "$leaf" == *.savedState ]] || return 1; key="${leaf%.savedState}" ;;
+        "$HOME/Library/HTTPStorages" | "$HOME/Library/Cookies") key="${leaf%.binarycookies}" ;;
+        "$HOME/Library/Application Support" | "$HOME/Library/WebKit" | \
+            "$HOME/Library/Containers" | "$HOME/Library/Application Scripts") ;;
+        /var/folders/*/*/C | /var/folders/*/*/T | /private/var/folders/*/*/C | /private/var/folders/*/*/T)
+            # `*` crosses `/` in a case pattern: hold the folder to its depth.
+            [[ "$parent" =~ ^(/private)?/var/folders/[^/]+/[^/]+/[CT]$ ]] || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    local own
+    mole_ascii_lowercase key "$key"
+    mole_ascii_lowercase own "$id"
+    [[ "$key" == "$own" ]] && return 0
+    while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] || continue
+        mole_ascii_lowercase lowered "$candidate"
+        [[ "$lowered" == "$own."* && "$key" == "$lowered" ]] && return 0
+    done <<< "$embedded"
+    return 1
+}
+
 # shellcheck disable=SC2154  # Arrays belong to the calling batch preview scope.
 _uninstall_prepare_data_review() {
-    local detail name app id total encoded remainder files path automatic personal i=0
+    local detail name app id total encoded remainder files path automatic personal i=0 embedded preselect
     for detail in "${_review_original_details[@]}"; do
         IFS='|' read -r name app id total encoded remainder <<< "$detail"
+        embedded=""
+        if [[ "${MOLE_UNINSTALL_WITH_DATA:-0}" == "own" && -d "$app" ]]; then
+            embedded=$(_mole_uninstall_embedded_bundle_ids "$app" "$id" 2> /dev/null) || embedded=""
+        fi
         files=$(decode_file_list "$encoded" "$name")
         local -a paths=()
         while IFS= read -r path; do
@@ -88,10 +143,15 @@ _uninstall_prepare_data_review() {
                 personal=$(append_line "$personal" "$path")
                 if ! mole_identity_in_list "$path" "${_review_personal_paths[@]+"${_review_personal_paths[@]}"}"; then
                     _review_personal_paths+=("$path")
-                    # --with-data starts from every path selected; D can still
-                    # deselect any of them before Enter.
-                    if [[ "${MOLE_UNINSTALL_WITH_DATA:-0}" == "1" ]] &&
-                        ! _uninstall_data_preselect_holdback "$path"; then
+                    # The starting selection: the app's own identifier data
+                    # by default, every path with --with-data, none with
+                    # --keep-data. D can still change any of them before Enter.
+                    preselect=0
+                    case "${MOLE_UNINSTALL_WITH_DATA:-0}" in
+                        1) preselect=1 ;;
+                        own) ! _uninstall_own_identifier_data "$path" "$id" "$embedded" || preselect=1 ;;
+                    esac
+                    if [[ "$preselect" == "1" ]] && ! _uninstall_data_preselect_holdback "$path"; then
                         _review_selected_paths+=("$path")
                     fi
                 fi

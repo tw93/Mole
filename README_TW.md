@@ -223,7 +223,7 @@ Free space: 223.5GB (+4.5GB)
 
 `mo uninstall` 移除已安裝的應用程式，以及 Mole 能確認屬於這個應用程式的相關檔案，若同一應用程式的另一個已安裝副本仍在使用這些檔案，會自動保留；應用程式此前已被手動刪除的話，執行 `mo clean` 掃描殘留。
 
-設定、外掛等個人資料預設保留，在解除安裝預覽頁按 `D` 可逐項選擇要刪除的資料路徑，使用 `mo uninstall --with-data` 時這些資料會預先選取，瀏覽器設定檔與 App Group 容器除外，預覽中單獨列出，仍可按 `D` 保留任一路徑，解除安裝後若發現 shell、Hook 或 MCP 設定仍參照已刪除的路徑，只提示檔案與行號，不修改設定。
+以 App 自身識別碼命名的資料（容器、設定、網頁儲存等）會隨 App 一併移除，依名稱比對到的其他個人資料預設保留，使用 `mo uninstall --keep-data` 時全部保留，在解除安裝預覽頁按 `D` 可逐項選擇要刪除的資料路徑，使用 `mo uninstall --with-data` 時這些資料會預先選取，瀏覽器設定檔與 App Group 容器除外，預覽中單獨列出，仍可按 `D` 保留任一路徑，解除安裝後若發現 shell、Hook 或 MCP 設定仍參照已刪除的路徑，只提示檔案與行號，不修改設定。
 
 ```text
 $ mo uninstall
@@ -239,9 +239,11 @@ Files to be removed:
 ✓ Photoshop 2024, 4.20GB
   ✓ /Applications/Adobe Photoshop 2024/Adobe Photoshop 2024.app
 
+Personal data to remove:
+  ✓ ~/Library/Preferences/com.adobe.Photoshop.plist
+
 Personal data kept:
   ~/Library/Application Support/Adobe/Adobe Photoshop 2024
-  ~/Library/Preferences/com.adobe.Photoshop.plist
 
 D choose personal data
 

@@ -327,6 +327,93 @@ SH
     [[ "$confirmed" == *"Remove 1 app, "*", including personal data"* ]] || { echo "$output"; return 1; }
 }
 
+@test "a default uninstall starts with the app's own identifier data selected and nothing matched by name" {
+    run env HOME="$HOME/own-data-review" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SH'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/ui/menu_paginated.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+id="com.google.GeminiMacOS"
+lib="$HOME/Library"
+app="$HOME/Applications/Gemini.app"
+own=(
+    "$lib/Application Support/$id" "$lib/WebKit/$id" "$lib/HTTPStorages/$id"
+    "$lib/Preferences/$id.plist" "$lib/Containers/$id.WidgetExtension"
+    "$lib/Application Scripts/$id.WidgetExtension" "$lib/Saved Application State/$id.savedState"
+)
+kept=(
+    "$lib/Application Support/Gemini" "$HOME/.gemini" "$lib/Preferences/$id.other.plist"
+    "$lib/Containers/$id.beta" "$lib/Group Containers/group.$id" "$lib/Application Support/$id/nested"
+    "$lib/Containers/com.utmapp.UTM" "$HOME/Documents/$id" "$lib/Application Support/Google/$id"
+)
+mkdir -p "$app" "$lib/Preferences"
+for path in "${own[@]}" "${kept[@]}"; do
+    case "$path" in *.plist) touch "$path" ;; *) mkdir -p "$path" ;; esac
+done
+# The widget is embedded in the app; `.beta` is another product's id.
+_mole_uninstall_embedded_bundle_ids() { printf '%s\n' "$id.WidgetExtension"; }
+for path in "${own[@]}"; do
+    _uninstall_own_identifier_data "$path" "$id" "$id.WidgetExtension" || { echo "not own: $path"; exit 1; }
+done
+for path in "${kept[@]}"; do
+    ! _uninstall_own_identifier_data "$path" "$id" "$id.WidgetExtension" || { echo "taken as own: $path"; exit 1; }
+done
+! _uninstall_own_identifier_data "$lib/Application Support/Gemini" "Gemini" "" || exit 1
+# A service the app embeds under another prefix is shared with its siblings.
+shared="com.google.SharedService"
+mkdir -p "$lib/Containers/$shared"
+! _uninstall_own_identifier_data "$lib/Containers/$shared" "$id" "$shared" || exit 1
+# The Darwin folders count at their own depth only, on both spellings.
+_uninstall_own_identifier_data "/var/folders/z8/abc/C/$id" "$id" "" || exit 1
+_uninstall_own_identifier_data "/private/var/folders/z8/abc/T/$id" "$id" "" || exit 1
+! _uninstall_own_identifier_data "/var/folders/z8/abc/deeper/C/$id" "$id" "" || exit 1
+_uninstall_own_identifier_data "$lib/Cookies/$id.binarycookies" "$id" "" || exit 1
+# Browser profiles keyed by the browser's id are held back like the named ones.
+for browser in net.imput.helium company.thebrowser.Browser com.duckduckgo.macos.browser; do
+    _uninstall_own_identifier_data "$lib/Application Support/$browser" "$browser" "" || exit 1
+    _uninstall_data_preselect_holdback "$lib/Application Support/$browser" || exit 1
+    _uninstall_data_preselect_holdback "$lib/Containers/$browser/Data" || exit 1
+done
+! _uninstall_data_preselect_holdback "$lib/Application Support/$id" || exit 1
+# Case folds as APFS does.
+_uninstall_own_identifier_data "$lib/WebKit/COM.GOOGLE.GEMINIMACOS" "$id" "" || exit 1
+
+list=("${own[@]}" "${kept[@]:0:5}")
+encoded=$(printf '%s\n' "${list[@]}" | base64 | tr -d '\n')
+app_details=("Gemini|$app|$id|12|$encoded||true|false|false|||||none||||")
+running_apps=() sudo_apps=() brew_cask_apps=() leftover_notes=()
+total_estimated_size=12
+get_path_size_kb() { printf '10\n'; }
+calculate_total_size() { if [[ -n "$1" ]]; then printf '1\n'; else printf '0\n'; fi; }
+drain_pending_input() { :; }
+paginated_multi_select() { return 9; }
+MOLE_UNINSTALL_WITH_DATA=own MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< ''
+IFS='|' read -r _ _ _ _ result _ <<< "${app_details[0]}"
+files=$(decode_file_list "$result" Gemini)
+for path in "${own[@]}"; do
+    grep -Fxq -- "$path" <<< "$files" || { echo "not selected: $path"; exit 1; }
+done
+for path in "${kept[@]:0:5}"; do
+    ! grep -Fxq -- "$path" <<< "$files" || { echo "selected: $path"; exit 1; }
+done
+
+# The UTM container is its own identifier data and still held back.
+utm=$(printf '%s\n' "$lib/Containers/com.utmapp.UTM" | base64 | tr -d '\n')
+app_details=("UTM|$app|com.utmapp.UTM|12|$utm||true|false|false|||||none||||")
+MOLE_UNINSTALL_WITH_DATA=own MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< ''
+IFS='|' read -r _ _ _ _ result _ <<< "${app_details[0]}"
+[[ "$(decode_file_list "$result" UTM)" != *"com.utmapp.UTM"* ]] || exit 1
+
+# --keep-data starts with none of it.
+app_details=("Gemini|$app|$id|12|$encoded||true|false|false|||||none||||")
+MOLE_UNINSTALL_WITH_DATA=0 MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< ''
+IFS='|' read -r _ _ _ _ result _ <<< "${app_details[0]}"
+[[ "$(decode_file_list "$result" Gemini)" != *"$lib/WebKit/$id"* ]] || exit 1
+SH
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Personal data to remove"* && "$output" == *"Personal data kept"* ]] || { echo "$output"; return 1; }
+}
+
 @test "--with-data preselects every app's personal data but holds back browser profiles and App Groups" {
     run env HOME="$HOME/with-data-review" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SH'
 set -euo pipefail
