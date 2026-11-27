@@ -53,6 +53,12 @@ make_cache() {
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"Bun install cache · 2 items,"* ]] || { echo "$output"; return 1; }
     [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
+    local sized
+    sized=$(tr '\0' '\n' < "$HOME/du-input")
+    [[ "$sized" == *"$root/first"* && "$sized" == *"$unusual"* && "$sized" != *"$root/kept"* ]] || return 1
+    [ -f "$root/first/entry/blob" ]
+    [ -f "$unusual/entry/blob" ]
+    [ -f "$root/kept/entry/blob" ]
     # Not a Bun special case: any rule takes one walk for all its children.
     make_cache "$HOME/.cache/moletool/a"
     make_cache "$HOME/.cache/moletool/b"
@@ -64,12 +70,6 @@ make_cache() {
         clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [[ "$output" == *"Mole tool cache · 3 items,"* ]] || { echo "$output"; return 1; }
     [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
-    local sized
-    sized=$(tr '\0' '\n' < "$HOME/du-input")
-    [[ "$sized" == *"$root/first"* && "$sized" == *"$unusual"* && "$sized" != *"$root/kept"* ]] || return 1
-    [ -f "$root/first/entry/blob" ]
-    [ -f "$unusual/entry/blob" ]
-    [ -f "$root/kept/entry/blob" ]
 }
 
 @test "a Flatpak app cache waits for flatpak to say the app is not running" {
