@@ -719,6 +719,7 @@ function Get-MoleInstallNestedFiles {
         "cmd\analyze\disk_size.go"
         "cmd\analyze\disk_size_test.go"
         "cmd\analyze\disk_size_windows_test.go"
+        "cmd\analyze\esc_selection_test.go"
         "cmd\analyze\file_id_bitmap.go"
         "cmd\analyze\file_id_bitmap_test.go"
         "cmd\analyze\format.go"
