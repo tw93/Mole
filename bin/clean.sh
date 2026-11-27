@@ -196,6 +196,10 @@ clean_rule_collect() {
         clean_uv_cache "$label" "$root" "$owners"
         return 0
     fi
+    if [[ "$selector" == tool:go ]]; then
+        clean_go_modcache "$label" "$root" "$owners"
+        return 0
+    fi
     [[ -n "$root" && -d "$root" && ! -L "$root" ]] || return 0
     local -a children=() eligible=()
     local child
@@ -312,6 +316,74 @@ clean_uv_cache() {
     else
         debug_log "uv cache prune failed"
     fi
+    return 0
+}
+
+# Go leaves its module files read-only, so only `go clean -modcache` can empty
+# the cache, and it removes the root itself. It runs only when GOMODCACHE is
+# Go's own <first GOPATH entry>/pkg/mod inside the home, owned by this user,
+# reached through no link below the home and with nothing mounted in it, and
+# when no whitelist entry sits inside it, since the command takes the whole
+# tree (Mac: lib/clean/dev.sh clean_go_cache_root). GOTOOLCHAIN=local keeps
+# `go env` from downloading a toolchain a go.mod in the folder asks for.
+clean_go_modcache() {
+    local label="$1" root="$2" owners="$3" out dir gopath
+    command -v go > /dev/null 2>&1 || return 0
+    out=$(cd / && mole_c env GOTOOLCHAIN=local timeout 10 go env GOMODCACHE GOPATH 2> /dev/null) || return 0
+    [[ "$out" == *$'\n'* ]] || return 0
+    dir="${out%%$'\n'*}"
+    gopath="${out#*$'\n'}"
+    [[ "$gopath" != *$'\n'* && -n "$gopath" ]] || return 0
+    gopath="${gopath%%:*}"
+    gopath="${gopath%/}"
+    [[ "$dir" == "$gopath/pkg/mod" && "$gopath" == "$HOME/"* ]] || return 0
+    [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] || return 0
+    mole_rule_root_ok "$dir" || return 0
+    mole_path_is_plain_home_item "$dir" || return 0
+    if mole_whitelisted "$label" "$dir" || mole_whitelisted "$label" "$root" || mole_whitelist_keeps_child "$dir"; then
+        group_note "$(whitelist_note "$label")"
+        return 0
+    fi
+    local kb
+    kb=$(mole_path_kb "$dir")
+    ((kb >= 8)) || return 0
+    local rc=0
+    rule_owner_state "$owners" || rc=$?
+    if [[ $rc -eq 0 ]]; then
+        group_note "$label · skipped while $(rule_owner_name "$owners") is running"
+        return 0
+    elif [[ $rc -ne 1 ]]; then
+        group_note "$label · skipped (process state unknown)"
+        return 0
+    fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+        G_KB=$((G_KB + kb))
+        G_COUNT=$((G_COUNT + 1))
+        return 0
+    fi
+    # Right before the command: still a plain folder, and no mount inside that
+    # Go's own removal would walk into.
+    mole_path_is_plain_home_item "$dir" && [[ -d "$dir" && ! -L "$dir" ]] || return 0
+    rc=0
+    mole_mount_within "$dir" || rc=$?
+    if [[ $rc -ne 1 ]]; then
+        debug_log "$label: a mount at or below $dir, kept"
+        return 0
+    fi
+    local ok=true
+    (cd / && mole_c env GOTOOLCHAIN=local GOMODCACHE="$dir" timeout 300 go clean -modcache > /dev/null 2>&1) || ok=false
+    local left=0
+    [[ -d "$dir" ]] && left=$(mole_path_kb "$dir")
+    if ((kb > left)); then
+        if [[ "$ok" == true ]]; then
+            log_operation clean REMOVED "$dir" "go clean -modcache"
+        else
+            log_operation clean REMOVED "$dir" "go clean -modcache, partial"
+        fi
+        G_KB=$((G_KB + kb - left))
+        G_COUNT=$((G_COUNT + 1))
+    fi
+    [[ "$ok" == true ]] || debug_log "go clean -modcache failed"
     return 0
 }
 

@@ -18,6 +18,7 @@
 #             suffix:<.ext>    only regular files ending in <.ext>
 #             except:<name>    every child but the one named <name>
 #             tool:uv          ask uv itself (uv cache prune), never rm
+#             tool:go          ask go itself (go clean -modcache), never rm
 # Consecutive rules with the same label are reported as one line.
 # A directory not named here is never selected. Profiles, config, model stores
 # (~/.ollama, ~/.cache/huggingface, ~/.cache/lm-studio), package databases and
@@ -328,6 +329,12 @@ Developer tools|Electron downloads|$c/electron|
 Developer tools|ESLint cache|$c/eslint|node
 Developer tools|Prettier cache|$c/prettier|node
 Developer tools|Vite cache|$c/vite|node
+Developer tools|Expo cache|$HOME/.expo/expo-go|node
+Developer tools|Expo cache|$HOME/.expo/android-apk-cache|node
+Developer tools|Expo cache|$HOME/.expo/native-modules-cache|node
+Developer tools|Expo cache|$HOME/.expo/schema-cache|node
+Developer tools|Expo cache|$HOME/.expo/template-cache|node
+Developer tools|Expo cache|$HOME/.expo/versions-cache|node
 Developer tools|webpack cache|$c/webpack|node
 Developer tools|Turbo cache|$HOME/.turbo/cache|turbo,node
 Developer tools|Parcel cache|$HOME/.parcel-cache|parcel,node
@@ -339,14 +346,17 @@ Developer tools|uv cache|$c/uv|uv,uvx|tool:uv
 Developer tools|Poetry cache|$c/pypoetry/cache|poetry
 Developer tools|Poetry artifacts|$c/pypoetry/artifacts|poetry
 Developer tools|pyenv cache|$HOME/.pyenv/cache|pyenv,python-build
+Developer tools|rbenv download cache|$HOME/.rbenv/cache|rbenv,ruby-build
 Developer tools|pre-commit cache|$c/pre-commit|pre-commit
 Developer tools|Ruff cache|$c/ruff|ruff
 Developer tools|mypy cache|$c/mypy|mypy,dmypy
 Developer tools|Go build cache|$c/go-build|go,gopls
+Developer tools|Go module cache|$HOME/go/pkg/mod|go,gopls|tool:go
 Developer tools|Cargo download cache|$cargo/registry/cache|$rust
 Developer tools|rustup downloads|$HOME/.rustup/downloads|rustup,cargo
 Developer tools|Zig cache|$c/zig|zig,zls
 Developer tools|Composer cache|$c/composer|composer,php
+Developer tools|Composer cache|$HOME/.composer/cache|composer,php
 Developer tools|Bundler cache|$HOME/.bundle/cache|bundle,ruby
 Developer tools|RubyGems spec cache|$HOME/.gem/specs|gem,ruby,bundle
 Developer tools|CPAN build files|$HOME/.cpan/build|cpan,cpanm,perl

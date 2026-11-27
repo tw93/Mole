@@ -207,6 +207,76 @@ start_owner() {
     [ "$(grep -c prune "$TEST_ROOT/uv.log")" -eq 1 ]
 }
 
+@test "go: go clean -modcache runs only on Go's own <GOPATH>/pkg/mod in the home, unlinked, with nothing whitelisted inside" {
+    hide_host_command go
+    mole_run clean 'mole_clean_rules | grep "|Go module cache|"'
+    [ "$output" = "Developer tools|Go module cache|$HOME/go/pkg/mod|go,gopls|tool:go" ]
+    # The owner here is a name no host process has: a machine running go must not decide the case.
+    local run='clean_rule "Go module cache" "$HOME/go/pkg/mod" "mole-go-owner" "tool:go"'
+    # Without go nothing happens.
+    make_cache "$HOME/go/pkg/mod"
+    mole_run clean "$run"
+    [ "$status" -eq 0 ]
+    [ -f "$HOME/go/pkg/mod/entry/blob" ]
+
+    fake_command go 'case "$1 $2" in "env GOMODCACHE") printf "%s\n%s\n" "$FAKE_GOMODCACHE" "$FAKE_GOPATH" ;; "clean -modcache") echo "clean $GOMODCACHE $GOTOOLCHAIN $PWD" >> "'"$TEST_ROOT"'/go.log"; rm -rf "$GOMODCACHE" ;; esac'
+    export FAKE_GOMODCACHE="$HOME/go/pkg/mod" FAKE_GOPATH="$HOME/go"
+    mole_run clean "DRY_RUN=true; $run"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Go module cache"* && "$output" != *"skipped"* ]] || { echo "$output"; return 1; }
+    [ ! -e "$TEST_ROOT/go.log" ]
+
+    # A whitelist entry inside the cache keeps all of it: the command takes the whole tree.
+    mkdir -p "$HOME/.config/mole"
+    printf '%s\n' "~/go/pkg/mod/entry" > "$HOME/.config/mole/whitelist"
+    mole_run clean "mole_whitelist_load; $run"
+    [[ "$output" == *"Go module cache"*"whitelist"* ]] || { echo "$output"; return 1; }
+    [ ! -e "$TEST_ROOT/go.log" ]
+    rm -f "$HOME/.config/mole/whitelist"
+
+    mole_run clean "$run"
+    [ "$status" -eq 0 ]
+    grep -qx "clean $HOME/go/pkg/mod local /" "$TEST_ROOT/go.log"
+    [ ! -e "$HOME/go/pkg/mod" ]
+    grep -q "REMOVED $HOME/go/pkg/mod (go clean -modcache)" "$HOME/.local/state/mole/operations.log"
+
+    # Never handed over: documents, a pkg/mod that is not the first GOPATH entry's,
+    # one reached through a linked folder, or ~/go itself.
+    rm -f "$TEST_ROOT/go.log"
+    make_cache "$HOME/Documents/notes"
+    export FAKE_GOMODCACHE="$HOME/Documents/notes"
+    mole_run clean "$run"
+    [ -f "$HOME/Documents/notes/entry/blob" ]
+    make_cache "$HOME/src/project/pkg/mod"
+    export FAKE_GOMODCACHE="$HOME/src/project/pkg/mod"
+    mole_run clean "$run"
+    [ -f "$HOME/src/project/pkg/mod/entry/blob" ]
+    make_cache "$HOME/elsewhere/pkg/mod"
+    ln -s "$HOME/elsewhere" "$HOME/gopath"
+    export FAKE_GOMODCACHE="$HOME/gopath/pkg/mod" FAKE_GOPATH="$HOME/gopath"
+    mole_run clean "$run"
+    [ -f "$HOME/elsewhere/pkg/mod/entry/blob" ]
+    # The preview agrees with the real run: nothing is offered.
+    mole_run clean "DRY_RUN=true; $run"
+    [[ "$output" != *"Go module cache"* ]] || { echo "$output"; return 1; }
+    export FAKE_GOMODCACHE="$HOME/go" FAKE_GOPATH="$HOME/go"
+    mole_run clean "$run"
+    [ ! -e "$TEST_ROOT/go.log" ]
+}
+
+@test "rbenv, legacy Composer and Expo caches have rules at the paths Mole CLI (macOS) cleans" {
+    mole_run clean 'mole_clean_rules'
+    [ "$status" -eq 0 ]
+    for line in "Developer tools|rbenv download cache|$HOME/.rbenv/cache|rbenv,ruby-build" \
+        "Developer tools|Composer cache|$HOME/.composer/cache|composer,php" \
+        "Developer tools|Expo cache|$HOME/.expo/expo-go|node" \
+        "Developer tools|Expo cache|$HOME/.expo/versions-cache|node"; do
+        grep -qxF "$line" <<< "$output" || { echo "missing: $line"; return 1; }
+    done
+    # Expo's state and credentials beside those caches have no rule.
+    ! grep -qE "\|$HOME/\.expo(/state\.json|/)?\|" <<< "$output"
+}
+
 @test "dry run sizes only the children a real run would remove" {
     mkdir -p "$HOME/.cache/tool/plain" "$HOME/.cache/tool/mnt"
     head -c 65536 /dev/zero > "$HOME/.cache/tool/plain/blob"
@@ -1182,11 +1252,13 @@ Discord cache
 Docker Buildx cache
 ESLint cache
 Electron downloads
+Expo cache
 Firefox cache
 GNOME Software cache
 GitHub Actions cache
 GitLab Runner cache
 Go build cache
+Go module cache
 Google Chrome Beta profile caches
 Google Chrome Dev profile caches
 Google Chrome cache
@@ -1253,6 +1325,7 @@ pip cache
 pnpm metadata cache
 pre-commit cache
 pyenv cache
+rbenv download cache
 rustup downloads
 sccache
 uv cache
