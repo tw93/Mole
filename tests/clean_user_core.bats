@@ -312,6 +312,7 @@ EOF
     local test_home="$HOME/google-vendor-home"
     mkdir -p \
         "$test_home/Library/Caches/Google/Chrome/Default/Cache" \
+        "$test_home/Library/Caches/com.ardia.browser/org.sparkle-project.Sparkle" \
         "$test_home/Library/Caches/ordinary-app/junk"
 
     run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
@@ -339,6 +340,7 @@ EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" != *"User app cache|$test_home/Library/Caches/Google"* ]] || return 1
+    [[ "$output" != *"User app cache|$test_home/Library/Caches/com.ardia.browser"* ]] || return 1
     [[ "$output" == *"User app cache|$test_home/Library/Caches/ordinary-app"* ]] || return 1
     rm -rf "$test_home"
 }
@@ -3031,6 +3033,40 @@ EOF
     [[ "$output" != *"Brave Service Worker ScriptCache"* ]] || return 1
 
     rm -rf "$HOME/Library"
+}
+
+@test "Ardia cleanup keeps offline data, updater state and linked profiles (#2125)" {
+    run env HOME="$HOME/ardia-test" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+mkdir -p "$HOME"
+source "$PROJECT_ROOT/bin/clean.sh"
+cache="$HOME/Library/Caches/com.ardia.browser"
+support="$HOME/Library/Application Support/com.ardia.browser/Chromium"
+http="$cache/Chromium/Profile p-12/Cache"
+gpu="$support/Default/GPUCache"
+offline="$support/Default/Service Worker/CacheStorage"
+updater="$cache/org.sparkle-project.Sparkle"
+mkdir -p "$http" "$gpu" "$offline" "$updater" "$HOME/other/GPUCache"
+ln -s "$HOME/other" "$support/Profile linked"
+for dir in "$http" "$gpu" "$offline" "$updater" "$HOME/other/GPUCache"; do
+    printf payload > "$dir/entry"
+done
+pgrep() { return "$owner_state"; }
+DRY_RUN=false
+for owner_state in 0 2; do
+    _clean_ardia_browser_caches
+    [[ -f "$http/entry" && -f "$gpu/entry" ]] || exit 1
+done
+owner_state=1
+DRY_RUN=true
+_clean_ardia_browser_caches
+[[ -f "$http/entry" && -f "$gpu/entry" ]] || exit 1
+DRY_RUN=false
+_clean_ardia_browser_caches
+[[ ! -e "$http/entry" && ! -e "$gpu/entry" ]] || exit 1
+[[ -f "$offline/entry" && -f "$updater/entry" && -f "$HOME/other/GPUCache/entry" ]]
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "clean_browsers covers Arc User Data layout" {
