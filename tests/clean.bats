@@ -39,10 +39,12 @@ make_cache() {
 @test "each rule sizes its eligible children with one du call after child protection and whitelist checks" {
     local root="$HOME/.bun/install/cache"
     local unusual="$root/"$'line\nbreak'
+    export MOLE_TEST_DU
+    MOLE_TEST_DU=$(command -v du)
     make_cache "$root/first"
     make_cache "$unusual"
     make_cache "$root/kept"
-    fake_command du 'printf "%s\n" "$*" >> "$HOME/du.log"; cat > "$HOME/du-input"; exec /usr/bin/du "$@" < "$HOME/du-input"'
+    fake_command du 'printf "%s\n" "$*" >> "$HOME/du.log"; cat > "$HOME/du-input"; exec "$MOLE_TEST_DU" "$@" < "$HOME/du-input"'
 
     mole_run clean '
         DRY_RUN=true
@@ -70,6 +72,145 @@ make_cache() {
         clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
     [[ "$output" == *"Mole tool cache · 3 items,"* ]] || { echo "$output"; return 1; }
     [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
+}
+
+@test "batch sizing counts a hardlink shared by two children once" {
+    local root="$HOME/.bun/install/cache" du_version first_kb second_kb
+    du_version=$(du --version 2> /dev/null) || skip "GNU du is required"
+    [[ "$du_version" == *"GNU coreutils"* ]] || skip "GNU du is required"
+    make_cache "$root/first"
+    mkdir -p "$root/second/entry"
+    ln "$root/first/entry/blob" "$root/second/entry/blob"
+    first_kb=$(du -skx -- "$root/first")
+    first_kb="${first_kb%%[[:space:]]*}"
+    second_kb=$(du -skx -- "$root/second")
+    second_kb="${second_kb%%[[:space:]]*}"
+
+    mole_run clean 'mole_paths_kb "$HOME/.bun/install/cache/first" "$HOME/.bun/install/cache/second"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" =~ ^[0-9]+$ ]] || return 1
+    [ "$output" -lt "$((first_kb + second_kb))" ]
+}
+
+@test "failed batch sizing falls back to per-path sizing and logs the failure" {
+    local root="$HOME/.bun/install/cache" expected
+    export MOLE_TEST_DU
+    MOLE_TEST_DU=$(command -v du)
+    make_cache "$root/first"
+    make_cache "$root/second"
+    expected=$(( $(du -skx -- "$root/first" | cut -f1) + $(du -skx -- "$root/second" | cut -f1) ))
+    fake_command du '
+        if [[ " $* " == *" --files0-from=- "* ]]; then
+            cat > /dev/null
+            printf "batch\n" >> "$HOME/du.log"
+            exit 1
+        fi
+        exec "$MOLE_TEST_DU" "$@"'
+
+    mole_run clean '
+        MO_DEBUG=1
+        DRY_RUN=true
+        rule_owner_state() { return 1; }
+        group_begin "Bun install cache"
+        clean_rule_collect "Bun install cache" "$HOME/.bun/install/cache" "bun,bunx"
+        printf "RESULT %s %s\n" "$G_KB" "$G_COUNT"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Batch size measurement failed; falling back to per-path measurement"* ]] || return 1
+    [[ "$output" == *"RESULT $expected 2"* ]] || { echo "$output"; return 1; }
+    [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
+}
+
+@test "a valid total from du exit 1 keeps batch sizing" {
+    local root="$HOME/.bun/install/cache"
+    make_cache "$root/first"
+    make_cache "$root/second"
+    fake_command du '
+        printf "%s\n" "$*" >> "$HOME/du.log"
+        cat > /dev/null
+        if [[ " $* " == *" --files0-from=- "* ]]; then
+            printf "42\ttotal\n"
+        fi
+        exit 1'
+
+    mole_run clean 'MO_DEBUG=1; mole_rule_paths_kb "$HOME/.bun/install/cache/first" "$HOME/.bun/install/cache/second"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = 42 ]
+    [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
+}
+
+@test "zero from a successful batch walk is not a measurement failure" {
+    local root="$HOME/.bun/install/cache"
+    make_cache "$root/first"
+    fake_command du 'cat > /dev/null; printf "0\ttotal\n"'
+
+    mole_run clean 'MO_DEBUG=1; mole_rule_paths_kb "$HOME/.bun/install/cache/first"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ "$output" = 0 ]
+}
+
+@test "malformed batch output falls back to per-path sizing" {
+    local root="$HOME/.bun/install/cache" expected
+    export MOLE_TEST_DU
+    MOLE_TEST_DU=$(command -v du)
+    make_cache "$root/first"
+    expected=$(du -skx -- "$root/first" | cut -f1)
+    fake_command du '
+        if [[ " $* " == *" --files0-from=- "* ]]; then
+            cat > /dev/null
+            printf "unknown\ttotal\n"
+        else
+            exec "$MOLE_TEST_DU" "$@"
+        fi'
+
+    mole_run clean 'MO_DEBUG=1; mole_rule_paths_kb "$HOME/.bun/install/cache/first"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Batch size measurement failed; falling back to per-path measurement"* ]] || return 1
+    [[ "$output" == *"$expected" ]] || return 1
+}
+
+@test "numeric batch output without a total label falls back to per-path sizing" {
+    local root="$HOME/.bun/install/cache" expected
+    export MOLE_TEST_DU
+    MOLE_TEST_DU=$(command -v du)
+    make_cache "$root/first"
+    expected=$(du -skx -- "$root/first" | cut -f1)
+    fake_command du '
+        if [[ " $* " == *" --files0-from=- "* ]]; then
+            cat > /dev/null
+            printf "42\tinvalid\n"
+        else
+            exec "$MOLE_TEST_DU" "$@"
+        fi'
+
+    mole_run clean 'MO_DEBUG=1; mole_rule_paths_kb "$HOME/.bun/install/cache/first"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Batch size measurement failed; falling back to per-path measurement"* ]] || return 1
+    [[ "$output" == *"$expected" ]] || return 1
+}
+
+@test "failed removals use one batch walk for remaining hardlinks" {
+    local root="$HOME/.bun/install/cache" expected
+    make_cache "$root/first"
+    mkdir -p "$root/second/entry"
+    ln "$root/first/entry/blob" "$root/second/entry/blob"
+    make_cache "$root/third"
+    expected=$(du -skx -- "$root/third" | cut -f1)
+    mole_run clean '
+        rm() {
+            case "${@: -1}" in
+                */first | */second) return 1 ;;
+            esac
+            command rm "$@"
+        }
+        rule_owner_state() { return 1; }
+        group_begin "Bun install cache"
+        clean_rule_collect "Bun install cache" "$HOME/.bun/install/cache" "bun,bunx"
+        printf "RESULT %s %s\n" "$G_KB" "$G_COUNT"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RESULT $expected 1"* ]] || { echo "$output"; return 1; }
+    [ -f "$root/first/entry/blob" ]
+    [ -f "$root/second/entry/blob" ]
+    [ ! -e "$root/third" ]
 }
 
 @test "a Flatpak app cache waits for flatpak to say the app is not running" {
