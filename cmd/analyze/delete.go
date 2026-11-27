@@ -258,8 +258,9 @@ func sessionTempRoots() ([]string, []os.FileInfo) {
 const tempSocketEntryLimit = 4096
 
 // isTempSocketPath reports any socket in the temp directory, and any direct
-// child folder of it whose own entries include a socket: zellij's, a database
-// server's .s.PGSQL.5432, a hand-started agent's. Moving one breaks the
+// child folder of it whose own entries include a socket: a database server's
+// .s.PGSQL.5432, a hand-started agent's (zellij keeps its sockets one level
+// lower, so its folder is not one). Moving one breaks the
 // session or the connection and frees nothing. The type is read with lstat,
 // so a link to a socket is not one, and the listing opens the folder without
 // following a link, stops at the first socket or after tempSocketEntryLimit

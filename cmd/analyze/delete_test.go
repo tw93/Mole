@@ -541,7 +541,8 @@ func TestAnalyzeDeleteRefusesAnySocketInTmpAndAFolderHoldingOne(t *testing.T) {
 		filepath.Join(plain, "a.o"),
 		// Only a direct child's own entries are read.
 		filepath.Join(tmpRoot, "zellij-1000"),
-		// A link to a socket folder is not one, and is never followed.
+		// A link to a socket folder is not one for this check, which never
+		// follows it; validateTrashTarget resolves it and refuses the target.
 		linkToAgent,
 		// Outside tmp the type is never asked.
 		filepath.Join(outside, "app.sock"),

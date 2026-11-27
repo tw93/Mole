@@ -243,6 +243,22 @@ start_owner() {
     [ "$(grep -c prune "$TEST_ROOT/uv.log")" -eq 1 ]
 }
 
+@test "go: a GOFLAGS saved with go env -w cannot widen go clean -modcache" {
+    command -v go > /dev/null 2>&1 || skip "needs a real go"
+    # The real go: a fake one cannot show what a saved flag does.
+    export GOENV="$TEST_ROOT/goenv" GOCACHE="$TEST_ROOT/gocache" GOPATH="$HOME/go" GOTOOLCHAIN=local
+    unset GOFLAGS GOMODCACHE
+    printf 'GOFLAGS=-fuzzcache\n' > "$GOENV"
+    mkdir -p "$GOCACHE/fuzz/example"
+    echo corpus > "$GOCACHE/fuzz/example/input"
+    make_cache "$HOME/go/pkg/mod"
+    mole_run clean 'clean_rule "Go module cache" "$HOME/go/pkg/mod" "mole-go-owner" "tool:go"'
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -e "$HOME/go/pkg/mod" ] || { echo "$output"; return 1; }
+    # -fuzzcache would have emptied this; the rule never checked or listed it.
+    [ -f "$GOCACHE/fuzz/example/input" ]
+}
+
 @test "go: go clean -modcache runs only on Go's own <GOPATH>/pkg/mod in the home, unlinked, with nothing whitelisted inside" {
     hide_host_command go
     mole_run clean 'mole_clean_rules | grep "|Go module cache|"'
@@ -255,7 +271,7 @@ start_owner() {
     [ "$status" -eq 0 ]
     [ -f "$HOME/go/pkg/mod/entry/blob" ]
 
-    fake_command go 'case "$1 $2" in "env GOMODCACHE") printf "%s\n%s\n" "$FAKE_GOMODCACHE" "$FAKE_GOPATH" ;; "clean -modcache") echo "clean $GOMODCACHE $GOTOOLCHAIN $PWD" >> "'"$TEST_ROOT"'/go.log"; rm -rf "$GOMODCACHE" ;; esac'
+    fake_command go 'case "$1 $2" in "env GOMODCACHE") printf "%s\n%s\n" "$FAKE_GOMODCACHE" "$FAKE_GOPATH" ;; "clean -modcache") echo "clean $GOMODCACHE $GOTOOLCHAIN $PWD" >> "'"$TEST_ROOT"'/go.log"; echo "flags=[${GOFLAGS-unset}]" >> "'"$TEST_ROOT"'/go.flags"; rm -rf "$GOMODCACHE" ;; esac'
     export FAKE_GOMODCACHE="$HOME/go/pkg/mod" FAKE_GOPATH="$HOME/go"
     mole_run clean "DRY_RUN=true; $run"
     [ "$status" -eq 0 ]
@@ -270,9 +286,15 @@ start_owner() {
     [ ! -e "$TEST_ROOT/go.log" ]
     rm -f "$HOME/.config/mole/whitelist"
 
+    export GOFLAGS=-fuzzcache
     mole_run clean "$run"
+    unset GOFLAGS
     [ "$status" -eq 0 ]
     grep -qx "clean $HOME/go/pkg/mod local /" "$TEST_ROOT/go.log"
+    # The user's GOFLAGS never reaches the owner command, where -fuzzcache or
+    # -cache would empty a cache this rule did not check. The value is pinned,
+    # not emptied: an empty one falls through to what `go env -w` saved.
+    grep -qx "flags=\[-modcacherw\]" "$TEST_ROOT/go.flags"
     [ ! -e "$HOME/go/pkg/mod" ]
     grep -q "REMOVED $HOME/go/pkg/mod (go clean -modcache)" "$HOME/.local/state/mole/operations.log"
 
