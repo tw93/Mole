@@ -6367,3 +6367,353 @@ echo "CALLS=$lsof_calls"
 SCRIPT
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
+
+@test "purge_artifact_launch_agent_protected protects direct Program and ProgramArguments references" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local worker="$HOME/www/la-worker"
+    local idle="$HOME/www/la-idle"
+    mkdir -p "$la_dir" "$worker/.venv/bin" "$idle/.venv/bin"
+    touch "$worker/pyproject.toml" "$worker/.venv/pyvenv.cfg" "$idle/pyproject.toml" "$idle/.venv/pyvenv.cfg"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.worker.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.worker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$worker/.venv/bin/python</string>
+        <string>-m</string>
+        <string>worker</string>
+    </array>
+</dict>
+</plist>
+EOF
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" WORKER="$worker" IDLE="$idle" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/sbin/lsof) printf 'p123\nfcwd\nn/unrelated\nf3\nn/elsewhere\n' ;;
+        pgrep) return 1 ;;
+        *) "$@" ;;
+    esac
+}
+worker_rc=0
+is_protected_purge_artifact "$WORKER/.venv" || worker_rc=$?
+echo "WORKER_RC=$worker_rc REASON=${PURGE_PROTECTION_REASON:-}"
+idle_rc=0
+is_protected_purge_artifact "$IDLE/.venv" || idle_rc=$?
+echo "IDLE_RC=$idle_rc REASON=${PURGE_PROTECTION_REASON:-}"
+SCRIPT
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"WORKER_RC=0 REASON=launch_agent"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"IDLE_RC=1 REASON="* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge_artifact_launch_agent_protected protects EnvironmentVariables PATH and VIRTUAL_ENV references" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local node_proj="$HOME/www/la-env-node"
+    local py_proj="$HOME/www/la-env-py"
+    local sib_proj="$HOME/www/la-env-sibling"
+    mkdir -p "$la_dir" "$node_proj/node_modules/.bin" "$py_proj/.venv/bin" "$sib_proj/node_modules"
+    touch "$node_proj/package.json" "$py_proj/pyproject.toml" "$py_proj/.venv/pyvenv.cfg" "$sib_proj/package.json"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.env.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.env</string>
+    <key>Program</key>
+    <string>/usr/bin/true</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>$node_proj/node_modules/.bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>VIRTUAL_ENV</key>
+        <string>$py_proj/.venv</string>
+    </dict>
+</dict>
+</plist>
+EOF
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" NODE_PROJ="$node_proj" PY_PROJ="$py_proj" SIB_PROJ="$sib_proj" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/sbin/lsof) printf 'p123\nfcwd\nn/unrelated\nf3\nn/elsewhere\n' ;;
+        pgrep) return 1 ;;
+        *) "$@" ;;
+    esac
+}
+node_rc=0
+purge_artifact_launch_agent_protected "$NODE_PROJ/node_modules" || node_rc=$?
+py_rc=0
+purge_artifact_launch_agent_protected "$PY_PROJ/.venv" || py_rc=$?
+sib_rc=0
+purge_artifact_launch_agent_protected "$SIB_PROJ/node_modules" || sib_rc=$?
+echo "NODE=$node_rc PY=$py_rc SIB=$sib_rc"
+SCRIPT
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"NODE=0 PY=0 SIB=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge_artifact_launch_agent_protected protects project runtime artifacts via WorkingDirectory without protecting sibling worktrees" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local main_proj="$HOME/www/mcp-server"
+    local sibling_wt="$HOME/www/mcp-server.old-worktree"
+    mkdir -p "$la_dir" "$main_proj/node_modules" "$main_proj/runner" "$sibling_wt/node_modules"
+    touch "$main_proj/package.json" "$main_proj/runner/start.sh" "$sibling_wt/package.json"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.mcp.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.mcp</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>$main_proj/runner/start.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$main_proj</string>
+</dict>
+</plist>
+EOF
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MAIN_PROJ="$main_proj" SIBLING_WT="$sibling_wt" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+main_rc=0
+purge_artifact_launch_agent_protected "$MAIN_PROJ/node_modules" || main_rc=$?
+sib_rc=0
+purge_artifact_launch_agent_protected "$SIBLING_WT/node_modules" || sib_rc=$?
+echo "MAIN=$main_rc SIBLING=$sib_rc"
+SCRIPT
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"MAIN=0 SIBLING=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge_artifact_launch_agent_protected ignores container WorkingDirectory and non-runtime caches" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local proj="$HOME/www/container-child"
+    mkdir -p "$la_dir" "$proj/node_modules" "$proj/.pytest_cache"
+    touch "$proj/package.json" "$proj/pyproject.toml"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.container.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.container</string>
+    <key>Program</key>
+    <string>/bin/sleep</string>
+    <key>WorkingDirectory</key>
+    <string>$HOME/www</string>
+</dict>
+</plist>
+EOF
+    cat > "$la_dir/com.example.project.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.project</string>
+    <key>Program</key>
+    <string>/bin/sleep</string>
+    <key>WorkingDirectory</key>
+    <string>$proj</string>
+</dict>
+</plist>
+EOF
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJ="$proj" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+pytest_rc=0
+purge_artifact_launch_agent_protected "$PROJ/.pytest_cache" || pytest_rc=$?
+rm -f "$HOME/Library/LaunchAgents/com.example.project.plist"
+_PURGE_LAUNCH_AGENT_SNAPSHOT_STATE=""
+container_rc=0
+purge_artifact_launch_agent_protected "$PROJ/node_modules" || container_rc=$?
+echo "PYTEST=$pytest_rc CONTAINER=$container_rc"
+SCRIPT
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"PYTEST=1 CONTAINER=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge_artifact_launch_agent_protected parses binary plists and ignores corrupt plists" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local proj="$HOME/www/bin-plist-proj"
+    mkdir -p "$la_dir" "$proj/dist"
+    touch "$proj/package.json"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.corrupt.plist" <<'EOF'
+not valid plist xml or binary
+EOF
+    cat > "$la_dir/com.example.binary.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.binary</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$proj/dist/server</string>
+    </array>
+</dict>
+</plist>
+EOF
+    /usr/bin/plutil -convert binary1 "$la_dir/com.example.binary.plist"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJ="$proj" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+rc=0
+purge_artifact_launch_agent_protected "$PROJ/dist" || rc=$?
+echo "BINARY_RC=$rc"
+SCRIPT
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"BINARY_RC=0"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge discovery scans LaunchAgent plists once per filter pass" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    mkdir -p "$la_dir"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.one.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.one</string>
+    <key>Program</key>
+    <string>$HOME/www/p2/target/release/app</string>
+</dict>
+</plist>
+EOF
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+count_file=$(mktemp)
+items=""
+for i in 1 2 3 4 5 6; do
+    mkdir -p "$HOME/www/p$i/target"
+    touch "$HOME/www/p$i/Cargo.toml"
+    items+="$HOME/www/p$i/target"$'\n'
+done
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/sbin/lsof) printf 'p123\nfcwd\nn/unrelated\nf3\nn/elsewhere\n' ;;
+        /usr/bin/plutil) echo plutil >> "$count_file"; /usr/bin/plutil "${@:2}" ;;
+        pgrep) return 1 ;;
+        *) "$@" ;;
+    esac
+}
+results=$(printf '%s' "$items" | filter_protected_artifacts)
+plutil_calls=$(wc -l < "$count_file" | tr -d ' ')
+rm -f "$count_file"
+echo "PLUTIL_CALLS=$plutil_calls"
+[[ "$plutil_calls" -eq 1 ]] || exit 1
+[[ "$results" == *p1/target* ]] || exit 1
+[[ "$results" != *p2/target* ]]
+SCRIPT
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"PLUTIL_CALLS=1"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge fails closed when LaunchAgents directory is unreadable" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local proj="$HOME/www/unreadable-la"
+    mkdir -p "$la_dir" "$proj/target"
+    touch "$proj/Cargo.toml"
+    chmod 000 "$la_dir"
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" PROJ="$proj" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/clean/project.sh"
+run_with_timeout() {
+    shift
+    case "$1" in
+        /usr/sbin/lsof) printf 'p123\nfcwd\nn/unrelated\nf3\nn/elsewhere\n' ;;
+        pgrep) return 1 ;;
+        *) "$@" ;;
+    esac
+}
+rc=0
+is_protected_purge_artifact "$PROJ/target" || rc=$?
+echo "RC=$rc UNVERIFIED=$PURGE_PROTECTION_UNVERIFIED"
+SCRIPT
+    chmod 755 "$la_dir"
+    rm -f "$la_dir"/*.plist
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"RC=0 UNVERIFIED=true"* ]] || { echo "$output"; return 1; }
+}
+
+@test "a selected build folder refused because a LaunchAgent references it says so" {
+    local la_dir="$HOME/Library/LaunchAgents"
+    local project="$HOME/www/la-selected"
+    mkdir -p "$la_dir" "$project/dist" "$HOME/.config/mole" "$HOME/.cache/mole"
+    touch "$project/package.json"
+    head -c 4096 /dev/zero > "$project/dist/server.js"
+    touch -t 202001010000 "$project/dist/server.js" "$project/dist" "$project/package.json"
+    printf '%s\n' "$HOME/www" > "$HOME/.config/mole/purge_paths"
+    rm -f "$la_dir"/*.plist
+    cat > "$la_dir/com.example.selected.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.selected</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>$project/dist/server.js</string>
+    </array>
+</dict>
+</plist>
+EOF
+    local mode dry real
+    for mode in 1 0; do
+        run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" DRY="$mode" /bin/bash --noprofile --norc <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/project.sh"
+filter_protected_artifacts() { cat; }
+eval "real_$(declare -f is_protected_purge_artifact)"
+protection_calls=0
+is_protected_purge_artifact() {
+    [[ "$1" == */www/la-selected/dist ]] && protection_calls=$((protection_calls + 1))
+    if [[ $protection_calls -eq 1 && "$1" == */www/la-selected/dist ]]; then
+        PURGE_PROTECTION_UNVERIFIED=false
+        PURGE_PROTECTION_REASON=""
+        return 1
+    fi
+    real_is_protected_purge_artifact "$@"
+}
+MOLE_DRY_RUN="$DRY" MOLE_PURGE_YES=1 clean_project_artifacts < /dev/null || true
+SCRIPT
+        if [[ "$mode" == 1 ]]; then dry="$output"; else real="$output"; fi
+    done
+    rm -f "$la_dir"/*.plist
+    [ -f "$project/dist/server.js" ] || { echo "$real"; return 1; }
+    [[ "$dry" != *"[DRY RUN] ~/www/la-selected/dist"* ]] || { echo "$dry"; return 1; }
+    [[ "$dry" == *"referenced by a LaunchAgent"* ]] || { echo "$dry"; return 1; }
+    [[ "$real" == *"referenced by a LaunchAgent"* ]] || { echo "$real"; return 1; }
+}

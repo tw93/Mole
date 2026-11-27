@@ -548,7 +548,8 @@ purge_artifact_has_authored_content() {
     return "$tracked_rc"
 }
 
-# Set by is_protected_purge_artifact: "in_use" when a process holds the artifact.
+# Set by is_protected_purge_artifact: "in_use" when a process holds the artifact,
+# or "launch_agent" when a user LaunchAgent references it.
 PURGE_PROTECTION_REASON=""
 # Set by is_protected_purge_artifact: true when the verdict came from an
 # unfinished content probe rather than evidence.
@@ -823,6 +824,276 @@ _purge_take_lsof_snapshots() {
     return 0
 }
 
+# LaunchAgent plist snapshot state for purge protection. User LaunchAgents
+# (idle, scheduled, or restarting) may depend on a project's runtime or build
+# artifacts even when no process is running during the purge scan.
+_MOLE_PURGE_LAUNCH_AGENTS_DIR=""
+_PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT=""
+_PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT=""
+_PURGE_LAUNCH_AGENT_SNAPSHOT_STATE=""
+_PURGE_LAUNCH_AGENT_SNAPSHOT_SECOND=""
+_PURGE_LAUNCH_AGENT_SNAPSHOT_PINNED=false
+
+_purge_canonicalize_existing_path() {
+    local raw_path="${1:-}" path resolved existing="" suffix=""
+    [[ -n "$raw_path" ]] || return 1
+    case "$raw_path" in
+        \~) path="$HOME" ;;
+        \~/*) path="${raw_path/#\~/$HOME}" ;;
+        /*) path="$raw_path" ;;
+        *) return 1 ;;
+    esac
+    while [[ "$path" == */ && "$path" != "/" ]]; do
+        path="${path%/}"
+    done
+    [[ "$path" != "/" ]] || return 1
+
+    existing="$path"
+    while [[ ! -e "$existing" && ! -L "$existing" && "$existing" != "/" && -n "$existing" ]]; do
+        suffix="/${existing##*/}$suffix"
+        existing="${existing%/*}"
+        [[ -n "$existing" ]] || existing="/"
+    done
+
+    if [[ -d "$existing" ]]; then
+        resolved=$(cd "$existing" 2> /dev/null && /bin/pwd -P) || resolved="$existing"
+    elif [[ -e "$existing" ]]; then
+        local parent_dir="${existing%/*}"
+        [[ -n "$parent_dir" ]] || parent_dir="/"
+        local resolved_parent=""
+        resolved_parent=$(cd "$parent_dir" 2> /dev/null && /bin/pwd -P) || resolved_parent="$parent_dir"
+        resolved="${resolved_parent%/}/${existing##*/}"
+    else
+        resolved="$existing"
+    fi
+
+    resolved="${resolved%/}$suffix"
+    [[ -n "$resolved" && "$resolved" != "/" ]] || return 1
+    printf '%s\n' "$resolved"
+}
+
+_purge_launch_agent_path_is_trivial() {
+    local path="${1%/}" physical_home="${MOLE_PURGE_PHYSICAL_HOME%/}"
+    case "$path" in
+        "" | / | /bin | /bin/* | /sbin | /sbin/* | /usr | /usr/bin | /usr/bin/* | /usr/sbin | /usr/sbin/* | \
+            /usr/local | /usr/local/bin | /opt | /opt/homebrew | /opt/homebrew/bin | \
+            /System | /System/* | /Library | /Applications | /private | /private/tmp | /tmp | /var | /private/var | \
+            /dev | /dev/* | "$HOME" | "$physical_home")
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+_purge_launch_agent_runtime_artifact_name() {
+    case "${1:-}" in
+        node_modules | venv | .venv | dist | build | target | .next | .nuxt | .output | bin | .build | Pods | vendor)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+_purge_extract_launch_agent_paths() {
+    local plist="$1" deadline="${2:-}"
+    local probe_timeout xml_out rc=0
+    probe_timeout=$(_mole_timeout_with_deadline "$MOLE_TIMEOUT_HINT_SCAN_SEC" "$deadline") || return 124
+    xml_out=$(run_with_timeout "$probe_timeout" /usr/bin/plutil -convert xml1 -o - "$plist" 2> /dev/null) || rc=$?
+    if mole_rc_signal "$rc"; then
+        return "$rc"
+    fi
+    if mole_rc_timeout "$rc"; then
+        return 124
+    fi
+    # One malformed third-party plist must not abort scanning valid LaunchAgents.
+    if [[ $rc -ne 0 ]]; then
+        debug_log "Skipping unreadable or malformed LaunchAgent plist: $plist"
+        return 1
+    fi
+
+    LC_ALL=C /usr/bin/awk '
+        function unescape(s) {
+            gsub(/&lt;/, "<", s)
+            gsub(/&gt;/, ">", s)
+            gsub(/&quot;/, "\"", s)
+            gsub(/&apos;/, "\x27", s)
+            gsub(/&amp;/, "\\&", s)
+            return s
+        }
+        {
+            line = $0
+            while (match(line, /<(dict|\/dict|array|\/array|key|string|\/key|\/string)[^>]*>/)) {
+                tag = substr(line, RSTART, RLENGTH)
+                text = substr(line, 1, RSTART - 1)
+                if (in_key) key_buf = key_buf text
+                else if (in_str) str_buf = str_buf text
+                line = substr(line, RSTART + RLENGTH)
+                if (tag == "<dict>") {
+                    depth++
+                    ctx[depth] = pending_key
+                    pending_key = ""
+                } else if (tag == "</dict>") {
+                    if (depth > 0) depth--
+                } else if (tag == "<array>") {
+                    arr_depth++
+                    arr_key[arr_depth] = pending_key
+                } else if (tag == "</array>") {
+                    if (arr_depth > 0) arr_depth--
+                } else if (tag == "<key>") {
+                    in_key = 1
+                    key_buf = ""
+                } else if (tag == "</key>") {
+                    in_key = 0
+                    pending_key = unescape(key_buf)
+                } else if (tag == "<string>") {
+                    in_str = 1
+                    str_buf = ""
+                } else if (tag == "</string>") {
+                    in_str = 0
+                    val = unescape(str_buf)
+                    if (depth == 1 && arr_depth == 0 && (pending_key == "Program" || pending_key == "WorkingDirectory")) {
+                        print "PROJ\t" val
+                    } else if (depth == 1 && arr_depth == 1 && arr_key[1] == "ProgramArguments") {
+                        print "PROJ\t" val
+                    } else if (depth == 2 && ctx[2] == "EnvironmentVariables" && (pending_key == "PATH" || pending_key == "PYTHONPATH" || pending_key == "VIRTUAL_ENV" || pending_key == "NODE_PATH")) {
+                        print "ENV\t" val
+                    }
+                    if (arr_depth == 0) pending_key = ""
+                }
+            }
+            if (in_key) key_buf = key_buf line "\n"
+            else if (in_str) str_buf = str_buf line "\n"
+        }
+    ' <<< "$xml_out"
+}
+
+_purge_take_launch_agent_snapshots() {
+    local deadline="${1:-}"
+    local launch_agents_dir="${_MOLE_PURGE_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
+    _PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT=""
+    _PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT=""
+    _PURGE_LAUNCH_AGENT_SNAPSHOT_STATE="ok"
+    _PURGE_LAUNCH_AGENT_SNAPSHOT_SECOND="$SECONDS"
+
+    [[ -e "$launch_agents_dir" ]] || return 0
+    if [[ ! -d "$launch_agents_dir" || ! -r "$launch_agents_dir" || ! -x "$launch_agents_dir" ]]; then
+        _PURGE_LAUNCH_AGENT_SNAPSHOT_STATE="error"
+        return 0
+    fi
+
+    local -a direct_paths=() project_paths=()
+    local nullglob_was_set=0
+    shopt -q nullglob && nullglob_was_set=1
+    shopt -s nullglob
+
+    local plist extracted extract_rc kind raw_val entry canon_path
+    for plist in "$launch_agents_dir"/*.plist; do
+        if [[ "$deadline" =~ ^[0-9]+$ && $SECONDS -ge $deadline ]]; then
+            _PURGE_LAUNCH_AGENT_SNAPSHOT_STATE="error"
+            break
+        fi
+        [[ -f "$plist" && -r "$plist" ]] || continue
+        extract_rc=0
+        extracted=$(_purge_extract_launch_agent_paths "$plist" "$deadline") || extract_rc=$?
+        if mole_rc_signal "$extract_rc"; then
+            [[ $nullglob_was_set -eq 1 ]] || shopt -u nullglob
+            _PURGE_LAUNCH_AGENT_SNAPSHOT_STATE="error"
+            return "$extract_rc"
+        fi
+        if mole_rc_timeout "$extract_rc"; then
+            _PURGE_LAUNCH_AGENT_SNAPSHOT_STATE="error"
+            break
+        fi
+        [[ $extract_rc -eq 0 && -n "$extracted" ]] || continue
+
+        while IFS=$'\t' read -r kind raw_val; do
+            [[ -n "$raw_val" ]] || continue
+            if [[ "$kind" == "ENV" ]]; then
+                local -a env_entries=()
+                IFS=':' read -ra env_entries <<< "$raw_val"
+                for entry in "${env_entries[@]+"${env_entries[@]}"}"; do
+                    canon_path=$(_purge_canonicalize_existing_path "$entry") || continue
+                    _purge_launch_agent_path_is_trivial "$canon_path" && continue
+                    direct_paths+=("$canon_path")
+                done
+            else
+                canon_path=$(_purge_canonicalize_existing_path "$raw_val") || continue
+                _purge_launch_agent_path_is_trivial "$canon_path" && continue
+                direct_paths+=("$canon_path")
+                project_paths+=("$canon_path")
+            fi
+        done <<< "$extracted"
+    done
+
+    [[ $nullglob_was_set -eq 1 ]] || shopt -u nullglob
+    _PURGE_LAUNCH_AGENT_SNAPSHOT_SECOND="$SECONDS"
+    if [[ "$_PURGE_LAUNCH_AGENT_SNAPSHOT_STATE" == "error" ]]; then
+        _PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT=""
+        _PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT=""
+        return 0
+    fi
+
+    if [[ ${#direct_paths[@]} -gt 0 ]]; then
+        _PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT=$(printf '%s\n' "${direct_paths[@]}" | LC_ALL=C /usr/bin/sort -u)
+    fi
+    if [[ ${#project_paths[@]} -gt 0 ]]; then
+        _PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT=$(printf '%s\n' "${project_paths[@]}" | LC_ALL=C /usr/bin/sort -u)
+    fi
+    return 0
+}
+
+# Tri-state probe matching purge_artifact_in_use:
+#   0 = referenced by a user LaunchAgent, 1 = not referenced, 2 = unverified, >128 = signal.
+purge_artifact_launch_agent_protected() {
+    local artifact="${1%/}" deadline="${2:-}" snap_rc=0
+    [[ "$artifact" == /* && ! "$artifact" =~ [[:cntrl:]] ]] || return 2
+
+    if [[ "$_PURGE_LAUNCH_AGENT_SNAPSHOT_PINNED" != "true" ]]; then
+        if [[ -z "$_PURGE_LAUNCH_AGENT_SNAPSHOT_STATE" || "$_PURGE_LAUNCH_AGENT_SNAPSHOT_SECOND" != "$SECONDS" ]]; then
+            _purge_take_launch_agent_snapshots "$deadline" || snap_rc=$?
+            [[ $snap_rc -le 128 ]] || return "$snap_rc"
+        fi
+    fi
+
+    [[ "$_PURGE_LAUNCH_AGENT_SNAPSHOT_STATE" == "ok" ]] || return 2
+
+    local physical_artifact="" ref=""
+    physical_artifact=$(_purge_canonicalize_existing_path "$artifact") || physical_artifact="$artifact"
+
+    if [[ -n "$_PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT" ]]; then
+        while IFS= read -r ref; do
+            [[ -n "$ref" ]] || continue
+            if [[ "$ref" == "$physical_artifact" || "$ref" == "$physical_artifact/"* ]]; then
+                return 0
+            fi
+        done <<< "$_PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT"
+    fi
+
+    if [[ -n "$_PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT" ]]; then
+        local base="${physical_artifact##*/}" project_root=""
+        if is_swiftpm_build_output_artifact "$physical_artifact"; then
+            local scratch_dir="${physical_artifact%/*}"
+            [[ "${scratch_dir##*/}" != "index-build" ]] || scratch_dir="${scratch_dir%/*}"
+            project_root="${scratch_dir%/*}"
+        elif _purge_launch_agent_runtime_artifact_name "$base"; then
+            project_root="${physical_artifact%/*}"
+        fi
+
+        local physical_home="${MOLE_PURGE_PHYSICAL_HOME%/}"
+        if [[ -n "$project_root" && "$project_root" != "/" && "$project_root" != "$HOME" && "$project_root" != "$physical_home" ]] &&
+            mole_purge_is_project_root "$project_root"; then
+            while IFS= read -r ref; do
+                [[ -n "$ref" ]] || continue
+                if [[ "$ref" == "$project_root" || "$ref" == "$project_root/"* ]]; then
+                    return 0
+                fi
+            done <<< "$_PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT"
+        fi
+    fi
+
+    return 1
+}
+
 # A build folder also stays while its project runs. Records an unknown state in
 # PURGE_PROTECTION_UNVERIFIED, as the other target checks do.
 _purge_running_project_protects() {
@@ -965,6 +1236,18 @@ is_protected_purge_artifact() {
     fi
     if [[ $in_use_rc -eq 0 ]]; then
         PURGE_PROTECTION_REASON="in_use"
+        return 0
+    fi
+
+    local launch_agent_rc=0
+    purge_artifact_launch_agent_protected "$physical_path" "$deadline" || launch_agent_rc=$?
+    [[ $launch_agent_rc -le 128 ]] || return "$launch_agent_rc"
+    if [[ $launch_agent_rc -eq 2 ]]; then
+        PURGE_PROTECTION_UNVERIFIED=true
+        return 0
+    fi
+    if [[ $launch_agent_rc -eq 0 ]]; then
+        PURGE_PROTECTION_REASON="launch_agent"
         return 0
     fi
 
@@ -1509,6 +1792,17 @@ filter_protected_artifacts() {
 
     local _PURGE_OPEN_SNAPSHOT=""
     _purge_take_lsof_snapshots "$deadline"
+    local _PURGE_LAUNCH_AGENT_DIRECT_SNAPSHOT=""
+    local _PURGE_LAUNCH_AGENT_PROJECT_SNAPSHOT=""
+    local _PURGE_LAUNCH_AGENT_SNAPSHOT_STATE=""
+    local _PURGE_LAUNCH_AGENT_SNAPSHOT_SECOND=""
+    local _PURGE_LAUNCH_AGENT_SNAPSHOT_PINNED=true
+    local _la_snap_rc=0
+    _purge_take_launch_agent_snapshots "$deadline" || _la_snap_rc=$?
+    if [[ $_la_snap_rc -gt 128 ]]; then
+        rm -f "$results" 2> /dev/null || true # SAFE: exact probe result scratch file owned by this filter
+        return "$_la_snap_rc"
+    fi
 
     local max_probe_jobs
     max_probe_jobs=$(get_optimal_parallel_jobs io)
@@ -3665,6 +3959,8 @@ clean_project_artifacts() {
                 echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (could not inspect contents; re-run mo purge to review it again)"
             elif [[ "${PURGE_PROTECTION_REASON:-}" == "in_use" ]]; then
                 echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (in use; stop what has it open, then run mo purge again)"
+            elif [[ "${PURGE_PROTECTION_REASON:-}" == "launch_agent" ]]; then
+                echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (referenced by a LaunchAgent; unload or update the plist, then run mo purge again)"
             else
                 debug_log "Skipping purge target that became protected after review: $item_path"
             fi
