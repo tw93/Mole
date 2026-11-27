@@ -1409,6 +1409,51 @@ clean_rust_dependency_cache_root() {
         "$display_name"
 }
 
+# Instruments leaves instruments<token>.ktrace in the per-user Darwin temp
+# root when a recording is closed without saving (one report: 14 files, 9.0
+# GB). Only that exact name directly in the getconf temp root, a regular file
+# with one link owned by the user, a day old, and only while Instruments is
+# not running; an unknown process state keeps them. Mole Mac's
+# InstrumentsTracePolicy uses the same shape and age.
+clean_instruments_unsaved_traces() {
+    local root resolved entry name token mtime now links
+    root=$(_mole_darwin_user_temp_dir) || return 0
+    [[ -n "$root" && -d "$root" && ! -L "${root%/}" ]] || return 0
+    resolved=$(cd -P "$root" 2> /dev/null && pwd) || return 0
+    local -a traces=()
+    now=$(get_epoch_seconds)
+    [[ "$now" =~ ^[0-9]+$ ]] || return 0
+    for entry in "$resolved"/instruments*.ktrace; do
+        [[ -f "$entry" && ! -L "$entry" && -O "$entry" ]] || continue
+        name="${entry##*/}"
+        token="${name#instruments}"
+        token="${token%.ktrace}"
+        [[ ${#token} -ge 1 && ${#token} -le 64 && "$token" =~ ^[A-Za-z0-9]+$ ]] || continue
+        links=$("$STAT_BSD" -f %l "$entry" 2> /dev/null) || continue
+        [[ "$links" == "1" ]] || continue
+        mtime=$(get_file_mtime "$entry")
+        [[ "$mtime" =~ ^[0-9]+$ && $mtime -gt 0 && $mtime -le $now && $((now - mtime)) -ge 86400 ]] || continue
+        traces+=("$entry")
+    done
+    [[ ${#traces[@]} -gt 0 ]] || return 0
+    local state=0
+    _instruments_running || state=$?
+    if [[ $state -ne 1 ]]; then
+        debug_log "Keeping Instruments traces, Instruments is running or its state is unknown"
+        return 0
+    fi
+    # The guard asks again after sizing and at the final sink.
+    local rc=0
+    _dev_safe_clean_process_guarded _instruments_running "Instruments" "Instruments unsaved traces" \
+        "${traces[@]}" "Instruments unsaved traces" || rc=$?
+    [[ $rc -eq 1 ]] && return 0
+    return "$rc"
+}
+
+_instruments_running() {
+    mole_pgrep_any -x Instruments -f '/Instruments[.]app/'
+}
+
 # Rust/cargo caches. Honor CARGO_HOME / RUSTUP_HOME when they point at a
 # validated absolute path (mise and other version managers relocate these).
 # Scope stays redundant download copies only: registry/cache and rustup
@@ -6502,6 +6547,7 @@ clean_developer_tools() {
 
     # GUI developer applications
     _run_developer_cleanup_step --strict clean_xcode_tools || return $?
+    _run_developer_cleanup_step clean_instruments_unsaved_traces || return $?
     _run_developer_cleanup_step clean_code_editors || return $?
 
     # Homebrew: only blanket-clean downloads/. Wiping api/ (JSON that needs a

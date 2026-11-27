@@ -2329,6 +2329,53 @@ clean_remote_desktop() {
     safe_clean ~/Library/Caches/com.todesk.*/* "ToDesk cache"
     safe_clean ~/Library/Caches/com.sunlogin.*/* "Sunlogin cache"
 }
+# Append the regular files directly in $1 that are at least $2 seconds old,
+# limited to the lowercase extensions in $3 (space-separated, empty for any),
+# to _MOLE_STALE_FILES. Links, folders and unreadable mtimes are skipped; a
+# future mtime reads as fresh.
+_mole_collect_stale_regular_files() {
+    local dir="$1" min_age="$2" extensions="${3:-}" now entry mtime ext physical
+    [[ -d "$dir" && ! -L "$dir" ]] || return 0
+    # A linked parent (LarkShell, Citro Labs) would point the sweep elsewhere.
+    physical=$(cd -P "$dir" 2> /dev/null && pwd) || return 0
+    [[ "$physical" == "$dir" ]] || return 0
+    now=$(get_epoch_seconds)
+    [[ "$now" =~ ^[0-9]+$ ]] || return 0
+    for entry in "$dir"/*; do
+        [[ -f "$entry" && ! -L "$entry" ]] || continue
+        if [[ -n "$extensions" ]]; then
+            ext=$(printf '%s' "${entry##*.}" | LC_ALL=C /usr/bin/tr "[:upper:]" "[:lower:]")
+            [[ "$entry" == *.* && " $extensions " == *" $ext "* ]] || continue
+        fi
+        mtime=$(get_file_mtime "$entry")
+        [[ "$mtime" =~ ^[0-9]+$ && $mtime -gt 0 && $mtime -le $now ]] || continue
+        [[ $((now - mtime)) -ge $min_age ]] || continue
+        _MOLE_STALE_FILES+=("$entry")
+    done
+}
+
+# Update packages an app already installed or abandoned, outside Library/Caches
+# (the generic sweep owns that root): Feishu and Lark leave a download in
+# update_downloading (490 MB, five months old in one probe), ego lite and
+# Tabbit keep Chromium updater payloads in crx_cache (196 MB and 236 MB). Only
+# regular files at least three days old: a fresh one is a download in progress
+# or waiting for the next quit. Same rule as Mole Mac's Update Package
+# Leftovers; its container rows (QQ, Tencent Meeting) stay out, since reading
+# another app's container raises the app-data prompt.
+clean_update_package_leftovers() {
+    local -a _MOLE_STALE_FILES=()
+    local support="$HOME/Library/Application Support" dir
+    for dir in "$support/LarkShell/update/update_downloading" \
+        "$support/LarkInternational/update/update_downloading"; do
+        _mole_collect_stale_regular_files "$dir" 259200 "zip dmg pkg"
+    done
+    for dir in "$support/Citro Labs/EgoUpdater/crx_cache" "$support/Tabbit/TabbitUpdater/crx_cache"; do
+        _mole_collect_stale_regular_files "$dir" 259200 ""
+    done
+    [[ ${#_MOLE_STALE_FILES[@]} -gt 0 ]] || return 0
+    safe_clean "${_MOLE_STALE_FILES[@]}" "Update package leftovers"
+}
+
 # Main entry for GUI app cleanup.
 clean_user_gui_applications() {
     # Product and media App Container rows share one recursive-handle budget.
@@ -2342,7 +2389,8 @@ clean_user_gui_applications() {
         clean_media_players clean_video_players clean_download_managers \
         clean_gaming_platforms clean_translation_apps clean_screenshot_tools \
         clean_email_clients clean_task_apps clean_shell_utils clean_system_utils \
-        clean_note_apps clean_launcher_apps clean_remote_desktop; do
+        clean_note_apps clean_launcher_apps clean_remote_desktop \
+        clean_update_package_leftovers; do
         start_section_spinner "Scanning apps..."
         if [[ "$app_group" == "clean_download_managers" ]]; then
             group_rc=0

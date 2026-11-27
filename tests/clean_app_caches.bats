@@ -694,7 +694,7 @@ for group in clean_communication_apps clean_dingtalk clean_ai_apps clean_design_
     clean_video_players clean_download_managers clean_gaming_platforms \
     clean_translation_apps clean_screenshot_tools clean_email_clients clean_task_apps \
     clean_shell_utils clean_system_utils clean_note_apps clean_launcher_apps \
-    clean_remote_desktop; do
+    clean_remote_desktop clean_update_package_leftovers; do
     eval "$group() { echo GROUP; }"
 done
 clean_user_gui_applications
@@ -708,8 +708,8 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     local first_run
     first_run=$(printf '%s\n' "$output" | sed -n '1,/^RC=/p' | tr '\n' ' ')
-    # Twenty groups, each one preceded by its own spinner start, then one stop.
-    [ "$(printf '%s\n' "$output" | sed -n '1,/^RC=/p' | grep -c '^START$')" -eq 20 ] || { echo "$first_run"; return 1; }
+    # Twenty-one groups, each one preceded by its own spinner start, then one stop.
+    [ "$(printf '%s\n' "$output" | sed -n '1,/^RC=/p' | grep -c '^START$')" -eq 21 ] || { echo "$first_run"; return 1; }
     [[ "$first_run" != *"GROUP GROUP"* ]] || { echo "$first_run"; return 1; }
     [[ "$first_run" == *"GROUP STOP RC=0"* ]] || { echo "$first_run"; return 1; }
     # A cancelled download-manager group still stops the spinner and returns its status.
@@ -4067,3 +4067,49 @@ EOF
     [[ "$output" == *"SCG|WeChat web cache|3"* ]] || { echo "$output"; return 1; }
     [ "$(printf '%s\n' "$output" | grep -c '^SCG|WeChat service worker cache|')" -eq 1 ] || { echo "$output"; return 1; }
 }
+
+@test "clean_update_package_leftovers offers only stale update packages outside Library/Caches" {
+    local support="$HOME/Library/Application Support"
+    local lark="$support/LarkShell/update/update_downloading"
+    local ego="$support/Citro Labs/EgoUpdater/crx_cache"
+    mkdir -p "$lark/sub.zip" "$ego"
+    touch -t 202601010000 "$lark/Feishu-7.1.dmg" "$lark/notes.txt" "$ego/payload"
+    touch "$lark/Feishu-7.2.zip" "$ego/fresh"
+    ln -s "$lark/Feishu-7.1.dmg" "$lark/link.pkg"
+    # A linked vendor folder must not move the sweep somewhere else.
+    local elsewhere="$HOME/elsewhere-downloads"
+    mkdir -p "$elsewhere/TabbitUpdater/crx_cache"
+    touch -t 202601010000 "$elsewhere/TabbitUpdater/crx_cache/keep.zip"
+    ln -s "$elsewhere" "$support/Tabbit"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { local label="${!#}" target; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
+clean_update_package_leftovers
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"CLEAN:$lark/Feishu-7.1.dmg|Update package leftovers"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"CLEAN:$ego/payload|Update package leftovers"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"Feishu-7.2.zip"* && "$output" != *"notes.txt"* && "$output" != *"fresh"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"link.pkg"* && "$output" != *"sub.zip"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"keep.zip"* && "$output" != *"elsewhere"* ]] || { echo "$output"; return 1; }
+}
+
+@test "clean_update_package_leftovers stays silent without stale packages" {
+    local empty_home="$HOME/empty-update-home"
+    mkdir -p "$empty_home/Library/Application Support/Tabbit/TabbitUpdater/crx_cache"
+    touch "$empty_home/Library/Application Support/Tabbit/TabbitUpdater/crx_cache/fresh"
+    run env HOME="$empty_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+safe_clean() { echo "CALLED:$*"; }
+clean_update_package_leftovers
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"CALLED:"* ]] || { echo "$output"; return 1; }
+}
+

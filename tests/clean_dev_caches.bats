@@ -5767,3 +5767,36 @@ EOF
     # The first cache's command ran; the interrupt stops the second one.
     [[ "$output" == *"RAN=1"* ]] || { echo "$output"; return 1; }
 }
+
+@test "clean_instruments_unsaved_traces takes only day-old Instruments traces in the temp root" {
+    local troot="$HOME/darwin-T"
+    mkdir -p "$troot/nested"
+    touch -t 202601010000 "$troot/instrumentsAb12.ktrace" "$troot/instruments-x.ktrace" \
+        "$troot/notinstruments1.ktrace" "$troot/nested/instrumentsZ9.ktrace"
+    touch "$troot/instrumentsFresh1.ktrace"
+    touch -t 202601010000 "$troot/instrumentsLinked2.ktrace"
+    ln "$troot/instrumentsLinked2.ktrace" "$troot/hardlink-copy"
+
+    run env HOME="$HOME" TROOT="$troot" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+_mole_darwin_user_temp_dir() { printf '%s\n' "$TROOT"; }
+mole_pgrep_any() { return "${PGREP_RC:-1}"; }
+safe_clean() { local label="${!#}" target; for target in "${@:1:$#-1}"; do echo "CLEAN:$target|$label"; done; }
+safe_clean_guarded() { local guard="$1"; shift; "$guard" || return 75; safe_clean "$@"; }
+clean_instruments_unsaved_traces
+echo "--running"
+PGREP_RC=0 clean_instruments_unsaved_traces
+echo "--unknown"
+PGREP_RC=2 clean_instruments_unsaved_traces
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    local first="${output%%--running*}" rest="${output#*--running}"
+    [[ "$first" == *"CLEAN:"*"/instrumentsAb12.ktrace|Instruments unsaved traces"* ]] || { echo "$output"; return 1; }
+    [[ "$first" != *"instruments-x"* && "$first" != *"notinstruments"* && "$first" != *"nested"* ]] || { echo "$output"; return 1; }
+    [[ "$first" != *"instrumentsFresh1"* && "$first" != *"instrumentsLinked2"* ]] || { echo "$output"; return 1; }
+    [[ "$rest" != *"CLEAN:"* ]] || { echo "$output"; return 1; }
+}
+
