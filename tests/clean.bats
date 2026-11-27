@@ -88,6 +88,17 @@ make_cache() {
     [ ! -e "$cache/http/entry" ]
 }
 
+@test "Oh My Zsh cache keeps the completions folder an open shell autoloads from" {
+    local cache="$HOME/.oh-my-zsh/cache"
+    make_cache "$cache/completions"
+    make_cache "$cache/plugin-data"
+
+    mole_run clean 'clean_user_rules'
+    [ "$status" -eq 0 ]
+    [ -f "$cache/completions/entry/blob" ]
+    [ ! -e "$cache/plugin-data/entry" ]
+}
+
 @test "only a Flatpak app's cache folder becomes a rule, never its data" {
     mkdir -p "$HOME/.var/app/org.test.App/cache" "$HOME/.var/app/org.test.App/data" "$HOME/.var/app/org.nocache.App/config"
     mole_run clean 'mole_flatpak_cache_rules'

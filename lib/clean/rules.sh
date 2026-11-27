@@ -16,6 +16,7 @@
 #                              link into root
 #             obsolete         only folders an editor's .obsolete file lists
 #             suffix:<.ext>    only regular files ending in <.ext>
+#             except:<name>    every child but the one named <name>
 #             tool:uv          ask uv itself (uv cache prune), never rm
 # Consecutive rules with the same label are reported as one line.
 # A directory not named here is never selected. Profiles, config, model stores
@@ -363,7 +364,7 @@ Developer tools|GitHub Actions cache|$HOME/.github/cache|act
 Developer tools|CircleCI cache|$HOME/.circleci/cache|circleci
 Developer tools|SonarQube cache|$HOME/.sonar/cache|sonar-scanner,cmd:org[.]sonar
 Developer tools|OpenCode cache|$c/opencode|opencode
-Developer tools|Oh My Zsh cache|$HOME/.oh-my-zsh/cache|
+Developer tools|Oh My Zsh cache|$HOME/.oh-my-zsh/cache||except:completions
 Developer tools|Android build cache|$HOME/.android/build-cache|studio,$gradle
 Developer tools|Android cache|$HOME/.android/cache|studio,$gradle
 Developer tools|mise download cache|$c/mise|mise
@@ -446,6 +447,9 @@ mole_rule_children() {
         versions:*) mole_select_old_versions "$root" "${selector#versions:}" ;;
         obsolete) mole_select_obsolete_extensions "$root" ;;
         suffix:*) find "$root" -mindepth 1 -maxdepth 1 -type f -name "*${selector#suffix:}" -print0 2> /dev/null ;;
+        # Oh My Zsh's completions/ is on fpath: an open zsh autoloads a
+        # completion from it on the first Tab (tw93/Mole#2110).
+        except:?*) find "$root" -mindepth 1 -maxdepth 1 ! -name "${selector#except:}" -print0 2> /dev/null ;;
         *) return 0 ;;
     esac
 }
