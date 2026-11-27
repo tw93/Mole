@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Examiner les dossiers temporaires sans nettoyage 
 Pour installer une version spécifique, spécifiez un tag depuis la [page des versions](https://github.com/tw93/mole/releases), avec ou sans le `V` initial. Pour suivre la branche de développement, utilisez `main` :
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

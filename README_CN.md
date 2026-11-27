@@ -105,7 +105,7 @@ mo analyze /private/tmp      # 仅查看临时目录（不自动清理）
 想装特定版本就传入 [Releases 页面](https://github.com/tw93/mole/releases) 里的任意 Tag，带不带开头的 `V` 都行，想跟开发分支就传 `main`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

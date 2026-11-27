@@ -105,7 +105,7 @@ mo analyze /private/tmp      # 一時ディレクトリの確認（自動削除�
 特定バージョンをインストールする場合は、[Releasesページ](https://github.com/tw93/mole/releases) のタグを指定してください（先頭の `V` はあってもなくても構いません）。開発ブランチを利用する場合は `main` を指定します：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

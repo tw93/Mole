@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Revisa pastas temporárias do usuário
 Para instalar uma versão específica, passe qualquer tag da [página de releases](https://github.com/tw93/mole/releases), com ou sem o `V` inicial. Para acompanhar o branch de desenvolvimento, passe `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Temporäre Benutzerverzeichnisse prüfen
 Um eine bestimmte Version zu installieren, übergib ein beliebiges Tag von der [Releases-Seite](https://github.com/tw93/mole/releases), mit oder ohne führendes `V`. Um den Entwicklungszweig zu nutzen, übergib `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

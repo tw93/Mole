@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Просмотреть временные кат�
 Чтобы установить конкретный выпуск, передайте любой тег со [страницы релизов](https://github.com/tw93/mole/releases), с ведущей `V` или без неё. Чтобы следить за веткой разработки, передайте `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

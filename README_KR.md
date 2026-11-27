@@ -105,7 +105,7 @@ mo analyze /private/tmp      # 임시 디렉터리 검토(자동 삭제 없음)
 특정 버전을 설치하려면 [릴리스 페이지](https://github.com/tw93/mole/releases)의 태그를 지정하세요(앞자리 `V` 유무 무관). 최신 개발 브랜치를 설치하려면 `main`을 전달합니다:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

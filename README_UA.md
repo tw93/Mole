@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Переглянути тимчасові тек�
 Щоб встановити конкретний реліз, передайте будь-який тег зі [сторінки релізів](https://github.com/tw93/mole/releases), з початковою `V` або без неї. Щоб стежити за гілкою розробки, передайте `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 

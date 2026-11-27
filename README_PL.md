@@ -105,7 +105,7 @@ mo analyze /private/tmp      # Przegląd katalogów tymczasowych użytkownika
 Aby zainstalować konkretne wydanie, podaj dowolny tag ze [strony wydań](https://github.com/tw93/mole/releases), z początkowym `V` lub bez niego. Aby śledzić gałąź rozwojową, podaj `main`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.74.0
+curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- 1.75.0
 curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- main
 ```
 
