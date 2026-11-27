@@ -62,6 +62,10 @@ All are published with `--latest=false`; `releases/latest` stays a macOS tag. Re
 - On the devbox a single Rust project's `target` was 8.8 GB against 614 MB of toolchains: the case for purge when it comes.
 - Before the port, `main`'s status on Linux scored a 72%-memory, swapping VM as 98 "Excellent", since memory pressure was empty there; the Linux status reads PSI and swap.
 
+## Measurements (2026-11-27)
+
+- A local Bun cache fixture held 300 package folders with one 4 KiB file each. Three dry runs took 2.260 s median with one `du` per package. One `du` for all eligible packages took 1.459 s median. Both runs printed the same result.
+
 ## Install channels (researched 2026-11-02)
 
 - Today: `install.sh` from this branch, `mo update`, `mo remove`.

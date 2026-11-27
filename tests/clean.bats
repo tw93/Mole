@@ -36,6 +36,31 @@ make_cache() {
     [ -f "$HOME/.cache/moletool/entry/blob" ]
 }
 
+@test "Bun cache sizing uses one du call after child protection and whitelist checks" {
+    local root="$HOME/.bun/install/cache"
+    local unusual="$root/"$'line\nbreak'
+    make_cache "$root/first"
+    make_cache "$unusual"
+    make_cache "$root/kept"
+    fake_command du 'printf "%s\n" "$*" >> "$HOME/du.log"; cat > "$HOME/du-input"; exec /usr/bin/du "$@" < "$HOME/du-input"'
+
+    mole_run clean '
+        DRY_RUN=true
+        MOLE_WHITELIST_PATTERNS=("$HOME/.bun/install/cache/kept")
+        rule_owner_state() { return 1; }
+        clean_rule "Bun install cache" "$HOME/.bun/install/cache" "bun,bunx"'
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"Bun install cache · 2 items,"* ]] || { echo "$output"; return 1; }
+    [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
+    local sized
+    sized=$(tr '\0' '\n' < "$HOME/du-input")
+    [[ "$sized" == *"$root/first"* && "$sized" == *"$unusual"* && "$sized" != *"$root/kept"* ]] || return 1
+    [ -f "$root/first/entry/blob" ]
+    [ -f "$unusual/entry/blob" ]
+    [ -f "$root/kept/entry/blob" ]
+}
+
 @test "a Flatpak app cache waits for flatpak to say the app is not running" {
     make_cache "$HOME/.var/app/org.test.App/cache"
     fake_command flatpak '[[ "$1" == ps ]] && echo org.test.App'

@@ -188,6 +188,16 @@ group_flush() {
     return 0
 }
 
+# One du walk counts shared hardlinks once and avoids one process per Bun package.
+mole_bun_cache_kb() {
+    local output kb
+    output=$(printf '%s\0' "$@" | mole_c du -skxc --files0-from=- 2> /dev/null) || true
+    kb="${output##*$'\n'}"
+    kb="${kb%%[[:space:]]*}"
+    [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
+    printf '%s\n' "$kb"
+}
+
 # Clean one rule into the current group. Only children mole_remove_cache would
 # accept are sized and counted, in a dry run as in a real one.
 clean_rule_collect() {
@@ -232,11 +242,16 @@ clean_rule_collect() {
         fi
         mole_cache_child_ok "$child" "$root" || continue
         eligible+=("$child")
-        kb=$((kb + $(mole_path_kb "$child")))
+        if [[ "$label" != "Bun install cache" ]]; then
+            kb=$((kb + $(mole_path_kb "$child")))
+        fi
     done
     if [[ ${#eligible[@]} -eq 0 ]]; then
         ((kept > 0)) && group_note "$(whitelist_note "$label")"
         return 0
+    fi
+    if [[ "$label" == "Bun install cache" ]]; then
+        kb=$(mole_bun_cache_kb "${eligible[@]}")
     fi
     ((kb >= 8)) || return 0
 
