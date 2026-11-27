@@ -1474,11 +1474,14 @@ safe_clean() {
     for arg in "$@"; do
         printf 'CLEAN:%s\n' "$arg"
     done
+    printf 'FINAL:%s\n' "${_MOLE_SAFE_REMOVE_FINAL_GUARD:-none}"
 }
 clean_notion_partition_disk_caches
 EOF
 
     [ "$status" -eq 0 ] || return 1
+    # The owner is asked again inside safe_remove, not only before the batch.
+    [[ "$output" == *"FINAL:_notion_service_worker_delete_guard_allows"* ]] || return 1
     local base="$HOME/Library/Application Support/Notion/Partitions"
     [[ "$output" == *"CLEAN:$base/notion/Cache/Cache_Data"* ]] || return 1
     [[ "$output" == *"CLEAN:$base/notion/Code Cache/js"* ]] || return 1

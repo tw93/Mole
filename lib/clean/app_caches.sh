@@ -906,6 +906,9 @@ clean_notion_partition_disk_caches() {
         return 0
     fi
 
+    # Ask once more inside safe_remove, as every named Application Support
+    # cache does: Notion can open while one item is being validated.
+    local _MOLE_SAFE_REMOVE_FINAL_GUARD=_notion_service_worker_delete_guard_allows
     _app_cache_safe_clean_guarded _notion_service_worker_delete_guard_allows "Notion" \
         "${cache_targets[@]}" "Notion web cache"
 }
