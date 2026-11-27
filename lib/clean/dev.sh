@@ -1065,7 +1065,11 @@ _run_go_cache_clean_bound() {
         return 1
     fi
 
-    local -a command_args=(env "$cache_kind=$physical_root" go clean)
+    # GOFLAGS is pinned to the harmless -modcacherw because `go clean` honors
+    # it: a `-modcache` or `-fuzzcache` exported or saved with `go env -w` would
+    # empty a cache whose root was never checked above, and an empty value does
+    # not override the saved one.
+    local -a command_args=(env GOFLAGS=-modcacherw "$cache_kind=$physical_root" go clean)
     if [[ "$owner_dry_run" == "true" ]]; then
         command_args+=(-n)
     fi

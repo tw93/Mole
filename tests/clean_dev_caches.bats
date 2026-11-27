@@ -3556,9 +3556,9 @@ EOF
     [[ "$output" == *"Go build cache"* ]] || return 1
     # Nothing may be handed to the owner command for the symlinked root, and
     # the physical directory the link points at must survive.
-    ! grep -q -- "-modcache" "$trace" || return 1
+    ! grep -q -- " -modcache" "$trace" || return 1
     [[ -d "$module_physical" ]] || return 1
-    grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOCACHE=$build_root go clean -cache" "$trace" || return 1
     rm -f "$trace" "$module_link"
     rm -rf "$module_physical" "$build_root"
 }
@@ -3615,15 +3615,50 @@ EOF
         echo "$output"
         return 1
     }
-    ! grep -q -- "-modcache" "$trace" || {
+    ! grep -q -- " -modcache" "$trace" || {
         cat "$trace"
         return 1
     }
     [[ -f "$outside_root/victim.txt" ]] || return 1
     # The concurrency-safe build cache is unaffected by the module-root swap.
-    grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOCACHE=$build_root go clean -cache" "$trace" || return 1
     rm -f "$trace" "$module_root"
     rm -rf "$outside_root" "$build_root"
+}
+
+@test "clean_dev_go pins GOFLAGS so a saved flag cannot widen go clean" {
+    command -v go > /dev/null 2>&1 || skip "needs a real go"
+    # The real go: a stub cannot show what a flag saved with `go env -w` does.
+    local module_root="$HOME/go-module-saved-flag"
+    local build_root="$HOME/go-build-saved-flag"
+    local goenv="$HOME/go-saved-flag.env"
+    mkdir -p "$module_root/cache/download" "$build_root/00"
+    echo module > "$module_root/cache/download/kept"
+    echo object > "$build_root/00/object"
+    printf 'GOFLAGS=-modcache\n' > "$goenv"
+
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" \
+        GOENV="$goenv" GOMODCACHE="$module_root" GOCACHE="$build_root" GOTOOLCHAIN=local \
+        GO_BUILD_ROOT="$build_root" \
+        /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+unset GOFLAGS
+DRY_RUN=false
+is_path_whitelisted() { return 1; }
+should_protect_path() { return 1; }
+go_cache_process_state() { return 1; }
+note_activity() { :; }
+cd /
+clean_go_cache_root "$GO_BUILD_ROOT" GOCACHE -cache "Go build cache"
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -e "$build_root/00/object" ] || { echo "$output"; return 1; }
+    # The saved -modcache would have removed this root, which was never checked.
+    [ -f "$module_root/cache/download/kept" ] || { echo "$output"; return 1; }
+    rm -rf "$module_root" "$build_root" "$goenv"
 }
 
 @test "clean_dev_go uses owner dry-run for the same cache roots" {
@@ -3662,8 +3697,8 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"Go module cache · would clean"* ]] || return 1
     [[ "$output" == *"Go build cache · would clean"* ]] || return 1
-    grep -qFx "env GOMODCACHE=$module_root go clean -n -modcache" "$trace" || return 1
-    grep -qFx "env GOCACHE=$build_root go clean -n -cache" "$trace" || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOMODCACHE=$module_root go clean -n -modcache" "$trace" || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOCACHE=$build_root go clean -n -cache" "$trace" || return 1
     rm -f "$trace"
     rm -rf "$module_root" "$build_root"
 }
@@ -3704,8 +3739,8 @@ EOF
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"SKIP=Go module cache|$module_root"* ]] || return 1
-    grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
-    [[ "$(cat "$trace")" != *"-modcache"* ]] || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOCACHE=$build_root go clean -cache" "$trace" || return 1
+    [[ "$(cat "$trace")" != *" -modcache"* ]] || return 1
     rm -f "$trace"
     rm -rf "$module_root" "$build_root"
 }
@@ -3808,7 +3843,7 @@ run_with_timeout() {
         return 0
     fi
     printf '%s\n' "$*" >> "$GO_TRACE"
-    [[ "$*" == *"-modcache"* ]] && return 124
+    [[ "$*" == *" -modcache"* ]] && return 124
     return 0
 }
 is_path_whitelisted() { return 1; }
@@ -3825,7 +3860,7 @@ EOF
     [[ "$output" == *"rc=0"* ]] || return 1
     [[ "$output" == *"CANCEL=0"* ]] || return 1
     [[ "$output" == *"Go module cache · stopped (timed out)"* ]] || return 1
-    grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOCACHE=$build_root go clean -cache" "$trace" || return 1
     grep -qF "Go module cache timed out after" "$HOME/Library/Logs/mole/mole.log" || return 1
     rm -f "$trace"
     rm -rf "$module_root" "$build_root"
@@ -3862,7 +3897,7 @@ run_with_timeout() {
         return 0
     fi
     printf '%s\n' "$*" >> "$GO_TRACE"
-    [[ "$*" == *"-modcache"* ]] && return 243
+    [[ "$*" == *" -modcache"* ]] && return 243
     return 0
 }
 is_path_whitelisted() { return 1; }
@@ -3879,7 +3914,7 @@ EOF
     [[ "$output" == *"rc=0"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"CANCEL=0"* ]] || { echo "$output"; return 1; }
     [[ "$output" == *"Go module cache · stopped (owner cleanup failed)"* ]] || { echo "$output"; return 1; }
-    grep -qFx "env GOCACHE=$build_root go clean -cache" "$trace" || return 1
+    grep -qFx "env GOFLAGS=-modcacherw GOCACHE=$build_root go clean -cache" "$trace" || return 1
     rm -f "$trace"
     rm -rf "$module_root" "$build_root"
 }
