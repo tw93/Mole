@@ -137,7 +137,10 @@ function Get-MoleInstallMethod {
     $path = $RootDir.TrimEnd('\') + '\'
     if ($path -like "*\Microsoft\WinGet\Packages\tw93.MoleCLI_*") { return "winget" }
     if ($path -like "*\scoop\apps\mole\*") { return "Scoop" }
-    if ($path -like "*\chocolatey\lib\mole\*") { return "Chocolatey" }
+    # Chocolatey installs under $env:ChocolateyInstall, which need not be named chocolatey.
+    $chocoRoot = [string]$env:ChocolateyInstall
+    $inChocoRoot = $chocoRoot -and $path.StartsWith($chocoRoot.TrimEnd('\') + '\lib\mole\', [StringComparison]::OrdinalIgnoreCase)
+    if ($inChocoRoot -or $path -like "*\chocolatey\lib\mole\*") { return "Chocolatey" }
     if (Test-Path -LiteralPath (Join-Path $RootDir ".git")) { return "Source" }
     return "Portable"
 }

@@ -210,6 +210,26 @@ Describe "mo remove" {
         Test-Path (Join-Path $managed "uninstall-called.txt") | Should -BeFalse
     }
 
+    It "Sends an install under a custom ChocolateyInstall root to choco instead of removing files" {
+        $root = Join-Path $TestDrive "pkgs"
+        $managed = Join-Path $root "lib\mole\tools"
+        New-Item -ItemType Directory -Path (Join-Path $managed "bin") -Force | Out-Null
+        Copy-Item (Join-Path $script:WindowsDir "bin\remove.ps1") (Join-Path $managed "bin\remove.ps1")
+        Copy-Item (Join-Path $script:Fake "install.ps1") (Join-Path $managed "install.ps1")
+
+        $saved = $env:ChocolateyInstall
+        try {
+            $env:ChocolateyInstall = $root
+            $output = ("y" | & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $managed "bin\remove.ps1") 2>&1 | Out-String)
+            $LASTEXITCODE | Should -Be 1
+        }
+        finally {
+            $env:ChocolateyInstall = $saved
+        }
+        $output | Should -Match ([regex]::Escape("choco uninstall mole"))
+        Test-Path (Join-Path $managed "uninstall-called.txt") | Should -BeFalse
+    }
+
     It "Refuses to preview with an installer that cannot preview <_>" -ForEach @("with --dry-run", "with MOLE_DRY_RUN=1") {
         # The stand-in installer has no -DryRun parameter, like one from before
         # the preview existed: it would ignore the switch and uninstall.

@@ -210,10 +210,12 @@ function Clear-NodeBuildCaches {
     #>
     
     # A build or editor that is running reads these, so each waits for its
-    # owner, as Mole for Windows holds them.
+    # owner, as Mole for Windows holds them. tsserver keeps one type cache for
+    # every editor and runs inside the editor's own process, so that row waits
+    # for each editor this file cleans, not only VS Code.
     Clear-MoleAppCache -Path "$env:LOCALAPPDATA\node-gyp\Cache" -Description "node-gyp cache" -Processes @('node')
     Clear-MoleAppCache -Path "$env:LOCALAPPDATA\electron\Cache" -Description "Electron cache" -Processes @('node')
-    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Microsoft\TypeScript" -Description "TypeScript cache" -Processes @('Code', 'node')
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Microsoft\TypeScript" -Description "TypeScript cache" -Processes @('Code', 'Code - Insiders', 'Cursor', 'Windsurf', 'VSCodium', 'devenv', 'node')
 }
 
 # ============================================================================
@@ -312,7 +314,18 @@ function Clear-GoCaches {
         Clean Go build and module caches
     #>
     
-    Invoke-MoleOwnerCacheCleanup -Name 'go' -Query @('env', 'GOCACHE') -Arguments @('clean', '-cache') -Description 'Go build cache'
+    # Go applies GOFLAGS to `go clean`: a -modcache exported or saved with
+    # `go env -w` would make this call empty the whole module cache, sources
+    # included, past the owner guard below. An empty value falls through to the
+    # saved one, so the harmless -modcacherw is pinned for the call.
+    $savedGoFlags = $env:GOFLAGS
+    try {
+        $env:GOFLAGS = '-modcacherw'
+        Invoke-MoleOwnerCacheCleanup -Name 'go' -Query @('env', 'GOCACHE') -Arguments @('clean', '-cache') -Description 'Go build cache'
+    }
+    finally {
+        $env:GOFLAGS = $savedGoFlags
+    }
 
     $moduleRoot = Get-MoleOwnerCachePath -Name 'go' -Arguments @('env', 'GOMODCACHE')
     if ($moduleRoot) {

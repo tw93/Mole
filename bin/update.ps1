@@ -204,7 +204,10 @@ function Get-PackageManagerUpgradeCommand {
     if ($path -like "*\scoop\apps\mole\*") {
         return "scoop update mole"
     }
-    if ($path -like "*\chocolatey\lib\mole\*") {
+    # Chocolatey installs under $env:ChocolateyInstall, which need not be named chocolatey.
+    $chocoRoot = [string]$env:ChocolateyInstall
+    $inChocoRoot = $chocoRoot -and $path.StartsWith($chocoRoot.TrimEnd('\') + '\lib\mole\', [StringComparison]::OrdinalIgnoreCase)
+    if ($inChocoRoot -or $path -like "*\chocolatey\lib\mole\*") {
         return "choco upgrade mole"
     }
     return $null

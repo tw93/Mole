@@ -120,6 +120,19 @@ Describe "mo update for package-manager installs" {
         Get-PackageManagerUpgradeCommand -InstallDir $Dir | Should -Be $Expected
     }
 
+    It "Names choco for an install under a custom ChocolateyInstall root" {
+        $saved = $env:ChocolateyInstall
+        try {
+            $env:ChocolateyInstall = "D:\tools\choco\"
+            Get-PackageManagerUpgradeCommand -InstallDir "D:\tools\choco\lib\mole\tools" | Should -Be "choco upgrade mole"
+            # Another package's folder under the same root is not Mole's.
+            Get-PackageManagerUpgradeCommand -InstallDir "D:\tools\choco\lib\molecule\tools" | Should -BeNullOrEmpty
+        }
+        finally {
+            $env:ChocolateyInstall = $saved
+        }
+    }
+
     It "Returns nothing for a plain folder" {
         Get-PackageManagerUpgradeCommand -InstallDir "C:\Users\me\AppData\Local\Mole" | Should -BeNullOrEmpty
     }

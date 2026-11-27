@@ -473,6 +473,23 @@ Describe "Uninstalling registry apps" {
             Should -Invoke Remove-SafeItem -Times 0 -Exactly
         }
 
+        It "Previews no leftover folder for a game that is handed to Steam" {
+            $game = Join-Path $script:SteamFolder "steamapps\common\Team Fortress 2"
+            New-Item -ItemType Directory -Path (Join-Path $game "Mods") -Force | Out-Null
+            $script:SteamApp.InstallLocation = $game
+            Mock Start-MoleSteamHandOff { throw "Steam must not start in a dry run" }
+            Set-DryRunMode -Enabled $true
+            try {
+                Uninstall-SelectedApps -Apps @($script:SteamApp)
+            }
+            finally {
+                Set-DryRunMode -Enabled $false
+            }
+
+            Should -Invoke Remove-SafeItem -Times 0 -Exactly
+            Should -Invoke Start-MoleSteamHandOff -Times 0 -Exactly
+        }
+
         It "Reports the game still installed when Steam did not remove it in time" {
             Mock Start-MoleSteamHandOff { }
             Mock Wait-MoleSteamRemoval { $false }

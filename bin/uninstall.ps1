@@ -814,7 +814,7 @@ function Invoke-MoleUninstallProcess {
 # request to the Steam client: started while Steam is closed it is the client and
 # never exits, and while Steam runs it exits before the user answers Steam's own
 # dialog. Its exit says nothing, so Mole starts it without waiting and without
-# elevation, then watches the game's entry for up to ten minutes (Mole for
+# asking for elevation, then watches the game's entry for up to ten minutes (Mole for
 # Windows SteamRemovalWait).
 function Test-MoleSteamHandOff {
     param($Launch)
@@ -1403,7 +1403,9 @@ function Uninstall-SelectedApps {
             Write-Host "  $esc[90mWould uninstall with $(Get-UninstallMethodDescription -App $app)$esc[0m"
             Show-UninstallChargeLimitNote -App $app
             $folder = [string](Get-MoleProperty $app 'InstallLocation')
-            if ($app.Source -ne "WindowsStore" -and (Test-MoleLeftoverOwnership -Path $folder -App $app -Preview)) {
+            # A Steam game's folder stays with Steam in a real run, so the preview lists none.
+            $steamHandOff = $app.Source -ne "WindowsStore" -and (Test-MoleSteamHandOff -Launch (Get-UninstallLaunch -App $app))
+            if ($app.Source -ne "WindowsStore" -and -not $steamHandOff -and (Test-MoleLeftoverOwnership -Path $folder -App $app -Preview)) {
                 $guard = { param($candidate) Test-MoleLeftoverOwnership -Path $candidate -App $app -Preview }
                 $null = Remove-SafeItem -Path $folder -Description "Leftover files to Recycle Bin" -Recurse -Recycle -Guard $guard
             }

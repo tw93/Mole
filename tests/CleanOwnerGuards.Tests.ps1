@@ -66,6 +66,8 @@ Describe 'Developer cache rows wait for their owner' {
         @{ Fn = 'Clear-NodeBuildCaches'; Row = 'node-gyp cache'; Owner = 'node' }
         @{ Fn = 'Clear-NodeBuildCaches'; Row = 'Electron cache'; Owner = 'node' }
         @{ Fn = 'Clear-NodeBuildCaches'; Row = 'TypeScript cache'; Owner = 'Code' }
+        @{ Fn = 'Clear-NodeBuildCaches'; Row = 'TypeScript cache'; Owner = 'Cursor' }
+        @{ Fn = 'Clear-NodeBuildCaches'; Row = 'TypeScript cache'; Owner = 'Code - Insiders' }
         @{ Fn = 'Clear-GoCaches'; Row = 'Go module cache'; Owner = 'go' }
         @{ Fn = 'Clear-EditorCaches'; Row = 'Zed cache'; Owner = 'Zed' }
         @{ Fn = 'Clear-IdeCaches'; Row = 'Visual Studio cache'; Owner = 'devenv' }
@@ -75,6 +77,25 @@ Describe 'Developer cache rows wait for their owner' {
         & $Fn
         Should -Invoke Clear-MoleAppCache -Scope It -ParameterFilter { $Description -eq $wantRow -and $Processes -contains $wantOwner }
         Should -Invoke Clear-DirectoryContents -Scope It -Times 0 -Exactly -ParameterFilter { $Description -eq $wantRow }
+    }
+}
+
+Describe 'Go build cache owner command' {
+    It 'Pins GOFLAGS for go clean and restores the user value afterwards' {
+        $saved = $env:GOFLAGS
+        try {
+            $env:GOFLAGS = '-modcache'
+            $script:SeenGoFlags = $null
+            Mock Invoke-MoleOwnerCacheCleanup { $script:SeenGoFlags = $env:GOFLAGS }
+            Mock Get-MoleOwnerCachePath { $null }
+            Mock Clear-MoleAppCache {}
+            Clear-GoCaches
+            $script:SeenGoFlags | Should -Be '-modcacherw'
+            $env:GOFLAGS | Should -Be '-modcache'
+        }
+        finally {
+            $env:GOFLAGS = $saved
+        }
     }
 }
 
