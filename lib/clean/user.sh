@@ -350,8 +350,11 @@ clean_user_essentials() {
             # shims, scheduler leases and the live target folders checkouts
             # link into, and evicts to its own size budget; swept whole it
             # broke builds, so it stays out like Mole Mac's protected root.
+            # Homebrew's api/ holds formula_names.txt and cask_names.txt that
+            # zsh completion rebuilds from (#2110); the Homebrew section runs
+            # `brew cleanup` for downloads, like Mole Mac's downloads-only row.
             case "${user_cache_target##*/}" in
-                Google | mbx) continue ;;
+                Google | mbx | Homebrew) continue ;;
             esac
             # Another Chromium browser keeps its live cache in a plain folder
             # here the way Chrome does under Google; leave it while that

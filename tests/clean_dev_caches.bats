@@ -501,6 +501,52 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_dev_shell keeps the Oh My Zsh completions folder (#2110)" {
+    # An open zsh autoloads a registered completion from it on the first Tab.
+    local test_home="$HOME/omz-home"
+    mkdir -p "$test_home/.oh-my-zsh/cache/completions" "$test_home/.oh-my-zsh/cache/plugin-data"
+    touch "$test_home/.oh-my-zsh/cache/completions/_gh" "$test_home/.oh-my-zsh/cache/grep-alias"
+
+    run env HOME="$test_home" PATH="/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+clean_dev_shell
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"CLEAN=Oh My Zsh cache|$test_home/.oh-my-zsh/cache/plugin-data"* ]] || return 1
+    [[ "$output" == *"CLEAN=Oh My Zsh cache|$test_home/.oh-my-zsh/cache/grep-alias"* ]] || return 1
+    [[ "$output" != *"completions"* ]] || return 1
+    rm -rf "$test_home"
+}
+
+@test "clean_dev_shell runs no Oh My Zsh row when only completions exist (#2110)" {
+    local test_home="$HOME/omz-only-home"
+    mkdir -p "$test_home/.oh-my-zsh/cache/completions"
+
+    run env HOME="$test_home" PATH="/usr/bin:/bin" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/dev.sh"
+DRY_RUN=false
+safe_clean() { printf 'CLEAN=%s\n' "$*"; }
+clean_dev_shell
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"Oh My Zsh"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_dev_cloud stops on GitHub CLI probe or clear cancellation" {
     local failure_phase failure_rc
     for failure_phase in help clear; do

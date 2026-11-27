@@ -380,6 +380,41 @@ EOF
     rm -rf "$test_home"
 }
 
+@test "clean_user_essentials leaves the Homebrew cache root to brew cleanup (#2110)" {
+    # api/ holds the formula and cask name lists zsh completion rebuilds from.
+    local test_home="$HOME/brew-cache-home"
+    mkdir -p "$test_home/Library/Caches/Homebrew/api" "$test_home/Library/Caches/ordinary-app/junk"
+    touch "$test_home/Library/Caches/Homebrew/api/formula_names.txt"
+
+    run env HOME="$test_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/user.sh"
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+clean_trash() { :; }
+_clean_recent_items() { :; }
+_clean_mail_downloads() { :; }
+safe_clean() {
+    local description="${!#}"
+    while [[ $# -gt 1 ]]; do
+        printf 'CLEAN=%s|%s\n' "$description" "$1"
+        shift
+    done
+}
+safe_clean_guarded() {
+    shift
+    safe_clean "$@"
+}
+clean_user_essentials
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" != *"$test_home/Library/Caches/Homebrew"* ]] || return 1
+    [[ "$output" == *"User app cache|$test_home/Library/Caches/ordinary-app"* ]] || return 1
+    rm -rf "$test_home"
+}
+
 @test "clean_user_essentials leaves the cache root of a running Chromium browser (#2094)" {
     # Chromium keeps a profile's live HTTP cache at the same path under Caches
     # as the profile under Application Support, whose SingletonLock names the

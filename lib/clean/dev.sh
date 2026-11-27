@@ -6398,7 +6398,18 @@ clean_dev_misc() {
 clean_dev_shell() {
     # Git owns its transaction lock; config and history backups can be the
     # only remaining copy of user state. Neither is an automatic cache target.
-    safe_clean ~/.oh-my-zsh/cache/* "Oh My Zsh cache"
+    # completions/ is on fpath: an open shell autoloads _gh or _docker from it
+    # on the first Tab, so removing it breaks completion there (#2110).
+    local omz_entry
+    local -a omz_targets=()
+    for omz_entry in "$HOME/.oh-my-zsh/cache"/*; do
+        [[ -e "$omz_entry" || -L "$omz_entry" ]] || continue
+        [[ "${omz_entry##*/}" == "completions" ]] && continue
+        omz_targets+=("$omz_entry")
+    done
+    if [[ ${#omz_targets[@]} -gt 0 ]]; then
+        safe_clean "${omz_targets[@]}" "Oh My Zsh cache"
+    fi
     safe_clean ~/.cache/pre-commit/* "pre-commit cache"
 }
 # Network tool caches.
