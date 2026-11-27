@@ -36,7 +36,7 @@ make_cache() {
     [ -f "$HOME/.cache/moletool/entry/blob" ]
 }
 
-@test "Bun cache sizing uses one du call after child protection and whitelist checks" {
+@test "each rule sizes its eligible children with one du call after child protection and whitelist checks" {
     local root="$HOME/.bun/install/cache"
     local unusual="$root/"$'line\nbreak'
     make_cache "$root/first"
@@ -52,6 +52,17 @@ make_cache() {
 
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"Bun install cache · 2 items,"* ]] || { echo "$output"; return 1; }
+    [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
+    # Not a Bun special case: any rule takes one walk for all its children.
+    make_cache "$HOME/.cache/moletool/a"
+    make_cache "$HOME/.cache/moletool/b"
+    make_cache "$HOME/.cache/moletool/c"
+    : > "$HOME/du.log"
+    mole_run clean '
+        DRY_RUN=true
+        rule_owner_state() { return 1; }
+        clean_rule "Mole tool cache" "$HOME/.cache/moletool" "moletestowner"'
+    [[ "$output" == *"Mole tool cache · 3 items,"* ]] || { echo "$output"; return 1; }
     [ "$(wc -l < "$HOME/du.log")" -eq 1 ]
     local sized
     sized=$(tr '\0' '\n' < "$HOME/du-input")

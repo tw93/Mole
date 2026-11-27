@@ -64,7 +64,7 @@ All are published with `--latest=false`; `releases/latest` stays a macOS tag. Re
 
 ## Measurements (2026-11-27)
 
-- A local Bun cache fixture held 300 package folders with one 4 KiB file each. Three dry runs took 2.260 s median with one `du` per package. One `du` for all eligible packages took 1.459 s median. Both runs printed the same result.
+- A local Bun cache fixture held 300 package folders with one 4 KiB file each. Three dry runs took 2.260 s median with one `du` per package. One `du` for all eligible packages took 1.459 s median. Both runs printed the same result. Every rule now sizes its children in one `du` walk, which also counts a hardlink shared by two children once.
 
 ## Install channels (researched 2026-11-02)
 
