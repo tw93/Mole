@@ -483,3 +483,15 @@ Source: Mole CLI (macOS) `8f559d39` (#2102). On a Mac Studio (Mac17,15, M5 Ultra
 On 2026-11-26, the registry DC input changed 60 seconds apart on Mac17,15. The SMC input voltage and current changed about once a second. Mole CLI (macOS) samples `PSTR` or `VD0R × ID0R` with each CPU/memory snapshot after the first full probe confirms no battery and no reported system watts. A failed SMC read uses the registry fallback. The Power card shows tenths of a watt, and JSON retains the measured value. Covered by `TestDesktopPowerRefreshKeepsRegistryFallback` and `TestDesktopPowerCardShowsSystemWatts`.
 
 Mole Mac follow-up is pending. Check that PWR tracks the other menu bar metrics with the panel closed and keeps one decimal at 10 W and above.
+
+## 2026-11-27 SonarScanner SSL stores, Oh My Zsh completions, Homebrew cache root, Windows owner-cache Int32
+
+Source: Mole CLI (macOS) `61789ea8` (#2118 for #2117) and `b6b1af96` (#2110); Mole CLI (Windows) `42070c03` (#2116 for #2115).
+
+| Row | Status | Consumer and evidence |
+| --- | --- | --- |
+| `~/.sonar` keeps `ssl/` | Implemented in source (`61789ea8`) | `lib/clean/dev.sh:clean_dev_cicd` now cleans only `~/.sonar/cache`. Mole CLI (Linux) already roots its `SonarQube cache` rule at `$HOME/.sonar/cache`. Mole Mac and Mole CLI (Windows) have no `.sonar` target (searched 2026-11-27): Not applicable. |
+| Oh My Zsh keeps `completions/` | Implemented in source (`b6b1af96`; Mole CLI (Linux) `2ac61947`) | macOS `clean_dev_shell` skips `completions`; the Linux rule uses a new `except:completions` selector, red on the old rule and all 266 bats green on the devbox. Mole Mac and Mole CLI (Windows) have no Oh My Zsh target: Not applicable. Neither is released. |
+| Generic sweep skips `Caches/Homebrew` | Implemented in source (`b6b1af96`) | `lib/clean/user.sh:clean_user_essentials` skips the root beside Google and mbx; `brew cleanup` keeps handling downloads. Mole Mac already offers only `Homebrew/downloads` (`CacheScanner.swift`, `coveredCacheExactNames`). Mole CLI (Linux) has no Homebrew rule; Windows: Not applicable. |
+| Owner cache delta above 2 GiB on Windows PowerShell 5.1 | Implemented in Mole CLI (Windows) source (`42070c03`) | `lib/clean/dev.ps1:Invoke-MoleOwnerCacheCleanup` uses `[Math]::Max(0L, ...)`; the new Pester case passed with 1011 others on Windows PowerShell 5.1.26100 in CI. A PowerShell overload choice: Not applicable to the shell CLIs and the C# app. Not released. |
+
