@@ -215,6 +215,68 @@ func TestValidateTrashTargetAllowsRegularUserPaths(t *testing.T) {
 	}
 }
 
+// Mole CLI (macOS) refuses the head of the user's own tree and keeps what is
+// inside it movable (tw93/Mole d3d162a9); on Linux the heads are the XDG base
+// directories and the xdg-user-dirs folders, localized ones included.
+func TestAnalyzeDeleteRefusesHeadFoldersButNotTheirContents(t *testing.T) {
+	home := isolateTrash(t)
+	config := filepath.Join(home, ".config")
+	if err := os.MkdirAll(config, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	userDirs := "# written by xdg-user-dirs-update\n" +
+		"XDG_DOCUMENTS_DIR=\"$HOME/文档\"\n" +
+		"XDG_PICTURES_DIR=\"$HOME/Bilder\"\n" +
+		"XDG_PUBLICSHARE_DIR=\"$HOME/\"\n"
+	if err := os.WriteFile(filepath.Join(config, "user-dirs.dirs"), []byte(userDirs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, refused := range []string{
+		filepath.Join(home, ".config"),
+		filepath.Join(home, ".cache"),
+		filepath.Join(home, ".local"),
+		filepath.Join(home, ".local", "share"),
+		filepath.Join(home, ".local", "state"),
+		filepath.Join(home, ".var", "app"),
+		filepath.Join(home, "Documents"),
+		filepath.Join(home, "Downloads"),
+		filepath.Join(home, "Videos"),
+		filepath.Join(home, "文档"),
+		filepath.Join(home, "Bilder"),
+		filepath.Join(home, ".config") + "/",
+	} {
+		if err := validateTrashTarget(refused); err == nil {
+			t.Errorf("head folder accepted: %s", refused)
+		}
+	}
+	for _, allowed := range []string{
+		filepath.Join(home, ".config", "old-app"),
+		filepath.Join(home, ".cache", "pip"),
+		filepath.Join(home, ".local", "share", "old-app"),
+		filepath.Join(home, "Downloads", "old.zip"),
+		filepath.Join(home, "文档", "draft.txt"),
+		filepath.Join(home, "Documents Old"),
+		filepath.Join(home, "documents"),
+		filepath.Join(home, "Projects"),
+	} {
+		if err := validateTrashTarget(allowed); err != nil {
+			t.Errorf("content inside a head folder refused: %s: %v", allowed, err)
+		}
+	}
+}
+
+func TestAnalyzeDeleteRefusesACustomXDGConfigHome(t *testing.T) {
+	isolateTrash(t)
+	config := filepath.Join(t.TempDir(), "conf")
+	t.Setenv("XDG_CONFIG_HOME", config)
+	if err := validateTrashTarget(config); err == nil {
+		t.Fatal("custom XDG_CONFIG_HOME accepted")
+	}
+	if err := validateTrashTarget(filepath.Join(config, "old-app")); err != nil {
+		t.Fatalf("content inside custom XDG_CONFIG_HOME refused: %v", err)
+	}
+}
+
 func TestAnalyzeDeleteRefusesSessionSocketFoldersInTmp(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for _, refused := range []string{

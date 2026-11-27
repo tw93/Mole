@@ -202,6 +202,9 @@ func isProtectedAnalyzeDeletePath(path string) bool {
 		if cleanPath == homeRoot || isSameExistingPath(cleanPath, homeRoot) {
 			return true
 		}
+		if isAnalyzeHeadHomeFolder(cleanPath, homeRoot) {
+			return true
+		}
 		for _, rel := range protectedHomeTrees {
 			tree := filepath.Join(homeRoot, rel)
 			if cleanPath == tree || strings.HasPrefix(cleanPath, tree+string(filepath.Separator)) ||
@@ -401,6 +404,78 @@ func isCriticalAnalyzeDeletePath(path string) bool {
 		}
 	}
 	return false
+}
+
+// analyzeHeadHomeFolders are the XDG base directories and the folders
+// xdg-user-dirs creates in a home. Moving one whole breaks every app that keeps
+// state there, so analyze refuses the folder itself and keeps what is inside it
+// deletable, the head-of-the-tree rule Mole CLI (macOS) follows (tw93/Mole
+// d3d162a9). Localized user folders come from user-dirs.dirs.
+var analyzeHeadHomeFolders = []string{
+	".cache", ".config", ".local", filepath.Join(".local", "bin"), filepath.Join(".local", "share"),
+	filepath.Join(".local", "state"), ".var", filepath.Join(".var", "app"),
+	"Desktop", "Documents", "Downloads", "Music", "Pictures", "Public", "Templates", "Videos",
+}
+
+func isAnalyzeHeadHomeFolder(path, homeRoot string) bool {
+	for _, folder := range analyzeHeadFolderPaths(homeRoot) {
+		if path == folder || isSameExistingPath(path, folder) {
+			return true
+		}
+	}
+	return false
+}
+
+func analyzeHeadFolderPaths(homeRoot string) []string {
+	folders := make([]string, 0, len(analyzeHeadHomeFolders)+12)
+	for _, rel := range analyzeHeadHomeFolders {
+		folders = append(folders, filepath.Join(homeRoot, rel))
+	}
+	configHome := filepath.Join(homeRoot, ".config")
+	for _, name := range []string{"XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		if dir := os.Getenv(name); filepath.IsAbs(dir) {
+			folders = append(folders, filepath.Clean(dir))
+			if name == "XDG_CONFIG_HOME" {
+				configHome = filepath.Clean(dir)
+			}
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(configHome, "user-dirs.dirs")); err == nil {
+		folders = append(folders, parseXDGUserDirs(string(data), homeRoot)...)
+	}
+	return folders
+}
+
+// parseXDGUserDirs reads the XDG_*_DIR="$HOME/Name" or "/abs/path" lines
+// xdg-user-dirs-update writes. A folder set to the home itself (how a user
+// disables one) is skipped, since the home has its own refusal.
+func parseXDGUserDirs(data, homeRoot string) []string {
+	var dirs []string
+	for _, line := range strings.Split(data, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") || !strings.HasPrefix(line, "XDG_") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || !strings.HasSuffix(key, "_DIR") {
+			continue
+		}
+		value = strings.Trim(value, "\"")
+		switch {
+		case value == "$HOME" || value == "$HOME/":
+			continue
+		case strings.HasPrefix(value, "$HOME/"):
+			value = filepath.Join(homeRoot, strings.TrimPrefix(value, "$HOME/"))
+		case filepath.IsAbs(value):
+			value = filepath.Clean(value)
+		default:
+			continue
+		}
+		if value != homeRoot {
+			dirs = append(dirs, value)
+		}
+	}
+	return dirs
 }
 
 func isDirectChildOfExistingRoot(path, protectedRoot string) bool {
