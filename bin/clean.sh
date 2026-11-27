@@ -188,6 +188,19 @@ group_flush() {
     return 0
 }
 
+# KB of several paths in one du walk: no process per child (a Bun cache holds
+# thousands of package folders, #2120), and a hardlink shared by two children
+# counts once, as removing both frees it once. A child gone mid-walk only makes
+# du exit nonzero; its total line still holds the others.
+mole_paths_kb() {
+    local output kb
+    output=$(printf '%s\0' "$@" | mole_c du -skxc --files0-from=- 2> /dev/null) || true
+    kb="${output##*$'\n'}"
+    kb="${kb%%[[:space:]]*}"
+    [[ "$kb" =~ ^[0-9]+$ ]] || kb=0
+    printf '%s\n' "$kb"
+}
+
 # Clean one rule into the current group. Only children mole_remove_cache would
 # accept are sized and counted, in a dry run as in a real one.
 clean_rule_collect() {
@@ -232,12 +245,12 @@ clean_rule_collect() {
         fi
         mole_cache_child_ok "$child" "$root" || continue
         eligible+=("$child")
-        kb=$((kb + $(mole_path_kb "$child")))
     done
     if [[ ${#eligible[@]} -eq 0 ]]; then
         ((kept > 0)) && group_note "$(whitelist_note "$label")"
         return 0
     fi
+    kb=$(mole_paths_kb "${eligible[@]}")
     ((kb >= 8)) || return 0
 
     # An owner that runs, or a probe that cannot tell, skips the rule.
