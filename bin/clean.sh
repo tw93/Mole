@@ -342,7 +342,11 @@ clean_user_rules() {
             group_flush
             group_begin "$label"
         }
-        start_section_spinner "Scanning $label..."
+        if [[ "$label" == "Bun install cache" ]]; then
+            start_section_spinner "Measuring Bun install cache size..." true
+        else
+            start_section_spinner "Scanning $label..."
+        fi
         clean_rule_collect "$label" "$root" "$owners" "$selector"
     done < <(mole_clean_rules)
     group_flush

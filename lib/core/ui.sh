@@ -171,7 +171,7 @@ format_spinner_message() {
 
 start_inline_spinner() {
     stop_inline_spinner 2> /dev/null || true
-    local display_message
+    local display_message elapsed="${2:-false}"
     display_message=$(format_spinner_message "$1")
     if [[ ! -t 2 ]]; then
         return 0
@@ -182,8 +182,9 @@ start_inline_spinner() {
         return 0
     }
     printf '%s\n' "$display_message" > "$INLINE_SPINNER_DIR/message"
+    printf '%s\n' "$elapsed" > "$INLINE_SPINNER_DIR/elapsed"
     (
-        local dir="$INLINE_SPINNER_DIR" i=0 current="$display_message" next="" lead
+        local dir="$INLINE_SPINNER_DIR" i=0 current="$display_message" next="" lead started=$SECONDS shown="$display_message" elapsed_seconds=-1 elapsed_now
         mo_spinner_frames
         printf '\r\033[2K' >&2 || true
         while [[ ! -f "$dir/stop" ]]; do
@@ -191,9 +192,20 @@ start_inline_spinner() {
             IFS= read -r next < "$dir/message" 2> /dev/null || next=""
             if [[ -n "$next" && "$next" != "$current" ]]; then
                 current="$next"
+                started=$SECONDS
+                elapsed_seconds=-1
                 lead="\r\033[2K"
             fi
-            printf "${lead}${MOLE_SPINNER_PREFIX:-}${BLUE}%s${NC} %s" "${MO_SPINNER_FRAMES[$((i % 4))]}" "$current" >&2 || break
+            if [[ $(<"$dir/elapsed") == true ]]; then
+                elapsed_now=$((SECONDS - started))
+                if ((elapsed_now != elapsed_seconds)); then
+                    shown=$(format_spinner_message "$current · Elapsed: ${elapsed_now}s")
+                    elapsed_seconds=$elapsed_now
+                fi
+            else
+                shown="$current"
+            fi
+            printf "${lead}${MOLE_SPINNER_PREFIX:-}${BLUE}%s${NC} %s" "${MO_SPINNER_FRAMES[$((i % 4))]}" "$shown" >&2 || break
             i=$((i + 1))
             sleep 0.08
         done
@@ -208,6 +220,7 @@ update_inline_spinner_message() {
     kill -0 "$INLINE_SPINNER_PID" 2> /dev/null || return 1
     local tmp
     tmp=$(mktemp "$INLINE_SPINNER_DIR/msg.XXXXXX") || return 1
+    printf '%s\n' "${2:-false}" > "$INLINE_SPINNER_DIR/elapsed"
     format_spinner_message "$1" > "$tmp" && echo >> "$tmp"
     mv -f "$tmp" "$INLINE_SPINNER_DIR/message"
 }
@@ -226,7 +239,7 @@ stop_inline_spinner() {
         [[ -t 2 ]] && printf '\r\033[2K' >&2
     fi
     if [[ -n "$INLINE_SPINNER_DIR" ]]; then
-        rm -f "$INLINE_SPINNER_DIR"/stop "$INLINE_SPINNER_DIR"/message "$INLINE_SPINNER_DIR"/msg.* 2> /dev/null
+        rm -f "$INLINE_SPINNER_DIR"/stop "$INLINE_SPINNER_DIR"/message "$INLINE_SPINNER_DIR"/elapsed "$INLINE_SPINNER_DIR"/msg.* 2> /dev/null
         rmdir "$INLINE_SPINNER_DIR" 2> /dev/null || true
         INLINE_SPINNER_DIR=""
     fi
@@ -235,8 +248,8 @@ stop_inline_spinner() {
 
 start_section_spinner() {
     local message="${1:-Scanning...}"
-    update_inline_spinner_message "$message" 2> /dev/null && return 0
-    MOLE_SPINNER_PREFIX="  " start_inline_spinner "$message"
+    update_inline_spinner_message "$message" "${2:-false}" 2> /dev/null && return 0
+    MOLE_SPINNER_PREFIX="  " start_inline_spinner "$message" "${2:-false}"
 }
 
 stop_section_spinner() { stop_inline_spinner; }
