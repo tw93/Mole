@@ -98,13 +98,16 @@ func measureInsightSize(ctx context.Context, path string) (int64, error) {
 }
 
 func measureInsightSizeWithPublication(ctx context.Context, path string, publication *scanPublication) (int64, error) {
-	home := os.Getenv("HOME")
-
-	if home != "" && path == filepath.Join(home, "Downloads") {
+	if isOldDownloadsOverviewPath(path) {
 		return measureOldDownloads(ctx, path, 90)
 	}
 
 	return measureOverviewSizeWithPublication(ctx, path, publication)
+}
+
+func isOldDownloadsOverviewPath(path string) bool {
+	home := os.Getenv("HOME")
+	return home != "" && path == filepath.Join(home, "Downloads")
 }
 
 // measureOldDownloads calculates total size of files in a directory
