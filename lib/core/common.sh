@@ -184,6 +184,13 @@ mole_print_release_highlights() {
     printf '  %s\n\n' "${GRAY}https://github.com/tw93/Mole/releases/tag/V${version}${NC}"
 }
 
+_mole_homebrew_update_abort() {
+    stop_inline_spinner 2> /dev/null
+    rm -f "$@" # SAFE: own mktemp scratch files
+    echo ""
+    exit 130
+}
+
 # Update via Homebrew
 update_via_homebrew() {
     local current_version="$1"
@@ -192,7 +199,7 @@ update_via_homebrew() {
     temp_upgrade=$(mktemp_file "brew_upgrade")
 
     # Set up trap for interruption (Ctrl+C) with inline cleanup
-    trap 'stop_inline_spinner 2>/dev/null; rm -f "$temp_update" "$temp_upgrade"; echo ""; exit 130' INT TERM # SAFE: own mktemp scratch files
+    trap '_mole_homebrew_update_abort "$temp_update" "$temp_upgrade"' INT TERM
 
     # Update Homebrew
     if [[ -t 1 ]]; then
@@ -201,9 +208,13 @@ update_via_homebrew() {
         echo "Updating Homebrew..."
     fi
 
+    # Ctrl-C must stop brew at once. When the terminal was handed to brew, the
+    # shell sees no SIGINT, only brew's 130, so that status ends the run too.
     local brew_update_timeout=120
+    local update_status=0
     HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 NONINTERACTIVE=1 \
-        run_with_timeout "$brew_update_timeout" brew update > "$temp_update" 2>&1 || true
+        run_with_interruptible_timeout "$brew_update_timeout" brew update > "$temp_update" 2>&1 || update_status=$?
+    [[ "$update_status" -ne 130 ]] || _mole_homebrew_update_abort "$temp_update" "$temp_upgrade"
 
     if [[ -t 1 ]]; then
         stop_inline_spinner
@@ -219,7 +230,8 @@ update_via_homebrew() {
     local brew_upgrade_timeout=120
     local upgrade_status=0
     HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_AUTO_UPDATE=1 NONINTERACTIVE=1 \
-        run_with_timeout "$brew_upgrade_timeout" brew upgrade mole > "$temp_upgrade" 2>&1 || upgrade_status=$?
+        run_with_interruptible_timeout "$brew_upgrade_timeout" brew upgrade mole > "$temp_upgrade" 2>&1 || upgrade_status=$?
+    [[ "$upgrade_status" -ne 130 ]] || _mole_homebrew_update_abort "$temp_update" "$temp_upgrade"
 
     local upgrade_output
     upgrade_output=$(cat "$temp_upgrade")

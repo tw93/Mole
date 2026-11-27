@@ -1058,6 +1058,69 @@ EOF
 	[[ "$output" == *"[update] REBUILT Homebrew mole (updated to 9.9.9)"* ]]
 }
 
+@test "Ctrl-C stops a Homebrew update at once even with a timeout binary installed (#2121)" {
+	command -v perl > /dev/null || skip "perl is required"
+	local fakebin="$HOME/ctrlc-bin"
+	mkdir -p "$fakebin"
+	# Like gtimeout and /usr/bin/timeout: the command runs in a process group of
+	# its own, so a terminal Ctrl-C reaches neither the command nor the binary.
+	cat > "$fakebin/fake-timeout" << 'PERL'
+#!/usr/bin/perl
+use POSIX qw(setpgid);
+shift @ARGV if $ARGV[0] eq '-k';
+shift @ARGV;
+shift @ARGV;
+setpgid(0, 0);
+my $pid = fork();
+if ($pid == 0) { exec @ARGV; exit 127; }
+waitpid($pid, 0);
+exit($? >> 8);
+PERL
+	# shellcheck disable=SC2016  # The stub expands $MARKER when it runs.
+	printf '#!/bin/sh\ntouch "$MARKER"\nexec sleep 8\n' > "$fakebin/brew"
+	chmod +x "$fakebin/fake-timeout" "$fakebin/brew"
+
+	# A file, not a heredoc: the forked subshell would move the shared offset of
+	# a script read from stdin.
+	cat > "$fakebin/ctrlc.sh" << 'SCRIPT'
+mkdir -p "$HOME"
+set -m
+(
+	source "$PROJECT_ROOT/lib/core/common.sh"
+	MO_TIMEOUT_BIN="$FAKEBIN/fake-timeout"
+	update_via_homebrew "1.0.0"
+) &
+pid=$!
+set +m
+# Interrupt only once brew runs, after the trap is in place.
+for _ in $(seq 100); do [[ -e "$MARKER" ]] && break; sleep 0.05; done
+start=$SECONDS
+kill -INT -- -"$pid"
+wait "$pid"
+rc=$?
+echo "rc=$rc elapsed=$((SECONDS - start))"
+SCRIPT
+	run env HOME="$HOME/ctrlc-homebrew" PROJECT_ROOT="$PROJECT_ROOT" FAKEBIN="$fakebin" MARKER="$fakebin/brew-started" PATH="$fakebin:$PATH" /bin/bash --noprofile --norc "$fakebin/ctrlc.sh"
+
+	[[ "$output" =~ rc=130\ elapsed=([0-9]+) ]] || {
+		echo "$output"
+		return 1
+	}
+	[ "${BASH_REMATCH[1]}" -lt 5 ] || {
+		echo "$output"
+		return 1
+	}
+}
+
+@test "Ctrl-C in a terminal stops a Homebrew update that holds the terminal (#2121)" {
+	command -v perl > /dev/null || skip "perl is required"
+	run python3 "$PROJECT_ROOT/tests/update_ctrlc_pty.py"
+	[ "$status" -eq 0 ] || {
+		echo "$output"
+		return 1
+	}
+}
+
 @test "Homebrew update logs the change before an interruptible highlights fetch" {
 	run env HOME="$HOME/interrupted-highlights" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
