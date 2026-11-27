@@ -188,12 +188,15 @@ group_flush() {
     return 0
 }
 
-# One du walk counts a hardlink shared by two children once.
+# KB of several paths in one du walk: no process per child (a Bun cache holds
+# thousands of package folders, #2120), and a hardlink shared by two children
+# counts once, as removing both frees it once. A child gone mid-walk only makes
+# du exit nonzero; its total line still holds the others, so the total row
+# decides, not the exit status. Fails when du prints no total (an
+# implementation without -c or --files0-from), so the caller can fall back.
 mole_paths_kb() {
     local output total_line kb
-    # -c gives a final total. mole_c fixes the locale, so its marker is "total".
-    # A child can vanish during du. A nonzero exit can still leave a valid total.
-    # Use the total row instead of the exit status.
+    # mole_c fixes the locale, so the marker of -c's final row is "total".
     output=$(printf '%s\0' "$@" | mole_c du -skxc --files0-from=- 2> /dev/null) || true
     total_line="${output##*$'\n'}"
     [[ "$total_line" == *$'\t'total ]] || return 1
