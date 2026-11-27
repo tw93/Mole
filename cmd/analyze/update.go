@@ -745,6 +745,11 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		if m.showLargeFiles {
+			if len(m.largeMultiSelected) > 0 {
+				m.largeMultiSelected = make(map[string]bool)
+				m.status = scanSummary(m.totalSize, m.scanState)
+				return m, nil
+			}
 			if m.largeFilter != "" {
 				m.resetLargeFilter()
 				m.clampLargeSelection()
@@ -752,6 +757,11 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.showLargeFiles = false
+			return m, nil
+		}
+		if len(m.multiSelected) > 0 {
+			m.multiSelected = make(map[string]bool)
+			m.status = scanSummary(m.totalSize, m.scanState)
 			return m, nil
 		}
 		if m.entryFilter != "" {
