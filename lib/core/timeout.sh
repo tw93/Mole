@@ -71,8 +71,16 @@ if [[ -z "${MO_TIMEOUT_INITIALIZED:-}" ]]; then
     done
     unset candidate candidate_path
 
-    if command -v perl > /dev/null 2>&1; then
+    # The system perl first: a PATH perl can be a plenv, asdf or perlbrew
+    # shim that exits 127 with no version selected, and the perl backend would
+    # then fail the command without ever starting it. run_with_interruptible_timeout
+    # always takes this backend, so `mo update` through Homebrew depends on it.
+    if [[ -x /usr/bin/perl ]]; then
+        MO_TIMEOUT_PERL_BIN="/usr/bin/perl"
+    elif command -v perl > /dev/null 2>&1; then
         MO_TIMEOUT_PERL_BIN="$(command -v perl)"
+    fi
+    if [[ -n "$MO_TIMEOUT_PERL_BIN" ]]; then
         if [[ -z "$MO_TIMEOUT_BIN" ]] && [[ "${MO_DEBUG:-0}" == "1" ]]; then
             echo "[TIMEOUT] Using perl fallback: $MO_TIMEOUT_PERL_BIN" >&2
         fi

@@ -771,6 +771,31 @@ _probe_timeout_backend() {
     ' bash "${BATS_TEST_DIRNAME}/.." "$fake_dir" < /dev/null
 }
 
+@test "the perl backend runs the system perl, not a broken PATH shim" {
+    local fake_dir="$BATS_TEST_TMPDIR/fake-perl-shim"
+    mkdir -p "$fake_dir"
+    # A plenv shim with no version selected: it never runs anything.
+    cat > "$fake_dir/perl" << 'SHIM'
+#!/bin/bash
+echo "plenv: perl: command not found" >&2
+exit 127
+SHIM
+    chmod +x "$fake_dir/perl"
+
+    # shellcheck disable=SC2016 # The child shell expands its own positional parameters.
+    run /bin/bash -c '
+        set -euo pipefail
+        unset MO_TIMEOUT_INITIALIZED MO_TIMEOUT_BIN MO_TIMEOUT_PERL_BIN
+        export PATH="$2:/usr/bin:/bin"
+        source "$1/lib/core/timeout.sh"
+        printf "perl=%s\n" "$MO_TIMEOUT_PERL_BIN"
+        run_with_interruptible_timeout 5 /bin/echo COMMAND_RAN
+    ' bash "${BATS_TEST_DIRNAME}/.." "$fake_dir" < /dev/null
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"perl=/usr/bin/perl"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *COMMAND_RAN* ]] || { echo "$output"; return 1; }
+}
+
 @test "timeout.sh skips a PATH timeout shim that reports its deadline as 143" {
     local fake_dir="$BATS_TEST_TMPDIR/fake-timeout-143"
     mkdir -p "$fake_dir"
