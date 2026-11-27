@@ -438,3 +438,53 @@ func TestLargeFilterViewShowsHintAndQuery(t *testing.T) {
 		t.Fatalf("expected match count in filter line, got:\n%s", view)
 	}
 }
+
+func TestEscClearsSelectionBeforeLeavingTopFiles(t *testing.T) {
+	m := topFilesFixture()
+	m.largeMultiSelected["/tmp/p/alpha.mp4"] = true
+
+	m, cmd := filterKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Fatalf("Esc with a selection must not emit a command")
+	}
+	if len(m.largeMultiSelected) != 0 {
+		t.Fatalf("Esc should clear the selection, got %d selected", len(m.largeMultiSelected))
+	}
+	if !m.showLargeFiles {
+		t.Fatalf("the first Esc should stay in Top Files")
+	}
+
+	m, _ = filterKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.showLargeFiles {
+		t.Fatalf("Esc with nothing selected should leave Top Files")
+	}
+}
+
+func TestEscClearsSelectionBeforeFilterInDirectoryView(t *testing.T) {
+	m := treeFixture()
+	m = filterType(t, filterRuneModel(t, m, '/'), "ode")
+	m, _ = filterKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m.multiSelected["/tmp/p/node_modules"] = true
+
+	m, cmd := filterKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Fatalf("Esc with a selection must not emit a command")
+	}
+	if len(m.multiSelected) != 0 {
+		t.Fatalf("Esc should clear the selection, got %d selected", len(m.multiSelected))
+	}
+	if m.entryFilter != "ode" || m.path != "/tmp/p" {
+		t.Fatalf("the first Esc should keep the filter and folder, got filter %q path %q", m.entryFilter, m.path)
+	}
+
+	m, _ = filterKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.entryFilter != "" {
+		t.Fatalf("the second Esc should clear the filter, got %q", m.entryFilter)
+	}
+}
+
+func filterRuneModel(t *testing.T, m model, r rune) model {
+	t.Helper()
+	m, _ = filterRune(t, m, r)
+	return m
+}

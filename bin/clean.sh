@@ -359,11 +359,15 @@ clean_uv_cache() {
 # reached through no link below the home and with nothing mounted in it, and
 # when no whitelist entry sits inside it, since the command takes the whole
 # tree (Mac: lib/clean/dev.sh clean_go_cache_root). GOTOOLCHAIN=local keeps
-# `go env` from downloading a toolchain a go.mod in the folder asks for.
+# `go env` from downloading a toolchain a go.mod in the folder asks for, and
+# GOFLAGS is pinned to the harmless -modcacherw because `go clean` honors it:
+# a `-fuzzcache` or `-cache` exported or saved with `go env -w` would empty a
+# cache this rule never checked or listed, and an empty value does not
+# override the saved one.
 clean_go_modcache() {
     local label="$1" root="$2" owners="$3" out dir gopath
     command -v go > /dev/null 2>&1 || return 0
-    out=$(cd / && mole_c env GOTOOLCHAIN=local timeout 10 go env GOMODCACHE GOPATH 2> /dev/null) || return 0
+    out=$(cd / && mole_c env GOTOOLCHAIN=local GOFLAGS=-modcacherw timeout 10 go env GOMODCACHE GOPATH 2> /dev/null) || return 0
     [[ "$out" == *$'\n'* ]] || return 0
     dir="${out%%$'\n'*}"
     gopath="${out#*$'\n'}"
@@ -405,7 +409,7 @@ clean_go_modcache() {
         return 0
     fi
     local ok=true
-    (cd / && mole_c env GOTOOLCHAIN=local GOMODCACHE="$dir" timeout 300 go clean -modcache > /dev/null 2>&1) || ok=false
+    (cd / && mole_c env GOTOOLCHAIN=local GOFLAGS=-modcacherw GOMODCACHE="$dir" timeout 300 go clean -modcache > /dev/null 2>&1) || ok=false
     local left=0
     [[ -d "$dir" ]] && left=$(mole_path_kb "$dir")
     if ((kb > left)); then
