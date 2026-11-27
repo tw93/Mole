@@ -299,6 +299,28 @@ assert sorted(s["command"] for s in sessions) == ["clean", "clean-dry-run"], ses
     ! grep -q "session started" "$log_file" 2> /dev/null || { cat "$log_file"; return 1; }
 }
 
+@test "mo history keeps the final deletion row without a newline" {
+    local last_path=$'/tmp/last\\path\tname  '
+    {
+        printf '2026-05-24T10:00:00+0000\ttrash\t4\tok\t/tmp/first\n'
+        printf '\n\t\t\nmalformed\ttrash\t4\n'
+        printf '2026-05-24T10:00:02+0000\tpermanent\t12\tdry-run\t%s' "$last_path"
+    } > "$HOME/Library/Logs/mole/deletions.log"
+
+    run env HOME="$HOME" "$PROJECT_ROOT/mole" history --json
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | python3 -c '
+import json, sys
+rows = json.load(sys.stdin)["deletions"]
+assert rows == [
+    {"timestamp": "2026-05-24T10:00:02+0000", "mode": "permanent",
+     "size_kb": 12, "status": "dry-run", "path": sys.argv[1]},
+    {"timestamp": "2026-05-24T10:00:00+0000", "mode": "trash",
+     "size_kb": 4, "status": "ok", "path": "/tmp/first"},
+], rows
+' "$last_path"
+}
+
 @test "mo history --json escapes unusual path characters" {
     : > "$HOME/Library/Logs/mole/operations.log"
     weird_path=$'/tmp/unicode-\xe9\x9b\xaa-quote"slash\\tab\tbackspace\bformfeed\fend'
