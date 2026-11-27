@@ -2705,6 +2705,7 @@ expect com.avg.hub AVG
 expect com.example.app AVG "AVG AntiVirus"
 expect com.malwarebytes.mbam.frontend.application Malwarebytes
 expect com.bitdefender.antivirusformac Bitdefender
+expect com.bitdefender.vpn Bitdefender
 expect com.intego.virusbarrier.app Intego
 expect com.kaspersky.kav.gui Kaspersky
 expect com.symantec.nfm Norton
@@ -2714,6 +2715,7 @@ expect com.adobe.gcclient "Adobe Genuine Service"
 expect com.kaspersky.passwordmanager ""
 expect com.intego.washingmachine ""
 expect com.bitdefender.virusscanner ""
+expect com.bitdefender.iosvpn ""
 expect com.adobe.Photoshop ""
 echo DONE
 EOF

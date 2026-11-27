@@ -198,3 +198,33 @@ EOF
 @test "Yarn Berry producer and sink preserve dependencies with a custom whitelist" {
     probe_yarn_berry_boundary custom
 }
+
+@test "should_protect_path refuses Chromium extension stores and AI tool data in cleanup only" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+chrome="$HOME/Library/Application Support/Google/Chrome/Default"
+for p in \
+    "$chrome/Local Extension Settings/abc/000003.log" "$chrome/Sync Extension Settings" \
+    "$chrome/Managed Extension Settings/abc" "$chrome/Extension State/LOG" \
+    "$chrome/Extension Rules/000001.ldb" "$chrome/Extension Scripts" \
+    "$chrome/Service Worker/ScriptCache/index" "$chrome/Service Worker/Database/MANIFEST" \
+    "$HOME/.claude/plans/p.md" "$HOME/.claude/skills" "$HOME/.claude/paste-cache/x" \
+    "$HOME/.codex/archived_sessions/2026/a.jsonl" "$HOME/.codex/memories" "$HOME/.codex/generated_images/i.png" \
+    "$HOME/.grok/sessions/s" "$HOME/.gemini/antigravity/brain" "$HOME/.gemini/tmp/h/logs.json"; do
+    should_protect_path "$p" || echo "UNPROTECTED|$p"
+done
+for p in \
+    "$chrome/Service Worker/CacheStorage/abc/def" "$chrome/Cache/Cache_Data/f_000001" \
+    "$HOME/.gemini/antigravity-browser-profile/Default/Cache/x" "$HOME/.codex/.tmp/old" \
+    "$HOME/.claude/worktrees/w"; do
+    if should_protect_path "$p"; then echo "OVERPROTECTED|$p"; fi
+done
+MOLE_UNINSTALL_MODE=1 should_protect_path "$chrome/Extension State" && echo "UNINSTALL_BLOCKED"
+echo DONE
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"DONE"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"UNPROTECTED|"* && "$output" != *"OVERPROTECTED|"* && "$output" != *"UNINSTALL_BLOCKED"* ]] || { echo "$output"; return 1; }
+}
+

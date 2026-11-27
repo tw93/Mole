@@ -419,6 +419,21 @@ should_protect_path() {
                 "$HOME/.bash_history.bak"* | "$HOME/.zsh_history.bak"*)
                 return 0
                 ;;
+            # Chromium extension storage: settings, state, declarative rules and
+            # the MV3 service worker scripts. Mole Mac once offered Service
+            # Worker/ScriptCache and broke MV3 extensions. No rule lists these;
+            # this keeps a future glob from reaching them (Mole CLI (Windows)
+            # e4e29c99). Service Worker/CacheStorage stays cleanable.
+            */"Local Extension Settings" | */"Local Extension Settings/"* | \
+                */"Sync Extension Settings" | */"Sync Extension Settings/"* | \
+                */"Managed Extension Settings" | */"Managed Extension Settings/"* | \
+                */"Extension State" | */"Extension State/"* | \
+                */"Extension Rules" | */"Extension Rules/"* | \
+                */"Extension Scripts" | */"Extension Scripts/"* | \
+                */"Service Worker/ScriptCache" | */"Service Worker/ScriptCache/"* | \
+                */"Service Worker/Database" | */"Service Worker/Database/"*)
+                return 0
+                ;;
         esac
     fi
 
@@ -577,6 +592,21 @@ should_protect_path() {
             */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Ff][Ii][Ll][Ee]-[Hh][Ii][Ss][Tt][Oo][Rr][Yy] | \
             */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Ff][Ii][Ll][Ee]-[Hh][Ii][Ss][Tt][Oo][Rr][Yy]/* | \
             */.[Cc][Ll][Aa][Uu][Dd][Ee]/[Hh][Ii][Ss][Tt][Oo][Rr][Yy].[Jj][Ss][Oo][Nn][Ll])
+            return 0
+            ;;
+        # The other AI tool stores Mole Mac's PathGuard refuses: plans, tasks,
+        # plugins, skills, memories, attachments, generated images and session
+        # archives are user data, not caches. No rule reaches them today.
+        */.claude/plans | */.claude/plans/* | */.claude/tasks | */.claude/tasks/* | \
+            */.claude/plugins | */.claude/plugins/* | */.claude/skills | */.claude/skills/* | \
+            */.claude/backups | */.claude/backups/* | */.claude/paste-cache | */.claude/paste-cache/* | \
+            */.codex/archived_sessions | */.codex/archived_sessions/* | \
+            */.codex/sqlite | */.codex/sqlite/* | */.codex/memories | */.codex/memories/* | \
+            */.codex/attachments | */.codex/attachments/* | \
+            */.codex/generated_images | */.codex/generated_images/* | \
+            */.codex/computer-use | */.codex/computer-use/* | */.codex/plugins | */.codex/plugins/* | \
+            */.grok/sessions | */.grok/sessions/* | \
+            */.gemini/antigravity | */.gemini/antigravity/* | */.gemini/tmp | */.gemini/tmp/*)
             return 0
             ;;
         # Bluetooth and WiFi configurations

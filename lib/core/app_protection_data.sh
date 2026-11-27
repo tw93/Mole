@@ -189,13 +189,15 @@ readonly OFFICIAL_UNINSTALLER_RULES=(
     # tool removes, so Mole points to it instead of trashing the app. A wrong
     # id matches nothing; a match only refuses. TeamViewer: UninstallTeamViewer
     # (maintainer 2026-11-01). Bitdefender, Intego, Norton and Trend Micro ids
-    # are unconfirmed leads, as in Mole Mac.
+    # are unconfirmed leads, as in Mole Mac. com.bitdefender.vpn: Endpoint
+    # Security self-protection refuses any other process deleting its files
+    # (Mole Mac 26e409f4b); the App Store com.bitdefender.iosvpn stays ordinary.
     "Adobe Genuine Service|com.adobe.gcclient,gocart.|adobe genuine service"
     "Avast|com.avast.aafm,com.avast.avast,com.avast.hub|"
     "AVG|com.avg.hub|avgantivirus,avg antivirus"
     "Malwarebytes|com.malwarebytes.mbam|"
     "TeamViewer|com.teamviewer.|"
-    "Bitdefender|com.bitdefender.antivirusformac|"
+    "Bitdefender|com.bitdefender.antivirusformac,com.bitdefender.vpn|"
     "Intego|com.intego.virusbarrier.,com.intego.virusbarrier-,com.intego.app.netbarrier|"
     "Kaspersky|com.kaspersky.kav|"
     "Norton|com.symantec.nfm|"
