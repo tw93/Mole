@@ -861,6 +861,9 @@ func renderBatteryCard(batts []BatteryStatus, thermal ThermalStatus, probed bool
 			subtleStyle.Render(placeholderValue),
 		)
 	} else if len(batts) == 0 {
+		if thermal.SystemPower > 0 {
+			lines = append(lines, fmt.Sprintf("Draw   %.1fW", thermal.SystemPower))
+		}
 		lines = append(lines, subtleStyle.Render("No battery"))
 	} else {
 		b := batts[0]

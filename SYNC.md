@@ -475,7 +475,11 @@ Source: Mole CLI (macOS) `8f559d39` (#2102). On a Mac Studio (Mac17,15, M5 Ultra
 | Product | Status | Consumer and evidence |
 | --- | --- | --- |
 | Mole CLI (macOS) | Implemented in source (`8f559d39`) | `cmd/status/metrics_battery.go:parseAppleSmartBatteryThermal` uses voltage times current only when `SystemPowerIn` is missing or 0; a non-zero `SystemPowerIn` still wins. Locked by `TestParseAppleSmartBatteryThermalDerivesSystemPowerFromInputWhenSystemPowerInIsZero`, `TestParseAppleSmartBatteryThermalPrefersReportedSystemPowerIn` and `TestParseAppleSmartBatteryThermalLeavesSystemPowerUnsetWithoutInputCurrent`. Not released. |
-| Mole Mac | Implemented in source (`0c59bca07`, 2026-11-25) | `SystemMetricsCollector+BatteryPower.swift:collectPower` reads `PowerTelemetryData` once when `PSTR` gives nothing: `SystemPowerIn` above 0, otherwise voltage times current, kept out of the `SMCBridge` the fan helper shares. Locked by `testTelemetryWattsUseDCInputWhenSystemPowerInIsZero` and two siblings; I-342 in its incidents. Not in a published build. |
+| Mole Mac | Implemented in source (`0c59bca07`, 2026-11-25) | `SystemMetricsCollector+BatteryPower.swift:collectPower` reads `PowerTelemetryData` once when `PSTR` gives nothing: `SystemPowerIn` above 0, otherwise voltage times current, kept out of the `SMCBridge` the fan helper shares. Locked by `testTelemetryWattsUseDCInputWhenSystemPowerInIsZero` and two siblings; I-342 in its incidents. The fix for the missing reading shipped in [1.22.0 Preview build 403](https://mole.fit/releases). |
 | Mole CLI (Linux) | Not applicable | No AppleSmartBattery or SMC; power comes from `/sys`. |
 | Mole CLI (Windows) | Not applicable | macOS telemetry. |
 | Mole for Windows | Not applicable | macOS telemetry. |
+
+On 2026-11-26, the registry DC input changed 60 seconds apart on Mac17,15. The SMC input voltage and current changed about once a second. Mole CLI (macOS) samples `PSTR` or `VD0R × ID0R` with each CPU/memory snapshot after the first full probe confirms no battery and no reported system watts. A failed SMC read uses the registry fallback. The Power card shows tenths of a watt, and JSON retains the measured value. Covered by `TestDesktopPowerRefreshKeepsRegistryFallback` and `TestDesktopPowerCardShowsSystemWatts`.
+
+Mole Mac follow-up is pending. Check that PWR tracks the other menu bar metrics with the panel closed and keeps one decimal at 10 W and above.

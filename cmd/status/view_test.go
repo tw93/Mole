@@ -587,6 +587,27 @@ func TestBatteryProgressBar(t *testing.T) {
 	}
 }
 
+func TestDesktopPowerCardShowsSystemWatts(t *testing.T) {
+	for _, tc := range []struct {
+		watts float64
+		want  string
+	}{
+		{9.84, "9.8W"},
+		{44.819445, "44.8W"},
+		{101.87, "101.9W"},
+	} {
+		card := renderBatteryCard(nil, ThermalStatus{SystemPower: tc.watts}, true)
+		got := stripANSI(strings.Join(card.lines, "\n"))
+		if !strings.Contains(got, tc.want) || !strings.Contains(got, "No battery") {
+			t.Errorf("desktop power at %v W: got %q, want %s and battery status", tc.watts, got, tc.want)
+		}
+	}
+	card := renderBatteryCard(nil, ThermalStatus{}, true)
+	if got := stripANSI(strings.Join(card.lines, "\n")); got != "No battery" {
+		t.Errorf("unavailable desktop power: got %q", got)
+	}
+}
+
 func TestRenderBatteryCardShowsAdapterInputOnly(t *testing.T) {
 	card := renderBatteryCard([]BatteryStatus{{
 		Percent:    80,
