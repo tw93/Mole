@@ -199,7 +199,7 @@ start_inline_spinner() {
             if [[ $(<"$dir/elapsed") == true ]]; then
                 elapsed_now=$((SECONDS - started))
                 if ((elapsed_now != elapsed_seconds)); then
-                    shown=$(format_spinner_message "$current · Elapsed: ${elapsed_now}s")
+                    shown=$(format_spinner_message "Elapsed: ${elapsed_now}s · $current")
                     elapsed_seconds=$elapsed_now
                 fi
             else
