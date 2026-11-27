@@ -810,6 +810,59 @@ function Invoke-MoleUninstallProcess {
     }
 }
 
+# A Steam game registers `steam.exe steam://uninstall/<id>`, which only hands the
+# request to the Steam client: started while Steam is closed it is the client and
+# never exits, and while Steam runs it exits before the user answers Steam's own
+# dialog. Its exit says nothing, so Mole starts it without waiting and without
+# elevation, then watches the game's entry for up to ten minutes (Mole for
+# Windows SteamRemovalWait).
+function Test-MoleSteamHandOff {
+    param($Launch)
+    $file = [string](Get-MoleProperty $Launch 'FilePath')
+    $arguments = [string](Get-MoleProperty $Launch 'Arguments')
+    return ([IO.Path]::GetFileName($file) -ieq 'steam.exe') -and ($arguments.Trim().Trim('"') -match '^steam://uninstall/\d+$')
+}
+
+function Start-MoleSteamHandOff {
+    param([string]$FilePath, [string[]]$ArgumentList)
+    $null = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -ErrorAction Stop
+}
+
+function Wait-MoleSteamRemoval {
+    param([string]$KeyPath, [ValidateRange(1, 600000)][int]$TimeoutMilliseconds = 600000, [int]$PollMilliseconds = 2000)
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        if (Test-UninstallEntryGone -KeyPath $KeyPath) { return $true }
+        if ($clock.Elapsed.TotalMilliseconds -ge $TimeoutMilliseconds) { return $false }
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+}
+
+# Windows Installer runs one installation at a time and holds
+# Global\_MSIExecute while it does; msiexec started meanwhile fails at once with
+# 1618. Idle, the mutex does not exist, and one that exists but cannot be opened
+# is an installation too (Mole for Windows WaitForInstallerAsync).
+function Test-MoleInstallerBusy {
+    param([string]$Name = 'Global\_MSIExecute')
+    $mutex = $null
+    try {
+        if (-not [Threading.Mutex]::TryOpenExisting($Name, [ref]$mutex)) { return $false }
+        $mutex.Dispose()
+        return $true
+    }
+    catch [UnauthorizedAccessException] { return $true }
+    catch { return $false }
+}
+
+# Waits up to ten minutes, then lets msiexec run so the result shows what it said.
+function Wait-MoleInstallerIdle {
+    param([ValidateRange(1, 600000)][int]$TimeoutMilliseconds = 600000, [int]$PollMilliseconds = 2000)
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while ((Test-MoleInstallerBusy) -and $clock.Elapsed.TotalMilliseconds -lt $TimeoutMilliseconds) {
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+}
+
 function Test-UninstallEntryGone {
     param([string]$KeyPath)
 
@@ -1398,6 +1451,13 @@ function Uninstall-SelectedApps {
                 $failCount++
                 continue
             }
+            # Wait out another installation first, so the checks below read the
+            # registry as it is once Windows Installer is free (an upgrade it was
+            # running may have replaced this entry).
+            if ((Get-MoleProperty $launch 'Kind') -eq 'msi' -and (Test-MoleInstallerBusy)) {
+                Write-Host -NoNewline " $esc[90m(waiting for another installation)$esc[0m"
+                Wait-MoleInstallerIdle
+            }
             # An uninstaller an earlier row ran may already have removed this
             # entry; that is done, not a changed command. Without one, the app
             # may have moved to a new entry (a self-update), so it is not done.
@@ -1426,25 +1486,38 @@ function Uninstall-SelectedApps {
                 $startArgs.ArgumentList = $launch.Arguments
             }
             $ranUninstaller = $true
-            $process = Invoke-MoleUninstallProcess @startArgs
-            $exitCode = Get-MoleProperty $process 'ExitCode'
+            $steamHandOff = Test-MoleSteamHandOff -Launch $launch
+            if ($steamHandOff) {
+                Start-MoleSteamHandOff @startArgs
+                $null = Wait-MoleSteamRemoval -KeyPath ([string](Get-MoleProperty $app 'RegistryKey'))
+                $outcome = 'removed by Steam'
+                $pendingOutcome = 'still installed, Steam did not remove it within ten minutes'
+            }
+            else {
+                $process = Invoke-MoleUninstallProcess @startArgs
+                $exitCode = Get-MoleProperty $process 'ExitCode'
+                $outcome = "exit code $exitCode"
+                $pendingOutcome = "still installed, exit code $exitCode"
+            }
 
             # A cancelled, failed or still-running uninstall leaves its entry behind, and
             # then the install folder is still the app's: nothing is removed.
             if (-not (Test-UninstallEntryGone -KeyPath ([string](Get-MoleProperty $app 'RegistryKey')))) {
-                Write-MoleOperation -Action "FAILED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome "still installed, exit code $exitCode" -Launch $launch)
-                Write-Host " $esc[33m(still installed, exit code $exitCode)$esc[0m"
+                Write-MoleOperation -Action "FAILED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome $pendingOutcome -Launch $launch)
+                Write-Host " $esc[33m($pendingOutcome)$esc[0m"
                 $remainingCount++
                 continue
             }
 
-            Write-MoleOperation -Action "UNINSTALLED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome "exit code $exitCode" -Launch $launch)
+            Write-MoleOperation -Action "UNINSTALLED" -Path $app.Name -Detail (Get-UninstallOperationDetail -App $app -Outcome $outcome -Launch $launch)
             Write-Host " $esc[32m$($script:Icons.Success)$esc[0m"
             $successCount++
 
-            # Clean leftover files
+            # Clean leftover files. A Steam game's folder sits in a Steam library, which
+            # Steam owns: what it leaves there is the user's (mods, saves), never Mole's
+            # to recycle (Mole for Windows drops the folder for Steam games too).
             $folder = [string](Get-MoleProperty $app 'InstallLocation')
-            if (Test-MoleLeftoverOwnership -Path $folder -App $app) {
+            if (-not $steamHandOff -and (Test-MoleLeftoverOwnership -Path $folder -App $app)) {
                 Write-Host "  $esc[90mMoving leftover files to Recycle Bin...$esc[0m"
                 $guard = { param($candidate) Test-MoleLeftoverOwnership -Path $candidate -App $app }
                 $null = Remove-SafeItem -Path $folder -Description "Leftover files to Recycle Bin" -Recurse -Recycle -Guard $guard

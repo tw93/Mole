@@ -823,6 +823,7 @@ function Get-MoleInstallNestedFiles {
         "scripts\test.ps1"
         "scripts\write-checksums.ps1"
         "tests\Clean.Tests.ps1"
+        "tests\CleanOwnerGuards.Tests.ps1"
         "tests\CleanupBoundary.Tests.ps1"
         "tests\CleanupTargets.Tests.ps1"
         "tests\AppCacheSafety.Tests.ps1"

@@ -209,23 +209,11 @@ function Clear-NodeBuildCaches {
         Clean Node.js build-related caches
     #>
     
-    # node-gyp
-    $nodeGypPath = "$env:LOCALAPPDATA\node-gyp\Cache"
-    if (Test-Path $nodeGypPath) {
-        Clear-DirectoryContents -Path $nodeGypPath -Description "node-gyp cache"
-    }
-    
-    # Electron cache
-    $electronCachePath = "$env:LOCALAPPDATA\electron\Cache"
-    if (Test-Path $electronCachePath) {
-        Clear-DirectoryContents -Path $electronCachePath -Description "Electron cache"
-    }
-    
-    # TypeScript cache
-    $tsCachePath = "$env:LOCALAPPDATA\TypeScript"
-    if (Test-Path $tsCachePath) {
-        Clear-DirectoryContents -Path $tsCachePath -Description "TypeScript cache"
-    }
+    # A build or editor that is running reads these, so each waits for its
+    # owner, as Mole for Windows holds them.
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\node-gyp\Cache" -Description "node-gyp cache" -Processes @('node')
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\electron\Cache" -Description "Electron cache" -Processes @('node')
+    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Microsoft\TypeScript" -Description "TypeScript cache" -Processes @('Code', 'node')
 }
 
 # ============================================================================
@@ -328,7 +316,7 @@ function Clear-GoCaches {
 
     $moduleRoot = Get-MoleOwnerCachePath -Name 'go' -Arguments @('env', 'GOMODCACHE')
     if ($moduleRoot) {
-        Clear-DirectoryContents -Path (Join-Path $moduleRoot 'cache') -Description 'Go module cache'
+        Clear-MoleAppCache -Path (Join-Path $moduleRoot 'cache') -Description 'Go module cache' -Processes @('go')
     }
 }
 
@@ -346,23 +334,12 @@ function Clear-RustCaches {
         Clean Rust/Cargo caches
     #>
     
-    # Cargo registry cache
-    $cargoRegistryCache = "$env:USERPROFILE\.cargo\registry\cache"
-    if (Test-Path $cargoRegistryCache) {
-        Clear-DirectoryContents -Path $cargoRegistryCache -Description "Cargo registry cache"
-    }
-    
-    # Cargo git cache
-    $cargoGitCache = "$env:USERPROFILE\.cargo\git\checkouts"
-    if (Test-Path $cargoGitCache) {
-        Clear-DirectoryContents -Path $cargoGitCache -Description "Cargo git cache"
-    }
-    
-    # Rustup downloads
-    $rustupDownloads = "$env:USERPROFILE\.rustup\downloads"
-    if (Test-Path $rustupDownloads) {
-        Clear-DirectoryContents -Path $rustupDownloads -Description "Rustup downloads"
-    }
+    # Only the download copies, and only while no Rust tool runs. The whole of
+    # .cargo and .rustup used to be default whitelist entries, so these rows
+    # never cleaned anything; sources, the index and git checkouts stay there.
+    $rustTooling = @('cargo', 'rustc', 'rustdoc', 'clippy-driver', 'cargo-nextest', 'rustup')
+    Clear-MoleAppCache -Path "$env:USERPROFILE\.cargo\registry\cache" -Description "Cargo registry cache" -Processes $rustTooling
+    Clear-MoleAppCache -Path "$env:USERPROFILE\.rustup\downloads" -Description "Rustup downloads" -Processes $rustTooling
 }
 
 # ============================================================================
@@ -590,9 +567,7 @@ function Clear-EditorCaches {
         "$env:APPDATA\Zed\cache"
     )
     foreach ($path in $zedCachePaths) {
-        if (Test-Path $path) {
-            Clear-DirectoryContents -Path $path -Description "Zed cache"
-        }
+        Clear-MoleAppCache -Path $path -Description "Zed cache" -Processes @('Zed')
     }
     
     # Sublime Text cache
@@ -625,29 +600,21 @@ function Clear-IdeCaches {
     foreach ($pattern in $vsCachePaths) {
         $paths = Resolve-Path $pattern -ErrorAction SilentlyContinue
         foreach ($path in $paths) {
-            if (Test-Path $path.Path) {
-                Clear-DirectoryContents -Path $path.Path -Description "Visual Studio cache"
-            }
+            Clear-MoleAppCache -Path $path.Path -Description "Visual Studio cache" -Processes @('devenv')
         }
     }
     
-    # JetBrains IDEs caches
-    $jetbrainsBasePaths = @(
-        "$env:LOCALAPPDATA\JetBrains"
-        "$env:APPDATA\JetBrains"
-    )
-    foreach ($basePath in $jetbrainsBasePaths) {
-        if (Test-Path $basePath) {
-            $ideFolders = Get-ChildItem -Path $basePath -Directory -ErrorAction SilentlyContinue
-            foreach ($ideFolder in $ideFolders) {
-                $cacheFolders = @("caches", "index", "tmp")
-                foreach ($cacheFolder in $cacheFolders) {
-                    $cachePath = Join-Path $ideFolder.FullName $cacheFolder
-                    if (Test-Path $cachePath) {
-                        Clear-DirectoryContents -Path $cachePath -Description "$($ideFolder.Name) $cacheFolder"
-                    }
-                }
-            }
+    # JetBrains IDEs: caches and index in each IDE's system folder, only while
+    # no JetBrains IDE runs (Mole for Windows' jetbrains-caches and -index rows).
+    # The roaming folder holds settings and plugins, never caches.
+    $jetbrainsIdes = @('idea64', 'idea', 'pycharm64', 'webstorm64', 'rider64', 'clion64', 'goland64',
+        'phpstorm64', 'rubymine64', 'datagrip64', 'rustrover64', 'dataspell64', 'aqua64', 'writerside64',
+        'mps64', 'gateway64', 'jetbrains_client64', 'studio64')
+    $jetbrainsRoot = "$env:LOCALAPPDATA\JetBrains"
+    foreach ($ideFolder in @(Get-ChildItem -LiteralPath $jetbrainsRoot -Directory -Force -ErrorAction SilentlyContinue)) {
+        if ($ideFolder.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        foreach ($cacheFolder in 'caches', 'index') {
+            Clear-MoleAppCache -Path (Join-Path $ideFolder.FullName $cacheFolder) -Description "$($ideFolder.Name) $cacheFolder" -Processes $jetbrainsIdes
         }
     }
 }

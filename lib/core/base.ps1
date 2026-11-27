@@ -170,12 +170,24 @@ $script:DefaultWhitelistPatterns = @(
     "$env:APPDATA\Microsoft\Windows\Recent"            # Recent files (used by shell)
     "$env:USERPROFILE\.vscode\extensions"              # VS Code extensions
     "$env:USERPROFILE\.nuget"                          # NuGet packages
-    "$env:USERPROFILE\.cargo"                          # Rust packages
-    "$env:USERPROFILE\.rustup"                         # Rust toolchain
+    # Cargo and rustup: everything but the download copies Clear-RustCaches
+    # takes (registry\cache, rustup downloads). registry\src is what an offline
+    # build compiles against, as Mole CLI (macOS) keeps it.
+    "$env:USERPROFILE\.cargo\bin"                      # Installed Rust binaries
+    "$env:USERPROFILE\.cargo\registry\index"           # Crate index
+    "$env:USERPROFILE\.cargo\registry\src"             # Extracted crate sources
+    "$env:USERPROFILE\.cargo\git"                      # Git dependencies
+    "$env:USERPROFILE\.rustup\toolchains"              # Rust toolchains
+    "$env:USERPROFILE\.rustup\update-hashes"           # rustup state
     "$env:USERPROFILE\.m2\repository"                  # Maven repository
     "$env:USERPROFILE\.gradle\caches\modules-2\files-*" # Gradle modules
     "$env:USERPROFILE\.ollama\models"                  # Ollama AI models
-    "$env:LOCALAPPDATA\JetBrains"                      # JetBrains IDEs
+    # JetBrains keeps caches, index and logs here beside Local History, the one
+    # record of the user's own edits; only Local History stays whitelisted, so
+    # Clear-IdeCaches can take caches and index (Mole for Windows' scope).
+    "$env:LOCALAPPDATA\JetBrains\*\LocalHistory*"      # JetBrains Local History
+    # Toolbox installs the IDEs it manages under its own folder (apps\...).
+    "$env:LOCALAPPDATA\JetBrains\Toolbox"              # JetBrains Toolbox and its IDEs
 )
 
 # ============================================================================

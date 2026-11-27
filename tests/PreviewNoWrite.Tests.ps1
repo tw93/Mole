@@ -25,12 +25,19 @@ BeforeAll {
             if ($LASTEXITCODE -ne 0) { throw "icacls could not deny writes to $path" }
         }
         $savedProfile = $env:USERPROFILE
+        # The fixture profile has no AppData\Local, so the child resolves an empty
+        # local app data folder and writes PowerShell's ModuleAnalysisCache relative
+        # to its working folder; it starts in a scratch folder, not the repository.
+        $workDir = New-Item -ItemType Directory -Path "$profileRoot-cwd"
+        Push-Location -LiteralPath $workDir.FullName
         try {
             $env:USERPROFILE = $profileRoot
             $output = & $script:HostExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:Root 'mole.ps1') @Arguments 2>&1 | Out-String
             return @{ ExitCode = $LASTEXITCODE; Output = $output }
         }
         finally {
+            Pop-Location
+            Remove-Item -LiteralPath $workDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
             $env:USERPROFILE = $savedProfile
             foreach ($path in $denied) { icacls $path /remove:d $user | Out-Null }
             Remove-Item -LiteralPath $profileRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -48,11 +55,14 @@ Describe 'Preview without writable state' {
         }
     }
     It 'Completes mo <Name> on a <State> run' -ForEach $script:Cases {
+        $before = Test-Path -LiteralPath (Join-Path $script:Root 'Microsoft')
         $run = Invoke-NoWriteMole -Arguments $Arguments -State $State
         $run.ExitCode | Should -Be 0
         $run.Output | Should -Match $Expect
         $run.Output | Should -Not -Match 'denied|error occurred'
         $run.Output | Should -Not -Match 'Detailed file list'
+        # Nothing lands in the checkout (a stray Microsoft folder failed the install inventory test).
+        if (-not $before) { Test-Path -LiteralPath (Join-Path $script:Root 'Microsoft') | Should -BeFalse }
     }
     It 'Names the preview list only when it was written' {
         $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:Root 'bin\clean.ps1'), [ref]$null, [ref]$null)

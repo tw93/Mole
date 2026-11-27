@@ -401,6 +401,8 @@ Describe "Uninstalling registry apps" {
         Mock Get-MoleInstallOwners { @{ Complete = $true; Owners = @() } }
         # The launch recheck has its own Describe.
         Mock Test-UninstallLaunchCurrent { $true }
+        # A real installation on the test machine must not hold an MSI case for ten minutes.
+        Mock Test-MoleInstallerBusy { $false }
         Mock Remove-AppxPackage { throw "Remove-AppxPackage must not run" }
 
         $script:AppFolder = New-TestFolder -Name "Contoso Tool"
@@ -429,6 +431,73 @@ Describe "Uninstalling registry apps" {
         Should -Invoke Remove-SafeItem -Times 0 -Exactly
         Should -Invoke Invoke-MoleUninstallProcess -Times 1 -Exactly
         Should -Invoke Start-Process -Times 0 -Exactly
+    }
+
+    Context "Steam games" {
+        BeforeEach {
+            $script:SteamFolder = New-TestFolder -Name "Steam"
+            $script:SteamExe = Join-Path $script:SteamFolder "steam.exe"
+            Set-Content -Path $script:SteamExe -Value "steam"
+            $script:SteamKey = New-TestUninstallKey -Name "Steam App 440" -Values @{ DisplayName = "Team Fortress 2"; UninstallString = "`"$script:SteamExe`" steam://uninstall/440" }
+            $script:SteamApp = [PSCustomObject]@{
+                Name = "Team Fortress 2"; Source = "Registry"; UninstallString = "`"$script:SteamExe`" steam://uninstall/440"
+                InstallLocation = $null; RegistryKey = $script:SteamKey; PackageFullName = $null
+            }
+        }
+
+        It "Hands the game to Steam without waiting on steam.exe and succeeds once Steam removed it" {
+            # Started while Steam is closed, steam.exe is the client and never exits.
+            Mock Start-MoleSteamHandOff { Remove-Item -LiteralPath $script:SteamKey -Recurse -Force }
+            Mock Wait-MoleSteamRemoval { $true }
+
+            Uninstall-SelectedApps -Apps @($script:SteamApp)
+
+            Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
+            Should -Invoke Start-MoleSteamHandOff -Times 1 -Exactly -ParameterFilter {
+                $FilePath -eq $script:SteamExe -and ($ArgumentList -join " ") -eq "steam://uninstall/440"
+            }
+            Should -Invoke Wait-MoleSteamRemoval -Times 1 -Exactly -ParameterFilter { $KeyPath -eq $script:SteamKey }
+            $script:MoleUninstallIncomplete | Should -BeFalse
+        }
+
+        It "Leaves what Steam kept in the library folder, such as mods, after the game is gone" {
+            $game = Join-Path $script:SteamFolder "steamapps\common\Team Fortress 2"
+            New-Item -ItemType Directory -Path (Join-Path $game "Mods") -Force | Out-Null
+            $script:SteamApp.InstallLocation = $game
+            Mock Start-MoleSteamHandOff { Remove-Item -LiteralPath $script:SteamKey -Recurse -Force }
+            Mock Wait-MoleSteamRemoval { $true }
+
+            Uninstall-SelectedApps -Apps @($script:SteamApp)
+
+            $script:MoleUninstallIncomplete | Should -BeFalse
+            Should -Invoke Remove-SafeItem -Times 0 -Exactly
+        }
+
+        It "Reports the game still installed when Steam did not remove it in time" {
+            Mock Start-MoleSteamHandOff { }
+            Mock Wait-MoleSteamRemoval { $false }
+
+            Uninstall-SelectedApps -Apps @($script:SteamApp)
+
+            Should -Invoke Invoke-MoleUninstallProcess -Times 0 -Exactly
+            Should -Invoke Remove-SafeItem -Times 0 -Exactly
+            $script:MoleUninstallIncomplete | Should -BeTrue
+        }
+
+        It "Treats only steam.exe with a steam://uninstall/ game id as a hand-off" {
+            Test-MoleSteamHandOff -Launch ([pscustomobject]@{ FilePath = $script:SteamExe; Arguments = 'steam://uninstall/440' }) | Should -BeTrue
+            Test-MoleSteamHandOff -Launch ([pscustomobject]@{ FilePath = $script:SteamExe; Arguments = '"steam://uninstall/440"' }) | Should -BeTrue
+            # The Steam client's own NSIS uninstaller keeps its window and its wait.
+            Test-MoleSteamHandOff -Launch ([pscustomobject]@{ FilePath = (Join-Path $script:SteamFolder 'uninstall.exe'); Arguments = '' }) | Should -BeFalse
+            Test-MoleSteamHandOff -Launch ([pscustomobject]@{ FilePath = $script:SteamExe; Arguments = 'steam://rungameid/440' }) | Should -BeFalse
+            Test-MoleSteamHandOff -Launch ([pscustomobject]@{ FilePath = (Join-Path $script:SteamFolder 'other.exe'); Arguments = 'steam://uninstall/440' }) | Should -BeFalse
+        }
+
+        It "Waits for the entry to go and gives up at the deadline" {
+            Wait-MoleSteamRemoval -KeyPath $script:SteamKey -TimeoutMilliseconds 60 -PollMilliseconds 10 | Should -BeFalse
+            Remove-Item -LiteralPath $script:SteamKey -Recurse -Force
+            Wait-MoleSteamRemoval -KeyPath $script:SteamKey -TimeoutMilliseconds 60 -PollMilliseconds 10 | Should -BeTrue
+        }
     }
 
     It "Runs an unrecognised uninstaller exactly once, as registered" {

@@ -209,9 +209,6 @@ function Clear-AppCaches {
         }
     }
     
-    # Epic Games Launcher
-    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache" -Description "Epic Games cache" -Processes @('EpicGamesLauncher')
-    
     Stop-Section
 }
 

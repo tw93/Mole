@@ -218,12 +218,6 @@ Describe "System Cleanup Module" {
         }
     }
     
-    Context "Memory Dumps" {
-        It "Should have Clear-MemoryDumps function" {
-            Get-Command Clear-MemoryDumps -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
-        }
-    }
-    
     Context "Targets the path guard can reach" {
         It "Lists nothing under the protected Windows folder" {
             $source = Get-Content (Join-Path $PSScriptRoot "..\lib\clean\system.ps1") -Raw

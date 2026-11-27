@@ -42,8 +42,11 @@ function Clear-OfficeCache {
             if (Test-Path $parent) {
                 $tmpFiles = Get-ChildItem -Path $parent -Filter "*.tmp" -File -ErrorAction SilentlyContinue
                 if ($tmpFiles) {
+                    # An open document keeps its ~WRL*.tmp here.
+                    $officeApps = @('WINWORD', 'EXCEL', 'POWERPNT', 'OUTLOOK')
+                    $officeIdle = { Test-MoleCacheOwnerIdle -Names $officeApps }
                     $paths = $tmpFiles | ForEach-Object { $_.FullName }
-                    Remove-SafeItems -Paths $paths -Description "Office temp files"
+                    Remove-SafeItems -Paths $paths -Description "Office temp files" -CanRemove $officeIdle
                 }
             }
         }
@@ -85,10 +88,11 @@ function Clear-GoogleDriveCache {
         if ($path -like "*.tmp") {
             $parent = Split-Path -Parent $path
             if (Test-Path $parent) {
-                $tmpFiles = Get-ChildItem -Path $parent -Filter "*.tmp" -ErrorAction SilentlyContinue
+                $tmpFiles = Get-ChildItem -Path $parent -Filter "*.tmp" -File -ErrorAction SilentlyContinue
                 if ($tmpFiles) {
+                    $driveIdle = { Test-MoleCacheOwnerIdle -Names @('GoogleDriveFS') }
                     $paths = $tmpFiles | ForEach-Object { $_.FullName }
-                    Remove-SafeItems -Paths $paths -Description "Google Drive temp"
+                    Remove-SafeItems -Paths $paths -Description "Google Drive temp" -CanRemove $driveIdle
                 }
             }
         }
@@ -164,8 +168,13 @@ function Clear-GamingPlatformCaches {
     # which stays protected; its web cache lives in the profile.
     Clear-MoleAppCache -Path "$env:LOCALAPPDATA\Steam\htmlcache" -Description "Steam web cache" -Processes @('steam', 'steamwebhelper')
 
-    # Epic Games Launcher
-    Clear-MoleAppCache -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\webcache" -Description "Epic Games webcache" -Processes @('EpicGamesLauncher')
+    # Epic Games Launcher keeps one webcache folder per embedded CEF generation
+    # (webcache, webcache_4147, webcache_4430), as Mole for Windows lists them.
+    $epicSaved = "$env:LOCALAPPDATA\EpicGamesLauncher\Saved"
+    foreach ($webcache in @(Get-ChildItem -LiteralPath $epicSaved -Directory -Filter 'webcache*' -Force -ErrorAction SilentlyContinue)) {
+        if ($webcache.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        Clear-MoleAppCache -Path $webcache.FullName -Description "Epic Games webcache" -Processes @('EpicGamesLauncher')
+    }
     Clear-MoleOwnerLogs -Path "$env:LOCALAPPDATA\EpicGamesLauncher\Saved\Logs" -Description "Epic Games logs" -Processes @('EpicGamesLauncher')
 
     # EA app (Origin replacement). 13.822 keeps a whole Chromium profile in

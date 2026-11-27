@@ -65,22 +65,6 @@ function Clear-InstallerCache {
 }
 
 # ============================================================================
-# Memory Dump Cleanup
-# ============================================================================
-
-function Clear-MemoryDumps {
-    <#
-    .SYNOPSIS
-        Clean per-user application crash dumps
-    #>
-
-    $path = "$env:LOCALAPPDATA\CrashDumps"
-    if (Test-Path $path -PathType Container) {
-        Clear-DirectoryContents -Path $path -Description "CrashDumps"
-    }
-}
-
-# ============================================================================
 # Main System Cleanup Function
 # ============================================================================
 
@@ -101,9 +85,6 @@ function Invoke-SystemCleanup {
 
     # Installer cache
     Clear-InstallerCache
-
-    # Memory dumps
-    Clear-MemoryDumps
 
     # NVIDIA driver installer extraction folders and Delivery Optimization files
     Clear-NvidiaDriverInstallers
