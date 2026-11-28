@@ -98,27 +98,42 @@ func measureInsightSize(ctx context.Context, path string) (int64, error) {
 }
 
 func measureInsightSizeWithPublication(ctx context.Context, path string, publication *scanPublication) (int64, error) {
-	home := os.Getenv("HOME")
-
-	if home != "" && path == filepath.Join(home, "Downloads") {
+	if isOldDownloadsOverviewPath(path) {
 		return measureOldDownloads(ctx, path, 90)
 	}
 
 	return measureOverviewSizeWithPublication(ctx, path, publication)
 }
 
+func isOldDownloadsOverviewPath(path string) bool {
+	home := os.Getenv("HOME")
+	return home != "" && path == filepath.Join(home, "Downloads")
+}
+
 // measureOldDownloads calculates total size of files in a directory
 // that haven't been modified in the given number of days.
 func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, error) {
+	size, err := measureOldDownloadsWithAllocation(ctx, dir, daysOld)
+	return size.reported, err
+}
+
+type oldDownloadsSize struct {
+	reported  int64
+	allocated int64
+}
+
+// The insight keeps its existing displayed size; the JSON disk total needs
+// the allocated bytes of a regular file, which can be sparse.
+func measureOldDownloadsWithAllocation(ctx context.Context, dir string, daysOld int) (oldDownloadsSize, error) {
 	ctx, cancel := context.WithTimeout(ctx, overviewDuTimeout)
 	defer cancel()
 	var failures scanFailures
 	cutoff := time.Now().AddDate(0, 0, -daysOld)
-	var total int64
+	var total oldDownloadsSize
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, err
+		return total, err
 	}
 	rootDevice := scanDeviceOf(dir)
 
@@ -148,9 +163,11 @@ func measureOldDownloads(ctx context.Context, dir string, daysOld int) (int64, e
 				// Use du for directories.
 				size, err := getDirectorySizeFromDuWithExcludeAndIgnores(ctx, filepath.Join(dir, entry.Name()), "", nil, overviewDuTimeout)
 				failures.record(err)
-				total += size
+				total.reported += size
+				total.allocated += size
 			} else {
-				total += info.Size()
+				total.reported += info.Size()
+				total.allocated += getActualFileSize("", info)
 			}
 		}
 	}

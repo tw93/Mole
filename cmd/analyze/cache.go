@@ -45,6 +45,15 @@ type overviewSizeSnapshot struct {
 	Partial       bool      `json:"partial,omitempty"`
 	Updated       time.Time `json:"updated"`
 	SchemaVersion int       `json:"schema_version"`
+	ExcludedPath  string    `json:"excluded_path,omitempty"`
+	CoverageKey   string    `json:"coverage_key,omitempty"`
+}
+
+func (snapshot overviewSizeSnapshot) state() scanState {
+	if snapshot.Partial {
+		return scanPartial
+	}
+	return scanComplete
 }
 
 var (
@@ -165,27 +174,29 @@ func loadStoredOverviewSize(path string) (int64, error) {
 }
 
 func loadStoredOverviewMeasurement(path string) (int64, scanState, error) {
+	snapshot, err := loadStoredOverviewSnapshot(path)
+	return snapshot.Size, snapshot.state(), err
+}
+
+func loadStoredOverviewSnapshot(path string) (overviewSizeSnapshot, error) {
 	if path == "" {
-		return 0, scanComplete, fmt.Errorf("empty path")
+		return overviewSizeSnapshot{}, fmt.Errorf("empty path")
 	}
 	overviewSnapshotMu.Lock()
 	defer overviewSnapshotMu.Unlock()
 	if err := ensureOverviewSnapshotCacheLocked(); err != nil {
-		return 0, scanComplete, err
+		return overviewSizeSnapshot{}, err
 	}
 	if overviewSnapshotCache == nil {
-		return 0, scanComplete, fmt.Errorf("snapshot cache unavailable")
+		return overviewSizeSnapshot{}, fmt.Errorf("snapshot cache unavailable")
 	}
 	if snapshot, ok := overviewSnapshotCache[path]; ok && snapshot.Size > 0 {
 		if stampWithin(time.Now(), snapshot.Updated, overviewCacheTTL) {
-			if snapshot.Partial {
-				return snapshot.Size, scanPartial, nil
-			}
-			return snapshot.Size, scanComplete, nil
+			return snapshot, nil
 		}
-		return 0, scanComplete, fmt.Errorf("snapshot expired")
+		return overviewSizeSnapshot{}, fmt.Errorf("snapshot expired")
 	}
-	return 0, scanComplete, fmt.Errorf("snapshot not found")
+	return overviewSizeSnapshot{}, fmt.Errorf("snapshot not found")
 }
 
 func storeOverviewSize(path string, size int64) error {
@@ -195,6 +206,10 @@ func storeOverviewSize(path string, size int64) error {
 // storeOverviewMeasurement records a size; partial marks one that is missing
 // only folders the terminal is not allowed to read.
 func storeOverviewMeasurement(path string, size int64, partial bool) error {
+	return storeOverviewMeasurementWithScope(path, size, partial, "", "")
+}
+
+func storeOverviewMeasurementWithScope(path string, size int64, partial bool, excludedPath, coverageKey string) error {
 	if path == "" || size <= 0 {
 		return fmt.Errorf("invalid overview size")
 	}
@@ -210,15 +225,26 @@ func storeOverviewMeasurement(path string, size int64, partial bool) error {
 	// every save re-serializes and rewrites the entire store. Skip the write
 	// while the recorded value still stands; the timestamp is only refreshed
 	// often enough to keep a live entry from aging out.
-	if existing, ok := overviewSnapshotCache[path]; ok && existing.Size == size && existing.Partial == partial &&
-		stampWithin(time.Now(), existing.Updated, overviewCacheTTL/overviewRefreshDivisor) {
-		return nil
+	if existing, ok := overviewSnapshotCache[path]; ok {
+		now := time.Now()
+		// Browsing Home publishes a whole-directory size at the same path.
+		// Keep a current snapshot that excludes its separately listed Library.
+		if existing.ExcludedPath != "" && excludedPath == "" &&
+			stampWithin(now, existing.Updated, overviewCacheTTL) {
+			return nil
+		}
+		if existing.Size == size && existing.Partial == partial && existing.ExcludedPath == excludedPath &&
+			existing.CoverageKey == coverageKey && stampWithin(now, existing.Updated, overviewCacheTTL/overviewRefreshDivisor) {
+			return nil
+		}
 	}
 	overviewSnapshotCache[path] = overviewSizeSnapshot{
 		Size:          size,
 		Partial:       partial,
 		Updated:       time.Now(),
 		SchemaVersion: cacheSchemaVersion,
+		ExcludedPath:  excludedPath,
+		CoverageKey:   coverageKey,
 	}
 	evictOverviewSnapshotsLocked()
 	return persistOverviewSnapshotLocked()

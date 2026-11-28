@@ -934,7 +934,18 @@ func measureOverviewSize(ctx context.Context, path string) (int64, error) {
 	return measureOverviewSizeWithPublication(ctx, path, nil)
 }
 
+func overviewExcludedPath(path string) string {
+	if home := os.Getenv("HOME"); home != "" && filepath.Clean(path) == home {
+		return filepath.Join(home, "Library")
+	}
+	return ""
+}
+
 func measureOverviewSizeWithPublication(ctx context.Context, path string, publication *scanPublication) (int64, error) {
+	return measureOverviewSizeWithCoverage(ctx, path, publication, "")
+}
+
+func measureOverviewSizeWithCoverage(ctx context.Context, path string, publication *scanPublication, coverageKey string) (int64, error) {
 	if path == "" {
 		return 0, fmt.Errorf("empty path")
 	}
@@ -948,13 +959,7 @@ func measureOverviewSizeWithPublication(ctx context.Context, path string, public
 		return 0, fmt.Errorf("cannot access path: %v", err)
 	}
 
-	// Determine if we should exclude ~/Library (when scanning Home)
-	home := os.Getenv("HOME")
-	excludePath := ""
-	if home != "" && path == home {
-		excludePath = filepath.Join(home, "Library")
-	}
-
+	excludePath := overviewExcludedPath(path)
 	ctx, cancel := context.WithTimeout(ctx, overviewDuTimeout)
 	defer cancel()
 	ignoreNames := overviewIgnoreNamesForPath(path)
@@ -963,7 +968,9 @@ func measureOverviewSizeWithPublication(ctx context.Context, path string, public
 		size, err = getDirectoryLogicalSizeWithExclude(ctx, path, excludePath, ignoreNames)
 	}
 	if overviewMeasurementStorable(size, err) {
-		store := func() error { return storeOverviewMeasurement(path, size, err != nil) }
+		store := func() error {
+			return storeOverviewMeasurementWithScope(path, size, err != nil, excludePath, coverageKey)
+		}
 		if publication != nil {
 			if storeErr := publication.commit(store); errors.Is(storeErr, context.Canceled) || errors.Is(storeErr, context.DeadlineExceeded) {
 				return 0, storeErr
