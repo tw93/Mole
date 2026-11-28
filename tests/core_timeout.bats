@@ -452,23 +452,39 @@ _tty_bg_field() {
 }
 
 @test "run_with_timeout: shell fallback cleans up watchdog sleep" {
-    /bin/bash -c "
+    local fixture="$BATS_TEST_TMPDIR/watchdog"
+    mkdir -p "$fixture/bin"
+    cat > "$fixture/bin/sleep" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$$" > "$WATCHDOG_PID_FILE"
+exec /bin/sleep "$@"
+EOF
+    chmod +x "$fixture/bin/sleep"
+    # shellcheck disable=SC2016  # Expand fixture variables in the child Bash.
+    run env WATCHDOG_PID_FILE="$fixture/sleep.pid" PATH="$fixture/bin:$PATH" /bin/bash -c '
         set -euo pipefail
-        source '$PROJECT_ROOT/lib/core/timeout.sh'
-        MO_TIMEOUT_BIN=''
-        MO_TIMEOUT_PERL_BIN=''
-        run_with_timeout 287 true
-        sleep 0.1
-        leaked=''
-        for pid in \$(pgrep -x sleep 2>/dev/null || true); do
-            command_line=\$(ps -p \"\$pid\" -o command= 2>/dev/null || true)
-            if [[ \"\$command_line\" == 'sleep 287' ]]; then
-                leaked=\"\$pid\"
-                kill \"\$pid\" 2>/dev/null || true
-            fi
-        done
-        [[ -z \"\$leaked\" ]] || return 1
-    "
+        source "$PROJECT_ROOT/lib/core/timeout.sh"
+        MO_TIMEOUT_BIN=""
+        MO_TIMEOUT_PERL_BIN=""
+        pgrep() { return 1; }
+        wait_for_watchdog() {
+            local attempt
+            for ((attempt = 0; attempt < 200; attempt++)); do
+                [[ -s "$WATCHDOG_PID_FILE" ]] && return 0
+                /bin/sleep 0.01
+            done
+            echo "watchdog did not start" >&2
+            return 1
+        }
+        run_with_timeout 30 wait_for_watchdog
+        read -r watchdog_pid < "$WATCHDOG_PID_FILE"
+        if kill -0 "$watchdog_pid" 2>/dev/null; then
+            kill -TERM "$watchdog_pid" 2>/dev/null || true
+            echo "watchdog sleeper survived command completion" >&2
+            exit 1
+        fi
+    '
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 # A directory-sizing `du` on a stalled network mount or a huge tree wedges the
