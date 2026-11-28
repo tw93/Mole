@@ -2959,6 +2959,64 @@ EOF
     [[ "$output" != *"SAFE_CLEAN:OneDrive cache"* ]]
 }
 
+@test "clean_cloud_storage previews only Baidu Netdisk's idle sandboxed code caches" {
+    local fixture_home="$HOME/baidu-home"
+    local support="$fixture_home/Library/Containers/com.baidu.netdisk/Data/Library/Application Support/baidunetdisk"
+    local code="$support/Code Cache"
+    mkdir -p "$code/js" "$code/wasm" "$support/Local Storage" "$support/IndexedDB" "$support/Downloads"
+    touch "$code/js/entry" "$code/wasm/entry"
+    local fixture_state
+    for fixture_state in 1 0 2 helper no_fda linked remove; do
+        run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 \
+            code="$code" fixture_state="$fixture_state" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+has_full_disk_access() { [[ "$fixture_state" != no_fda ]]; }
+pgrep() {
+    case "$*" in
+        "-f /BaiduNetdisk"*) [[ "$fixture_state" == helper ]] && return 0 ;;
+    esac
+    case "$*" in
+        *BaiduNetdisk*) case "$fixture_state" in 0 | 1 | 2) return "$fixture_state" ;; esac ;;
+    esac
+    return 1
+}
+get_path_size_kb() { printf '8\n'; }
+register_dry_run_cleanup_target() { printf 'PREVIEW=%s\n' "$1"; }
+append_dry_run_cleanup_target() { :; }
+if [[ "$fixture_state" == linked ]]; then
+    mv "$code" "$HOME/external-code"
+    ln -s "$HOME/external-code" "$code"
+fi
+clean_cloud_storage
+test -f "$code/js/entry" || exit 1
+if [[ "$fixture_state" == remove ]]; then
+    DRY_RUN=false
+    export MOLE_DRY_RUN=0
+    rm "$code" # SAFE: remove the fixture-owned link before restoring the test cache directory
+    mv "$HOME/external-code" "$code"
+    touch "${code%/*}/Downloads/keep" "${code%/*}/IndexedDB/keep" "${code%/*}/Local Storage/keep"
+    clean_cloud_storage
+    test ! -e "$code/js" && test ! -e "$code/wasm" || exit 1
+    test -f "${code%/*}/Downloads/keep" &&
+        test -f "${code%/*}/IndexedDB/keep" &&
+        test -f "${code%/*}/Local Storage/keep"
+fi
+EOF
+
+        [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+        if [[ "$fixture_state" == 1 ]]; then
+            [[ "$output" == *"PREVIEW=$code/js"* ]] || { echo "$output"; return 1; }
+            [[ "$output" == *"PREVIEW=$code/wasm"* ]] || return 1
+            [[ "$output" != *"PREVIEW=$support/Local Storage"* &&
+               "$output" != *"PREVIEW=$support/IndexedDB"* &&
+               "$output" != *"PREVIEW=$support/Downloads"* ]] || return 1
+        else
+            [[ "$output" != *"PREVIEW=$code/"* ]] || return 1
+        fi
+    done
+}
+
 @test "clean_browsers keeps all Chrome AI model stores when whitelisted" {
     local chrome_support="$HOME/Library/Application Support/Google/Chrome"
     mkdir -p "$chrome_support/OptGuideOnDeviceModel/2026"
