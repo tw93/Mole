@@ -1502,7 +1502,7 @@ scan_purge_targets() {
             fi
             [[ -n "$tag_file" ]] || continue
             local cache_dir="${tag_file%/*}"
-            if [[ -n "$cache_dir" ]] && mole_dir_has_cachedir_tag "$cache_dir"; then
+            if [[ -n "$cache_dir" ]] && mole_cachedir_tag_proves_build_output "$cache_dir"; then
                 printf '%s\n' "$cache_dir"
             fi
         done
