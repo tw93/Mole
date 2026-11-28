@@ -124,3 +124,35 @@ func TestPerformOverviewScanForJSONSchemaWithInjectedEntries(t *testing.T) {
 		t.Fatalf("expected measured overview size, got %d", result.TotalSize)
 	}
 }
+
+func TestOverviewJSONTotalCountsCoveredRowsOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resetOverviewSnapshotForTest()
+	t.Cleanup(resetOverviewSnapshotForTest)
+
+	library := filepath.Join(home, "Library")
+	docker := filepath.Join(library, "Containers", "com.docker.docker", "Data")
+	sibling := filepath.Join(home, "Library-Archive")
+	rows := []dirEntry{
+		{Name: "Home", Path: home, IsDir: true},
+		{Name: "User Library", Path: library, IsDir: true},
+		{Name: "Docker Data", Path: docker, IsDir: true},
+		{Name: "Library Archive", Path: sibling, IsDir: true},
+	}
+	// Seed the same measurements that an overview scan would reuse.
+	for index, size := range []int64{300, 200, 50, 20} {
+		if err := storeOverviewSize(rows[index].Path, size); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := performOverviewScanForJSONWithEntries("/", rows[2:3], rows)
+	if len(result.Entries) != len(rows) || result.TotalSize != 500 {
+		t.Fatalf("expected all four rows and total_size 500, got %+v", result)
+	}
+	withoutLibrary := performOverviewScanForJSONWithEntries("/", rows[2:3], []dirEntry{rows[0], rows[2]})
+	if len(withoutLibrary.Entries) != 2 || withoutLibrary.TotalSize != 350 {
+		t.Fatalf("expected Docker to count when Library is absent, got %+v", withoutLibrary)
+	}
+}
