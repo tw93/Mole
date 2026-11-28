@@ -307,6 +307,25 @@ mole_dir_has_cachedir_tag() {
     [[ "$signature" == "$MOLE_CACHEDIR_TAG_SIGNATURE" ]]
 }
 
+# A cache directory tag says "leave this out of backups", not "this can be
+# rebuilt": restic, borg and Kopia users tag a Downloads or VM folder with it.
+# So the tag proves build output only under a purge target name, or when the
+# tool that wrote it says so (Cargo for a custom target directory, SwiftPM for
+# a --scratch-path), as Mole Mac and Mole for Windows read it (2026-11-28).
+mole_cachedir_tag_proves_build_output() {
+    local dir="${1%/}"
+    local base="${dir##*/}"
+    local target
+    mole_dir_has_cachedir_tag "$dir" || return 1
+    for target in "${MOLE_PURGE_TARGETS[@]}"; do
+        [[ "$base" != "$target" ]] || return 0
+    done
+    # The writers put their name in the comment under the signature; a bounded
+    # read keeps a huge tag file from holding the scan.
+    LC_ALL=C /usr/bin/head -c 1024 "$dir/$MOLE_CACHEDIR_TAG_NAME" 2> /dev/null |
+        LC_ALL=C /usr/bin/grep -q -e 'created by cargo' -e 'Swift Package Manager'
+}
+
 mole_purge_quick_hint_target_names() {
     local target
     local excluded
