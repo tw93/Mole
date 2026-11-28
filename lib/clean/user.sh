@@ -911,6 +911,20 @@ _utm_process_state() {
     mole_pgrep_any -x "UTM"
 }
 
+_chrome_webgpu_cache_path_is_physical() {
+    local ancestor="$1"
+    [[ -d "$ancestor" ]] || return 1
+    while [[ "$ancestor" != "$HOME" ]]; do
+        [[ "$ancestor" == "$HOME/"* && ! -L "$ancestor" ]] || return 1
+        ancestor="${ancestor%/*}"
+    done
+}
+
+_chrome_webgpu_cache_owner_state() {
+    _chrome_webgpu_cache_path_is_physical "${_MOLE_DEV_GUARDED_PATH:-}" || return 2
+    is_google_chrome_running
+}
+
 _clean_chrome_profile_caches_guarded() {
     _user_safe_clean_process_guarded is_google_chrome_running "Chrome" "Chrome app cache" \
         ~/Library/Application\ Support/Google/Chrome/*/Application\ Cache/* "Chrome app cache" || return 1
@@ -920,6 +934,18 @@ _clean_chrome_profile_caches_guarded() {
         ~/Library/Application\ Support/Google/Chrome/*/GPUCache/* "Chrome GPU cache" || return 1
     _user_safe_clean_process_guarded is_google_chrome_running "Chrome" "Chrome Dawn cache" \
         ~/Library/Application\ Support/Google/Chrome/*/DawnCache/* "Chrome Dawn cache" || return 1
+    local chrome_support="$HOME/Library/Application Support/Google/Chrome"
+    local -a webgpu_caches=()
+    local webgpu_cache
+    for webgpu_cache in "$chrome_support"/{Default,Profile\ *}/DawnWebGPUCache; do
+        _chrome_webgpu_cache_path_is_physical "$webgpu_cache" || continue
+        webgpu_caches+=("$webgpu_cache")
+    done
+    if [[ ${#webgpu_caches[@]} -gt 0 ]] && mole_cleanup_targets_exist "${webgpu_caches[@]}"; then
+        local _MOLE_DEV_PROCESS_GUARD_UNKNOWN_REASON="process or cache path state unknown"
+        _dev_safe_clean_process_guarded _chrome_webgpu_cache_owner_state "Chrome" "Chrome WebGPU cache" \
+            "${webgpu_caches[@]}" "Chrome WebGPU cache" || return $?
+    fi
     _user_safe_clean_process_guarded is_google_chrome_running "Chrome" "Chrome GR shader cache" \
         ~/Library/Application\ Support/Google/Chrome/*/GrShaderCache/* "Chrome GR shader cache" || return 1
     _user_safe_clean_process_guarded is_google_chrome_running "Chrome" "Chrome Graphite Dawn cache" \
@@ -2266,6 +2292,7 @@ clean_browsers() {
         "$HOME/Library/Application Support/Google/Chrome"/*/Code\ Cache/* \
         "$HOME/Library/Application Support/Google/Chrome"/*/GPUCache/* \
         "$HOME/Library/Application Support/Google/Chrome"/*/DawnCache/* \
+        "$HOME/Library/Application Support/Google/Chrome"/{Default,Profile\ *}/DawnWebGPUCache \
         "$HOME/Library/Application Support/Google/Chrome"/*/GrShaderCache/* \
         "$HOME/Library/Application Support/Google/Chrome"/*/GraphiteDawnCache/* \
         "$HOME/Library/Application Support/Google/Chrome"/component_crx_cache/* \
