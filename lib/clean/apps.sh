@@ -2355,6 +2355,19 @@ clean_orphaned_system_services() {
                 continue
             fi
             if [[ "$DRY_RUN" == "true" ]]; then
+                # The real run's sink validates the path once more without
+                # uninstall mode, counts a protected refusal and removes nothing
+                # on any other; ask the same question here so the preview never
+                # lists a file the real run keeps (#2140).
+                if ! validate_path_for_deletion "$orphan_file"; then
+                    if should_protect_path "$orphan_file"; then
+                        debug_log "Skipping protected orphaned service: $orphan_file"
+                        skipped_protected_count=$((skipped_protected_count + 1))
+                    else
+                        debug_log "Keeping orphaned service the removal would refuse: $orphan_file"
+                    fi
+                    continue
+                fi
                 debug_log "[DRY RUN] Would remove orphaned service: $orphan_file"
                 local orphan_size_kb=0
                 local orphan_size_rc=0

@@ -4170,6 +4170,54 @@ EOF
     [[ "$output" != *"Would remove orphaned service"* ]] || return 1
 }
 
+@test "clean_orphaned_system_services dry-run keeps what the real sink would refuse (#2140)" {
+    # Same fixture and stub as the real-run case above: uninstall mode lets a
+    # vendor helper plist through the first check, and the sink's validation
+    # then refuses it by name. Both runs must report it as protected.
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { echo "debug: $*"; }
+should_protect_path() {
+  if [[ "${MOLE_UNINSTALL_MODE:-0}" == "1" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+tmp_dir="$(mktemp -d)"
+tmp_plist="$tmp_dir/com.adobe.example.plist"
+/usr/libexec/PlistBuddy -c "Add :Program string $tmp_dir/missing-helper" "$tmp_plist" 2>/dev/null || true
+
+sudo() {
+  if [[ "$1" == "-n" && "$2" == "true" ]]; then
+    return 0
+  fi
+  [[ "${1:-}" == "-n" ]] && shift
+  if [[ "$1" == "find" ]]; then
+    case "$2" in
+      /Library/LaunchDaemons) printf '%s\0' "$tmp_plist" ;;
+      *) : ;;
+    esac
+    return 0
+  fi
+  command "$@"
+}
+
+clean_orphaned_system_services
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Found 1 orphaned"* ]] || return 1
+    [[ "$output" == *"skipped 1 protected"* ]] || return 1
+    [[ "$output" != *"Would remove orphaned service"* ]] || return 1
+}
+
 @test "clean_orphaned_system_services dry-run reports unprotected orphans (#886)" {
     # MOLE_TEST_NO_AUTH=0 overrides CI default so the function executes.
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 DRY_RUN=true /bin/bash --noprofile --norc <<'EOF'

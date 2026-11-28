@@ -167,7 +167,9 @@ bundle_has_installed_app() {
 
     local -a mapped_app_bundles=()
     case "$bundle_id" in
-        com.microsoft.autoupdate.helper | com.microsoft.office.licensingV2.helper)
+        # Office renumbers its licensing helper (V2, then V3 in 2026, #2140);
+        # every generation is shared by the same Office apps.
+        com.microsoft.autoupdate.helper | com.microsoft.office.licensingV[0-9].helper)
             mapped_app_bundles=(
                 "com.microsoft.Word"
                 "com.microsoft.Excel"

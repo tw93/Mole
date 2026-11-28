@@ -252,6 +252,28 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "bundle_has_installed_app maps the V3 Office licensing helper to the Office apps (#2140)" {
+    make_app "$FAKE_APPS/Microsoft Word.app" "com.microsoft.Word"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.microsoft.office.licensingV3.helper"
+EOF
+
+    [ "$status" -eq 0 ]
+}
+
+@test "the Office licensing helper has no owner when only Teams is installed (#2140)" {
+    make_app "$FAKE_APPS/Microsoft Teams.app" "com.microsoft.teams2"
+
+    run env FAKE_APPS="$FAKE_APPS" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<EOF
+$(prelude)
+bundle_has_installed_app "com.microsoft.office.licensingV3.helper"
+EOF
+
+    [ "$status" -ne 0 ]
+}
+
 @test "bundle_has_installed_app does not use broad Microsoft vendor prefix" {
     make_app "$FAKE_APPS/Microsoft Teams.app" "com.microsoft.teams2"
 
