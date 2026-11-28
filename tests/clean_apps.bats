@@ -3676,6 +3676,95 @@ EOF
     [[ "$output" != *"REFERENCE_RC:0"* ]]
 }
 
+@test "orphan helper reference scan reads each unchanged registration once across helpers (#2130)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_MODE=0 MOLE_TEST_NO_AUTH=0 \
+        DRY_RUN=false MOLE_DRY_RUN=0 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/apps.sh"
+
+start_section_spinner() { :; }
+stop_section_spinner() { :; }
+note_activity() { :; }
+debug_log() { :; }
+should_protect_path() { return 1; }
+bundle_has_installed_app() { return 1; }
+
+tmp_dir=$(mktemp -d)
+count_file="$tmp_dir/reads"
+: > "$count_file"
+plists=()
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    plist="$tmp_dir/com.example.other$i.plist"
+    /usr/libexec/PlistBuddy -c "Add :Program string /usr/local/bin/other$i" "$plist" > /dev/null
+    plists+=("$plist")
+done
+# The three registrations that name the helpers sit last, the slow order.
+for name in one two three; do
+    plist="$tmp_dir/com.example.helper-$name.plist"
+    /usr/libexec/PlistBuddy -c "Add :Program string /Library/PrivilegedHelperTools/com.example.$name" "$plist" > /dev/null
+    plists+=("$plist")
+done
+reference_scan=false
+_mole_materialize_bounded_sudo_find() {
+    if [[ "$reference_scan" == "true" && "$3" == "/Library/LaunchDaemons" ]]; then
+        printf '%s\0' "${plists[@]}" > "$1"
+    else
+        : > "$1"
+    fi
+}
+sudo() {
+    [[ "${1:-}" == "-n" ]] && shift
+    case "${1:-}" in
+        true) return 0 ;;
+        /usr/libexec/PlistBuddy)
+            [[ "$reference_scan" == "true" ]] && echo read >> "$count_file"
+            command "$@"
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+clean_orphaned_system_services
+reference_scan=true
+service_cleanup_deadline=$((SECONDS + 30))
+reads() { wc -l < "$count_file" | tr -d ' '; }
+# Called directly, never in a command substitution: the memo lives in this shell.
+check() {
+    r=0
+    _orphan_service_helper_is_unreferenced "/Library/PrivilegedHelperTools/com.example.$1" "$service_cleanup_deadline" || r=$?
+}
+
+check one; [[ "$r" == "1" ]] || { echo "one: $r"; exit 1; }
+first=$(reads)
+check two; [[ "$r" == "1" ]] || { echo "two: $r"; exit 1; }
+check three; [[ "$r" == "1" ]] || { echo "three: $r"; exit 1; }
+after_three=$(reads)
+# A second pass, as before removal, over unchanged registrations.
+for name in one two three; do check "$name"; [[ "$r" == "1" ]] || { echo "again $name: $r"; exit 1; }; done
+second_pass=$(reads)
+printf 'READS first=%s three=%s again=%s\n' "$first" "$after_three" "$second_pass"
+# One helper reads up to its own registration; the next two add only the two
+# registrations not yet read, and the second pass reads nothing.
+[[ "$after_three" -le $((first + 6)) ]] || { echo "later helpers re-read the inventory"; exit 1; }
+[[ "$second_pass" -eq "$after_three" ]] || { echo "the second pass read again"; exit 1; }
+# An unreferenced helper is still proven by the whole inventory.
+check four; [[ "$r" == "0" ]] || { echo "four: $r"; exit 1; }
+# A registration rewritten to name it has another identity and is read again.
+sleep 1
+/usr/libexec/PlistBuddy -c "Set :Program /Library/PrivilegedHelperTools/com.example.four" "${plists[0]}" > /dev/null
+check four; [[ "$r" == "1" ]] || { echo "a rewritten registration was not re-read: $r"; exit 1; }
+# So is a new one.
+plist="$tmp_dir/com.example.new.plist"
+/usr/libexec/PlistBuddy -c "Add :Program string /Library/PrivilegedHelperTools/com.example.five" "$plist" > /dev/null
+plists+=("$plist")
+check five; [[ "$r" == "1" ]] || { echo "a new registration was not read: $r"; exit 1; }
+EOF
+
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"READS first="* ]] || { echo "$output"; return 1; }
+}
+
 @test "_privileged_helper_bundle_id_from_binary prefers Info.plist bundle ID over directory and executable names" {
     run env PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail

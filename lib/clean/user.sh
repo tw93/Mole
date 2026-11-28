@@ -354,7 +354,8 @@ clean_user_essentials() {
             # zsh completion rebuilds from (#2110); the Homebrew section runs
             # `brew cleanup` for downloads, like Mole Mac's downloads-only row.
             case "${user_cache_target##*/}" in
-                Google | mbx | Homebrew) continue ;;
+                # The Browsers row owns Ardia's Chromium caches. Keep its Sparkle state.
+                Google | mbx | Homebrew | com.ardia.browser) continue ;;
             esac
             # Another Chromium browser keeps its live cache in a plain folder
             # here the way Chrome does under Google; leave it while that
@@ -2201,6 +2202,43 @@ clean_external_volume_target() {
     return 0
 }
 
+# A profile can be redirected after discovery. Check the physical parent
+# again when the shared guard binds the item and at the final removal.
+_ardia_cache_owner_state() {
+    local item="${_MOLE_DEV_GUARDED_PATH:-}"
+    if [[ -n "$item" ]]; then
+        local parent="${item%/*}"
+        [[ "$(cd -P "$parent" 2> /dev/null && pwd -P)" == "$parent" ]] || return 2
+    fi
+    mole_pgrep_any -x "Ardia" -f '/Ardia[.]app/'
+}
+
+# The Ardia 0.2.49 layout in #2125 splits Chromium's caches across two
+# roots. Service Worker storage can hold sites' offline data.
+_clean_ardia_browser_caches() {
+    local cache="$HOME/Library/Caches/com.ardia.browser/Chromium"
+    local support="$HOME/Library/Application Support/com.ardia.browser/Chromium"
+    [[ -d "$cache" || -d "$support" ]] || return 0
+
+    local leaf physical_leaf
+    local -a targets=()
+    for leaf in \
+        "$cache"/{Default,Profile\ *}/{Cache,Code\ Cache} \
+        "$support"/{Default,Profile\ *}/{GPUCache,DawnGraphiteCache,DawnWebGPUCache} \
+        "$support"/{GraphiteDawnCache,component_crx_cache,extensions_crx_cache}; do
+        [[ -d "$leaf" ]] || continue
+        physical_leaf=$(cd -P "$leaf" && pwd -P) || continue
+        [[ "$physical_leaf" == "$leaf" ]] || continue
+        targets+=("$leaf"/*)
+    done
+    [[ ${#targets[@]} -gt 0 ]] || return 0
+    local _MOLE_DEV_GUARD_UNKNOWN_REASON="process or cache path state unknown"
+    local rc=0
+    _dev_safe_clean_process_guarded _ardia_cache_owner_state "Ardia" "Ardia cache" \
+        "${targets[@]}" "Ardia cache" || rc=$?
+    [[ $rc -le 1 ]] || return "$rc"
+}
+
 # Browser caches (Safari/Chrome/Edge/Firefox).
 clean_browsers() {
     # Refusal reason for the browser process guards below.
@@ -2269,6 +2307,7 @@ clean_browsers() {
         fi
     fi
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
+    _clean_ardia_browser_caches || return $?
     # Arc Browser.
     if [[ -d ~/Library/Application\ Support/Arc ]]; then
         safe_clean ~/Library/Caches/company.thebrowser.Browser/* "Arc cache"

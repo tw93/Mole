@@ -291,6 +291,10 @@ func loadOverviewCachedMeasurement(path string) (int64, scanState, error) {
 	if path == "" {
 		return 0, scanComplete, fmt.Errorf("empty path")
 	}
+	// Both cache tiers store the whole folder. Old Downloads needs an age-filtered scan.
+	if isOldDownloadsOverviewPath(path) {
+		return 0, scanComplete, os.ErrNotExist
+	}
 	if snapshot, state, err := loadStoredOverviewMeasurement(path); err == nil {
 		return snapshot, state, nil
 	}
@@ -850,6 +854,9 @@ func removeOverviewSnapshots(paths ...string) {
 func (m *model) startOverviewPrefetch(ctx context.Context) {
 	jobs := make(map[string]*scanPublication)
 	for _, entry := range createOverviewEntries() {
+		if isOldDownloadsOverviewPath(entry.Path) {
+			continue
+		}
 		if size, err := loadStoredOverviewSize(entry.Path); err == nil && size > 0 {
 			continue
 		}

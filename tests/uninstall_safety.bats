@@ -2050,3 +2050,24 @@ SCRIPT
 
 	[[ "$result" == *"com.runningwithcrayons.Alfred-Preferences"* ]]
 }
+
+@test "uninstall warns about a driver extension left behind, not only a system extension (#2131)" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'SH'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/uninstall/batch.sh"
+root=$(mktemp -d "$HOME/system-extensions.XXXXXX")
+mkdir -p "$root/1111/com.logi.ghub.hidfilter.dext" "$root/2222/com.logi.ghub.audiooverride.dext" \
+    "$root/3333/com.example.camera.extension.systemextension" "$root/4444/com.logi.ghubx.hidfilter.dext"
+_uninstall_leaves_system_extension com.logi.ghub "$root" || { echo "dext missed"; exit 1; }
+_uninstall_leaves_system_extension com.example.camera "$root" || { echo "systemextension missed"; exit 1; }
+# A longer id is another product, and a name is not a bundle id.
+! _uninstall_leaves_system_extension com.logi.ghu "$root" || { echo "prefix matched"; exit 1; }
+! _uninstall_leaves_system_extension com.other.app "$root" || { echo "unrelated matched"; exit 1; }
+! _uninstall_leaves_system_extension ghub "$root" || { echo "bare name matched"; exit 1; }
+rm -rf "$root/1111" "$root/2222"
+! _uninstall_leaves_system_extension com.logi.ghub "$root" || { echo "ghubx counted as ghub"; exit 1; }
+! _uninstall_leaves_system_extension com.logi.ghub "$root/missing" || { echo "missing root matched"; exit 1; }
+SH
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
