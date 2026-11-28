@@ -2307,7 +2307,7 @@ clean_browsers() {
         fi
     fi
     safe_clean ~/Library/Caches/com.microsoft.edgemac/* "Edge cache"
-    _clean_ardia_browser_caches
+    _clean_ardia_browser_caches || return $?
     # Arc Browser.
     if [[ -d ~/Library/Application\ Support/Arc ]]; then
         safe_clean ~/Library/Caches/company.thebrowser.Browser/* "Arc cache"
