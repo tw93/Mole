@@ -1857,6 +1857,17 @@ clean_orphaned_system_services() {
         orphaned_count=$((orphaned_count + 1))
     }
 
+    # What each registration names as its program, remembered for this run
+    # under the plist's path and identity (device, inode, mtime, size). Every
+    # helper asks about every registration, at listing and again before
+    # removal, and each answer is two or more sudo PlistBuddy reads: three
+    # Adobe helpers on a Mac with many registrations ran the whole step to its
+    # 60 second limit and removed nothing (#2130). A registration that is new,
+    # replaced or rewritten has another identity and is read again, so the
+    # scan still sees every change; only conclusive answers are remembered.
+    _ORPHAN_REFERENCE_MEMO_KEYS=()
+    _ORPHAN_REFERENCE_MEMO_VALUES=()
+
     # Returns 0 only after a complete, bounded scan proves that no surviving
     # LaunchDaemon or LaunchAgent references this helper. A plist removal and
     # its Program helper form one cleanup family: if the registration survives,
@@ -1905,7 +1916,24 @@ clean_orphaned_system_services() {
                 fi
                 local referenced_binary=""
                 local binary_rc=0
-                referenced_binary=$(_plist_binary_path "$plist") || binary_rc=$?
+                local memo_key="" memo_identity="" memo_index=0 memo_hit=false
+                memo_identity=$(/usr/bin/stat -f '%d:%i:%m:%z' "$plist" 2> /dev/null) || memo_identity=""
+                if [[ -n "$memo_identity" ]]; then
+                    memo_key="$plist|$memo_identity"
+                    for ((memo_index = 0; memo_index < ${#_ORPHAN_REFERENCE_MEMO_KEYS[@]}; memo_index++)); do
+                        if [[ "${_ORPHAN_REFERENCE_MEMO_KEYS[memo_index]}" == "$memo_key" ]]; then
+                            referenced_binary="${_ORPHAN_REFERENCE_MEMO_VALUES[memo_index]}"
+                            memo_hit=true
+                            break
+                        fi
+                    done
+                fi
+                if [[ "$memo_hit" == "true" ]]; then
+                    # Remembered as naming no absolute program.
+                    [[ -n "$referenced_binary" ]] || continue
+                else
+                    referenced_binary=$(_plist_binary_path "$plist") || binary_rc=$?
+                fi
                 if mole_rc_timeout_or_signal "$binary_rc"; then
                     reference_scan_rc=$binary_rc
                     break
@@ -1934,8 +1962,16 @@ clean_orphaned_system_services() {
                         reference_scan_rc=2
                         break
                     elif [[ $binary_rc -eq 1 ]]; then
+                        if [[ -n "$memo_key" ]]; then
+                            _ORPHAN_REFERENCE_MEMO_KEYS+=("$memo_key")
+                            _ORPHAN_REFERENCE_MEMO_VALUES+=("")
+                        fi
                         continue
                     fi
+                fi
+                if [[ "$memo_hit" != "true" && -n "$memo_key" && -n "$referenced_binary" ]]; then
+                    _ORPHAN_REFERENCE_MEMO_KEYS+=("$memo_key")
+                    _ORPHAN_REFERENCE_MEMO_VALUES+=("$referenced_binary")
                 fi
 
                 if [[ "$referenced_binary" == "$helper" ]] ||
