@@ -2445,18 +2445,21 @@ func TestCacheBypassSkipsHomeLibraryOverviewSnapshot(t *testing.T) {
 
 func TestLiveScanStartPreservesEntryFilterBackingList(t *testing.T) {
 	root := t.TempDir()
-	apps := filepath.Join(root, "apps")
+	// The filter matches the whole path too, and the temp root is random: a
+	// query of plain letters ("app") matched a root named ...stubs.jaPpYv and
+	// rendered both rows. An underscore never appears in those names.
+	apps := filepath.Join(root, "my_apps")
 	logs := filepath.Join(root, "logs")
 
 	m := newModel(root, false)
-	m.entryFilter = "app"
+	m.entryFilter = "y_a"
 	_ = m.scanFreshCmd(root)
 	defer m.cancelLiveScan()
 	start := liveScanStartMsg{
 		id:   m.liveScanID,
 		path: root,
 		entries: []dirEntry{
-			{Name: "apps", Path: apps, Size: -1, IsDir: true},
+			{Name: "my_apps", Path: apps, Size: -1, IsDir: true},
 			{Name: "logs", Path: logs, Size: -1, IsDir: true},
 		},
 		events: make(chan liveScanEventMsg),
