@@ -66,6 +66,40 @@ setup() {
     done
 }
 
+@test "purge paths marks a default that exists and no configured path covers" {
+    mkdir -p "$HOME/.codex/worktrees" "$HOME/Projects" "$HOME/www/app"
+    printf '%s\n' "$HOME/project" "$HOME/Projects" "$HOME/www" > "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code NO_COLOR=1 MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    # shellcheck disable=SC2088  # literal tilde is the expected display form
+    [[ "$output" == *"  - ~/.codex/worktrees, not in your config"* ]] || { echo "$output"; return 1; }
+    # Configured as written, or missing from this Mac: no note.
+    # shellcheck disable=SC2088
+    [[ "$output" != *"~/Projects, not in your config"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"~/.claude/worktrees, not in your config"* ]] || { echo "$output"; return 1; }
+    # One list only, no second block.
+    [[ "$output" != *"Unconfigured Default Paths"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge paths counts a default under a configured parent as covered" {
+    mkdir -p "$HOME/.codex/worktrees"
+    printf '%s\n' "$HOME/.codex" > "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code NO_COLOR=1 MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"not in your config"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge paths adds no note while the defaults are in use" {
+    mkdir -p "$HOME/.codex/worktrees"
+    rm -f "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code NO_COLOR=1 MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" != *"not in your config"* ]] || { echo "$output"; return 1; }
+}
+
 @test "purge paths abbreviates HOME only at a path boundary" {
     # Purge resolves configured paths physically; a real HOME is physical too,
     # while the bats temp dir may sit under the /var or /tmp links.
