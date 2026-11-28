@@ -122,3 +122,59 @@ func TestPerformOverviewScanForJSONSchemaWithInjectedEntries(t *testing.T) {
 		t.Fatalf("expected measured overview size, got %d", result.TotalSize)
 	}
 }
+
+func TestOverviewJSONTotalCountsCoveredRowsOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cache := filepath.Join(home, homeCacheDirName)
+	disk := filepath.Join(home, "mnt", "disk")
+	useMountTable(t, newMountTable(parseMountInfo("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 0:50 / "+disk+" rw - nfs4 nas:/export rw\n")))
+
+	rows := []dirEntry{
+		{Name: "Home", Path: home, IsDir: true, Size: 300},
+		{Name: "User Cache", Path: cache, IsDir: true, Size: 200},
+		{Name: "Hugging Face Cache", Path: filepath.Join(cache, "huggingface"), IsDir: true, Size: 50},
+		{Name: "Steam", Path: filepath.Join(home, ".local", "share", "Steam"), IsDir: true, Size: 40},
+		{Name: "Disk", Path: disk, IsDir: true, Size: 30},
+		{Name: "Sibling", Path: home + "-archive", IsDir: true, Size: 20},
+	}
+	// Home 300 (Steam inside it), User Cache 200 (Hugging Face inside it), the
+	// network share below Home that du leaves out 30 and the sibling 20.
+	if got := overviewTotalSize(rows); got != 550 {
+		t.Fatalf("expected each covered row once, total 550, got %d", got)
+	}
+	// With no User Cache row the Hugging Face row is the only measurement of
+	// that folder, since Home leaves ~/.cache out.
+	if got := overviewTotalSize([]dirEntry{rows[0], rows[2]}); got != 350 {
+		t.Fatalf("expected the cache insight to count beside Home, got %d", got)
+	}
+	// A parent that was not measured covers nothing.
+	unmeasured := []dirEntry{{Name: "Home", Path: home, IsDir: true, Size: -1}, rows[3]}
+	if got := overviewTotalSize(unmeasured); got != 40 {
+		t.Fatalf("expected the insight to count under an unmeasured Home, got %d", got)
+	}
+}
+
+func TestOverviewJSONTotalKeepsAShareBelowALinkedHome(t *testing.T) {
+	base := t.TempDir()
+	realHome := filepath.Join(base, "real")
+	if err := os.MkdirAll(realHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "home")
+	if err := os.Symlink(realHome, home); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	share := filepath.Join(realHome, "nas")
+	useMountTable(t, newMountTable(parseMountInfo("1 0 8:1 / / rw - ext4 /dev/sda1 rw\n2 1 0:50 / "+share+" rw - nfs4 nas:/export rw\n")))
+
+	rows := []dirEntry{
+		{Name: "Home", Path: home, IsDir: true, Size: 300},
+		{Name: "NAS", Path: filepath.Join(home, "nas"), IsDir: true, Size: 30},
+		{Name: "Steam", Path: filepath.Join(home, ".local", "share", "Steam"), IsDir: true, Size: 40},
+	}
+	if got := overviewTotalSize(rows); got != 330 {
+		t.Fatalf("expected Home plus the share du left out, total 330, got %d", got)
+	}
+}
