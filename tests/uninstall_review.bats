@@ -404,6 +404,21 @@ MOLE_UNINSTALL_WITH_DATA=own MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_
 IFS='|' read -r _ _ _ _ result _ <<< "${app_details[0]}"
 [[ "$(decode_file_list "$result" UTM)" != *"com.utmapp.UTM"* ]] || exit 1
 
+# Ardia keeps its Chromium profiles and session inside its own bundle-ID root.
+ardia="$lib/Application Support/com.ardia.browser"
+ardia_cache="$lib/Caches/com.ardia.browser"
+mkdir -p "$ardia/Chromium/Default" "$ardia_cache" "$HOME/Applications/Ardia.app"
+touch "$ardia/session.json"
+encoded_ardia=$(printf '%s\n' "$ardia" "$ardia_cache" | base64 | tr -d '\n')
+for mode in own 1; do
+    app_details=("Ardia|$HOME/Applications/Ardia.app|com.ardia.browser|12|$encoded_ardia||true|false|false|||||none||||")
+    MOLE_UNINSTALL_WITH_DATA="$mode" MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< ''
+    IFS='|' read -r _ _ _ _ result _ <<< "${app_details[0]}"
+    files=$(decode_file_list "$result" Ardia)
+    grep -Fxq -- "$ardia_cache" <<< "$files" || exit 1
+    ! grep -Fxq -- "$ardia" <<< "$files" || exit 1
+done
+
 # --keep-data starts with none of it.
 app_details=("Gemini|$app|$id|12|$encoded||true|false|false|||||none||||")
 MOLE_UNINSTALL_WITH_DATA=0 MOLE_DRY_RUN=1 MOLE_TEST_MODE=1 _batch_preview_and_confirm <<< ''

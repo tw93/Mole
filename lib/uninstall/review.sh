@@ -43,7 +43,7 @@ _uninstall_data_preselect_holdback() {
     # the own-identifier default would otherwise start with them selected.
     local browser root
     for browser in net.imput.helium company.thebrowser.browser com.duckduckgo.macos.browser \
-        com.sigmaos.sigmaos.macos com.apple.safaritechnologypreview; do
+        com.ardia.browser com.sigmaos.sigmaos.macos com.apple.safaritechnologypreview; do
         for root in "$home/library/application support/$browser" "$home/library/containers/$browser"; do
             [[ "$path" == "$root" || "$path" == "$root/"* ]] && return 0
         done
