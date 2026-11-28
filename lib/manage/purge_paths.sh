@@ -79,36 +79,35 @@ manage_purge_paths() {
     echo ""
     if [[ $custom_count -gt 0 ]]; then
         echo -e "${GRAY}Using custom config with $custom_count paths${NC}"
-        local -a missing_defaults=()
-        local default_path resolved_default configured_path already_configured
-        for default_path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
-            [[ -d "$default_path" ]] || continue
-            resolved_default=$(mole_purge_resolve_path_case "$default_path")
-            already_configured=false
-            for configured_path in "${PURGE_SEARCH_PATHS[@]+"${PURGE_SEARCH_PATHS[@]}"}"; do
-                if [[ "$resolved_default" == "$configured_path" ]]; then
-                    already_configured=true
-                    break
-                fi
-            done
-            [[ "$already_configured" == "true" ]] && continue
-            missing_defaults+=("$default_path")
-        done
-        if [[ ${#missing_defaults[@]} -gt 0 ]]; then
-            echo ""
-            echo -e "${YELLOW}Unconfigured Default Paths Found:${NC}"
-            for path in "${missing_defaults[@]}"; do
-                echo -e "  ${CYAN}+${NC} $(mole_tilde_path "$path")"
-            done
-        fi
     else
         echo -e "${GRAY}Using ${#DEFAULT_PURGE_SEARCH_PATHS[@]} default paths${NC}"
     fi
 
     echo ""
+    # With a custom config the defaults are not scanned, so a root a later
+    # version added (an agent's worktrees folder) stays unknown to the user.
+    # The list below is already here: a default that exists on this Mac and
+    # that no configured path equals or contains gets one quiet note, rather
+    # than a second block repeating the list.
     echo -e "${YELLOW}Default Paths:${NC}"
+    local resolved_default configured_path covered
     for path in "${DEFAULT_PURGE_SEARCH_PATHS[@]}"; do
-        echo -e "  ${GRAY}-${NC} $(mole_tilde_path "$path")"
+        covered=true
+        if [[ $custom_count -gt 0 && -d "$path" ]]; then
+            covered=false
+            resolved_default=$(mole_purge_resolve_path_case "$path")
+            for configured_path in "${PURGE_SEARCH_PATHS[@]+"${PURGE_SEARCH_PATHS[@]}"}"; do
+                if [[ "$resolved_default" == "$configured_path" || "$resolved_default" == "${configured_path%/}/"* ]]; then
+                    covered=true
+                    break
+                fi
+            done
+        fi
+        if [[ "$covered" == "true" ]]; then
+            echo -e "  ${GRAY}-${NC} $(mole_tilde_path "$path")"
+        else
+            echo -e "  ${GRAY}-${NC} $(mole_tilde_path "$path")${GRAY}, not in your config${NC}"
+        fi
     done
 
     echo ""
