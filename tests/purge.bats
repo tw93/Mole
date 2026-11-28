@@ -1398,7 +1398,7 @@ purge_node_modules_is_protected() { return 1; }
 @test "scan_purge_targets: includes valid CACHEDIR.TAG directories in find mode" {
 	mkdir -p "$HOME/www/python-app/.custom-cache"
 	touch "$HOME/www/python-app/pyproject.toml"
-	printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > "$HOME/www/python-app/.custom-cache/CACHEDIR.TAG"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n' > "$HOME/www/python-app/.custom-cache/CACHEDIR.TAG"
 
 	scan_output=$(mktemp)
 	result=$(/bin/bash -c "
@@ -1413,6 +1413,27 @@ purge_node_modules_is_protected() { return 1; }
 	rm -f "$scan_output"
 
 	[[ "$result" == "FOUND" ]]
+}
+
+@test "scan_purge_targets: a backup tool's CACHEDIR.TAG proves nothing outside a build output name" {
+	mkdir -p "$HOME/www/python-app/VMs" "$HOME/www/python-app/build" "$HOME/www/python-app/cargo-out"
+	touch "$HOME/www/python-app/pyproject.toml"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n# restic\n' > "$HOME/www/python-app/VMs/CACHEDIR.TAG"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > "$HOME/www/python-app/build/CACHEDIR.TAG"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n' > "$HOME/www/python-app/cargo-out/CACHEDIR.TAG"
+
+	scan_output=$(mktemp)
+	run /bin/bash -c "
+        source '$PROJECT_ROOT/lib/clean/project.sh'
+        MO_USE_FIND=1 scan_purge_targets '$HOME/www' '$scan_output'
+        cat '$scan_output'
+    "
+	rm -f "$scan_output"
+
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"/python-app/VMs"* ]] || return 1
+	[[ "$output" == *"/python-app/build"* ]] || return 1
+	[[ "$output" == *"/python-app/cargo-out"* ]] || return 1
 }
 
 @test "scan_purge_targets: ignores invalid CACHEDIR.TAG signatures" {
@@ -1438,7 +1459,7 @@ purge_node_modules_is_protected() { return 1; }
 @test "scan_purge_targets: keeps CACHEDIR.TAG under Library out of purge scans" {
 	mkdir -p "$HOME/www/python-app/Library/fontconfig-cache"
 	touch "$HOME/www/python-app/pyproject.toml"
-	printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > "$HOME/www/python-app/Library/fontconfig-cache/CACHEDIR.TAG"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n' > "$HOME/www/python-app/Library/fontconfig-cache/CACHEDIR.TAG"
 
 	scan_output=$(mktemp)
 	result=$(/bin/bash -c "
@@ -5049,7 +5070,7 @@ EOF
 	local root="$HOME/sites-1666-calls"
 	mkdir -p "$root/a/node_modules" "$root/b/.cache"
 	touch "$root/a/package.json" "$root/b/package.json"
-	printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > "$root/b/.cache/CACHEDIR.TAG"
+	printf 'Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n' > "$root/b/.cache/CACHEDIR.TAG"
 	local stub="$HOME/find-1666-calls" log="$HOME/find-1666-calls.log"
 	cat > "$stub" <<'STUB'
 #!/bin/bash
@@ -5084,7 +5105,8 @@ EOF
 }
 
 @test "purge keeps target and CACHEDIR.TAG depth coverage when walking scan units (#1666)" {
-	local sig='Signature: 8a477f597d28d172789f06886806bc55'
+	# Cargo's own tag: a bare tag proves nothing under a name that is no target.
+	local sig=$'Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.'
 	local box="$HOME/parity-1666"
 	local container="$box/container" project="$box/project"
 	# Container root: targets at depth 1, 2, 6 and 7; tags at depth 2, 3, 7 and 8.
@@ -5140,7 +5162,8 @@ EOF
 }
 
 @test "purge never offers a CACHEDIR.TAG directory inside a depth-one .git or Library (#1666)" {
-	local sig='Signature: 8a477f597d28d172789f06886806bc55'
+	# Cargo's own tag, so only the prune can keep these folders out.
+	local sig=$'Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.'
 	local root="$HOME/git-tag-1666"
 	mkdir -p "$root/node_modules" "$root/Library/cache"
 	touch "$root/package.json"
