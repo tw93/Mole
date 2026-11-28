@@ -109,6 +109,133 @@ EOF
 }
 
 
+assert_qq_partition_cleanup() {
+    local scenario="$1" dry_run="$2" fda=1
+    case "$scenario" in
+        fda-denied) fda=0 ;;
+        fda-unknown) fda=unknown ;;
+    esac
+
+    # The actual complete-visibility and recursive-handle probes use this stub.
+    # shellcheck disable=SC2016 # The command body is evaluated in the fixture shell.
+    mole_test_fake_command lsof '
+if [[ "$*" == "-F pu -p 1" ]]; then
+    printf "p1\nu0\n"
+    exit 0
+fi
+[[ "$3" == +D && "$4" == "$HOME/Library/Containers/com.tencent.qq/"* ]] || exit 2
+printf "%s\n" "$4" >> "$HOME/handle-probes"
+case "$QQ_SCENARIO" in
+    open) printf "p42\nf1\nn%s/cache\n" "$4"; exit 0 ;;
+    handle-unknown) printf "lsof: incomplete walk\n" >&2 ;;
+    owner-started) touch "$HOME/renderer-started" ;;
+    replaced)
+        mv "$4" "$4.old"
+        mkdir "$4"
+        printf replacement > "$4/keep"
+        ;;
+esac
+exit 1
+'
+
+    run env HOME="$HOME/qq-$scenario-$dry_run" PROJECT_ROOT="$PROJECT_ROOT" \
+        QQ_SCENARIO="$scenario" MOLE_HAS_FDA="$fda" MOLE_DRY_RUN="$dry_run" \
+        MOLE_TIMEOUT_MEDIUM_PROBE_SEC=20 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+support="$HOME/Library/Containers/com.tencent.qq/Data/Library/Application Support"
+partitions="$support/QQ/Partitions"
+mkdir -p "$HOME/outside/Cache"
+printf durable > "$HOME/outside/Cache/keep"
+targets=() preserved=()
+for partition in qq-browser-tab qq-browser-1 qqnt_2; do
+    profile="$partitions/$partition"
+    mkdir -p "$profile/Cache/Cache_Data" "$profile/Code Cache/js" \
+        "$profile/Local Storage" "$profile/IndexedDB" "$profile/GPUCache" \
+        "$profile/Service Worker/CacheStorage"
+    printf disposable > "$profile/Cache/Cache_Data/data"
+    printf disposable > "$profile/Code Cache/js/data"
+    targets+=("$profile/Cache/Cache_Data" "$profile/Code Cache/js")
+    preserved+=("$profile/Cookies" "$profile/Local Storage/keep" "$profile/IndexedDB/keep" \
+        "$profile/GPUCache/keep" "$profile/Service Worker/CacheStorage/keep")
+done
+mkdir -p "$partitions/unrecognized/Cache" "$partitions/qqnt_2/Local Storage/Cache" \
+    "$support/QQ/Downloads" "$partitions/qqnt_3"
+protected="$partitions/qqnt_2/Cache/whitelisted"
+preserved+=("$protected" "$partitions/unrecognized/Cache/keep" \
+    "$partitions/qqnt_2/Local Storage/Cache/keep" "$support/QQ/Downloads/keep")
+for file in "${preserved[@]}"; do printf durable > "$file"; done
+ln -s "$HOME/outside" "$partitions/qqnt_4"
+ln -s "$HOME/outside/Cache" "$partitions/qqnt_3/Cache"
+ln -s "$HOME/outside" "$partitions/qqnt_2/Cache/link"
+if [[ "$QQ_SCENARIO" == ancestor-link ]]; then
+    mv "$support" "$support.real"
+    ln -s "$support.real" "$support"
+fi
+
+source "$PROJECT_ROOT/bin/clean.sh"
+WHITELIST_PATTERNS+=("$protected")
+EXPORT_LIST_FILE="$HOME/preview"
+: > "$EXPORT_LIST_FILE"
+pgrep() {
+    case "$*" in
+        *QQ*) printf '%s\n' "$*" >> "$HOME/owner-probes" ;;
+        *) return 1 ;;
+    esac
+    case "$QQ_SCENARIO" in
+        owner-running)
+            [[ "$1" == -x && "|$2|" == *'|QQ|'* ]] && return 0 ;;
+        owner-unknown) return 2 ;;
+        owner-started)
+            # Only the packaged helper is running, with no QQ main process.
+            if [[ "$1" == -f && -f "$HOME/renderer-started" ]] &&
+                [[ '/Applications/QQ.app/Contents/Frameworks/QQ Helper (Renderer).app/Contents/MacOS/QQ Helper (Renderer)' =~ $2 ]]; then
+                return 0
+            fi
+            ;;
+    esac
+    return 1
+}
+
+# The cleanup exception belongs to this guarded invocation only.
+should_protect_path "${targets[0]}" || exit 1
+clean_communication_apps
+should_protect_path "${targets[0]}" || exit 1
+for file in "${preserved[@]}" "$HOME/outside/Cache/keep"; do
+    [[ -f "$file" ]] || { printf 'Lost protected file %s\n' "$file"; exit 1; }
+done
+[[ -L "$partitions/qqnt_4" && -L "$partitions/qqnt_3/Cache" &&
+    -L "$partitions/qqnt_2/Cache/link" ]] || exit 1
+
+for target in "${targets[@]}"; do
+    [[ -d "${target%/*}" ]] || exit 1
+    if [[ "$QQ_SCENARIO" != idle || "$DRY_RUN" == true ]]; then
+        [[ -d "$target" ]] || exit 1
+    else
+        [[ ! -e "$target" ]] || { printf 'Cache still present %s\n' "$target"; exit 1; }
+    fi
+    if [[ "$QQ_SCENARIO" == idle && "$DRY_RUN" == true ]]; then
+        grep -Fq -- "$target  # " "$EXPORT_LIST_FILE" || { printf 'Missing preview entry %s\n' "$target"; exit 1; }
+    fi
+done
+if [[ "$QQ_SCENARIO" == idle && "$DRY_RUN" == true ]]; then
+    [[ $(wc -l < "$EXPORT_LIST_FILE") -eq ${#targets[@]} ]] || exit 1
+else
+    [[ ! -s "$EXPORT_LIST_FILE" ]] || exit 1
+fi
+case "$QQ_SCENARIO" in
+    fda-denied|fda-unknown|ancestor-link)
+        [[ ! -e "$HOME/owner-probes" && ! -e "$HOME/handle-probes" ]] || exit 1 ;;
+    owner-running|owner-unknown)
+        [[ -s "$HOME/owner-probes" && ! -e "$HOME/handle-probes" ]] || exit 1 ;;
+    *) [[ -s "$HOME/owner-probes" && -s "$HOME/handle-probes" ]] || exit 1 ;;
+esac
+if [[ "$QQ_SCENARIO" == replaced ]]; then
+    [[ -f "${targets[0]}/keep" && -f "${targets[0]}.old/data" ]] || exit 1
+fi
+EOF
+    [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+}
+
 @test "clean_xcode_tools skips derived data when Xcode running" {
     local fixture_home="$HOME/xcode-running-derived-data"
     run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
@@ -1261,6 +1388,26 @@ EOF
     [[ "$output" == *"/Microsoft/Teams/Cache/"*"|Microsoft Teams legacy cache"* ]] || return 1
     [[ "$output" == *"/Microsoft/Teams/logs/"*"|Microsoft Teams legacy cache"* ]] || return 1
     [[ "$(grep -c '^CALL:Microsoft Teams legacy' <<< "$output")" == 1 ]]
+}
+
+@test "QQ partition cleanup previews and removes only measured cache leaves" {
+    assert_qq_partition_cleanup idle 1 || return 1
+    assert_qq_partition_cleanup idle 0
+}
+
+@test "QQ partition cleanup keeps caches when access or idleness is uncertain" {
+    local scenario
+    for scenario in owner-unknown owner-running open handle-unknown owner-started fda-denied fda-unknown; do
+        assert_qq_partition_cleanup "$scenario" 1 || return 1
+        assert_qq_partition_cleanup "$scenario" 0 || return 1
+    done
+}
+
+@test "QQ partition cleanup keeps linked ancestors and replaced cache entries" {
+    assert_qq_partition_cleanup replaced 1 || return 1
+    assert_qq_partition_cleanup replaced 0 || return 1
+    assert_qq_partition_cleanup ancestor-link 1 || return 1
+    assert_qq_partition_cleanup ancestor-link 0
 }
 
 @test "clean_communication_apps cleans Vesktop session caches only while Vesktop is not running" {
