@@ -128,22 +128,27 @@ _mole_cleanup_timeout_killer() {
     local killer_pid="${1:-}"
     [[ "$killer_pid" =~ ^[0-9]+$ ]] || return 0
 
-    local child_pids=""
-    if command -v pgrep > /dev/null 2>&1; then
-        child_pids=$(pgrep -P "$killer_pid" 2> /dev/null || true)
-    fi
-
     kill "$killer_pid" 2> /dev/null || true
-
-    if [[ -n "$child_pids" ]]; then
-        local child_pid
-        while IFS= read -r child_pid; do
-            [[ "$child_pid" =~ ^[0-9]+$ ]] || continue
-            kill "$child_pid" 2> /dev/null || true
-        done <<< "$child_pids"
-    fi
-
     wait "$killer_pid" 2> /dev/null || true
+}
+
+_mole_timeout_watchdog_sleep() {
+    sleep "$1" &
+    watchdog_sleep_pid=$!
+    # A TERM between starting sleep and assigning $! leaves the trap with no
+    # PID to signal. Apply that cancellation once the PID is known.
+    if [[ $watchdog_cancelled -ne 0 ]]; then
+        kill -TERM "$watchdog_sleep_pid" 2> /dev/null || true
+    fi
+    local sleep_rc=0
+    wait "$watchdog_sleep_pid" || sleep_rc=$?
+    if [[ $watchdog_cancelled -ne 0 ]]; then
+        # The trap may have interrupted wait before it reaped sleep.
+        wait "$watchdog_sleep_pid" 2> /dev/null || true
+        sleep_rc=1
+    fi
+    watchdog_sleep_pid=""
+    return "$sleep_rc"
 }
 
 # Return success when Mole's process group still owns the controlling terminal.
@@ -450,12 +455,12 @@ run_with_timeout() {
     cmd_pid=$!
 
     # Start timeout killer in background.
-    # Redirect all FDs to /dev/null so orphaned child processes (e.g. sleep $duration)
-    # do not inherit open file descriptors from the caller and block output pipes
-    # (notably bats output capture pipes that wait for all writers to close).
+    # The watchdog owns and reaps each sleeper. Keep its descriptors detached
+    # from the caller so it cannot hold the caller's output pipes open.
     (
-        # Wait for timeout duration
-        sleep "$duration"
+        local watchdog_sleep_pid="" watchdog_cancelled=0
+        trap 'watchdog_cancelled=1; if [[ -n "$watchdog_sleep_pid" ]]; then kill -TERM "$watchdog_sleep_pid" 2>/dev/null || true; fi' TERM
+        _mole_timeout_watchdog_sleep "$duration" || exit 0
 
         # Check if process still exists
         if kill -0 "$cmd_pid" 2> /dev/null; then
@@ -464,7 +469,7 @@ run_with_timeout() {
             kill -TERM -"$cmd_pid" 2> /dev/null || kill -TERM "$cmd_pid" 2> /dev/null || true
 
             # Grace period for clean shutdown
-            sleep 2
+            _mole_timeout_watchdog_sleep 2 || exit 0
 
             # Escalate to SIGKILL if still alive
             if kill -0 "$cmd_pid" 2> /dev/null; then
