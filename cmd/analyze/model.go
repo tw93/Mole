@@ -309,16 +309,21 @@ func (m *model) hydrateOverviewEntries() {
 		m.overviewSizeCache = make(map[string]int64)
 	}
 	for i := range m.entries {
-		if size, ok := m.overviewSizeCache[m.entries[i].Path]; ok {
+		path := m.entries[i].Path
+		// Browsing Downloads can also put its whole size in the in-memory cache.
+		if isOldDownloadsOverviewPath(path) {
+			continue
+		}
+		if size, ok := m.overviewSizeCache[path]; ok {
 			m.entries[i].Size = size
 			continue
 		}
-		if size, state, err := loadOverviewCachedMeasurement(m.entries[i].Path); err == nil {
+		if size, state, err := loadOverviewCachedMeasurement(path); err == nil {
 			m.entries[i].Size = size
 			m.entries[i].State = state
 			// The in-memory map holds sizes only, so it keeps complete ones.
 			if state == scanComplete {
-				m.overviewSizeCache[m.entries[i].Path] = size
+				m.overviewSizeCache[path] = size
 			}
 		}
 	}
