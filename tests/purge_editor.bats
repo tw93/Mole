@@ -66,22 +66,6 @@ setup() {
     done
 }
 
-@test "purge paths abbreviates HOME only at a path boundary" {
-    # Purge resolves configured paths physically; a real HOME is physical too,
-    # while the bats temp dir may sit under the /var or /tmp links.
-    HOME=$(cd "$HOME" && pwd -P)
-    local sibling="${HOME}er/projects"
-    mkdir -p "$sibling"
-    printf '%s\n' "$HOME/project" "$sibling" > "$HOME/.config/mole/purge_paths"
-    run env EDITOR=code MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
-
-    [ "$status" -eq 0 ] || return 1
-    # shellcheck disable=SC2088  # literal tilde is the expected display form
-    [[ "$output" == *"~/project"* ]] || return 1
-    [[ "$output" == *"$sibling"* ]] || return 1
-    [[ "$output" != *"~er/projects"* ]]
-}
-
 @test "purge paths marks a default that exists and no configured path covers" {
     mkdir -p "$HOME/.codex/worktrees" "$HOME/Projects" "$HOME/www/app"
     printf '%s\n' "$HOME/project" "$HOME/Projects" "$HOME/www" > "$HOME/.config/mole/purge_paths"
@@ -114,4 +98,20 @@ setup() {
 
     [ "$status" -eq 0 ] || return 1
     [[ "$output" != *"not in your config"* ]] || { echo "$output"; return 1; }
+}
+
+@test "purge paths abbreviates HOME only at a path boundary" {
+    # Purge resolves configured paths physically; a real HOME is physical too,
+    # while the bats temp dir may sit under the /var or /tmp links.
+    HOME=$(cd "$HOME" && pwd -P)
+    local sibling="${HOME}er/projects"
+    mkdir -p "$sibling"
+    printf '%s\n' "$HOME/project" "$sibling" > "$HOME/.config/mole/purge_paths"
+    run env EDITOR=code MOLE_TEST_NO_AUTH=1 "$PROJECT_ROOT/mole" purge --paths
+
+    [ "$status" -eq 0 ] || return 1
+    # shellcheck disable=SC2088  # literal tilde is the expected display form
+    [[ "$output" == *"~/project"* ]] || return 1
+    [[ "$output" == *"$sibling"* ]] || return 1
+    [[ "$output" != *"~er/projects"* ]]
 }
