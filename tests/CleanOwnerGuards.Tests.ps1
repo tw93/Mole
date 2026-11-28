@@ -52,6 +52,55 @@ Describe 'Cargo and rustup download copies' {
     }
 }
 
+Describe 'A moved Cargo or rustup home' {
+    BeforeEach {
+        $script:SavedCargoHome = $env:CARGO_HOME
+        $script:SavedRustupHome = $env:RUSTUP_HOME
+        $script:Moved = Join-Path $TestDrive 'tools\cargo-home'
+        New-Item -ItemType Directory -Force -Path $script:Moved | Out-Null
+    }
+    AfterEach {
+        $env:CARGO_HOME = $script:SavedCargoHome
+        $env:RUSTUP_HOME = $script:SavedRustupHome
+    }
+    It 'Follows a drive-absolute CARGO_HOME and RUSTUP_HOME to their download copies only' {
+        $env:CARGO_HOME = "  $script:Moved  "
+        $env:RUSTUP_HOME = $script:Moved.Replace('\', '/')
+        Mock Clear-MoleAppCache {}
+        Clear-RustCaches
+        Should -Invoke Clear-MoleAppCache -Times 1 -Exactly -ParameterFilter { $Path -eq "$script:Moved\registry\cache" -and $Processes -contains 'cargo' }
+        Should -Invoke Clear-MoleAppCache -Times 1 -Exactly -ParameterFilter { $Path -eq "$script:Moved\downloads" }
+        Should -Invoke Clear-MoleAppCache -Times 2 -Exactly
+    }
+    It 'Reads a value that is no plain drive-absolute path as unset' {
+        foreach ($value in '', '   ', 'cargo-home', '..\cargo-home', "$script:Moved\..\other", '\\server\share\cargo', "$script:Moved`nC:\Windows") {
+            $env:CARGO_HOME = $value
+            Resolve-MoleRustHome -Variable 'CARGO_HOME' -Default "$env:USERPROFILE\.cargo" | Should -Be "$env:USERPROFILE\.cargo" -Because "value '$value'"
+        }
+    }
+    It 'Offers nothing for a home that is a drive root, a system folder or a folder holding the profile' {
+        $candidates = @('C:\', "$env:SystemRoot\cargo", "$env:ProgramFiles\cargo", "$env:ProgramData\cargo",
+            $env:USERPROFILE, (Split-Path -Parent $env:USERPROFILE), (Join-Path $TestDrive 'missing-home'))
+        foreach ($value in $candidates) {
+            $env:CARGO_HOME = $value
+            Resolve-MoleRustHome -Variable 'CARGO_HOME' -Default 'C:\nowhere\.cargo' | Should -BeNullOrEmpty -Because "value '$value'"
+        }
+        $env:CARGO_HOME = $env:ProgramData
+        $env:RUSTUP_HOME = 'C:\'
+        Mock Clear-MoleAppCache {}
+        Clear-RustCaches
+        Should -Invoke Clear-MoleAppCache -Times 0 -Exactly
+    }
+    It 'Offers nothing for a home that is a junction' {
+        $target = Join-Path $TestDrive 'tools\real-home'
+        $link = Join-Path $TestDrive 'tools\linked-home'
+        New-Item -ItemType Directory -Force -Path $target | Out-Null
+        New-Item -ItemType Junction -Path $link -Target $target | Out-Null
+        $env:CARGO_HOME = $link
+        Resolve-MoleRustHome -Variable 'CARGO_HOME' -Default 'C:\nowhere\.cargo' | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Developer cache rows wait for their owner' {
     BeforeEach {
         $env:LOCALAPPDATA = Join-Path $TestDrive 'Local'

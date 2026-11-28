@@ -341,18 +341,70 @@ function Clear-MiseCache {
 # Rust Ecosystem
 # ============================================================================
 
+# CARGO_HOME and RUSTUP_HOME move a home, to another drive included (rustup-init
+# and mise both allow it), as Mole for Windows and Mole CLI (macOS) follow them.
+# The variable counts only as one trimmed line holding a drive-absolute path
+# with no '..' segment; any other value means the default home, never a guess.
+# A moved home must be a folder a tool could own: below a drive root, outside
+# Windows, Program Files and ProgramData, holding neither the profile nor one of
+# its known folders (CARGO_HOME=C:\Users\me must not make the user's own
+# folders Cargo's), and no junction. One that fails offers nothing.
+function Resolve-MoleRustHome {
+    param([string]$Variable, [string]$Default)
+
+    $value = [Environment]::GetEnvironmentVariable($Variable)
+    if ($null -eq $value) { return $Default }
+    $raw = $value.Trim().Replace('/', '\')
+    if (-not $raw -or $raw -match "[`r`n]" -or $raw -notmatch '^[A-Za-z]:\\[^<>:"|?*]*$') { return $Default }
+    if (@($raw.Split('\') | Where-Object { $_ -eq '..' -or $_ -eq '.' }).Count -gt 0) { return $Default }
+    $moved = $raw.TrimEnd('\')
+    if ([string]::Equals($moved, $Default.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) { return $Default }
+    if ($moved.Length -le 2) { return $null }
+
+    $under = {
+        param([string]$Child, [string]$Parent)
+        if (-not $Child -or -not $Parent) { return $false }
+        $c = $Child.TrimEnd('\'); $q = $Parent.TrimEnd('\')
+        return [string]::Equals($c, $q, [StringComparison]::OrdinalIgnoreCase) -or
+            $c.StartsWith($q + '\', [StringComparison]::OrdinalIgnoreCase)
+    }
+    foreach ($system in $env:SystemRoot, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramData) {
+        if (& $under $moved $system) { return $null }
+    }
+    $held = @($env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA)
+    if ($env:USERPROFILE) { $held += Split-Path -Parent $env:USERPROFILE }
+    foreach ($folder in 'MyDocuments', 'DesktopDirectory') {
+        try { $held += [Environment]::GetFolderPath($folder) } catch { }
+    }
+    foreach ($known in $held) {
+        if (& $under $known $moved) { return $null }
+    }
+    try {
+        $item = Get-Item -LiteralPath $moved -Force -ErrorAction Stop
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $null }
+    }
+    catch { return $null }
+    return $moved
+}
+
 function Clear-RustCaches {
     <#
     .SYNOPSIS
         Clean Rust/Cargo caches
     #>
-    
+
     # Only the download copies, and only while no Rust tool runs. The whole of
     # .cargo and .rustup used to be default whitelist entries, so these rows
     # never cleaned anything; sources, the index and git checkouts stay there.
     $rustTooling = @('cargo', 'rustc', 'rustdoc', 'clippy-driver', 'cargo-nextest', 'rustup')
-    Clear-MoleAppCache -Path "$env:USERPROFILE\.cargo\registry\cache" -Description "Cargo registry cache" -Processes $rustTooling
-    Clear-MoleAppCache -Path "$env:USERPROFILE\.rustup\downloads" -Description "Rustup downloads" -Processes $rustTooling
+    $cargoHome = Resolve-MoleRustHome -Variable 'CARGO_HOME' -Default "$env:USERPROFILE\.cargo"
+    if ($cargoHome) {
+        Clear-MoleAppCache -Path "$cargoHome\registry\cache" -Description "Cargo registry cache" -Processes $rustTooling
+    }
+    $rustupHome = Resolve-MoleRustHome -Variable 'RUSTUP_HOME' -Default "$env:USERPROFILE\.rustup"
+    if ($rustupHome) {
+        Clear-MoleAppCache -Path "$rustupHome\downloads" -Description "Rustup downloads" -Processes $rustTooling
+    }
 }
 
 # ============================================================================
