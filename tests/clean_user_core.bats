@@ -2818,6 +2818,53 @@ EOF
     [[ "$output" != *"SAFE_CLEAN:Chrome code cache"* ]]
 }
 
+@test "clean_browsers covers Chrome WebGPU cache only when Chrome is idle" {
+    local fixture_home="$HOME/chrome-webgpu"
+    local profile="$fixture_home/Library/Application Support/Google/Chrome/Default"
+    mkdir -p "$profile/DawnWebGPUCache" "$profile/Service Worker/CacheStorage"
+    touch "$profile/DawnWebGPUCache/entry" "$profile/Service Worker/CacheStorage/keep"
+    run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" MOLE_DRY_RUN=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/clean.sh"
+clean_chrome_old_versions() { :; }
+clean_edge_old_versions() { :; }
+clean_brave_old_versions() { :; }
+pgrep() { return 1; }
+get_path_size_kb() { printf '8\n'; }
+register_dry_run_cleanup_target() { printf 'PREVIEW=%s\n' "$1"; }
+append_dry_run_cleanup_target() { :; }
+clean_browsers
+echo RUNNING
+pgrep() { [[ "$*" == *"Google Chrome"* ]]; }
+clean_browsers
+echo LINKED
+profile="$HOME/Library/Application Support/Google/Chrome/Profile 1"
+mkdir -p "$profile" "$HOME/outside-webgpu"
+touch "$HOME/outside-webgpu/entry"
+ln -s "$HOME/outside-webgpu" "$profile/DawnWebGPUCache"
+pgrep() { return 1; }
+clean_browsers
+test -f "$HOME/outside-webgpu/entry"
+echo REMOVAL
+DRY_RUN=false
+export MOLE_DRY_RUN=0
+idle="$HOME/Library/Application Support/Google/Chrome/Profile 2"
+mkdir -p "$idle/DawnWebGPUCache"
+touch "$idle/DawnWebGPUCache/entry"
+clean_browsers
+test ! -e "$HOME/Library/Application Support/Google/Chrome/Default/DawnWebGPUCache" || exit 1
+test ! -e "$idle/DawnWebGPUCache" || exit 1
+test -f "$HOME/outside-webgpu/entry" || exit 1
+test -f "$HOME/Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage/keep"
+EOF
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "${output%%RUNNING*}" == *"PREVIEW=$profile/DawnWebGPUCache"* ]] || { echo "$output"; return 1; }
+    local after_running="${output#*RUNNING}"
+    [[ "${after_running%%LINKED*}" != *"PREVIEW=$profile/DawnWebGPUCache"* ]] || return 1
+    [[ "${output#*LINKED}" != *"Profile 1/DawnWebGPUCache"* ]] || return 1
+    [[ "$output" != *"PREVIEW=$profile/Service Worker/CacheStorage"* ]]
+}
+
 @test "clean_browsers does not defer empty Chrome and Firefox roots" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
