@@ -529,6 +529,19 @@ start_uninstall_metadata_refresh() {
 
 }
 
+# A mounted volume that holds another macOS installation (a second system on
+# the internal disk, a bootable external drive) keeps that system's apps, which
+# are not installed on the running Mac (#2139). The system volume carries
+# SystemVersion.plist and its data volume, where /Applications lives, the local
+# directory store. The sibling scan in lib/uninstall/batch.sh still reads these
+# volumes, so a same-bundle copy there keeps shared leftovers as before.
+uninstall_volume_holds_another_macos() {
+    local volume_root="$1"
+    [[ -e "$volume_root/System/Library/CoreServices/SystemVersion.plist" ]] && return 0
+    [[ -d "$volume_root/private/var/db/dslocal" ]] && return 0
+    return 1
+}
+
 uninstall_print_app_search_dirs() {
     local -a app_dirs=(
         "/Applications"
@@ -544,7 +557,7 @@ uninstall_print_app_search_dirs() {
     local nullglob_was_set=0
     shopt -q nullglob && nullglob_was_set=1
     shopt -s nullglob
-    for vol_app_dir in /Volumes/*/Applications; do
+    for vol_app_dir in "${_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT:-/Volumes}"/*/Applications; do
         [[ -d "$vol_app_dir" && -r "$vol_app_dir" ]] || continue
         if [[ -d "/Applications" && "$vol_app_dir" -ef "/Applications" ]]; then
             continue
@@ -552,6 +565,7 @@ uninstall_print_app_search_dirs() {
         if [[ -d "$HOME/Applications" && "$vol_app_dir" -ef "$HOME/Applications" ]]; then
             continue
         fi
+        uninstall_volume_holds_another_macos "${vol_app_dir%/Applications}" && continue
         app_dirs+=("$vol_app_dir")
     done
     if [[ $nullglob_was_set -eq 0 ]]; then

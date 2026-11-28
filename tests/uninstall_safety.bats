@@ -1628,6 +1628,24 @@ EOF
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
+@test "uninstall inventory leaves out the apps of another macOS installation (#2139)" {
+	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/bin/uninstall.sh"
+volumes="$HOME/volumes"
+_MOLE_UNINSTALL_LIVE_VOLUMES_ROOT="$volumes"
+mkdir -p "$volumes/Apps Disk/Applications" \
+    "$volumes/Sequoia/Applications" "$volumes/Sequoia/System/Library/CoreServices" \
+    "$volumes/Sequoia - Data/Applications" "$volumes/Sequoia - Data/private/var/db/dslocal"
+: > "$volumes/Sequoia/System/Library/CoreServices/SystemVersion.plist"
+dirs=$(uninstall_print_app_search_dirs)
+printf '%s\n' "$dirs"
+printf '%s\n' "$dirs" | grep -Fx "$volumes/Apps Disk/Applications" > /dev/null || exit 1
+if printf '%s\n' "$dirs" | grep -F "$volumes/Sequoia" > /dev/null; then exit 1; fi
+EOF
+	[ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "PlayCover inventory reads flat bundle metadata and invalidates its cache (#1715)" {
 	run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" MOLE_TEST_NO_AUTH=1 /bin/bash --noprofile --norc <<'EOF'
 set -euo pipefail
