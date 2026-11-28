@@ -4019,6 +4019,8 @@ clean_project_artifacts() {
                 fi
                 if [[ "${PURGE_PROTECTION_REASON:-}" == "in_use" ]]; then
                     echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (in use; stop what has it open, then run mo purge again)"
+                elif [[ "${PURGE_PROTECTION_REASON:-}" == "launch_agent" ]]; then
+                    echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (referenced by a LaunchAgent; unload or update the plist, then run mo purge again)"
                 else
                     echo -e "${YELLOW}${ICON_WARNING}${NC} Skipped $display_item_path (final removal check failed; re-run mo purge to review it again)"
                 fi

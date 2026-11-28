@@ -6717,3 +6717,14 @@ SCRIPT
     [[ "$dry" == *"referenced by a LaunchAgent"* ]] || { echo "$dry"; return 1; }
     [[ "$real" == *"referenced by a LaunchAgent"* ]] || { echo "$real"; return 1; }
 }
+
+@test "a LaunchAgent refusal names its reason at the review recheck and at the final removal check" {
+    # The final check printed "final removal check failed" for an artifact a
+    # LaunchAgent started to reference between review and removal.
+    local count
+    count=$(grep -c 'referenced by a LaunchAgent; unload or update the plist, then run mo purge again' "$PROJECT_ROOT/lib/clean/project.sh")
+    [ "$count" -eq 2 ] || { echo "sites: $count"; return 1; }
+    run grep -B2 'final removal check failed; re-run mo purge to review it again' "$PROJECT_ROOT/lib/clean/project.sh"
+    [ "$status" -eq 0 ] || return 1
+    [[ "$output" == *"referenced by a LaunchAgent"* ]] || { echo "$output"; return 1; }
+}
