@@ -511,6 +511,14 @@ Source: a read-only comparison of the four products on 2026-11-27, each finding 
 | A Ctrl-C during a Homebrew `mo update` stops it at once | Implemented in Mole CLI (macOS) source (`6fafdfc8`, tw93/Mole#2121), released in V1.75.0 | `run_with_interruptible_timeout`; Homebrew is the macOS install channel only, so the Windows and Linux CLIs are Not applicable. |
 | Linux rules size their children in one `du` walk | Implemented in Mole CLI (Linux) source (`f42da2a0`, tw93/Mole#2123), released in V0.8.0-linux | Linux-only sizing loop in `bin/clean.sh`; Mole CLI (macOS) sizes through its own `safe_clean` path: Not applicable. |
 
+## 2026-11-27 Old Downloads overview cache
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented | `5fe796af` keeps the 90-day row out of the whole-folder caches and generic prefetch. `TestOldDownloadsOverviewIgnoresWholeDirectoryCache` covers a warm JSON result and both TUI cache tiers. |
+| Mole CLI (Linux) | Pending | `c2e71f04` has the same whole-folder cache reuse in `cmd/analyze/model.go` and `cmd/analyze/json.go`. The local counterpart and its Analyze tests cross-compiled for amd64 and arm64. Run the tests on Linux before delivery. |
+| Mole CLI (Windows) | Implemented | At `ed71050f`, `cmd/analyze/update.go` keeps a full folder scan out of `overviewSizeCache`, and `cmd/analyze/overview.go` measures the 90-day subset separately. Verified in source. |
+
 ## 2026-11-27 Pre-release review of the three CLIs
 
 Source: the review of every commit since `V1.74.0`, `V1.46.0-windows` and `V0.7.1-linux` (recorded in `docs/weekly-audit.md`). Each row was checked against the destination's own consumer.
