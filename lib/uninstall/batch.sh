@@ -3187,18 +3187,8 @@ _batch_execute_removals() {
             success_names+=("$app_name")
             success_dock_targets+=("$app_path|$bundle_id")
             # Check for orphaned system extensions (camera, network, endpoint security, etc.)
-            if mole_is_reverse_dns_bundle_id "$bundle_id" && [[ -d /Library/SystemExtensions ]]; then
-                local system_extension_path=""
-                local has_bundle_system_extension=false
-                while IFS= read -r -d '' system_extension_path; do
-                    if mole_name_starts_with_bundle_id_boundary "$system_extension_path" "$bundle_id"; then
-                        has_bundle_system_extension=true
-                        break
-                    fi
-                done < <(command find /Library/SystemExtensions -maxdepth 3 -name "*.systemextension" -print0 2> /dev/null)
-                if [[ "$has_bundle_system_extension" == "true" ]]; then
-                    system_extension_warning_apps+=("$app_name")
-                fi
+            if _uninstall_leaves_system_extension "$bundle_id"; then
+                system_extension_warning_apps+=("$app_name")
             fi
         else
             # Stop spinner before printing the failure line so the error
@@ -3418,6 +3408,20 @@ _batch_log_brew_autoremove() {
         [[ "$keg" == /* ]] || continue
         log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "REMOVED" "$keg" "brew autoremove"
     done <<< "$output"
+}
+
+# An app's system extension outlives the app: macOS keeps it activated under
+# /Library/SystemExtensions/<UUID>/ until it is removed in System Settings or
+# with systemextensionsctl, and Mole only says so. Driver extensions end in
+# .dext, not .systemextension: Logitech G HUB's HID filter and audio override
+# stayed activated with no warning (#2131).
+_uninstall_leaves_system_extension() {
+    local bundle_id="$1" root="${2:-/Library/SystemExtensions}" extension_path=""
+    mole_is_reverse_dns_bundle_id "$bundle_id" && [[ -d "$root" ]] || return 1
+    while IFS= read -r -d '' extension_path; do
+        mole_name_starts_with_bundle_id_boundary "$extension_path" "$bundle_id" && return 0
+    done < <(command find "$root" -maxdepth 3 \( -name "*.systemextension" -o -name "*.dext" \) -print0 2> /dev/null)
+    return 1
 }
 
 batch_uninstall_applications() {
