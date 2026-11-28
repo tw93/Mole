@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -91,14 +92,12 @@ func performOverviewScanForJSONWithEntries(path string, insightEntries, overview
 		insightPaths[insight.Path] = true
 	}
 
-	var totalSize int64
 	entries := make([]dirEntry, 0, len(overviewEntries))
 	for _, entry := range measureOverviewEntriesForJSON(overviewEntries, insightPaths) {
 		// Match the TUI: omit scanned insight/tool entries that ended up empty.
 		if entry.Size == 0 && entry.State == scanComplete {
 			continue
 		}
-		totalSize += max(entry.Size, 0)
 		entries = append(entries, entry)
 	}
 
@@ -109,8 +108,33 @@ func performOverviewScanForJSONWithEntries(path string, insightEntries, overview
 		ScanStatus: entryScanState(entries),
 		Overview:   true,
 		Entries:    jsonEntriesFromDirEntries(entries, true, insightPaths),
-		TotalSize:  totalSize,
+		TotalSize:  overviewTotalSize(entries),
 	}
+}
+
+// The overview keeps every measured row, but a parent already accounts for
+// its children. Home's measurement explicitly excludes Library.
+func overviewTotalSize(entries []dirEntry) int64 {
+	home := os.Getenv("HOME")
+	library := filepath.Join(home, "Library")
+	var total int64
+	for _, entry := range entries {
+		covered := false
+		for _, parent := range entries {
+			if parent.Size <= 0 || parent.Path == entry.Path || !pathIsWithin(entry.Path, parent.Path) {
+				continue
+			}
+			if home != "" && parent.Path == home && pathIsWithin(entry.Path, library) {
+				continue
+			}
+			covered = true
+			break
+		}
+		if !covered {
+			total += max(entry.Size, 0)
+		}
+	}
+	return total
 }
 
 func measureOverviewEntriesForJSON(overviewEntries []dirEntry, insightPaths map[string]bool) []dirEntry {
