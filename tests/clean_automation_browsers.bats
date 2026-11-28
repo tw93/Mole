@@ -281,30 +281,37 @@ SCRIPT
     cat > "$HOME/bin/ps" <<'SCRIPT'
 #!/bin/bash
 printf '%s\n' \
-    '  920     1 01-20:00:00 Tue Sep  1 02:03:04 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/agent-browser-chrome-old' \
-    '  921   888 06-20:00:00 Wed Sep  2 03:04:05 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/agent-browser-chrome-live'
+    '  920     1 01-20:00:00 Tue Sep  1 02:03:04 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/agent-browser-chrome-0a1b2c3d-1111-4222-8333-444455556666' \
+    '  921   888 06-20:00:00 Wed Sep  2 03:04:05 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/agent-browser-chrome-0a1b2c3d-1111-4222-8333-777788889999' \
+    '  922     1 01-20:00:00 Tue Sep  1 02:03:04 2026 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/me/agent-browser-chrome-notes'
 SCRIPT
     cat > "$HOME/bin/pgrep" <<'SCRIPT'
 #!/bin/bash
 for arg in "$@"; do
-    [[ "$arg" == *"agent-browser-chrome-live"* ]] && exit 0
+    [[ "$arg" == *"agent-browser-chrome-0a1b2c3d-1111-4222-8333-777788889999"* ]] && exit 0
 done
 exit 1
 SCRIPT
     chmod +x "$HOME/bin/ps" "$HOME/bin/pgrep"
 
-    mkdir -p "$HOME/tmproot/agent-browser-chrome-stale" \
-        "$HOME/tmproot/agent-browser-chrome-live" \
-        "$HOME/tmproot/agent-browser-chrome-fresh"
-    touch -t 202601010000 "$HOME/tmproot/agent-browser-chrome-stale" \
-        "$HOME/tmproot/agent-browser-chrome-live"
+    mkdir -p "$HOME/tmproot/agent-browser-chrome-0a1b2c3d-1111-4222-8333-aaaabbbbcccc" \
+        "$HOME/tmproot/agent-browser-chrome-0a1b2c3d-1111-4222-8333-777788889999" \
+        "$HOME/tmproot/agent-browser-chrome-0a1b2c3d-1111-4222-8333-ddddeeeeffff" \
+        "$HOME/tmproot/agent-browser-chrome-notes"
+    touch -t 202601010000 "$HOME/tmproot/agent-browser-chrome-0a1b2c3d-1111-4222-8333-aaaabbbbcccc" \
+        "$HOME/tmproot/agent-browser-chrome-0a1b2c3d-1111-4222-8333-777788889999" \
+        "$HOME/tmproot/agent-browser-chrome-notes"
 
     run_cleanup false
     [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"stopped 1 processes"* ]] || { echo "$output"; return 1; }
-    [[ "$output" == *"SAFE_CLEAN"*"agent-browser-chrome-stale"* ]] || { echo "$output"; return 1; }
-    [[ "$output" != *"SAFE_CLEAN"*"agent-browser-chrome-live"* ]] || { echo "$output"; return 1; }
-    [[ "$output" != *"SAFE_CLEAN"*"agent-browser-chrome-fresh"* ]] || { echo "$output"; return 1; }
+    [[ "$output" == *"SAFE_CLEAN"*"agent-browser-chrome-0a1b2c3d-1111-4222-8333-aaaabbbbcccc"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SAFE_CLEAN"*"agent-browser-chrome-0a1b2c3d-1111-4222-8333-777788889999"* ]] || { echo "$output"; return 1; }
+    [[ "$output" != *"SAFE_CLEAN"*"agent-browser-chrome-0a1b2c3d-1111-4222-8333-ddddeeeeffff"* ]] || { echo "$output"; return 1; }
     grep -q 'KILL -TERM 920' "$HOME/kill.trace" || return 1
     ! grep -q ' 921' "$HOME/kill.trace" || return 1
+    # Only the temporary profiles agent-browser itself creates, the prefix plus a
+    # UUID: a folder or a Chrome the user named with that prefix is theirs.
+    [[ "$output" != *"SAFE_CLEAN"*"agent-browser-chrome-notes"* ]] || { echo "$output"; return 1; }
+    ! grep -q ' 922' "$HOME/kill.trace" || return 1
 }
