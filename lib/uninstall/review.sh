@@ -43,7 +43,7 @@ _uninstall_data_preselect_holdback() {
     # the own-identifier default would otherwise start with them selected.
     local browser root
     for browser in net.imput.helium company.thebrowser.browser com.duckduckgo.macos.browser \
-        com.sigmaos.sigmaos.macos com.apple.safaritechnologypreview; do
+        com.ardia.browser com.sigmaos.sigmaos.macos com.apple.safaritechnologypreview; do
         for root in "$home/library/application support/$browser" "$home/library/containers/$browser"; do
             [[ "$path" == "$root" || "$path" == "$root/"* ]] && return 0
         done
@@ -96,8 +96,14 @@ _uninstall_own_identifier_data() {
     [[ "$id" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9_-]+)+$ ]] || return 1
     parent="${path%/*}" leaf="${path##*/}" key="$leaf"
     case "$parent" in
-        "$HOME/Library/Preferences") [[ "$leaf" == *.plist ]] || return 1; key="${leaf%.plist}" ;;
-        "$HOME/Library/Saved Application State") [[ "$leaf" == *.savedState ]] || return 1; key="${leaf%.savedState}" ;;
+        "$HOME/Library/Preferences")
+            [[ "$leaf" == *.plist ]] || return 1
+            key="${leaf%.plist}"
+            ;;
+        "$HOME/Library/Saved Application State")
+            [[ "$leaf" == *.savedState ]] || return 1
+            key="${leaf%.savedState}"
+            ;;
         "$HOME/Library/HTTPStorages" | "$HOME/Library/Cookies") key="${leaf%.binarycookies}" ;;
         "$HOME/Library/Application Support" | "$HOME/Library/WebKit" | \
             "$HOME/Library/Containers" | "$HOME/Library/Application Scripts") ;;
