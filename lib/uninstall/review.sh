@@ -96,8 +96,14 @@ _uninstall_own_identifier_data() {
     [[ "$id" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9_-]+)+$ ]] || return 1
     parent="${path%/*}" leaf="${path##*/}" key="$leaf"
     case "$parent" in
-        "$HOME/Library/Preferences") [[ "$leaf" == *.plist ]] || return 1; key="${leaf%.plist}" ;;
-        "$HOME/Library/Saved Application State") [[ "$leaf" == *.savedState ]] || return 1; key="${leaf%.savedState}" ;;
+        "$HOME/Library/Preferences")
+            [[ "$leaf" == *.plist ]] || return 1
+            key="${leaf%.plist}"
+            ;;
+        "$HOME/Library/Saved Application State")
+            [[ "$leaf" == *.savedState ]] || return 1
+            key="${leaf%.savedState}"
+            ;;
         "$HOME/Library/HTTPStorages" | "$HOME/Library/Cookies") key="${leaf%.binarycookies}" ;;
         "$HOME/Library/Application Support" | "$HOME/Library/WebKit" | \
             "$HOME/Library/Containers" | "$HOME/Library/Application Scripts") ;;
