@@ -527,6 +527,11 @@ should_protect_path() {
             "$path" == "$HOME/Library/Containers/com.tencent.xinWeChat/Data/.wxapplet/WMPF/"* ]] ||
             _is_wechat_web_profile_cache_child "$path"; then
             _container_cache_path=true
+        # Only the QQ cleaner's bound plan can open this part of the container.
+        elif [[ "${_MOLE_SAFE_REMOVE_FINAL_GUARD:-}" == _qq_partition_cache_delete_guard &&
+            "$path" == "$HOME/Library/Containers/com.tencent.qq/Data/Library/Application Support/QQ/Partitions/"* ]] &&
+            mole_identity_in_list "$path" "${_MOLE_QQ_CACHE_TARGETS[@]+"${_MOLE_QQ_CACHE_TARGETS[@]}"}"; then
+            _container_cache_path=true
         elif [[ "${MOLE_UNINSTALL_MODE:-0}" != "1" ]] && should_protect_data "$bundle_id"; then
             return 0
         fi

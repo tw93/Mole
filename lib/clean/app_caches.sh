@@ -1167,6 +1167,111 @@ clean_wechat_container_caches() {
     fi
 }
 
+_qq_partition_cache_owner_state() {
+    mole_pgrep_any -x "QQ" -x "QQ Helper" -x 'QQ Helper \((GPU|Plugin|Renderer)\)' \
+        -x "QQ Login Helper" -f '/QQ[.]app/Contents/'
+}
+
+# Walk from HOME so an existing link is refused before probing below it.
+_qq_partition_cache_path_is_unlinked() {
+    local relative="${1#"$HOME"/}" ancestor="$HOME"
+    [[ "$relative" != "$1" ]] || return 1
+    while [[ "$relative" == */* ]]; do
+        ancestor="$ancestor/${relative%%/*}"
+        [[ ! -L "$ancestor" && -d "$ancestor" ]] || return 1
+        relative="${relative#*/}"
+    done
+    [[ ! -L "$1" ]]
+}
+
+_qq_partition_cache_delete_guard() {
+    local path="$1" index
+    [[ "$_MOLE_QQ_CACHE_OWNER_REFUSED" == "false" ]] || return 1
+    _MOLE_SAFE_CLEAN_SKIP_PATH="$path"
+    for ((index = 0; index < ${#_MOLE_QQ_CACHE_TARGETS[@]}; index++)); do
+        [[ "${_MOLE_QQ_CACHE_TARGETS[index]}" != "$path" ]] || break
+    done
+    [[ $index -lt ${#_MOLE_QQ_CACHE_TARGETS[@]} ]] || return 1
+    _qq_partition_cache_path_is_unlinked "$path" || return 1
+
+    local parent="$_MOLE_QQ_CACHE_PHYSICAL_HOME/${path#"$HOME"/}"
+    parent="${parent%/*}"
+    local parent_id="${_MOLE_QQ_CACHE_PARENT_IDS[index]}"
+    local target_id="${_MOLE_QQ_CACHE_TARGET_IDS[index]}"
+    _mole_path_matches_identity "$path" "$parent" "$parent_id" "$target_id" || return 1
+
+    # Preview has no final sink. Real cleanup runs the recursive handle check
+    # only at the final sink, where the earlier guard has already bound the path.
+    if [[ "$DRY_RUN" == "true" || "$_MOLE_SAFE_CLEAN_BOUND_PATH" == "$path" ]]; then
+        local handle_rc=0
+        _mole_container_cache_has_open_handle "$path" || handle_rc=$?
+        mole_rc_signal "$handle_rc" && return "$handle_rc"
+        [[ $handle_rc -eq 1 ]] || return 1
+    fi
+    _MOLE_SAFE_CLEAN_SKIP_PATH=""
+    if ! mole_clean_process_guard _qq_partition_cache_owner_state "QQ started"; then
+        _MOLE_QQ_CACHE_OWNER_REFUSED=true
+        return 1
+    fi
+
+    _MOLE_SAFE_CLEAN_SKIP_PATH="$path"
+    [[ ! -L "$path" ]] && _mole_path_matches_identity "$path" "$parent" "$parent_id" "$target_id" || return 1
+    _MOLE_SAFE_CLEAN_SKIP_PATH=""
+    _MOLE_SAFE_CLEAN_BOUND_PATH="$path"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT="$parent"
+    _MOLE_SAFE_CLEAN_EXPECTED_PARENT_ID="$parent_id"
+    _MOLE_SAFE_CLEAN_EXPECTED_TARGET_ID="$target_id"
+}
+
+# QQ 7.0.3 (com.tencent.qq) held 40,345,600 bytes across the HTTP and V8 code
+# caches in five web partitions. Keep the cache directories and partitions,
+# plus cookies, Local Storage, IndexedDB, downloads, and all other data.
+clean_qq_partition_caches() {
+    # Traversal below another app's container can raise the macOS app-data prompt.
+    has_full_disk_access || return 0
+    local root="$HOME/Library/Containers/com.tencent.qq/Data/Library/Application Support/QQ/Partitions"
+    _qq_partition_cache_path_is_unlinked "$root" && [[ -d "$root" ]] || return 0
+
+    local _MOLE_QQ_CACHE_PHYSICAL_HOME _MOLE_CONTAINER_CACHE_PROBE_DEADLINE
+    _MOLE_QQ_CACHE_PHYSICAL_HOME=$(cd -P "$HOME" 2> /dev/null && pwd -P) || return 0
+    _MOLE_CONTAINER_CACHE_PROBE_DEADLINE=$(_mole_container_cache_probe_deadline)
+    local -a _MOLE_QQ_CACHE_TARGETS=() _MOLE_QQ_CACHE_PARENT_IDS=() _MOLE_QQ_CACHE_TARGET_IDS=()
+    local partition cache_root target
+    for partition in "$root"/*; do
+        [[ $SECONDS -lt $_MOLE_CONTAINER_CACHE_PROBE_DEADLINE ]] || return 0
+        [[ "${partition##*/}" == "qq-browser-tab" || "${partition##*/}" =~ ^(qq-browser-|qqnt_)[0-9]+$ ]] || continue
+        [[ ! -L "$partition" && -d "$partition" ]] || continue
+        for cache_root in "$partition/Cache" "$partition/Code Cache"; do
+            [[ ! -L "$cache_root" && -d "$cache_root" ]] || continue
+            for target in "$cache_root"/*; do
+                [[ $SECONDS -lt $_MOLE_CONTAINER_CACHE_PROBE_DEADLINE ]] || return 0
+                [[ ! -L "$target" && (-f "$target" || -d "$target") && ! "$target" =~ [[:cntrl:]] ]] || continue
+                _mole_snapshot_path_identity "$target" || continue
+                [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "$_MOLE_QQ_CACHE_PHYSICAL_HOME/${cache_root#"$HOME"/}" ]] || continue
+                _MOLE_QQ_CACHE_TARGETS+=("$target")
+                _MOLE_QQ_CACHE_PARENT_IDS+=("$_MOLE_PATH_SNAPSHOT_PARENT_ID")
+                _MOLE_QQ_CACHE_TARGET_IDS+=("$_MOLE_PATH_SNAPSHOT_TARGET_ID")
+            done
+        done
+    done
+    [[ ${#_MOLE_QQ_CACHE_TARGETS[@]} -gt 0 ]] || return 0
+
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard _qq_partition_cache_owner_state "QQ started"; then
+        mole_report_guard_stop "QQ web cache" mole_defer_cleanup_family "QQ"
+        return 0
+    fi
+    local _MOLE_QQ_CACHE_OWNER_REFUSED=false
+    local _MOLE_SAFE_REMOVE_FINAL_GUARD=_qq_partition_cache_delete_guard
+    local guarded_rc=0
+    safe_clean_guarded _qq_partition_cache_delete_guard "${_MOLE_QQ_CACHE_TARGETS[@]}" "QQ web cache" || guarded_rc=$?
+    if [[ "$_MOLE_QQ_CACHE_OWNER_REFUSED" == "true" ]]; then
+        mole_report_guard_stop "QQ web cache" mole_defer_cleanup_family "QQ"
+        [[ $guarded_rc -ne 75 ]] || return 0
+    fi
+    return "$guarded_rc"
+}
+
 # Communication apps.
 clean_communication_apps() {
     mole_safe_clean_app_cache "Discord" ~/Library/Application\ Support/discord/Cache/* "Discord cache"
@@ -1187,6 +1292,7 @@ clean_communication_apps() {
     safe_clean ~/Library/Caches/com.tencent.meeting/* "Tencent Meeting cache"
     safe_clean ~/Library/Caches/com.tencent.WeWorkMac/* "WeCom cache"
     safe_clean ~/Library/Caches/com.tencent.qq/* "QQ cache"
+    clean_qq_partition_caches || return $?
     safe_clean ~/Library/Caches/com.feishu.*/* "Feishu cache"
     _clean_messaging_container_roots "Feishu/Lark" \
         _feishu_service_worker_delete_guard_allows \
