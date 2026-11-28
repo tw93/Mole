@@ -522,3 +522,11 @@ Source: the review of every commit since `V1.74.0`, `V1.46.0-windows` and `V0.7.
 | Notion partition caches recheck the owner at the sink | Implemented in Mole CLI (macOS) source (`cc226daa`), released in V1.75.0 | `clean_notion_partition_disk_caches targets Cache and Code Cache in every partition`. macOS-only row: Not applicable elsewhere. |
 | Mole CLI (Windows): the uninstall preview lists no folder for a Steam hand-off, the TypeScript cache waits for every editor that hosts tsserver, a Chocolatey copy is recognized under a custom `ChocolateyInstall` | Implemented in Mole CLI (Windows) source (`c2201015`), released in V1.47.0-windows | Recorded in the windows branch's SYNC.md and `.claude/rules`. Mole for Windows `CleanCatalog.cs` holds the TypeScript row for `Code` and `node` only: Pending there. Mole CLI (macOS) has no such row: Not applicable. |
 
+## 2026-11-27 JSON overview totals
+
+| Product | Status | Consumer and evidence |
+| --- | --- | --- |
+| Mole CLI (macOS) | Implemented | `faa1ca1a` counts covered measurements once and refreshes cached parent scans when the listed child coverage changes. The native Go suite, focused race tests and CLI fixture passed. |
+| Mole CLI (Linux) | Pending | At `c2e71f04`, `cmd/analyze/json.go` adds nested and parent rows. The local counterpart follows Linux mount rules. The focused regressions and full Analyze Go package passed in a Linux arm64 container, independently and with the Old Downloads draft. Check the macOS path and cache coverage refinements against the Linux consumer before delivery. |
+| Mole CLI (Windows) | Implemented | At `ed71050f`, `cmd/analyze/json.go:overviewTotalSize` already excludes covered nested rows from the JSON total. Verified in source. |
+
