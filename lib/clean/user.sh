@@ -2510,6 +2510,18 @@ clean_browsers() {
 }
 
 # Cloud storage caches.
+_baidu_netdisk_code_cache_process_state() {
+    # The shared process guard passes the candidate here at preview and deletion.
+    # A linked directory could redirect the cleanup outside Baidu's sandbox.
+    local ancestor="${_MOLE_DEV_GUARDED_PATH:-}"
+    [[ -d "$ancestor" ]] || return 2
+    while [[ "$ancestor" != "$HOME" ]]; do
+        [[ "$ancestor" == "$HOME/"* && ! -L "$ancestor" ]] || return 2
+        ancestor="${ancestor%/*}"
+    done
+    mole_pgrep_any -x "BaiduNetdisk" -f '/BaiduNetdisk[.]app/Contents/'
+}
+
 clean_cloud_storage() {
     if [[ "${MO_DEBUG:-0}" == "1" ]]; then
         echo "[DEBUG] Cleaning cloud storage caches..." >&2
@@ -2548,6 +2560,17 @@ clean_cloud_storage() {
         note_activity
     fi
     safe_clean ~/Library/Caches/com.baidu.netdisk "Baidu Netdisk cache"
+    local baidu_code="$HOME/Library/Containers/com.baidu.netdisk/Data/Library/Application Support/baidunetdisk/Code Cache"
+    if has_full_disk_access && [[ -d "$baidu_code/js" || -d "$baidu_code/wasm" ]]; then
+        local _MOLE_DEV_PROCESS_GUARD_UNKNOWN_REASON="process or cache path state unknown"
+        # Chromium-generated JavaScript and WebAssembly only. Keep downloads,
+        # session storage, IndexedDB and other app data outside these leaves.
+        local baidu_rc=0
+        _dev_safe_clean_process_guarded _baidu_netdisk_code_cache_process_state \
+            "Baidu Netdisk" "Baidu Netdisk code cache" \
+            "$baidu_code/js" "$baidu_code/wasm" "Baidu Netdisk code cache" || baidu_rc=$?
+        [[ $baidu_rc -le 1 ]] || return "$baidu_rc"
+    fi
     safe_clean ~/Library/Caches/com.alibaba.teambitiondisk "Alibaba Cloud cache"
     safe_clean ~/Library/Caches/com.box.desktop "Box cache"
     local onedrive_state=0
