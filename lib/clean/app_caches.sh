@@ -2042,6 +2042,7 @@ clean_3d_tools() {
 futu_running() {
     mole_pgrep_any \
         -x "FTNN" \
+        -x 'FTNN Helper( [(](GPU|Plugin|Renderer)[)])?' \
         -f '/Contents/MacOS/FTNN( |$)'
 }
 
@@ -2073,6 +2074,87 @@ clean_futu_update_downloads() {
     return "$guarded_rc"
 }
 
+# The shared cleanup guard asks this after sizing and again at safe_remove.
+# Compare with the identities captured before sizing and before owner probes.
+_futu_cef_cache_state() {
+    local state=0
+    futu_running || state=$?
+    [[ $state -eq 1 ]] || return "$state"
+
+    local path="${_MOLE_DEV_GUARDED_PATH:-}"
+    local index
+    for index in "${!_MOLE_FUTU_CEF_TARGETS[@]}"; do
+        [[ "$path" == "${_MOLE_FUTU_CEF_TARGETS[$index]}" ]] || continue
+        local leaf="${path%/*}"
+        local parent="$_MOLE_FUTU_CEF_ROOT/${leaf##*/}"
+        local parent_id="${_MOLE_FUTU_CEF_PARENT_IDS[$index]}"
+        local target_id="${_MOLE_FUTU_CEF_TARGET_IDS[$index]}"
+        _mole_path_matches_identity "$leaf" "$_MOLE_FUTU_CEF_ROOT" "$_MOLE_FUTU_CEF_ROOT_ID" "$parent_id" || return 2
+        _mole_path_matches_identity "$path" "$parent" "$parent_id" "$target_id" || return 2
+        _MOLE_SAFE_CLEAN_BOUND_PATH="$path"
+        _MOLE_SAFE_CLEAN_EXPECTED_PARENT="$parent"
+        _MOLE_SAFE_CLEAN_EXPECTED_PARENT_ID="$parent_id"
+        _MOLE_SAFE_CLEAN_EXPECTED_TARGET_ID="$target_id"
+        return 1
+    done
+    return 2
+}
+
+clean_futu_cef_cache() {
+    # Do not traverse another app's sandbox without Full Disk Access.
+    has_full_disk_access || return 0
+    # Futu 16.40.27608 keeps HTTP and compiled code caches in a second
+    # container. Read-only cleanup sizing measured 251464 KiB in Cache and
+    # 179276 KiB in Code Cache. Keep both leaf directories, Login, QuantCache,
+    # GPUCache, databases and Chromium cookie, local, session and web storage.
+    local container_data="Library/Containers/cn.futu.niuniu.nx/Data"
+    local cef_root="$HOME/$container_data/$container_data/Library/Application Support/Common/cef_cache"
+    [[ -d "$cef_root" && ! -L "$cef_root" ]] || return 0
+    local physical_home
+    physical_home=$(cd -P "$HOME" 2> /dev/null && pwd -P) || return 0
+    local _MOLE_FUTU_CEF_ROOT="${physical_home%/}/${cef_root#"$HOME"/}"
+    _mole_snapshot_path_identity "$cef_root" || return 0
+    [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "${_MOLE_FUTU_CEF_ROOT%/*}" ]] || return 0
+    local _MOLE_FUTU_CEF_ROOT_ID="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+    local -a _MOLE_FUTU_CEF_TARGETS=() _MOLE_FUTU_CEF_PARENT_IDS=() _MOLE_FUTU_CEF_TARGET_IDS=()
+
+    local scan_deadline
+    scan_deadline=$(_mole_container_cache_probe_deadline)
+    local leaf leaf_id path
+    for leaf in "$cef_root/Cache" "$cef_root/Code Cache"; do
+        [[ -d "$leaf" && ! -L "$leaf" ]] || continue
+        _mole_snapshot_path_identity "$leaf" || continue
+        [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "$_MOLE_FUTU_CEF_ROOT" &&
+            "$_MOLE_PATH_SNAPSHOT_PARENT_ID" == "$_MOLE_FUTU_CEF_ROOT_ID" ]] || continue
+        leaf_id="$_MOLE_PATH_SNAPSHOT_TARGET_ID"
+        for path in "$leaf"/*; do
+            [[ $SECONDS -lt $scan_deadline ]] || return 0
+            [[ -e "$path" && ! -L "$path" ]] || continue
+            _mole_snapshot_path_identity "$path" || continue
+            [[ "$_MOLE_PATH_SNAPSHOT_PARENT" == "$_MOLE_FUTU_CEF_ROOT/${leaf##*/}" &&
+                "$_MOLE_PATH_SNAPSHOT_PARENT_ID" == "$leaf_id" ]] || continue
+            _MOLE_FUTU_CEF_TARGETS+=("$path")
+            _MOLE_FUTU_CEF_PARENT_IDS+=("$leaf_id")
+            _MOLE_FUTU_CEF_TARGET_IDS+=("$_MOLE_PATH_SNAPSHOT_TARGET_ID")
+        done
+    done
+    [[ ${#_MOLE_FUTU_CEF_TARGETS[@]} -gt 0 ]] || return 0
+    mole_cleanup_targets_exist "${_MOLE_FUTU_CEF_TARGETS[@]}" || return 0
+
+    local label="Futu CEF cache"
+    local _MOLE_CLEAN_GUARD_REASON=""
+    if ! mole_clean_process_guard futu_running "Futu started"; then
+        mole_report_guard_stop "$label" mole_defer_cleanup_family "Futu"
+        return 0
+    fi
+    local _MOLE_DEV_PROCESS_GUARD_UNKNOWN_REASON="process or cache path state unknown"
+    local rc=0
+    _dev_safe_clean_process_guarded _futu_cef_cache_state "Futu" "$label" \
+        "${_MOLE_FUTU_CEF_TARGETS[@]}" "$label" || rc=$?
+    [[ $rc -gt 1 ]] || return 0
+    return "$rc"
+}
+
 clean_productivity_apps() {
     safe_clean ~/Library/Caches/com.tw93.MiaoYan/* "MiaoYan cache"
     safe_clean ~/Library/Caches/com.klee.desktop/* "Klee cache"
@@ -2086,7 +2168,8 @@ clean_productivity_apps() {
     safe_clean ~/.cache/kaku/* "Kaku cache"
     safe_clean ~/Library/Application\ Support/spacedrive/thumbnails/* "Spacedrive thumbnail cache"
     safe_clean ~/Library/Containers/is.follow/Data/Library/Application\ Support/Folo/Cache/Cache_Data/* "Folo cache"
-    clean_futu_update_downloads
+    clean_futu_update_downloads || return $?
+    clean_futu_cef_cache
 }
 # Music/media players (protect Spotify offline music).
 clean_media_players() {

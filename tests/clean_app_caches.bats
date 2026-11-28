@@ -109,6 +109,132 @@ EOF
 }
 
 
+assert_futu_cef_cache_cleanup() {
+    local scenario="$1" dry_run="$2"
+    local status output
+    run env HOME="$HOME/iso-futu-cef-$scenario-$dry_run" PROJECT_ROOT="$PROJECT_ROOT" \
+        SCENARIO="$scenario" MOLE_TEST_NO_AUTH=1 MOLE_DRY_RUN="$dry_run" /bin/bash --noprofile --norc <<'EOF'
+set -euo pipefail
+outer="$HOME/Library/Containers/cn.futu.niuniu.nx/Data/Library"
+common="$outer/Containers/cn.futu.niuniu.nx/Data/Library/Application Support/Common"
+cef="$common/cef_cache"
+http="$cef/Cache/Cache_Data"
+js="$cef/Code Cache/js"
+wasm="$cef/Code Cache/wasm"
+for target in "$http" "$js" "$wasm"; do
+    mkdir -p "$target"
+    printf cache > "$target/payload"
+done
+kept=("$common/Login/account.db" "$common/QuantCache/data" "$cef/Cookies" \
+    "$cef/IndexedDB/db" "$cef/Local Storage/store" "$cef/Session Storage/store" \
+    "$cef/WebStorage/store" "$cef/GPUCache/data" "$cef/databases/db" \
+    "$outer/Application Support/Common/cef_cache/Cache/decoy" \
+    "$outer/Application Support/LiveUpdate/other-channel/package.dmg")
+for sentinel in "${kept[@]}"; do
+    mkdir -p "${sentinel%/*}"
+    printf keep > "$sentinel"
+done
+ln -s "$cef/IndexedDB" "$cef/Cache/state-link"
+if [[ "$SCENARIO" == symlink ]]; then
+    mv "$common" "$HOME/redirected"
+    ln -s "$HOME/redirected" "$common"
+fi
+
+source "$PROJECT_ROOT/bin/clean.sh"
+MOLE_CURRENT_COMMAND=clean
+CLEAN_PREVIEW_LEDGER_FILE="$HOME/preview"
+: > "$CLEAN_PREVIEW_LEDGER_FILE"
+has_full_disk_access() { [[ "$SCENARIO" != no-access ]]; }
+pgrep() {
+    local owner="$SCENARIO"
+    if [[ "$owner" == sink-* ]]; then
+        [[ -f "$HOME/validated" ]] || return 1
+        owner="${owner#sink-}"
+    fi
+    case "$owner" in
+        main)
+            [[ "$1" == -x ]] || return 1
+            printf '%s\n' FTNN | /usr/bin/grep -Exq -- "$2" || return $?
+            ;;
+        helper)
+            [[ "$1" == -f ]] || return 1
+            printf '%s\n' '/Applications/富途牛牛.app/Contents/Frameworks/FTNN Helper (Renderer).app/Contents/MacOS/FTNN Helper (Renderer) --type=renderer' |
+                /usr/bin/grep -Eq -- "$2" || return $?
+            ;;
+        unknown)
+            [[ "$1" == -f ]] || return 1
+            printf 'unknown\n' > "$HOME/probed"
+            return 3
+            ;;
+        parent)
+            if [[ ! -d "$cef/retired" ]]; then
+                mv "$cef/Cache" "$cef/retired"
+                mkdir "$cef/Cache"
+                mv "$cef/retired/Cache_Data" "$http"
+            fi
+            return 1
+            ;;
+        *) return 1 ;;
+    esac
+    printf '%s\n' "$owner" > "$HOME/probed"
+}
+get_cleanup_path_size_kb() {
+    if [[ "$SCENARIO" == size-swap && "$1" == "$http" && ! -d "$cef/original" ]]; then
+        mv "$http" "$cef/original"
+        mkdir "$http"
+        printf replacement > "$http/payload"
+    fi
+    _cleanup_path_sizes_kb "$1"
+}
+eval "$(declare -f validate_path_for_deletion | sed '1s/validate_path_for_deletion/_fixture_validate/')"
+validate_path_for_deletion() {
+    _fixture_validate "$@" || return $?
+    [[ "$1" != "$http" ]] || : > "$HOME/validated"
+}
+
+clean_productivity_apps
+
+for sentinel in "${kept[@]}"; do
+    [[ "$(cat "$sentinel")" == keep ]] || exit 1
+done
+case "$SCENARIO" in
+    idle)
+        [[ "$files_cleaned" -eq 3 ]] || { printf 'Expected three CEF candidates, got %s\n' "$files_cleaned"; exit 1; }
+        for target in "$http" "$js" "$wasm"; do
+            if [[ "$DRY_RUN" == true ]]; then
+                [[ -f "$target/payload" ]] || exit 1
+                /usr/bin/tr '\000' '\n' < "$CLEAN_PREVIEW_LEDGER_FILE" | /usr/bin/grep -Fxq -- "$target" || exit 1
+            else
+                [[ ! -e "$target" ]] || exit 1
+                /usr/bin/grep -Fq -- "$target" "$HOME/Library/Logs/mole/operations.log" || exit 1
+            fi
+        done
+        [[ -d "$cef/Cache" && -d "$cef/Code Cache" && -L "$cef/Cache/state-link" ]] || exit 1
+        ;;
+    sink-parent)
+        [[ -d "$cef/retired" && -f "$HOME/validated" && "$(cat "$http/payload")" == cache ]] || exit 1
+        [[ "$files_cleaned" -eq 2 && ! -e "$js" && ! -e "$wasm" ]] || exit 1
+        ;;
+    *)
+        [[ "$files_cleaned" -eq 0 && ! -s "$CLEAN_PREVIEW_LEDGER_FILE" ]] || exit 1
+        [[ -f "$http/payload" && -f "$js/payload" && -f "$wasm/payload" ]] || exit 1
+        case "$SCENARIO" in
+            main | helper | unknown | sink-main | sink-helper | sink-unknown)
+                [[ "$(cat "$HOME/probed")" == "${SCENARIO#sink-}" ]] || exit 1
+                ;;
+            size-swap)
+                [[ "$(cat "$http/payload")" == replacement && -f "$cef/original/payload" ]] || exit 1
+                ;;
+        esac
+        ;;
+esac
+EOF
+    [ "$status" -eq 0 ] || { printf '%s (dry run %s)\n%s\n' "$scenario" "$dry_run" "$output"; return 1; }
+    if [[ "$scenario" == idle ]]; then
+        [ "$(printf '%s\n' "$output" | grep -c 'Futu CEF cache')" -eq 1 ] || { echo "$output"; return 1; }
+    fi
+}
+
 @test "clean_xcode_tools skips derived data when Xcode running" {
     local fixture_home="$HOME/xcode-running-derived-data"
     run env HOME="$fixture_home" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
@@ -1640,7 +1766,9 @@ pgrep() {
     local selector="$1" pattern="$2" line
     for line in "${PROC_LINES[@]}"; do
         if [[ "$selector" == "-x" ]]; then
-            [[ "${line##*/}" == "$pattern" ]] && return 0
+            if printf '%s\n' "${line##*/}" | /usr/bin/grep -Exq -- "$pattern"; then
+                return 0
+            fi
         elif printf '%s\n' "$line" | grep -Eq -- "$pattern"; then
             return 0
         fi
@@ -1655,13 +1783,44 @@ probe() {
 }
 echo "main=$(probe '/Applications/富途牛牛.app/Contents/MacOS/FTNN')"
 echo "helper=$(probe '/Applications/富途牛牛.app/Contents/Frameworks/FTNN Helper (GPU).app/Contents/MacOS/FTNN Helper (GPU) --type=gpu-process')"
+for name in 'FTNN Helper' 'FTNN Helper (GPU)' 'FTNN Helper (Plugin)' 'FTNN Helper (Renderer)'; do
+    [[ "$(probe "$name")" == 0 ]] || { printf 'Missed CEF process name: %s\n' "$name"; exit 1; }
+done
 echo "other=$(probe '/Applications/Other.app/Contents/MacOS/FTNNX' '/usr/bin/vim notes-about-FTNN.txt')"
 EOF
 
-    [ "$status" -eq 0 ] || return 1
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
     [[ "$output" == *"main=0"* ]] || return 1
     [[ "$output" == *"helper=0"* ]] || return 1
     [[ "$output" == *"other=1"* ]]
+}
+
+@test "Futu CEF cleanup previews and removes only the observed cache children" {
+    assert_futu_cef_cache_cleanup idle 1 || return 1
+    assert_futu_cef_cache_cleanup idle 0
+}
+
+@test "Futu CEF cleanup holds caches for live main and CEF helper processes or unknown owners" {
+    local scenario
+    for scenario in main helper unknown; do
+        assert_futu_cef_cache_cleanup "$scenario" 1 || return 1
+        assert_futu_cef_cache_cleanup "$scenario" 0 || return 1
+    done
+    assert_futu_cef_cache_cleanup sink-main 0 || return 1
+    assert_futu_cef_cache_cleanup sink-helper 0 || return 1
+    assert_futu_cef_cache_cleanup sink-unknown 0
+}
+
+@test "Futu CEF cleanup skips the sandbox without Full Disk Access" {
+    assert_futu_cef_cache_cleanup no-access 1 || return 1
+    assert_futu_cef_cache_cleanup no-access 0
+}
+
+@test "Futu CEF cleanup refuses redirected ancestors and replaced cache identities" {
+    assert_futu_cef_cache_cleanup symlink 0 || return 1
+    assert_futu_cef_cache_cleanup size-swap 1 || return 1
+    assert_futu_cef_cache_cleanup size-swap 0 || return 1
+    assert_futu_cef_cache_cleanup sink-parent 0
 }
 
 @test "clean_notion_service_worker_caches refuses a symlinked cache child" {
